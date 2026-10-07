@@ -312,11 +312,19 @@ impl World {
                 best = Some((n, (cx, cy)));
             }
         }
-        let (ex, ey) = match best {
+        let (mut ex, mut ey) = match best {
             Some((_, c)) => c,
             None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
         };
-        let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), 512);
+        let mut facing = 512;
+        // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
+        if self.is_water_type(ty) {
+            let Some((cx, cy, f)) = self.naval_spawn_cell(b) else { return false };
+            (ex, ey, facing) = (cx, cy, f);
+        }
+        let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        // Helicopters start landed on their helipad (helicopter.rs).
+        self.heli_produced(u, b);
         // Planes park on their airfield (plane.rs).
         if self.plane_produced(u, b) {
             return true;

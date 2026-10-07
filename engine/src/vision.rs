@@ -34,7 +34,8 @@ impl World {
         let n = self.actors.len();
         for i in 0..n {
             let a = &self.actors[i];
-            if !a.alive {
+            // Passengers see nothing from inside their transport.
+            if !a.alive || !a.in_world() {
                 continue;
             }
             let sight = self.rules.actors[a.ty as usize].sight;

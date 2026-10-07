@@ -634,13 +634,13 @@ impl World {
         let (planes, rest): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.is_plane(i) && self.is_rearm_base_for(i, t));
         let tref = self.make_ref(t);
         for i in planes {
-            self.order_return_to_base(i, Some(tref));
+            self.plane_return_to_base(i, Some(tref));
         }
         rest
     }
 
     /// Send a plane home to rearm (to `base` when free, else the nearest free base).
-    pub fn order_return_to_base(&mut self, i: usize, base: Option<u32>) {
+    pub fn plane_return_to_base(&mut self, i: usize, base: Option<u32>) {
         if !self.is_plane(i) || self.is_support_aircraft(i) || self.actors[i].air.phase == Phase::Crashing {
             return;
         }

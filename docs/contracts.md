@@ -134,7 +134,55 @@ all); `player_json` has `won`, `defeated` and `team`.
 `engine` units move in a domain: `ground` (flow fields on land), `water` (flow
 fields on water cells, naval yards are their docks) and `air` (free flight,
 no pathfinding). Queue types: Building, Defense, Infantry, Vehicle, Aircraft,
-Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16.
+Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16,
+mine 32, underwater 64 (submerged submarines), submarine 128 (any
+submarine; depth charge warheads). Naval yards are structure and water.
+
+Transports (engine/src/cargo.rs): a right-click with units on an own
+transport they fit in is the smart action `Load` (6, `Game.cursor_action`).
+`Game.deploy` on a loaded transport unloads it; `Game.deploy_state` is 1 when
+it can unload now and 2 when no free cell is next to it. `Game.actor_json`
+reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
+transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
+out of the world: not pickable, not box-selectable, dropped from the selection.
+
+### Helicopters (`engine/src/helicopter.rs`)
+
+Built at the Helipad (HPAD) and start landed on it. VTOL: take off and land
+vertically, hover in place when idle, turn in place, slide toward their goal.
+Landed aircraft (altitude 0) count as vehicles for targeting (OpenRA
+`Targetable@GROUND`), so anti-air cannot hit them and ground weapons can.
+Idle armed helicopters hold fire (OpenRA `InitialStance: HoldFire`) and only
+engage on attack-move or an attack order. Rounds are spent per shot; an empty
+helicopter reserves a free helipad (one per pad), lands, reloads
+`reload_count` rounds every `reload_delay` ticks (OpenRA AmmoPool) and takes
+off again. Damaged helicopters land on the service depot to be repaired.
+Shot down in the air they fall and explode on impact.
+
+Orders (`Order` in engine/src/world.rs, validated by `packages/protocol`):
+`{"o": "land", ids, x, y}` lands on or next to a cell (on an own helipad or
+service depot: reload or repair there), `{"o": "return_to_base", ids}` flies
+to a free helipad (a full helicopter only waits near the base), `deploy`
+lands where the helicopter hovers or takes off again. A smart order on an own
+helipad docks (cursor 4), on an own service depot repairs (cursor 5). Engine
+API: `Game.order_land(player, ids, x, y)`, `Game.order_return_to_base(player,
+ids)`; `actor_json` reports `ammo`, `maxAmmo` and `landed`.
+
+Deliberate deviations from OpenRA (the `OVERRIDES` table in
+`tools/gen_rules.py`):
+
+- The Helipad is buildable by both sides (OpenRA: Allies only), as in classic
+  Red Alert (1996), where the Soviets fly the Hind from it.
+- The Hind is enabled for the Soviets (OpenRA: `~disabled`).
+- The Black Hawk requires `structures.allies`, so it stays Allied as in
+  OpenRA; the Chinook is available to both sides, as in classic Red Alert.
+
+The Chinook is a transport (cargo.rs): infantry board it only while it is
+landed (Deploy on the empty Chinook lands it); Deploy on a loaded Chinook
+lands it on or next to its spot, unloads and takes off again. Passengers die
+when it is shot down.
+
+Not modelled: landed helicopters do not block ground units' paths.
 
 Aircraft are targeted by their state: airborne ones are `air`, landed ones
 count as `vehicle` (OpenRA `Targetable@AIRBORNE` / `Targetable@GROUND`).

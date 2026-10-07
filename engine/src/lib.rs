@@ -7,6 +7,7 @@
 mod abilities;
 mod ai;
 mod air;
+mod cargo;
 mod combat;
 pub mod flowfield;
 mod helicopter;
@@ -314,7 +315,8 @@ impl Game {
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
     pub fn build_render(&mut self, player: u8, alpha: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
         let view = View { x0, y0, x1, y1 };
-        self.selection.retain(|&r| self.world.resolve(r).is_some());
+        // Units that got into a transport drop out of the selection.
+        self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
         self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
         self.sprites.len() / render::SPRITE_FLOATS
     }
@@ -339,7 +341,7 @@ impl Game {
 
     /// Selected ids that are still alive.
     pub fn selection(&self) -> Vec<u32> {
-        self.selection.iter().copied().filter(|&r| self.world.resolve(r).is_some()).collect()
+        self.selection.iter().copied().filter(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world())).collect()
     }
 
     /// Actor under a world-pixel position visible to `player`, or 0xFFFFFFFF.
@@ -368,7 +370,8 @@ impl Game {
                 a.alive
                     && a.owner == player
                     && a.kind != Kind::Building
-                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
+                    && a.in_world()
+                    && !w.is_support_aircraft(i)
                     && a.x >= ax
                     && a.x <= bx
                     && a.y >= ay
@@ -403,16 +406,27 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            // Helicopters: AmmoPool rounds left and size, and whether landed.
+            "ammo": self.world.heli_ammo(i).0,
+            "maxAmmo": self.world.heli_ammo(i).1,
+            "landed": a.heli.landed,
+            // Transports: passengers inside (ids, loading order), their total weight and Cargo.MaxWeight.
+            "passengers": self.world.passengers(i).into_iter().map(|p| self.world.make_ref(p)).collect::<Vec<_>>(),
+            "cargoWeight": self.world.cargo_weight(i),
+            "cargoMax": self.world.cargo_max(i),
+            // Passengers: the transport they are in (NONE when outside).
+            "carrier": a.carrier,
+            "submerged": a.submerged,
         })
         .to_string()
     }
 
-    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock, 5 repair.
+    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock, 5 repair, 6 load (enter a transport).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()
             .filter_map(|&r| self.world.resolve(r))
-            .filter(|&i| self.world.actors[i].owner == player && self.world.actors[i].is_unit())
+            .filter(|&i| self.world.actors[i].owner == player && self.world.actors[i].is_unit() && self.world.actors[i].in_world())
             .collect();
         self.world.smart_action(player, &units, to_wu(x), to_wu(y)) as u8
     }
@@ -435,6 +449,16 @@ impl Game {
         self.submit(Order::Stop { player, ids });
     }
 
+    /// Helicopters: land on or next to the cell at (x, y) (world pixels).
+    pub fn order_land(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
+        self.submit(Order::Land { player, ids, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// Helicopters: fly back to a free helipad and reload.
+    pub fn order_return_to_base(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::ReturnToBase { player, ids });
+    }
+
     pub fn sell(&mut self, player: u8, building: u32) {
         self.submit(Order::Sell { player, building });
     }
@@ -451,15 +475,29 @@ impl Game {
         (info.cost as i64 * pct as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32
     }
 
-    /// Deploy selected MCVs / pack up a selected Construction Yard.
+    /// Deploy selected MCVs / pack up a selected Construction Yard / unload selected transports.
     pub fn deploy(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::Deploy { player, ids });
     }
 
     /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here.
+    /// A loaded transport "deploys" by unloading (2: no free cell to unload onto).
     pub fn deploy_state(&self, player: u8, id: u32) -> u8 {
         let Some(i) = self.world.resolve(id) else { return 0 };
-        if self.world.actors[i].owner != player || self.world.deploy_target(i).is_none() {
+        if self.world.actors[i].owner != player {
+            return 0;
+        }
+        if self.world.has_passengers(i) && self.world.can_unload(i) {
+            return 1;
+        }
+        // Helicopters: land here (then unload), or take off again.
+        if self.world.actors[i].kind == Kind::Aircraft && self.world.is_helicopter(i) {
+            return self.world.heli_deploy_state(i);
+        }
+        if self.world.has_passengers(i) {
+            return 2;
+        }
+        if self.world.deploy_target(i).is_none() {
             return 0;
         }
         if self.world.can_deploy(i) {

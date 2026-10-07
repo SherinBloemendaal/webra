@@ -102,6 +102,16 @@ export const CURSORS = {
     16,
     'pointer',
   ),
+  // Enter a transport: a chevron diving into an open hatch.
+  load: cursor(
+    `<path d="M4 14 L4 28 L28 28 L28 14" fill="#3d4a3a" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/>` +
+      `<rect x="9" y="20" width="14" height="8" fill="#1d241c" stroke="${OUTLINE}" stroke-width="1.5"/>` +
+      `<path d="M9 4 L16 12 L23 4 M9 10 L16 18 L23 10" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="M9 4 L16 12 L23 4 M9 10 L16 18 L23 10" fill="none" stroke="#5fe36a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+    16,
+    16,
+    'pointer',
+  ),
   blocked: cursor(
     `<circle cx="16" cy="16" r="11" fill="none" stroke="${OUTLINE}" stroke-width="6"/>` +
       `<circle cx="16" cy="16" r="11" fill="none" stroke="#ff4a3a" stroke-width="3"/>` +
@@ -113,8 +123,8 @@ export const CURSORS = {
   ),
 };
 
-/** Cursor for a smart action code from Game.cursor_action (0 none ... 5 repair). */
-export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair];
+/** Cursor for a smart action code from Game.cursor_action (0 none ... 6 load). */
+export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair, CURSORS.load];
 
 /** Smart action codes, matching SmartAction in engine/src/world.rs. */
-export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5 };
+export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5, LOAD: 6 };

@@ -262,12 +262,18 @@ fn every_actor_is_reachable_for_the_right_factions() {
     let can = |faction: &str, id: &str| r.obtainable[r.faction_index(faction).unwrap()][r.actor_index(id).unwrap()];
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
-        // FACT comes from deploying an MCV; the Hind is disabled in OpenRA's rules
-        // until the helicopter work enables it.
-        // Support power actors (paratroopers, spy plane, Badgers) are never built.
+        // FACT comes from deploying an MCV; support power actors (paratroopers,
+        // spy plane, Badgers) are never built.
         let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str());
-        assert!(any || support || a.id == "FACT" || a.id == "HIND", "{} is buildable by some faction", a.id);
+        assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
+    // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the
+    // Chinook, the Soviets fly the Hind, the Allies the Black Hawk and Longbow.
+    for f in ["allies", "england", "france", "germany", "soviet", "russia", "ukraine"] {
+        assert!(can(f, "HPAD") && can(f, "TRAN"), "{f} builds helipads and Chinooks");
+    }
+    assert!(can("soviet", "HIND") && can("russia", "HIND") && can("ukraine", "HIND") && !can("allies", "HIND"));
+    assert!(can("allies", "MH60") && can("england", "HELI") && !can("soviet", "MH60") && !can("russia", "HELI"));
     assert!(can("germany", "CTNK") && !can("england", "CTNK") && !can("russia", "CTNK"));
     assert!(can("russia", "TTNK") && !can("ukraine", "TTNK"));
     assert!(can("ukraine", "DTRK") && !can("russia", "DTRK"));
