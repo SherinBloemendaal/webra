@@ -4,12 +4,26 @@
 // Overrides have the shape `{ actors: { ID: {...} }, weapons: { NAME: {...} } }`
 // (docs/contracts.md section 2). The base rules are the same shape, keyed by id.
 //
-// Merge semantics: objects merge recursively; arrays and scalars replace the
-// built-in value wholesale (so overriding one warhead's damage means sending the
-// whole `warheads` array).
+// Rules match the engine (engine/src/rules.rs apply_overrides): ids match
+// case-insensitively, only existing fields, same JSON type, integers only, and
+// id/name/kind/queue cannot change. Merge semantics: objects merge
+// recursively; arrays and scalars replace the built-in value wholesale (so
+// overriding one warhead's damage means sending the whole `warheads` array).
 
 /** Fields that identify an entry; changing them would rename it, so they are rejected. */
 const IDENTITY = { actors: 'id', weapons: 'name' };
+/** Fields the engine never lets a map change (they decide which code runs). */
+const LOCKED = new Set(['kind', 'queue']);
+
+/** Find a built-in entry; ids match case-insensitively, like the engine. */
+export function findEntry(base, section, id) {
+  const entries = base?.[section];
+  if (!entries) return undefined;
+  if (entries[id]) return entries[id];
+  const lower = String(id).toLowerCase();
+  const key = Object.keys(entries).find((k) => k.toLowerCase() === lower);
+  return key === undefined ? undefined : entries[key];
+}
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -30,11 +44,13 @@ function checkValue(path, value, base, errors) {
     return;
   }
   if (base === null) {
-    // Optional numeric fields (turret_turn_speed, reload_override, ...) are null
-    // when unset; they may be overridden with a number or kept null.
-    if (value !== null && !(typeof value === 'number' && Number.isFinite(value))) {
-      errors.push(`${path}: expected a number or null, got ${typeName(value)}`);
-    }
+    // The engine only accepts a value of the same JSON type as the built-in one,
+    // so optional fields that are unset (null) cannot be overridden.
+    errors.push(`${path}: has no built-in value and cannot be overridden`);
+    return;
+  }
+  if (value === null) {
+    errors.push(`${path}: expected ${typeName(base) === 'integer' ? 'a number' : typeName(base)}, got null`);
     return;
   }
   if (isObject(base)) {
@@ -42,7 +58,10 @@ function checkValue(path, value, base, errors) {
       errors.push(`${path}: expected an object, got ${typeName(value)}`);
       return;
     }
-    for (const [k, v] of Object.entries(value)) checkValue(`${path}.${k}`, v, base[k], errors);
+    for (const [k, v] of Object.entries(value)) {
+      if (LOCKED.has(k)) errors.push(`${path}.${k}: cannot be overridden`);
+      else checkValue(`${path}.${k}`, v, base[k], errors);
+    }
     return;
   }
   if (Array.isArray(base)) {
@@ -62,7 +81,7 @@ function checkValue(path, value, base, errors) {
       errors.push(`${path}: expected a number, got ${typeName(value)}`);
       return;
     }
-    if (Number.isInteger(base) && !Number.isInteger(value)) {
+    if (!Number.isInteger(value)) {
       errors.push(`${path}: expected an integer, got ${value}`);
       return;
     }
@@ -93,7 +112,7 @@ export function validateOverrides(rules, base) {
     }
     for (const [id, fields] of Object.entries(entries)) {
       const path = `rules.${section}.${id}`;
-      const builtIn = base?.[section]?.[id];
+      const builtIn = findEntry(base, section, id);
       if (!builtIn) {
         errors.push(`${path}: unknown ${section === 'actors' ? 'actor' : 'weapon'} id`);
         continue;
@@ -103,8 +122,8 @@ export function validateOverrides(rules, base) {
         continue;
       }
       for (const [k, v] of Object.entries(fields)) {
-        if (k === IDENTITY[section]) {
-          errors.push(`${path}.${k}: the ${k} cannot be overridden`);
+        if (k === IDENTITY[section] || LOCKED.has(k)) {
+          errors.push(`${path}.${k}: cannot be overridden`);
           continue;
         }
         checkValue(`${path}.${k}`, v, builtIn[k], errors);

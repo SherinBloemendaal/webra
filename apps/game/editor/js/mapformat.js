@@ -21,6 +21,7 @@ export const LIMITS = Object.freeze({
   authorMax: 64,
   descriptionMax: 500,
   maxFacing: 1023,
+  maxActors: 2000,
 });
 
 /** Map preview colours, the same as `Game.map_preview` in engine/src/lib.rs. */
@@ -116,9 +117,15 @@ export function mapHash(map) {
   return sha256Hex(canonicalJson(map));
 }
 
-/** Any map with `rules` overrides is a modded map. */
+/**
+ * Any map with `rules` overrides is a modded map. Like the engine, `null` and an
+ * empty object are not modded.
+ */
 export function isModded(map) {
-  return map?.rules !== undefined && map?.rules !== null;
+  const r = map?.rules;
+  if (r === undefined || r === null) return false;
+  if (isObject(r)) return Object.keys(r).length > 0;
+  return true;
 }
 
 // ---- Building maps ----------------------------------------------------------------
@@ -194,6 +201,14 @@ export function footprintOf(info) {
     return info.footprint.filter((c) => c[2] !== 0);
   }
   return [[0, 0, 1]];
+}
+
+/** Catalog lookup; actor ids match case-insensitively, like the engine. */
+export function catalogEntry(catalog, type) {
+  if (catalog[type]) return catalog[type];
+  const lower = String(type).toLowerCase();
+  const key = Object.keys(catalog).find((k) => k.toLowerCase() === lower);
+  return key === undefined ? undefined : catalog[key];
 }
 
 // ---- Validation -------------------------------------------------------------------
@@ -274,7 +289,7 @@ export function validateMap(map, opts = {}) {
     }
     if (badTerrain) error(`terrain has ${badTerrain} cells with values outside 0..4.`);
     if (badOre) error(`ore has ${badOre} cells with density above ${LIMITS.maxOre}.`);
-    if (oreOnBlocked) warn(`${oreOnBlocked} ore cells lie on impassable terrain and cannot be harvested.`);
+    if (oreOnBlocked) error(`${oreOnBlocked} ore cells lie on impassable terrain; ore can only lie on clear or rough ground.`);
   }
 
   // Spawns
@@ -297,20 +312,19 @@ export function validateMap(map, opts = {}) {
     goodSpawns.push({ n, x: s[0], y: s[1] });
   });
   if (layers && goodSpawns.length) {
-    const fact = opts.catalog?.FACT;
-    const yard = fact ? footprintOf(fact) : null;
     for (const s of goodSpawns) {
+      // The engine needs the whole 3x4 construction yard on clear ground.
       const t = layers.terrain[s.y * w + s.x];
+      let open = true;
+      for (let dy = 0; dy < 4 && open; dy++) {
+        for (let dx = 0; dx < 3 && open; dx++) {
+          open = inside(s.x + dx, s.y + dy) && isBuildable(layers.terrain[(s.y + dy) * w + s.x + dx]);
+        }
+      }
       if (!isPassable(t)) {
         error(`Spawn ${s.n} at ${s.x},${s.y} is on impassable ground (${TERRAIN_NAMES[t] ?? t}).`, s.x, s.y);
-      } else if (yard) {
-        const blocked = yard.some(([dx, dy, c]) => {
-          const x = s.x + dx;
-          const y = s.y + dy;
-          if (!inside(x, y)) return true;
-          return c === 1 ? !isBuildable(layers.terrain[y * w + x]) : !isPassable(layers.terrain[y * w + x]);
-        });
-        if (blocked) warn(`Spawn ${s.n}: the construction yard does not fit on clear ground here.`, s.x, s.y);
+      } else if (!open) {
+        error(`Spawn ${s.n} at ${s.x},${s.y} needs 3x4 clear ground for the construction yard.`, s.x, s.y);
       }
     }
     for (let a = 0; a < goodSpawns.length; a++) {
@@ -336,6 +350,9 @@ export function validateMap(map, opts = {}) {
   // Actors
   if (map.actors !== undefined && !Array.isArray(map.actors)) error('actors must be an array.');
   const spawnCount = spawns?.length ?? 0;
+  if (Array.isArray(map.actors) && map.actors.length > LIMITS.maxActors) {
+    error(`At most ${LIMITS.maxActors} pre-placed actors (has ${map.actors.length}).`);
+  }
   (Array.isArray(map.actors) ? map.actors : []).forEach((a, i) => {
     const label = `Actor ${i + 1}${a && typeof a.type === 'string' ? ` (${a.type})` : ''}`;
     if (!isObject(a)) {
@@ -346,13 +363,14 @@ export function validateMap(map, opts = {}) {
       if (!['type', 'owner', 'x', 'y', 'facing'].includes(k)) error(`${label}: unknown field "${k}".`);
     }
     if (typeof a.type !== 'string' || !a.type) error(`${label}: type must be an actor id.`);
-    const info = opts.catalog && typeof a.type === 'string' ? opts.catalog[a.type] : undefined;
+    const info = opts.catalog && typeof a.type === 'string' ? catalogEntry(opts.catalog, a.type) : undefined;
     if (opts.catalog && typeof a.type === 'string' && !info) error(`${label}: unknown actor type.`);
     if (!isInt(a.owner) || a.owner < -1 || a.owner >= spawnCount) {
       error(`${label}: owner must be -1 (neutral) or a spawn index 0..${spawnCount - 1}.`);
     }
-    if (a.facing !== undefined && (!isInt(a.facing) || a.facing < 0 || a.facing > LIMITS.maxFacing)) {
-      error(`${label}: facing must be an integer 0..${LIMITS.maxFacing}.`);
+    if (a.facing !== undefined && !isInt(a.facing)) error(`${label}: facing must be an integer.`);
+    else if (a.facing !== undefined && (a.facing < 0 || a.facing > LIMITS.maxFacing)) {
+      warn(`${label}: facing should be 0..${LIMITS.maxFacing}.`);
     }
     if (!sizeOk) return;
     if (!inside(a.x, a.y)) {
@@ -362,7 +380,7 @@ export function validateMap(map, opts = {}) {
     if (info) {
       const cells = footprintOf(info);
       if (cells.some(([dx, dy]) => !inside(a.x + dx, a.y + dy))) {
-        error(`${label} at ${a.x},${a.y} does not fit inside the map.`, a.x, a.y);
+        warn(`${label} at ${a.x},${a.y} does not fit inside the map.`, a.x, a.y);
         return;
       }
       if (layers) {

@@ -112,9 +112,10 @@ test('map hash is the sha256 of the canonical JSON and ignores key order', async
   assert.notEqual(await mapHash({ ...map, name: 'Other' }), hash);
 });
 
-test('modded means rules is present and not null', () => {
+test('modded means rules is present, not null and not empty', () => {
   const map = makeMap();
   assert.equal(isModded(map), false);
+  assert.equal(isModded({ ...map, rules: {} }), false);
   assert.equal(isModded({ ...map, rules: { actors: {} } }), true);
   assert.equal(validateMap({ ...map, rules: { actors: { E1: { cost: 10 } } } }, { rulesBase: RULES_BASE }).modded, true);
 });
@@ -154,9 +155,7 @@ test('layers must decode to width*height bytes with valid values', () => {
   const badOre = makeMap({}, (_t, o) => (o[5] = 13));
   assert.ok(validateMap(badOre).errors.some((e) => e.includes('above 12')));
   const oreOnRock = makeMap({}, (t, o) => ((t[5] = TERRAIN.ROCK), (o[5] = 4)));
-  const r = validateMap(oreOnRock);
-  assert.ok(r.ok);
-  assert.ok(r.warnings.some((w) => w.includes('impassable')));
+  assert.ok(validateMap(oreOnRock).errors.some((e) => e.includes('ore can only lie on clear or rough ground')));
 });
 
 test('spawn count, bounds and passable ground', () => {
@@ -193,12 +192,17 @@ test('spawns must be reachable from each other by ground', () => {
   assert.equal(seen[0 * 48 + 24], 0);
 });
 
-test('construction yard fit and overlapping spawns are warnings', () => {
-  const map = makeMap({}, (t, _o, w) => (t[11 * w + 11] = TERRAIN.TREE));
-  map.spawns = [[10, 10], [12, 12]];
-  const r = validateMap(map, { catalog: CATALOG });
+test('spawns need 3x4 clear ground; overlapping spawns are a warning', () => {
+  const rough = makeMap({}, (t, _o, w) => (t[13 * w + 12] = TERRAIN.ROUGH));
+  rough.spawns = [[10, 10], [30, 30]];
+  assert.ok(validateMap(rough).errors.some((e) => e.includes('Spawn 1 at 10,10 needs 3x4 clear ground')));
+  const edge = makeMap();
+  edge.spawns = [[46, 10], [30, 30]];
+  assert.ok(validateMap(edge).errors.some((e) => e.includes('Spawn 1 at 46,10 needs 3x4 clear ground')));
+  const close = makeMap();
+  close.spawns = [[10, 10], [12, 12]];
+  const r = validateMap(close, { catalog: CATALOG });
   assert.ok(r.ok, r.errors.join('; '));
-  assert.ok(r.warnings.some((w) => w.includes('Spawn 1: the construction yard does not fit')));
   assert.ok(r.warnings.some((w) => w.includes('Spawns 1 and 2 overlap')));
 });
 
@@ -209,9 +213,13 @@ test('actors: type, owner, facing and footprint checks', () => {
   assert.ok(check([{ type: 'NOPE', owner: 0, x: 1, y: 1, facing: 0 }]).errors.some((e) => e.includes('unknown actor type')));
   assert.ok(check([{ type: 'SBAG', owner: 2, x: 1, y: 1, facing: 0 }]).errors.some((e) => e.includes('owner must be -1')));
   assert.ok(check([{ type: 'SBAG', owner: -2, x: 1, y: 1, facing: 0 }]).errors.length === 1);
-  assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 1024 }]).errors.some((e) => e.includes('facing')));
+  assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 1024 }]).warnings.some((e) => e.includes('facing')));
+  assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 1.5 }]).errors.some((e) => e.includes('facing')));
+  assert.ok(check([{ type: 'sbag', owner: 0, x: 1, y: 1, facing: 0 }]).ok, 'actor ids are case-insensitive');
   assert.ok(check([{ type: 'SBAG', owner: 0, x: 48, y: 1, facing: 0 }]).errors.some((e) => e.includes('outside the map')));
-  assert.ok(check([{ type: 'FACT', owner: 0, x: 46, y: 1, facing: 0 }]).errors.some((e) => e.includes('does not fit')));
+  assert.ok(check([{ type: 'FACT', owner: 0, x: 46, y: 1, facing: 0 }]).warnings.some((e) => e.includes('does not fit')));
+  const many = Array.from({ length: 2001 }, (_, i) => ({ type: 'SBAG', owner: -1, x: i % 48, y: Math.floor(i / 48), facing: 0 }));
+  assert.ok(check(many).errors.some((e) => e.includes('At most 2000')));
   assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 0, hp: 5 }]).errors.some((e) => e.includes('unknown field "hp"')));
   assert.ok(!validateMap({ ...map, actors: {} }).ok);
   const onRock = makeMap({}, (t, _o, w) => (t[5 * w + 5] = TERRAIN.ROCK));
@@ -233,7 +241,7 @@ test('the 1 MiB limit applies to the canonical JSON', () => {
 
 test('rules overrides: valid overrides pass', () => {
   const rules = {
-    actors: { '1TNK': { cost: 400, unit: { speed: 150 }, turret_turn_speed: 30 }, FACT: { reload_override: 20 } },
+    actors: { '1TNK': { cost: 400, unit: { speed: 150 }, turret_turn_speed: 30 }, '2tnk': { hp: 1 } },
     weapons: { '25mm': { range: 6000 } },
   };
   assert.deepEqual(validateOverrides(rules, RULES_BASE), []);
@@ -252,6 +260,11 @@ test('rules overrides: unknown ids, fields and wrong types are rejected', () => 
   assert.match(errs({ actors: { E1: { cost: -1 } } })[0], /must not be negative/);
   assert.match(errs({ actors: { E1: { hp: 0 } } })[0], /at least 1/);
   assert.match(errs({ actors: { E1: { id: 'E2' } } })[0], /cannot be overridden/);
+  assert.match(errs({ actors: { E1: { kind: 'vehicle' } } })[0], /cannot be overridden/);
+  assert.match(errs({ actors: { E1: { queue: 'Vehicle' } } })[0], /cannot be overridden/);
+  assert.match(errs({ weapons: { '25mm': { name: 'x' } } })[0], /cannot be overridden/);
+  assert.match(errs({ actors: { E1: { turret_turn_speed: 5 } } })[0], /no built-in value/);
+  assert.match(errs({ actors: { E1: { cost: null } } })[0], /got null/);
   assert.match(errs({ actors: { E1: { unit: 5 } } })[0], /expected an object/);
   assert.match(errs({ weapons: { '25mm': { warheads: [{ damage: 'x' }] } } })[0], /warheads\[0\]\.damage: expected a number/);
   assert.match(errs({ sounds: {} })[0], /unknown section/);
@@ -289,4 +302,95 @@ test('parseMap and file names', () => {
   assert.equal(parseMap('{"format":1}').format, 1);
   assert.equal(mapFileName('Twin Rivers!'), 'twin-rivers.webra-map.json');
   assert.equal(mapFileName(''), 'map.webra-map.json');
+});
+
+// ---- Parity with the engine (needs `npm run build:wasm`) -----------------------------
+
+const { initSync, Game } = await import('../pkg/webra_sim.js');
+initSync({ module: readFileSync(new URL('../pkg/webra_sim_bg.wasm', import.meta.url)) });
+const ENGINE_CATALOG = Object.fromEntries(JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json()).actors.map((a) => [a.id, a]));
+const engineValidate = (map) => JSON.parse(Game.validate_map(JSON.stringify(map)));
+const ours = (map) => validateMap(map, { catalog: ENGINE_CATALOG, rulesBase: RULES_BASE });
+
+test('canonical JSON and hash match the engine for generated maps', async () => {
+  for (const [seed, size, players] of [[1, 64, 2], [7, 96, 4], [42, 128, 8], [3, 32, 3]]) {
+    const text = Game.generated_map(seed, size, players);
+    const map = JSON.parse(text);
+    assert.equal(canonicalJson(map), text, `${seed}/${size}/${players}`);
+    assert.equal(await mapHash(map), Game.map_hash(text));
+    const r = ours(map);
+    assert.deepEqual(r.errors, [], `${seed}/${size}/${players}`);
+    assert.equal(engineValidate(map).ok, true);
+  }
+});
+
+test('canonical JSON and hash match the engine for a modded map with actors', async () => {
+  const map = JSON.parse(Game.generated_map(5, 64, 2));
+  // Keys in odd orders, optional fields missing, awkward characters in text.
+  delete map.description;
+  map.name = 'Zwälf «河» "quoted" \\ /slash\u0001\ttab';
+  map.actors = [
+    { facing: 5, y: 30, x: 31, owner: -1, type: 'SBAG' },
+    { type: '1tnk', owner: 1, x: 20, y: 21 },
+  ];
+  map.rules = { weapons: { '25mm': { reload: 9, range: 6000 } }, actors: { '1TNK': { unit: { turn_speed: 9, speed: 150 }, cost: 400 } } };
+  const reordered = Object.fromEntries(Object.entries(map).reverse());
+  const engineText = Game.map_canonical(JSON.stringify(reordered));
+  assert.equal(canonicalJson(reordered), engineText);
+  assert.equal(await mapHash(reordered), Game.map_hash(JSON.stringify(reordered)));
+  const v = engineValidate(reordered);
+  assert.equal(v.ok, true, v.errors.join('; '));
+  assert.equal(v.modded, true);
+  assert.equal(v.hash, await mapHash(reordered));
+  const r = ours(reordered);
+  assert.equal(r.ok, true, r.errors.join('; '));
+  assert.equal(r.modded, true);
+  // An empty rules object is kept as {} but is not modded.
+  const empty = { ...map, rules: {} };
+  assert.equal(canonicalJson(empty), Game.map_canonical(JSON.stringify(empty)));
+  assert.equal(engineValidate(empty).modded, false);
+  assert.equal(isModded(empty), false);
+});
+
+test('validation agrees with the engine on broken maps', () => {
+  const base = () => JSON.parse(Game.generated_map(9, 64, 2));
+  const edit = (map, fn) => {
+    const { terrain, ore } = decodeLayers(map);
+    fn(terrain, ore, map.width);
+    map.terrain = encodeBase64(terrain);
+    map.ore = encodeBase64(ore);
+    return map;
+  };
+  const cases = {
+    valid: base(),
+    'spawn on rough': edit(base(), (t, o, w) => {
+      const m = base();
+      const [x, y] = m.spawns[0];
+      t[(y + 1) * w + x + 1] = TERRAIN.ROUGH;
+      o[(y + 1) * w + x + 1] = 0;
+    }),
+    'ore on rock': edit(base(), (t, o) => {
+      const i = o.findIndex((v) => v > 0);
+      t[i] = TERRAIN.ROCK;
+      o[i] = 3;
+    }),
+    'unreachable spawn': edit(base(), (t, o, w) => {
+      for (let y = 0; y < 64; y++) for (let x = 30; x < 34; x++) (t[y * w + x] = TERRAIN.WATER), (o[y * w + x] = 0);
+    }),
+    'unknown actor': { ...base(), actors: [{ type: 'NOPE', owner: -1, x: 1, y: 1, facing: 0 }] },
+    'bad owner': { ...base(), actors: [{ type: 'E1', owner: 2, x: 1, y: 1, facing: 0 }] },
+    'one spawn': { ...base(), spawns: [[8, 8]] },
+    'long name': { ...base(), name: 'x'.repeat(65) },
+    'small map': { ...base(), width: 31 },
+    'null field override': { ...base(), rules: { actors: { E1: { turret_turn_speed: 5 } } } },
+    'float override': { ...base(), rules: { actors: { E1: { cost: 1.5 } } } },
+    'kind override': { ...base(), rules: { actors: { E1: { kind: 'vehicle' } } } },
+    'unknown weapon': { ...base(), rules: { weapons: { Laser: { range: 1 } } } },
+    'lower-case ids': { ...base(), rules: { actors: { '1tnk': { cost: 1 } } } },
+  };
+  for (const [name, map] of Object.entries(cases)) {
+    const e = engineValidate(map);
+    const r = ours(map);
+    assert.equal(r.ok, e.ok, `${name}: engine ${JSON.stringify(e.errors)} vs ours ${JSON.stringify(r.errors)}`);
+  }
 });
