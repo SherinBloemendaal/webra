@@ -79,7 +79,8 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
 copyTree(website, dist);
-copyTree(game, join(dist, 'play'), new Set(['tests']));
+// apps/game/protocol is a symlink to packages/protocol/src: copied as real files below.
+copyTree(game, join(dist, 'play'), new Set(['tests', 'protocol']));
 copyTree(protocol, join(dist, 'play/protocol'));
 
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
