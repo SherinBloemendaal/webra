@@ -17,9 +17,10 @@ this document; change it first (in its own commit) when a contract has to move.
 | `tools/` | `gen_rules.py`, `shader-check`, `check-js.mjs` | |
 
 The browser imports `packages/protocol` through the path `/play/protocol/` (the
-build copies `packages/protocol/src` to `dist/play/protocol/`). In the repo the
-game imports it as `../../../packages/protocol/src/index.js` only through the
-re-export file `apps/game/js/protocol.js`, so one line changes when paths move.
+build copies `packages/protocol/src` to `dist/play/protocol/`). In the repo
+`apps/game/protocol` is a symlink to `../../packages/protocol/src`, and the game
+imports it only through the re-export file `apps/game/js/protocol.js` (from
+`../protocol/index.js`), so the same path works in local dev and in `dist/`.
 
 ## 2. Map format (`.webra-map.json`, format 1)
 

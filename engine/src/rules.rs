@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-const RULES_JSON: &str = include_str!("../rules.json");
+pub(crate) const RULES_JSON: &str = include_str!("../rules.json");
 
 #[derive(Deserialize)]
 struct RawRules {
