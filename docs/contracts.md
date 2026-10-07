@@ -40,9 +40,13 @@ re-export file `apps/game/js/protocol.js`, so one line changes when paths move.
 }
 ```
 
-- Identity: `sha256` (hex) of the canonical JSON (keys in the order above, no
-  whitespace). The engine and the server compute it the same way; clients
-  check it after download.
+- Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
+  above (`description`, `actors` and `rules` always present; `actors` entries
+  as `type, owner, x, y, facing`), keys inside `rules` sorted alphabetically at
+  every level, integers only, no whitespace. `Game.map_canonical(json)` returns
+  exactly that string; JavaScript implementations must match it byte for byte
+  (tests compare against the engine). The server and clients check the hash
+  after every download.
 - Size limit: 1 MiB serialized.
 - `rules` overrides (the rules.ini story): a partial copy of `engine/rules.json`
   keyed by id: `{ "actors": { "1TNK": { "cost": 400, "unit": { "speed": 150 } } }, "weapons": { "25mm": { "range": 6000 } } }`.
@@ -51,10 +55,14 @@ re-export file `apps/game/js/protocol.js`, so one line changes when paths move.
   shows a warning ("This map changes game rules (costs, damage, speed...). It
   can be unfair or act as a cheat.") and the player must accept before the map
   is installed. The lobby shows a MODDED badge for such maps.
-- Engine API: `Game.from_map(mapJson, optionsJson)` builds a world from a map;
-  `Game.map_hash(mapJson)` returns the identity; `Game.validate_map(mapJson)`
-  returns `{ ok, errors: [], modded }`; generated maps export with
-  `Game.generated_map(seed, size, players)`.
+- Engine API (landed): `Game.from_map(mapJson, optionsJson)` builds a world
+  from a map (players fill spawns in slot order, extra spawns stay empty,
+  neutral actors get a passive owner); `Game.map_hash(mapJson)`,
+  `Game.map_canonical(mapJson)`, `Game.validate_map(mapJson)` returns
+  `{ ok, errors: [], modded, hash }`; `Game.generated_map(seed, size, players)`
+  exports a generated map file; previews: `Game.map_file_preview(mapJson)` and
+  `Game.map_preview_players(seed, size, players)` (RGBA per cell, spawns in
+  player colours).
 
 ## 3. Game options (lobby to engine)
 
@@ -111,9 +119,14 @@ reports desyncs, and drops a player who stops sending orders for 10 s.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
-Engine side: `Game.set_lockstep(true)` makes order methods queue into an outbox;
-`Game.take_orders()` returns them as JSON; `Game.apply_frame(playerOrdersJson)`
-queues a frame's orders before `tick()`. `Game.state_hash()` for checks.
+Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
+an outbox; `Game.take_orders()` returns them as a JSON array of order objects
+(`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
+`Game.apply_frame('[[player, [order, ...]], ...]')` queues one frame before
+`tick()` and re-stamps every order with that player index (invalid entries are
+skipped, returns the count). `Game.state_hash()` (hex string) for desync
+checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
+all); `player_json` has `won`, `defeated` and `team`.
 
 ## 5. Domains for units
 

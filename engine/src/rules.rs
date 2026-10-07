@@ -519,7 +519,22 @@ pub const TECH_LEVELS: [&str; 5] = ["infonly", "low", "medium", "high", "unrestr
 
 impl Rules {
     pub fn load() -> Rules {
-        let raw: RawRules = serde_json::from_str(RULES_JSON).expect("rules.json is valid");
+        Rules::load_with(None).expect("built-in rules are valid")
+    }
+
+    /// Load the built-in rules with optional overrides from a custom map
+    /// (`{ "actors": { "1TNK": { "cost": 400 } }, "weapons": { "25mm": { "range": 6000 } } }`).
+    /// Overrides may only change existing fields to values of the same type.
+    pub fn load_with(overrides: Option<&serde_json::Value>) -> Result<Rules, String> {
+        let mut base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
+        if let Some(o) = overrides {
+            apply_overrides(&mut base, o)?;
+        }
+        let raw: RawRules = serde_json::from_value(base).map_err(|e| format!("rules overrides produce invalid rules: {e}"))?;
+        Ok(Rules::from_raw(raw))
+    }
+
+    fn from_raw(raw: RawRules) -> Rules {
         let mut tokens: Vec<String> = vec![TOKEN_DISABLED.to_string()];
         for t in TECH_LEVELS {
             tokens.push(format!("techlevel.{t}"));
@@ -753,9 +768,92 @@ impl Rules {
     }
 }
 
+/// Deep-merge `overrides` into the rules JSON. Only `actors` (by id) and
+/// `weapons` (by name) can be changed, only existing fields, only with values
+/// of the same JSON type; identity fields cannot change.
+fn apply_overrides(base: &mut serde_json::Value, overrides: &serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let o = overrides.as_object().ok_or("rules overrides must be an object")?;
+    for (section, key_field) in [("actors", "id"), ("weapons", "name")] {
+        let Some(patches) = o.get(section) else { continue };
+        let patches = patches.as_object().ok_or_else(|| format!("rules.{section} must be an object"))?;
+        let list = base[section].as_array_mut().expect("rules sections are arrays");
+        for (id, patch) in patches {
+            let target = list
+                .iter_mut()
+                .find(|e| e[key_field].as_str().is_some_and(|v| v.eq_ignore_ascii_case(id)))
+                .ok_or_else(|| format!("rules.{section}: unknown id {}", truncate(id)))?;
+            merge(target, patch, &format!("{section}.{}", truncate(id)), key_field)?;
+        }
+    }
+    for k in o.keys() {
+        if k != "actors" && k != "weapons" {
+            return Err(format!("rules: unknown section {}", truncate(k)));
+        }
+    }
+    fn merge(target: &mut Value, patch: &Value, path: &str, key_field: &str) -> Result<(), String> {
+        let (Some(t), Some(p)) = (target.as_object_mut(), patch.as_object()) else {
+            return Err(format!("{path}: expected an object"));
+        };
+        for (k, v) in p {
+            if k == key_field || k == "kind" || k == "queue" {
+                return Err(format!("{path}.{}: cannot be changed", truncate(k)));
+            }
+            let cur = t.get_mut(k).ok_or_else(|| format!("{path}: unknown field {}", truncate(k)))?;
+            let same_type = matches!(
+                (&*cur, v),
+                (Value::Number(_), Value::Number(_))
+                    | (Value::Bool(_), Value::Bool(_))
+                    | (Value::String(_), Value::String(_))
+                    | (Value::Array(_), Value::Array(_))
+                    | (Value::Object(_), Value::Object(_))
+            );
+            if !same_type {
+                return Err(format!("{path}.{}: wrong type", truncate(k)));
+            }
+            if v.is_object() {
+                merge(cur, v, &format!("{path}.{}", truncate(k)), "")?;
+            } else {
+                if let Value::Number(n) = v {
+                    if !(n.is_i64() || n.is_u64()) {
+                        return Err(format!("{path}.{}: numbers must be integers", truncate(k)));
+                    }
+                }
+                *cur = v.clone();
+            }
+        }
+        Ok(())
+    }
+    Ok(())
+}
+
+fn truncate(s: &str) -> String {
+    s.chars().take(40).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overrides_change_values_and_reject_bad_input() {
+        let o: serde_json::Value = serde_json::json!({ "actors": { "1tnk": { "cost": 123, "unit": { "speed": 200 } } }, "weapons": { "25mm": { "range": 9000 } } });
+        let r = Rules::load_with(Some(&o)).unwrap();
+        let t = &r.actors[r.actor_index("1TNK").unwrap()];
+        assert_eq!(t.cost, 123);
+        assert_eq!(t.unit.as_ref().unwrap().speed, 200);
+        assert_eq!(r.weapons[t.weapons[0]].range, 9000);
+        for bad in [
+            serde_json::json!({ "actors": { "NOPE": { "cost": 1 } } }),
+            serde_json::json!({ "actors": { "1TNK": { "costt": 1 } } }),
+            serde_json::json!({ "actors": { "1TNK": { "cost": "free" } } }),
+            serde_json::json!({ "actors": { "1TNK": { "id": "2TNK" } } }),
+            serde_json::json!({ "actors": { "1TNK": { "cost": 1.5 } } }),
+            serde_json::json!({ "player": { "starting_cash": 1 } }),
+        ] {
+            assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn rules_load_and_resolve() {

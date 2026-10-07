@@ -8,6 +8,7 @@ mod ai;
 mod combat;
 pub mod flowfield;
 pub mod map;
+pub mod mapdata;
 pub mod math;
 mod production;
 pub mod render;
@@ -49,6 +50,9 @@ pub struct Game {
     fog: Vec<u8>,
     terrain: Vec<u8>,
     selection: Vec<u32>,
+    /// Lockstep multiplayer: orders wait in the outbox for the network.
+    lockstep: bool,
+    outbox: Vec<Order>,
 }
 
 #[wasm_bindgen]
@@ -67,86 +71,65 @@ impl Game {
         Ok(Game::wrap(world))
     }
 
-    /// Skirmish from lobby options (JSON, see apps/game/js/lobby.js). Players are
-    /// already resolved to concrete factions by the caller.
+    /// Skirmish on a generated map from lobby options (JSON, see
+    /// apps/game/js/lobby.js and docs/contracts.md section 3). Factions must
+    /// already be resolved (no "random"); closed slots are left out.
     pub fn from_options(json: &str) -> Result<Game, JsError> {
-        let v: serde_json::Value = serde_json::from_str(json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
-        let rules = rules::Rules::load();
-        let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
-        let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
-        let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
-        let mut players = Vec::new();
-        for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| JsError::new("options.players missing"))? {
-            let faction = p.get("faction").and_then(|f| f.as_str()).unwrap_or("allies").to_string();
-            if rules.faction_index(&faction).is_none() {
-                return Err(JsError::new(&format!("unknown faction {faction}")));
-            }
-            let ai = match p.get("type").and_then(|t| t.as_str()) {
-                Some("ai") => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
-                    "easy" => AiDifficulty::Easy,
-                    "hard" => AiDifficulty::Hard,
-                    _ => AiDifficulty::Normal,
-                }),
-                _ => None,
-            };
-            players.push(PlayerSetup { faction, ai });
-        }
-        if players.len() != 2 {
-            return Err(JsError::new("exactly two players are supported"));
-        }
-        let tech = text("techLevel", "unrestricted");
-        let options = GameOptions {
-            starting_cash: num("startingCash", 5000).clamp(0, 1_000_000) as i32,
-            starting_units: match text("startingUnits", "mcv").as_str() {
-                "light" => StartingUnits::Light,
-                "heavy" => StartingUnits::Heavy,
-                "base" => StartingUnits::Base,
-                _ => StartingUnits::Mcv,
-            },
-            tech_level: rules::TECH_LEVELS.iter().position(|t| *t == tech).unwrap_or(4),
-            fog: flag("fog", true),
-            explored: flag("explored", false),
-            build_radius: flag("buildRadius", true),
-            redeployable_mcv: flag("redeployableMcv", true),
-            ore_regrowth: flag("oreRegrowth", true),
-        };
-        let seed = num("seed", 1).max(0) as u64;
-        let size = (num("mapSize", 96) as i32).clamp(48, 512);
-        Ok(Game::wrap(World::with_options(seed, size, &players, options)))
+        let o = parse_options(json)?;
+        Ok(Game::wrap(World::with_options(o.seed, o.map_size, &o.players, o.options)))
     }
 
-    /// Map preview for the lobby: RGBA, one pixel per cell, spawns marked.
+    /// Game on a map file (docs/contracts.md section 2) with lobby options.
+    /// Rules overrides of modded maps apply; the caller must have shown the warning.
+    pub fn from_map(map_json: &str, options_json: &str) -> Result<Game, JsError> {
+        let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
+        let o = parse_options(options_json)?;
+        let world = World::from_map(&data, o.seed, &o.players, o.options).map_err(|e| JsError::new(&e))?;
+        Ok(Game::wrap(world))
+    }
+
+    /// SHA-256 (hex) identity of a map file's canonical form.
+    pub fn map_hash(map_json: &str) -> Result<String, JsError> {
+        Ok(mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?.hash())
+    }
+
+    /// Canonical JSON of a map file (what the hash is computed over).
+    pub fn map_canonical(map_json: &str) -> Result<String, JsError> {
+        Ok(mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?.canonical_json())
+    }
+
+    /// `{ ok, errors, modded, hash }` for a map file.
+    pub fn validate_map(map_json: &str) -> String {
+        let v = match mapdata::MapData::parse(map_json) {
+            Ok(d) => d.validate(),
+            Err(e) => mapdata::Validation { ok: false, errors: vec![e], modded: false, hash: None },
+        };
+        serde_json::to_string(&v).expect("validation serializes")
+    }
+
+    /// A generated map exported as a map file (for the editor and for multiplayer).
+    pub fn generated_map(seed: u32, size: i32, players: u32) -> String {
+        let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
+        let m = map::Map::generate_for(size, size, seed as u64, 12, players as usize);
+        let name = format!("Random {players}p #{seed}");
+        mapdata::MapData::from_map(&m, &name, "WebRA", "Generated map").canonical_json()
+    }
+
+    /// Lobby preview of a map file: RGBA, one pixel per cell, spawns marked.
+    pub fn map_file_preview(map_json: &str) -> Result<Vec<u8>, JsError> {
+        let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
+        let m = data.to_map().map_err(|e| JsError::new(&e))?;
+        Ok(preview_rgba(&m))
+    }
+
+    /// Lobby preview of a generated map: RGBA, one pixel per cell, spawns marked.
     pub fn map_preview(seed: u32, size: i32) -> Vec<u8> {
+        Game::map_preview_players(seed, size, 2)
+    }
+
+    pub fn map_preview_players(seed: u32, size: i32, players: u32) -> Vec<u8> {
         let size = size.clamp(48, 512);
-        let m = map::Map::generate(size, size, seed as u64, 12);
-        let mut out = Vec::with_capacity((size * size * 4) as usize);
-        for i in 0..m.cells() {
-            let rgb = if m.ore[i] > 0 {
-                [200, 160, 50]
-            } else {
-                match m.terrain[i] {
-                    map::Terrain::Clear => [62, 88, 44],
-                    map::Terrain::Rough => [96, 92, 58],
-                    map::Terrain::Rock => [128, 118, 102],
-                    map::Terrain::Water => [36, 70, 102],
-                    map::Terrain::Tree => [28, 54, 24],
-                }
-            };
-            out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
-        }
-        for (k, &(sx, sy)) in m.spawns.iter().enumerate() {
-            let col = if k == 0 { [90, 150, 255] } else { [240, 80, 60] };
-            for dy in 0..4 {
-                for dx in 0..3 {
-                    let (x, y) = (sx + dx, sy + dy);
-                    if m.contains(x, y) {
-                        let i = m.idx(x, y) * 4;
-                        out[i..i + 3].copy_from_slice(&col);
-                    }
-                }
-            }
-        }
-        out
+        preview_rgba(&map::Map::generate_for(size, size, seed as u64, 12, players as usize))
     }
 
     /// Benchmark: `units` armed units split over two armies that attack-move into each other.
@@ -155,11 +138,62 @@ impl Game {
     }
 
     fn wrap(world: World) -> Game {
-        Game { world, sprites: Vec::new(), rects: Vec::new(), fog: Vec::new(), terrain: Vec::new(), selection: Vec::new() }
+        Game {
+            world,
+            sprites: Vec::new(),
+            rects: Vec::new(),
+            fog: Vec::new(),
+            terrain: Vec::new(),
+            selection: Vec::new(),
+            lockstep: false,
+            outbox: Vec::new(),
+        }
     }
 
     pub fn tick(&mut self) {
         self.world.step();
+    }
+
+    // ---- Lockstep multiplayer (docs/contracts.md section 4) ------------------
+
+    /// In lockstep mode, local orders go to an outbox instead of the world.
+    pub fn set_lockstep(&mut self, on: bool) {
+        self.lockstep = on;
+    }
+
+    /// Local orders since the last call, as a JSON array, for the network.
+    pub fn take_orders(&mut self) -> String {
+        let orders = std::mem::take(&mut self.outbox);
+        serde_json::to_string(&orders).expect("orders serialize")
+    }
+
+    /// Queue one network frame before `tick()`: `[[player, [order, ...]], ...]`.
+    /// Every order is re-stamped with the player the server assigned, so a
+    /// client can never act for someone else. Invalid entries are skipped.
+    /// Returns the number of orders queued.
+    pub fn apply_frame(&mut self, frame_json: &str) -> Result<u32, JsError> {
+        let frame: Vec<(u8, Vec<serde_json::Value>)> = serde_json::from_str(frame_json)
+            .map_err(|e| JsError::new(&format!("bad frame: {}", e.to_string().chars().take(80).collect::<String>())))?;
+        let mut queued = 0;
+        for (player, orders) in frame {
+            if player as usize >= self.world.players.len() {
+                continue;
+            }
+            for v in orders {
+                let Ok(mut o) = serde_json::from_value::<Order>(v) else { continue };
+                if !o.is_reasonable() {
+                    continue;
+                }
+                o.set_player(player);
+                self.world.queue_order(o);
+                queued += 1;
+            }
+        }
+        Ok(queued)
+    }
+
+    pub fn player_count(&self) -> usize {
+        self.world.players.iter().filter(|p| !p.neutral).count()
     }
 
     pub fn ticks_per_second() -> u32 {
@@ -351,23 +385,23 @@ impl Game {
     // ---- Orders (applied at the start of the next tick) --------------------
 
     pub fn order_smart(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
-        self.world.queue_order(Order::Smart { player, ids, x: to_wu(x), y: to_wu(y) });
+        self.submit(Order::Smart { player, ids, x: to_wu(x), y: to_wu(y) });
     }
 
     pub fn order_move(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32, attack_move: bool) {
-        self.world.queue_order(Order::Move { player, ids, x: to_wu(x), y: to_wu(y), attack_move });
+        self.submit(Order::Move { player, ids, x: to_wu(x), y: to_wu(y), attack_move });
     }
 
     pub fn order_attack(&mut self, player: u8, ids: Vec<u32>, target: u32) {
-        self.world.queue_order(Order::Attack { player, ids, target });
+        self.submit(Order::Attack { player, ids, target });
     }
 
     pub fn order_stop(&mut self, player: u8, ids: Vec<u32>) {
-        self.world.queue_order(Order::Stop { player, ids });
+        self.submit(Order::Stop { player, ids });
     }
 
     pub fn sell(&mut self, player: u8, building: u32) {
-        self.world.queue_order(Order::Sell { player, building });
+        self.submit(Order::Sell { player, building });
     }
 
     /// Refund a structure would give right now (0 if it cannot be sold).
@@ -384,7 +418,7 @@ impl Game {
 
     /// Deploy selected MCVs / pack up a selected Construction Yard.
     pub fn deploy(&mut self, player: u8, ids: Vec<u32>) {
-        self.world.queue_order(Order::Deploy { player, ids });
+        self.submit(Order::Deploy { player, ids });
     }
 
     /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here.
@@ -401,24 +435,24 @@ impl Game {
     }
 
     pub fn set_rally(&mut self, player: u8, building: u32, x: f32, y: f32) {
-        self.world.queue_order(Order::Rally { player, building, x: to_wu(x), y: to_wu(y) });
+        self.submit(Order::Rally { player, building, x: to_wu(x), y: to_wu(y) });
     }
 
     pub fn start_production(&mut self, player: u8, actor: &str, count: i32) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
-            self.world.queue_order(Order::StartProduction { player, ty: ty as u16, count });
+            self.submit(Order::StartProduction { player, ty: ty as u16, count });
         }
     }
 
     pub fn cancel_production(&mut self, player: u8, actor: &str) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
-            self.world.queue_order(Order::CancelProduction { player, ty: ty as u16 });
+            self.submit(Order::CancelProduction { player, ty: ty as u16 });
         }
     }
 
     pub fn place_building(&mut self, player: u8, actor: &str, cx: i32, cy: i32) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
-            self.world.queue_order(Order::Place { player, ty: ty as u16, cx, cy });
+            self.submit(Order::Place { player, ty: ty as u16, cx, cy });
         }
     }
 
@@ -486,6 +520,8 @@ impl Game {
             "hasProducer": has_producer,
             "defeated": p.defeated,
             "winner": w.winner,
+            "won": w.has_won(player),
+            "team": p.team,
             "units": units,
             "tick": w.tick,
             "flowFields": w.flow.computed,
@@ -553,5 +589,103 @@ impl World {
         w.refresh_tokens();
         w.update_vision();
         w
+    }
+}
+
+struct ParsedOptions {
+    seed: u64,
+    map_size: i32,
+    players: Vec<PlayerSetup>,
+    options: GameOptions,
+}
+
+fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
+    let rules = rules::Rules::load();
+    let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
+    let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
+    let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
+    let mut players = Vec::new();
+    for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| JsError::new("options.players missing"))? {
+        let kind = p.get("type").and_then(|t| t.as_str()).unwrap_or("human");
+        if kind == "closed" || kind == "open" {
+            continue;
+        }
+        let faction = p.get("faction").and_then(|f| f.as_str()).unwrap_or("allies").to_string();
+        if rules.faction_index(&faction).is_none() {
+            return Err(JsError::new(&format!("unknown faction {}", faction.chars().take(24).collect::<String>())));
+        }
+        let ai = match kind {
+            "ai" => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
+                "easy" => AiDifficulty::Easy,
+                "hard" => AiDifficulty::Hard,
+                _ => AiDifficulty::Normal,
+            }),
+            _ => None,
+        };
+        let team = p.get("team").and_then(|t| t.as_u64()).unwrap_or(0).min(8) as u8;
+        players.push(PlayerSetup { faction, ai, team });
+    }
+    if !(2..=8).contains(&players.len()) {
+        return Err(JsError::new("a game needs 2 to 8 players"));
+    }
+    let tech = text("techLevel", "unrestricted");
+    let options = GameOptions {
+        starting_cash: num("startingCash", 5000).clamp(0, 1_000_000) as i32,
+        starting_units: match text("startingUnits", "mcv").as_str() {
+            "light" => StartingUnits::Light,
+            "heavy" => StartingUnits::Heavy,
+            "base" => StartingUnits::Base,
+            _ => StartingUnits::Mcv,
+        },
+        tech_level: rules::TECH_LEVELS.iter().position(|t| *t == tech).unwrap_or(4),
+        fog: flag("fog", true),
+        explored: flag("explored", false),
+        build_radius: flag("buildRadius", true),
+        redeployable_mcv: flag("redeployableMcv", true),
+        ore_regrowth: flag("oreRegrowth", true),
+    };
+    Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
+}
+
+fn preview_rgba(m: &map::Map) -> Vec<u8> {
+    let mut out = Vec::with_capacity(m.cells() * 4);
+    for i in 0..m.cells() {
+        let rgb = if m.ore[i] > 0 {
+            [200, 160, 50]
+        } else {
+            match m.terrain[i] {
+                map::Terrain::Clear => [62, 88, 44],
+                map::Terrain::Rough => [96, 92, 58],
+                map::Terrain::Rock => [128, 118, 102],
+                map::Terrain::Water => [36, 70, 102],
+                map::Terrain::Tree => [28, 54, 24],
+            }
+        };
+        out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+    }
+    const COLORS: [[u8; 3]; 8] =
+        [[90, 150, 255], [240, 80, 60], [240, 205, 70], [90, 205, 100], [205, 115, 240], [240, 140, 50], [100, 215, 215], [230, 230, 230]];
+    for (k, &(sx, sy)) in m.spawns.iter().enumerate() {
+        for dy in 0..4 {
+            for dx in 0..3 {
+                let (x, y) = (sx + dx, sy + dy);
+                if m.contains(x, y) {
+                    let i = m.idx(x, y) * 4;
+                    out[i..i + 3].copy_from_slice(&COLORS[k % 8]);
+                }
+            }
+        }
+    }
+    out
+}
+
+impl Game {
+    fn submit(&mut self, o: Order) {
+        if self.lockstep {
+            self.outbox.push(o);
+        } else {
+            self.world.queue_order(o);
+        }
     }
 }

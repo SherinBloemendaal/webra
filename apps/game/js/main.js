@@ -221,9 +221,9 @@ function start(game, { stress, tickMs }) {
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);
-      if (!over && !stress && state.winner !== null && state.winner !== undefined) {
+      if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
-        $('gameover-title').textContent = state.winner === PLAYER ? 'Mission accomplished' : 'Mission failed';
+        $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
         $('gameover').hidden = false;
       }
     }

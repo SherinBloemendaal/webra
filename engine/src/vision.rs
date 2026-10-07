@@ -55,6 +55,23 @@ impl World {
                 }
             }
         }
+        // Allies share vision (OpenRA default for teams).
+        if self.players.iter().any(|p| p.team != 0) {
+            let own: Vec<Vec<u8>> = self.players.iter().map(|p| p.visible.clone()).collect();
+            for a in 0..self.players.len() {
+                for (b, theirs) in own.iter().enumerate() {
+                    if a != b && self.are_allies(a as u8, b as u8) {
+                        let p = &mut self.players[a];
+                        for (i, &v) in theirs.iter().enumerate() {
+                            if v != 0 {
+                                p.visible[i] = 1;
+                                p.explored[i] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if !self.options.fog {
             // "Fog of war" off: everything ever explored stays visible.
             for p in self.players.iter_mut() {
