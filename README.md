@@ -20,42 +20,51 @@ It is modernised where it helps (large unit counts, flow-field pathfinding, a lo
 
 WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and readable silhouettes instead of hyper-detailed textures. Simple images are easier to recognise at a glance and easier to remember, which is exactly what you want when a hundred units are moving across the screen. All sprites are generated procedurally at startup with Canvas2D (at 2x resolution), so the project ships no image assets at all.
 
-## Features (milestone 1)
+## Features
 
-- [x] Procedural, left-right mirrored 2-player maps (fair for both sides) (clear, rough, rock, water, trees, ore fields), seeded
-- [x] Ore harvesting: harvesters search, harvest bale by bale, queue at the refinery dock and unload; ore regrows and spreads; refinery storage limit
-- [x] Credits and power (power plants scale with health, low power slows production 3x like OpenRA)
-- [x] Classic sidebar production queues (Buildings / Infantry / Vehicles), pay-as-you-build, build-time speedup with multiple factories, queue/cancel with refund
-- [x] Building placement with OpenRA rules (adjacency 2 cells, base provider range, footprint with passable bibs, explored ground only)
-- [x] Tech tree with real OpenRA prerequisites for 7 factions (Allies, England, France, Germany, Soviet, Russia, Ukraine)
-- [x] Buildings: Construction Yard, Power Plant, Ore Refinery, Allied Barracks, Soviet Barracks, War Factory, Service Depot (repairs vehicles for 20% of value)
-- [x] Units: Rifle Infantry, Light Tank, Heavy Tank, Ore Truck
-- [x] Combat with OpenRA weapon data: range, reload, burst, projectile speed, spread damage with falloff, armour-type versus table, friendly fire, turrets with turn rates
-- [x] Classic left-click orders (move, attack, harvest, dock, repair) with custom cursors, attack-move, stop, rally points, control groups
-- [x] Sidebar shows every item, with what is still needed to unlock it (or which side or country it belongs to); numpad hotkeys
-- [x] Tracked vehicles and ore trucks crush enemy infantry (OpenRA locomotor rules)
-- [x] Idle ore trucks resume harvesting by themselves
-- [x] Fog of war and shroud, remembered enemy buildings under fog
-- [x] Skirmish AI: build order, power management, harvesters, attack waves that grow, base defence
-- [x] Victory and defeat
+Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [webra.sherin.dev](https://webra.sherin.dev/)).
+
+### Game modes
+- [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
+- [x] **Online multiplayer**: anyone can host a session, public (listed in the server browser) or private, optionally password protected; deterministic lockstep over WebSockets on Cloudflare Durable Objects, with desync detection
+- [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
+- [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
+- [x] Lobby options like OpenRA: starting cash and units (MCV only, light or heavy support, construction yard), tech level, game speed, fog of war, explored map, build radius, redeployable MCVs, ore regrowth
 - [x] Stress test mode (tens of thousands of units)
-- [x] Deterministic simulation with tests (19 tests, including AI vs AI games played to completion)
+
+### Content (all Red Alert ground, naval and air units and structures, from OpenRA's rules)
+- [x] Every building and defence: power plants, refinery, silo, barracks, kennel, war factory, service depot, radar dome, helipad, airfield, naval yard, sub pen, tech centers, walls, pillboxes, turret, flame tower, Tesla Coil, AA gun, SAM site, gap generator, France's decoys
+- [x] Every ground vehicle: Ranger, APC, Mobile Flak, light, medium, heavy and Mammoth tanks, V2, artillery, Minelayer, Radar Jammer, Mobile Gap Generator, Tesla Tank, Demolition Truck, Chrono Tank, Phase Transport, Supply Truck, MAD Tank, MCV, ore truck
+- [x] **Boats**: Gunboat, Destroyer, Cruiser, Transport (LST), Submarine and Missile Submarine; submarines dive and surface, depth charges, naval repair
+- [x] **Helicopters**: Chinook (troop transport), Black Hawk, Longbow and the Hind (disabled in OpenRA, restored here); hovering, landing, ammo and rearming at helipads
+- [x] **Planes and air support powers**: Yak and MiG attack runs with ammo and rearming at airfields; Spy Plane, Paratroopers and Parabombs
+- [x] **Abilities and superweapons**: minefields, cloaking and detection, missile jamming, gap generators, chrono teleport, demolition and MAD tank detonations, cash delivery; Chronosphere, Iron Curtain, Atom Bomb and GPS satellite
+- [x] Transports: infantry ride in APCs, Rangers, Phase Transports, the LST and the Chinook
+- [x] Tech tree with real OpenRA prerequisites for 7 factions; the sidebar shows every item and what is still needed to unlock it
+
+### Gameplay
+- [x] Ore economy with regrowth, refinery and silo storage, power with low-power slowdown and shutdown of powered defences
+- [x] Classic production queues (Buildings, Defense, Infantry, Vehicles, Aircraft, Naval), OpenRA placement rules, selling, MCV deploy and pack-up
+- [x] OpenRA weapon data: range and minimum range, burst, projectile speed and inaccuracy, warheads with spread, falloff, delays and armour versus tables, death explosions, crushing
+- [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
+- [x] Fair generated maps (left-right mirrored for 2 players, symmetric layouts for more)
+
+### Engineering
+- [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
+- [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format and editor
+- [x] Security review of multiplayer with every finding fixed: see [docs/security.md](docs/security.md)
+- [x] CI on every push, semantic versioning from Conventional Commits, automatic deploys to Cloudflare
 
 ## Roadmap
 
-- [x] Helicopters: Chinook, Hind, Black Hawk and Longbow with hovering flight, landing, ammo and rearming at helipads (the Hind and a Soviet helipad are restored from classic Red Alert; see docs/contracts.md section 5)
-- [ ] All remaining Red Alert units and buildings from [data/CATALOG.md](data/CATALOG.md) (defences, aircraft, naval, superweapons, support powers)
-- [ ] Minimap / radar (requires Radar Dome)
-- [ ] Run the simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
-- [ ] Lockstep multiplayer over WebRTC/WebSockets using the deterministic sim and state hash
-- [ ] Veterancy, infantry prone, crushing, garrisons
-- [ ] Sound effects and music
-- [ ] Map editor and loading OpenRA `.oramap` maps
-- [ ] Selling and repairing buildings, silos, walls
-- [ ] Better AI (scouting, harassment, difficulty levels)
-- [ ] Replays (record orders), save/load
-- [ ] Mobile/touch controls
-- [ ] Hotkey customisation and options menu
+- [ ] AI that uses aircraft, ships, mines and superweapons (in progress)
+- [ ] Minimap / radar (Radar Dome) and radar jamming
+- [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
+- [ ] Sound effects and music (user-supplied original content; the repository ships no EA assets)
+- [ ] Reconnecting to an online game, spectators, replays (record orders), save/load
+- [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
+- [ ] Loading OpenRA `.oramap` maps
+- [ ] Mobile/touch controls, hotkey customisation and an options menu
 
 ## Architecture
 
