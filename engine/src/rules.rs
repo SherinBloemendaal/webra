@@ -148,6 +148,27 @@ pub struct SupportPowerInfo {
     pub duration: i32,
     pub range: i32,
     pub max_distance: i32,
+    /// SupportPowerPaletteOrder: position in the support power bar.
+    #[serde(default)]
+    pub palette_order: i32,
+    // ---- Aircraft powers (AirstrikePower, ParatroopersPower); see powers.rs and plane.rs.
+    /// Actor id of the aircraft that flies in (UnitType).
+    #[serde(default)]
+    pub unit_type: String,
+    #[serde(default)]
+    pub squad_size: i32,
+    /// SquadOffset (x, y) between the planes of a squad, in world units.
+    #[serde(default)]
+    pub squad_offset: Vec<i32>,
+    /// Actor ids dropped by a ParatroopersPower (DropItems).
+    #[serde(default)]
+    pub drop_items: Vec<String>,
+    /// Reveal range of the power's camera at the target (0: none).
+    #[serde(default)]
+    pub camera_range: i32,
+    /// Ticks the camera stays after the aircraft passed (CameraRemoveDelay).
+    #[serde(default)]
+    pub camera_remove_delay: i32,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +228,21 @@ pub struct AircraftInfo {
     pub landable: Vec<String>,
     pub ammo: i32,
     pub rearm_actors: Vec<String>,
+    /// AmmoPool.ReloadDelay: ticks per rearm step on a rearm actor.
+    #[serde(default)]
+    pub reload_delay: i32,
+    /// AmmoPool.ReloadCount: rounds added per rearm step.
+    #[serde(default)]
+    pub reload_count: i32,
+    /// ParaDrop.DropRange: paratroopers jump within this distance of the target (0: no ParaDrop).
+    #[serde(default)]
+    pub drop_range: i32,
+    /// FallsToEarth.Velocity of the husk an airborne plane leaves (0: no crash).
+    #[serde(default)]
+    pub crash_velocity: i32,
+    /// FallsToEarth.Explosion: weapon index fired where the husk hits the ground.
+    #[serde(default)]
+    pub crash_weapon: Option<usize>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -440,6 +476,8 @@ pub enum Projectile {
     Missile,
     Instant,
     Tesla,
+    /// GravityBomb: dropped from an aircraft, falls straight down at `speed` per tick.
+    Bomb,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -696,6 +734,7 @@ impl Rules {
                     "bullet" => Projectile::Bullet,
                     "missile" => Projectile::Missile,
                     "tesla" => Projectile::Tesla,
+                    "bomb" => Projectile::Bomb,
                     _ => Projectile::Instant,
                 },
                 speed: w.speed,

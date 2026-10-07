@@ -75,7 +75,7 @@ pub struct View {
 }
 
 impl View {
-    fn contains(&self, x: f32, y: f32, margin: f32) -> bool {
+    pub(crate) fn contains(&self, x: f32, y: f32, margin: f32) -> bool {
         x >= self.x0 - margin && x <= self.x1 + margin && y >= self.y0 - margin && y <= self.y1 + margin
     }
 }
@@ -179,7 +179,8 @@ impl World {
                 }
                 continue;
             }
-            if a.owner != player && !self.is_visible_to(i, player) {
+            // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
+            if a.air.parachute || (a.owner != player && !self.is_visible_to(i, player)) {
                 continue;
             }
             let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
@@ -203,6 +204,8 @@ impl World {
             }
         }
         sprites.extend_from_slice(&turrets);
+        // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
+        self.render_air_extras(player, alpha, view, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
 
         for pr in &self.projectiles {
