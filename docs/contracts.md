@@ -82,6 +82,12 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 Generated 2-player maps are mirrored left to right with both bases at the
 same height, so mirror matches are fair: Red Alert structures face south
 (exits, refinery docks), which favours one side on a point symmetric map.
+Generated maps for 3 to 8 players are mirrored left to right too, and every
+base gets the same surroundings, shifted and never rotated (a clearing with
+its ore fields south of the yard, rock walls north and south, open sides):
+3 and 4 players in two rows (the bottom half repeats the top half), 5 to 8
+on a ring. Their spawns are listed by column, top first, so slots 0 and 1
+(the left column of a 4-player map) against slots 2 and 3 is a mirror match.
 
 ## 4. Online multiplayer
 

@@ -162,8 +162,9 @@ function oneOf(value, allowed, fallback) {
 // ---- Map size per player count --------------------------------------------------
 
 /**
- * Smallest generated map that leaves room for every base: bases sit on a
- * ring around the centre, so more players need a larger ring.
+ * Smallest generated map that leaves room for every base: three or four
+ * bases sit in two rows, five to eight on a ring around the centre, so more
+ * players need a larger map.
  */
 export function minMapSize(players) {
   return players <= 4 ? 64 : 96;
