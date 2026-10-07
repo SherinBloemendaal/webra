@@ -44,6 +44,18 @@ fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
             }
         }
     }
+    if verbose {
+        for p in 0..n {
+            let mut owned: Vec<String> = w
+                .actors
+                .iter()
+                .filter(|a| a.alive && a.owner as usize == p)
+                .map(|a| format!("{}@{},{}", w.rules.actors[a.ty as usize].id, a.x / 1024, a.y / 1024))
+                .collect();
+            owned.truncate(12);
+            println!("player {p} left with {owned:?}, funds {}", w.players[p].funds());
+        }
+    }
     // Rank: later elimination is better; survivors by owned value.
     let value = |p: usize| -> i64 {
         w.actors.iter().filter(|a| a.alive && a.owner as usize == p).map(|a| w.rules.actors[a.ty as usize].cost as i64).sum()
@@ -62,6 +74,8 @@ fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
 fn main() {
     let teams_arg = std::env::args().nth(1).unwrap_or_else(|| "0000".into());
     let seeds: u64 = std::env::args().nth(2).map(|s| s.parse().expect("seeds is a number")).unwrap_or(16);
+    // FAIR_SEED plays that one seed only (handy with FAIR_VERBOSE).
+    let only: Option<u64> = std::env::var("FAIR_SEED").ok().map(|s| s.parse().expect("FAIR_SEED is a number"));
     let teams: Vec<u8> = teams_arg.chars().map(|c| c.to_digit(10).expect("team digit") as u8).collect();
     let n = teams.len();
     let default_size = if n <= 4 { 96 } else { 128 };
@@ -75,7 +89,7 @@ fn main() {
                 let (teams, faction) = (&teams, faction.as_str());
                 s.spawn(move || {
                     (0..seeds)
-                        .filter(|seed| seed % threads as u64 == k)
+                        .filter(|seed| seed % threads as u64 == k && only.is_none_or(|o| o == *seed))
                         .map(|seed| (seed, play(seed, size, teams, faction)))
                         .collect::<Vec<_>>()
                 })

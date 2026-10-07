@@ -33,6 +33,8 @@ mod tests;
 #[cfg(test)]
 mod tests_abilities;
 #[cfg(test)]
+mod tests_ai;
+#[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
 mod tests_naval;
