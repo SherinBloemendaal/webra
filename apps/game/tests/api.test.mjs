@@ -142,3 +142,61 @@ test('same seed gives the same game', () => {
   ticks(b, 600);
   assert.equal(a.state_hash(), b.state_hash());
 });
+
+test('generated map files validate, hash stably and start a game', () => {
+  const json = Game.generated_map(42, 64, 4);
+  const map = JSON.parse(json);
+  assert.equal(map.format, 1);
+  assert.equal(map.spawns.length, 4);
+  const v = JSON.parse(Game.validate_map(json));
+  assert.equal(v.ok, true, v.errors.join('; '));
+  assert.equal(v.modded, false);
+  assert.match(v.hash, /^[0-9a-f]{64}$/);
+  // Re-serializing in another key order keeps the identity.
+  const reordered = JSON.stringify(Object.fromEntries(Object.entries(map).reverse()));
+  assert.equal(Game.map_hash(reordered), v.hash);
+  const options = { ...OPTIONS, players: [...OPTIONS.players, { slot: 2, type: 'ai', faction: 'england', team: 0 }] };
+  const game = Game.from_map(json, JSON.stringify(options));
+  assert.equal(game.player_count(), 3);
+  ticks(game, 10);
+});
+
+test('modded maps are reported and bad maps rejected', () => {
+  const map = JSON.parse(Game.generated_map(1, 48, 2));
+  map.rules = { actors: { '1TNK': { cost: 1 } } };
+  const v = JSON.parse(Game.validate_map(JSON.stringify(map)));
+  assert.equal(v.ok, true);
+  assert.equal(v.modded, true);
+  map.rules = { actors: { '1TNK': { cost: 'free' } } };
+  assert.equal(JSON.parse(Game.validate_map(JSON.stringify(map))).ok, false);
+  assert.equal(JSON.parse(Game.validate_map('{"format":1}')).ok, false);
+  assert.throws(() => Game.from_map('{"format":1}', JSON.stringify(OPTIONS)));
+});
+
+test('lockstep: orders go to the outbox and frames are re-stamped', () => {
+  const a = newGame({ startingUnits: 'light' });
+  const b = newGame({ startingUnits: 'light' });
+  a.set_lockstep(true);
+  const units = ownUnits(a);
+  a.order_move(0, Uint32Array.from(units), 30 * 24, 30 * 24, false);
+  const out = JSON.parse(a.take_orders());
+  assert.equal(out.length, 1);
+  assert.equal(out[0].o, 'move');
+  assert.equal(a.take_orders(), '[]', 'outbox drained');
+  // A frame claiming player 1 for player 0's units does nothing: the server's stamp wins.
+  const forged = JSON.stringify([[1, out]]);
+  const honest = JSON.stringify([[0, out]]);
+  assert.equal(a.apply_frame(honest), 1);
+  assert.equal(b.apply_frame(honest), 1);
+  for (let i = 0; i < 100; i++) {
+    a.tick();
+    b.tick();
+  }
+  assert.equal(a.state_hash(), b.state_hash(), 'same frames, same game');
+  const c = newGame({ startingUnits: 'light' });
+  c.apply_frame(forged);
+  ticks(c, 100);
+  assert.notEqual(c.state_hash(), a.state_hash(), 'forged orders did not move player 0 units');
+  assert.throws(() => a.apply_frame('not json'));
+  assert.equal(a.apply_frame('[[0,[{"o":"nope"}]],[99,[]]]'), 0, 'invalid entries skipped');
+});

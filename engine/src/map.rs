@@ -13,6 +13,17 @@ pub enum Terrain {
 }
 
 impl Terrain {
+    pub fn from_u8(v: u8) -> Option<Terrain> {
+        Some(match v {
+            0 => Terrain::Clear,
+            1 => Terrain::Rough,
+            2 => Terrain::Rock,
+            3 => Terrain::Water,
+            4 => Terrain::Tree,
+            _ => return None,
+        })
+    }
+
     pub fn passable(self) -> bool {
         matches!(self, Terrain::Clear | Terrain::Rough)
     }
@@ -120,6 +131,103 @@ impl Map {
         m
     }
 
+    /// Map for `players` starting positions (2..8). Two players keep the
+    /// classic 180 degree symmetric layout; four players on a square map get
+    /// 90 degree rotational symmetry; other counts sit on a ring around the
+    /// centre with identical base surroundings.
+    pub fn generate_for(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
+        let players = players.clamp(2, 8);
+        if players == 2 {
+            return Map::generate(width, height, seed, ore_max);
+        }
+        let mut m = Map::generate(width, height, seed, ore_max);
+        // Wipe the 2-player bases and ore; rebuild for N players below.
+        m.ore.iter_mut().for_each(|o| *o = 0);
+        let mut rng = Rng::new(seed ^ 0x5eed_0000_0000_0004);
+        let (cx, cy) = (width / 2, height / 2);
+        let radius = (width.min(height) / 2 - 12).max(10);
+        let mut spawns = Vec::new();
+        for i in 0..players {
+            // Angle in 1024 units, starting top-left like the 2-player map.
+            let a = 896 + (i as i32 * 1024) / players as i32;
+            let (vx, vy) = crate::math::facing_vec(a);
+            let sx = cx + vx * radius / 1024 - 1;
+            let sy = cy + vy * radius / 1024 - 2;
+            spawns.push((sx.clamp(2, width - 5), sy.clamp(2, height - 6)));
+        }
+        m.spawns = spawns.clone();
+        if players == 4 && width == height {
+            m.rotate_symmetric();
+            // Recompute the spawns as exact rotations of the first one.
+            let (x0, y0) = m.spawns[0];
+            let rot = |x: i32, y: i32| (width - 1 - y, x);
+            let mut s = vec![(x0, y0)];
+            let (mut x, mut y) = (x0 + 1, y0 + 1); // centre-ish cell of the 3x4 yard
+            for _ in 0..3 {
+                let (nx, ny) = rot(x, y);
+                x = nx;
+                y = ny;
+                s.push((x - 1, y - 1));
+            }
+            m.spawns = s;
+        }
+        let spawns = m.spawns.clone();
+        if players == 4 && width == height {
+            // Build one base in the top-left quadrant, carve a road to the
+            // centre, then rotate it into the other three quadrants.
+            let (sx, sy) = spawns[0];
+            m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
+            m.ore_field(&mut rng, sx + 1 + 12, sy + 2 + 4, 4, ore_max);
+            m.ore_field(&mut rng, sx + 1 + 3, sy + 2 + 13, 3, ore_max);
+            m.ore_field(&mut rng, cx - 6, cy - 6, 4, ore_max);
+            m.carve((sx + 1, sy + 1), (cx - 1, cy - 1));
+            m.rotate_symmetric();
+            m.fill_circle(cx, cy, 3, Terrain::Clear);
+            return m;
+        }
+        for &(sx, sy) in &spawns {
+            m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
+            // Two ore fields per base, toward the centre.
+            let (dx, dy) = ((cx - sx).signum(), (cy - sy).signum());
+            m.ore_field(&mut rng, sx + 1 + dx * 12, sy + 2 + dy * 4, 4, ore_max);
+            m.ore_field(&mut rng, sx + 1 + dx * 3, sy + 2 + dy * 13, 3, ore_max);
+        }
+        // Contested ore in the middle.
+        m.ore_field(&mut rng, cx, cy, 5, ore_max);
+        for &(sx, sy) in &spawns[1..] {
+            m.ensure_connected(spawns[0], (sx, sy));
+        }
+        m
+    }
+
+    /// Make the map 90 degree rotationally symmetric by copying the top-left quadrant.
+    fn rotate_symmetric(&mut self) {
+        let w = self.width;
+        let src_t = self.terrain.clone();
+        let src_o = self.ore.clone();
+        for y in 0..w {
+            for x in 0..w {
+                // Rotate (x, y) back into the top-left quadrant.
+                let (mut qx, mut qy) = (x, y);
+                for _ in 0..4 {
+                    if qx < w / 2 && qy < w / 2 {
+                        break;
+                    }
+                    let (nx, ny) = (qy, w - 1 - qx);
+                    qx = nx;
+                    qy = ny;
+                }
+                let (i, j) = (self.idx(x, y), self.idx(qx, qy));
+                self.terrain[i] = src_t[j];
+                self.ore[i] = src_o[j];
+            }
+        }
+    }
+
+    pub fn connected(&self, a: (i32, i32), b: (i32, i32)) -> bool {
+        self.reachable(a, b)
+    }
+
     fn set_terrain(&mut self, x: i32, y: i32, t: Terrain) {
         if self.contains(x, y) {
             let i = self.idx(x, y);
@@ -191,8 +299,13 @@ impl Map {
         if self.reachable(a, b) {
             return;
         }
-        let (mut x, mut y) = (a.0 + 1, a.1 + 1);
-        let (tx, ty) = (b.0 + 1, b.1 + 1);
+        self.carve((a.0 + 1, a.1 + 1), (b.0 + 1, b.1 + 1));
+    }
+
+    /// Clear a 3-cell wide straight-ish road between two cells.
+    fn carve(&mut self, a: (i32, i32), b: (i32, i32)) {
+        let (mut x, mut y) = a;
+        let (tx, ty) = b;
         while (x, y) != (tx, ty) {
             for oy in -1..=1 {
                 for ox in -1..=1 {
@@ -266,6 +379,26 @@ impl Map {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multi_player_maps_have_connected_spawns() {
+        for players in 2..=8 {
+            let size = if players <= 4 { 96 } else { 128 };
+            let m = Map::generate_for(size, size, 5, 12, players);
+            assert_eq!(m.spawns.len(), players);
+            for &s in &m.spawns {
+                assert!(m.contains(s.0, s.1) && m.contains(s.0 + 2, s.1 + 3), "{players}: spawn {s:?} in bounds");
+                assert!(m.connected(m.spawns[0], s), "{players}: spawn {s:?} reachable");
+            }
+        }
+        let m = Map::generate_for(96, 96, 9, 12, 4);
+        let w = 96;
+        for y in 0..w {
+            for x in 0..w {
+                assert_eq!(m.terrain[m.idx(x, y)], m.terrain[m.idx(w - 1 - y, x)], "4-way symmetric");
+            }
+        }
+    }
 
     #[test]
     fn generated_map_is_symmetric_and_connected() {

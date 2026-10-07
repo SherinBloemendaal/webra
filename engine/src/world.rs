@@ -191,6 +191,10 @@ pub struct Player {
     pub is_ai: bool,
     pub defeated: bool,
     pub start: (i32, i32),
+    /// 0: no team; equal non-zero teams are allies.
+    pub team: u8,
+    /// Owner of neutral map actors: never plays, never wins or loses.
+    pub neutral: bool,
 }
 
 impl Player {
@@ -298,9 +302,18 @@ pub enum AiDifficulty {
 pub struct PlayerSetup {
     pub faction: String,
     pub ai: Option<AiDifficulty>,
+    /// 0: no team (free for all); equal non-zero teams are allies.
+    pub team: u8,
 }
 
-#[derive(Clone, Debug)]
+impl PlayerSetup {
+    pub fn new(faction: &str, ai: Option<AiDifficulty>) -> PlayerSetup {
+        PlayerSetup { faction: faction.to_string(), ai, team: 0 }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "o", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Order {
     Move {
         player: u8,
@@ -356,6 +369,54 @@ pub enum Order {
     },
 }
 
+impl Order {
+    /// Issuing player of this order.
+    pub fn player(&self) -> u8 {
+        match self {
+            Order::Move { player, .. }
+            | Order::Smart { player, .. }
+            | Order::Attack { player, .. }
+            | Order::Stop { player, .. }
+            | Order::StartProduction { player, .. }
+            | Order::CancelProduction { player, .. }
+            | Order::Place { player, .. }
+            | Order::Rally { player, .. }
+            | Order::Sell { player, .. }
+            | Order::Deploy { player, .. } => *player,
+        }
+    }
+
+    /// Replace the issuing player (the multiplayer server decides who sent an order).
+    pub fn set_player(&mut self, p: u8) {
+        match self {
+            Order::Move { player, .. }
+            | Order::Smart { player, .. }
+            | Order::Attack { player, .. }
+            | Order::Stop { player, .. }
+            | Order::StartProduction { player, .. }
+            | Order::CancelProduction { player, .. }
+            | Order::Place { player, .. }
+            | Order::Rally { player, .. }
+            | Order::Sell { player, .. }
+            | Order::Deploy { player, .. } => *player = p,
+        }
+    }
+
+    /// Bound the size of id lists so one order cannot carry unbounded work.
+    pub fn is_reasonable(&self) -> bool {
+        const MAX_IDS: usize = 2000;
+        match self {
+            Order::Move { ids, .. }
+            | Order::Smart { ids, .. }
+            | Order::Attack { ids, .. }
+            | Order::Stop { ids, .. }
+            | Order::Deploy { ids, .. } => ids.len() <= MAX_IDS,
+            Order::StartProduction { count, .. } => (1..=50).contains(count),
+            _ => true,
+        }
+    }
+}
+
 /// What a smart (right-click) order would do at a position.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SmartAction {
@@ -402,14 +463,38 @@ pub struct World {
 impl World {
     /// Quick setup used by tests and tools: a deployed base each, default options.
     pub fn new(seed: u64, map_size: i32, factions: &[(&str, bool)]) -> World {
-        let players: Vec<PlayerSetup> =
-            factions.iter().map(|&(f, ai)| PlayerSetup { faction: f.to_string(), ai: ai.then_some(AiDifficulty::Normal) }).collect();
+        let players: Vec<PlayerSetup> = factions.iter().map(|&(f, ai)| PlayerSetup::new(f, ai.then_some(AiDifficulty::Normal))).collect();
         World::with_options(seed, map_size, &players, GameOptions::default())
     }
 
     pub fn with_options(seed: u64, map_size: i32, players: &[PlayerSetup], options: GameOptions) -> World {
         let rules = Rules::load();
-        let map = Map::generate(map_size, map_size, seed, rules.player.ore_max_density);
+        let map = Map::generate_for(map_size, map_size, seed, rules.player.ore_max_density, players.len());
+        World::setup(rules, map, seed, players, options, &[])
+    }
+
+    /// World from a map file; rules overrides (modded maps) apply.
+    pub fn from_map(data: &crate::mapdata::MapData, seed: u64, players: &[PlayerSetup], options: GameOptions) -> Result<World, String> {
+        let v = data.validate();
+        if !v.ok {
+            return Err(v.errors.join("; "));
+        }
+        if players.len() > data.spawns.len() {
+            return Err(format!("this map has {} spawns, {} players joined", data.spawns.len(), players.len()));
+        }
+        let rules = Rules::load_with(data.rules())?;
+        let map = data.to_map()?;
+        Ok(World::setup(rules, map, seed, players, options, &data.actors))
+    }
+
+    fn setup(
+        rules: Rules,
+        map: Map,
+        seed: u64,
+        players: &[PlayerSetup],
+        options: GameOptions,
+        actors: &[crate::mapdata::MapActor],
+    ) -> World {
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
         let spawns = w.map.spawns.clone();
@@ -417,6 +502,7 @@ impl World {
             let fi = w.rules.faction_index(&p.faction).unwrap_or_else(|| panic!("unknown faction {}", p.faction));
             w.add_player(fi, p.ai.is_some(), spawns[slot]);
             w.players[slot].cash = options.starting_cash;
+            w.players[slot].team = p.team;
             if options.explored {
                 w.players[slot].explored.iter_mut().for_each(|e| *e = 1);
             }
@@ -426,8 +512,31 @@ impl World {
             .enumerate()
             .map(|(slot, p)| crate::ai::AiState::new(slot as u32, p.ai.unwrap_or(AiDifficulty::Normal)))
             .collect();
-        for slot in 0..w.players.len() {
+        for slot in 0..players.len() {
             w.spawn_start(slot as u8);
+        }
+        // Pre-placed map actors. Those of empty spawns are skipped; neutral
+        // ones belong to an extra, passive player.
+        if actors.iter().any(|a| a.owner < 0) {
+            let fi = w.rules.faction_index("allies").unwrap();
+            w.add_player(fi, false, (0, 0));
+            let n = w.players.len() - 1;
+            w.players[n].neutral = true;
+            w.players[n].cash = 0;
+            w.ai.push(crate::ai::AiState::new(n as u32, AiDifficulty::Easy));
+        }
+        let neutral = w.players.len() as u8 - 1;
+        for a in actors {
+            let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
+            if a.owner >= players.len() as i32 {
+                continue;
+            }
+            let Some(ty) = w.rules.actor_index(&a.ty) else { continue };
+            if w.rules.actors[ty].kind == Kind::Building {
+                w.spawn_building(ty as u16, owner, a.x, a.y);
+            } else {
+                w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+            }
         }
         w.refresh_tokens();
         w.update_power();
@@ -517,7 +626,24 @@ impl World {
             is_ai,
             defeated: false,
             start,
+            team: 0,
+            neutral: false,
         });
+    }
+
+    /// Hostile players: different players that are not on the same team and not neutral.
+    #[inline]
+    pub fn are_enemies(&self, a: u8, b: u8) -> bool {
+        if a == b {
+            return false;
+        }
+        let (pa, pb) = (&self.players[a as usize], &self.players[b as usize]);
+        !pa.neutral && !pb.neutral && (pa.team == 0 || pa.team != pb.team)
+    }
+
+    #[inline]
+    pub fn are_allies(&self, a: u8, b: u8) -> bool {
+        a == b || (!self.are_enemies(a, b) && !self.players[a as usize].neutral && !self.players[b as usize].neutral)
     }
 
     // ---- Actor references -------------------------------------------------
@@ -968,8 +1094,11 @@ impl World {
         let any_vehicle = units.iter().any(|&i| self.actors[i].kind == Kind::Vehicle);
         if let Some(t) = self.actor_at(player, x, y) {
             let ta = &self.actors[t];
-            if ta.owner != player {
+            if self.are_enemies(player, ta.owner) {
                 return if any_weapon { SmartAction::Attack } else { SmartAction::Move };
+            }
+            if ta.owner != player {
+                return SmartAction::Move; // allied or neutral: just move there
             }
             if ta.kind == Kind::Building {
                 let b = self.rules.actors[ta.ty as usize].building.as_ref().unwrap();
@@ -1111,14 +1240,22 @@ impl World {
             }
         }
         for (p, &n) in alive_count.iter().enumerate() {
-            if n == 0 {
+            if n == 0 && !self.players[p].neutral {
                 self.players[p].defeated = true;
             }
         }
-        let remaining: Vec<usize> = (0..self.players.len()).filter(|&p| !self.players[p].defeated).collect();
-        if remaining.len() == 1 && self.players.len() > 1 {
-            self.winner = Some(remaining[0] as u8);
+        // The game ends when every remaining player is on the same side.
+        let remaining: Vec<u8> =
+            (0..self.players.len() as u8).filter(|&p| !self.players[p as usize].defeated && !self.players[p as usize].neutral).collect();
+        let playing = self.players.iter().filter(|p| !p.neutral).count();
+        if playing > 1 && !remaining.is_empty() && remaining.iter().all(|&p| self.are_allies(p, remaining[0])) {
+            self.winner = Some(remaining[0]);
         }
+    }
+
+    /// Whether `player` is on the winning side (game over).
+    pub fn has_won(&self, player: u8) -> bool {
+        self.winner.is_some_and(|w| self.are_allies(w, player))
     }
 
     /// FNV-1a over the simulation state; used to check determinism.

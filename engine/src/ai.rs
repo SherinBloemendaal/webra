@@ -316,7 +316,7 @@ fn command_army(w: &mut World, player: u8) {
     let threat = (0..w.actors.len()).find(|&i| {
         let a = &w.actors[i];
         a.alive
-            && a.owner != player
+            && w.are_enemies(player, a.owner)
             && a.kind != Kind::Building
             && w.is_visible_to(i, player)
             && dist(a.x, a.y, base.0, base.1) <= DEFEND_RADIUS
@@ -356,7 +356,7 @@ fn command_army(w: &mut World, player: u8) {
 fn enemy_target(w: &World, player: u8, base: (i32, i32)) -> Option<(i32, i32)> {
     let mut best: Option<(i64, (i32, i32))> = None;
     for a in &w.actors {
-        if !a.alive || a.owner == player || w.players[a.owner as usize].defeated {
+        if !a.alive || !w.are_enemies(player, a.owner) || w.players[a.owner as usize].defeated {
             continue;
         }
         let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };

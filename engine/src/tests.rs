@@ -239,8 +239,7 @@ fn opts() -> crate::world::GameOptions {
 
 fn world_with(seed: u64, factions: [&str; 2], ai: [bool; 2], options: crate::world::GameOptions) -> World {
     use crate::world::{AiDifficulty, PlayerSetup};
-    let players: Vec<PlayerSetup> =
-        factions.iter().zip(ai).map(|(f, a)| PlayerSetup { faction: f.to_string(), ai: a.then_some(AiDifficulty::Normal) }).collect();
+    let players: Vec<PlayerSetup> = factions.iter().zip(ai).map(|(f, a)| PlayerSetup::new(f, a.then_some(AiDifficulty::Normal))).collect();
     World::with_options(seed, 80, &players, options)
 }
 
@@ -544,8 +543,7 @@ fn ai_starting_from_an_mcv_builds_a_base_at_every_difficulty() {
     for diff in [AiDifficulty::Easy, AiDifficulty::Normal, AiDifficulty::Hard] {
         let mut o = opts();
         o.starting_units = StartingUnits::Mcv;
-        let players =
-            vec![PlayerSetup { faction: "england".into(), ai: Some(diff) }, PlayerSetup { faction: "ukraine".into(), ai: Some(diff) }];
+        let players = vec![PlayerSetup::new("england", Some(diff)), PlayerSetup::new("ukraine", Some(diff))];
         let mut w = World::with_options(21, 80, &players, o);
         run(&mut w, 25 * 60 * 4);
         for p in 0..2u8 {
@@ -553,4 +551,97 @@ fn ai_starting_from_an_mcv_builds_a_base_at_every_difficulty() {
             assert!(b >= 5, "{diff:?} AI {p} built {b} buildings");
         }
     }
+}
+
+// ---- Maps, teams and lockstep foundation ----------------------------------------
+
+fn setups(list: &[(&str, bool, u8)]) -> Vec<crate::world::PlayerSetup> {
+    use crate::world::{AiDifficulty, PlayerSetup};
+    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team }).collect()
+}
+
+#[test]
+fn map_file_with_actors_and_modded_rules_builds_a_world() {
+    use crate::mapdata::{MapActor, MapData};
+    let m = crate::map::Map::generate_for(64, 64, 4, 12, 2);
+    let mut d = MapData::from_map(&m, "Custom", "Me", "");
+    let (x, y) = (d.spawns[0][0] + 6, d.spawns[0][1]);
+    d.actors.push(MapActor { ty: "SBAG".into(), owner: -1, x, y, facing: 0 });
+    d.actors.push(MapActor { ty: "1TNK".into(), owner: 1, x: d.spawns[1][0] + 4, y: d.spawns[1][1] + 6, facing: 512 });
+    d.rules = Some(serde_json::json!({ "actors": { "1TNK": { "cost": 1 } } }));
+    let v = d.validate();
+    assert!(v.ok && v.modded, "{:?}", v.errors);
+    let w = World::from_map(&d, 1, &setups(&[("germany", false, 0), ("russia", true, 0)]), opts()).unwrap();
+    assert_eq!(w.rules.actors[ty(&w, "1TNK") as usize].cost, 1, "modded rules apply");
+    assert_eq!(w.players.len(), 3, "an extra neutral owner for the sandbag");
+    assert!(w.players[2].neutral);
+    assert_eq!(count(&w, 2, "SBAG"), 1);
+    assert_eq!(count(&w, 1, "1TNK"), 1);
+    assert!(!w.are_enemies(0, 2) && w.are_enemies(0, 1));
+}
+
+#[test]
+fn teammates_do_not_fight_share_vision_and_win_together() {
+    let players = setups(&[("england", false, 1), ("germany", false, 1), ("russia", false, 2), ("ukraine", false, 2)]);
+    let mut o = opts();
+    o.starting_units = crate::world::StartingUnits::Light;
+    let mut w = World::with_options(3, 96, &players, o);
+    assert!(w.are_allies(0, 1) && w.are_enemies(0, 2) && !w.are_enemies(2, 3));
+    // Put an ally's tank next to player 0's riflemen: nobody shoots.
+    let (sx, sy) = w.players[0].start;
+    let t = w.spawn_unit(ty(&w, "1TNK"), 1, cell_center(sx + 2), cell_center(sy + 5), 0);
+    let hp = w.actors[t].hp;
+    run(&mut w, 50);
+    assert_eq!(w.actors[t].hp, hp);
+    // Shared vision: player 0 sees what player 1 sees around its base.
+    let (bx, by) = w.players[1].start;
+    let ci = w.map.idx(bx + 1, by + 1);
+    assert!(w.players[0].visible[ci] != 0);
+    // Team 2 loses everything: team 1 wins, both members.
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.actors[i].owner >= 2 {
+            w.kill(i);
+        }
+    }
+    run(&mut w, 30);
+    assert!(w.has_won(0) && w.has_won(1) && !w.has_won(2));
+}
+
+#[test]
+fn eight_player_map_and_skirmish_setup() {
+    let list: Vec<(&str, bool, u8)> =
+        ["england", "france", "germany", "allies", "russia", "ukraine", "soviet", "russia"].iter().map(|&f| (f, true, 0)).collect();
+    let w = World::with_options(8, 128, &setups(&list), opts());
+    assert_eq!(w.players.len(), 8);
+    for p in 0..8u8 {
+        assert_eq!(count(&w, p, "FACT"), 1, "player {p} has a base");
+    }
+}
+
+#[test]
+fn orders_round_trip_through_json_and_get_restamped() {
+    let o = Order::Move { player: 0, ids: vec![1, 2, 3], x: 100, y: 200, attack_move: true };
+    let json = serde_json::to_string(&o).unwrap();
+    assert!(json.starts_with(r#"{"o":"move""#), "{json}");
+    let mut back: Order = serde_json::from_str(&json).unwrap();
+    back.set_player(3);
+    assert_eq!(back.player(), 3);
+    assert!(serde_json::from_str::<Order>(r#"{"o":"move","player":0,"ids":[],"x":0,"y":0,"attack_move":false,"evil":1}"#).is_err());
+    assert!(!Order::StartProduction { player: 0, ty: 1, count: 100_000 }.is_reasonable());
+}
+
+#[test]
+fn four_player_free_for_all_ai_game_finishes() {
+    let list = [("england", true, 0), ("russia", true, 0), ("germany", true, 0), ("ukraine", true, 0)];
+    let mut w = World::with_options(12, 96, &setups(&list), opts());
+    for _ in 0..(25 * 60 * 25) {
+        w.step();
+        if w.winner.is_some() {
+            break;
+        }
+    }
+    let killed: u32 = w.losses.iter().sum();
+    assert!(killed > 20, "fighting happened: {killed}");
+    let defeated = w.players.iter().filter(|p| p.defeated).count();
+    assert!(defeated >= 1, "at least one player was eliminated in 25 minutes");
 }

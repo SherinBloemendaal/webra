@@ -562,7 +562,7 @@ impl World {
                             continue;
                         }
                         // A moving crusher (tracked vehicles, ore truck) runs over enemy soldiers.
-                        if a.owner != b.owner {
+                        if self.are_enemies(a.owner, b.owner) {
                             let crush_reach = (min as i64) * (min as i64) * 9 / 16;
                             if d2 <= crush_reach {
                                 if a.moved && self.crushes(i, j) {
@@ -585,7 +585,7 @@ impl World {
                         };
                         let overlap = (min - d).min(MAX_PUSH * 2);
                         // Moving units push idle friends aside; enemies are walls to each other.
-                        let (wa, wb) = match (a.moved, b.moved, a.owner == b.owner) {
+                        let (wa, wb) = match (a.moved, b.moved, !self.are_enemies(a.owner, b.owner)) {
                             (true, false, false) => (100, 0),
                             (false, true, false) => (0, 100),
                             _ => (50, 50),

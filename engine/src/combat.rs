@@ -53,7 +53,11 @@ impl World {
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
                     let t = &self.actors[u];
-                    if !t.alive || t.owner == a.owner || !info.can_attack(&self.rules, t.kind) || !self.targetable(u, a.owner) {
+                    if !t.alive
+                        || !self.are_enemies(a.owner, t.owner)
+                        || !info.can_attack(&self.rules, t.kind)
+                        || !self.targetable(u, a.owner)
+                    {
                         continue;
                     }
                     let d = dist_sq(a.x, a.y, t.x, t.y);
@@ -66,7 +70,7 @@ impl World {
                     let b = b as usize;
                     let t = &self.actors[b];
                     if t.alive
-                        && t.owner != a.owner
+                        && self.are_enemies(a.owner, t.owner)
                         && !self.rules.actors[t.ty as usize].is_wall()
                         && info.can_attack(&self.rules, Kind::Building)
                     {
@@ -113,7 +117,11 @@ impl World {
     /// Current valid target of `i`, if any.
     fn live_target(&self, i: usize) -> Option<usize> {
         let owner = self.actors[i].owner;
-        self.resolve(self.actors[i].target).filter(|&t| self.actors[t].owner != owner && self.targetable(t, owner))
+        // Forced attacks may target anyone but yourself (e.g. a neutral wall).
+        let forced = self.actors[i].forced;
+        self.resolve(self.actors[i].target).filter(|&t| {
+            self.actors[t].owner != owner && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner)
+        })
     }
 
     // ---- Units ---------------------------------------------------------------
