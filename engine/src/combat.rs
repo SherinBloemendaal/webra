@@ -23,6 +23,8 @@ impl World {
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
+            // Landed aircraft are ground targets (air.rs).
+            Kind::Aircraft => self.target_kind(i).target_class(),
             // Naval yards are WaterActor and Structure in OpenRA (torpedoes hit them).
             Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
                 crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
@@ -129,7 +131,7 @@ impl World {
     }
 
     /// Current valid target of `i`, if any.
-    fn live_target(&self, i: usize) -> Option<usize> {
+    pub(crate) fn live_target(&self, i: usize) -> Option<usize> {
         let owner = self.actors[i].owner;
         // Forced attacks may target anyone but yourself (e.g. a neutral wall).
         let forced = self.actors[i].forced;
@@ -302,7 +304,7 @@ impl World {
         }
     }
 
-    fn fire(&mut self, i: usize, t: usize, w: usize) {
+    pub(crate) fn fire(&mut self, i: usize, t: usize, w: usize) {
         let (sx, sy, facing, owner) = {
             let a = &self.actors[i];
             let info = &self.rules.actors[a.ty as usize];

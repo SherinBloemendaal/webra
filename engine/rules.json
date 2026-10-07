@@ -1024,7 +1024,6 @@
    "palette_order": 120,
    "prerequisites": [
     "dome",
-    "~structures.allies",
     "~techlevel.medium"
    ],
    "build_at": "Building",
@@ -5012,7 +5011,22 @@
       "Gems"
      ],
      "ammo": 0,
-     "rearm_actors": []
+     "rearm_actors": [],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 58,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": false,
+     "facing_tolerance": 512,
+     "ammo_pips": 0,
+     "rotors": [
+      597,
+      -597
+     ]
     }
    }
   },
@@ -5026,8 +5040,8 @@
    "build_ticks": 900,
    "palette_order": 20,
    "prerequisites": [
-    "~disabled",
     "~hpad",
+    "~structures.soviet",
     "~techlevel.medium"
    ],
    "build_at": "Helicopter",
@@ -5071,6 +5085,20 @@
      "ammo": 24,
      "rearm_actors": [
       "HPAD"
+     ],
+     "reload_delay": 8,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": [
+      0
      ]
     }
    }
@@ -5086,6 +5114,7 @@
    "palette_order": 20,
    "prerequisites": [
     "~hpad",
+    "~structures.allies",
     "~techlevel.medium"
    ],
    "build_at": "Helicopter",
@@ -5129,6 +5158,20 @@
      "ammo": 24,
      "rearm_actors": [
       "HPAD"
+     ],
+     "reload_delay": 8,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": [
+      0
      ]
     }
    }
@@ -5189,6 +5232,20 @@
      "ammo": 8,
      "rearm_actors": [
       "HPAD"
+     ],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 8,
+     "rotors": [
+      0
      ]
     }
    }
@@ -5241,7 +5298,19 @@
      "rearm_actors": [
       "AFLD",
       "AFLD.Ukraine"
-     ]
+     ],
+     "reload_delay": 11,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": []
     }
    }
   },
@@ -5294,7 +5363,19 @@
      "rearm_actors": [
       "AFLD",
       "AFLD.Ukraine"
-     ]
+     ],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 8,
+     "rotors": []
     }
    }
   }

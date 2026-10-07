@@ -606,6 +606,10 @@ impl World {
                         if !b.alive || self.domain_of(i) != self.domain_of(j) {
                             continue;
                         }
+                        // A landed helicopter and one flying over it do not touch.
+                        if (a.altitude == 0) != (b.altitude == 0) {
+                            continue;
+                        }
                         let rb = self.rules.actors[b.ty as usize].unit.as_ref().unwrap().radius;
                         let min = ra + rb;
                         let (dx, dy) = (b.x - a.x, b.y - a.y);

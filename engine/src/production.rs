@@ -323,6 +323,8 @@ impl World {
             (ex, ey, facing) = (cx, cy, f);
         }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        // Helicopters start landed on their helipad (helicopter.rs).
+        self.heli_produced(u, b);
         if self.is_harvester(u) {
             return true;
         }

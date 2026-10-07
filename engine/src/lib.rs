@@ -397,6 +397,10 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            // Helicopters: AmmoPool rounds left and size, and whether landed.
+            "ammo": self.world.heli_ammo(i).0,
+            "maxAmmo": self.world.heli_ammo(i).1,
+            "landed": a.heli.landed,
             // Transports: passengers inside (ids, loading order), their total weight and Cargo.MaxWeight.
             "passengers": self.world.passengers(i).into_iter().map(|p| self.world.make_ref(p)).collect::<Vec<_>>(),
             "cargoWeight": self.world.cargo_weight(i),
@@ -436,6 +440,16 @@ impl Game {
         self.submit(Order::Stop { player, ids });
     }
 
+    /// Helicopters: land on or next to the cell at (x, y) (world pixels).
+    pub fn order_land(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
+        self.submit(Order::Land { player, ids, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// Helicopters: fly back to a free helipad and reload.
+    pub fn order_return_to_base(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::ReturnToBase { player, ids });
+    }
+
     pub fn sell(&mut self, player: u8, building: u32) {
         self.submit(Order::Sell { player, building });
     }
@@ -464,8 +478,15 @@ impl Game {
         if self.world.actors[i].owner != player {
             return 0;
         }
+        if self.world.has_passengers(i) && self.world.can_unload(i) {
+            return 1;
+        }
+        // Helicopters: land here (then unload), or take off again.
+        if self.world.actors[i].kind == Kind::Aircraft && self.world.is_helicopter(i) {
+            return self.world.heli_deploy_state(i);
+        }
         if self.world.has_passengers(i) {
-            return if self.world.can_unload(i) { 1 } else { 2 };
+            return 2;
         }
         if self.world.deploy_target(i).is_none() {
             return 0;
