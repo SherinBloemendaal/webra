@@ -9,7 +9,15 @@
 // - orders are stamped with the sender's player index (never trusted);
 // - dropping a player discards their undelivered orders and may complete frames.
 
-import { HASH_INTERVAL } from '@webra/protocol';
+import { HASH_INTERVAL, TICKS_PER_SECOND } from '@webra/protocol';
+
+/**
+ * A player who holds the game up must let at least this many frames through
+ * per drop window (one second of game time per window, at normal speed), or
+ * `silent` reports them. Slow but honest machines stay well above it; a
+ * client that trickles one tick every few seconds does not.
+ */
+export const MIN_PROGRESS_FRAMES = TICKS_PER_SECOND;
 
 export class LockstepError extends Error {
   constructor(message, code = 'invalid') {
@@ -30,7 +38,12 @@ export class Lockstep {
     this.active = new Set(players);
     /** Next tick each player must submit. */
     this.expected = new Map(players.map((p) => [p, delay]));
-    this.lastSeen = new Map(players.map((p) => [p, now]));
+    /**
+     * Players the game is waiting on: they have not delivered frame `next`.
+     * `since` is when they started holding the game up (without a break) and
+     * `frame` the value of `next` when the current drop window began.
+     */
+    this.blocking = new Map(players.map((p) => [p, { since: now, frame: delay }]));
     /** tick -> Map(player -> orders) */
     this.pending = new Map();
     /** tick -> Map(player -> hash) */
@@ -63,7 +76,6 @@ export class Lockstep {
     if (tick !== expected) throw new LockstepError(`orders for tick ${expected} expected`);
     if (tick > this.next + this.delay) throw new LockstepError('orders are too far ahead');
     this.expected.set(player, tick + 1);
-    this.lastSeen.set(player, now);
     let byPlayer = this.pending.get(tick);
     if (!byPlayer) {
       byPlayer = new Map();
@@ -74,7 +86,9 @@ export class Lockstep {
       player,
       orders.map((o) => ({ ...o, player })),
     );
-    return this.flush();
+    const frames = this.flush();
+    this.track(now);
+    return frames;
   }
 
   /** Emit every frame that all active players have delivered. */
@@ -96,19 +110,42 @@ export class Lockstep {
   }
 
   /** Remove a player (left, dropped or kicked). Returns frames that became complete. */
-  drop(player) {
+  drop(player, now = Date.now()) {
     if (!this.active.delete(player)) return [];
     this.expected.delete(player);
-    this.lastSeen.delete(player);
+    this.blocking.delete(player);
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
-    return this.flush();
+    const frames = this.flush();
+    this.track(now);
+    return frames;
   }
 
-  /** Active players that sent no orders for longer than `limitMs`. */
+  /** Update who the game is waiting on (see `blocking`). */
+  track(now) {
+    for (const p of this.active) {
+      if (this.expected.get(p) > this.next) this.blocking.delete(p);
+      else if (!this.blocking.has(p)) this.blocking.set(p, { since: now, frame: this.next });
+    }
+  }
+
+  /**
+   * Players to drop: they have held the game up for longer than `limitMs`
+   * without letting MIN_PROGRESS_FRAMES frames through in that time. Merely
+   * sending something now and then is not enough (a client sending one tick
+   * every 9 s used to stall a game forever); a slow but steady player starts
+   * a new window instead.
+   */
   silent(now, limitMs) {
-    return [...this.active].filter((p) => now - this.lastSeen.get(p) > limitMs);
+    this.track(now);
+    const out = [];
+    for (const [p, b] of this.blocking) {
+      if (now - b.since <= limitMs) continue;
+      if (this.next - b.frame >= MIN_PROGRESS_FRAMES) this.blocking.set(p, { since: now, frame: this.next });
+      else out.push(p);
+    }
+    return out;
   }
 
   /**

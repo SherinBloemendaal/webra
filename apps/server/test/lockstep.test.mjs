@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Lockstep, LockstepError } from '../src/lockstep.js';
+import { Lockstep, LockstepError, MIN_PROGRESS_FRAMES } from '../src/lockstep.js';
 import { TokenBucket } from '../src/ratelimit.js';
 
 const stop = (ids, player = 0) => ({ o: 'stop', player, ids });
@@ -60,6 +60,44 @@ test('dropping a silent player completes waiting frames and discards their order
   assert.deepEqual(ls.drop(1), []);
   ls.drop(0);
   assert.equal(ls.finished, true);
+});
+
+/**
+ * Play `ms` of wall time in 100 ms steps. Player 0 is a fast honest client:
+ * it always submits as far ahead as the server allows. `slow(t)` says how many
+ * ticks player 1 submits at time t. Returns when player 1 is reported silent
+ * (the time) or null.
+ */
+function race(slow, ms = 120_000) {
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 0; t <= ms; t += 100) {
+    while (ls.expected.get(0) <= ls.next + ls.delay) ls.submit(0, ls.expected.get(0), [], t);
+    for (let k = slow(t); k > 0 && ls.expected.get(1) <= ls.next + ls.delay; k--) ls.submit(1, ls.expected.get(1), [], t);
+    const silent = ls.silent(t, 10_000);
+    assert.ok(!silent.includes(0), 'the fast player is never blamed');
+    if (silent.includes(1)) return t;
+  }
+  return null;
+}
+
+test('a player trickling one tick every 9 s is dropped, slow but steady players are not', () => {
+  // N4: lastSeen was refreshed by every submission, so this stalled games forever.
+  const dropped = race((t) => (t > 0 && t % 9000 === 0 ? 1 : 0));
+  assert.ok(dropped !== null && dropped <= 21_000, `dropped at ${dropped}`);
+  // A slow machine (a few ticks per second) holds everyone up but keeps the game going.
+  assert.equal(race((t) => (t % 1000 === 0 ? 5 : 0)), null);
+  // A long hiccup followed by catching up is fine too.
+  assert.equal(race((t) => (t >= 2000 && t < 10_000 ? 0 : 3)), null);
+  // Just below the minimum rate is not.
+  const per = Math.max(1, Math.floor(MIN_PROGRESS_FRAMES / 10) - 1);
+  assert.notEqual(race((t) => (t % 1000 === 0 ? per : 0)), null);
+  // A player that delivered ahead is not holding anyone up, however long it stays quiet.
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (const tick of [3, 4, 5, 6]) ls.submit(1, tick, [], 0);
+  ls.submit(0, 3, [], 0);
+  assert.deepEqual(ls.silent(30_000, 10_000), [0]);
 });
 
 test('drop can unblock a frame', () => {
