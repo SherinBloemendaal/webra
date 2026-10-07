@@ -388,6 +388,10 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            // Helicopters: AmmoPool rounds left and size, and whether landed.
+            "ammo": self.world.heli_ammo(i).0,
+            "maxAmmo": self.world.heli_ammo(i).1,
+            "landed": a.heli.landed,
         })
         .to_string()
     }
@@ -420,6 +424,16 @@ impl Game {
         self.submit(Order::Stop { player, ids });
     }
 
+    /// Helicopters: land on or next to the cell at (x, y) (world pixels).
+    pub fn order_land(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
+        self.submit(Order::Land { player, ids, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// Helicopters: fly back to a free helipad and reload.
+    pub fn order_return_to_base(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::ReturnToBase { player, ids });
+    }
+
     pub fn sell(&mut self, player: u8, building: u32) {
         self.submit(Order::Sell { player, building });
     }
@@ -444,6 +458,10 @@ impl Game {
     /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here.
     pub fn deploy_state(&self, player: u8, id: u32) -> u8 {
         let Some(i) = self.world.resolve(id) else { return 0 };
+        // Helicopters: land here, or take off again.
+        if self.world.actors[i].owner == player && self.world.actors[i].kind == Kind::Aircraft && self.world.is_helicopter(i) {
+            return self.world.heli_deploy_state(i);
+        }
         if self.world.actors[i].owner != player || self.world.deploy_target(i).is_none() {
             return 0;
         }

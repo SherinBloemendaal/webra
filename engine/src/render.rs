@@ -75,7 +75,7 @@ pub struct View {
 }
 
 impl View {
-    fn contains(&self, x: f32, y: f32, margin: f32) -> bool {
+    pub(crate) fn contains(&self, x: f32, y: f32, margin: f32) -> bool {
         x >= self.x0 - margin && x <= self.x1 + margin && y >= self.y0 - margin && y <= self.y1 + margin
     }
 }
@@ -177,6 +177,8 @@ impl World {
                         0.0,
                     );
                 }
+                // Helicopter rotors and rotor wash (helicopter.rs).
+                self.push_heli_rotors(i, x, y - lift, alpha, sprites, &mut aircraft);
                 continue;
             }
             if a.owner != player && !self.is_visible_to(i, player) {
@@ -202,6 +204,8 @@ impl World {
                 );
             }
         }
+        // Shot-down helicopters falling (helicopter.rs).
+        self.push_heli_crashes(player, alpha, view, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
         sprites.extend_from_slice(&aircraft);
 
@@ -298,6 +302,7 @@ impl World {
                 rects.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
                 rects.extend_from_slice(&[l, t + h + 2.0, w * load, 2.0, 0.95, 0.75, 0.2, 1.0]);
             }
+            self.push_heli_ammo_pips(i, l, t + h, w, rects);
             if a.kind == Kind::Building && a.owner == player {
                 if let Some((rx, ry)) = a.rally {
                     push_sprite(sprites, px(rx), px(ry), 0.0, ids.rally, a.owner as f32, 1.0, 1.0, 0.0);

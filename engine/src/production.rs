@@ -317,6 +317,8 @@ impl World {
             None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
         };
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), 512);
+        // Helicopters start landed on their helipad (helicopter.rs).
+        self.heli_produced(u, b);
         if self.is_harvester(u) {
             return true;
         }

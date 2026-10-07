@@ -54,7 +54,7 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
-                        || !info.can_attack(&self.rules, t.kind)
+                        || !info.can_attack(&self.rules, self.target_kind(u))
                         || !self.targetable(u, a.owner)
                     {
                         continue;
@@ -114,7 +114,7 @@ impl World {
     }
 
     /// Current valid target of `i`, if any.
-    fn live_target(&self, i: usize) -> Option<usize> {
+    pub(crate) fn live_target(&self, i: usize) -> Option<usize> {
         let owner = self.actors[i].owner;
         // Forced attacks may target anyone but yourself (e.g. a neutral wall).
         let forced = self.actors[i].forced;
@@ -144,7 +144,7 @@ impl World {
             return;
         };
         let info = &self.rules.actors[self.actors[i].ty as usize];
-        let tkind = self.actors[t].kind;
+        let tkind = self.target_kind(t);
         let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target(tkind)).collect();
         if usable.is_empty() {
             self.actors[i].target = NONE;
@@ -263,7 +263,7 @@ impl World {
         if !aligned {
             return;
         }
-        let tkind = self.actors[t].kind;
+        let tkind = self.target_kind(t);
         let reload_override = self.rules.actors[ty].reload_override;
         let weapons = self.rules.actors[ty].weapons.clone();
         let d = self.hit_distance(t, x, y);
@@ -285,7 +285,7 @@ impl World {
         }
     }
 
-    fn fire(&mut self, i: usize, t: usize, w: usize) {
+    pub(crate) fn fire(&mut self, i: usize, t: usize, w: usize) {
         let (sx, sy, facing, owner) = {
             let a = &self.actors[i];
             let info = &self.rules.actors[a.ty as usize];
@@ -422,7 +422,7 @@ impl World {
                 let ci = self.map.idx(xx, yy);
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
-                    if self.actors[u].alive && wh.affects(self.actors[u].kind) {
+                    if self.actors[u].alive && wh.affects(self.target_kind(u)) {
                         let d = self.hit_distance(u, x, y);
                         if d <= radius {
                             hits.push((u, d));
