@@ -21,9 +21,9 @@ import {
   validateMap,
 } from '../editor/js/mapformat.js';
 import { countOverrides, deepMerge, pruneOverrides, validateOverrides } from '../editor/js/overrides.js';
-import { buildRulesBase, OUT as RULES_BASE_PATH } from '../editor/tools/sync-rules-base.mjs';
+import { rulesBaseFrom } from '../editor/js/rulesbase.js';
 
-const RULES_BASE = JSON.parse(readFileSync(RULES_BASE_PATH, 'utf8'));
+const RULES_BASE = rulesBaseFrom(JSON.parse(readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8')));
 
 // A minimal catalog in the shape of the engine's rules_json() actors.
 const CATALOG = {
@@ -289,9 +289,9 @@ test('prune and count overrides', () => {
   assert.equal(countOverrides(null), 0);
 });
 
-test('rules-base.json is in sync with engine/rules.json', () => {
-  const engineRules = readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8');
-  assert.equal(readFileSync(RULES_BASE_PATH, 'utf8'), buildRulesBase(engineRules), 'run node apps/game/editor/tools/sync-rules-base.mjs');
+test('the engine exports exactly the built-in rules the editor validates against', () => {
+  const fromEngine = rulesBaseFrom(JSON.parse(base_rules_json()));
+  assert.deepEqual(fromEngine, RULES_BASE);
 });
 
 // ---- Helpers ------------------------------------------------------------------------
@@ -306,7 +306,7 @@ test('parseMap and file names', () => {
 
 // ---- Parity with the engine (needs `npm run build:wasm`) -----------------------------
 
-const { initSync, Game } = await import('../pkg/webra_sim.js');
+const { initSync, Game, base_rules_json } = await import('../pkg/webra_sim.js');
 initSync({ module: readFileSync(new URL('../pkg/webra_sim_bg.wasm', import.meta.url)) });
 const ENGINE_CATALOG = Object.fromEntries(JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json()).actors.map((a) => [a.id, a]));
 const engineValidate = (map) => JSON.parse(Game.validate_map(JSON.stringify(map)));

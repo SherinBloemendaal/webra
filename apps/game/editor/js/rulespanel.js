@@ -1,6 +1,8 @@
 // Rules overrides tab: a structured editor for common actor and weapon values,
 // and a raw JSON view. Every change is an undoable document edit.
 
+import { base_rules_json } from '../../pkg/webra_sim.js';
+import { rulesBaseFrom } from './rulesbase.js';
 import { countOverrides, getPath, pruneOverrides, validateOverrides } from './overrides.js';
 import { el } from './ui.js';
 
@@ -48,7 +50,7 @@ export class RulesPanel {
   /**
    * @param root container element
    * @param doc MapDoc
-   * @param base rules-base.json ({ armorTypes, weaponNames, actors, weapons })
+   * @param base built-in rules keyed by id ({ armorTypes, weaponNames, actors, weapons }), see rulesbase.js
    */
   constructor(root, doc, base) {
     this.root = root;
@@ -348,10 +350,8 @@ export class RulesPanel {
   }
 }
 
-/** Load rules-base.json (built-in actors and weapons keyed by id). */
+/** Built-in actors and weapons keyed by id, from the engine (the wasm package must be initialised). */
 export async function loadRulesBase() {
-  const res = await fetch(new URL('../data/rules-base.json', import.meta.url));
-  if (!res.ok) throw new Error(`could not load rules-base.json (HTTP ${res.status})`);
-  return res.json();
+  return rulesBaseFrom(JSON.parse(base_rules_json()));
 }
 
