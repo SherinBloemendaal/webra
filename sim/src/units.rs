@@ -1,0 +1,938 @@
+//! Per-tick unit behaviour: movement, crowd separation, combat, harvesting, repair.
+
+use crate::flowfield::{nearest_in_component, DIRS, DIR_GOAL, DIR_NONE};
+use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
+use crate::rules::{Kind, Projectile as ProjKind};
+use crate::world::{cell_center, Activity, Effect, EffectKind, HarvState, Projectile, World, NONE};
+
+const SCAN_INTERVAL: i32 = 8;
+/// Vehicles stop to turn when the heading is off by more than this (45 degrees).
+const MOVE_WHILE_TURNING: i32 = 128;
+const MAX_PUSH: i32 = 96;
+const STUCK_LIMIT: i32 = 75;
+/// Ticks an ore truck stays idle before it resumes harvesting.
+const HARVESTER_IDLE_RESUME: i32 = 3 * 25;
+
+impl World {
+    pub(crate) fn tick_units(&mut self) {
+        let n = self.actors.len();
+        for i in 0..n {
+            let a = &mut self.actors[i];
+            if !a.alive || a.kind == Kind::Building {
+                continue;
+            }
+            a.moved = false;
+            if a.flash > 0 {
+                a.flash -= 1;
+            }
+            for r in a.reload.iter_mut() {
+                if *r > 0 {
+                    *r -= 1;
+                }
+            }
+        }
+        for i in 0..n {
+            if !self.actors[i].alive || self.actors[i].kind == Kind::Building {
+                continue;
+            }
+            match self.actors[i].activity {
+                Activity::Idle => self.tick_idle(i),
+                Activity::Move => self.tick_move(i),
+                Activity::Attack => self.tick_attack(i),
+                Activity::Harvest => self.tick_harvest(i),
+                Activity::Repair => self.tick_repair(i),
+            }
+        }
+        self.tick_buildings();
+        self.separate_units();
+    }
+
+    fn has_weapons(&self, i: usize) -> bool {
+        !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty()
+    }
+
+    // ---- Target acquisition ------------------------------------------------
+
+    /// Closest enemy within weapon range that this unit's owner can see.
+    /// Units are preferred over buildings, like OpenRA's default target priorities.
+    fn scan_for_target(&self, i: usize) -> Option<usize> {
+        let a = &self.actors[i];
+        let info = &self.rules.actors[a.ty as usize];
+        let range = info.max_range(&self.rules);
+        if range == 0 {
+            return None;
+        }
+        let r_cells = range / CELL + 1;
+        let (cx, cy) = self.cell_of(a.x, a.y);
+        let range_sq = (range as i64) * (range as i64);
+        let mut best_unit: Option<(i64, usize)> = None;
+        let mut best_building: Option<(i32, usize)> = None;
+        for y in cy - r_cells..=cy + r_cells {
+            for x in cx - r_cells..=cx + r_cells {
+                if !self.map.contains(x, y) {
+                    continue;
+                }
+                let ci = self.map.idx(x, y);
+                if self.players[a.owner as usize].visible[ci] == 0 {
+                    continue;
+                }
+                for &u in self.units_in_cell(ci) {
+                    let u = u as usize;
+                    let t = &self.actors[u];
+                    if !t.alive || t.owner == a.owner {
+                        continue;
+                    }
+                    let d = dist_sq(a.x, a.y, t.x, t.y);
+                    if d <= range_sq && best_unit.map_or(true, |(bd, bi)| d < bd || (d == bd && u < bi)) {
+                        best_unit = Some((d, u));
+                    }
+                }
+                let b = self.building_at[ci];
+                if b != NONE && best_unit.is_none() {
+                    let b = b as usize;
+                    let t = &self.actors[b];
+                    if t.alive && t.owner != a.owner {
+                        let d = self.hit_distance(b, a.x, a.y);
+                        if d <= range && best_building.map_or(true, |(bd, bi)| d < bd || (d == bd && b < bi)) {
+                            best_building = Some((d, b));
+                        }
+                    }
+                }
+            }
+        }
+        best_unit.map(|(_, u)| u).or(best_building.map(|(_, b)| b))
+    }
+
+    fn try_auto_target(&mut self, i: usize) -> bool {
+        if !self.has_weapons(i) {
+            return false;
+        }
+        let a = &mut self.actors[i];
+        a.scan_cooldown -= 1;
+        if a.scan_cooldown > 0 {
+            return false;
+        }
+        a.scan_cooldown = SCAN_INTERVAL;
+        if let Some(t) = self.scan_for_target(i) {
+            let tref = self.make_ref(t);
+            let a = &mut self.actors[i];
+            a.target = tref;
+            a.forced = false;
+            a.chase_cell = NONE;
+            a.activity = Activity::Attack;
+            return true;
+        }
+        false
+    }
+
+    // ---- Activities --------------------------------------------------------
+
+    fn tick_idle(&mut self, i: usize) {
+        if self.try_auto_target(i) {
+            return;
+        }
+        // Idle ore trucks go back to work on their own after a short pause,
+        // like OpenRA's harvesters (e.g. after a move order or a fight).
+        if self.is_harvester(i) {
+            let a = &mut self.actors[i];
+            a.harv_timer += 1;
+            if a.harv_timer >= HARVESTER_IDLE_RESUME {
+                a.activity = Activity::Harvest;
+                a.harv = HarvState::Search;
+                a.harv_timer = 0;
+            }
+            return;
+        }
+        // Damaged vehicles parked on a repair pad get repaired.
+        let a = &self.actors[i];
+        if a.kind == crate::rules::Kind::Vehicle && a.hp < self.rules.actors[a.ty as usize].hp {
+            let b = self.building_at[self.cell_index(a.x, a.y)];
+            if b != NONE {
+                let b = b as usize;
+                let ba = &self.actors[b];
+                if ba.owner == a.owner && self.rules.actors[ba.ty as usize].building.as_ref().unwrap().repairs.is_some() {
+                    let r = self.make_ref(b);
+                    let a = &mut self.actors[i];
+                    a.activity = Activity::Repair;
+                    a.depot = r;
+                    a.repair_timer = 0;
+                }
+            }
+        }
+    }
+
+    fn arrive_radius(&self, i: usize) -> i32 {
+        let a = &self.actors[i];
+        let r = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
+        if a.group_size <= 1 {
+            return r.max(256);
+        }
+        (r * isqrt(a.group_size as i64) as i32 * 13 / 10).max(256)
+    }
+
+    fn tick_move(&mut self, i: usize) {
+        if self.actors[i].attack_move && self.try_auto_target(i) {
+            return;
+        }
+        let goal = self.actors[i].goal;
+        if goal == NONE {
+            self.actors[i].activity = Activity::Idle;
+            return;
+        }
+        let r = self.arrive_radius(i);
+        if self.goal_reached(i, goal, r, true) {
+            self.actors[i].activity = Activity::Idle;
+            self.actors[i].attack_move = false;
+            return;
+        }
+        self.move_toward(i, goal);
+    }
+
+    /// Arrival test, including crowd arrival: a unit that bumps into a stopped
+    /// member of its own group near the goal stops too.
+    fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
+        let gx = cell_center(goal as i32 % self.map.width);
+        let gy = cell_center(goal as i32 / self.map.width);
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let d = dist(x, y, gx, gy);
+        if d <= radius {
+            return true;
+        }
+        if crowd && d <= radius * 2 + CELL {
+            let (cx, cy) = self.cell_of(x, y);
+            let me = &self.actors[i];
+            let rr = self.rules.actors[me.ty as usize].unit.as_ref().unwrap().radius;
+            for oy in -1..=1 {
+                for ox in -1..=1 {
+                    if !self.map.contains(cx + ox, cy + oy) {
+                        continue;
+                    }
+                    for &u in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
+                        let u = u as usize;
+                        let o = &self.actors[u];
+                        if u == i || o.group != me.group || o.activity != Activity::Idle {
+                            continue;
+                        }
+                        let orr = self.rules.actors[o.ty as usize].unit.as_ref().unwrap().radius;
+                        if dist(x, y, o.x, o.y) <= rr + orr + 64 {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        // Give up when no progress is made for a while near the goal.
+        let a = &mut self.actors[i];
+        if d < a.best_dist - 64 {
+            a.best_dist = d;
+            a.stuck_ticks = 0;
+        } else {
+            a.stuck_ticks += 1;
+            if a.stuck_ticks > STUCK_LIMIT && d <= radius * 3 + 2 * CELL {
+                return true;
+            }
+            if a.stuck_ticks > STUCK_LIMIT * 6 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// One movement step along the flow field toward `goal`.
+    fn move_toward(&mut self, i: usize, goal: u32) {
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let ci = self.cell_index(x, y);
+        let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
+        let loco = unit.locomotor as u8;
+        let dir = self.flow.dir(&self.map, &self.pass, &self.rules.locomotors, goal, loco, ci);
+        let (wx, wy) = if dir == DIR_GOAL {
+            (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
+        } else if dir == DIR_NONE {
+            // Standing on a blocked cell (e.g. a building was placed next to us)
+            // or the field is unreachable: step to the nearest open cell.
+            let comp_cell = (0..8).find_map(|d| {
+                let (dx, dy) = DIRS[d];
+                let (cx, cy) = self.cell_of(x, y);
+                let (nx, ny) = (cx + dx, cy + dy);
+                (self.map.contains(nx, ny) && !self.pass.blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
+            });
+            match comp_cell {
+                Some((nx, ny)) => (cell_center(nx), cell_center(ny)),
+                None => {
+                    self.actors[i].activity = Activity::Idle;
+                    return;
+                }
+            }
+        } else {
+            let (cx, cy) = self.cell_of(x, y);
+            let (dx, dy) = DIRS[dir as usize];
+            (cell_center(cx + dx), cell_center(cy + dy))
+        };
+        self.step_toward(i, wx, wy, &unit);
+    }
+
+    /// Turn and drive toward a world point, respecting turn rate and terrain speed.
+    pub(crate) fn step_toward(&mut self, i: usize, wx: i32, wy: i32, unit: &crate::rules::UnitInfo) {
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let Some(desired) = facing_of(wx - x, wy - y) else { return };
+        let ci = self.cell_index(x, y);
+        let speed_pct = self.rules.locomotors[unit.locomotor].speeds[self.map.speed_class(ci)];
+        let speed = unit.speed * speed_pct / 100;
+        let a = &mut self.actors[i];
+        let has_turret = unit.turret_turn_speed.is_some();
+        if unit.turn_in_place {
+            a.facing = desired;
+        } else {
+            a.facing = turn_toward(a.facing, desired, unit.turn_speed);
+            if angle_diff(a.facing, desired).abs() > MOVE_WHILE_TURNING {
+                if has_turret && a.target == NONE {
+                    a.turret = turn_toward(a.turret, a.facing, unit.turret_turn_speed.unwrap());
+                }
+                return;
+            }
+        }
+        if has_turret && (a.target == NONE || a.activity != Activity::Attack) {
+            a.turret = turn_toward(a.turret, a.facing, unit.turret_turn_speed.unwrap());
+        }
+        let d = dist(x, y, wx, wy);
+        let (nx, ny) = if d <= speed {
+            (wx, wy)
+        } else if unit.turn_in_place {
+            (x + ((wx - x) as i64 * speed as i64 / d as i64) as i32, y + ((wy - y) as i64 * speed as i64 / d as i64) as i32)
+        } else {
+            let (vx, vy) = facing_vec(a.facing);
+            (x + vx * speed / 1024, y + vy * speed / 1024)
+        };
+        self.try_move(i, nx, ny);
+    }
+
+    /// Move to (nx, ny) unless that enters a blocked cell; slide along walls.
+    fn try_move(&mut self, i: usize, nx: i32, ny: i32) -> bool {
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        for (tx, ty) in [(nx, ny), (nx, y), (x, ny)] {
+            if (tx, ty) == (x, y) {
+                continue;
+            }
+            let max_x = self.map.width * CELL - 1;
+            let max_y = self.map.height * CELL - 1;
+            let (tx, ty) = (tx.clamp(0, max_x), ty.clamp(0, max_y));
+            let from = self.cell_index(x, y);
+            let to = self.cell_index(tx, ty);
+            if to == from || !self.pass.blocked[to] {
+                let a = &mut self.actors[i];
+                a.x = tx;
+                a.y = ty;
+                a.moved = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn tick_attack(&mut self, i: usize) {
+        let target = self.resolve(self.actors[i].target).filter(|&t| {
+            let owner = self.actors[i].owner;
+            self.actors[t].owner != owner && self.is_visible_to(t, owner)
+        });
+        let Some(t) = target else {
+            self.actors[i].target = NONE;
+            if self.actors[i].attack_move {
+                // Resume the attack-move toward the original destination.
+                let (dx, dy) = self.actors[i].dest;
+                let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
+                let goal = nearest_in_component(&self.map, &self.pass, self.cell_of(dx, dy), comp).unwrap_or(NONE);
+                let a = &mut self.actors[i];
+                a.goal = goal;
+                a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
+                a.best_dist = i32::MAX;
+                a.stuck_ticks = 0;
+            } else {
+                self.actors[i].activity = Activity::Idle;
+            }
+            return;
+        };
+        // While attack-moving, a closer threat takes priority.
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        let range = info.max_range(&self.rules);
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let d = self.hit_distance(t, x, y);
+        if d <= range {
+            self.aim_and_fire(i, t);
+            return;
+        }
+        if !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
+            return;
+        }
+        // Chase: path toward the target's cell (or the nearest reachable one).
+        let (tx, ty) = self.cell_of(self.actors[t].x, self.actors[t].y);
+        let tcell = self.map.idx(tx, ty) as u32;
+        if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
+            let comp = self.pass.component[self.cell_index(x, y)];
+            let goal = nearest_in_component(&self.map, &self.pass, (tx, ty), comp).unwrap_or(NONE);
+            let a = &mut self.actors[i];
+            a.chase_cell = tcell;
+            a.goal = goal;
+        }
+        let goal = self.actors[i].goal;
+        if goal == NONE {
+            self.actors[i].activity = Activity::Idle;
+            return;
+        }
+        self.move_toward(i, goal);
+    }
+
+    fn aim_and_fire(&mut self, i: usize, t: usize) {
+        let ty = self.actors[i].ty as usize;
+        let unit = self.rules.actors[ty].unit.clone().unwrap();
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let (tx, ty_) = (self.actors[t].x, self.actors[t].y);
+        let desired = facing_of(tx - x, ty_ - y).unwrap_or(self.actors[i].facing);
+        let aligned = {
+            let a = &mut self.actors[i];
+            if let Some(ts) = unit.turret_turn_speed {
+                a.turret = turn_toward(a.turret, desired, ts);
+                a.turret == desired
+            } else if unit.turn_in_place {
+                a.facing = desired;
+                true
+            } else {
+                a.facing = turn_toward(a.facing, desired, unit.turn_speed);
+                a.facing == desired
+            }
+        };
+        if !aligned {
+            return;
+        }
+        let weapons = self.rules.actors[ty].weapons.clone();
+        for (slot, &w) in weapons.iter().enumerate().take(crate::world::MAX_WEAPONS) {
+            let wi = &self.rules.weapons[w];
+            if self.actors[i].reload[slot] > 0 || self.hit_distance(t, x, y) > wi.range {
+                continue;
+            }
+            self.fire(i, t, w);
+            let wi = &self.rules.weapons[w];
+            let a = &mut self.actors[i];
+            a.burst_shot[slot] += 1;
+            if a.burst_shot[slot] < wi.burst {
+                a.reload[slot] = wi.burst_delay(a.burst_shot[slot] - 1).max(1);
+            } else {
+                a.burst_shot[slot] = 0;
+                a.reload[slot] = wi.reload.max(1);
+            }
+        }
+    }
+
+    fn fire(&mut self, i: usize, t: usize, w: usize) {
+        let wi = &self.rules.weapons[w];
+        let (sx, sy, facing, owner) = {
+            let a = &self.actors[i];
+            let f = if self.rules.actors[a.ty as usize].unit.as_ref().unwrap().turret_turn_speed.is_some() {
+                a.turret
+            } else {
+                a.facing
+            };
+            let (vx, vy) = facing_vec(f);
+            let muzzle = if a.kind == Kind::Infantry { 128 } else { 384 };
+            (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
+        };
+        // Aim at the target's hit shape point closest to the shooter (buildings are big).
+        let (tx, ty) = self.aim_point(t, sx, sy);
+        match wi.projectile {
+            ProjKind::Instant => self.impact(w, tx, ty, owner),
+            ProjKind::Bullet | ProjKind::Missile => {
+                let tref = self.make_ref(t);
+                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
+            }
+        }
+    }
+
+    fn aim_point(&self, t: usize, sx: i32, sy: i32) -> (i32, i32) {
+        let a = &self.actors[t];
+        if a.kind != Kind::Building {
+            return (a.x, a.y);
+        }
+        let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+        let mut best = (i64::MAX, a.x, a.y);
+        for &(dx, dy) in &b.hit_cells {
+            let (cx, cy) = (cell_center(a.cx + dx), cell_center(a.cy + dy));
+            let d = dist_sq(sx, sy, cx, cy);
+            if d < best.0 {
+                best = (d, cx, cy);
+            }
+        }
+        (best.1, best.2)
+    }
+
+    pub(crate) fn tick_projectiles(&mut self) {
+        let mut k = 0;
+        while k < self.projectiles.len() {
+            let p = &self.projectiles[k];
+            let wi = &self.rules.weapons[p.weapon as usize];
+            // Missiles home on a live target; bullets fly to the aimed point.
+            let (mut tx, mut ty) = (p.tx, p.ty);
+            if wi.projectile == ProjKind::Missile {
+                if let Some(t) = self.resolve(p.target) {
+                    let (ax, ay) = self.aim_point(t, p.x, p.y);
+                    tx = ax;
+                    ty = ay;
+                }
+            }
+            let d = dist(p.x, p.y, tx, ty);
+            let speed = wi.speed.max(1);
+            if d <= speed {
+                let (w, owner) = (p.weapon as usize, p.owner);
+                self.projectiles.swap_remove(k);
+                self.impact(w, tx, ty, owner);
+                continue;
+            }
+            let p = &mut self.projectiles[k];
+            p.x += ((tx - p.x) as i64 * speed as i64 / d as i64) as i32;
+            p.y += ((ty - p.y) as i64 * speed as i64 / d as i64) as i32;
+            p.tx = tx;
+            p.ty = ty;
+            if let Some(f) = facing_of(tx - p.x, ty - p.y) {
+                p.facing = f;
+            }
+            k += 1;
+        }
+    }
+
+    /// Apply a weapon's SpreadDamage warhead at a point. Friendly fire applies, as in OpenRA.
+    pub(crate) fn impact(&mut self, w: usize, x: i32, y: i32, _owner: u8) {
+        let wi = &self.rules.weapons[w];
+        let radius = wi.damage_radius();
+        let damage = wi.damage;
+        let r_cells = radius / CELL + 2;
+        let (cx, cy) = self.cell_of(x, y);
+        let mut hits: Vec<(usize, i32)> = Vec::new();
+        let mut seen_buildings: Vec<usize> = Vec::new();
+        for yy in cy - r_cells..=cy + r_cells {
+            for xx in cx - r_cells..=cx + r_cells {
+                if !self.map.contains(xx, yy) {
+                    continue;
+                }
+                let ci = self.map.idx(xx, yy);
+                for &u in self.units_in_cell(ci) {
+                    let u = u as usize;
+                    if self.actors[u].alive {
+                        let d = self.hit_distance(u, x, y);
+                        if d <= radius {
+                            hits.push((u, d));
+                        }
+                    }
+                }
+                let b = self.building_at[ci];
+                if b != NONE && !seen_buildings.contains(&(b as usize)) {
+                    let b = b as usize;
+                    seen_buildings.push(b);
+                    if self.actors[b].alive {
+                        let d = self.hit_distance(b, x, y);
+                        if d <= radius {
+                            hits.push((b, d));
+                        }
+                    }
+                }
+            }
+        }
+        let falloffs: Vec<(usize, i32)> = hits.iter().map(|&(u, d)| (u, wi.falloff_at(d))).collect();
+        let versus = wi.versus.clone();
+        let effect = if damage >= 3000 { EffectKind::SmallExplosion } else { EffectKind::Piff };
+        let ttl = if effect == EffectKind::SmallExplosion { 12 } else { 6 };
+        self.effects.push(Effect { x, y, kind: effect, ttl, max: ttl });
+        for (u, fall) in falloffs {
+            let armor = self.rules.actors[self.actors[u].ty as usize].armor;
+            let dmg = (damage as i64 * versus[armor] as i64 / 100 * fall as i64 / 100) as i32;
+            if dmg <= 0 {
+                continue;
+            }
+            let a = &mut self.actors[u];
+            a.hp -= dmg;
+            a.flash = 2;
+            if a.hp <= 0 {
+                self.kill(u);
+            }
+        }
+    }
+
+    // ---- Harvesting --------------------------------------------------------
+
+    fn tick_harvest(&mut self, i: usize) {
+        let info = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
+        let hv = info.harvester.clone().unwrap();
+        match self.actors[i].harv {
+            HarvState::Wait => {
+                let a = &mut self.actors[i];
+                a.harv_timer -= 1;
+                if a.harv_timer <= 0 {
+                    a.harv = HarvState::Search;
+                }
+            }
+            HarvState::Search => {
+                let found = self.find_ore(i, &hv);
+                let a = &mut self.actors[i];
+                match found {
+                    Some(c) => {
+                        a.harv_cell = c;
+                        a.goal = c;
+                        a.harv = HarvState::ToOre;
+                        a.group_size = 1;
+                        a.best_dist = i32::MAX;
+                        a.stuck_ticks = 0;
+                    }
+                    None if a.bales > 0 => a.harv = HarvState::ToDock,
+                    None => {
+                        a.harv = HarvState::Wait;
+                        a.harv_timer = 50;
+                        a.harv_cell = NONE;
+                    }
+                }
+            }
+            HarvState::ToOre => {
+                let c = self.actors[i].harv_cell;
+                if c == NONE || self.map.ore[c as usize] == 0 {
+                    self.actors[i].harv = HarvState::Search;
+                    return;
+                }
+                if self.at_cell_center(i, c) {
+                    let a = &mut self.actors[i];
+                    a.harv = HarvState::Harvesting;
+                    a.harv_timer = hv.bale_load_delay;
+                    return;
+                }
+                if self.goal_reached(i, c, 0, false) {
+                    // Could not get onto that cell (crowded); pick another.
+                    let a = &mut self.actors[i];
+                    a.harv = HarvState::Search;
+                    a.harv_cell = NONE;
+                    return;
+                }
+                self.move_toward(i, c);
+            }
+            HarvState::Harvesting => {
+                let c = self.actors[i].harv_cell as usize;
+                let a = &mut self.actors[i];
+                a.harv_timer -= 1;
+                if a.harv_timer > 0 {
+                    return;
+                }
+                a.harv_timer = hv.bale_load_delay;
+                if self.map.ore[c] > 0 {
+                    self.map.ore[c] -= 1;
+                    self.terrain_dirty = true;
+                    self.actors[i].bales += 1;
+                }
+                let a = &mut self.actors[i];
+                if a.bales >= hv.capacity {
+                    a.harv = HarvState::ToDock;
+                    a.best_dist = i32::MAX;
+                    a.stuck_ticks = 0;
+                } else if self.map.ore[c] == 0 {
+                    a.harv = HarvState::Search;
+                }
+            }
+            HarvState::ToDock => {
+                let Some(r) = self.pick_refinery(i) else {
+                    let a = &mut self.actors[i];
+                    a.harv = HarvState::Wait;
+                    a.harv_timer = 50;
+                    return;
+                };
+                let dock = self.dock_cell(r);
+                let me = self.make_ref(i);
+                let busy = self.resolve(self.actors[r].dock_user).map_or(false, |u| self.make_ref(u) != me);
+                if self.at_cell_center(i, dock) && !busy {
+                    self.actors[r].dock_user = me;
+                    let rref = self.make_ref(r);
+                    let a = &mut self.actors[i];
+                    a.refinery = rref;
+                    a.harv = HarvState::Unloading;
+                    a.harv_timer = hv.bale_unload_delay;
+                    return;
+                }
+                // Wait outside while another harvester unloads.
+                let (dx, dy) = (cell_center(dock as i32 % self.map.width), cell_center(dock as i32 / self.map.width));
+                if busy && dist(self.actors[i].x, self.actors[i].y, dx, dy) < 3 * CELL {
+                    return;
+                }
+                self.move_toward(i, dock);
+            }
+            HarvState::Unloading => {
+                let Some(r) = self.resolve(self.actors[i].refinery) else {
+                    self.actors[i].harv = HarvState::ToDock;
+                    return;
+                };
+                let a = &mut self.actors[i];
+                a.facing = turn_toward(a.facing, 0, info.turn_speed);
+                a.harv_timer -= 1;
+                if a.harv_timer > 0 {
+                    return;
+                }
+                a.harv_timer = hv.bale_unload_delay.max(1);
+                if a.bales > 0 {
+                    a.bales -= 1;
+                    let owner = a.owner;
+                    let value = self.rules.player.ore_value;
+                    self.give_resources(owner, value);
+                }
+                if self.actors[i].bales == 0 {
+                    self.actors[r].dock_user = NONE;
+                    let a = &mut self.actors[i];
+                    a.harv = HarvState::Search;
+                }
+            }
+        }
+    }
+
+    fn at_cell_center(&self, i: usize, cell: u32) -> bool {
+        let a = &self.actors[i];
+        let (cx, cy) = (cell_center(cell as i32 % self.map.width), cell_center(cell as i32 / self.map.width));
+        dist(a.x, a.y, cx, cy) <= 96
+    }
+
+    fn pick_refinery(&mut self, i: usize) -> Option<usize> {
+        if let Some(r) = self.resolve(self.actors[i].refinery) {
+            if self.actors[r].owner == self.actors[i].owner {
+                return Some(r);
+            }
+        }
+        let (x, y, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+        let mut best: Option<(i64, usize)> = None;
+        for (j, b) in self.actors.iter().enumerate() {
+            if !b.alive || b.owner != owner || b.kind != Kind::Building {
+                continue;
+            }
+            if self.rules.actors[b.ty as usize].building.as_ref().unwrap().refinery.is_none() {
+                continue;
+            }
+            let d = dist_sq(x, y, b.x, b.y);
+            if best.map_or(true, |(bd, _)| d < bd) {
+                best = Some((d, j));
+            }
+        }
+        let r = best.map(|(_, j)| j)?;
+        self.actors[i].refinery = self.make_ref(r);
+        Some(r)
+    }
+
+    pub fn dock_cell(&self, r: usize) -> u32 {
+        let a = &self.actors[r];
+        let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+        let rf = b.refinery.as_ref().unwrap();
+        let x = a.x + b.center_offset.0 + rf.dock_offset.0;
+        let y = a.y + b.center_offset.1 + rf.dock_offset.1;
+        self.cell_index(x, y) as u32
+    }
+
+    fn find_ore(&mut self, i: usize, hv: &crate::rules::HarvesterInfo) -> Option<u32> {
+        let a = &self.actors[i];
+        let (origin, radius) = if a.harv_cell != NONE {
+            let c = a.harv_cell as i32;
+            ((c % self.map.width, c / self.map.width), hv.search_from_harv)
+        } else if let Some(r) = self.resolve(a.refinery) {
+            (self.cell_of(self.actors[r].x, self.actors[r].y), hv.search_from_proc)
+        } else {
+            (self.cell_of(a.x, a.y), hv.search_from_proc)
+        };
+        let comp = self.pass.component[self.cell_index(a.x, a.y)];
+        let (ux, uy) = self.cell_of(a.x, a.y);
+        // Cells other harvesters already claimed.
+        let claimed: Vec<u32> = self
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(j, o)| {
+                *j != i
+                    && o.alive
+                    && o.activity == crate::world::Activity::Harvest
+                    && matches!(o.harv, HarvState::ToOre | HarvState::Harvesting)
+            })
+            .map(|(_, o)| o.harv_cell)
+            .collect();
+        let mut best: Option<(i32, u32)> = None;
+        for y in origin.1 - radius..=origin.1 + radius {
+            for x in origin.0 - radius..=origin.0 + radius {
+                if !self.map.contains(x, y) {
+                    continue;
+                }
+                let c = self.map.idx(x, y);
+                if self.map.ore[c] == 0 || self.pass.blocked[c] || self.pass.component[c] != comp {
+                    continue;
+                }
+                if claimed.contains(&(c as u32)) {
+                    continue;
+                }
+                let d = (x - ux).pow(2) + (y - uy).pow(2);
+                if best.map_or(true, |(bd, bc)| d < bd || (d == bd && (c as u32) < bc)) {
+                    best = Some((d, c as u32));
+                }
+            }
+        }
+        if best.is_none() && self.actors[i].harv_cell != NONE {
+            // Nothing near the last field: search again from the refinery.
+            self.actors[i].harv_cell = NONE;
+            return self.find_ore(i, hv);
+        }
+        best.map(|(_, c)| c)
+    }
+
+    // ---- Repair ------------------------------------------------------------
+
+    fn tick_repair(&mut self, i: usize) {
+        let Some(d) = self.resolve(self.actors[i].depot) else {
+            self.actors[i].activity = Activity::Idle;
+            return;
+        };
+        let depot = &self.actors[d];
+        let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
+        let rep = binfo.repairs.clone().unwrap();
+        let pad = self.map.idx(depot.cx + binfo.width / 2, depot.cy + binfo.height / 2) as u32;
+        if !self.at_cell_center(i, pad) {
+            if self.goal_reached(i, pad, 0, false) {
+                self.actors[i].activity = Activity::Idle;
+                return;
+            }
+            self.move_toward(i, pad);
+            return;
+        }
+        let ty = self.actors[i].ty as usize;
+        let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
+        let a = &mut self.actors[i];
+        if a.hp >= max_hp {
+            // Done: leave the pad toward the depot's rally point (or just below it).
+            let (rx, ry) = self.actors[d].rally.unwrap_or((
+                cell_center(self.actors[d].cx + binfo.width / 2),
+                cell_center(self.actors[d].cy + binfo.height + 1),
+            ));
+            self.order_move(&[i], rx, ry, false);
+            return;
+        }
+        a.repair_timer -= 1;
+        if a.repair_timer > 0 {
+            return;
+        }
+        a.repair_timer = rep.interval;
+        let step = rep.hp_per_step.min(max_hp - a.hp);
+        // OpenRA RepairsUnits: repair costs ValuePercent of the unit's value, pro rata.
+        let price = ((cost as i64 * rep.value_percent as i64 * step as i64 + 100 * max_hp as i64 - 1) / (100 * max_hp as i64)) as i32;
+        let owner = a.owner;
+        if self.spend(owner, price) {
+            self.actors[i].hp += step;
+        }
+    }
+
+    // ---- Crowd separation --------------------------------------------------
+
+    fn separate_units(&mut self) {
+        self.rebuild_hash();
+        let n = self.actors.len();
+        let mut push = vec![(0i32, 0i32); n];
+        let mut crushed: Vec<usize> = Vec::new();
+        for i in 0..n {
+            let a = &self.actors[i];
+            if !a.alive || a.kind == Kind::Building {
+                continue;
+            }
+            let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
+            let (cx, cy) = self.cell_of(a.x, a.y);
+            for oy in -1..=1 {
+                for ox in -1..=1 {
+                    if !self.map.contains(cx + ox, cy + oy) {
+                        continue;
+                    }
+                    for &j in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
+                        let j = j as usize;
+                        if j <= i {
+                            continue;
+                        }
+                        let b = &self.actors[j];
+                        if !b.alive {
+                            continue;
+                        }
+                        let rb = self.rules.actors[b.ty as usize].unit.as_ref().unwrap().radius;
+                        let min = ra + rb;
+                        let (dx, dy) = (b.x - a.x, b.y - a.y);
+                        let d2 = dx as i64 * dx as i64 + dy as i64 * dy as i64;
+                        if d2 >= (min as i64) * (min as i64) {
+                            continue;
+                        }
+                        // A moving crusher (tracked vehicles, ore truck) runs over enemy soldiers.
+                        if a.owner != b.owner {
+                            let crush_reach = (min as i64) * (min as i64) * 9 / 16;
+                            if d2 <= crush_reach {
+                                if a.moved && self.crushes(i, j) {
+                                    crushed.push(j);
+                                    continue;
+                                }
+                                if b.moved && self.crushes(j, i) {
+                                    crushed.push(i);
+                                    continue;
+                                }
+                            }
+                        }
+                        let d = isqrt(d2) as i32;
+                        let (nx, ny) = if d == 0 {
+                            // Deterministic split for exactly overlapping units.
+                            let f = ((i * 7 + j * 13) % 8) as usize;
+                            (DIRS[f].0 * 1024, DIRS[f].1 * 1024)
+                        } else {
+                            (dx * 1024 / d, dy * 1024 / d)
+                        };
+                        let overlap = (min - d).min(MAX_PUSH * 2);
+                        // Moving units push idle friends aside; enemies are walls to each other.
+                        let (wa, wb) = match (a.moved, b.moved, a.owner == b.owner) {
+                            (true, false, false) => (100, 0),
+                            (false, true, false) => (0, 100),
+                            _ => (50, 50),
+                        };
+                        let pa = overlap * wa / 100;
+                        let pb = overlap * wb / 100;
+                        push[i].0 -= nx * pa / 1024;
+                        push[i].1 -= ny * pa / 1024;
+                        push[j].0 += nx * pb / 1024;
+                        push[j].1 += ny * pb / 1024;
+                    }
+                }
+            }
+        }
+        for k in crushed {
+            if self.actors[k].alive {
+                self.kill(k);
+            }
+        }
+        for (i, &(px, py)) in push.iter().enumerate() {
+            if px == 0 && py == 0 || !self.actors[i].alive {
+                continue;
+            }
+            let a = &self.actors[i];
+            // Units busy at a dock or repair pad hold their spot.
+            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting) {
+                continue;
+            }
+            let (px, py) = (px.clamp(-MAX_PUSH, MAX_PUSH), py.clamp(-MAX_PUSH, MAX_PUSH));
+            let (x, y) = (a.x, a.y);
+            let moved = self.actors[i].moved;
+            self.try_move(i, x + px, y + py);
+            self.actors[i].moved = moved;
+        }
+    }
+
+    /// Whether unit `a` crushes unit `b` (vehicle whose locomotor crushes infantry, over infantry).
+    fn crushes(&self, a: usize, b: usize) -> bool {
+        let (ta, tb) = (&self.actors[a], &self.actors[b]);
+        if ta.kind != Kind::Vehicle || tb.kind != Kind::Infantry {
+            return false;
+        }
+        let loco = self.rules.actors[ta.ty as usize].unit.as_ref().unwrap().locomotor;
+        self.rules.locomotors[loco].crushes_infantry
+    }
+
+    // ---- Buildings ---------------------------------------------------------
+
+    fn tick_buildings(&mut self) {
+        for a in self.actors.iter_mut() {
+            if a.alive && a.kind == Kind::Building && a.flash > 0 {
+                a.flash -= 1;
+            }
+        }
+    }
+}

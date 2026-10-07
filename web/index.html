@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebRA</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/sidebar.css" />
+  </head>
+  <body>
+    <section id="menu">
+      <div class="menu-card">
+        <h1>Web<span>RA</span></h1>
+        <p class="tagline">Red Alert in your browser. Rust, WebAssembly and WebGPU.</p>
+        <p id="menu-error" class="error" hidden></p>
+
+        <h2>Skirmish</h2>
+        <label>Your faction
+          <select id="faction">
+            <optgroup label="Allies">
+              <option value="england">England</option>
+              <option value="france">France</option>
+              <option value="germany" selected>Germany</option>
+            </optgroup>
+            <optgroup label="Soviet">
+              <option value="russia">Russia</option>
+              <option value="ukraine">Ukraine</option>
+            </optgroup>
+          </select>
+        </label>
+        <label>Map size
+          <select id="map-size">
+            <option value="64">Small (64 x 64)</option>
+            <option value="96" selected>Medium (96 x 96)</option>
+            <option value="128">Large (128 x 128)</option>
+          </select>
+        </label>
+        <label>Seed <input id="seed" type="number" min="0" /></label>
+        <button id="start" class="primary">Start skirmish</button>
+
+        <h2>Stress test</h2>
+        <p class="hint">Two armies attack-move into each other. Shows how many units the WebAssembly simulation and flow fields can handle.</p>
+        <label>Units <input id="stress-units" type="number" value="10000" min="100" max="200000" step="1000" /></label>
+        <button id="start-stress">Start stress test</button>
+
+        <details class="controls">
+          <summary>Controls</summary>
+          <ul>
+            <li><b>Left click</b> select; with units selected, <b>left click</b> gives the order (move, attack, harvest, dock, repair)</li>
+            <li><b>Drag</b> box select (only combat units when the box has any), <b>double click</b> all of that type on screen</li>
+            <li><b>Right click</b> clears the selection. A selected factory: left click the ground to set its rally point</li>
+            <li><b>A</b> then click: attack-move. <b>S</b> stop. <b>Esc</b> cancel</li>
+            <li><b>Ctrl+1..9</b> make group, <b>1..9</b> select group</li>
+            <li><b>Numpad 1..9</b> build that sidebar card (Shift: 5, Ctrl: cancel), <b>Numpad +/-/0</b> switch tabs</li>
+            <li><b>Arrow keys</b>, screen edges or <b>middle drag</b> to pan, <b>wheel</b> to zoom, <b>H</b>/<b>Space</b> base</li>
+            <li>Sidebar: click to build (shift: 5), right click to cancel, click a finished building to place it</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+
+    <div id="app" hidden>
+      <main id="field">
+        <canvas id="view"></canvas>
+        <div id="hud"></div>
+      </main>
+      <aside id="sidebar"></aside>
+    </div>
+
+    <section id="gameover" hidden>
+      <div class="menu-card">
+        <h1 id="gameover-title">Mission accomplished</h1>
+        <button id="again" class="primary">Play again</button>
+      </div>
+    </section>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,426 @@
+// Camera, mouse and keyboard handling. Converts screen input into world
+// positions and queues orders on the simulation.
+//
+// Classic Red Alert mouse: with your units selected, LEFT click gives the
+// order (move, attack, harvest, dock, repair) and left click on one of your
+// own units selects it instead. Right click clears the selection.
+
+import { CURSORS, ACTION_CURSORS, ACTION } from './cursors.js';
+
+const NONE = 0xffffffff;
+const CELL = 24;
+const EDGE = 12; // px from the canvas edge that scrolls the view
+const PAN_SPEED = 900; // CSS px per second
+const DOUBLE_CLICK_MS = 300;
+
+export class Input {
+  constructor(canvas, game, rules, player, hooks) {
+    this.canvas = canvas;
+    this.game = game;
+    this.rules = rules;
+    this.player = player;
+    this.hooks = hooks; // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir) }
+    this.camera = { x: 0, y: 0, zoom: 1.5 };
+    this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
+    this.selection = [];
+    this.ownUnits = null;
+    this.groups = new Map();
+    this.keys = new Set();
+    this.mouse = { x: -1, y: -1, inside: false };
+    this.drag = null;
+    this.pan = null;
+    this.placing = null; // actor id being placed
+    this.attackMove = false;
+    this.lastClick = { time: 0, id: NONE };
+    this.bind();
+  }
+
+  // ---- Coordinates ------------------------------------------------------------
+
+  toWorld(sx, sy) {
+    return { x: this.camera.x + sx / this.camera.zoom, y: this.camera.y + sy / this.camera.zoom };
+  }
+
+  viewRect() {
+    const w = this.canvas.clientWidth / this.camera.zoom;
+    const h = this.canvas.clientHeight / this.camera.zoom;
+    return { x0: this.camera.x, y0: this.camera.y, x1: this.camera.x + w, y1: this.camera.y + h };
+  }
+
+  centerOn(x, y) {
+    this.camera.x = x - this.canvas.clientWidth / this.camera.zoom / 2;
+    this.camera.y = y - this.canvas.clientHeight / this.camera.zoom / 2;
+    this.clampCamera();
+  }
+
+  clampCamera() {
+    const vw = this.canvas.clientWidth / this.camera.zoom;
+    const vh = this.canvas.clientHeight / this.camera.zoom;
+    const margin = 2 * CELL;
+    this.camera.x = Math.min(Math.max(this.camera.x, -margin), Math.max(-margin, this.mapPx.w - vw + margin));
+    this.camera.y = Math.min(Math.max(this.camera.y, -margin), Math.max(-margin, this.mapPx.h - vh + margin));
+  }
+
+  // ---- Selection ----------------------------------------------------------------
+
+  setSelection(ids) {
+    this.selection = Array.from(new Set(ids));
+    this.ownUnits = null;
+    this.game.set_selection(Uint32Array.from(this.selection));
+    this.hooks.onSelectionChanged(this.selection);
+  }
+
+  refreshSelection() {
+    const alive = Array.from(this.game.selection());
+    if (alive.length !== this.selection.length) {
+      this.selection = alive;
+      this.ownUnits = null;
+      this.hooks.onSelectionChanged(this.selection);
+    }
+  }
+
+  info(id) {
+    return id === NONE ? null : JSON.parse(this.game.actor_json(id));
+  }
+
+  /** Selected units that belong to the local player (cached per selection change). */
+  selectedOwnUnits() {
+    if (!this.ownUnits) {
+      this.ownUnits = this.selection.filter((id) => {
+        const info = this.info(id);
+        return info && info.owner === this.player && !info.building;
+      });
+    }
+    return this.ownUnits;
+  }
+
+  /** The single selected own factory or depot, for rally points. */
+  selectedRallyBuilding() {
+    if (this.selection.length !== 1) return null;
+    const info = this.info(this.selection[0]);
+    return info && info.owner === this.player && info.building && info.producer ? this.selection[0] : null;
+  }
+
+  /**
+   * What a left click at world point `w` does with the current selection:
+   * { kind: 'order', action } | { kind: 'rally' } | { kind: 'select', id } | { kind: 'none' }.
+   */
+  clickIntent(w) {
+    const hit = this.game.pick(this.player, w.x, w.y);
+    const hitInfo = this.info(hit);
+    const units = this.selectedOwnUnits();
+    if (units.length) {
+      const action = this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y);
+      // Own units and buildings are selected, unless the order targets them (dock, repair).
+      const ownHit = hitInfo && hitInfo.owner === this.player;
+      if (ownHit && action !== ACTION.DOCK && action !== ACTION.REPAIR) return { kind: 'select', id: hit };
+      return { kind: 'order', action, units };
+    }
+    if (this.selectedRallyBuilding() !== null && !hitInfo) return { kind: 'rally' };
+    return hit === NONE ? { kind: 'none' } : { kind: 'select', id: hit };
+  }
+
+  // ---- Placement ----------------------------------------------------------------
+
+  startPlacing(actorId) {
+    this.placing = actorId;
+    this.attackMove = false;
+  }
+
+  cancelPlacing() {
+    if (this.placing) {
+      this.placing = null;
+      this.hooks.onCancelPlace();
+    }
+  }
+
+  placementCell(wx, wy) {
+    const a = this.rules.actors.find((r) => r.id === this.placing);
+    return { cx: Math.round(wx / CELL - a.width / 2), cy: Math.round(wy / CELL - a.height / 2) };
+  }
+
+  // ---- Event binding --------------------------------------------------------------
+
+  bind() {
+    const c = this.canvas;
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('mousedown', (e) => this.onMouseDown(e));
+    window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    c.addEventListener('mouseenter', () => (this.mouse.inside = true));
+    c.addEventListener('mouseleave', () => (this.mouse.inside = false));
+    c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    window.addEventListener('keydown', (e) => this.onKeyDown(e));
+    window.addEventListener('keyup', (e) => this.keys.delete(e.key));
+    window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  local(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  onMouseDown(e) {
+    const p = this.local(e);
+    const w = this.toWorld(p.x, p.y);
+    if (e.button === 1) {
+      e.preventDefault();
+      this.pan = { x: p.x, y: p.y, cx: this.camera.x, cy: this.camera.y };
+      return;
+    }
+    if (e.button === 2) {
+      if (this.placing) {
+        this.cancelPlacing();
+        return;
+      }
+      if (this.attackMove) {
+        this.attackMove = false;
+        return;
+      }
+      this.setSelection([]);
+      return;
+    }
+    if (e.button !== 0) return;
+    if (this.placing) {
+      const { cx, cy } = this.placementCell(w.x, w.y);
+      const cells = this.game.placement_preview(this.player, this.placing, cx, cy);
+      let ok = cells.length > 0;
+      for (let i = 2; i < cells.length; i += 3) ok = ok && cells[i] === 1;
+      if (ok) {
+        this.game.place_building(this.player, this.placing, cx, cy);
+        this.placing = null;
+        this.hooks.onPlaced();
+      }
+      return;
+    }
+    if (this.attackMove) {
+      const units = this.selectedOwnUnits();
+      if (units.length) {
+        this.game.order_move(this.player, Uint32Array.from(units), w.x, w.y, true);
+        this.flashOrder(w, ACTION.ATTACK);
+      }
+      if (!e.shiftKey) this.attackMove = false;
+      return;
+    }
+    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey };
+  }
+
+  onMouseMove(e) {
+    const p = this.local(e);
+    this.mouse.x = p.x;
+    this.mouse.y = p.y;
+    if (this.pan) {
+      this.camera.x = this.pan.cx - (p.x - this.pan.x) / this.camera.zoom;
+      this.camera.y = this.pan.cy - (p.y - this.pan.y) / this.camera.zoom;
+      this.clampCamera();
+    }
+    if (this.drag) {
+      this.drag.ex = p.x;
+      this.drag.ey = p.y;
+    }
+  }
+
+  onMouseUp(e) {
+    if (e.button === 1) {
+      this.pan = null;
+      return;
+    }
+    if (e.button !== 0 || !this.drag) return;
+    const d = this.drag;
+    this.drag = null;
+    const a = this.toWorld(d.sx, d.sy);
+    const b = this.toWorld(d.ex, d.ey);
+    if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < 6) {
+      const intent = d.shift ? { kind: 'select' } : this.clickIntent(b);
+      if (intent.kind === 'order') {
+        this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
+        this.flashOrder(b, intent.action);
+      } else if (intent.kind === 'rally') {
+        this.game.set_rally(this.player, this.selection[0], b.x, b.y);
+        this.flashOrder(b, ACTION.MOVE);
+      } else {
+        this.clickSelect(b, d.shift);
+      }
+      return;
+    }
+    const ids = Array.from(this.game.select_box(this.player, a.x, a.y, b.x, b.y));
+    this.setSelection(d.shift ? this.selection.concat(ids) : ids);
+  }
+
+  clickSelect(w, shift) {
+    const id = this.game.pick(this.player, w.x, w.y);
+    const now = performance.now();
+    if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
+      const v = this.viewRect();
+      const same = Array.from(this.game.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
+      if (same.length) this.setSelection(same);
+      this.lastClick = { time: 0, id: NONE };
+      return;
+    }
+    this.lastClick = { time: now, id };
+    if (id === NONE) {
+      if (!shift) this.setSelection([]);
+      return;
+    }
+    const info = this.info(id);
+    const own = info && info.owner === this.player;
+    if (shift && own && !info.building) {
+      const has = this.selection.includes(id);
+      this.setSelection(has ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
+    } else {
+      this.setSelection([id]);
+    }
+  }
+
+  onWheel(e) {
+    e.preventDefault();
+    const p = this.local(e);
+    const before = this.toWorld(p.x, p.y);
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    this.camera.zoom = Math.min(4, Math.max(0.5, this.camera.zoom * factor));
+    this.camera.x = before.x - p.x / this.camera.zoom;
+    this.camera.y = before.y - p.y / this.camera.zoom;
+    this.clampCamera();
+  }
+
+  onKeyDown(e) {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    this.keys.add(e.key);
+    // Numpad drives the sidebar (works with NumLock on or off):
+    // 1-9 build that card (Shift: 5, Ctrl: cancel one), + / - switch tabs.
+    if (e.code.startsWith('Numpad')) {
+      const digit = /^Numpad([1-9])$/.exec(e.code);
+      if (digit) {
+        e.preventDefault();
+        this.hooks.onNumpad?.(Number(digit[1]), { shift: e.shiftKey, cancel: e.ctrlKey || e.metaKey });
+        return;
+      }
+      if (e.code === 'NumpadAdd' || e.code === 'Numpad0') {
+        e.preventDefault();
+        this.hooks.onTab?.(1);
+        return;
+      }
+      if (e.code === 'NumpadSubtract') {
+        e.preventDefault();
+        this.hooks.onTab?.(-1);
+        return;
+      }
+      if (e.code === 'NumpadDecimal') {
+        e.preventDefault();
+        this.cancelPlacing();
+        return;
+      }
+    }
+    const k = e.key.toLowerCase();
+    if (k === 'escape') {
+      if (this.placing) this.cancelPlacing();
+      else if (this.attackMove) this.attackMove = false;
+      else this.setSelection([]);
+    } else if (k === 'a' && !e.ctrlKey && !e.metaKey) {
+      if (this.selectedOwnUnits().length) this.attackMove = true;
+    } else if (k === 's' && !e.ctrlKey && !e.metaKey) {
+      const units = this.selectedOwnUnits();
+      if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
+    } else if (k === 'h' || k === ' ') {
+      e.preventDefault();
+      const [x, y] = this.game.start_position(this.player);
+      this.centerOn(x, y);
+    } else if (/^[1-9]$/.test(e.key)) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        this.groups.set(e.key, this.selectedOwnUnits());
+      } else if (this.groups.has(e.key)) {
+        // The game drops dead ids from a selection; keep the stored group in sync.
+        this.game.set_selection(Uint32Array.from(this.groups.get(e.key)));
+        const alive = Array.from(this.game.selection());
+        this.groups.set(e.key, alive);
+        this.setSelection(alive);
+      }
+    }
+  }
+
+  /** Per-frame camera scrolling from arrow keys and screen edges. */
+  update(dt) {
+    let dx = 0;
+    let dy = 0;
+    if (this.keys.has('ArrowLeft')) dx -= 1;
+    if (this.keys.has('ArrowRight')) dx += 1;
+    if (this.keys.has('ArrowUp')) dy -= 1;
+    if (this.keys.has('ArrowDown')) dy += 1;
+    if (this.mouse.inside && !this.drag && !this.pan) {
+      const w = this.canvas.clientWidth;
+      const h = this.canvas.clientHeight;
+      if (this.mouse.x < EDGE) dx -= 1;
+      if (this.mouse.x > w - EDGE) dx += 1;
+      if (this.mouse.y < EDGE) dy -= 1;
+      if (this.mouse.y > h - EDGE) dy += 1;
+    }
+    if (dx || dy) {
+      this.camera.x += (dx * PAN_SPEED * dt) / this.camera.zoom;
+      this.camera.y += (dy * PAN_SPEED * dt) / this.camera.zoom;
+      this.clampCamera();
+    }
+    this.updateCursor();
+  }
+
+  updateCursor() {
+    let cursor = CURSORS.select;
+    if (this.placing) cursor = 'none';
+    else if (this.attackMove) cursor = CURSORS.attackMove;
+    else if (this.mouse.inside && !this.drag && !this.pan) {
+      const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
+      if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
+      else if (intent.kind === 'rally') cursor = CURSORS.rally;
+    }
+    if (this.cursor !== cursor) {
+      this.cursor = cursor;
+      this.canvas.style.cursor = cursor;
+    }
+  }
+
+  /** Short marker where an order was given, like the original's flashing target. */
+  flashOrder(w, action) {
+    this.orderFlash = { x: w.x, y: w.y, action, until: performance.now() + 450 };
+  }
+
+  /** UI rectangles (world space) for the drag box and placement preview. */
+  uiRects() {
+    const out = [];
+    const push = (x, y, w, h, r, g, b, a) => out.push(x, y, w, h, r, g, b, a);
+    if (this.drag) {
+      const a = this.toWorld(this.drag.sx, this.drag.sy);
+      const b = this.toWorld(this.drag.ex, this.drag.ey);
+      const x0 = Math.min(a.x, b.x);
+      const y0 = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x);
+      const h = Math.abs(b.y - a.y);
+      const t = 1 / this.camera.zoom;
+      push(x0, y0, w, h, 0.4, 0.9, 0.4, 0.08);
+      push(x0, y0, w, t, 0.5, 1, 0.5, 0.9);
+      push(x0, y0 + h - t, w, t, 0.5, 1, 0.5, 0.9);
+      push(x0, y0, t, h, 0.5, 1, 0.5, 0.9);
+      push(x0 + w - t, y0, t, h, 0.5, 1, 0.5, 0.9);
+    }
+    if (this.orderFlash && performance.now() < this.orderFlash.until) {
+      const f = this.orderFlash;
+      const t = (f.until - performance.now()) / 450;
+      const r = 3 + (1 - t) * 7;
+      const col = f.action === ACTION.ATTACK ? [1, 0.3, 0.2] : f.action === ACTION.HARVEST ? [0.95, 0.75, 0.25] : [0.4, 0.95, 0.45];
+      const th = 1.5 / this.camera.zoom + 0.5;
+      push(f.x - r, f.y - r, 2 * r, th, ...col, t);
+      push(f.x - r, f.y + r - th, 2 * r, th, ...col, t);
+      push(f.x - r, f.y - r, th, 2 * r, ...col, t);
+      push(f.x + r - th, f.y - r, th, 2 * r, ...col, t);
+    }
+    if (this.placing && this.mouse.inside) {
+      const w = this.toWorld(this.mouse.x, this.mouse.y);
+      const { cx, cy } = this.placementCell(w.x, w.y);
+      const cells = this.game.placement_preview(this.player, this.placing, cx, cy);
+      for (let i = 0; i < cells.length; i += 3) {
+        const ok = cells[i + 2] === 1;
+        push(cells[i] * CELL + 1, cells[i + 1] * CELL + 1, CELL - 2, CELL - 2, ok ? 0.3 : 0.95, ok ? 0.9 : 0.25, ok ? 0.35 : 0.2, 0.45);
+      }
+    }
+    return out;
+  }
+}

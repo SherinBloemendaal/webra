@@ -1,0 +1,3115 @@
+{
+  "25mm": {
+    "ReloadDelay": "21",
+    "Range": "4c768",
+    "Report": "cannon2.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "853",
+      "Image": "50CAL",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "32",
+        "Wood": "52",
+        "Light": "116",
+        "Concrete": "32",
+        "Heavy": "48"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "90mm": {
+    "ReloadDelay": "50",
+    "Range": "4c768",
+    "Report": "cannon1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "682",
+      "Image": "120MM",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "4000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "30",
+        "Wood": "75",
+        "Light": "75",
+        "Concrete": "50",
+        "Heavy": "115"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "105mm": {
+    "ReloadDelay": "70",
+    "Range": "4c768",
+    "Report": "cannon1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "682",
+      "Image": "120MM",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "4000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "30",
+        "Wood": "75",
+        "Light": "75",
+        "Concrete": "50",
+        "Heavy": "115"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2"
+  },
+  "120mm": {
+    "ReloadDelay": "90",
+    "Range": "4c768",
+    "Report": "cannon1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "682",
+      "Image": "120MM",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "30",
+        "Wood": "75",
+        "Light": "75",
+        "Concrete": "50",
+        "Heavy": "115"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath",
+      "InvalidTargets": "Air"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "InvalidTargets": "Air, Infantry"
+  },
+  "TurretGun": {
+    "ReloadDelay": "30",
+    "Range": "6c512",
+    "Report": "turret1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "682",
+      "Image": "120MM",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "20",
+        "Wood": "50",
+        "Light": "75",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "155mm": {
+    "ReloadDelay": "85",
+    "Range": "12c0",
+    "Report": "tank5.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "170",
+      "Image": "120MM",
+      "Shadow": "True",
+      "Blockable": "false",
+      "LaunchAngle": "62",
+      "Inaccuracy": "1c138",
+      "ContrailLength": "30"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "23000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "60",
+        "Wood": "40",
+        "Light": "60",
+        "Concrete": "50",
+        "Heavy": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath",
+      "Falloff": "100, 55, 20, 5"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "MinRange": "4c0",
+    "TargetActorCenter": "true"
+  },
+  "8Inch": {
+    "ReloadDelay": "250",
+    "Range": "20c0",
+    "Report": "turret1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "204",
+      "Image": "120MM",
+      "Shadow": "True",
+      "Blockable": "false",
+      "LaunchAngle": "62",
+      "Inaccuracy": "1c938",
+      "ContrailLength": "30"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "60",
+        "Wood": "35",
+        "Light": "60",
+        "Concrete": "100",
+        "Heavy": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "MinRange": "3c0",
+    "Burst": "2",
+    "TargetActorCenter": "true"
+  },
+  "2Inch": {
+    "ReloadDelay": "60",
+    "Range": "5c512",
+    "Report": "cannon2.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "682",
+      "Image": "120MM",
+      "Shadow": "True"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "256",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "28",
+        "Wood": "72",
+        "Light": "72",
+        "Concrete": "48"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "InvalidTargets": "Underwater"
+  },
+  "Grenade": {
+    "ReloadDelay": "60",
+    "Range": "4c0",
+    "Report": "grenade1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "136",
+      "Image": "BOMB",
+      "Shadow": "True",
+      "Blockable": "false",
+      "LaunchAngle": "62",
+      "Inaccuracy": "554"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "256",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "60",
+        "Wood": "100",
+        "Light": "25",
+        "Concrete": "100",
+        "Heavy": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "DepthCharge": {
+    "ReloadDelay": "60",
+    "Range": "5c0",
+    "ValidTargets": "Underwater",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "125",
+      "Image": "BOMB",
+      "Shadow": "True",
+      "Blockable": "false",
+      "LaunchAngle": "62",
+      "Inaccuracy": "128"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "6000",
+      "ValidTargets": "Submarine",
+      "Versus": {
+        "None": "90",
+        "Wood": "40",
+        "Light": "100",
+        "Concrete": "50",
+        "Heavy": "25"
+      },
+      "DamageTypes": "ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Submarine",
+      "InvalidTargets": "Underwater"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Warhead@5EffSubmergedHitSound": {
+      "_": "CreateEffect",
+      "ImpactSounds": "h2obomb2.aud",
+      "ValidTargets": "Underwater"
+    }
+  },
+  "CrateNapalm": {
+    "ValidTargets": "Ground, GroundActor, WaterActor, Trees",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "170",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "90",
+        "Wood": "100",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "AffectsParent": "true"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Ground, Water, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    }
+  },
+  "CrateExplosion": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "AffectsParent": "true"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "self_destruct",
+      "ImpactSounds": "kaboom22.aud",
+      "ValidTargets": "Ground, Water, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    }
+  },
+  "UnitExplode": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "self_destruct",
+      "ImpactSounds": "kaboom22.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "UnitExplodePlane": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_napalm",
+      "ImpactSounds": "kaboom22.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "UnitExplodeHeli": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "kaboom22.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "VisualExplode": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "offset_napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "UnitExplodeShip": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "building",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Water",
+      "ImpactActors": "false"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water",
+      "InvalidTargets": "Bridge",
+      "ImpactActors": "false"
+    }
+  },
+  "UnitExplodeSubmarine": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water",
+      "ImpactActors": "false"
+    }
+  },
+  "UnitExplodeSmall": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "4000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "ArtilleryExplode": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "15000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "self_destruct",
+      "ImpactSounds": "kaboom22.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "V2Explode": {
+    "ReloadDelay": "215",
+    "Range": "10c0",
+    "MinRange": "4c0",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "341",
+      "Damage": "4500",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "70",
+        "Heavy": "40",
+        "Concrete": "100",
+        "Tree": "75"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath, Incendiary",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "170",
+      "Blockable": "false",
+      "TrailImage": "smokey",
+      "TrailDelay": "5",
+      "Inaccuracy": "213",
+      "Image": "V2",
+      "Shadow": "True",
+      "LaunchAngle": "62"
+    }
+  },
+  "BuildingExplode": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "building, building_napalm, large_explosion, self_destruct, large_napalm"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "GroundActor",
+      "InvalidTargets": "Wall"
+    }
+  },
+  "SmallBuildingExplode": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "building, building_napalm, large_explosion, self_destruct"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "GroundActor",
+      "InvalidTargets": "Wall"
+    }
+  },
+  "CivPanicExplosion": {
+    "ValidTargets": "Ground, GroundActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "ValidTargets": "Infantry",
+      "Falloff": "100, 100",
+      "Range": "0, 128",
+      "Damage": "1",
+      "Delay": "1"
+    }
+  },
+  "BarrelExplode": {
+    "Warhead@Cluster": {
+      "_": "FireCluster",
+      "Weapon": "BarrelCluster",
+      "Dimensions": "3,3",
+      "Footprint": "_X_ X_X _X_"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "325",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "5",
+      "ValidTargets": "GroundActor, Trees",
+      "Versus": {
+        "None": "120",
+        "Light": "50",
+        "Wood": "20",
+        "Concrete": "10"
+      }
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "building",
+      "ImpactSounds": "kaboom25.aud"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater"
+    }
+  },
+  "BarrelCluster": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "325",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, Trees",
+      "Versus": {
+        "None": "120",
+        "Wood": "20",
+        "Light": "50",
+        "Heavy": "25",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "5"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees",
+      "Delay": "5"
+    },
+    "Projectile": "InstantHit"
+  },
+  "BridgeExplode": {
+    "ValidTargets": "Ground, Water, Air, GroundActor, WaterActor, AirborneActor",
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Vehicle, Infantry"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Bridge, Ground, Water"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "ATMine": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "256",
+      "Damage": "40000",
+      "AffectsParent": "true",
+      "ValidTargets": "GroundActor, WaterActor",
+      "InvalidTargets": "Mine",
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "large_explosion",
+      "ImpactSounds": "mineblo1.aud",
+      "ImpactActors": "false"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, GroundActor",
+      "InvalidTargets": "Structure, Wall"
+    }
+  },
+  "APMine": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "256",
+      "Damage": "40000",
+      "AffectsParent": "true",
+      "ValidTargets": "GroundActor, WaterActor",
+      "InvalidTargets": "Mine",
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "mine1.aud",
+      "ImpactActors": "false"
+    },
+    "Warhead@Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, GroundActor",
+      "InvalidTargets": "Structure, Wall"
+    }
+  },
+  "OreExplosion": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "9",
+      "Damage": "1000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "70",
+        "Light": "60",
+        "Heavy": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath"
+    },
+    "Warhead@3Res": {
+      "_": "CreateResource",
+      "AddsResourceType": "Ore",
+      "Size": "1,1"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ImpactActors": "false"
+    }
+  },
+  "CrateNuke": {
+    "ValidTargets": "Ground, GroundActor, Trees, Water, WaterActor, Underwater, Air, AirborneActor",
+    "Warhead@1Dam_impact": {
+      "_": "SpreadDamage",
+      "Spread": "1c0",
+      "Damage": "10000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "ValidTargets": "GroundActor, Trees, WaterActor, AirborneActor",
+      "Versus": {
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Res_impact": "DestroyResource",
+    "Warhead@3Eff_impact": {
+      "_": "CreateEffect",
+      "Explosions": "nuke",
+      "ImpactSounds": "kaboom1.aud",
+      "ImpactActors": "false"
+    },
+    "Warhead@4Dam_areanuke1": {
+      "_": "SpreadDamage",
+      "Spread": "1c0",
+      "Damage": "6000",
+      "Falloff": "1000, 600, 400, 250, 150, 100, 0",
+      "Delay": "5",
+      "ValidTargets": "GroundActor, Trees, WaterActor, AirborneActor",
+      "Versus": {
+        "Tree": "200",
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@5Res_areanuke1": {
+      "_": "DestroyResource",
+      "Size": "4",
+      "Delay": "5"
+    },
+    "Warhead@6Eff_areanuke1": {
+      "_": "CreateEffect",
+      "ImpactSounds": "kaboom22.aud",
+      "Delay": "5",
+      "ImpactActors": "false"
+    },
+    "Warhead@6Smu_areanuke1": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "4",
+      "Delay": "5"
+    },
+    "Warhead@7FlashEffect": {
+      "_": "FlashEffect",
+      "Duration": "20",
+      "FlashType": "Nuke"
+    }
+  },
+  "MiniNuke": {
+    "ValidTargets": "Ground, GroundActor, Trees, Water, WaterActor, Underwater, Air, AirborneActor",
+    "Warhead@1Dam_impact": {
+      "_": "SpreadDamage",
+      "Spread": "1c0",
+      "Damage": "15000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Wood": "40",
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Res_impact": {
+      "_": "DestroyResource",
+      "Size": "1"
+    },
+    "Warhead@3Eff_impact": {
+      "_": "CreateEffect",
+      "Explosions": "nuke",
+      "ImpactSounds": "kaboom1.aud",
+      "ImpactActors": "false"
+    },
+    "Warhead@4Dam_areanuke1": {
+      "_": "SpreadDamage",
+      "Spread": "2c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "5",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Wood": "55",
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@5Res_areanuke1": {
+      "_": "DestroyResource",
+      "Size": "2",
+      "Delay": "5"
+    },
+    "Warhead@6Eff_areanuke1": {
+      "_": "CreateEffect",
+      "ImpactSounds": "kaboom22.aud",
+      "Delay": "5",
+      "ImpactActors": "false"
+    },
+    "Warhead@7Dam_areanuke2": {
+      "_": "SpreadDamage",
+      "Spread": "3c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "10",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Wood": "50",
+        "Tree": "200",
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@9Res_areanuke2": {
+      "_": "DestroyResource",
+      "Size": "3",
+      "Delay": "10"
+    },
+    "Warhead@10Dam_areanuke3": {
+      "_": "SpreadDamage",
+      "Spread": "4c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "15",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater",
+      "Versus": {
+        "Tree": "300",
+        "Concrete": "25"
+      },
+      "AffectsParent": "true",
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@12Res_areanuke3": {
+      "_": "DestroyResource",
+      "Size": "4",
+      "Delay": "15"
+    },
+    "Warhead@13Smu_areanuke3": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "4",
+      "Delay": "15"
+    },
+    "Warhead@14FlashEffect": {
+      "_": "FlashEffect",
+      "Duration": "20",
+      "FlashType": "Nuke"
+    }
+  },
+  "Maverick": {
+    "ReloadDelay": "50",
+    "Range": "9c0",
+    "MinRange": "2c0",
+    "Report": "missile7.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "256",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "316",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "20",
+      "RangeLimit": "14c410",
+      "CruiseAltitude": "2c0"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "7000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "30",
+        "Wood": "90",
+        "Light": "90",
+        "Heavy": "115",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "7"
+  },
+  "Dragon": {
+    "ReloadDelay": "50",
+    "Range": "5c0",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "213",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "20",
+      "RangeLimit": "6c0",
+      "TrailImage": "smokey"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "34",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "HellfireAG": {
+    "ReloadDelay": "34",
+    "Range": "5c0",
+    "MinRange": "1c256",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "256",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "40",
+      "RangeLimit": "8c512"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "30",
+        "Wood": "90",
+        "Light": "90",
+        "Heavy": "100",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "10"
+  },
+  "HellfireAA": {
+    "ReloadDelay": "30",
+    "Range": "4c0",
+    "MinRange": "1c256",
+    "Report": "missile6.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "492",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "100",
+      "RangeLimit": "7c0",
+      "CloseEnough": "0c600"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "3000",
+      "ValidTargets": "AirborneActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "100",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion_air",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees",
+      "ImpactActors": "false"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "10"
+  },
+  "MammothTusk": {
+    "ReloadDelay": "60",
+    "Range": "6c512",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "AirborneActor, Infantry",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "341",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "60",
+      "RangeLimit": "9c614"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "256",
+      "Damage": "5000",
+      "ValidTargets": "AirborneActor, Infantry",
+      "Versus": {
+        "None": "100",
+        "Wood": "74",
+        "Light": "60",
+        "Heavy": "24",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom12.aud",
+      "ValidTargets": "Ground, GroundActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "Warhead@5EffAir": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion_air",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Air, AirborneActor"
+    }
+  },
+  "Nike": {
+    "ReloadDelay": "15",
+    "Range": "7c512",
+    "MinRange": "0c512",
+    "Report": "missile1.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "341",
+      "Arm": "3",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "0",
+      "Image": "MISSILE",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "100",
+      "RangeLimit": "11c0"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "4500",
+      "ValidTargets": "AirborneActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "100",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion_air",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees",
+      "ImpactActors": "false"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "RedEye": {
+    "ReloadDelay": "50",
+    "Range": "7c512",
+    "MinRange": "0c512",
+    "Report": "missile1.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "298",
+      "Arm": "3",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "0",
+      "Image": "MISSILE",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "80",
+      "RangeLimit": "9c0"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "2400",
+      "ValidTargets": "AirborneActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "100",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion_air",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees",
+      "ImpactActors": "false"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "Stinger": {
+    "ReloadDelay": "60",
+    "Range": "7c512",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "170",
+      "Arm": "3",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "0",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "80",
+      "RangeLimit": "9c512",
+      "CloseEnough": "149"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "36",
+        "Wood": "88",
+        "Light": "66",
+        "Heavy": "120",
+        "Concrete": "60"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "0",
+    "InvalidTargets": "Underwater"
+  },
+  "StingerAA": {
+    "ReloadDelay": "60",
+    "Range": "7c512",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "255",
+      "Arm": "3",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "0",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "80",
+      "RangeLimit": "9c512",
+      "CloseEnough": "298"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1650",
+      "ValidTargets": "AirborneActor",
+      "Versus": {
+        "None": "36",
+        "Wood": "88",
+        "Light": "100",
+        "Heavy": "120",
+        "Concrete": "60"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion_air",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "0",
+    "InvalidTargets": "Underwater"
+  },
+  "APTusk": {
+    "ReloadDelay": "60",
+    "Range": "6c0",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "298",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "40",
+      "RangeLimit": "7c204",
+      "TrailImage": "smokey"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "34",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "0"
+  },
+  "APTusk.stnk": {
+    "ReloadDelay": "100",
+    "Range": "6c0",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "298",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "10",
+      "Inaccuracy": "128",
+      "Image": "DRAGON",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "40",
+      "RangeLimit": "7c204",
+      "TrailImage": "smokey"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "5000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "10",
+        "Wood": "74",
+        "Light": "34",
+        "Heavy": "100",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "kaboom25.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "med_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "1",
+    "BurstDelays": "0"
+  },
+  "TorpTube": {
+    "ReloadDelay": "100",
+    "Range": "9c0",
+    "Report": "torpedo1.aud",
+    "ValidTargets": "Water, WaterActor, Underwater, Bridge",
+    "Burst": "2",
+    "BurstDelays": "15",
+    "Projectile": {
+      "_": "Missile",
+      "Image": "torpedo",
+      "Arm": "3",
+      "Speed": "85",
+      "TrailImage": "bubbles",
+      "HorizontalRateOfTurn": "4",
+      "RangeLimit": "10c819",
+      "BoundToTerrainType": "Water",
+      "Palette": "shadow",
+      "MaximumLaunchAngle": "0",
+      "CruiseAltitude": "0"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "18000",
+      "ValidTargets": "WaterActor, Underwater, Bridge",
+      "Versus": {
+        "Wood": "75",
+        "Light": "75",
+        "Heavy": "100",
+        "Concrete": "500"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, WaterActor, Underwater, GroundActor, Bridge"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "SubMissile": {
+    "ReloadDelay": "300",
+    "Range": "20c0",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "80",
+        "Wood": "50",
+        "Light": "48",
+        "Heavy": "30",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "TargetActorCenter": "true",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "215",
+      "Blockable": "false",
+      "LaunchAngle": "120",
+      "Inaccuracy": "0c614",
+      "Image": "MISSILE",
+      "Shadow": "True",
+      "TrailImage": "smokey",
+      "ContrailLength": "30"
+    }
+  },
+  "SubMissileAA": {
+    "ReloadDelay": "300",
+    "Range": "8c0",
+    "MinRange": "0c512",
+    "Report": "missile6.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": {
+      "_": "Missile",
+      "Speed": "234",
+      "Arm": "2",
+      "Blockable": "false",
+      "ContrailLength": "30",
+      "Inaccuracy": "0c614",
+      "Image": "MISSILE",
+      "Shadow": "True",
+      "HorizontalRateOfTurn": "60",
+      "RangeLimit": "9c0",
+      "TrailImage": "smokey"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "426",
+      "Damage": "450",
+      "ValidTargets": "AirborneActor",
+      "Versus": {
+        "None": "80",
+        "Wood": "50",
+        "Light": "100",
+        "Heavy": "30",
+        "Concrete": "100"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2"
+  },
+  "SCUD": {
+    "ReloadDelay": "215",
+    "Range": "10c0",
+    "MinRange": "4c0",
+    "Report": "missile1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "341",
+      "Damage": "4500",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "90",
+        "Wood": "75",
+        "Light": "70",
+        "Heavy": "40",
+        "Concrete": "100",
+        "Tree": "75"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, SmallExplosionDeath, Incendiary",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ValidTargets": "Ground, Air, GroundActor, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "large_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "170",
+      "Blockable": "false",
+      "TrailImage": "smokey",
+      "TrailDelay": "5",
+      "Inaccuracy": "213",
+      "Image": "V2",
+      "Shadow": "True",
+      "LaunchAngle": "62"
+    }
+  },
+  "FireballLauncher": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor, Trees",
+    "ReloadDelay": "70",
+    "Range": "5c0",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "15000",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "90",
+        "Wood": "50",
+        "Tree": "50",
+        "Light": "50",
+        "Heavy": "25",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "InvalidTargets": "Structure, Wall"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ImpactActors": "false"
+    },
+    "Burst": "2",
+    "BurstDelays": "20",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "250",
+      "TrailImage": "fb2",
+      "Image": "FB1"
+    }
+  },
+  "Flamer": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor, Trees",
+    "ReloadDelay": "50",
+    "Range": "5c0",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "341",
+      "Damage": "1000",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "70",
+        "Wood": "80",
+        "Tree": "80",
+        "Light": "40",
+        "Heavy": "20",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "InvalidTargets": "Structure, Wall",
+      "Chance": "15"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ImpactActors": "false"
+    },
+    "Burst": "15",
+    "BurstDelays": "1",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "170",
+      "TrailImage": "fb4",
+      "Image": "fb3",
+      "LaunchAngle": "62",
+      "Inaccuracy": "853"
+    }
+  },
+  "Napalm": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor, Trees",
+    "ReloadDelay": "20",
+    "Range": "4c512",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "170",
+      "Damage": "10000",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "90",
+        "Wood": "100",
+        "Tree": "50",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "50"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "InvalidTargets": "Structure, Wall"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ImpactActors": "false"
+    },
+    "Projectile": {
+      "_": "Bullet",
+      "Image": "BOMBLET",
+      "Speed": "85",
+      "Blockable": "false"
+    }
+  },
+  "TeslaZap": {
+    "ReloadDelay": "3",
+    "Range": "7c0",
+    "Report": "tesla1.aud",
+    "Projectile": "TeslaZap",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "42",
+      "Damage": "10000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "1000",
+        "Wood": "60"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ElectricityDeath"
+    }
+  },
+  "PortaTesla": {
+    "ReloadDelay": "70",
+    "Range": "6c0",
+    "Report": "tesla1.aud",
+    "Projectile": "TeslaZap",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "42",
+      "Damage": "4500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "1000",
+        "Wood": "73",
+        "Heavy": "60"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ElectricityDeath"
+    }
+  },
+  "TTankZap": {
+    "ReloadDelay": "120",
+    "Range": "7c0",
+    "Report": "tesla1.aud",
+    "Projectile": "TeslaZap",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "42",
+      "Damage": "10000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "1000"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ElectricityDeath"
+    }
+  },
+  "DogJaw": {
+    "ValidTargets": "Infantry",
+    "ReloadDelay": "10",
+    "Range": "3c0",
+    "Report": "dogg5p.aud",
+    "TargetActorCenter": "true",
+    "Projectile": "InstantHit",
+    "Warhead@1Dam": {
+      "_": "TargetDamage",
+      "Damage": "100000",
+      "ValidTargets": "Infantry",
+      "InvalidTargets": "Ant",
+      "DamageTypes": "DefaultDeath"
+    }
+  },
+  "Heal": {
+    "ReloadDelay": "80",
+    "Range": "4c0",
+    "Report": "heal2.aud",
+    "ValidTargets": "Heal",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "1c682"
+    },
+    "Warhead@1Eff": {
+      "_": "FlashTargetsInRadius",
+      "Radius": "1065",
+      "ValidRelationships": "Ally",
+      "ValidTargets": "Heal"
+    },
+    "Warhead@2Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "-5000",
+      "ValidRelationships": "Ally",
+      "ValidTargets": "Heal",
+      "DebugOverlayColor": "00FF00"
+    }
+  },
+  "Repair": {
+    "ReloadDelay": "80",
+    "Range": "4c0",
+    "Report": "fixit1.aud",
+    "ValidTargets": "Repair",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "1c682"
+    },
+    "Warhead@1Eff": {
+      "_": "FlashTargetsInRadius",
+      "Radius": "1065",
+      "ValidRelationships": "Ally",
+      "ValidTargets": "Repair"
+    },
+    "Warhead@2Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "-2000",
+      "ValidRelationships": "Ally",
+      "ValidTargets": "Repair",
+      "DebugOverlayColor": "00FF00"
+    }
+  },
+  "Demolish": {
+    "ValidTargets": "GroundActor, WaterActor",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "DamageTypes": "DefaultDeath",
+      "ValidTargets": "GroundActor, WaterActor"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "building",
+      "ImpactSounds": "kaboom25.aud"
+    }
+  },
+  "Claw": {
+    "ReloadDelay": "30",
+    "Range": "1c512",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "1c682"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "3000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "97",
+        "Wood": "10",
+        "Light": "30",
+        "Heavy": "10",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    }
+  },
+  "Mandible": {
+    "ReloadDelay": "10",
+    "Range": "1c512",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "1c682"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "6000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "90",
+        "Wood": "10",
+        "Light": "30",
+        "Heavy": "10",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Burst": "2",
+    "BurstDelays": "14",
+    "StartBurstReport": "antbite.aud"
+  },
+  "MandibleHeavy": {
+    "ReloadDelay": "15",
+    "Range": "1c512",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "1c682"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "10000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "100",
+        "Wood": "10",
+        "Light": "90",
+        "Heavy": "35",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Burst": "2",
+    "BurstDelays": "20",
+    "StartBurstReport": "antbite.aud"
+  },
+  "AntFireball": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor, Trees",
+    "ReloadDelay": "50",
+    "Range": "4c0",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "4000",
+      "ValidTargets": "GroundActor, WaterActor, Trees",
+      "Versus": {
+        "None": "80",
+        "Wood": "85",
+        "Tree": "50",
+        "Light": "45",
+        "Heavy": "20",
+        "Concrete": "15"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "InvalidTargets": "Structure, Wall"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "napalm",
+      "ImpactSounds": "firebl3.aud",
+      "ImpactActors": "false"
+    },
+    "Burst": "2",
+    "BurstDelays": "20",
+    "Projectile": {
+      "_": "Bullet",
+      "Speed": "200",
+      "TrailImage": "fb2",
+      "Image": "FB1"
+    },
+    "Report": "antbite.aud"
+  },
+  "DemoTruckTargeting": {
+    "ValidTargets": "DetonateAttack",
+    "Range": "2c0",
+    "Projectile": "InstantHit",
+    "Warhead@1Dam": {
+      "_": "TargetDamage",
+      "ValidTargets": "DetonateAttack"
+    }
+  },
+  "MADTankThump": {
+    "ValidTargets": "GroundActor, WaterActor",
+    "InvalidTargets": "MADTank, Infantry",
+    "Warhead@1Dam": {
+      "_": "HealthPercentageDamage",
+      "Spread": "7c0",
+      "Damage": "1",
+      "ValidTargets": "GroundActor, WaterActor",
+      "InvalidTargets": "MADTank, Infantry"
+    },
+    "Warhead@Shake": {
+      "_": "ShakeScreen",
+      "Duration": "10",
+      "Intensity": "3",
+      "Multiplier": "1,0"
+    }
+  },
+  "MADTankDetonate": {
+    "ValidTargets": "GroundActor, WaterActor",
+    "InvalidTargets": "MADTank, Infantry",
+    "Warhead@1Dam": {
+      "_": "HealthPercentageDamage",
+      "Spread": "7c0",
+      "Damage": "19",
+      "ValidTargets": "GroundActor, WaterActor",
+      "InvalidTargets": "MADTank, Infantry"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "Size": "7,6"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "med_explosion",
+      "ImpactSounds": "mineblo1.aud",
+      "ImpactActors": "false"
+    }
+  },
+  "ZSU-23": {
+    "ReloadDelay": "6",
+    "Range": "10c0",
+    "Report": "aacanon3.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": "InstantHit",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "900",
+      "ValidTargets": "AirborneActor",
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion_air",
+      "ValidTargets": "Air, Ground, Water, Trees"
+    },
+    "Burst": "2",
+    "BurstDelays": "0"
+  },
+  "FLAK-23-AA": {
+    "ReloadDelay": "10",
+    "Range": "8c0",
+    "Report": "aacanon3.aud",
+    "ValidTargets": "AirborneActor",
+    "Projectile": "InstantHit",
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "1200",
+      "ValidTargets": "AirborneActor",
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "small_explosion_air",
+      "ValidTargets": "Air, Ground, Water, Trees"
+    }
+  },
+  "FLAK-23-AG": {
+    "ReloadDelay": "10",
+    "Range": "6c0",
+    "Report": "aacanon3.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "213",
+      "Damage": "2000",
+      "ValidTargets": "AirborneActor, GroundActor, WaterActor",
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath",
+      "Versus": {
+        "None": "40",
+        "Wood": "10",
+        "Light": "60",
+        "Heavy": "10",
+        "Concrete": "20"
+      }
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "flak_explosion_ground",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    }
+  },
+  "Vulcan": {
+    "ReloadDelay": "35",
+    "Range": "6c0",
+    "Report": "gun13.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Warhead@4Dam_2": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "Delay": "2",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@4Eff_2": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Delay": "2"
+    },
+    "Warhead@4Eff_2Water": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Delay": "2"
+    },
+    "Warhead@5Dam_3": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "Delay": "4",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@6Eff_3": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Delay": "4"
+    },
+    "Warhead@6Eff_3Water": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Delay": "4"
+    },
+    "Warhead@7Dam_4": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "Delay": "6",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@8Eff_4": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Delay": "6"
+    },
+    "Warhead@8Eff_4Water": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Delay": "6"
+    },
+    "Warhead@9Dam_5": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "Delay": "8",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@10Eff_5": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Delay": "8"
+    },
+    "Warhead@10Eff_5Water": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Delay": "8"
+    },
+    "Warhead@11Dam_6": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "Delay": "10",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "200",
+        "Wood": "50",
+        "Light": "50",
+        "Heavy": "20",
+        "Concrete": "20"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@12Eff_6": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Delay": "10"
+    },
+    "Warhead@12Eff_6Water": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Delay": "10"
+    }
+  },
+  "ChainGun": {
+    "ReloadDelay": "10",
+    "Range": "5c0",
+    "Report": "gun13.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "false"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "2500",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "144",
+        "Wood": "60",
+        "Light": "72",
+        "Heavy": "28",
+        "Concrete": "28"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "0",
+    "MinRange": "0c768"
+  },
+  "ChainGun.Yak": {
+    "ReloadDelay": "3",
+    "Range": "5c0",
+    "Report": "gun13.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "false"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "4000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "100",
+        "Wood": "50",
+        "Light": "60",
+        "Heavy": "25",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, BulletDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piffs",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piffs",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge"
+    },
+    "Burst": "2",
+    "BurstDelays": "0",
+    "MinRange": "2c512"
+  },
+  "Pistol": {
+    "ReloadDelay": "7",
+    "Range": "3c0",
+    "Report": "gun27.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "100",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "100",
+        "Wood": "10",
+        "Light": "40",
+        "Heavy": "10",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Inaccuracy": "128"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piff",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Inaccuracy": "128"
+    }
+  },
+  "M1Carbine": {
+    "ReloadDelay": "20",
+    "Range": "5c0",
+    "Report": "gun11.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "150",
+        "Wood": "30",
+        "Light": "40",
+        "Heavy": "10",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Inaccuracy": "171"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piff",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Inaccuracy": "171"
+    },
+    "Warhead@2Eff2": {
+      "_": "CreateEffect",
+      "Delay": "2",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Inaccuracy": "171"
+    },
+    "Warhead@3EffWater2": {
+      "_": "CreateEffect",
+      "Delay": "2",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Explosions": "water_piff",
+      "Inaccuracy": "171"
+    },
+    "Warhead@2Eff3": {
+      "_": "CreateEffect",
+      "Delay": "4",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Inaccuracy": "171"
+    },
+    "Warhead@3EffWater3": {
+      "_": "CreateEffect",
+      "Delay": "4",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Explosions": "water_piff",
+      "Inaccuracy": "171"
+    }
+  },
+  "M60mg": {
+    "ReloadDelay": "30",
+    "Range": "4c0",
+    "Report": "pillbox1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "1000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "150",
+        "Wood": "10",
+        "Light": "30",
+        "Heavy": "10",
+        "Concrete": "10"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees",
+      "Inaccuracy": "213"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piff",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Bridge",
+      "Inaccuracy": "213"
+    },
+    "Burst": "5"
+  },
+  "SilencedPPK": {
+    "ReloadDelay": "80",
+    "Range": "2c512",
+    "Report": "silppk.aud",
+    "ValidTargets": "Ground, Infantry, Barrel",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "128",
+      "Damage": "15000",
+      "ValidTargets": "Barrel, Infantry",
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piff",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Ship, Structure, Bridge"
+    }
+  },
+  "Colt45": {
+    "ReloadDelay": "7",
+    "Range": "7c0",
+    "Report": "gun5.aud",
+    "ValidTargets": "Ground, Infantry, Barrel",
+    "Projectile": {
+      "_": "InstantHit",
+      "Blockable": "true"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "42",
+      "Damage": "10000",
+      "ValidTargets": "Barrel, Infantry",
+      "DamageTypes": "Prone50Percent, TriggerProne, DefaultDeath"
+    },
+    "Warhead@2Eff": {
+      "_": "CreateEffect",
+      "Explosions": "piff",
+      "ValidTargets": "Ground, GroundActor, Air, AirborneActor, WaterActor, Trees"
+    },
+    "Warhead@3EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "water_piff",
+      "ValidTargets": "Water, Underwater",
+      "InvalidTargets": "Ship, Structure, Bridge"
+    }
+  },
+  "ParaBomb": {
+    "ReloadDelay": "8",
+    "Range": "6c0",
+    "Report": "chute1.aud",
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor",
+    "Projectile": {
+      "_": "GravityBomb",
+      "Image": "PARABOMB",
+      "OpenSequence": "open",
+      "Velocity": "0, 0, -50",
+      "Acceleration": "0, 0, 0",
+      "Shadow": "False"
+    },
+    "Warhead@1Dam": {
+      "_": "SpreadDamage",
+      "Spread": "1000",
+      "Damage": "30000",
+      "ValidTargets": "GroundActor, WaterActor",
+      "Versus": {
+        "None": "40",
+        "Wood": "60",
+        "Light": "75",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, ExplosionDeath"
+    },
+    "Warhead@2Smu": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Crater",
+      "ValidTargets": "Ground, Infantry"
+    },
+    "Warhead@3Eff": {
+      "_": "CreateEffect",
+      "Explosions": "artillery_explosion",
+      "ImpactSounds": "kaboom15.aud",
+      "ValidTargets": "Ground, GroundActor, WaterActor, Trees"
+    },
+    "Warhead@4EffWater": {
+      "_": "CreateEffect",
+      "Explosions": "small_splash",
+      "ImpactSounds": "splash9.aud",
+      "ValidTargets": "Water, Underwater"
+    }
+  },
+  "Atomic": {
+    "ValidTargets": "Ground, Water, GroundActor, WaterActor, Underwater, AirborneActor, Trees",
+    "Warhead@1Dam_impact": {
+      "_": "SpreadDamage",
+      "Spread": "1c0",
+      "Damage": "15000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "ValidTargets": "GroundActor, WaterActor, Underwater, AirborneActor, Trees",
+      "Versus": {
+        "Wood": "25",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@2Res_impact": {
+      "_": "DestroyResource",
+      "Size": "1"
+    },
+    "Warhead@3Smu_impact": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "1"
+    },
+    "Warhead@4Eff_impact": {
+      "_": "CreateEffect",
+      "Explosions": "nuke",
+      "ImpactSounds": "kaboom1.aud",
+      "ImpactActors": "false",
+      "ValidTargets": "Ground, Water, Air"
+    },
+    "Warhead@5Dam_areanuke1": {
+      "_": "SpreadDamage",
+      "Spread": "2c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "5",
+      "ValidTargets": "GroundActor, WaterActor, Underwater, AirborneActor, Trees",
+      "Versus": {
+        "Wood": "25",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@6Res_areanuke1": {
+      "_": "DestroyResource",
+      "Size": "2",
+      "Delay": "5"
+    },
+    "Warhead@7Smu_areanuke1": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "2",
+      "Delay": "5"
+    },
+    "Warhead@8Eff_areanuke1": {
+      "_": "CreateEffect",
+      "ImpactSounds": "kaboom22.aud",
+      "Delay": "5",
+      "ImpactActors": "false"
+    },
+    "Warhead@9Dam_areanuke2": {
+      "_": "SpreadDamage",
+      "Spread": "3c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "10",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Wood": "50",
+        "Tree": "200",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@11Res_areanuke2": {
+      "_": "DestroyResource",
+      "Size": "3",
+      "Delay": "10"
+    },
+    "Warhead@12Smu_areanuke2": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "3",
+      "Delay": "10"
+    },
+    "Warhead@13Dam_areanuke3": {
+      "_": "SpreadDamage",
+      "Spread": "4c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "15",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Tree": "200",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@15Res_areanuke3": {
+      "_": "DestroyResource",
+      "Size": "4",
+      "Delay": "15"
+    },
+    "Warhead@16Smu_areanuke3": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "4",
+      "Delay": "15"
+    },
+    "Warhead@17Dam_areanuke4": {
+      "_": "SpreadDamage",
+      "Spread": "5c0",
+      "Damage": "6000",
+      "Falloff": "1000, 368, 135, 50, 18, 7, 0",
+      "Delay": "20",
+      "ValidTargets": "GroundActor, Trees, WaterActor, Underwater, AirborneActor",
+      "Versus": {
+        "Tree": "200",
+        "Concrete": "25"
+      },
+      "DamageTypes": "Prone50Percent, TriggerProne, FireDeath, Incendiary"
+    },
+    "Warhead@19Res_areanuke4": {
+      "_": "DestroyResource",
+      "Size": "5",
+      "Delay": "20"
+    },
+    "Warhead@20Smu_areanuke4": {
+      "_": "LeaveSmudge",
+      "SmudgeType": "Scorch",
+      "ValidTargets": "Ground, Infantry",
+      "Size": "5",
+      "Delay": "20"
+    },
+    "Warhead@21Shake": {
+      "_": "ShakeScreen",
+      "Duration": "20",
+      "Intensity": "5",
+      "Multiplier": "1,1"
+    },
+    "Warhead@22FlashEffect": {
+      "_": "FlashEffect",
+      "Duration": "20",
+      "FlashType": "Nuke"
+    }
+  }
+}

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-labelledby="title desc">
+  <title id="title">WebRA</title>
+  <desc id="desc">Red Alert in your browser. Rust + WebAssembly + WebGPU. A flat top-down battlefield with blue and red tanks, a base building and ore fields.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#2c3a22" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0d0f0b" stop-opacity="0.97"/>
+      <stop offset="0.48" stop-color="#0d0f0b" stop-opacity="0.85"/>
+      <stop offset="0.62" stop-color="#0d0f0b" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="titleFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff5a3c"/>
+      <stop offset="1" stop-color="#c41a12"/>
+    </linearGradient>
+    <g id="tank">
+      <rect x="-20" y="-15" width="40" height="30" rx="3"/>
+      <rect x="-22" y="-17" width="44" height="7" fill="#1b1b1b"/>
+      <rect x="-22" y="10" width="44" height="7" fill="#1b1b1b"/>
+    </g>
+    <g id="turret">
+      <circle r="9"/>
+      <rect x="0" y="-3" width="26" height="6"/>
+    </g>
+  </defs>
+
+  <!-- ground -->
+  <rect width="1280" height="400" fill="#3b4a2c"/>
+  <path d="M700 0H1280V400H640C690 330 660 250 720 190C770 140 690 60 700 0Z" fill="#46562f"/>
+  <path d="M980 400C1000 340 1080 330 1120 290C1170 240 1230 260 1280 230V400Z" fill="#2a5d7a"/>
+  <path d="M1010 400C1030 355 1095 345 1130 312C1175 272 1230 285 1280 262" fill="none" stroke="#3b7da0" stroke-width="4"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+
+  <!-- rocks and trees -->
+  <g fill="#6b6457">
+    <path d="M1180 40l30 -14l34 10l8 30l-28 18l-36 -6z"/>
+    <path d="M860 340l22 -10l20 8l2 20l-26 8z"/>
+  </g>
+  <g fill="#244a1c">
+    <circle cx="1230" cy="140" r="16"/>
+    <circle cx="1252" cy="160" r="13"/>
+    <circle cx="1212" cy="168" r="12"/>
+    <circle cx="690" cy="40" r="14"/>
+    <circle cx="712" cy="58" r="11"/>
+  </g>
+
+  <!-- ore field -->
+  <g fill="#d9a521">
+    <circle cx="880" cy="70" r="6"/><circle cx="902" cy="62" r="5"/><circle cx="925" cy="78" r="7"/>
+    <circle cx="896" cy="90" r="6"/><circle cx="918" cy="104" r="5"/><circle cx="944" cy="96" r="6"/>
+    <circle cx="866" cy="96" r="4"/><circle cx="952" cy="68" r="4"/><circle cx="938" cy="120" r="5"/>
+    <circle cx="884" cy="118" r="5"/><circle cx="910" cy="132" r="4"/>
+  </g>
+  <g fill="#f2cf5b">
+    <circle cx="882" cy="68" r="2"/><circle cx="927" cy="76" r="2.5"/><circle cx="898" cy="88" r="2"/><circle cx="946" cy="94" r="2"/>
+  </g>
+
+  <!-- allied base building (blue) -->
+  <g transform="translate(1040 120)">
+    <rect x="-6" y="70" width="140" height="18" fill="#5a5a4e"/>
+    <rect x="0" y="0" width="128" height="76" fill="#8a8f96"/>
+    <rect x="0" y="0" width="128" height="14" fill="#2d6fd6"/>
+    <rect x="16" y="28" width="38" height="34" fill="#4b5058"/>
+    <rect x="70" y="28" width="42" height="12" fill="#c9ced4"/>
+    <rect x="70" y="46" width="42" height="12" fill="#c9ced4"/>
+    <rect x="98" y="-26" width="12" height="30" fill="#6c7178"/>
+  </g>
+
+  <!-- ore truck -->
+  <g transform="translate(980 110) rotate(160)" fill="#2d6fd6">
+    <rect x="-22" y="-13" width="44" height="26" rx="3"/>
+    <rect x="-22" y="-13" width="16" height="26" fill="#8fb8f5"/>
+    <rect x="-2" y="-9" width="20" height="18" fill="#d9a521"/>
+  </g>
+
+  <!-- blue tanks -->
+  <g fill="#2d6fd6">
+    <g transform="translate(860 230) rotate(200)"><use href="#tank"/></g>
+    <g transform="translate(940 290) rotate(185)"><use href="#tank"/></g>
+    <g transform="translate(1010 230) rotate(190)"><use href="#tank"/></g>
+  </g>
+  <g fill="#8fb8f5">
+    <g transform="translate(860 230) rotate(205)"><use href="#turret"/></g>
+    <g transform="translate(940 290) rotate(178)"><use href="#turret"/></g>
+    <g transform="translate(1010 230) rotate(196)"><use href="#turret"/></g>
+  </g>
+
+  <!-- red tanks -->
+  <g fill="#c41a12">
+    <g transform="translate(700 250) rotate(10)"><use href="#tank"/></g>
+    <g transform="translate(740 330) rotate(-5)"><use href="#tank"/></g>
+  </g>
+  <g fill="#ff7b66">
+    <g transform="translate(700 250) rotate(14)"><use href="#turret"/></g>
+    <g transform="translate(740 330) rotate(-12)"><use href="#turret"/></g>
+  </g>
+
+  <!-- red infantry -->
+  <g fill="#c41a12">
+    <circle cx="790" cy="200" r="6"/><circle cx="806" cy="214" r="6"/><circle cx="782" cy="222" r="6"/>
+  </g>
+
+  <!-- tracer and impact -->
+  <path d="M726 254L838 236" stroke="#ffe08a" stroke-width="3" stroke-linecap="round"/>
+  <g transform="translate(846 234)">
+    <circle r="16" fill="#ff8a1f"/>
+    <circle r="9" fill="#ffd34d"/>
+    <circle r="4" fill="#fff6d6"/>
+  </g>
+
+  <!-- selection box -->
+  <g fill="none" stroke="#7dff7a" stroke-width="2">
+    <path d="M684 230v-8h8M716 230v-8h-8M684 270v8h8M716 270v8h-8"/>
+  </g>
+  <rect x="684" y="218" width="32" height="3" fill="#7dff7a"/>
+
+  <!-- left fade for text -->
+  <rect width="1280" height="400" fill="url(#fade)"/>
+
+  <!-- frame -->
+  <rect x="6" y="6" width="1268" height="388" fill="none" stroke="#c41a12" stroke-width="4"/>
+  <rect x="14" y="14" width="1252" height="372" fill="none" stroke="#5a1410" stroke-width="2"/>
+
+  <!-- title -->
+  <g font-family="Impact, Haettenschweiler, 'Arial Black', sans-serif">
+    <text x="78" y="214" font-size="168" fill="#2a0806" letter-spacing="4">WebRA</text>
+    <text x="70" y="206" font-size="168" fill="url(#titleFill)" stroke="#ffd0c4" stroke-width="2" letter-spacing="4">WebRA</text>
+  </g>
+  <rect x="72" y="236" width="420" height="6" fill="#c41a12"/>
+  <rect x="500" y="236" width="40" height="6" fill="#d9a521"/>
+  <g font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-weight="bold">
+    <text x="72" y="286" font-size="30" fill="#f2efe6">Red Alert in your browser.</text>
+    <text x="72" y="326" font-size="22" fill="#b9b4a6" letter-spacing="1">Rust + WebAssembly + WebGPU</text>
+  </g>
+</svg>

@@ -1,0 +1,189 @@
+/* Page layout, menu and HUD. The sidebar has its own stylesheet. */
+
+:root {
+  --bg: #0d0f0c;
+  --panel: #1b1f19;
+  --panel-edge: #343b2f;
+  --text: #e6e4d6;
+  --muted: #9c9a8a;
+  --accent: #d9b23a;
+  --danger: #e2503c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+#field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 3px;
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  color: #cfd8c4;
+  pointer-events: none;
+}
+
+/* ---- Menu and game over -------------------------------------------------- */
+
+#menu,
+#gameover {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    radial-gradient(ellipse at top, #263022, var(--bg) 70%);
+}
+
+#gameover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.menu-card {
+  width: min(440px, 100%);
+  padding: 24px 28px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-top: 3px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.menu-card h1 {
+  margin: 0;
+  font: 900 44px/1 Impact, 'Arial Black', sans-serif;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.menu-card h1 span {
+  color: var(--danger);
+}
+
+.menu-card h2 {
+  margin: 22px 0 8px;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.tagline,
+.hint {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.menu-card label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.menu-card select,
+.menu-card input {
+  width: 200px;
+  padding: 6px 8px;
+  background: #11140f;
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font: inherit;
+}
+
+.menu-card button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  background: #2b3226;
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font: 700 14px system-ui, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.menu-card button.primary {
+  background: #7a2a20;
+  border-color: #a63a2c;
+}
+
+.menu-card button:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.menu-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controls {
+  margin-top: 18px;
+  color: var(--muted);
+}
+
+.controls summary {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.controls ul {
+  padding-left: 18px;
+}
+
+@media (max-width: 720px) {
+  #app {
+    flex-direction: column;
+  }
+  #sidebar {
+    width: 100% !important;
+    height: 40vh;
+  }
+}

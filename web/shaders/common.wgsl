@@ -1,0 +1,34 @@
+// Shared by every shader (prepended at load time).
+struct Globals {
+    view_size: vec2f,  // render target size in device pixels
+    camera: vec2f,     // world pixel at the top-left of the view
+    zoom: f32,         // device pixels per world pixel
+    time: f32,         // seconds
+    map_size: vec2f,   // map size in cells
+    team_colors: array<vec4f, 8>,
+};
+
+@group(0) @binding(0) var<uniform> g: Globals;
+
+const CELL_PX: f32 = 24.0;
+
+fn world_to_clip(w: vec2f) -> vec4f {
+    let s = (w - g.camera) * g.zoom;
+    return vec4f(s.x / g.view_size.x * 2.0 - 1.0, 1.0 - s.y / g.view_size.y * 2.0, 0.0, 1.0);
+}
+
+fn hash2(p: vec2f) -> f32 {
+    var q = fract(p * vec2f(123.34, 456.21));
+    q += dot(q, q + 45.32);
+    return fract(q.x * q.y);
+}
+
+struct FullscreenOut {
+    @builtin(position) pos: vec4f,
+};
+
+fn fullscreen_pos(i: u32) -> vec4f {
+    // One triangle that covers the screen.
+    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);
+}

@@ -1,0 +1,9 @@
+[package]
+name = "shader-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Parses and validates the WGSL shaders in web/js with naga"
+
+[dependencies]
+naga = { version = "30", features = ["wgsl-in"] }
