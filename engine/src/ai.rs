@@ -402,15 +402,18 @@ fn base_point(w: &World, player: u8) -> (i32, i32) {
     (cell_center(sx + 1), cell_center(sy + 2))
 }
 
-/// First visible enemy unit within `DEFEND_RADIUS` of a point.
+/// First enemy unit within `DEFEND_RADIUS` of a point that `player` can see
+/// and target. Mines, cloaked or submerged units and passengers do not count:
+/// the army could only rally to them and stand there.
 fn threat_near(w: &World, player: u8, at: (i32, i32)) -> Option<usize> {
     (0..w.actors.len()).find(|&i| {
         let a = &w.actors[i];
         a.alive
-            && a.kind != Kind::Building
+            && a.in_world()
+            && !matches!(a.kind, Kind::Building | Kind::Mine)
             && w.are_enemies(player, a.owner)
-            && w.is_visible_to(i, player)
             && dist(a.x, a.y, at.0, at.1) <= DEFEND_RADIUS
+            && w.targetable(i, player)
     })
 }
 
@@ -500,7 +503,7 @@ fn strength(w: &World, player: u8) -> i64 {
 /// it has no buildings left.
 fn distance_to_player(w: &World, from: (i32, i32), p: u8) -> i32 {
     let mut best: Option<(bool, i32)> = None;
-    for a in w.actors.iter().filter(|a| a.alive && a.owner == p) {
+    for a in w.actors.iter().filter(|a| a.alive && a.owner == p && a.in_world() && a.kind != Kind::Mine) {
         let key = (a.kind != Kind::Building, dist(from.0, from.1, a.x, a.y));
         if best.is_none_or(|b| key < b) {
             best = Some(key);
@@ -561,7 +564,9 @@ fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i3
             Some(t) => a.owner == t,
             None => w.are_enemies(player, a.owner) && !w.players[a.owner as usize].defeated,
         };
-        if !a.alive || !wanted {
+        // Buildings are known (like most skirmish AIs, it knows the bases);
+        // units only count when they are in the world and not mines.
+        if !a.alive || !wanted || !a.in_world() || a.kind == Kind::Mine {
             continue;
         }
         let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };

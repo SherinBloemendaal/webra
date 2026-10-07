@@ -825,6 +825,42 @@ fn ai_sends_idle_units_to_an_ally_whose_base_is_attacked() {
 }
 
 #[test]
+fn ai_ignores_enemies_it_cannot_see_or_target_near_its_base() {
+    // AI 0 with a few idle tanks (fewer than a wave) and two hidden enemies at its base.
+    let list = [("england", true, 0), ("france", false, 0)];
+    let mut w = World::with_options(2, 96, &setups(&list), opts());
+    let (ax, ay) = w.players[0].start;
+    let tanks = spawn_tanks(&mut w, 0, (ax + 1, ay + 6), 3);
+    let mine = w.spawn_unit(ty(&w, "MINV"), 1, cell_center(ax + 4), cell_center(ay + 8), 0);
+    w.actors[mine].ab.cloaked = true;
+    let stnk = w.spawn_unit(ty(&w, "STNK"), 1, cell_center(ax + 6), cell_center(ay + 6), 0);
+    w.actors[stnk].reload = [1_000_000; crate::world::MAX_WEAPONS];
+    w.actors[stnk].ab.cloaked = true;
+    let hidden = |w: &World| [mine, stnk].iter().map(|&h| (w.actors[h].x, w.actors[h].y)).collect::<Vec<_>>();
+    let rallied_to_hidden = |w: &World| {
+        tanks.iter().any(|&i| {
+            let a = &w.actors[i];
+            a.attack_move && hidden(w).iter().any(|&(hx, hy)| crate::math::dist(a.dest.0, a.dest.1, hx, hy) < CELL)
+        })
+    };
+    for _ in 0..25 * 4 {
+        w.step();
+        w.actors[stnk].ab.cloaked = true;
+        assert!(!rallied_to_hidden(&w), "the AI rallied to an enemy it cannot target");
+    }
+    assert!(!w.targetable(stnk, 0));
+    // Once the Phase Transport is visible, it is a threat.
+    w.actors[stnk].ab.cloaked = false;
+    run(&mut w, 30);
+    let (sx, sy) = (w.actors[stnk].x, w.actors[stnk].y);
+    assert!(
+        tanks.iter().any(|&i| w.actors[i].attack_move && crate::math::dist(w.actors[i].dest.0, w.actors[i].dest.1, sx, sy) < CELL)
+            || tanks.iter().any(|&i| w.actors[i].activity == Activity::Attack),
+        "a visible intruder pulls the tanks in"
+    );
+}
+
+#[test]
 fn ai_leaves_neutral_actors_alone() {
     use crate::mapdata::{MapActor, MapData};
     let m = crate::map::Map::generate_for(64, 64, 6, 12, 2);
