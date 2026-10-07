@@ -497,3 +497,150 @@ fn deploy_states_for_ability_units() {
     assert_eq!(w.ability_deploy_state(ml), Some(2), "no ammo");
     let _ = CELL;
 }
+
+// ---- Superweapons ---------------------------------------------------------------------
+
+/// Give `player` a powered structure `id` and a full charge on its power `key`.
+fn superweapon(w: &mut World, player: u8, id: &str, cx: i32, cy: i32, key: &str) {
+    for k in 0..3 {
+        let p = ty(w, "APWR");
+        w.spawn_building(p, player, cx + 4 + k * 3, cy);
+    }
+    let b = ty(w, id);
+    w.spawn_building(b, player, cx, cy);
+    w.refresh_tokens();
+    w.update_power();
+    run(w, 1);
+    let inst = w.powers.players[player as usize].iter_mut().find(|p| p.key == key).expect("power offered");
+    inst.remaining = 0;
+}
+
+fn power(w: &mut World, player: u8, key: &str, x: (i32, i32), src: Option<(i32, i32)>) {
+    w.queue_order(Order::SupportPower {
+        player,
+        key: key.into(),
+        x: cell_center(x.0),
+        y: cell_center(x.1),
+        x2: src.map(|s| cell_center(s.0)),
+        y2: src.map(|s| cell_center(s.1)),
+    });
+}
+
+#[test]
+fn chronosphere_shifts_vehicles_and_pulls_them_back_after_duration() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let key = "ChronoshiftPower@chronoshift";
+    superweapon(&mut w, 0, "PDOX", 8, 50, key);
+    let t1 = passive(&mut w, "2TNK", 0, 20, 20);
+    let t2 = passive(&mut w, "2TNK", 0, 21, 20);
+    let enemy = passive(&mut w, "3TNK", 1, 20, 21);
+    let soldier = passive(&mut w, "E1", 0, 19, 20);
+    let outside = passive(&mut w, "2TNK", 0, 22, 22);
+    run(&mut w, 1);
+    // Not ready: ignored.
+    w.powers.players[0].iter_mut().find(|p| p.key == key).unwrap().remaining = 5;
+    power(&mut w, 0, key, (40, 30), Some((20, 20)));
+    run(&mut w, 1);
+    assert_eq!(w.cell_of(w.actors[t1].x, w.actors[t1].y), (20, 20));
+    run(&mut w, 5);
+    power(&mut w, 0, key, (40, 30), Some((20, 20)));
+    run(&mut w, 1);
+    let cell = |w: &World, i: usize| w.cell_of(w.actors[i].x, w.actors[i].y);
+    assert_eq!(cell(&w, t1), (40, 30));
+    assert_eq!(cell(&w, t2), (41, 30));
+    assert_eq!(cell(&w, enemy), (40, 31), "enemy vehicles in the area go along");
+    assert_eq!(cell(&w, soldier), (19, 20), "infantry is not Chronoshiftable");
+    assert_eq!(cell(&w, outside), (22, 22), "outside the 3x3 plus footprint");
+    assert!(!w.powers.players[0].iter().find(|p| p.key == key).unwrap().ready(), "timer restarted");
+    run(&mut w, 400);
+    assert_eq!(cell(&w, t1), (20, 20), "back after Duration 400");
+    assert_eq!(cell(&w, enemy), (20, 21));
+}
+
+#[test]
+fn germany_gets_the_advanced_chronoshift() {
+    let mut w = flat_world(["germany", "soviet"]);
+    superweapon(&mut w, 0, "PDOX", 8, 50, "ChronoshiftPower@advancedchronoshift");
+    assert!(w.power_instances(0).iter().all(|p| p.key != "ChronoshiftPower@chronoshift"));
+    let far = passive(&mut w, "2TNK", 0, 22, 20);
+    run(&mut w, 1);
+    power(&mut w, 0, "ChronoshiftPower@advancedchronoshift", (40, 30), Some((20, 20)));
+    run(&mut w, 1);
+    assert_eq!(w.cell_of(w.actors[far].x, w.actors[far].y), (42, 30), "5x5 diamond reaches 2 cells out");
+}
+
+#[test]
+fn iron_curtain_blocks_damage_for_its_duration() {
+    let mut w = flat_world(["soviet", "allies"]);
+    let key = "GrantExternalConditionPower@IRONCURTAIN";
+    superweapon(&mut w, 0, "IRON", 8, 50, key);
+    let tank = passive(&mut w, "3TNK", 0, 30, 30);
+    let truck = passive(&mut w, "DTRK", 0, 40, 40);
+    run(&mut w, 1);
+    power(&mut w, 0, key, (30, 30), None);
+    run(&mut w, 1);
+    let hp = w.actors[tank].hp;
+    w.damage(tank, 10_000);
+    assert_eq!(w.actors[tank].hp, hp, "invulnerable");
+    run(&mut w, 400);
+    w.damage(tank, 10_000);
+    assert_eq!(w.actors[tank].hp, hp - 10_000, "worn off after Duration 400");
+    // A demolition truck under the Iron Curtain blows up (KillsSelf).
+    w.powers.players[0].iter_mut().find(|p| p.key == key).unwrap().remaining = 0;
+    power(&mut w, 0, key, (40, 40), None);
+    run(&mut w, 1);
+    assert!(!w.actors[truck].alive);
+}
+
+#[test]
+fn atom_bomb_lands_after_its_flight_time() {
+    let mut w = flat_world(["soviet", "allies"]);
+    superweapon(&mut w, 0, "MSLO", 8, 50, "NukePower");
+    let target = w.spawn_building(ty(&w, "POWR"), 1, 40, 20);
+    let tank = passive(&mut w, "2TNK", 1, 44, 21);
+    let tr = w.make_ref(tank);
+    let hp = w.actors[target].hp;
+    power(&mut w, 0, "NukePower", (41, 21), None);
+    run(&mut w, 1);
+    assert_eq!(w.abil.nukes.len(), 1);
+    // MissileDelay 5 + FlightDelay 400.
+    run(&mut w, 5 + 400 - 2);
+    assert_eq!(w.actors[target].hp, hp, "still in the air");
+    assert!(w.players[0].visible[w.map.idx(41, 21)] != 0, "camera over the target before impact");
+    run(&mut w, 30);
+    assert!(w.abil.nukes.is_empty());
+    assert!(!w.actors[target].alive || w.actors[target].hp < hp / 2, "{} of {hp}", w.actors[target].hp);
+    assert!(w.resolve(tr).is_none(), "the tank 3 cells away is gone");
+}
+
+#[test]
+fn gps_satellite_launches_itself_once_and_reveals_the_map() {
+    let mut w = World::new(9, 64, &[("allies", false), ("soviet", false)]);
+    superweapon(&mut w, 0, "ATEK", 8, 50, "GpsPower");
+    run(&mut w, 2);
+    assert!(w.power_instances(0).iter().all(|p| p.key != "GpsPower"), "OneShot: gone after launch");
+    assert!(w.players[0].explored.contains(&0));
+    run(&mut w, 375);
+    assert!(w.has_gps(0) && !w.has_gps(1));
+    assert!(w.players[0].explored.iter().all(|&e| e == 1), "RevealDelay 375, then the whole map");
+    run(&mut w, 13000);
+    assert!(w.power_instances(0).iter().all(|p| p.key != "GpsPower"), "never charges again");
+}
+
+#[test]
+fn superweapons_need_their_structure_and_validate() {
+    let mut w = flat_world(["soviet", "allies"]);
+    superweapon(&mut w, 0, "IRON", 8, 50, "GrantExternalConditionPower@IRONCURTAIN");
+    let tank = passive(&mut w, "3TNK", 1, 30, 30);
+    run(&mut w, 1);
+    // Player 1 does not own the power.
+    power(&mut w, 1, "GrantExternalConditionPower@IRONCURTAIN", (30, 30), None);
+    run(&mut w, 1);
+    assert_eq!(w.actors[tank].invulnerable_until, 0);
+    // A chronoshift without a source area does nothing (and keeps the charge).
+    let mut w = flat_world(["allies", "soviet"]);
+    superweapon(&mut w, 0, "PDOX", 8, 50, "ChronoshiftPower@chronoshift");
+    power(&mut w, 0, "ChronoshiftPower@chronoshift", (30, 30), None);
+    run(&mut w, 1);
+    assert!(w.power_instances(0).iter().find(|p| p.key == "ChronoshiftPower@chronoshift").unwrap().ready());
+}
