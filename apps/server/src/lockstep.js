@@ -12,10 +12,13 @@
 import { HASH_INTERVAL, TICKS_PER_SECOND } from '@webra/protocol';
 
 /**
- * A player who holds the game up must let at least this many frames through
- * per drop window (one second of game time per window, at normal speed), or
- * `silent` reports them. Slow but honest machines stay well above it; a
- * client that trickles one tick every few seconds does not.
+ * Each player gets a window that renews whenever this many frames went out
+ * since it began (one second of game time at normal speed). A player who,
+ * within one window, held the game up for longer than the drop limit in
+ * total is reported by `silent`. With a 10 s limit a single slow player can
+ * therefore keep the game at about 2.5 ticks per second (10 percent of normal
+ * speed) without being dropped: that floor is deliberate, so honest slow
+ * machines and hiccups survive.
  */
 export const MIN_PROGRESS_FRAMES = TICKS_PER_SECOND;
 
@@ -39,11 +42,13 @@ export class Lockstep {
     /** Next tick each player must submit. */
     this.expected = new Map(players.map((p) => [p, delay]));
     /**
-     * Players the game is waiting on: they have not delivered frame `next`.
-     * `since` is when they started holding the game up (without a break) and
-     * `frame` the value of `next` when the current drop window began.
+     * Drop window per player: `frame` is the value of `next` when it began,
+     * `heldMs` how long the player held the game up (did not deliver frame
+     * `next`) since then, `since` when the current hold began (null while the
+     * player is ahead). Going ahead pauses the clock but never resets it, so
+     * players cannot take turns holding the game up.
      */
-    this.blocking = new Map(players.map((p) => [p, { since: now, frame: delay }]));
+    this.windows = new Map(players.map((p) => [p, { frame: delay, heldMs: 0, since: now }]));
     /** tick -> Map(player -> orders) */
     this.pending = new Map();
     /** tick -> Map(player -> hash) */
@@ -113,7 +118,7 @@ export class Lockstep {
   drop(player, now = Date.now()) {
     if (!this.active.delete(player)) return [];
     this.expected.delete(player);
-    this.blocking.delete(player);
+    this.windows.delete(player);
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
@@ -122,28 +127,37 @@ export class Lockstep {
     return frames;
   }
 
-  /** Update who the game is waiting on (see `blocking`). */
+  /** Bring the drop windows (see `windows`) up to `now`. */
   track(now) {
     for (const p of this.active) {
-      if (this.expected.get(p) > this.next) this.blocking.delete(p);
-      else if (!this.blocking.has(p)) this.blocking.set(p, { since: now, frame: this.next });
+      const w = this.windows.get(p);
+      const holding = this.expected.get(p) <= this.next;
+      if (this.next - w.frame >= MIN_PROGRESS_FRAMES) {
+        // Enough frames went out: a fresh window.
+        w.frame = this.next;
+        w.heldMs = 0;
+        w.since = holding ? now : null;
+      } else if (holding && w.since === null) {
+        w.since = now;
+      } else if (!holding && w.since !== null) {
+        w.heldMs += now - w.since;
+        w.since = null;
+      }
     }
   }
 
   /**
-   * Players to drop: they have held the game up for longer than `limitMs`
-   * without letting MIN_PROGRESS_FRAMES frames through in that time. Merely
-   * sending something now and then is not enough (a client sending one tick
-   * every 9 s used to stall a game forever); a slow but steady player starts
-   * a new window instead.
+   * Players to drop: holding the game up right now, and, within a window in
+   * which fewer than MIN_PROGRESS_FRAMES frames went out, for longer than
+   * `limitMs` in total. Sending a tick now and then does not reset that, and
+   * neither does taking turns with another player (a client sending one tick
+   * every 9 s, or two seats alternating, used to stall a game forever).
    */
   silent(now, limitMs) {
     this.track(now);
     const out = [];
-    for (const [p, b] of this.blocking) {
-      if (now - b.since <= limitMs) continue;
-      if (this.next - b.frame >= MIN_PROGRESS_FRAMES) this.blocking.set(p, { since: now, frame: this.next });
-      else out.push(p);
+    for (const [p, w] of this.windows) {
+      if (w.since !== null && w.heldMs + (now - w.since) > limitMs) out.push(p);
     }
     return out;
   }

@@ -100,6 +100,54 @@ test('a player trickling one tick every 9 s is dropped, slow but steady players 
   assert.deepEqual(ls.silent(30_000, 10_000), [0]);
 });
 
+test('two seats taking turns at holding the game up are dropped too', () => {
+  // Re-audit of N4: seats 1 and 2 stay one frame apart and swap the holder
+  // role every 9 s, so a clock that restarts whenever a player goes ahead never fired.
+  const ls = new Lockstep({ players: [0, 1, 2], delay: 3, now: 0 });
+  ls.initialFrames();
+  // The honest seat runs at about 30 ticks per second, as far ahead as allowed.
+  const fill = (p, t) => {
+    for (let k = 0; k < 3 && ls.expected.get(p) <= ls.next + ls.delay; k++) ls.submit(p, ls.expected.get(p), [], t);
+  };
+  ls.submit(2, 3, [], 0);
+  ls.submit(2, 4, [], 0);
+  ls.submit(1, 3, [], 0);
+  let holder = 1;
+  let lastSwap = 0;
+  const dropped = [];
+  let t = 0;
+  for (; t <= 600_000 && dropped.length < 2; t += 100) {
+    fill(0, t);
+    if (t - lastSwap >= 9000) {
+      // The holder delivers until it is one frame past the other colluder (or one tick when alone).
+      const other = holder === 1 ? 2 : 1;
+      const alone = !ls.isActive(other);
+      while (ls.expected.get(holder) <= ls.next + ls.delay && (alone || ls.expected.get(holder) <= ls.expected.get(other))) {
+        ls.submit(holder, ls.expected.get(holder), [], t);
+        if (alone) break;
+      }
+      if (!alone) holder = other;
+      lastSwap = t;
+    }
+    const silent = ls.silent(t, 10_000);
+    assert.ok(!silent.includes(0), 'the honest seat is never blamed');
+    for (const p of silent) {
+      dropped.push([p, t]);
+      ls.drop(p, t);
+      if (p === holder) holder = p === 1 ? 2 : 1;
+    }
+  }
+  assert.equal(dropped.length, 2, JSON.stringify(dropped));
+  assert.ok(dropped[0][1] <= 30_000 && t <= 60_000, JSON.stringify(dropped));
+  // Once the colluders are gone the honest seat plays on at full speed.
+  const before = ls.next;
+  for (const end = t + 60_000; t <= end; t += 100) {
+    fill(0, t);
+    assert.deepEqual(ls.silent(t, 10_000), []);
+  }
+  assert.ok(ls.next - before > 500);
+});
+
 test('drop can unblock a frame', () => {
   const ls = new Lockstep({ players: [0, 1], delay: 3 });
   ls.initialFrames();
