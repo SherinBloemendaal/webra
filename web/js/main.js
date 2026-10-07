@@ -1,51 +1,107 @@
-// Boot: load the simulation (WebAssembly), the WebGPU renderer and the UI, then
-// run the fixed-step game loop with interpolated rendering.
+// Boot: load the simulation (WebAssembly), the WebGPU renderer and the lobby,
+// then run the fixed-step game loop with interpolated rendering.
 
-import init, { Game } from '../pkg/webra_sim.js';
-import { Renderer } from './renderer.js';
+import init, { Game, version } from '../pkg/webra_sim.js';
+import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
+import { Lobby } from './lobby.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
 
-const $ = (id) => document.getElementById(id);
+// OpenRA game speeds: milliseconds per simulation tick.
+const SPEEDS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
+const COLOR_NAMES = ['Blue', 'Red', 'Gold', 'Green', 'Purple', 'Orange', 'Teal', 'White'];
+const RANDOM_POOLS = {
+  random: ['england', 'france', 'germany', 'russia', 'ukraine'],
+  randomallies: ['england', 'france', 'germany'],
+  randomsoviet: ['russia', 'ukraine'],
+};
 
-const SOVIET = ['soviet', 'russia', 'ukraine'];
-const ALLIES = ['england', 'france', 'germany'];
+const $ = (id) => document.getElementById(id);
 
 let wasm;
 let renderer;
 
 async function boot() {
+  let gpuError = null;
   try {
     wasm = await init();
-    renderer = await Renderer.create($('view'));
   } catch (err) {
-    $('menu-error').textContent = `${err.message} WebRA needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
-    $('menu-error').hidden = false;
-    $('start').disabled = true;
-    $('start-stress').disabled = true;
-    return;
+    gpuError = `Could not load the game engine: ${err.message}`;
   }
-  $('seed').value = String(Math.floor(Math.random() * 1e6));
-  $('start').addEventListener('click', () => {
-    const faction = $('faction').value;
-    const pool = SOVIET.includes(faction) ? ALLIES : SOVIET.slice(1);
-    const seed = Number($('seed').value) >>> 0;
-    const ai = pool[seed % pool.length];
-    start(new Game(seed, faction, ai, Number($('map-size').value)));
+  $('version').textContent = wasm ? `v${version()}` : '';
+  const lobby = new Lobby($('menu'), {
+    colors: TEAM_COLORS,
+    colorNames: COLOR_NAMES,
+    mapPreview: (seed, size) => Game.map_preview(seed, size),
+    onStart: (options) => startSkirmish(options, lobby),
+    onStress: ({ seed, units }) => startStress(seed, units, lobby),
   });
-  $('start-stress').addEventListener('click', () => {
-    const units = Math.max(100, Math.min(200000, Number($('stress-units').value) || 10000));
-    const size = Math.max(96, Math.ceil(Math.sqrt(units) * 2.2));
-    start(Game.new_stress(Number($('seed').value) >>> 0, units, size), true);
-  });
-  $('again').addEventListener('click', () => location.reload());
+  if (!gpuError) {
+    try {
+      renderer = await Renderer.create($('view'));
+    } catch (err) {
+      gpuError = `${err.message} WebRA needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
+    }
+  }
+  if (gpuError) lobby.showError(gpuError);
 }
 
-function start(game, stress = false) {
+/** Resolve "random" factions deterministically from the seed. */
+function resolveFactions(options) {
+  const players = options.players.map((p, i) => {
+    const pool = RANDOM_POOLS[p.faction];
+    if (!pool) return { ...p };
+    return { ...p, faction: pool[(options.seed + i * 7919) % pool.length] };
+  });
+  return { ...options, players };
+}
+
+/**
+ * The renderer and sidebar colour player N with TEAM_COLORS[N]; reorder the
+ * shared palette in place so each slot gets the colour picked in the lobby.
+ */
+function applyColors(players) {
+  const palette = TEAM_COLORS.map((c) => c.slice());
+  const used = new Set(players.map((p) => p.color));
+  const rest = palette.map((_, i) => i).filter((i) => !used.has(i));
+  players
+    .map((p) => p.color)
+    .concat(rest)
+    .forEach((src, dst) => {
+      TEAM_COLORS[dst] = palette[src];
+    });
+}
+
+function startSkirmish(options, lobby) {
+  if (!renderer) return;
+  const resolved = resolveFactions(options);
+  let game;
+  try {
+    game = Game.from_options(JSON.stringify(resolved));
+  } catch (err) {
+    lobby.showError(`Could not start the game: ${err.message ?? err}`);
+    return;
+  }
+  applyColors(resolved.players);
+  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal });
+}
+
+function startStress(seed, units, lobby) {
+  if (!renderer) return;
+  const n = Math.max(100, Math.min(200000, units || 10000));
+  const size = Math.max(96, Math.ceil(Math.sqrt(n) * 2.2));
+  try {
+    start(Game.new_stress(seed >>> 0, n, size), { stress: true, tickMs: SPEEDS.normal });
+  } catch (err) {
+    lobby.showError(`Could not start the stress test: ${err.message ?? err}`);
+  }
+}
+
+function start(game, { stress, tickMs }) {
   $('menu').hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
@@ -54,11 +110,15 @@ function start(game, stress = false) {
 
   let sidebar = null;
   const input = new Input($('view'), game, rules, PLAYER, {
-    onSelectionChanged: (ids) => sidebar?.setSelection(selectionInfo(game, ids)),
+    onSelectionChanged: (ids) => {
+      sidebar?.setSelection(selectionInfo(game, ids));
+      sidebar?.setDeployState(input.deployState());
+    },
     onPlaced: () => sidebar?.setPlacing(null),
     onCancelPlace: () => sidebar?.setPlacing(null),
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
+    onSellMode: (on) => sidebar?.setSellMode(on),
   });
   sidebar = new Sidebar($('sidebar'), game, rules, PLAYER, {
     onPlace: (id) => {
@@ -69,15 +129,39 @@ function start(game, stress = false) {
       input.placing = null;
       sidebar.setPlacing(null);
     },
+    onSell: () => input.toggleSellMode(),
+    onDeploy: () => input.deploySelection(),
   });
-
   // Handle for debugging from the browser console.
   window.webra = { game, input, sidebar, renderer, wasm, rules };
   const [sx, sy] = game.start_position(PLAYER);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
-  const tickMs = 1000 / Game.ticks_per_second();
+  // ---- Pause --------------------------------------------------------------------
+  let paused = false;
+  const setPaused = (on) => {
+    paused = on;
+    $('pause').hidden = !on;
+    $('pause-button').textContent = on ? 'Resume' : 'Pause';
+  };
+  $('pause-button').hidden = false;
+  $('pause-button').addEventListener('click', () => setPaused(!paused));
+  $('resume').addEventListener('click', () => setPaused(false));
+  $('quit').addEventListener('click', () => location.reload());
+  $('again').addEventListener('click', () => location.reload());
+  window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Pause' || e.key === 'F10') {
+      e.preventDefault();
+      setPaused(!paused);
+    }
+  });
+  // A single-player game pauses when its tab is hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !stress) setPaused(true);
+  });
+
   let acc = 0;
   let last = performance.now();
   let simMs = 0;
@@ -90,16 +174,18 @@ function start(game, stress = false) {
   function frame(now) {
     const dt = Math.min(now - last, 250);
     last = now;
-    acc += dt;
-    let ticks = 0;
-    const t0 = performance.now();
-    while (acc >= tickMs && ticks < MAX_TICKS_PER_FRAME) {
-      game.tick();
-      acc -= tickMs;
-      ticks++;
+    if (!paused) {
+      acc += dt;
+      let ticks = 0;
+      const t0 = performance.now();
+      while (acc >= tickMs && ticks < MAX_TICKS_PER_FRAME) {
+        game.tick();
+        acc -= tickMs;
+        ticks++;
+      }
+      if (ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / ticks) * 0.1;
+      if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
     }
-    if (ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / ticks) * 0.1;
-    if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
 
     input.update(dt / 1000);
     if (game.terrain_dirty()) {
@@ -113,7 +199,7 @@ function start(game, stress = false) {
     // detach existing views, so collect them before taking views of wasm memory.
     const uiRects = input.uiRects();
     const v = input.viewRect();
-    const spriteCount = game.build_render(PLAYER, acc / tickMs, v.x0, v.y0, v.x1, v.y1);
+    const spriteCount = game.build_render(PLAYER, paused ? 1 : acc / tickMs, v.x0, v.y0, v.x1, v.y1);
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
     const simRectCount = game.rect_count();
     const rects = new Float32Array(simRectCount * 8 + uiRects.length);
@@ -133,7 +219,8 @@ function start(game, stress = false) {
       const state = JSON.parse(game.player_json(PLAYER));
       sidebar.update(state);
       sidebar.setSelection(selectionInfo(game, input.selection));
-      updateHud(game, state, fps, simMs, stress);
+      sidebar.setDeployState(input.deployState());
+      updateHud(game, state, fps, simMs, stress, paused);
       if (!over && !stress && state.winner !== null && state.winner !== undefined) {
         over = true;
         $('gameover-title').textContent = state.winner === PLAYER ? 'Mission accomplished' : 'Mission failed';
@@ -151,10 +238,10 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
-function updateHud(game, state, fps, simMs, stress) {
+function updateHud(game, state, fps, simMs, stress, paused) {
   const secs = Math.floor(state.tick / Game.ticks_per_second());
   const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
+  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
   if (stress) parts.push(`${game.actor_count()} units`, `${state.flowFields} flow fields`);
   $('hud').textContent = parts.join('  |  ');
 }

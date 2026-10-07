@@ -90,6 +90,10 @@ pub struct Actor {
 
     /// Ticks of white hit-flash left (render only).
     pub flash: i32,
+    pub last_damaged: u32,
+    pub heal_timer: i32,
+    /// Iron Curtain: no damage until this tick.
+    pub invulnerable_until: u32,
 }
 
 impl Actor {
@@ -136,6 +140,9 @@ impl Actor {
             rally: None,
             dock_user: NONE,
             flash: 0,
+            last_damaged: 0,
+            heal_timer: 0,
+            invulnerable_until: 0,
         }
     }
 
@@ -211,26 +218,142 @@ pub enum EffectKind {
     SmallExplosion,
     LargeExplosion,
     Piff,
+    /// Line effect from (x, y) to (tx, ty).
+    TeslaBolt,
+    NukeExplosion,
+    ChronoShimmer,
+    /// Dust cloud of a sold or packed-up structure.
+    Dust,
 }
 
 pub struct Effect {
     pub x: i32,
     pub y: i32,
+    /// End point for line effects; equal to (x, y) otherwise.
+    pub tx: i32,
+    pub ty: i32,
     pub kind: EffectKind,
     pub ttl: i32,
     pub max: i32,
 }
 
+/// A warhead that lands later (delayed warheads, chained death explosions).
+pub struct PendingImpact {
+    pub tick: u32,
+    pub weapon: u16,
+    pub warhead: u8,
+    pub x: i32,
+    pub y: i32,
+    pub owner: u8,
+}
+
+/// Lobby options (see web/js/lobby.js). Defaults follow OpenRA's.
+#[derive(Clone, Debug)]
+pub struct GameOptions {
+    pub starting_cash: i32,
+    pub starting_units: StartingUnits,
+    /// Index into rules::TECH_LEVELS.
+    pub tech_level: usize,
+    pub fog: bool,
+    pub explored: bool,
+    pub build_radius: bool,
+    pub redeployable_mcv: bool,
+    pub ore_regrowth: bool,
+}
+
+impl Default for GameOptions {
+    fn default() -> Self {
+        GameOptions {
+            starting_cash: 5000,
+            starting_units: StartingUnits::Base,
+            tech_level: 4,
+            fog: true,
+            explored: false,
+            build_radius: true,
+            redeployable_mcv: true,
+            ore_regrowth: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StartingUnits {
+    /// Just a Mobile Construction Vehicle (OpenRA default).
+    Mcv,
+    /// MCV plus a few soldiers and a light vehicle.
+    Light,
+    /// MCV plus a stronger escort.
+    Heavy,
+    /// An already deployed Construction Yard.
+    Base,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AiDifficulty {
+    Easy,
+    Normal,
+    Hard,
+}
+
+pub struct PlayerSetup {
+    pub faction: String,
+    pub ai: Option<AiDifficulty>,
+}
+
 #[derive(Clone, Debug)]
 pub enum Order {
-    Move { player: u8, ids: Vec<u32>, x: i32, y: i32, attack_move: bool },
-    Smart { player: u8, ids: Vec<u32>, x: i32, y: i32 },
-    Attack { player: u8, ids: Vec<u32>, target: u32 },
-    Stop { player: u8, ids: Vec<u32> },
-    StartProduction { player: u8, ty: u16, count: i32 },
-    CancelProduction { player: u8, ty: u16 },
-    Place { player: u8, ty: u16, cx: i32, cy: i32 },
-    Rally { player: u8, building: u32, x: i32, y: i32 },
+    Move {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+        attack_move: bool,
+    },
+    Smart {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
+    Attack {
+        player: u8,
+        ids: Vec<u32>,
+        target: u32,
+    },
+    Stop {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    StartProduction {
+        player: u8,
+        ty: u16,
+        count: i32,
+    },
+    CancelProduction {
+        player: u8,
+        ty: u16,
+    },
+    Place {
+        player: u8,
+        ty: u16,
+        cx: i32,
+        cy: i32,
+    },
+    Rally {
+        player: u8,
+        building: u32,
+        x: i32,
+        y: i32,
+    },
+    Sell {
+        player: u8,
+        building: u32,
+    },
+    /// Deploy an MCV into a Construction Yard, or pack a Construction Yard up.
+    Deploy {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 /// What a smart (right-click) order would do at a position.
@@ -272,28 +395,73 @@ pub struct World {
     pub stress: bool,
     /// Actors destroyed so far, per owner.
     pub losses: Vec<u32>,
+    pub pending: Vec<PendingImpact>,
+    pub options: GameOptions,
 }
 
 impl World {
+    /// Quick setup used by tests and tools: a deployed base each, default options.
     pub fn new(seed: u64, map_size: i32, factions: &[(&str, bool)]) -> World {
+        let players: Vec<PlayerSetup> =
+            factions.iter().map(|&(f, ai)| PlayerSetup { faction: f.to_string(), ai: ai.then_some(AiDifficulty::Normal) }).collect();
+        World::with_options(seed, map_size, &players, GameOptions::default())
+    }
+
+    pub fn with_options(seed: u64, map_size: i32, players: &[PlayerSetup], options: GameOptions) -> World {
         let rules = Rules::load();
         let map = Map::generate(map_size, map_size, seed, rules.player.ore_max_density);
         let mut w = World::empty(rules, map, seed);
+        w.options = options.clone();
         let spawns = w.map.spawns.clone();
-        for (slot, &(faction, is_ai)) in factions.iter().enumerate() {
-            let fi = w.rules.faction_index(faction).unwrap_or_else(|| panic!("unknown faction {faction}"));
-            w.add_player(fi, is_ai, spawns[slot]);
+        for (slot, p) in players.iter().enumerate() {
+            let fi = w.rules.faction_index(&p.faction).unwrap_or_else(|| panic!("unknown faction {}", p.faction));
+            w.add_player(fi, p.ai.is_some(), spawns[slot]);
+            w.players[slot].cash = options.starting_cash;
+            if options.explored {
+                w.players[slot].explored.iter_mut().for_each(|e| *e = 1);
+            }
         }
-        let fact = w.rules.actor_index("FACT").unwrap() as u16;
-        for p in 0..w.players.len() {
-            let (sx, sy) = spawns[p];
-            w.spawn_building(fact, p as u8, sx, sy);
+        w.ai = players
+            .iter()
+            .enumerate()
+            .map(|(slot, p)| crate::ai::AiState::new(slot as u32, p.ai.unwrap_or(AiDifficulty::Normal)))
+            .collect();
+        for slot in 0..w.players.len() {
+            w.spawn_start(slot as u8);
         }
-        w.ai = (0..w.players.len()).map(|p| crate::ai::AiState::new(p as u32)).collect();
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
         w
+    }
+
+    /// Starting units per the lobby option. Escorts depend on the side, like OpenRA's.
+    fn spawn_start(&mut self, player: u8) {
+        let (sx, sy) = self.players[player as usize].start;
+        let side = self.players[player as usize].side;
+        let id = |w: &World, s: &str| w.rules.actor_index(s).unwrap() as u16;
+        match self.options.starting_units {
+            StartingUnits::Base => {
+                let fact = id(self, "FACT");
+                self.spawn_building(fact, player, sx, sy);
+                return;
+            }
+            _ => {
+                let mcv = id(self, "MCV");
+                self.spawn_unit(mcv, player, cell_center(sx + 1), cell_center(sy + 1), 512);
+            }
+        }
+        let tank = if side == 0 { "1TNK" } else { "3TNK" };
+        let escort: Vec<&str> = match self.options.starting_units {
+            StartingUnits::Light => vec!["E1", "E1", "E1", tank],
+            StartingUnits::Heavy => vec!["E1", "E1", "E1", "E1", "E1", tank, tank, if side == 0 { "2TNK" } else { "3TNK" }],
+            _ => vec![],
+        };
+        for (k, u) in escort.iter().enumerate() {
+            let ty = id(self, u);
+            let (dx, dy) = ((k as i32 % 4) - 1, 3 + k as i32 / 4);
+            self.spawn_unit(ty, player, cell_center(sx + 1 + dx), cell_center(sy + 1 + dy), 512);
+        }
     }
 
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
@@ -323,6 +491,8 @@ impl World {
             circle_cache: Vec::new(),
             stress: false,
             losses: Vec::new(),
+            pending: Vec::new(),
+            options: GameOptions::default(),
             map,
         }
     }
@@ -402,7 +572,7 @@ impl World {
         a.pturret = facing;
         a.hp = info.hp;
         a.scan_cooldown = (i as i32) % 8;
-        if info.unit.as_ref().map_or(false, |u| u.harvester.is_some()) {
+        if info.unit.as_ref().is_some_and(|u| u.harvester.is_some()) {
             a.activity = Activity::Harvest;
             a.harv = HarvState::Search;
         }
@@ -461,11 +631,21 @@ impl World {
         self.dying.push(i as u32);
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
         let ttl = if kind == Kind::Building { 30 } else { 18 };
-        self.effects.push(Effect { x, y, kind: effect, ttl, max: ttl });
+        self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        self.death_explosion(i);
+    }
+
+    /// Remove an actor without it dying (sold, deployed, packed up).
+    pub fn remove(&mut self, i: usize) {
+        if !self.actors[i].alive {
+            return;
+        }
+        self.actors[i].alive = false;
+        self.dying.push(i as u32);
     }
 
     /// Free storage and cells of actors killed this tick.
-    fn cleanup_dead(&mut self) {
+    pub(crate) fn cleanup_dead(&mut self) {
         let dying = std::mem::take(&mut self.dying);
         for i in dying {
             let i = i as usize;
@@ -501,10 +681,7 @@ impl World {
 
     #[inline]
     pub fn cell_of(&self, x: i32, y: i32) -> (i32, i32) {
-        (
-            (x.div_euclid(CELL)).clamp(0, self.map.width - 1),
-            (y.div_euclid(CELL)).clamp(0, self.map.height - 1),
-        )
+        ((x.div_euclid(CELL)).clamp(0, self.map.width - 1), (y.div_euclid(CELL)).clamp(0, self.map.height - 1))
     }
 
     #[inline]
@@ -541,9 +718,7 @@ impl World {
         let vis = &self.players[player as usize].visible;
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-            b.footprint
-                .iter()
-                .any(|&(dx, dy, c)| c != FootCell::Empty && vis[self.map.idx(a.cx + dx, a.cy + dy)] != 0)
+            b.footprint.iter().any(|&(dx, dy, c)| c != FootCell::Empty && vis[self.map.idx(a.cx + dx, a.cy + dy)] != 0)
         } else {
             vis[self.cell_index(a.x, a.y)] != 0
         }
@@ -622,11 +797,8 @@ impl World {
     }
 
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
-        let mut out: Vec<usize> = ids
-            .iter()
-            .filter_map(|&r| self.resolve(r))
-            .filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit())
-            .collect();
+        let mut out: Vec<usize> =
+            ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit()).collect();
         out.sort_unstable();
         out.dedup();
         out
@@ -663,6 +835,22 @@ impl World {
                 Order::CancelProduction { player, ty } => self.cancel_production(player, ty),
                 Order::Place { player, ty, cx, cy } => {
                     self.place_building(player, ty, cx, cy);
+                }
+                Order::Sell { player, building } => {
+                    if let Some(b) = self.resolve(building) {
+                        if self.actors[b].owner == player {
+                            self.sell(b);
+                        }
+                    }
+                }
+                Order::Deploy { player, ids } => {
+                    let mut actors: Vec<usize> =
+                        ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player).collect();
+                    actors.sort_unstable();
+                    actors.dedup();
+                    for i in actors {
+                        self.deploy(i);
+                    }
                 }
                 Order::Rally { player, building, x, y } => {
                     if let Some(b) = self.resolve(building) {
@@ -753,7 +941,7 @@ impl World {
                     }
                     let r = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius.max(256);
                     let d = dist(x, y, a.x, a.y);
-                    if d <= r && best.map_or(true, |(bd, _)| d < bd) {
+                    if d <= r && best.is_none_or(|(bd, _)| d < bd) {
                         best = Some((d, u));
                     }
                 }
@@ -844,8 +1032,7 @@ impl World {
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let tref = self.make_ref(t);
-                let (veh, others): (Vec<usize>, Vec<usize>) =
-                    units.iter().partition(|&&i| self.actors[i].kind == Kind::Vehicle);
+                let (veh, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.actors[i].kind == Kind::Vehicle);
                 for i in veh {
                     self.release_dock(i);
                     let a = &mut self.actors[i];
@@ -862,7 +1049,7 @@ impl World {
     }
 
     pub fn is_harvester(&self, i: usize) -> bool {
-        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().map_or(false, |u| u.harvester.is_some())
+        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some())
     }
 
     // ---- Tick --------------------------------------------------------------
@@ -895,20 +1082,20 @@ impl World {
         if self.tokens_dirty {
             self.refresh_tokens();
         }
-        if self.tick % ORE_GROWTH_INTERVAL == 0 {
+        if self.options.ore_regrowth && self.tick.is_multiple_of(ORE_GROWTH_INTERVAL) {
             let max = self.rules.player.ore_max_density;
             if self.map.grow_ore(&mut self.rng, max, &self.pass.blocked) {
                 self.terrain_dirty = true;
             }
         }
-        if self.tick % VISION_INTERVAL == 0 {
+        if self.tick.is_multiple_of(VISION_INTERVAL) {
             self.update_vision();
         }
         for e in self.effects.iter_mut() {
             e.ttl -= 1;
         }
         self.effects.retain(|e| e.ttl > 0);
-        if self.tick % TICKS_PER_SECOND == 0 {
+        if self.tick.is_multiple_of(TICKS_PER_SECOND) {
             self.check_victory();
         }
     }

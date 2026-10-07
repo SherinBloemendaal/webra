@@ -55,6 +55,14 @@ impl World {
                 }
             }
         }
+        if !self.options.fog {
+            // "Fog of war" off: everything ever explored stays visible.
+            for p in self.players.iter_mut() {
+                for (v, &e) in p.visible.iter_mut().zip(p.explored.iter()) {
+                    *v |= e;
+                }
+            }
+        }
         self.update_ghosts();
     }
 
@@ -67,9 +75,10 @@ impl World {
                 .iter()
                 .filter(|(_, g)| {
                     let b = self.rules.actors[g.ty as usize].building.as_ref().unwrap();
-                    let seen = b.footprint.iter().any(|&(dx, dy, c)| {
-                        c != FootCell::Empty && self.players[p].visible[self.map.idx(g.cx + dx, g.cy + dy)] != 0
-                    });
+                    let seen = b
+                        .footprint
+                        .iter()
+                        .any(|&(dx, dy, c)| c != FootCell::Empty && self.players[p].visible[self.map.idx(g.cx + dx, g.cy + dy)] != 0);
                     seen && self.resolve(g.actor).is_none()
                 })
                 .map(|(k, _)| *k)

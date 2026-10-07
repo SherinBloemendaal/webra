@@ -49,10 +49,27 @@
    "prerequisites": [
     "~disabled"
    ],
+   "build_at": "Building",
    "hp": 150000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "transforms": {
+     "into": "MCV",
+     "offset": [
+      1,
+      1
+     ],
+     "facing": 384,
+     "needs_option": true
+    }
+   },
    "building": {
     "width": 3,
     "height": 4,
@@ -62,6 +79,11 @@
      "XxX",
      "==="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": 0,
     "power_scales_with_health": false,
     "produces": [
@@ -72,6 +94,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 16384,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "fact",
@@ -127,10 +151,17 @@
    "prerequisites": [
     "~techlevel.infonly"
    ],
+   "build_at": "Building",
    "hp": 40000,
    "armor": 1,
    "sight": 4096,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 2,
     "height": 3,
@@ -139,6 +170,11 @@
      "xx",
      "=="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": 100,
     "power_scales_with_health": true,
     "produces": [],
@@ -146,6 +182,83 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "anypower"
+     ],
+     "england": [
+      "anypower"
+     ],
+     "france": [
+      "anypower"
+     ],
+     "germany": [
+      "anypower"
+     ],
+     "soviet": [
+      "anypower"
+     ],
+     "russia": [
+      "anypower"
+     ],
+     "ukraine": [
+      "anypower"
+     ]
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "APWR",
+   "name": "Advanced Power Plant",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 110,
+   "prerequisites": [
+    "dome",
+    "~techlevel.medium"
+   ],
+   "build_at": "Building",
+   "hp": 70000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "xxx",
+     "Xxx",
+     "==="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 200,
+    "power_scales_with_health": true,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "anypower"
@@ -188,10 +301,17 @@
     "anypower",
     "~techlevel.infonly"
    ],
+   "build_at": "Building",
    "hp": 90000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 3,
     "height": 4,
@@ -201,6 +321,11 @@
      "X==",
      "==="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": -30,
     "power_scales_with_health": false,
     "produces": [],
@@ -208,6 +333,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 2000,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "proc"
@@ -236,7 +363,6 @@
       0,
       1024
      ],
-     "storage": 2000,
      "free_actor": "HARV",
      "free_actor_offset": [
       1,
@@ -246,6 +372,65 @@
     "center_offset": [
      0,
      -512
+    ]
+   }
+  },
+  {
+   "id": "SILO",
+   "name": "Silo",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 150,
+   "build_ticks": 90,
+   "palette_order": 35,
+   "prerequisites": [
+    "proc",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Defense",
+   "hp": 30000,
+   "armor": 1,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -10,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 3000,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
     ]
    }
   },
@@ -263,10 +448,17 @@
     "~structures.allies",
     "~techlevel.infonly"
    ],
+   "build_at": "Building",
    "hp": 60000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 2,
     "height": 3,
@@ -275,6 +467,11 @@
      "xx",
      "=="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": -20,
     "power_scales_with_health": false,
     "produces": [
@@ -294,6 +491,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "barracks",
@@ -352,10 +551,17 @@
     "~structures.soviet",
     "~techlevel.infonly"
    ],
+   "build_at": "Building",
    "hp": 60000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 2,
     "height": 3,
@@ -364,6 +570,11 @@
      "xx",
      "=="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": -20,
     "power_scales_with_health": false,
     "produces": [
@@ -383,6 +594,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "barr",
@@ -426,6 +639,116 @@
    }
   },
   {
+   "id": "KENN",
+   "name": "Kennel",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 175,
+   "prerequisites": [
+    "anypower",
+    "~structures.soviet",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Building",
+   "hp": 30000,
+   "armor": 1,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -10,
+    "power_scales_with_health": false,
+    "produces": [
+     "Infantry",
+     "Dog"
+    ],
+    "exits": [
+     [
+      -1,
+      1
+     ],
+     [
+      0,
+      1
+     ],
+     [
+      -1,
+      0
+     ],
+     [
+      -1,
+      -1
+     ],
+     [
+      0,
+      -1
+     ],
+     [
+      1,
+      -1
+     ],
+     [
+      1,
+      0
+     ],
+     [
+      1,
+      1
+     ]
+    ],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "kenn"
+     ],
+     "england": [
+      "kenn"
+     ],
+     "france": [
+      "kenn"
+     ],
+     "germany": [
+      "kenn"
+     ],
+     "soviet": [
+      "kenn"
+     ],
+     "russia": [
+      "kenn"
+     ],
+     "ukraine": [
+      "kenn"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
    "id": "WEAP",
    "name": "War Factory",
    "description": "",
@@ -438,10 +761,17 @@
     "proc",
     "~techlevel.low"
    ],
+   "build_at": "Building",
    "hp": 150000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 3,
     "height": 3,
@@ -450,6 +780,11 @@
      "xxx",
      "==="
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": -30,
     "power_scales_with_health": false,
     "produces": [
@@ -464,6 +799,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "vehicles.allies",
@@ -520,10 +857,17 @@
     "weap",
     "~techlevel.medium"
    ],
+   "build_at": "Building",
    "hp": 80000,
    "armor": 1,
    "sight": 5120,
    "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
    "building": {
     "width": 3,
     "height": 3,
@@ -532,6 +876,11 @@
      "+++",
      "_+_"
     ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
     "power": -30,
     "power_scales_with_health": false,
     "produces": [],
@@ -539,6 +888,8 @@
     "gives_buildable_area": true,
     "base_provider_range": 0,
     "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
     "provides": {
      "allies": [
       "fix"
@@ -574,36 +925,2549 @@
    }
   },
   {
-   "id": "HARV",
-   "name": "Ore Truck",
+   "id": "DOME",
+   "name": "Radar Dome",
    "description": "",
-   "kind": "vehicle",
-   "queue": "Vehicle",
-   "cost": 1100,
-   "build_ticks": 660,
-   "palette_order": 110,
+   "kind": "building",
+   "queue": "Building",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 90,
    "prerequisites": [
     "proc",
+    "~techlevel.medium"
+   ],
+   "build_at": "Building",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 10240,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "provides_radar": {}
+   },
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -40,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "dome"
+     ],
+     "england": [
+      "dome"
+     ],
+     "france": [
+      "dome"
+     ],
+     "germany": [
+      "dome"
+     ],
+     "soviet": [
+      "dome"
+     ],
+     "russia": [
+      "dome"
+     ],
+     "ukraine": [
+      "dome"
+     ]
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "HPAD",
+   "name": "Helipad",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 120,
+   "prerequisites": [
+    "dome",
+    "~structures.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Building",
+   "hp": 80000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -10,
+    "power_scales_with_health": false,
+    "produces": [
+     "Aircraft",
+     "Helicopter"
+    ],
+    "exits": [
+     [
+      0,
+      0
+     ]
+    ],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "aircraft.allies",
+      "aircraft.alliesvanilla",
+      "hpad"
+     ],
+     "england": [
+      "aircraft.allies",
+      "aircraft.england",
+      "hpad"
+     ],
+     "france": [
+      "aircraft.allies",
+      "aircraft.france",
+      "hpad"
+     ],
+     "germany": [
+      "aircraft.allies",
+      "aircraft.germany",
+      "hpad"
+     ],
+     "soviet": [
+      "hpad"
+     ],
+     "russia": [
+      "hpad"
+     ],
+     "ukraine": [
+      "hpad"
+     ]
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "AFLD",
+   "name": "Airfield",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 130,
+   "prerequisites": [
+    "dome",
+    "~structures.soviet",
+    "~techlevel.medium",
+    "~!structures.ukraine"
+   ],
+   "build_at": "Building",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "AirstrikePower@spyplane",
+      "kind": "AirstrikePower",
+      "name": "Spy Plane",
+      "description": "Reveals an area of the map.",
+      "charge": 3750,
+      "prerequisites": [
+       "aircraft.soviet"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     },
+     {
+      "key": "ParatroopersPower@paratroopers",
+      "kind": "ParatroopersPower",
+      "name": "Paratroopers",
+      "description": "A Badger drops a squad of infantry",
+      "charge": 7500,
+      "prerequisites": [
+       "aircraft.soviet"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     },
+     {
+      "key": "AirstrikePower@parabombs",
+      "kind": "AirstrikePower",
+      "name": "Parabombs",
+      "description": "A Badger drops parachuted bombs",
+      "charge": 7500,
+      "prerequisites": [
+       "aircraft.ukraine"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 3,
+    "height": 2,
+    "footprint": [
+     "xxx",
+     "xxx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [
+     "Aircraft",
+     "Plane"
+    ],
+    "exits": [
+     [
+      1,
+      1
+     ]
+    ],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "afld"
+     ],
+     "england": [
+      "afld"
+     ],
+     "france": [
+      "afld"
+     ],
+     "germany": [
+      "afld"
+     ],
+     "soviet": [
+      "afld",
+      "aircraft.soviet",
+      "aircraft.sovietvanilla"
+     ],
+     "russia": [
+      "afld",
+      "aircraft.russia",
+      "aircraft.soviet"
+     ],
+     "ukraine": [
+      "afld",
+      "aircraft.soviet",
+      "aircraft.ukraine"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "AFLD.Ukraine",
+   "name": "Airfield",
+   "description": "actor-afld-ukraine-description",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 130,
+   "prerequisites": [
+    "dome",
+    "~techlevel.medium",
+    "~structures.ukraine"
+   ],
+   "build_at": "Building",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "AirstrikePower@spyplane",
+      "kind": "AirstrikePower",
+      "name": "Spy Plane",
+      "description": "Reveals an area of the map.",
+      "charge": 3750,
+      "prerequisites": [
+       "aircraft.soviet"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     },
+     {
+      "key": "ParatroopersPower@paratroopers",
+      "kind": "ParatroopersPower",
+      "name": "Paratroopers",
+      "description": "A Badger drops a squad of infantry",
+      "charge": 7500,
+      "prerequisites": [
+       "aircraft.soviet"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     },
+     {
+      "key": "AirstrikePower@parabombs",
+      "kind": "AirstrikePower",
+      "name": "Parabombs",
+      "description": "A Badger drops parachuted bombs",
+      "charge": 7500,
+      "prerequisites": [
+       "aircraft.ukraine"
+      ],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 3,
+    "height": 2,
+    "footprint": [
+     "xxx",
+     "xxx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [
+     "Aircraft",
+     "Plane"
+    ],
+    "exits": [
+     [
+      1,
+      1
+     ]
+    ],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "afld"
+     ],
+     "england": [
+      "afld"
+     ],
+     "france": [
+      "afld"
+     ],
+     "germany": [
+      "afld"
+     ],
+     "soviet": [
+      "afld",
+      "aircraft.soviet",
+      "aircraft.sovietvanilla"
+     ],
+     "russia": [
+      "afld",
+      "aircraft.russia",
+      "aircraft.soviet"
+     ],
+     "ukraine": [
+      "afld",
+      "aircraft.soviet",
+      "aircraft.ukraine"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "SYRD",
+   "name": "Naval Yard",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 40,
+   "prerequisites": [
+    "anypower",
+    "~structures.allies",
+    "~techlevel.low"
+   ],
+   "build_at": "Building",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 10240
+    }
+   },
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "XXX",
+     "xxx",
+     "XXX"
+    ],
+    "terrain": [
+     "Water"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [
+     "Ship",
+     "Boat"
+    ],
+    "exits": [
+     [
+      0,
+      2
+     ],
+     [
+      2,
+      2
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      0
+     ]
+    ],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "ships.allies",
+      "ships.alliesvanilla",
+      "syrd"
+     ],
+     "england": [
+      "ships.allies",
+      "ships.england",
+      "syrd"
+     ],
+     "france": [
+      "ships.allies",
+      "ships.france",
+      "syrd"
+     ],
+     "germany": [
+      "ships.allies",
+      "ships.germany",
+      "syrd"
+     ],
+     "soviet": [
+      "syrd"
+     ],
+     "russia": [
+      "syrd"
+     ],
+     "ukraine": [
+      "syrd"
+     ]
+    },
+    "repairs": {
+     "hp_per_step": 1000,
+     "interval": 24,
+     "value_percent": 20
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "SPEN",
+   "name": "Sub Pen",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 800,
+   "build_ticks": 480,
+   "palette_order": 50,
+   "prerequisites": [
+    "anypower",
+    "~structures.soviet",
+    "~techlevel.low"
+   ],
+   "build_at": "Building",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 10240
+    }
+   },
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "XXX",
+     "xxx",
+     "XXX"
+    ],
+    "terrain": [
+     "Water"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [
+     "Ship",
+     "Submarine"
+    ],
+    "exits": [
+     [
+      -1,
+      2
+     ],
+     [
+      3,
+      2
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      0
+     ],
+     [
+      0,
+      2
+     ],
+     [
+      2,
+      2
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      0
+     ]
+    ],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "spen"
+     ],
+     "england": [
+      "spen"
+     ],
+     "france": [
+      "spen"
+     ],
+     "germany": [
+      "spen"
+     ],
+     "soviet": [
+      "ships.soviet",
+      "ships.sovietvanilla",
+      "spen"
+     ],
+     "russia": [
+      "ships.russia",
+      "ships.soviet",
+      "spen"
+     ],
+     "ukraine": [
+      "ships.soviet",
+      "ships.ukraine",
+      "spen"
+     ]
+    },
+    "repairs": {
+     "hp_per_step": 1000,
+     "interval": 24,
+     "value_percent": 20
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "ATEK",
+   "name": "Allied Tech Center",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 140,
+   "prerequisites": [
+    "weap",
+    "dome",
+    "~structures.allies",
+    "~techlevel.high"
+   ],
+   "build_at": "Building",
+   "hp": 60000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "GpsPower",
+      "kind": "GpsPower",
+      "name": "GPS Satellite",
+      "description": "",
+      "charge": 12000,
+      "prerequisites": [],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -200,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "atek",
+      "techcenter"
+     ],
+     "england": [
+      "atek",
+      "techcenter"
+     ],
+     "france": [
+      "atek",
+      "techcenter"
+     ],
+     "germany": [
+      "atek",
+      "techcenter"
+     ],
+     "soviet": [
+      "atek",
+      "techcenter"
+     ],
+     "russia": [
+      "atek",
+      "techcenter"
+     ],
+     "ukraine": [
+      "atek",
+      "techcenter"
+     ]
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "STEK",
+   "name": "Soviet Tech Center",
+   "description": "",
+   "kind": "building",
+   "queue": "Building",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 150,
+   "prerequisites": [
+    "weap",
+    "dome",
+    "~structures.soviet",
+    "~techlevel.high"
+   ],
+   "build_at": "Building",
+   "hp": 80000,
+   "armor": 1,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "XxX",
+     "XxX",
+     "==="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -100,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "stek",
+      "techcenter"
+     ],
+     "england": [
+      "stek",
+      "techcenter"
+     ],
+     "france": [
+      "stek",
+      "techcenter"
+     ],
+     "germany": [
+      "stek",
+      "techcenter"
+     ],
+     "soviet": [
+      "stek",
+      "techcenter"
+     ],
+     "russia": [
+      "stek",
+      "techcenter"
+     ],
+     "ukraine": [
+      "stek",
+      "techcenter"
+     ]
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "GAP",
+   "name": "Gap Generator",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 800,
+   "build_ticks": 480,
+   "palette_order": 110,
+   "prerequisites": [
+    "atek",
+    "~structures.allies",
+    "~techlevel.high"
+   ],
+   "build_at": "Defense",
+   "hp": 50000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "creates_shroud": {
+     "range": 6144
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -60,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "PDOX",
+   "name": "Chronosphere",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 120,
+   "prerequisites": [
+    "atek",
+    "~structures.allies",
+    "~techlevel.unrestricted"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "ChronoshiftPower@chronoshift",
+      "kind": "ChronoshiftPower",
+      "name": "Chronoshift",
+      "description": "Teleports a group of units across",
+      "charge": 3000,
+      "prerequisites": [
+       "!pdox.germany"
+      ],
+      "duration": 400,
+      "range": 1,
+      "max_distance": 0
+     },
+     {
+      "key": "ChronoshiftPower@advancedchronoshift",
+      "kind": "ChronoshiftPower",
+      "name": "Advanced Chronoshift",
+      "description": "Teleports a large group of units across",
+      "charge": 3000,
+      "prerequisites": [
+       "pdox.germany"
+      ],
+      "duration": 400,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 2,
+    "height": 2,
+    "footprint": [
+     "xx",
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -200,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "pdox"
+     ],
+     "england": [
+      "pdox"
+     ],
+     "france": [
+      "pdox"
+     ],
+     "germany": [
+      "pdox",
+      "pdox.germany"
+     ],
+     "soviet": [
+      "pdox"
+     ],
+     "russia": [
+      "pdox"
+     ],
+     "ukraine": [
+      "pdox"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "IRON",
+   "name": "Iron Curtain",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 130,
+   "prerequisites": [
+    "stek",
+    "~structures.soviet",
+    "~techlevel.unrestricted"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "GrantExternalConditionPower@IRONCURTAIN",
+      "kind": "GrantExternalConditionPower",
+      "name": "Invulnerability",
+      "description": "Grants invulnerability to a group of units",
+      "charge": 3000,
+      "prerequisites": [],
+      "duration": 400,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 2,
+    "height": 2,
+    "footprint": [
+     "++",
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -200,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "MSLO",
+   "name": "Missile Silo",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 2500,
+   "build_ticks": 1500,
+   "palette_order": 140,
+   "prerequisites": [
+    "techcenter",
+    "~techlevel.unrestricted"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "support_powers": [
+     {
+      "key": "NukePower",
+      "kind": "NukePower",
+      "name": "Atom Bomb",
+      "description": "Launches a devastating atomic bomb",
+      "charge": 13500,
+      "prerequisites": [],
+      "duration": 0,
+      "range": 1,
+      "max_distance": 0
+     }
+    ]
+   },
+   "building": {
+    "width": 2,
+    "height": 1,
+    "footprint": [
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -150,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "SBAG",
+   "name": "Sandbag Wall",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 30,
+   "build_ticks": 18,
+   "palette_order": 10,
+   "prerequisites": [
+    "fact",
+    "~structures.allies",
+    "~techlevel.low"
+   ],
+   "build_at": "Defense",
+   "hp": 15000,
+   "armor": 1,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "line_build": {
+     "range": 8
+    },
+    "crushable": [
+     "wall"
+    ]
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": false,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "FENC",
+   "name": "Wire Fence",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 30,
+   "build_ticks": 18,
+   "palette_order": 20,
+   "prerequisites": [
+    "fact",
+    "~structures.soviet",
+    "~techlevel.low"
+   ],
+   "build_at": "Defense",
+   "hp": 15000,
+   "armor": 1,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "line_build": {
+     "range": 8
+    },
+    "crushable": [
+     "wall"
+    ]
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": false,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "BRIK",
+   "name": "Concrete Wall",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 30,
+   "prerequisites": [
+    "fact",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 4,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "line_build": {
+     "range": 8
+    },
+    "crushable": [
+     "heavywall"
+    ]
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": false,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "PBOX",
+   "name": "Pillbox",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 600,
+   "build_ticks": 360,
+   "palette_order": 40,
+   "prerequisites": [
+    "tent",
+    "~structures.allies",
+    "~techlevel.low"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    0
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 1,
+     "garrison": true,
+     "initial": [
+      "E1"
+     ]
+    },
+    "detect_cloaked": {
+     "range": 6144
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "HBOX",
+   "name": "Camo Pillbox",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 750,
+   "build_ticks": 450,
+   "palette_order": 50,
+   "prerequisites": [
+    "tent",
+    "~structures.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    0
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 1,
+     "garrison": true,
+     "initial": [
+      "E1"
+     ]
+    },
+    "cloak": {
+     "initial_delay": 125,
+     "cloak_delay": 60,
+     "uncloak_on": [
+      "Attack"
+     ]
+    },
+    "detect_cloaked": {
+     "range": 6144
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "GUN",
+   "name": "Turret",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 800,
+   "build_ticks": 480,
+   "palette_order": 70,
+   "prerequisites": [
+    "tent",
+    "~structures.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6656,
+   "weapons": [
+    1
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 6144
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -40,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "FTUR",
+   "name": "Flame Tower",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 600,
+   "build_ticks": 360,
+   "palette_order": 60,
+   "prerequisites": [
+    "barr",
+    "~structures.soviet",
+    "~techlevel.low"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    2
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 5120
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -20,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "ftur"
+     ],
+     "england": [
+      "ftur"
+     ],
+     "france": [
+      "ftur"
+     ],
+     "germany": [
+      "ftur"
+     ],
+     "soviet": [
+      "ftur"
+     ],
+     "russia": [
+      "ftur"
+     ],
+     "ukraine": [
+      "ftur"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "TSLA",
+   "name": "Tesla Coil",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 1200,
+   "build_ticks": 720,
+   "palette_order": 80,
+   "prerequisites": [
+    "weap",
+    "~structures.soviet",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 7168,
+   "weapons": [
+    3
+   ],
+   "turret_turn_speed": null,
+   "reload_override": 120,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 6144
+    }
+   },
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -80,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [
+      "tsla"
+     ],
+     "england": [
+      "tsla"
+     ],
+     "france": [
+      "tsla"
+     ],
+     "germany": [
+      "tsla"
+     ],
+     "soviet": [
+      "tsla"
+     ],
+     "russia": [
+      "tsla"
+     ],
+     "ukraine": [
+      "tsla"
+     ]
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "AGUN",
+   "name": "AA Gun",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 800,
+   "build_ticks": 480,
+   "palette_order": 90,
+   "prerequisites": [
+    "dome",
+    "~structures.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    4
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -50,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "SAM",
+   "name": "SAM Site",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 700,
+   "build_ticks": 420,
+   "palette_order": 100,
+   "prerequisites": [
+    "dome",
+    "~structures.soviet",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 8192,
+   "weapons": [
+    5
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 1,
+    "footprint": [
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": -40,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "FPWR",
+   "name": "Fake Power Plant",
+   "description": "Looks like a Power Plant.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 30,
+   "build_ticks": 18,
+   "palette_order": 870,
+   "prerequisites": [
+    "~structures.france",
     "~techlevel.infonly"
    ],
-   "hp": 60000,
-   "armor": 3,
-   "sight": 4096,
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 1,
+   "sight": 1024,
    "weapons": [],
-   "unit": {
-    "speed": 72,
-    "turn_speed": 20,
-    "turn_in_place": false,
-    "locomotor": 0,
-    "turret_turn_speed": null,
-    "radius": 384,
-    "harvester": {
-     "capacity": 20,
-     "bale_load_delay": 4,
-     "bale_unload_delay": 1,
-     "search_from_proc": 15,
-     "search_from_harv": 8
-    }
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "TENF",
+   "name": "Fake Allied Barracks",
+   "description": "Looks like an Allied Barracks.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 50,
+   "build_ticks": 30,
+   "palette_order": 880,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Defense",
+   "hp": 60000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "SYRF",
+   "name": "Fake Naval Yard",
+   "description": "Looks like a Naval Yard.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 100,
+   "build_ticks": 60,
+   "palette_order": 890,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 2,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "XXX",
+     "xxx",
+     "XXX"
+    ],
+    "terrain": [
+     "Water"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "WEAF",
+   "name": "Fake War Factory",
+   "description": "Looks like a War Factory.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 920,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 150000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "xxx",
+     "xxx",
+     "==="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "DOMF",
+   "name": "Fake Radar Dome",
+   "description": "Looks like a Radar Dome.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 180,
+   "build_ticks": 108,
+   "palette_order": 930,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "FIXF",
+   "name": "Fake Service Depot",
+   "description": "Looks like a Service Depot.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 120,
+   "build_ticks": 72,
+   "palette_order": 940,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 80000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "_=_",
+     "xxx",
+     "_=_"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "FAPW",
+   "name": "Fake Advanced Power Plant",
+   "description": "Looks like an Advanced Power Plant.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 50,
+   "build_ticks": 30,
+   "palette_order": 950,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 70000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 3,
+    "footprint": [
+     "xxx",
+     "Xxx",
+     "==="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "ATEF",
+   "name": "Fake Allied Tech Center",
+   "description": "Looks like an Allied Tech Center.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 150,
+   "build_ticks": 90,
+   "palette_order": 970,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.high"
+   ],
+   "build_at": "Defense",
+   "hp": 40000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 3,
+    "footprint": [
+     "xx",
+     "xx",
+     "=="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
+   }
+  },
+  {
+   "id": "PDOF",
+   "name": "Fake Chronosphere",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 150,
+   "build_ticks": 90,
+   "palette_order": 980,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.unrestricted"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 2,
+    "footprint": [
+     "xx",
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "MSLF",
+   "name": "Fake Missile Silo",
+   "description": "",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 250,
+   "build_ticks": 150,
+   "palette_order": 990,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.unrestricted"
+   ],
+   "build_at": "Defense",
+   "hp": 100000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": true,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 2,
+    "height": 1,
+    "footprint": [
+     "xx"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "id": "FACF",
+   "name": "Fake Construction Yard",
+   "description": "Looks like a Construction Yard.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 1000,
+   "prerequisites": [
+    "~structures.france",
+    "~techlevel.medium"
+   ],
+   "build_at": "Defense",
+   "hp": 150000,
+   "armor": 1,
+   "sight": 1024,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {},
+   "building": {
+    "width": 3,
+    "height": 4,
+    "footprint": [
+     "xxX",
+     "xxx",
+     "XxX",
+     "==="
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": true,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "center_offset": [
+     0,
+     -512
+    ]
    }
   },
   {
@@ -619,19 +3483,281 @@
     "~barracks",
     "~techlevel.infonly"
    ],
+   "build_at": "Soldier",
    "hp": 5000,
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    0
+    6
    ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
    "unit": {
     "speed": 54,
     "turn_speed": 512,
     "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry"
+   }
+  },
+  {
+   "id": "HARV",
+   "name": "Ore Truck",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1100,
+   "build_ticks": 660,
+   "palette_order": 110,
+   "prerequisites": [
+    "proc",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Vehicle",
+   "hp": 60000,
+   "armor": 3,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 7,
+   "self_heal": {
+    "step": 100,
+    "delay": 25,
+    "start_if_below": 50,
+    "damage_cooldown": 500
+   },
+   "abilities": {},
+   "unit": {
+    "speed": 72,
+    "turn_speed": 20,
+    "turn_in_place": false,
     "locomotor": 1,
-    "turret_turn_speed": null,
-    "radius": 128
+    "radius": 384,
+    "passenger": "Vehicle",
+    "harvester": {
+     "capacity": 20,
+     "bale_load_delay": 4,
+     "bale_unload_delay": 1,
+     "search_from_proc": 15,
+     "search_from_harv": 8
+    }
+   }
+  },
+  {
+   "id": "MCV",
+   "name": "Mobile Construction Vehicle",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 2000,
+   "build_ticks": 1000,
+   "palette_order": 210,
+   "prerequisites": [
+    "fix",
+    "~techlevel.medium"
+   ],
+   "build_at": "Vehicle",
+   "hp": 60000,
+   "armor": 2,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "transforms": {
+     "into": "FACT",
+     "offset": [
+      -1,
+      -1
+     ],
+     "facing": 384,
+     "needs_option": false
+    }
+   },
+   "unit": {
+    "speed": 60,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 1,
+    "radius": 512,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "TRUK",
+   "name": "Supply Truck",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 410,
+   "prerequisites": [
+    "~techlevel.low"
+   ],
+   "build_at": "Vehicle",
+   "hp": 11000,
+   "armor": 2,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "delivers_cash": {
+     "payload": 500
+    }
+   },
+   "unit": {
+    "speed": 113,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "JEEP",
+   "name": "Ranger",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 130,
+   "prerequisites": [
+    "~vehicles.allies",
+    "~techlevel.low"
+   ],
+   "build_at": "Vehicle",
+   "hp": 15000,
+   "armor": 2,
+   "sight": 7168,
+   "weapons": [
+    9
+   ],
+   "turret_turn_speed": 40,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 1,
+     "garrison": false,
+     "initial": []
+    }
+   },
+   "unit": {
+    "speed": 164,
+    "turn_speed": 40,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "APC",
+   "name": "Armored Personnel Carrier",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 850,
+   "build_ticks": 510,
+   "palette_order": 120,
+   "prerequisites": [
+    "~vehicles.soviet",
+    "~techlevel.low"
+   ],
+   "build_at": "Vehicle",
+   "hp": 35000,
+   "armor": 3,
+   "sight": 5120,
+   "weapons": [
+    9
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 5,
+     "garrison": false,
+     "initial": []
+    }
+   },
+   "unit": {
+    "speed": 128,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "FTRK",
+   "name": "Mobile Flak",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 600,
+   "build_ticks": 360,
+   "palette_order": 130,
+   "prerequisites": [
+    "~vehicles.soviet",
+    "~techlevel.low"
+   ],
+   "build_at": "Vehicle",
+   "hp": 15000,
+   "armor": 2,
+   "sight": 6144,
+   "weapons": [
+    10,
+    11
+   ],
+   "turret_turn_speed": 40,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 113,
+    "turn_speed": 40,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
    }
   },
   {
@@ -647,19 +3773,62 @@
     "~vehicles.allies",
     "~techlevel.low"
    ],
+   "build_at": "Vehicle",
    "hp": 23000,
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    1
+    12
    ],
+   "turret_turn_speed": 28,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {},
    "unit": {
     "speed": 113,
     "turn_speed": 20,
     "turn_in_place": false,
-    "locomotor": 2,
-    "turret_turn_speed": 28,
-    "radius": 384
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "2TNK",
+   "name": "Medium Tank",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 850,
+   "build_ticks": 510,
+   "palette_order": 220,
+   "prerequisites": [
+    "fix",
+    "~vehicles.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Vehicle",
+   "hp": 46000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    13
+   ],
+   "turret_turn_speed": 20,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 72,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
    }
   },
   {
@@ -676,26 +3845,819 @@
     "~vehicles.soviet",
     "~techlevel.medium"
    ],
+   "build_at": "Vehicle",
    "hp": 60000,
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    2
+    14
    ],
+   "turret_turn_speed": 20,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {},
    "unit": {
     "speed": 64,
     "turn_speed": 20,
     "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "4TNK",
+   "name": "Mammoth Tank",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 320,
+   "prerequisites": [
+    "fix",
+    "stek",
+    "~vehicles.soviet",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 90000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [
+    15,
+    16
+   ],
+   "turret_turn_speed": 8,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": {
+    "step": 100,
+    "delay": 3,
+    "start_if_below": 50,
+    "damage_cooldown": 150
+   },
+   "abilities": {},
+   "unit": {
+    "speed": 43,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 4,
+    "radius": 512,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "V2RL",
+   "name": "V2 Rocket Launcher",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 900,
+   "build_ticks": 540,
+   "palette_order": 230,
+   "prerequisites": [
+    "dome",
+    "~vehicles.soviet",
+    "~techlevel.medium"
+   ],
+   "build_at": "Vehicle",
+   "hp": 20000,
+   "armor": 2,
+   "sight": 5120,
+   "weapons": [
+    17
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 18,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 72,
+    "turn_speed": 20,
+    "turn_in_place": false,
     "locomotor": 2,
-    "turret_turn_speed": 20,
-    "radius": 384
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "ARTY",
+   "name": "Artillery",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 850,
+   "build_ticks": 510,
+   "palette_order": 230,
+   "prerequisites": [
+    "dome",
+    "~vehicles.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Vehicle",
+   "hp": 10000,
+   "armor": 2,
+   "sight": 5120,
+   "weapons": [
+    19
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 20,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 72,
+    "turn_speed": 8,
+    "turn_in_place": false,
+    "locomotor": 5,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "MNLY",
+   "name": "Minelayer",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 800,
+   "build_ticks": 480,
+   "palette_order": 310,
+   "prerequisites": [
+    "fix",
+    "~techlevel.medium"
+   ],
+   "build_at": "Vehicle",
+   "hp": 30000,
+   "armor": 3,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 21,
+   "self_heal": null,
+   "abilities": {
+    "minelayer": {
+     "mine": "MINV",
+     "ammo": 5
+    },
+    "detect_cloaked": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 113,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "MRJ",
+   "name": "Mobile Radar Jammer",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 320,
+   "prerequisites": [
+    "atek",
+    "~vehicles.allies",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 22000,
+   "armor": 3,
+   "sight": 7168,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "jams_missiles": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 68,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "MGG",
+   "name": "Mobile Gap Generator",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 330,
+   "prerequisites": [
+    "atek",
+    "~vehicles.england",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 22000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "creates_shroud": {
+     "range": 7168
+    }
+   },
+   "unit": {
+    "speed": 72,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "TTNK",
+   "name": "Tesla Tank",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1350,
+   "build_ticks": 810,
+   "palette_order": 330,
+   "prerequisites": [
+    "tsla",
+    "stek",
+    "~vehicles.russia",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 7168,
+   "weapons": [
+    22
+   ],
+   "turret_turn_speed": 512,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 92,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "DTRK",
+   "name": "Demolition Truck",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 2500,
+   "build_ticks": 1500,
+   "palette_order": 330,
+   "prerequisites": [
+    "stek",
+    "~vehicles.ukraine",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 2800,
+   "armor": 2,
+   "sight": 4096,
+   "weapons": [
+    23
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 24,
+   "self_heal": null,
+   "abilities": {
+    "demo_truck": {}
+   },
+   "unit": {
+    "speed": 67,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 2,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "CTNK",
+   "name": "Chrono Tank",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1350,
+   "build_ticks": 810,
+   "palette_order": 330,
+   "prerequisites": [
+    "atek",
+    "~vehicles.germany",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 6144,
+   "weapons": [
+    25
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "portable_chrono": {
+     "charge_delay": 250,
+     "max_distance": 12
+    }
+   },
+   "unit": {
+    "speed": 86,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 1,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "STNK",
+   "name": "Phase Transport",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 330,
+   "prerequisites": [
+    "atek",
+    "~vehicles.france",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 35000,
+   "armor": 2,
+   "sight": 7168,
+   "weapons": [
+    26
+   ],
+   "turret_turn_speed": 20,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 5,
+     "garrison": false,
+     "initial": []
+    },
+    "cloak": {
+     "initial_delay": 125,
+     "cloak_delay": 175,
+     "uncloak_on": [
+      "Attack",
+      "Load",
+      "Unload",
+      "Heal",
+      "Dock"
+     ]
+    }
+   },
+   "unit": {
+    "speed": 128,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 1,
+    "radius": 384,
+    "passenger": "Vehicle"
+   }
+  },
+  {
+   "id": "QTNK",
+   "name": "MAD Tank",
+   "description": "",
+   "kind": "vehicle",
+   "queue": "Vehicle",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 420,
+   "prerequisites": [
+    "fix",
+    "stek",
+    "~vehicles.soviet",
+    "~techlevel.high"
+   ],
+   "build_at": "Vehicle",
+   "hp": 90000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 8,
+   "self_heal": null,
+   "abilities": {
+    "mad_tank": {
+     "charge_delay": 96,
+     "thump_interval": 8,
+     "thump_weapon": 27,
+     "detonation_weapon": 28
+    }
+   },
+   "unit": {
+    "speed": 46,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 3,
+    "radius": 512,
+    "passenger": "Vehicle"
    }
   }
  ],
  "weapons": [
   {
+   "name": "Vulcan",
+   "range": 6144,
+   "min_range": 0,
+   "reload": 35,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 2,
+     "valid": 23,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 4,
+     "valid": 23,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 6,
+     "valid": 23,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 8,
+     "valid": 23,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      200,
+      50,
+      50,
+      20,
+      20
+     ],
+     "delay": 10,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "TurretGun",
+   "range": 6656,
+   "min_range": 0,
+   "reload": 30,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 682,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      20,
+      50,
+      75,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "FireballLauncher",
+   "range": 5120,
+   "min_range": 0,
+   "reload": 70,
+   "burst": 2,
+   "burst_delays": [
+    20
+   ],
+   "projectile": "bullet",
+   "speed": 250,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 15000,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      50,
+      50,
+      25,
+      20
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "TeslaZap",
+   "range": 7168,
+   "min_range": 0,
+   "reload": 3,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "tesla",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 10000,
+     "spread": 42,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      1000,
+      60,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ZSU-23",
+   "range": 10240,
+   "min_range": 0,
+   "reload": 6,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 900,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Nike",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 15,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 341,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      100,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
    "name": "M1Carbine",
    "range": 5120,
+   "min_range": 0,
    "reload": 20,
    "burst": 1,
    "burst_delays": [
@@ -703,25 +4665,233 @@
    ],
    "projectile": "instant",
    "speed": 0,
-   "damage": 1000,
-   "spread": 128,
-   "falloff": [
-    100,
-    37,
-    14,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      150,
+      30,
+      40,
+      10,
+      10
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "OreExplosion",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
     5
    ],
-   "versus": [
-    150,
-    30,
-    40,
-    10,
-    10
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 9,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      70,
+      60,
+      20,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplodeSmall",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "M60mg",
+   "range": 4096,
+   "min_range": 0,
+   "reload": 30,
+   "burst": 5,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      150,
+      10,
+      30,
+      10,
+      10
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "FLAK-23-AA",
+   "range": 8192,
+   "min_range": 0,
+   "reload": 10,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1200,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "FLAK-23-AG",
+   "range": 6144,
+   "min_range": 0,
+   "reload": 10,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2000,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      40,
+      10,
+      60,
+      10,
+      20
+     ],
+     "delay": 0,
+     "valid": 31,
+     "invalid": 0
+    }
    ]
   },
   {
    "name": "25mm",
    "range": 4864,
+   "min_range": 0,
    "reload": 21,
    "burst": 1,
    "burst_delays": [
@@ -729,25 +4899,77 @@
    ],
    "projectile": "bullet",
    "speed": 853,
-   "damage": 2500,
-   "spread": 128,
-   "falloff": [
-    100,
-    37,
-    14,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      32,
+      52,
+      116,
+      48,
+      32
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "90mm",
+   "range": 4864,
+   "min_range": 0,
+   "reload": 50,
+   "burst": 1,
+   "burst_delays": [
     5
    ],
-   "versus": [
-    32,
-    52,
-    116,
-    48,
-    32
+   "projectile": "bullet",
+   "speed": 682,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      75,
+      75,
+      115,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
    ]
   },
   {
    "name": "105mm",
    "range": 4864,
+   "min_range": 0,
    "reload": 70,
    "burst": 2,
    "burst_delays": [
@@ -755,24 +4977,675 @@
    ],
    "projectile": "bullet",
    "speed": 682,
-   "damage": 4000,
-   "spread": 128,
-   "falloff": [
-    100,
-    37,
-    14,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      75,
+      75,
+      115,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "120mm",
+   "range": 4864,
+   "min_range": 0,
+   "reload": 90,
+   "burst": 2,
+   "burst_delays": [
     5
    ],
-   "versus": [
-    30,
-    75,
-    75,
-    115,
-    50
+   "projectile": "bullet",
+   "speed": 682,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 9,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      75,
+      75,
+      115,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 8
+    }
+   ]
+  },
+  {
+   "name": "MammothTusk",
+   "range": 6656,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 341,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 9,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      74,
+      60,
+      24,
+      50
+     ],
+     "delay": 0,
+     "valid": 9,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "SCUD",
+   "range": 10240,
+   "min_range": 4096,
+   "reload": 215,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 170,
+   "inaccuracy": 213,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4500,
+     "spread": 341,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      70,
+      40,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "V2Explode",
+   "range": 10240,
+   "min_range": 4096,
+   "reload": 215,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 170,
+   "inaccuracy": 213,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4500,
+     "spread": 341,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      70,
+      40,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "155mm",
+   "range": 12288,
+   "min_range": 4096,
+   "reload": 85,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 170,
+   "inaccuracy": 1162,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 23000,
+     "spread": 426,
+     "falloff": [
+      100,
+      55,
+      20,
+      5
+     ],
+     "versus": [
+      60,
+      40,
+      60,
+      25,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ArtilleryExplode",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 15000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ATMine",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 40000,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 32
+    }
+   ]
+  },
+  {
+   "name": "TTankZap",
+   "range": 7168,
+   "min_range": 0,
+   "reload": 120,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "tesla",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 10000,
+     "spread": 42,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      1000,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "DemoTruckTargeting",
+   "range": 2048,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 7,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "target",
+     "damage": 0,
+     "spread": 43,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 7,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "MiniNuke",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 15000,
+     "spread": 1024,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      40,
+      100,
+      100,
+      25
+     ],
+     "delay": 0,
+     "valid": 31,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 2048,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      55,
+      100,
+      100,
+      25
+     ],
+     "delay": 5,
+     "valid": 31,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 3072,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      50,
+      100,
+      100,
+      25
+     ],
+     "delay": 10,
+     "valid": 31,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 4096,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      25
+     ],
+     "delay": 15,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "APTusk",
+   "range": 6144,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 298,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      34,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "APTusk.stnk",
+   "range": 6144,
+   "min_range": 512,
+   "reload": 100,
+   "burst": 1,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 298,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      34,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "MADTankThump",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 1,
+   "warheads": [
+    {
+     "kind": "percent",
+     "damage": 1,
+     "spread": 7168,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 1
+    }
+   ]
+  },
+  {
+   "name": "MADTankDetonate",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 1,
+   "warheads": [
+    {
+     "kind": "percent",
+     "damage": 19,
+     "spread": 7168,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 1
+    }
    ]
   }
  ],
  "locomotors": [
+  {
+   "name": "foot",
+   "speeds": [
+    100,
+    89,
+    89
+   ],
+   "crushes": [
+    "mine",
+    "crate"
+   ]
+  },
   {
    "name": "heavywheeled",
    "speeds": [
@@ -788,11 +5661,11 @@
    ]
   },
   {
-   "name": "foot",
+   "name": "wheeled",
    "speeds": [
     100,
-    89,
-    89
+    50,
+    88
    ],
    "crushes": [
     "mine",
@@ -809,6 +5682,34 @@
    "crushes": [
     "wall",
     "infantry",
+    "mine",
+    "crate"
+   ]
+  },
+  {
+   "name": "heavytracked",
+   "speeds": [
+    100,
+    88,
+    88
+   ],
+   "crushes": [
+    "wall",
+    "infantry",
+    "mine",
+    "crate",
+    "heavywall"
+   ]
+  },
+  {
+   "name": "lighttracked",
+   "speeds": [
+    100,
+    88,
+    88
+   ],
+   "crushes": [
+    "wall",
     "mine",
     "crate"
    ]

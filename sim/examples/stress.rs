@@ -18,5 +18,8 @@ fn main() {
     }
     let avg = t0.elapsed().as_secs_f64() * 1000.0 / ticks as f64;
     let alive = w.actors.iter().filter(|a| a.alive).count();
-    println!("{ticks} ticks: avg {avg:.2} ms/tick, worst {worst:.2} ms, budget 40 ms; {alive} alive, {} flow fields computed", w.flow.computed);
+    println!(
+        "{ticks} ticks: avg {avg:.2} ms/tick, worst {worst:.2} ms, budget 40 ms; {alive} alive, {} flow fields computed",
+        w.flow.computed
+    );
 }

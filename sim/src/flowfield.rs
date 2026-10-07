@@ -222,7 +222,7 @@ pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), com
                 let i = map.idx(x, y);
                 if pass.component[i] == component && !pass.blocked[i] {
                     let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
-                    if best.map_or(true, |(bd, bi)| d < bd || (d == bd && (i as u32) < bi)) {
+                    if best.is_none_or(|(bd, bi)| d < bd || (d == bd && (i as u32) < bi)) {
                         best = Some((d, i as u32));
                     }
                 }

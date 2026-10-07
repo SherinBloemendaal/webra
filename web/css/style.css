@@ -61,7 +61,8 @@ body {
 /* ---- Menu and game over -------------------------------------------------- */
 
 #menu,
-#gameover {
+#gameover,
+#pause {
   position: fixed;
   inset: 0;
   display: grid;
@@ -74,8 +75,37 @@ body {
     radial-gradient(ellipse at top, #263022, var(--bg) 70%);
 }
 
-#gameover {
+#gameover,
+#pause {
   background: rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+
+.hud-button {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  padding: 3px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #cfd8c4;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font: 600 12px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.hud-button:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+#version {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  z-index: 60;
+  font: 11px ui-monospace, Menlo, Consolas, monospace;
+  color: rgba(220, 220, 200, 0.55);
+  pointer-events: none;
 }
 
 .menu-card {

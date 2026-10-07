@@ -156,7 +156,7 @@
 #sidebar .sb-tabs {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 3px;
 }
 
@@ -530,4 +530,48 @@
   #sidebar .sb-power.low .sb-power-label {
     animation: none;
   }
+}
+
+/* ---- Command buttons (sell / deploy) -------------------------------------- */
+
+#sidebar .sb-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+
+#sidebar .sb-tool {
+  padding: 5px 0;
+  background: linear-gradient(#2c3330, #222826);
+  color: var(--sb-text, #e6e4d6);
+  border: 1px solid #3c4541;
+  border-radius: 2px;
+  font: 700 11px/1.2 system-ui, 'Segoe UI', sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#sidebar .sb-tool:hover:not(:disabled) {
+  filter: brightness(1.25);
+}
+
+#sidebar .sb-tool.active {
+  border-color: var(--sb-gold, #d9b23a);
+  color: var(--sb-gold, #d9b23a);
+  box-shadow: inset 0 0 0 1px var(--sb-gold, #d9b23a);
+}
+
+#sidebar .sb-tool.blocked {
+  color: #d9776b;
+}
+
+#sidebar .sb-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#sidebar .sb-tab {
+  font-size: 10px;
 }

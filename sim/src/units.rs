@@ -1,11 +1,10 @@
 //! Per-tick unit behaviour: movement, crowd separation, combat, harvesting, repair.
 
-use crate::flowfield::{nearest_in_component, DIRS, DIR_GOAL, DIR_NONE};
+use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
-use crate::rules::{Kind, Projectile as ProjKind};
-use crate::world::{cell_center, Activity, Effect, EffectKind, HarvState, Projectile, World, NONE};
+use crate::rules::Kind;
+use crate::world::{cell_center, Activity, HarvState, World, NONE};
 
-const SCAN_INTERVAL: i32 = 8;
 /// Vehicles stop to turn when the heading is off by more than this (45 degrees).
 const MOVE_WHILE_TURNING: i32 = 128;
 const MAX_PUSH: i32 = 96;
@@ -18,7 +17,7 @@ impl World {
         let n = self.actors.len();
         for i in 0..n {
             let a = &mut self.actors[i];
-            if !a.alive || a.kind == Kind::Building {
+            if !a.alive {
                 continue;
             }
             a.moved = false;
@@ -31,8 +30,16 @@ impl World {
                 }
             }
         }
-        for i in 0..n {
-            if !self.actors[i].alive || self.actors[i].kind == Kind::Building {
+        // Alternate the processing direction every tick so no player's units
+        // always act (and fire) first; otherwise player slot order decides fights.
+        let forward = self.tick.is_multiple_of(2);
+        for k in 0..n {
+            let i = if forward { k } else { n - 1 - k };
+            if !self.actors[i].alive {
+                continue;
+            }
+            if self.actors[i].kind == Kind::Building {
+                self.tick_defense(i);
                 continue;
             }
             match self.actors[i].activity {
@@ -42,87 +49,11 @@ impl World {
                 Activity::Harvest => self.tick_harvest(i),
                 Activity::Repair => self.tick_repair(i),
             }
-        }
-        self.tick_buildings();
-        self.separate_units();
-    }
-
-    fn has_weapons(&self, i: usize) -> bool {
-        !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty()
-    }
-
-    // ---- Target acquisition ------------------------------------------------
-
-    /// Closest enemy within weapon range that this unit's owner can see.
-    /// Units are preferred over buildings, like OpenRA's default target priorities.
-    fn scan_for_target(&self, i: usize) -> Option<usize> {
-        let a = &self.actors[i];
-        let info = &self.rules.actors[a.ty as usize];
-        let range = info.max_range(&self.rules);
-        if range == 0 {
-            return None;
-        }
-        let r_cells = range / CELL + 1;
-        let (cx, cy) = self.cell_of(a.x, a.y);
-        let range_sq = (range as i64) * (range as i64);
-        let mut best_unit: Option<(i64, usize)> = None;
-        let mut best_building: Option<(i32, usize)> = None;
-        for y in cy - r_cells..=cy + r_cells {
-            for x in cx - r_cells..=cx + r_cells {
-                if !self.map.contains(x, y) {
-                    continue;
-                }
-                let ci = self.map.idx(x, y);
-                if self.players[a.owner as usize].visible[ci] == 0 {
-                    continue;
-                }
-                for &u in self.units_in_cell(ci) {
-                    let u = u as usize;
-                    let t = &self.actors[u];
-                    if !t.alive || t.owner == a.owner {
-                        continue;
-                    }
-                    let d = dist_sq(a.x, a.y, t.x, t.y);
-                    if d <= range_sq && best_unit.map_or(true, |(bd, bi)| d < bd || (d == bd && u < bi)) {
-                        best_unit = Some((d, u));
-                    }
-                }
-                let b = self.building_at[ci];
-                if b != NONE && best_unit.is_none() {
-                    let b = b as usize;
-                    let t = &self.actors[b];
-                    if t.alive && t.owner != a.owner {
-                        let d = self.hit_distance(b, a.x, a.y);
-                        if d <= range && best_building.map_or(true, |(bd, bi)| d < bd || (d == bd && b < bi)) {
-                            best_building = Some((d, b));
-                        }
-                    }
-                }
+            if self.actors[i].alive {
+                self.tick_self_heal(i);
             }
         }
-        best_unit.map(|(_, u)| u).or(best_building.map(|(_, b)| b))
-    }
-
-    fn try_auto_target(&mut self, i: usize) -> bool {
-        if !self.has_weapons(i) {
-            return false;
-        }
-        let a = &mut self.actors[i];
-        a.scan_cooldown -= 1;
-        if a.scan_cooldown > 0 {
-            return false;
-        }
-        a.scan_cooldown = SCAN_INTERVAL;
-        if let Some(t) = self.scan_for_target(i) {
-            let tref = self.make_ref(t);
-            let a = &mut self.actors[i];
-            a.target = tref;
-            a.forced = false;
-            a.chase_cell = NONE;
-            a.activity = Activity::Attack;
-            return true;
-        }
-        false
+        self.separate_units();
     }
 
     // ---- Activities --------------------------------------------------------
@@ -239,7 +170,7 @@ impl World {
     }
 
     /// One movement step along the flow field toward `goal`.
-    fn move_toward(&mut self, i: usize, goal: u32) {
+    pub(crate) fn move_toward(&mut self, i: usize, goal: u32) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let ci = self.cell_index(x, y);
         let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
@@ -278,21 +209,22 @@ impl World {
         let ci = self.cell_index(x, y);
         let speed_pct = self.rules.locomotors[unit.locomotor].speeds[self.map.speed_class(ci)];
         let speed = unit.speed * speed_pct / 100;
+        let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
         let a = &mut self.actors[i];
-        let has_turret = unit.turret_turn_speed.is_some();
+        let has_turret = turret_speed.is_some();
         if unit.turn_in_place {
             a.facing = desired;
         } else {
             a.facing = turn_toward(a.facing, desired, unit.turn_speed);
             if angle_diff(a.facing, desired).abs() > MOVE_WHILE_TURNING {
                 if has_turret && a.target == NONE {
-                    a.turret = turn_toward(a.turret, a.facing, unit.turret_turn_speed.unwrap());
+                    a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
                 }
                 return;
             }
         }
         if has_turret && (a.target == NONE || a.activity != Activity::Attack) {
-            a.turret = turn_toward(a.turret, a.facing, unit.turret_turn_speed.unwrap());
+            a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
         }
         let d = dist(x, y, wx, wy);
         let (nx, ny) = if d <= speed {
@@ -327,231 +259,6 @@ impl World {
             }
         }
         false
-    }
-
-    fn tick_attack(&mut self, i: usize) {
-        let target = self.resolve(self.actors[i].target).filter(|&t| {
-            let owner = self.actors[i].owner;
-            self.actors[t].owner != owner && self.is_visible_to(t, owner)
-        });
-        let Some(t) = target else {
-            self.actors[i].target = NONE;
-            if self.actors[i].attack_move {
-                // Resume the attack-move toward the original destination.
-                let (dx, dy) = self.actors[i].dest;
-                let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
-                let goal = nearest_in_component(&self.map, &self.pass, self.cell_of(dx, dy), comp).unwrap_or(NONE);
-                let a = &mut self.actors[i];
-                a.goal = goal;
-                a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
-                a.best_dist = i32::MAX;
-                a.stuck_ticks = 0;
-            } else {
-                self.actors[i].activity = Activity::Idle;
-            }
-            return;
-        };
-        // While attack-moving, a closer threat takes priority.
-        let info = &self.rules.actors[self.actors[i].ty as usize];
-        let range = info.max_range(&self.rules);
-        let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let d = self.hit_distance(t, x, y);
-        if d <= range {
-            self.aim_and_fire(i, t);
-            return;
-        }
-        if !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
-            return;
-        }
-        // Chase: path toward the target's cell (or the nearest reachable one).
-        let (tx, ty) = self.cell_of(self.actors[t].x, self.actors[t].y);
-        let tcell = self.map.idx(tx, ty) as u32;
-        if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
-            let comp = self.pass.component[self.cell_index(x, y)];
-            let goal = nearest_in_component(&self.map, &self.pass, (tx, ty), comp).unwrap_or(NONE);
-            let a = &mut self.actors[i];
-            a.chase_cell = tcell;
-            a.goal = goal;
-        }
-        let goal = self.actors[i].goal;
-        if goal == NONE {
-            self.actors[i].activity = Activity::Idle;
-            return;
-        }
-        self.move_toward(i, goal);
-    }
-
-    fn aim_and_fire(&mut self, i: usize, t: usize) {
-        let ty = self.actors[i].ty as usize;
-        let unit = self.rules.actors[ty].unit.clone().unwrap();
-        let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let (tx, ty_) = (self.actors[t].x, self.actors[t].y);
-        let desired = facing_of(tx - x, ty_ - y).unwrap_or(self.actors[i].facing);
-        let aligned = {
-            let a = &mut self.actors[i];
-            if let Some(ts) = unit.turret_turn_speed {
-                a.turret = turn_toward(a.turret, desired, ts);
-                a.turret == desired
-            } else if unit.turn_in_place {
-                a.facing = desired;
-                true
-            } else {
-                a.facing = turn_toward(a.facing, desired, unit.turn_speed);
-                a.facing == desired
-            }
-        };
-        if !aligned {
-            return;
-        }
-        let weapons = self.rules.actors[ty].weapons.clone();
-        for (slot, &w) in weapons.iter().enumerate().take(crate::world::MAX_WEAPONS) {
-            let wi = &self.rules.weapons[w];
-            if self.actors[i].reload[slot] > 0 || self.hit_distance(t, x, y) > wi.range {
-                continue;
-            }
-            self.fire(i, t, w);
-            let wi = &self.rules.weapons[w];
-            let a = &mut self.actors[i];
-            a.burst_shot[slot] += 1;
-            if a.burst_shot[slot] < wi.burst {
-                a.reload[slot] = wi.burst_delay(a.burst_shot[slot] - 1).max(1);
-            } else {
-                a.burst_shot[slot] = 0;
-                a.reload[slot] = wi.reload.max(1);
-            }
-        }
-    }
-
-    fn fire(&mut self, i: usize, t: usize, w: usize) {
-        let wi = &self.rules.weapons[w];
-        let (sx, sy, facing, owner) = {
-            let a = &self.actors[i];
-            let f = if self.rules.actors[a.ty as usize].unit.as_ref().unwrap().turret_turn_speed.is_some() {
-                a.turret
-            } else {
-                a.facing
-            };
-            let (vx, vy) = facing_vec(f);
-            let muzzle = if a.kind == Kind::Infantry { 128 } else { 384 };
-            (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
-        };
-        // Aim at the target's hit shape point closest to the shooter (buildings are big).
-        let (tx, ty) = self.aim_point(t, sx, sy);
-        match wi.projectile {
-            ProjKind::Instant => self.impact(w, tx, ty, owner),
-            ProjKind::Bullet | ProjKind::Missile => {
-                let tref = self.make_ref(t);
-                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
-            }
-        }
-    }
-
-    fn aim_point(&self, t: usize, sx: i32, sy: i32) -> (i32, i32) {
-        let a = &self.actors[t];
-        if a.kind != Kind::Building {
-            return (a.x, a.y);
-        }
-        let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-        let mut best = (i64::MAX, a.x, a.y);
-        for &(dx, dy) in &b.hit_cells {
-            let (cx, cy) = (cell_center(a.cx + dx), cell_center(a.cy + dy));
-            let d = dist_sq(sx, sy, cx, cy);
-            if d < best.0 {
-                best = (d, cx, cy);
-            }
-        }
-        (best.1, best.2)
-    }
-
-    pub(crate) fn tick_projectiles(&mut self) {
-        let mut k = 0;
-        while k < self.projectiles.len() {
-            let p = &self.projectiles[k];
-            let wi = &self.rules.weapons[p.weapon as usize];
-            // Missiles home on a live target; bullets fly to the aimed point.
-            let (mut tx, mut ty) = (p.tx, p.ty);
-            if wi.projectile == ProjKind::Missile {
-                if let Some(t) = self.resolve(p.target) {
-                    let (ax, ay) = self.aim_point(t, p.x, p.y);
-                    tx = ax;
-                    ty = ay;
-                }
-            }
-            let d = dist(p.x, p.y, tx, ty);
-            let speed = wi.speed.max(1);
-            if d <= speed {
-                let (w, owner) = (p.weapon as usize, p.owner);
-                self.projectiles.swap_remove(k);
-                self.impact(w, tx, ty, owner);
-                continue;
-            }
-            let p = &mut self.projectiles[k];
-            p.x += ((tx - p.x) as i64 * speed as i64 / d as i64) as i32;
-            p.y += ((ty - p.y) as i64 * speed as i64 / d as i64) as i32;
-            p.tx = tx;
-            p.ty = ty;
-            if let Some(f) = facing_of(tx - p.x, ty - p.y) {
-                p.facing = f;
-            }
-            k += 1;
-        }
-    }
-
-    /// Apply a weapon's SpreadDamage warhead at a point. Friendly fire applies, as in OpenRA.
-    pub(crate) fn impact(&mut self, w: usize, x: i32, y: i32, _owner: u8) {
-        let wi = &self.rules.weapons[w];
-        let radius = wi.damage_radius();
-        let damage = wi.damage;
-        let r_cells = radius / CELL + 2;
-        let (cx, cy) = self.cell_of(x, y);
-        let mut hits: Vec<(usize, i32)> = Vec::new();
-        let mut seen_buildings: Vec<usize> = Vec::new();
-        for yy in cy - r_cells..=cy + r_cells {
-            for xx in cx - r_cells..=cx + r_cells {
-                if !self.map.contains(xx, yy) {
-                    continue;
-                }
-                let ci = self.map.idx(xx, yy);
-                for &u in self.units_in_cell(ci) {
-                    let u = u as usize;
-                    if self.actors[u].alive {
-                        let d = self.hit_distance(u, x, y);
-                        if d <= radius {
-                            hits.push((u, d));
-                        }
-                    }
-                }
-                let b = self.building_at[ci];
-                if b != NONE && !seen_buildings.contains(&(b as usize)) {
-                    let b = b as usize;
-                    seen_buildings.push(b);
-                    if self.actors[b].alive {
-                        let d = self.hit_distance(b, x, y);
-                        if d <= radius {
-                            hits.push((b, d));
-                        }
-                    }
-                }
-            }
-        }
-        let falloffs: Vec<(usize, i32)> = hits.iter().map(|&(u, d)| (u, wi.falloff_at(d))).collect();
-        let versus = wi.versus.clone();
-        let effect = if damage >= 3000 { EffectKind::SmallExplosion } else { EffectKind::Piff };
-        let ttl = if effect == EffectKind::SmallExplosion { 12 } else { 6 };
-        self.effects.push(Effect { x, y, kind: effect, ttl, max: ttl });
-        for (u, fall) in falloffs {
-            let armor = self.rules.actors[self.actors[u].ty as usize].armor;
-            let dmg = (damage as i64 * versus[armor] as i64 / 100 * fall as i64 / 100) as i32;
-            if dmg <= 0 {
-                continue;
-            }
-            let a = &mut self.actors[u];
-            a.hp -= dmg;
-            a.flash = 2;
-            if a.hp <= 0 {
-                self.kill(u);
-            }
-        }
     }
 
     // ---- Harvesting --------------------------------------------------------
@@ -639,7 +346,7 @@ impl World {
                 };
                 let dock = self.dock_cell(r);
                 let me = self.make_ref(i);
-                let busy = self.resolve(self.actors[r].dock_user).map_or(false, |u| self.make_ref(u) != me);
+                let busy = self.resolve(self.actors[r].dock_user).is_some_and(|u| self.make_ref(u) != me);
                 if self.at_cell_center(i, dock) && !busy {
                     self.actors[r].dock_user = me;
                     let rref = self.make_ref(r);
@@ -705,7 +412,7 @@ impl World {
                 continue;
             }
             let d = dist_sq(x, y, b.x, b.y);
-            if best.map_or(true, |(bd, _)| d < bd) {
+            if best.is_none_or(|(bd, _)| d < bd) {
                 best = Some((d, j));
             }
         }
@@ -762,7 +469,7 @@ impl World {
                     continue;
                 }
                 let d = (x - ux).pow(2) + (y - uy).pow(2);
-                if best.map_or(true, |(bd, bc)| d < bd || (d == bd && (c as u32) < bc)) {
+                if best.is_none_or(|(bd, bc)| d < bd || (d == bd && (c as u32) < bc)) {
                     best = Some((d, c as u32));
                 }
             }
@@ -799,10 +506,9 @@ impl World {
         let a = &mut self.actors[i];
         if a.hp >= max_hp {
             // Done: leave the pad toward the depot's rally point (or just below it).
-            let (rx, ry) = self.actors[d].rally.unwrap_or((
-                cell_center(self.actors[d].cx + binfo.width / 2),
-                cell_center(self.actors[d].cy + binfo.height + 1),
-            ));
+            let (rx, ry) = self.actors[d]
+                .rally
+                .unwrap_or((cell_center(self.actors[d].cx + binfo.width / 2), cell_center(self.actors[d].cy + binfo.height + 1)));
             self.order_move(&[i], rx, ry, false);
             return;
         }
@@ -872,7 +578,7 @@ impl World {
                         let d = isqrt(d2) as i32;
                         let (nx, ny) = if d == 0 {
                             // Deterministic split for exactly overlapping units.
-                            let f = ((i * 7 + j * 13) % 8) as usize;
+                            let f = (i * 7 + j * 13) % 8;
                             (DIRS[f].0 * 1024, DIRS[f].1 * 1024)
                         } else {
                             (dx * 1024 / d, dy * 1024 / d)
@@ -916,7 +622,6 @@ impl World {
         }
     }
 
-    /// Whether unit `a` crushes unit `b` (vehicle whose locomotor crushes infantry, over infantry).
     fn crushes(&self, a: usize, b: usize) -> bool {
         let (ta, tb) = (&self.actors[a], &self.actors[b]);
         if ta.kind != Kind::Vehicle || tb.kind != Kind::Infantry {
@@ -924,15 +629,5 @@ impl World {
         }
         let loco = self.rules.actors[ta.ty as usize].unit.as_ref().unwrap().locomotor;
         self.rules.locomotors[loco].crushes_infantry
-    }
-
-    // ---- Buildings ---------------------------------------------------------
-
-    fn tick_buildings(&mut self) {
-        for a in self.actors.iter_mut() {
-            if a.alive && a.kind == Kind::Building && a.flash > 0 {
-                a.flash -= 1;
-            }
-        }
     }
 }

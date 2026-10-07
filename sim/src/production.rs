@@ -1,8 +1,9 @@
 //! Prerequisites, power, classic per-category production queues and building placement.
 
+use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
-use crate::world::{cell_center, Activity, QueueItem, World, NONE};
+use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
 const MAX_QUEUED: usize = 30;
@@ -12,6 +13,16 @@ pub struct Requirement {
     pub label: String,
     /// This faction can never meet it (other side or country).
     pub never: bool,
+}
+
+fn tech_level_label(level: &str) -> &'static str {
+    match level {
+        "infonly" => "Infantry only",
+        "low" => "Low",
+        "medium" => "Medium",
+        "high" => "No superweapons",
+        _ => "Unrestricted",
+    }
 }
 
 fn title(s: &str) -> String {
@@ -30,8 +41,15 @@ pub struct Availability {
 impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
+        // The lobby tech level grants techlevel.* tokens up to the chosen level.
+        let tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
+            .filter_map(|l| self.rules.token(&format!("techlevel.{}", crate::rules::TECH_LEVELS[l])))
+            .collect();
         for p in self.players.iter_mut() {
             p.tokens.iter_mut().for_each(|t| *t = false);
+            for &t in &tech {
+                p.tokens[t as usize] = true;
+            }
             p.storage = 0;
         }
         for a in &self.actors {
@@ -43,9 +61,7 @@ impl World {
             for &t in &b.provides[p.faction] {
                 p.tokens[t as usize] = true;
             }
-            if let Some(r) = &b.refinery {
-                p.storage += r.storage;
-            }
+            p.storage += b.storage;
         }
         for p in self.players.iter_mut() {
             // Ore over capacity is lost, as in OpenRA when silos are destroyed.
@@ -105,7 +121,10 @@ impl World {
                 Requirement { label: format!("Not available to {}", title(&self.rules.factions[p.faction])), never: true }
             } else {
                 let providers = self.providers(p.faction, pr.token);
-                if providers.is_empty() {
+                let name = &self.rules.tokens[pr.token as usize];
+                if let Some(level) = name.strip_prefix("techlevel.") {
+                    Requirement { label: format!("Tech level {}", tech_level_label(level)), never: true }
+                } else if providers.is_empty() {
                     Requirement { label: self.exclusive_label(pr.token), never: true }
                 } else {
                     Requirement { label: providers.join(" or "), never: false }
@@ -123,9 +142,8 @@ impl World {
         let mut names: Vec<String> = Vec::new();
         for a in &self.rules.actors {
             let Some(b) = &a.building else { continue };
-            let buildable = !a.prerequisites.iter().any(|pr| self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
-            let starting = a.id == "FACT";
-            if (buildable || starting) && b.provides[faction].contains(&token) && !names.contains(&a.name) {
+            let idx = self.rules.actor_index(&a.id).unwrap();
+            if self.rules.obtainable[faction][idx] && b.provides[faction].contains(&token) && !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
@@ -135,18 +153,13 @@ impl World {
     /// "Allies only", "Soviet only" or "Russia only" for a token no building of
     /// this faction provides.
     fn exclusive_label(&self, token: u16) -> String {
-        let factions: Vec<usize> = (0..self.rules.factions.len())
-            .filter(|&f| !self.providers(f, token).is_empty())
-            .collect();
+        let factions: Vec<usize> = (0..self.rules.factions.len()).filter(|&f| !self.providers(f, token).is_empty()).collect();
         if factions.is_empty() {
             return "Not available yet".into();
         }
         let sides: Vec<usize> = factions.iter().map(|&f| self.rules.side_of(f)).collect();
-        let all_of_side = |side: usize| {
-            (0..self.rules.factions.len())
-                .filter(|&f| self.rules.side_of(f) == side)
-                .all(|f| factions.contains(&f))
-        };
+        let all_of_side =
+            |side: usize| (0..self.rules.factions.len()).filter(|&f| self.rules.side_of(f) == side).all(|f| factions.contains(&f));
         if sides.iter().all(|&s| s == sides[0]) && all_of_side(sides[0]) {
             return if sides[0] == 0 { "Allies only".into() } else { "Soviet only".into() };
         }
@@ -158,12 +171,27 @@ impl World {
         format!("{} only", names.join(" or "))
     }
 
-    fn producer_count(&self, player: u8, q: QueueType) -> usize {
-        self.actors
-            .iter()
-            .filter(|a| a.alive && a.owner == player && a.kind == Kind::Building)
-            .filter(|a| self.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&q))
-            .count()
+    /// Own buildings that can produce `ty` (OpenRA: Production types vs BuildAtProductionType).
+    fn producers_of(&self, player: u8, ty: u16) -> Vec<usize> {
+        let info = &self.rules.actors[ty as usize];
+        (0..self.actors.len())
+            .filter(|&i| {
+                let a = &self.actors[i];
+                a.alive && a.owner == player && a.kind == Kind::Building && {
+                    let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+                    b.produces.contains(&info.queue) && b.production_types.contains(&info.build_at)
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_producer(&self, player: u8, q: QueueType) -> bool {
+        self.actors.iter().any(|a| {
+            a.alive
+                && a.owner == player
+                && a.kind == Kind::Building
+                && self.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&q)
+        })
     }
 
     pub fn start_production(&mut self, player: u8, ty: u16, count: i32) {
@@ -174,7 +202,7 @@ impl World {
         let queue = &mut self.players[player as usize].queues[q as usize];
         for _ in 0..count.max(1) {
             // Classic sidebar: only one building at a time.
-            if q == QueueType::Building && !queue.items.is_empty() {
+            if q.is_structure() && !queue.items.is_empty() {
                 return;
             }
             if queue.items.len() >= MAX_QUEUED {
@@ -206,12 +234,14 @@ impl World {
             if self.players[player as usize].queues[qi].items.is_empty() {
                 continue;
             }
-            let producers = self.producer_count(player, q);
+            let first_ty = self.players[player as usize].queues[qi].items[0].ty;
+            let producers =
+                if q.is_structure() { usize::from(self.has_producer(player, q)) } else { self.producers_of(player, first_ty).len() };
+            // No factory (or it was destroyed): the queue waits.
             if producers == 0 {
                 continue;
             }
             // Production pauses while prerequisites are lost (e.g. the repair depot died).
-            let first_ty = self.players[player as usize].queues[qi].items[0].ty;
             if !self.availability(player, first_ty).enabled {
                 continue;
             }
@@ -223,11 +253,12 @@ impl World {
             let low_power = self.players[player as usize].low_power();
             let item = &mut self.players[player as usize].queues[qi].items[0];
             if item.done {
-                if q == QueueType::Building {
+                if q.is_structure() {
                     continue; // waiting for placement
                 }
             } else {
                 if item.total == 0 {
+                    // More factories of the same kind build faster (BuildTimeSpeedReduction).
                     let red = reductions[(producers - 1).min(reductions.len() - 1)];
                     item.total = (build_ticks * red / 100).max(1);
                     item.remaining = item.total;
@@ -251,25 +282,19 @@ impl World {
                     continue;
                 }
                 item.done = true;
-                if q == QueueType::Building {
+                if q.is_structure() {
                     continue;
                 }
             }
             // Finished unit: spawn it at a producer.
-            if self.spawn_produced(player, first_ty, q) {
+            if self.spawn_produced(player, first_ty) {
                 self.players[player as usize].queues[qi].items.remove(0);
             }
         }
     }
 
-    fn spawn_produced(&mut self, player: u8, ty: u16, q: QueueType) -> bool {
-        let producer = self.actors.iter().enumerate().find(|(_, a)| {
-            a.alive
-                && a.owner == player
-                && a.kind == Kind::Building
-                && self.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&q)
-        });
-        let Some((b, _)) = producer else { return false };
+    fn spawn_produced(&mut self, player: u8, ty: u16) -> bool {
+        let Some(&b) = self.producers_of(player, ty).first() else { return false };
         let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
         let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
         let exits = binfo.exits.clone();
@@ -283,19 +308,19 @@ impl World {
                 continue;
             }
             let n = self.units_in_cell(self.map.idx(cx, cy)).len();
-            if best.map_or(true, |(bn, _)| n < bn) {
+            if best.is_none_or(|(bn, _)| n < bn) {
                 best = Some((n, (cx, cy)));
             }
         }
         let (ex, ey) = match best {
             Some((_, c)) => c,
-            None => (bcx + width / 2, bcy + height - 1),
+            None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
         };
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), 512);
         if self.is_harvester(u) {
             return true;
         }
-        let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center(bcy + height + 1)));
+        let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))));
         self.order_move(&[u], rx, ry, false);
         true
     }
@@ -314,19 +339,21 @@ impl World {
                 continue;
             }
             let (x, y) = (cx + dx, cy + dy);
-            let ok = in_area
-                && self.map.contains(x, y)
-                && {
-                    let i = self.map.idx(x, y);
-                    self.map.terrain[i].buildable()
-                        && self.map.ore[i] == 0
-                        && self.building_at[i] == NONE
-                        && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive)
-                        && self.players[player as usize].explored[i] != 0
-                };
+            let ok = in_area && self.map.contains(x, y) && self.cell_free_for(player, b.on_water, self.map.idx(x, y), None);
             out.push((x, y, ok));
         }
         out
+    }
+
+    /// Whether a structure cell may go on map cell `i`: right terrain, no ore,
+    /// no building, no units (except `ignore`), explored by the player.
+    fn cell_free_for(&self, player: u8, on_water: bool, i: usize, ignore: Option<usize>) -> bool {
+        let terrain_ok = if on_water { self.map.terrain[i] == Terrain::Water } else { self.map.terrain[i].buildable() };
+        terrain_ok
+            && self.map.ore[i] == 0
+            && self.building_at[i] == NONE
+            && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
+            && self.players[player as usize].explored[i] != 0
     }
 
     pub fn can_place(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
@@ -335,12 +362,13 @@ impl World {
     }
 
     /// OpenRA rules: within `Adjacent` cells of an existing building that gives
-    /// buildable area, and within range of a base provider (construction yard).
+    /// buildable area, and (with the "Build radius" option) within range of a
+    /// base provider (construction yard).
     fn in_build_area(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
         let b = self.rules.actors[ty as usize].building.as_ref().unwrap();
         let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
         let mut adjacent = false;
-        let mut provider = false;
+        let mut provider = !(self.options.build_radius && b.requires_base_provider);
         for a in &self.actors {
             if !a.alive || a.owner != player || a.kind != Kind::Building {
                 continue;
@@ -367,20 +395,134 @@ impl World {
     }
 
     pub fn place_building(&mut self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
-        let qi = QueueType::Building as usize;
-        let ready = self.players[player as usize].queues[qi].items.first().map_or(false, |it| it.ty == ty && it.done);
+        let qi = self.rules.actors[ty as usize].queue as usize;
+        let ready = self.players[player as usize].queues[qi].items.first().is_some_and(|it| it.ty == ty && it.done);
         if !ready || !self.can_place(player, ty, cx, cy) {
             return false;
         }
         self.players[player as usize].queues[qi].items.remove(0);
         self.spawn_building(ty, player, cx, cy);
-        // Units standing on the new building's bib get nudged by separation;
-        // anyone ordered through it re-paths because the passability version changed.
+        if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
+            self.fill_wall_line(player, ty, cx, cy, lb.range);
+        }
+        // Anyone ordered through the new building re-paths (passability version changed).
         for a in self.actors.iter_mut() {
             if a.alive && a.kind != Kind::Building && a.activity == Activity::Move {
                 a.best_dist = i32::MAX;
             }
         }
+        self.refresh_tokens();
+        self.update_power();
+        true
+    }
+
+    /// OpenRA LineBuild: a wall piece placed in line with another piece of the
+    /// same wall (within range) fills the gap between them.
+    fn fill_wall_line(&mut self, player: u8, ty: u16, cx: i32, cy: i32, range: i32) {
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let mut gap = Vec::new();
+            for k in 1..=range {
+                let (x, y) = (cx + dx * k, cy + dy * k);
+                if !self.map.contains(x, y) {
+                    break;
+                }
+                let i = self.map.idx(x, y);
+                let b = self.building_at[i];
+                if b != NONE {
+                    let o = &self.actors[b as usize];
+                    if o.alive && o.owner == player && o.ty == ty && !gap.is_empty() {
+                        for &(gx, gy) in &gap {
+                            self.spawn_building(ty, player, gx, gy);
+                        }
+                    }
+                    break;
+                }
+                if !self.cell_free_for(player, false, i, None) {
+                    break;
+                }
+                gap.push((x, y));
+            }
+        }
+    }
+
+    // ---- Selling, deploying ------------------------------------------------
+
+    /// Sell a structure: refund RefundPercent of its value, scaled by health (OpenRA Sellable).
+    pub fn sell(&mut self, b: usize) -> bool {
+        let a = &self.actors[b];
+        if !a.alive || a.kind != Kind::Building {
+            return false;
+        }
+        let info = &self.rules.actors[a.ty as usize];
+        let percent = info.building.as_ref().unwrap().sell_refund;
+        if percent <= 0 {
+            return false;
+        }
+        let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
+        let (owner, x, y) = (a.owner, a.x, a.y);
+        self.refund(owner, refund);
+        self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
+        self.remove(b);
+        true
+    }
+
+    /// Where actor `i` would deploy to: (target actor type, top-left cell or unit cell).
+    pub fn deploy_target(&self, i: usize) -> Option<(u16, i32, i32)> {
+        let a = &self.actors[i];
+        if !a.alive {
+            return None;
+        }
+        let info = &self.rules.actors[a.ty as usize];
+        let tr = info.abilities.transforms.as_ref()?;
+        if tr.needs_option && !self.options.redeployable_mcv {
+            return None;
+        }
+        let into = info.transforms_into? as u16;
+        let (ox, oy) = (tr.offset[0], tr.offset[1]);
+        if a.kind == Kind::Building {
+            return Some((into, a.cx + ox, a.cy + oy));
+        }
+        let (ux, uy) = self.cell_of(a.x, a.y);
+        Some((into, ux + ox, uy + oy))
+    }
+
+    /// Whether actor `i` can deploy (MCV) or pack up (Construction Yard) right now.
+    pub fn can_deploy(&self, i: usize) -> bool {
+        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
+        let a = &self.actors[i];
+        match &self.rules.actors[into as usize].building {
+            // MCV: the yard's footprint must be free (the MCV itself may stand on it).
+            Some(b) => b.footprint.iter().filter(|c| c.2 != FootCell::Empty).all(|&(dx, dy, _)| {
+                let (x, y) = (cx + dx, cy + dy);
+                self.map.contains(x, y) && self.cell_free_for(a.owner, b.on_water, self.map.idx(x, y), Some(i))
+            }),
+            // Construction Yard: the MCV appears on its pad.
+            None => self.map.contains(cx, cy),
+        }
+    }
+
+    pub fn deploy(&mut self, i: usize) -> bool {
+        if !self.can_deploy(i) {
+            return false;
+        }
+        let (into, cx, cy) = self.deploy_target(i).unwrap();
+        let owner = self.actors[i].owner;
+        let facing = self.rules.actors[self.actors[i].ty as usize].abilities.transforms.as_ref().unwrap().facing;
+        let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[self.actors[i].ty as usize].hp as i64);
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        self.release_dock(i);
+        self.remove(i);
+        // Free the cells now so the new actor can take them in the same tick.
+        self.cleanup_dead();
+        let j = if self.rules.actors[into as usize].kind == Kind::Building {
+            self.spawn_building(into, owner, cx, cy)
+        } else {
+            self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)
+        };
+        // Damage carries over between the two forms.
+        let max = self.rules.actors[into as usize].hp as i64;
+        self.actors[j].hp = ((max * hp_ratio.0 / hp_ratio.1.max(1)) as i32).max(1);
+        self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 16, max: 16 });
         self.refresh_tokens();
         self.update_power();
         true

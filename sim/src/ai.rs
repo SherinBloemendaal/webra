@@ -1,63 +1,122 @@
-//! Skirmish AI: follows a build order, keeps harvesters busy, builds an army and
-//! attacks in growing waves. It plays by the same rules and economy as a human.
+//! Skirmish AI: deploys its MCV, follows a build order, keeps harvesters busy,
+//! builds an army and a few defences, and attacks in growing waves. It plays by
+//! the same rules and economy as a human; difficulty changes how fast it reacts
+//! and how large its waves are.
 
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
-use crate::world::{cell_center, Activity, World};
+use crate::world::{cell_center, Activity, AiDifficulty, Order, World};
 
-const THINK_INTERVAL: u32 = 25;
-const FIRST_WAVE: usize = 6;
-const MAX_WAVE: usize = 20;
 const DEFEND_RADIUS: i32 = 14 * CELL;
 
 pub struct AiState {
     offset: u32,
+    think_interval: u32,
     wave_size: usize,
+    max_wave: usize,
+    /// Defensive structures to keep around the base.
+    defenses: usize,
 }
 
 impl AiState {
-    pub fn new(player: u32) -> AiState {
-        AiState { offset: player * 7, wave_size: FIRST_WAVE }
+    pub fn new(player: u32, difficulty: AiDifficulty) -> AiState {
+        let (think_interval, wave_size, max_wave, defenses) = match difficulty {
+            AiDifficulty::Easy => (50, 10, 12, 0),
+            AiDifficulty::Normal => (25, 6, 20, 2),
+            AiDifficulty::Hard => (15, 5, 30, 4),
+        };
+        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses }
     }
 }
 
 /// Build order by prerequisite token rather than actor id, so it works for both sides.
-const BUILD_ORDER: &[&str] = &["anypower", "proc", "barracks", "weap", "proc", "anypower", "fix", "anypower", "anypower"];
+const BUILD_ORDER: &[&str] =
+    &["anypower", "proc", "barracks", "weap", "proc", "anypower", "fix", "anypower", "dome", "anypower", "techcenter"];
 
 pub fn think(w: &mut World, player: u8) {
     let state = &w.ai[player as usize];
-    if (w.tick + state.offset) % THINK_INTERVAL != 0 {
+    if !(w.tick + state.offset).is_multiple_of(state.think_interval) {
         return;
     }
-    place_ready_building(w, player);
+    deploy_mcv(w, player);
+    cancel_blocked(w, player);
+    place_ready_building(w, player, QueueType::Building);
+    place_ready_building(w, player, QueueType::Defense);
     queue_buildings(w, player);
+    queue_defenses(w, player);
     queue_units(w, player);
     command_army(w, player);
 }
 
+/// Without a Construction Yard, deploy an MCV (starting units "MCV only").
+fn deploy_mcv(w: &mut World, player: u8) {
+    if w.has_producer(player, QueueType::Building) {
+        return;
+    }
+    let mcvs: Vec<usize> = (0..w.actors.len())
+        .filter(|&i| {
+            let a = &w.actors[i];
+            a.alive && a.owner == player && a.kind == Kind::Vehicle && w.rules.actors[a.ty as usize].transforms_into.is_some()
+        })
+        .collect();
+    for i in mcvs {
+        if w.actors[i].activity != Activity::Idle {
+            continue;
+        }
+        if w.can_deploy(i) {
+            let r = w.make_ref(i);
+            w.queue_order(Order::Deploy { player, ids: vec![r] });
+            return;
+        }
+        // Blocked: drive a little and try again next time.
+        let (x, y) = (w.actors[i].x, w.actors[i].y);
+        let dx = if (w.tick / 100).is_multiple_of(2) { 2 * CELL } else { -2 * CELL };
+        w.order_move(&[i], x + dx, y + CELL, false);
+    }
+}
+
+/// Cancel queued items whose prerequisites were destroyed (e.g. a half-built
+/// tech center after the war factory died), so the base can be rebuilt.
+fn cancel_blocked(w: &mut World, player: u8) {
+    for qi in 0..crate::rules::QUEUE_COUNT {
+        let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { continue };
+        if !w.availability(player, item.ty).enabled {
+            w.cancel_production(player, item.ty);
+        }
+    }
+}
+
+/// A unit worth sending into battle (not a harvester, mine layer or suicide unit).
+fn is_army_unit(w: &World, ty: usize) -> bool {
+    let info = &w.rules.actors[ty];
+    info.kind != Kind::Building
+        && info.can_attack(&w.rules, Kind::Vehicle)
+        && info.abilities.demo_truck.is_none()
+        && info.abilities.mad_tank.is_none()
+}
+
 fn owned_buildings(w: &World, player: u8) -> Vec<usize> {
-    (0..w.actors.len())
-        .filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].kind == Kind::Building)
-        .collect()
+    (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].kind == Kind::Building).collect()
 }
 
 fn count_providing(w: &World, player: u8, token: &str) -> usize {
     let faction = w.players[player as usize].faction;
-    let Some(t) = w.rules.tokens.iter().position(|x| x == token) else { return 0 };
+    let Some(t) = w.rules.token(token) else { return 0 };
     owned_buildings(w, player)
         .iter()
-        .filter(|&&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().provides[faction].contains(&(t as u16)))
+        .filter(|&&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().provides[faction].contains(&t))
         .count()
 }
 
 /// Cheapest enabled building that provides `token`.
 fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
     let faction = w.players[player as usize].faction;
-    let t = w.rules.tokens.iter().position(|x| x == token)? as u16;
+    let t = w.rules.token(token)?;
     (0..w.rules.actors.len())
         .filter(|&a| {
             let info = &w.rules.actors[a];
             info.kind == Kind::Building
+                && info.queue == QueueType::Building
                 && info.building.as_ref().unwrap().provides[faction].contains(&t)
                 && w.availability(player, a as u16).enabled
         })
@@ -65,8 +124,20 @@ fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
         .map(|a| a as u16)
 }
 
+fn build_order_done(w: &World, player: u8) -> bool {
+    let mut needed: Vec<(&str, usize)> = Vec::new();
+    BUILD_ORDER.iter().all(|&tok| {
+        match needed.iter_mut().find(|(t, _)| *t == tok) {
+            Some(e) => e.1 += 1,
+            None => needed.push((tok, 1)),
+        }
+        let want = needed.iter().find(|(t, _)| *t == tok).unwrap().1;
+        count_providing(w, player, tok) >= want || building_for(w, player, tok).is_none()
+    })
+}
+
 fn queue_buildings(w: &mut World, player: u8) {
-    if !w.players[player as usize].queues[QueueType::Building as usize].items.is_empty() {
+    if !w.players[player as usize].queues[QueueType::Building as usize].items.is_empty() || !w.has_producer(player, QueueType::Building) {
         return;
     }
     let p = &w.players[player as usize];
@@ -96,25 +167,48 @@ fn queue_buildings(w: &mut World, player: u8) {
     }
 }
 
-fn queue_units(w: &mut World, player: u8) {
-    let order_done = {
-        let mut needed: Vec<(&str, usize)> = Vec::new();
-        BUILD_ORDER.iter().all(|&tok| {
-            match needed.iter_mut().find(|(t, _)| *t == tok) {
-                Some(e) => e.1 += 1,
-                None => needed.push((tok, 1)),
-            }
-            let want = needed.iter().find(|(t, _)| *t == tok).unwrap().1;
-            count_providing(w, player, tok) >= want || building_for(w, player, tok).is_none()
+/// A few gun or Tesla defences once the base stands.
+fn queue_defenses(w: &mut World, player: u8) {
+    let want = w.ai[player as usize].defenses;
+    let dq = QueueType::Defense as usize;
+    if want == 0 || !w.players[player as usize].queues[dq].items.is_empty() || !build_order_done(w, player) {
+        return;
+    }
+    let have = owned_buildings(w, player)
+        .iter()
+        .filter(|&&b| {
+            let info = &w.rules.actors[w.actors[b].ty as usize];
+            info.queue == QueueType::Defense && info.can_attack(&w.rules, Kind::Vehicle)
         })
-    };
+        .count();
+    if have >= want || w.players[player as usize].funds() < 1500 {
+        return;
+    }
+    let best = (0..w.rules.actors.len() as u16)
+        .filter(|&a| {
+            let info = &w.rules.actors[a as usize];
+            info.queue == QueueType::Defense
+                && info.can_attack(&w.rules, Kind::Vehicle)
+                && !info.is_wall()
+                && w.availability(player, a).enabled
+        })
+        .max_by_key(|&a| w.rules.actors[a as usize].cost);
+    if let Some(ty) = best {
+        w.start_production(player, ty, 1);
+    }
+}
+
+fn queue_units(w: &mut World, player: u8) {
+    let order_done = build_order_done(w, player);
     let funds = w.players[player as usize].funds();
     let mut candidates: Vec<u16> = (0..w.rules.actors.len() as u16).filter(|&a| w.availability(player, a).enabled).collect();
     candidates.sort_by_key(|&a| std::cmp::Reverse(w.rules.actors[a as usize].cost));
 
-    // Infantry is cheap: keep a trickle going whenever there is spare money.
+    // Infantry is cheap: keep a trickle going, but tanks are the backbone.
+    let count_kind = |k: Kind| w.actors.iter().filter(|a| a.alive && a.owner == player && a.kind == k).count();
+    let (infantry, vehicles) = (count_kind(Kind::Infantry), count_kind(Kind::Vehicle));
     let iq = QueueType::Infantry as usize;
-    if w.players[player as usize].queues[iq].items.len() < 2 && (order_done || funds >= 600) {
+    if w.players[player as usize].queues[iq].items.len() < 2 && infantry < 6 + vehicles * 2 && (order_done || funds >= 600) {
         if let Some(&inf) = candidates.iter().rev().find(|&&a| {
             let info = &w.rules.actors[a as usize];
             info.queue == QueueType::Infantry && !info.weapons.is_empty()
@@ -123,7 +217,7 @@ fn queue_units(w: &mut World, player: u8) {
         }
     }
 
-    // One harvester per refinery, plus a spare once the war factory is up.
+    // One harvester per refinery, plus a spare when there is money.
     let refineries = count_providing(w, player, "proc");
     let harvesters = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.is_harvester(i)).count();
     let vq = QueueType::Vehicle as usize;
@@ -131,43 +225,55 @@ fn queue_units(w: &mut World, player: u8) {
         return;
     }
     if harvesters < refineries + 1 && refineries > 0 {
-        if let Some(&h) = candidates.iter().find(|&&a| w.rules.actors[a as usize].unit.as_ref().map_or(false, |u| u.harvester.is_some())) {
+        if let Some(&h) = candidates.iter().find(|&&a| w.rules.actors[a as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some())) {
             if harvesters < refineries || funds >= 1500 {
                 w.start_production(player, h, 1);
                 return;
             }
         }
     }
-    // Tanks once the build order is done (or when rich).
-    if order_done || funds >= 2500 {
-        if let Some(&tank) = candidates.iter().find(|&&a| {
-            let info = &w.rules.actors[a as usize];
-            info.queue == QueueType::Vehicle && !info.weapons.is_empty()
-        }) {
-            w.start_production(player, tank, 1);
-        }
+    // Tanks as soon as there is a war factory and money to spare beyond the
+    // build order: the best army unit we can afford now.
+    let reserve = if order_done { 0 } else { 600 };
+    let tank = candidates.iter().copied().find(|&a| {
+        let info = &w.rules.actors[a as usize];
+        info.queue == QueueType::Vehicle && is_army_unit(w, a as usize) && info.cost + reserve <= funds
+    });
+    if let Some(tank) = tank {
+        w.start_production(player, tank, 1);
     }
 }
 
-fn place_ready_building(w: &mut World, player: u8) {
-    let qi = QueueType::Building as usize;
+fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
+    let qi = q as usize;
     let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { return };
     if !item.done {
         return;
     }
     let (sx, sy) = w.players[player as usize].start;
+    // Defences go out toward the map centre; everything else around the yard.
+    let (ax, ay) = if q == QueueType::Defense {
+        let (mx, my) = (w.map.width / 2, w.map.height / 2);
+        (sx + (mx - sx).signum() * 7, sy + (my - sy).signum() * 7)
+    } else {
+        (sx, sy)
+    };
     let b = w.rules.actors[item.ty as usize].building.as_ref().unwrap();
     let (bw, bh) = (b.width, b.height);
-    // Spiral outward from the base. Prefer spots that leave a one cell gap so
+    // Mirror the scan for bases in the other half of the map, so both players
+    // lay out their bases the same way (the map is point symmetric).
+    let m = if sx * 2 > w.map.width { -1 } else { 1 };
+    // Spiral outward from the anchor. Prefer spots that leave a one cell gap so
     // units can still pass; fall back to any legal spot.
     for strict in [true, false] {
-        for r in 0i32..16 {
+        for r in 0i32..18 {
             for dy in -r..=r {
                 for dx in -r..=r {
                     if dx.abs() != r && dy.abs() != r {
                         continue;
                     }
-                    let (cx, cy) = (sx + dx, sy + dy);
+                    // Mirror around the footprint centre, not the top-left corner.
+                    let (cx, cy) = if m > 0 { (ax + dx, ay + dy) } else { (ax - dx - (bw - 3), ay - dy - (bh - 4)) };
                     if w.can_place(player, item.ty, cx, cy) && (!strict || has_clearance(w, cx, cy, bw, bh)) {
                         w.place_building(player, item.ty, cx, cy);
                         return;
@@ -202,14 +308,18 @@ fn command_army(w: &mut World, player: u8) {
     let army: Vec<usize> = (0..w.actors.len())
         .filter(|&i| {
             let a = &w.actors[i];
-            a.alive && a.owner == player && a.kind != Kind::Building && !w.is_harvester(i) && !w.rules.actors[a.ty as usize].weapons.is_empty()
+            a.alive && a.owner == player && a.kind != Kind::Building && is_army_unit(w, a.ty as usize)
         })
         .collect();
 
     // Defend: enemies near our buildings pull idle units in.
     let threat = (0..w.actors.len()).find(|&i| {
         let a = &w.actors[i];
-        a.alive && a.owner != player && a.kind != Kind::Building && w.is_visible_to(i, player) && dist(a.x, a.y, base.0, base.1) <= DEFEND_RADIUS
+        a.alive
+            && a.owner != player
+            && a.kind != Kind::Building
+            && w.is_visible_to(i, player)
+            && dist(a.x, a.y, base.0, base.1) <= DEFEND_RADIUS
     });
     if let Some(t) = threat {
         let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
@@ -224,19 +334,17 @@ fn command_army(w: &mut World, player: u8) {
     let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
     let gathered: Vec<usize> = idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) < 6 * CELL).collect();
     let target = enemy_target(w, player, base);
-    let wave = w.ai[player as usize].wave_size;
+    let (wave, max_wave) = (w.ai[player as usize].wave_size, w.ai[player as usize].max_wave);
     if gathered.len() >= wave {
         if let Some((tx, ty)) = target {
             w.order_move(&gathered, tx, ty, true);
-            w.ai[player as usize].wave_size = (wave + 2).min(MAX_WAVE);
+            w.ai[player as usize].wave_size = (wave + 2).min(max_wave);
         }
         return;
     }
     // Units of an earlier wave that went idle in the field keep pushing; the rest regroup.
-    let (forward, home): (Vec<usize>, Vec<usize>) = idle
-        .into_iter()
-        .filter(|i| !gathered.contains(i))
-        .partition(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) > 20 * CELL);
+    let (forward, home): (Vec<usize>, Vec<usize>) =
+        idle.into_iter().filter(|i| !gathered.contains(i)).partition(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) > 20 * CELL);
     if let Some((tx, ty)) = target {
         w.order_move(&forward, tx, ty, true);
     }
@@ -252,7 +360,7 @@ fn enemy_target(w: &World, player: u8, base: (i32, i32)) -> Option<(i32, i32)> {
             continue;
         }
         let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };
-        if best.map_or(true, |(bd, _)| d < bd) {
+        if best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, (a.x, a.y)));
         }
     }

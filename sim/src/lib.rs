@@ -5,6 +5,7 @@
 //! out of WebAssembly memory every frame.
 
 mod ai;
+mod combat;
 pub mod flowfield;
 pub mod map;
 pub mod math;
@@ -25,7 +26,16 @@ use render::{View, PX_PER_CELL};
 use rules::{FootCell, Kind, QueueType};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
-use world::{Order, World, NONE, TICKS_PER_SECOND};
+use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World, NONE, TICKS_PER_SECOND};
+
+/// Version shown in the game: the crate version plus the git commit it was built from.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const GIT_HASH: &str = env!("WEBRA_GIT_HASH");
+
+#[wasm_bindgen]
+pub fn version() -> String {
+    format!("{VERSION}+{GIT_HASH}")
+}
 
 fn to_wu(px: f32) -> i32 {
     (px * CELL as f32 / PX_PER_CELL).round() as i32
@@ -55,6 +65,88 @@ impl Game {
         let size = map_size.clamp(48, 512);
         let world = World::new(seed as u64, size, &[(faction, false), (ai_faction, true)]);
         Ok(Game::wrap(world))
+    }
+
+    /// Skirmish from lobby options (JSON, see web/js/lobby.js). Players are
+    /// already resolved to concrete factions by the caller.
+    pub fn from_options(json: &str) -> Result<Game, JsError> {
+        let v: serde_json::Value = serde_json::from_str(json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
+        let rules = rules::Rules::load();
+        let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
+        let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
+        let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
+        let mut players = Vec::new();
+        for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| JsError::new("options.players missing"))? {
+            let faction = p.get("faction").and_then(|f| f.as_str()).unwrap_or("allies").to_string();
+            if rules.faction_index(&faction).is_none() {
+                return Err(JsError::new(&format!("unknown faction {faction}")));
+            }
+            let ai = match p.get("type").and_then(|t| t.as_str()) {
+                Some("ai") => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
+                    "easy" => AiDifficulty::Easy,
+                    "hard" => AiDifficulty::Hard,
+                    _ => AiDifficulty::Normal,
+                }),
+                _ => None,
+            };
+            players.push(PlayerSetup { faction, ai });
+        }
+        if players.len() != 2 {
+            return Err(JsError::new("exactly two players are supported"));
+        }
+        let tech = text("techLevel", "unrestricted");
+        let options = GameOptions {
+            starting_cash: num("startingCash", 5000).clamp(0, 1_000_000) as i32,
+            starting_units: match text("startingUnits", "mcv").as_str() {
+                "light" => StartingUnits::Light,
+                "heavy" => StartingUnits::Heavy,
+                "base" => StartingUnits::Base,
+                _ => StartingUnits::Mcv,
+            },
+            tech_level: rules::TECH_LEVELS.iter().position(|t| *t == tech).unwrap_or(4),
+            fog: flag("fog", true),
+            explored: flag("explored", false),
+            build_radius: flag("buildRadius", true),
+            redeployable_mcv: flag("redeployableMcv", true),
+            ore_regrowth: flag("oreRegrowth", true),
+        };
+        let seed = num("seed", 1).max(0) as u64;
+        let size = (num("mapSize", 96) as i32).clamp(48, 512);
+        Ok(Game::wrap(World::with_options(seed, size, &players, options)))
+    }
+
+    /// Map preview for the lobby: RGBA, one pixel per cell, spawns marked.
+    pub fn map_preview(seed: u32, size: i32) -> Vec<u8> {
+        let size = size.clamp(48, 512);
+        let m = map::Map::generate(size, size, seed as u64, 12);
+        let mut out = Vec::with_capacity((size * size * 4) as usize);
+        for i in 0..m.cells() {
+            let rgb = if m.ore[i] > 0 {
+                [200, 160, 50]
+            } else {
+                match m.terrain[i] {
+                    map::Terrain::Clear => [62, 88, 44],
+                    map::Terrain::Rough => [96, 92, 58],
+                    map::Terrain::Rock => [128, 118, 102],
+                    map::Terrain::Water => [36, 70, 102],
+                    map::Terrain::Tree => [28, 54, 24],
+                }
+            };
+            out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+        }
+        for (k, &(sx, sy)) in m.spawns.iter().enumerate() {
+            let col = if k == 0 { [90, 150, 255] } else { [240, 80, 60] };
+            for dy in 0..4 {
+                for dx in 0..3 {
+                    let (x, y) = (sx + dx, sy + dy);
+                    if m.contains(x, y) {
+                        let i = m.idx(x, y) * 4;
+                        out[i..i + 3].copy_from_slice(&col);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Benchmark: `units` armed units split over two armies that attack-move into each other.
@@ -113,11 +205,11 @@ impl Game {
                     "height": b.map_or(1, |b| b.height),
                     "footprint": b.map(|b| b.footprint.iter().map(|&(x, y, c)| json!([x, y, match c { FootCell::Empty => 0, FootCell::Occupied => 1, FootCell::Passable => 2 }])).collect::<Vec<_>>()),
                     "power": b.map_or(0, |b| b.power),
-                    "turret": a.unit.as_ref().map_or(false, |u| u.turret_turn_speed.is_some()),
+                    "turret": a.turret_turn_speed.is_some(),
                     "radius": a.unit.as_ref().map_or(0, |u| u.radius),
-                    "harvester": a.unit.as_ref().map_or(false, |u| u.harvester.is_some()),
-                    "refinery": b.map_or(false, |b| b.refinery.is_some()),
-                    "repairs": b.map_or(false, |b| b.repairs.is_some()),
+                    "harvester": a.unit.as_ref().is_some_and(|u| u.harvester.is_some()),
+                    "refinery": b.is_some_and(|b| b.refinery.is_some()),
+                    "repairs": b.is_some_and(|b| b.repairs.is_some()),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
                 })
             })
@@ -220,7 +312,11 @@ impl Game {
     pub fn select_same_type(&self, player: u8, id: u32, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
         let Some(t) = self.world.resolve(id) else { return Vec::new() };
         let ty = self.world.actors[t].ty;
-        self.units_in_box(player, x0, y0, x1, y1).into_iter().filter(|&i| self.world.actors[i].ty == ty).map(|i| self.world.make_ref(i)).collect()
+        self.units_in_box(player, x0, y0, x1, y1)
+            .into_iter()
+            .filter(|&i| self.world.actors[i].ty == ty)
+            .map(|i| self.world.make_ref(i))
+            .collect()
     }
 
     /// JSON description of an actor for the selection panel.
@@ -236,7 +332,7 @@ impl Game {
             "hp": a.hp,
             "maxHp": info.hp,
             "building": a.kind == Kind::Building,
-            "producer": info.building.as_ref().map_or(false, |b| !b.produces.is_empty() || b.repairs.is_some()),
+            "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
         })
         .to_string()
@@ -268,6 +364,40 @@ impl Game {
 
     pub fn order_stop(&mut self, player: u8, ids: Vec<u32>) {
         self.world.queue_order(Order::Stop { player, ids });
+    }
+
+    pub fn sell(&mut self, player: u8, building: u32) {
+        self.world.queue_order(Order::Sell { player, building });
+    }
+
+    /// Refund a structure would give right now (0 if it cannot be sold).
+    pub fn sell_value(&self, player: u8, building: u32) -> i32 {
+        let Some(b) = self.world.resolve(building) else { return 0 };
+        let a = &self.world.actors[b];
+        if a.owner != player || a.kind != Kind::Building {
+            return 0;
+        }
+        let info = &self.world.rules.actors[a.ty as usize];
+        let pct = info.building.as_ref().unwrap().sell_refund;
+        (info.cost as i64 * pct as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32
+    }
+
+    /// Deploy selected MCVs / pack up a selected Construction Yard.
+    pub fn deploy(&mut self, player: u8, ids: Vec<u32>) {
+        self.world.queue_order(Order::Deploy { player, ids });
+    }
+
+    /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here.
+    pub fn deploy_state(&self, player: u8, id: u32) -> u8 {
+        let Some(i) = self.world.resolve(id) else { return 0 };
+        if self.world.actors[i].owner != player || self.world.deploy_target(i).is_none() {
+            return 0;
+        }
+        if self.world.can_deploy(i) {
+            1
+        } else {
+            2
+        }
     }
 
     pub fn set_rally(&mut self, player: u8, building: u32, x: f32, y: f32) {
@@ -335,7 +465,10 @@ impl Game {
             .map(|q| {
                 let qt = QueueType::from_index(q);
                 w.actors.iter().any(|a| {
-                    a.alive && a.owner == player && a.kind == Kind::Building && w.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&qt)
+                    a.alive
+                        && a.owner == player
+                        && a.kind == Kind::Building
+                        && w.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&qt)
                 })
             })
             .collect();

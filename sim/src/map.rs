@@ -66,15 +66,10 @@ impl Map {
     pub fn generate(width: i32, height: i32, seed: u64, ore_max: u8) -> Map {
         let mut rng = Rng::new(seed);
         let n = (width * height) as usize;
-        let mut m = Map {
-            width,
-            height,
-            terrain: vec![Terrain::Clear; n],
-            ore: vec![0; n],
-            spawns: vec![(8, 8), (width - 11, height - 12)],
-        };
+        let mut m =
+            Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: vec![(8, 8), (width - 11, height - 12)] };
 
-        let area = (width * height) as i32;
+        let area = width * height;
         // Rough patches.
         for _ in 0..(area / 900).max(2) {
             let (cx, cy) = (rng.range(0, width), rng.range(0, height));

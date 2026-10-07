@@ -80,6 +80,28 @@ export const CURSORS = {
     29,
     'pointer',
   ),
+  sell: cursor(
+    `<circle cx="16" cy="16" r="12" fill="#d9b23a" stroke="${OUTLINE}" stroke-width="2.5"/>` +
+      `<circle cx="16" cy="16" r="9" fill="none" stroke="#9c7d20" stroke-width="1.5"/>` +
+      `<text x="16" y="21.5" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="15" font-weight="900" fill="${OUTLINE}">$</text>`,
+    16,
+    16,
+    'pointer',
+  ),
+  deploy: cursor(
+    [[0, -1], [1, 0], [0, 1], [-1, 0]]
+      .map(([dx, dy]) => {
+        const x = 16 + dx * 8;
+        const y = 16 + dy * 8;
+        const r = Math.atan2(dy, dx) * (180 / Math.PI);
+        return `<g transform="rotate(${r} ${x} ${y})"><path d="M${x - 4} ${y - 4} L${x + 3} ${y} L${x - 4} ${y + 4}" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+          `<path d="M${x - 4} ${y - 4} L${x + 3} ${y} L${x - 4} ${y + 4}" fill="none" stroke="#7fd0ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+      })
+      .join('') + `<rect x="12" y="12" width="8" height="8" fill="#7fd0ff" stroke="${OUTLINE}" stroke-width="1.5"/>`,
+    16,
+    16,
+    'pointer',
+  ),
   blocked: cursor(
     `<circle cx="16" cy="16" r="11" fill="none" stroke="${OUTLINE}" stroke-width="6"/>` +
       `<circle cx="16" cy="16" r="11" fill="none" stroke="#ff4a3a" stroke-width="3"/>` +

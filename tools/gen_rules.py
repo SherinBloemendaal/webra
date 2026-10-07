@@ -16,7 +16,19 @@ DATA = os.path.join(ROOT, 'data')
 OUT = os.path.join(ROOT, 'sim', 'rules.json')
 
 # Actors that are part of the current milestone.
-ACTORS = ['FACT', 'POWR', 'PROC', 'TENT', 'BARR', 'WEAP', 'FIX', 'HARV', 'E1', '1TNK', '3TNK']
+ACTORS = [
+    # Buildings and defences
+    'FACT', 'POWR', 'APWR', 'PROC', 'SILO', 'TENT', 'BARR', 'KENN', 'WEAP', 'FIX', 'DOME', 'HPAD', 'AFLD', 'AFLD.Ukraine',
+    'SYRD', 'SPEN', 'ATEK', 'STEK', 'GAP', 'PDOX', 'IRON', 'MSLO',
+    'SBAG', 'FENC', 'BRIK', 'PBOX', 'HBOX', 'GUN', 'FTUR', 'TSLA', 'AGUN', 'SAM',
+    # France: decoy structures
+    'FPWR', 'TENF', 'SYRF', 'WEAF', 'DOMF', 'FIXF', 'FAPW', 'ATEF', 'PDOF', 'MSLF', 'FACF',
+    # Infantry (more later)
+    'E1',
+    # Ground vehicles
+    'HARV', 'MCV', 'TRUK', 'JEEP', 'APC', 'FTRK', '1TNK', '2TNK', '3TNK', '4TNK', 'V2RL', 'ARTY', 'MNLY',
+    'MRJ', 'MGG', 'TTNK', 'DTRK', 'CTNK', 'STNK', 'QTNK',
+]
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
 ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete']
 TERRAIN_TYPES = ['Clear', 'Rough', 'Ore']
@@ -101,47 +113,115 @@ def parse_locomotors():
     return locos
 
 
+# Target classes, as bit flags shared with the simulation (rules.rs).
+TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 0, 'Bridge': 0,
+               'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
+
+
+def target_mask(v):
+    m = 0
+    for t in tokens(v):
+        if t not in TARGET_BITS:
+            # Special classes (e.g. MADTank) matter only for effects not modelled yet.
+            if t not in UNKNOWN_TARGETS:
+                UNKNOWN_TARGETS.add(t)
+                print(f'note: target type {t} ignored')
+            continue
+        m |= TARGET_BITS[t]
+    return m
+
+
+UNKNOWN_TARGETS = set()
+
+
 def weapon_info(name, weapons):
     w = weapons[name]
     proj = w.get('Projectile', {})
     ptype = proj.get('_') if isinstance(proj, dict) else proj
-    dmg = next((v for k, v in w.items() if k.startswith('Warhead') and isinstance(v, dict) and v.get('_') == 'SpreadDamage'), None)
-    if dmg is None:
-        raise SystemExit(f'weapon {name} has no SpreadDamage warhead')
-    versus = dmg.get('Versus', {})
-    burst = int(w.get('Burst', 1))
-    delays = ints(w['BurstDelays']) if 'BurstDelays' in w else [DEFAULT_BURST_DELAY]
+    warheads = []
+    for k, v in w.items():
+        if not (k.startswith('Warhead') and isinstance(v, dict)):
+            continue
+        kind = v.get('_')
+        if kind not in ('SpreadDamage', 'TargetDamage', 'HealthPercentageDamage'):
+            continue
+        versus = v.get('Versus', {})
+        warheads.append({
+            'kind': {'SpreadDamage': 'spread', 'TargetDamage': 'target', 'HealthPercentageDamage': 'percent'}[kind],
+            'damage': int(v.get('Damage', 0)),
+            'spread': wdist(v.get('Spread', 43)),
+            'falloff': ints(v['Falloff']) if 'Falloff' in v else DEFAULT_FALLOFF,
+            'versus': [int(versus.get(a, 100)) for a in ARMOR_TYPES],
+            'delay': int(v.get('Delay', 0)),
+            'valid': target_mask(v.get('ValidTargets', 'Ground, Water')) or (1 | 2 | 4 | 16),
+            'invalid': target_mask(v.get('InvalidTargets', '')),
+        })
+    if not warheads:
+        raise SystemExit(f'weapon {name} has no damage warhead')
+    projectile = {'Bullet': 'bullet', 'Missile': 'missile', 'InstantHit': 'instant', 'TeslaZap': 'tesla', None: 'instant'}[ptype]
+    speed = 0
+    if isinstance(proj, dict) and projectile in ('bullet', 'missile'):
+        speed = ints(proj.get('Speed', '213'))[0] if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
     return {
         'name': name,
         'range': wdist(w.get('Range')),
+        'min_range': wdist(w.get('MinRange')),
         'reload': int(w.get('ReloadDelay', 1)),
-        'burst': burst,
-        'burst_delays': delays,
-        'projectile': {'Bullet': 'bullet', 'Missile': 'missile', 'InstantHit': 'instant'}[ptype],
-        'speed': int(proj.get('Speed', '0').split(',')[0]) if isinstance(proj, dict) and ptype != 'InstantHit' else 0,
-        'damage': int(dmg['Damage']),
-        'spread': wdist(dmg.get('Spread', 43)),
-        'falloff': ints(dmg['Falloff']) if 'Falloff' in dmg else DEFAULT_FALLOFF,
-        'versus': [int(versus.get(a, 100)) for a in ARMOR_TYPES],
+        'burst': int(w.get('Burst', 1)),
+        'burst_delays': ints(w['BurstDelays']) if 'BurstDelays' in w else [DEFAULT_BURST_DELAY],
+        'projectile': projectile,
+        'speed': speed,
+        'inaccuracy': wdist(proj.get('Inaccuracy')) if isinstance(proj, dict) else 0,
+        'arc': isinstance(proj, dict) and bool(proj.get('LaunchAngle')),
+        'valid': target_mask(w.get('ValidTargets', 'Ground, Water')),
+        'invalid': target_mask(w.get('InvalidTargets', '')),
+        'warheads': warheads,
     }
+
+
+def has_damage(w):
+    return any(k.startswith('Warhead') and isinstance(v, dict) and v.get('_') in ('SpreadDamage', 'TargetDamage', 'HealthPercentageDamage')
+               for k, v in w.items())
 
 
 def footprint_rows(fp):
     return fp.split()
 
 
+def first(t, name):
+    """First trait instance named `name` (any @suffix) that has no RequiresCondition, or {}."""
+    for k, v in trait(t, name).items():
+        v = v if isinstance(v, dict) else {}
+        if 'RequiresCondition' not in v:
+            return v
+    return {}
+
+
+def has(t, name):
+    return bool(trait(t, name))
+
+
 def main():
     actors = {a['id']: a for a in json.load(open(os.path.join(DATA, 'actors.json')))}
     weapons = json.load(open(os.path.join(DATA, 'weapons.json')))
     wl = {k.lower(): k for k in weapons}
-    ftl = load_ftl()
     locos = parse_locomotors()
+    ids_lower = {k.lower(): k for k in actors}
 
     out_actors, used_weapons, used_locos = [], [], []
+
+    def weapon_index(wname):
+        wn = wl[wname.lower()]
+        if wn not in used_weapons:
+            used_weapons.append(wn)
+        return used_weapons.index(wn)
+
     for aid in ACTORS:
         a = actors[aid]
         t = a['traits']
         kind = 'building' if 'Building' in t else ('infantry' if a['queue'] == 'Infantry' else 'vehicle')
+        attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
             'name': a['name'],
@@ -153,18 +233,95 @@ def main():
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
             'prerequisites': a['prerequisites'],
+            'build_at': t['Buildable'].get('BuildAtProductionType') or a['queue'],
             'hp': a['hp'],
             'armor': ARMOR_TYPES.index(a['armor'] or 'None'),
             'sight': wdist(a['sight']),
             'weapons': [],
+            'turret_turn_speed': int(first(t, 'Turreted').get('TurnSpeed', 512)) if has(t, 'Turreted') else None,
+            'reload_override': int(t['AttackTesla']['ReloadDelay']) if 'AttackTesla' in t and isinstance(t['AttackTesla'], dict) and 'ReloadDelay' in t['AttackTesla'] else None,
+            'requires_power': has(t, 'GrantConditionOnPowerState'),
+            'death_weapon': None,
+            'self_heal': None,
+            'abilities': {},
         }
         for slot, arm in trait(t, 'Armament').items():
-            # Only the default (unconditioned) armament; garrison weapons are not modelled yet.
-            if isinstance(arm, dict) and 'Name' not in arm:
-                wn = wl[arm['Weapon'].lower()]
-                if wn not in used_weapons:
-                    used_weapons.append(wn)
-                e['weapons'].append(used_weapons.index(wn))
+            # Garrison weapons belong to the soldier inside, not the vehicle or building.
+            if isinstance(arm, dict) and arm.get('Name') != 'garrisoned':
+                e['weapons'].append(weapon_index(arm['Weapon']))
+        death = t.get('FireWarheadsOnDeath')
+        # Death explosions that only make visual effects (BuildingExplode) deal no damage: skip them.
+        if kind != 'building' and isinstance(death, dict) and death.get('Weapon') and has_damage(weapons[wl[death['Weapon'].lower()]]):
+            e['death_weapon'] = weapon_index(death['Weapon'])
+        heal = first(t, 'ChangesHealth')
+        if heal and int(heal.get('Step', 0)) > 0:
+            # OpenRA ChangesHealthInfo defaults: StartIfBelow 50 (%), DamageCooldown 0.
+            e['self_heal'] = {'step': int(heal['Step']), 'delay': int(heal.get('Delay', 5)),
+                              'start_if_below': int(heal.get('StartIfBelow', 50)),
+                              'damage_cooldown': int(heal.get('DamageCooldown', 0))}
+        # Garrisoned defences (pillboxes) come with soldiers inside (Cargo.InitialUnits);
+        # they fire those soldiers' garrison weapon.
+        cargo = first(t, 'Cargo')
+        if 'AttackGarrisoned' in t and cargo.get('InitialUnits'):
+            for unit_id in tokens(cargo['InitialUnits']):
+                for arm in trait(actors[ids_lower[unit_id.lower()]]['traits'], 'Armament').values():
+                    if isinstance(arm, dict) and arm.get('Name') == 'garrisoned':
+                        e['weapons'].append(weapon_index(arm['Weapon']))
+
+        ab = e['abilities']
+        if has(t, 'Cargo'):
+            c = first(t, 'Cargo')
+            ab['cargo'] = {'types': tokens(c.get('Types')), 'max': int(c.get('MaxWeight', 1)),
+                           'garrison': 'AttackGarrisoned' in t,
+                           'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))]}
+        if 'Minelayer' in t:
+            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(t.get('AmmoPool', {}).get('Ammo', 5))}
+        if 'JamsMissiles' in t:
+            ab['jams_missiles'] = {'range': wdist(t['JamsMissiles'].get('Range'))}
+        if has(t, 'CreatesShroud'):
+            ab['creates_shroud'] = {'range': wdist(next(iter(trait(t, 'CreatesShroud').values())).get('Range'))}
+        if has(t, 'Cloak'):
+            c = next(iter(trait(t, 'Cloak').values()))
+            ab['cloak'] = {'initial_delay': int(c.get('InitialDelay', 10)), 'cloak_delay': int(c.get('CloakDelay', 30)),
+                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack'))}
+        if has(t, 'DetectCloaked'):
+            ab['detect_cloaked'] = {'range': wdist(next(iter(trait(t, 'DetectCloaked').values())).get('Range', '5c0'))}
+        if 'PortableChrono' in t:
+            c = t['PortableChrono'] if isinstance(t['PortableChrono'], dict) else {}
+            ab['portable_chrono'] = {'charge_delay': int(c.get('ChargeDelay', 500)), 'max_distance': int(c.get('MaxDistance', 12))}
+        if 'MadTank' in t:
+            m = t['MadTank'] if isinstance(t['MadTank'], dict) else {}
+            ab['mad_tank'] = {'charge_delay': int(m.get('ChargeDelay', 96)), 'thump_interval': int(m.get('ThumpInterval', 8)),
+                              'thump_weapon': weapon_index(m.get('ThumpDamageWeapon', 'MADTankThump')),
+                              'detonation_weapon': weapon_index(m.get('DetonationWeapon', 'MADTankDetonate'))}
+        if a['id'] == 'DTRK':
+            ab['demo_truck'] = {}
+        if 'DeliversCash' in t:
+            ab['delivers_cash'] = {'payload': int(t['DeliversCash'].get('Payload', 500))}
+        if has(t, 'Transforms'):
+            tr = next(iter(trait(t, 'Transforms').values()))
+            ab['transforms'] = {'into': ids_lower[tr['IntoActor'].lower()], 'offset': ints(tr.get('Offset', '0,0')),
+                                'facing': int(tr.get('Facing', 384)), 'needs_option': 'RequiresCondition' in tr}
+        if 'LineBuild' in t:
+            ab['line_build'] = {'range': int(t['LineBuild'].get('Range', 5))}
+        if has(t, 'ProvidesRadar'):
+            ab['provides_radar'] = {}
+        if 'Crushable' in t and isinstance(t['Crushable'], dict) and a['queue'] != 'Infantry':
+            ab['crushable'] = tokens(t['Crushable'].get('CrushClasses'))
+        if kind == 'infantry':
+            ab['crushable'] = ['infantry']
+        powers = []
+        for k, v in t.items():
+            base = k.split('@')[0]
+            if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower'):
+                v = v if isinstance(v, dict) else {}
+                powers.append({'key': k, 'kind': base, 'name': ftl.get(v.get('Name', ''), v.get('Name', base)),
+                               'description': ftl.get(v.get('Description', ''), ''),
+                               'charge': int(v.get('ChargeInterval', 0)), 'prerequisites': tokens(v.get('Prerequisites')),
+                               'duration': int(v.get('Duration', 0)), 'range': int(ints(v.get('Range', '1'))[0]) if v.get('Range') and 'c' not in v.get('Range') else wdist(v.get('Range')) // 1024 if v.get('Range') else 1,
+                               'max_distance': int(v.get('MaxDistance', 0) or 0)})
+        if powers:
+            ab['support_powers'] = powers
 
         if kind == 'building':
             b = t['Building']
@@ -175,13 +332,17 @@ def main():
                 'width': w,
                 'height': h,
                 'footprint': rows,
+                'terrain': tokens(b.get('TerrainTypes', 'Clear,Road')),
+                'requires_base_provider': str(b.get('RequiresBaseProvider', 'False')).lower() == 'true',
                 'power': sum(int(p.get('Amount', 0)) for p in trait(t, 'Power').values()),
                 'power_scales_with_health': 'ScalePowerWithHealth' in t,
                 'produces': tokens(t.get('Production', {}).get('Produces', '')) if 'Production' in t else [],
-                'exits': [ints(x['ExitCell']) for k, x in sorted(trait(t, 'Exit').items())],
+                'exits': [ints(x['ExitCell']) for k, x in sorted(trait(t, 'Exit').items()) if isinstance(x, dict) and 'ExitCell' in x],
                 'gives_buildable_area': 'GivesBuildableArea' in t,
                 'base_provider_range': wdist(t['BaseProvider']['Range']) if 'BaseProvider' in t else 0,
-                'adjacent': 2,  # OpenRA BuildingInfo.Adjacent default
+                'adjacent': int(b.get('Adjacent', 2)),
+                'storage': int(t['StoresPlayerResources']['Capacity']) if isinstance(t.get('StoresPlayerResources'), dict) else 0,
+                'sell_refund': int(t['Sellable'].get('RefundPercent', 50)) if isinstance(t.get('Sellable'), dict) else (50 if 'Sellable' in t else 0),
                 'provides': {},
             }
             # Static prerequisite resolution per faction. A provider with
@@ -189,38 +350,34 @@ def main():
             # Factions-filtered provider of the same faction.
             for f in FACTIONS:
                 base = set()
+                faction_tokens = set()
+                for other in ACTORS:
+                    for p in trait(actors[other]['traits'], 'ProvidesPrerequisite').values():
+                        if isinstance(p, dict) and f in tokens(p.get('Factions')):
+                            faction_tokens.add(p.get('Prerequisite'))
                 for k, p in trait(t, 'ProvidesPrerequisite').items():
                     p = p if isinstance(p, dict) else {}
                     fs = tokens(p.get('Factions'))
                     if fs and f not in fs:
                         continue
-                    if p.get('RequiresPrerequisites'):
+                    req = tokens(p.get('RequiresPrerequisites'))
+                    if req and not all(r in faction_tokens for r in req):
                         continue
                     base.add(p.get('Prerequisite') or aid.lower())
-                faction_tokens = set()
-                for other in ACTORS:
-                    ot = actors[other]['traits']
-                    for p in trait(ot, 'ProvidesPrerequisite').values():
-                        if isinstance(p, dict) and f in tokens(p.get('Factions')):
-                            faction_tokens.add(p.get('Prerequisite'))
-                for k, p in trait(t, 'ProvidesPrerequisite').items():
-                    if isinstance(p, dict) and p.get('RequiresPrerequisites'):
-                        if all(r in faction_tokens for r in tokens(p['RequiresPrerequisites'])):
-                            base.add(p.get('Prerequisite') or aid.lower())
                 e['building']['provides'][f] = sorted(base)
             if 'Refinery' in t:
                 d = t['DockHost']
                 e['building']['refinery'] = {
                     'dock_offset': [wdist(x) for x in d['DockOffset'].split(',')][:2],
-                    'storage': int(t['StoresPlayerResources']['Capacity']),
                     'free_actor': t['FreeActor']['Actor'],
                     'free_actor_offset': ints(t['FreeActor']['SpawnOffset']),
                 }
             if 'RepairsUnits' in t:
-                r = t['RepairsUnits']
+                r = t['RepairsUnits'] if isinstance(t['RepairsUnits'], dict) else {}
+                # OpenRA RepairsUnitsInfo defaults.
                 e['building']['repairs'] = {
-                    'hp_per_step': int(r['HpPerStep']),
-                    'interval': int(r['Interval']),
+                    'hp_per_step': int(r.get('HpPerStep', 1000)),
+                    'interval': int(r.get('Interval', 24)),
                     'value_percent': int(r.get('ValuePercent', 20)),
                 }
             lco = t['Building'].get('LocalCenterOffset')
@@ -235,8 +392,8 @@ def main():
                 'turn_speed': int(m.get('TurnSpeed', 512)),
                 'turn_in_place': m.get('AlwaysTurnInPlace', 'false').lower() == 'true' or kind == 'infantry',
                 'locomotor': used_locos.index(loco),
-                'turret_turn_speed': int(t['Turreted']['TurnSpeed']) if 'Turreted' in t else None,
-                'radius': 128 if kind == 'infantry' else 384,
+                'radius': 128 if kind == 'infantry' else (512 if a['cost'] >= 1500 and aid != 'DTRK' else 384),
+                'passenger': t.get('Passenger', {}).get('CargoType') if isinstance(t.get('Passenger'), dict) else None,
             }
             if 'Harvester' in t:
                 hv = t['Harvester']
@@ -248,6 +405,12 @@ def main():
                     'search_from_harv': int(hv.get('SearchFromHarvesterRadius', HARVESTER_SEARCH_FROM_HARV)),
                 }
         out_actors.append(e)
+
+    # Resolve refinery free actors to ids that exist in the export.
+    for e in out_actors:
+        r = e.get('building', {}).get('refinery')
+        if r:
+            r['free_actor'] = ids_lower[r['free_actor'].lower()]
 
     player = {
         'starting_cash': 5000,           # OpenRA lobby default
@@ -274,6 +437,8 @@ def main():
         json.dump(rules, fh, indent=1)
     print(f'wrote {OUT}: {len(out_actors)} actors, {len(used_weapons)} weapons, {len(used_locos)} locomotors')
 
+
+ftl = load_ftl()
 
 if __name__ == '__main__':
     main()

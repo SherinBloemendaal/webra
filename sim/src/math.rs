@@ -79,7 +79,7 @@ pub fn facing_of(dx: i32, dy: i32) -> Option<i32> {
     // Largest t with sin(t) * ay <= cos(t) * ax.
     let (mut lo, mut hi) = (0usize, 256usize);
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         if SIN_Q[mid] as i64 * ay <= SIN_Q[256 - mid] as i64 * ax {
             lo = mid;
         } else {
@@ -88,10 +88,10 @@ pub fn facing_of(dx: i32, dy: i32) -> Option<i32> {
     }
     let t = lo as i32;
     let f = match (dx >= 0, dy < 0) {
-        (true, true) => t,          // north-east
-        (true, false) => 512 - t,   // south-east
-        (false, false) => 512 + t,  // south-west
-        (false, true) => 1024 - t,  // north-west
+        (true, true) => t,         // north-east
+        (true, false) => 512 - t,  // south-east
+        (false, false) => 512 + t, // south-west
+        (false, true) => 1024 - t, // north-west
     };
     Some(wrap_angle(f))
 }

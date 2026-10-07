@@ -5,8 +5,11 @@
 import { drawIcon } from './sprites.js';
 import { TEAM_COLORS } from './renderer.js';
 
-const QUEUE_NAMES = ['Buildings', 'Infantry', 'Vehicles'];
+// Must match QueueType in sim/src/rules.rs.
+const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles'];
 const QUEUE_BUILDINGS = 0;
+/** Buildings and Defense items are placed on the map when finished (one at a time). */
+const isStructureQueue = (q) => q === 0 || q === 1;
 const SHIFT_COUNT = 5;
 
 // Icon canvas size in CSS pixels; the backing store is scaled by devicePixelRatio.
@@ -158,7 +161,19 @@ export class Sidebar {
     this.selEl = sel;
     sel.classList.add('empty');
 
-    root.append(top, power, tabs, this.gridEl, sel, this.tipEl);
+    // Command buttons: sell mode and deploy (MCV / pack up the Construction Yard).
+    const tools = el('div', 'sb-tools');
+    this.sellBtn = el('button', 'sb-tool', 'Sell');
+    this.sellBtn.type = 'button';
+    this.sellBtn.title = 'Sell a structure for 50% of its value (scaled by health). Hotkey: Z';
+    this.sellBtn.addEventListener('click', () => this.callbacks.onSell?.());
+    this.deployBtn = el('button', 'sb-tool', 'Deploy');
+    this.deployBtn.type = 'button';
+    this.deployBtn.title = 'Deploy the selected MCV, or pack up the selected Construction Yard. Hotkey: D';
+    this.deployBtn.addEventListener('click', () => this.callbacks.onDeploy?.());
+    tools.append(this.sellBtn, this.deployBtn);
+
+    root.append(top, power, tools, tabs, this.gridEl, sel, this.tipEl);
     this.selectTab(this.activeTab);
   }
 
@@ -248,7 +263,7 @@ export class Sidebar {
     const c = this.cards.get(id);
     if (!c || c.enabled === false) return;
     const actor = c.actor;
-    if (actor.queue === QUEUE_BUILDINGS) {
+    if (isStructureQueue(actor.queue)) {
       if (c.ready) {
         this.callbacks.onPlace?.(id);
         return;
@@ -263,7 +278,7 @@ export class Sidebar {
   onCardCancel(id) {
     const c = this.cards.get(id);
     if (!c) return;
-    const wasReady = c.ready && c.actor.queue === QUEUE_BUILDINGS;
+    const wasReady = c.ready && isStructureQueue(c.actor.queue);
     this.game.cancel_production(this.playerId, id);
     if (wasReady) this.callbacks.onCancelPlace?.();
   }
@@ -293,7 +308,7 @@ export class Sidebar {
     setText(this.tipDesc, a.description || '');
     this.tipDesc.hidden = !a.description;
     this.updateTipWarning(c);
-    const hint = a.queue === QUEUE_BUILDINGS
+    const hint = isStructureQueue(a.queue)
       ? 'Left click: build / place. Right click: cancel.'
       : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
     setText(this.tipHint, hint);
@@ -421,7 +436,9 @@ export class Sidebar {
   updateRequirements(c, b, index) {
     c.requires = b.requires || [];
     c.exclusive = b.exclusive || null;
-    const text = b.enabled ? '' : c.exclusive || (c.requires.length ? `Needs ${c.requires.join(', ')}` : '');
+    // Cards show the first way to unlock each requirement; the tooltip lists all.
+    const short = c.requires.map((r) => r.split(' or ')[0]);
+    const text = b.enabled ? '' : c.exclusive || (short.length ? `Needs ${short.join(', ')}` : '');
     if (c.reqText !== text) {
       c.reqText = text;
       setText(c.req, text);
@@ -460,6 +477,18 @@ export class Sidebar {
     if (!id) return;
     if (cancel) this.onCardCancel(id);
     else this.onCardClick(id, shift);
+  }
+
+  /** Highlight the Sell button while sell mode is active. */
+  setSellMode(on) {
+    this.sellBtn.classList.toggle('active', !!on);
+    this.sellBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  /** Enable the Deploy button when the selection can deploy (0 no, 1 yes, 2 blocked). */
+  setDeployState(state) {
+    this.deployBtn.disabled = state === 0;
+    this.deployBtn.classList.toggle('blocked', state === 2);
   }
 
   /** Switch to the next (+1) or previous (-1) production tab. */

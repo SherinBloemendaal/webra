@@ -30,6 +30,7 @@ export class Input {
     this.drag = null;
     this.pan = null;
     this.placing = null; // actor id being placed
+    this.sellMode = false;
     this.attackMove = false;
     this.lastClick = { time: 0, id: NONE };
     this.bind();
@@ -108,6 +109,12 @@ export class Input {
   clickIntent(w) {
     const hit = this.game.pick(this.player, w.x, w.y);
     const hitInfo = this.info(hit);
+    // Clicking a selected MCV (or Construction Yard) deploys it, like the original.
+    if (hit !== NONE && this.selection.includes(hit)) {
+      const st = this.game.deploy_state(this.player, hit);
+      if (st === 1) return { kind: 'deploy', id: hit };
+      if (st === 2) return { kind: 'blocked' };
+    }
     const units = this.selectedOwnUnits();
     if (units.length) {
       const action = this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y);
@@ -125,6 +132,37 @@ export class Input {
   startPlacing(actorId) {
     this.placing = actorId;
     this.attackMove = false;
+    this.setSellMode(false);
+  }
+
+  setSellMode(on) {
+    this.sellMode = !!on;
+    if (on) {
+      this.placing = null;
+      this.attackMove = false;
+    }
+    this.hooks.onSellMode?.(this.sellMode);
+  }
+
+  toggleSellMode() {
+    this.setSellMode(!this.sellMode);
+  }
+
+  /** Deploy selected MCVs, or pack up a selected Construction Yard. */
+  deploySelection() {
+    const ids = this.selection.filter((id) => this.game.deploy_state(this.player, id) !== 0);
+    if (ids.length) this.game.deploy(this.player, Uint32Array.from(ids));
+  }
+
+  /** 0: nothing selected can deploy, 1: something can deploy now, 2: blocked. */
+  deployState() {
+    let best = 0;
+    for (const id of this.selection) {
+      const st = this.game.deploy_state(this.player, id);
+      if (st === 1) return 1;
+      if (st === 2) best = 2;
+    }
+    return best;
   }
 
   cancelPlacing() {
@@ -177,10 +215,23 @@ export class Input {
         this.attackMove = false;
         return;
       }
+      if (this.sellMode) {
+        this.setSellMode(false);
+        return;
+      }
       this.setSelection([]);
       return;
     }
     if (e.button !== 0) return;
+    if (this.sellMode) {
+      const hit = this.game.pick(this.player, w.x, w.y);
+      if (hit !== NONE && this.game.sell_value(this.player, hit) > 0) {
+        this.game.sell(this.player, hit);
+        this.flashOrder(w, ACTION.HARVEST);
+      }
+      if (!e.shiftKey) this.setSellMode(false);
+      return;
+    }
     if (this.placing) {
       const { cx, cy } = this.placementCell(w.x, w.y);
       const cells = this.game.placement_preview(this.player, this.placing, cx, cy);
@@ -235,6 +286,10 @@ export class Input {
       if (intent.kind === 'order') {
         this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
         this.flashOrder(b, intent.action);
+      } else if (intent.kind === 'deploy') {
+        this.game.deploy(this.player, Uint32Array.from([intent.id]));
+      } else if (intent.kind === 'blocked') {
+        // Nothing to do: the deploy cursor already shows why.
       } else if (intent.kind === 'rally') {
         this.game.set_rally(this.player, this.selection[0], b.x, b.y);
         this.flashOrder(b, ACTION.MOVE);
@@ -313,11 +368,16 @@ export class Input {
     }
     const k = e.key.toLowerCase();
     if (k === 'escape') {
-      if (this.placing) this.cancelPlacing();
+      if (this.sellMode) this.setSellMode(false);
+      else if (this.placing) this.cancelPlacing();
       else if (this.attackMove) this.attackMove = false;
       else this.setSelection([]);
     } else if (k === 'a' && !e.ctrlKey && !e.metaKey) {
       if (this.selectedOwnUnits().length) this.attackMove = true;
+    } else if (k === 'd' && !e.ctrlKey && !e.metaKey) {
+      this.deploySelection();
+    } else if (k === 'z' && !e.ctrlKey && !e.metaKey) {
+      this.toggleSellMode();
     } else if (k === 's' && !e.ctrlKey && !e.metaKey) {
       const units = this.selectedOwnUnits();
       if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
@@ -365,12 +425,18 @@ export class Input {
 
   updateCursor() {
     let cursor = CURSORS.select;
-    if (this.placing) cursor = 'none';
+    if (this.sellMode) {
+      const w = this.toWorld(this.mouse.x, this.mouse.y);
+      const hit = this.game.pick(this.player, w.x, w.y);
+      cursor = hit !== NONE && this.game.sell_value(this.player, hit) > 0 ? CURSORS.sell : CURSORS.blocked;
+    } else if (this.placing) cursor = 'none';
     else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
       const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
       if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
       else if (intent.kind === 'rally') cursor = CURSORS.rally;
+      else if (intent.kind === 'deploy') cursor = CURSORS.deploy;
+      else if (intent.kind === 'blocked') cursor = CURSORS.blocked;
     }
     if (this.cursor !== cursor) {
       this.cursor = cursor;
