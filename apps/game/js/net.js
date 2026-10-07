@@ -257,10 +257,13 @@ export class LockstepDriver {
   advance(dtMs) {
     if (this.stopped) return { ticks: 0, alpha: 1 };
     this.acc += dtMs;
-    // Behind the network (e.g. after a hitch): catch up faster than real time.
+    // Behind the network (e.g. after a hitch or after others stalled): catch
+    // up faster than real time. From delay + 1 waiting frames on, the server
+    // is already waiting for this client's orders, so every frame of pacing
+    // here would count against its round trip (lockstep.js HOLD_GRACE_MS).
     const backlog = this.frames.size;
     let ticks = 0;
-    while (ticks < MAX_TICKS_PER_FRAME && this.frames.has(this.next) && (this.acc >= this.tickMs || backlog > this.delay + 1)) {
+    while (ticks < MAX_TICKS_PER_FRAME && this.frames.has(this.next) && (this.acc >= this.tickMs || backlog > this.delay)) {
       this.runTick();
       this.acc = Math.max(0, this.acc - this.tickMs);
       ticks++;

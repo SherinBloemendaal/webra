@@ -124,3 +124,15 @@ test('a client never runs a tick before its frame arrives', () => {
   assert.ok(a.driver.next > 3);
   assert.equal(a.driver.stalledMs, 0);
 });
+
+test('a backlog of delay + 1 frames is caught up at once, delay frames are paced', () => {
+  const { clients } = harness([0, 1]);
+  const [a] = clients;
+  for (const tick of [0, 1, 2]) a.driver.onFrame({ tick, orders: [] });
+  // Three waiting frames (the order delay) still run at the normal pace.
+  assert.equal(a.driver.advance(1).ticks, 0);
+  // A fourth means the server waits for this client: run them all now.
+  a.driver.onFrame({ tick: 3, orders: [] });
+  assert.equal(a.driver.advance(1).ticks, 4);
+  assert.equal(a.driver.next, 4);
+});
