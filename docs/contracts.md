@@ -136,7 +136,9 @@ Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
 `packages/protocol`, limits message size (8 KiB) and rate, compares hashes and
 reports desyncs, and drops a player who, while fewer than 25 frames (one
-second of game time) went out, held the game up for more than 10 s in total.
+second of game time) went out, held the game up for more than 10 s in total,
+or held it up longest in such a window older than 10 s (time within 1 s of
+the frame a client needed going out does not count).
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
