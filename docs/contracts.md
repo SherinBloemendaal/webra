@@ -133,7 +133,17 @@ all); `player_json` has `won`, `defeated` and `team`.
 `engine` units move in a domain: `ground` (flow fields on land), `water` (flow
 fields on water cells, naval yards are their docks) and `air` (free flight,
 no pathfinding). Queue types: Building, Defense, Infantry, Vehicle, Aircraft,
-Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16.
+Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16,
+mine 32, underwater 64 (submerged submarines), submarine 128 (any
+submarine; depth charge warheads). Naval yards are structure and water.
+
+Transports (engine/src/cargo.rs): a right-click with units on an own
+transport they fit in is the smart action `Load` (6, `Game.cursor_action`).
+`Game.deploy` on a loaded transport unloads it; `Game.deploy_state` is 1 when
+it can unload now and 2 when no free cell is next to it. `Game.actor_json`
+reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
+transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
+out of the world: not pickable, not box-selectable, dropped from the selection.
 
 ## 6. Deployment
 
