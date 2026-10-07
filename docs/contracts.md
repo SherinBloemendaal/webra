@@ -135,8 +135,8 @@ Server to client: `welcome {you, hostId, session}`, `lobby {slots, options, map}
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
 `packages/protocol`, limits message size (8 KiB) and rate, compares hashes and
-reports desyncs, and drops a player who holds the game up for 10 s without
-letting at least 25 frames (one second of game time) through in that time.
+reports desyncs, and drops a player who, while fewer than 25 frames (one
+second of game time) went out, held the game up for more than 10 s in total.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
