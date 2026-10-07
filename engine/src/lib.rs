@@ -67,7 +67,7 @@ impl Game {
         Ok(Game::wrap(world))
     }
 
-    /// Skirmish from lobby options (JSON, see web/js/lobby.js). Players are
+    /// Skirmish from lobby options (JSON, see apps/game/js/lobby.js). Players are
     /// already resolved to concrete factions by the caller.
     pub fn from_options(json: &str) -> Result<Game, JsError> {
         let v: serde_json::Value = serde_json::from_str(json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;

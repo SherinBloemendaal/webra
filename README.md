@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/SherinBloemendaal/webra/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SherinBloemendaal/webra/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Rust" src="https://img.shields.io/badge/Rust-sim-B7410E?logo=rust&logoColor=white">
   <img alt="WebAssembly" src="https://img.shields.io/badge/WebAssembly-wasm--bindgen-654FF0?logo=webassembly&logoColor=white">
   <img alt="WebGPU" src="https://img.shields.io/badge/WebGPU-WGSL-005A9C">
@@ -64,9 +65,9 @@ flowchart LR
     parse --> json["actors.json<br/>weapons.json<br/>CATALOG.md"]
   end
   json --> gen["tools/gen_rules.py"]
-  gen --> rules["sim/rules.json"]
+  gen --> rules["engine/rules.json"]
 
-  subgraph sim["sim/ : webra-sim (Rust to WebAssembly)"]
+  subgraph sim["engine/ : webra-sim (Rust to WebAssembly)"]
     rules --> world["World<br/>fixed step, 25 ticks/s<br/>integer math only"]
     world --> flow["Flow fields<br/>LRU cache of 256"]
     world --> hash["Spatial hash"]
@@ -74,44 +75,40 @@ flowchart LR
     world --> inst["Instance buffers<br/>(flat Float32Array)"]
   end
 
-  subgraph web["web/ : ES modules, no bundler"]
+  subgraph web["apps/game/ : ES modules, no bundler"]
     ui["Input + sidebar"] -- orders --> world
     inst -- "zero-copy view of wasm memory" --> gpu["WebGPU renderer<br/>terrain, sprites, fog, rects"]
     sprites["Canvas2D procedural sprites"] --> gpu
   end
 ```
 
-**Simulation (`sim/`).** The `webra-sim` crate is compiled to WebAssembly with `wasm-bindgen` and `wasm-pack`. It runs a fixed-step simulation at 25 ticks per second (OpenRA timing) using integer math only: 1024 world units per cell, 1024 angle units per full turn and an integer sine table. No floating point touches game state, so two machines fed the same orders compute the same world. A state hash is exposed for desync checks.
+**Simulation (`engine/`).** The `webra-sim` crate is compiled to WebAssembly with `wasm-bindgen` and `wasm-pack`. It runs a fixed-step simulation at 25 ticks per second (OpenRA timing) using integer math only: 1024 world units per cell, 1024 angle units per full turn and an integer sine table. No floating point touches game state, so two machines fed the same orders compute the same world. A state hash is exposed for desync checks.
 
 **Pathfinding.** Movement uses flow fields: a Dijkstra integration field per goal cell and locomotor. Fields are cached in an LRU of 256 entries and rebuilt lazily when passability changes. Connectivity labels detect unreachable goals, which snap to the nearest reachable cell. Many units ordered to the same goal share one field.
 
 **Spatial hash.** Rebuilt every tick with a counting sort, it serves crowd separation, target scanning and splash damage.
 
-**Rendering (`web/`).** Plain ES modules, no bundler. The WebGPU renderer uses WGSL shaders in `web/shaders` for terrain, instanced sprites with team colour masks, fog of war and rectangles. Rust writes instance data into flat `Float32Array`s, which are uploaded straight from WebAssembly memory to the GPU.
+**Rendering (`apps/game/`).** Plain ES modules, no bundler. The WebGPU renderer uses WGSL shaders in `apps/game/shaders` for terrain, instanced sprites with team colour masks, fog of war and rectangles. Rust writes instance data into flat `Float32Array`s, which are uploaded straight from WebAssembly memory to the GPU.
 
 ## Project layout
 
+A monorepo; [docs/contracts.md](docs/contracts.md) defines how the parts fit together.
+
 ```
 webra/
-├── Cargo.toml              Cargo workspace (sim, tools/shader-check)
-├── sim/                    webra-sim: deterministic simulation (Rust, compiled to wasm)
-│   ├── rules.json          generated rules for the current milestone, embedded in the wasm
-│   ├── src/                world, units, production, map, flowfield, vision, ai, render, tests
-│   └── examples/           ai_vs_ai.rs (headless match), stress.rs (benchmark)
-├── web/                    browser frontend (ES modules, no bundler)
-│   ├── js/                 renderer, input, procedural sprites, game UI
-│   ├── shaders/            WGSL: terrain, sprite, fog, rect, common
-│   ├── css/
-│   └── pkg/                wasm-pack output (generated, not committed)
+├── engine/                 webra-sim: deterministic simulation (Rust, compiled to WebAssembly)
+│   ├── rules.json          generated rules, embedded in the wasm
+│   ├── src/                world, units, combat, production, map, flowfield, vision, ai, render, tests
+│   └── examples/           ai_vs_ai.rs (headless match), stress.rs (benchmark), ai_probe.rs
+├── apps/
+│   ├── game/               browser client, served at /play (ES modules, WebGPU, no bundler)
+│   ├── website/            landing site, served at /
+│   └── server/             Cloudflare Worker: static hosting, API, multiplayer sessions
+├── packages/
+│   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog extracted from OpenRA mods/ra
-│   ├── CATALOG.md          human-readable catalog of actors, weapons and tech tree
-│   ├── actors.json
-│   ├── weapons.json
-│   └── source/             original OpenRA YAML + parse.py + gen_md.py
-├── tools/
-│   ├── gen_rules.py        generates sim/rules.json from data/
-│   └── shader-check/       validates the WGSL shaders with naga
-└── docs/                   README assets
+├── tools/                  gen_rules.py, shader-check (naga), check-js.mjs
+└── docs/                   contracts, README assets
 ```
 
 ## Getting started
@@ -121,8 +118,9 @@ You need a Rust toolchain, `wasm-pack` and Python 3 (only for the static file se
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
-cd sim && wasm-pack build --release --target web --out-dir ../web/pkg --no-typescript && cd ..
-python3 -m http.server 8080 --directory web
+npm install
+npm run build:wasm
+python3 -m http.server 8080 --directory apps/game
 ```
 
 Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Edge 113+, Safari 26+, or Firefox 141+ on Windows.
@@ -131,10 +129,11 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 
 | Task | Command |
 |------|---------|
+| Everything CI runs (engine tests, wasm build, JS checks, API tests) | `npm test` |
 | Run the simulation tests | `cargo test -p webra-sim --release` |
 | Headless AI vs AI match (seed 7) | `cargo run -p webra-sim --release --example ai_vs_ai -- 7` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
-| Regenerate `sim/rules.json` | `python3 tools/gen_rules.py` |
+| Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 
 ## Controls
@@ -168,7 +167,7 @@ Every order type has its own cursor (move, attack, attack-move, harvest, dock, r
 
 [data/CATALOG.md](data/CATALOG.md) is the full Red Alert catalog extracted from OpenRA's `mods/ra` rules: 94 buildable actors and 77 weapons, with inheritance resolved and the tech tree solved per faction. The machine-readable versions are [data/actors.json](data/actors.json) and [data/weapons.json](data/weapons.json); the original YAML and the scripts that produced them (`parse.py`, `gen_md.py`) live in [data/source](data/source).
 
-`tools/gen_rules.py` picks the actors needed for the current milestone and writes `sim/rules.json`, which is embedded in the WebAssembly module.
+`tools/gen_rules.py` picks the actors needed for the current milestone and writes `engine/rules.json`, which is embedded in the WebAssembly module.
 
 ## Determinism and performance
 

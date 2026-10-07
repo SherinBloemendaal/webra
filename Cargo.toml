@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["sim", "tools/shader-check"]
+members = ["engine", "tools/shader-check"]
 
 [profile.release]
 opt-level = 3

@@ -18,7 +18,7 @@ pub fn px(wu: i32) -> f32 {
 }
 
 /// Sprite ids: actor `t` has body `2t` and turret `2t + 1`; specials follow.
-/// Must match the SPECIALS order in web/js/sprites.js.
+/// Must match the SPECIALS order in apps/game/js/sprites.js.
 pub struct SpriteIds {
     pub bullet: f32,
     pub small_explosion: f32,

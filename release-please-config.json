@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "package-name": "webra",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "toml", "path": "engine/Cargo.toml", "jsonpath": "$.package.version" },
+        { "type": "json", "path": "package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/game/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/server/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/website/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/protocol/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

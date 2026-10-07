@@ -1,12 +1,12 @@
 // End-to-end tests of the WebAssembly API exactly as the browser uses it.
-// Run after `wasm-pack build` (see README): node --test tests/web
+// Run after `npm run build:wasm` (see README): node --test apps/game/tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { initSync, Game, version } from '../../web/pkg/webra_sim.js';
+import { initSync, Game, version } from '../pkg/webra_sim.js';
 
-const wasmPath = fileURLToPath(new URL('../../web/pkg/webra_sim_bg.wasm', import.meta.url));
+const wasmPath = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
 const wasm = initSync({ module: readFileSync(wasmPath) });
 
 const OPTIONS = {

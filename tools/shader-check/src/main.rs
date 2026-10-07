@@ -1,4 +1,4 @@
-//! Validates the WGSL shaders in web/shaders with naga, the same front end
+//! Validates the WGSL shaders in apps/game/shaders with naga, the same front end
 //! wgpu and Firefox use. Each shader is checked with common.wgsl prepended,
 //! exactly as the renderer loads it.
 //!
@@ -7,7 +7,7 @@
 use std::path::Path;
 
 fn main() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/shaders");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/game/shaders");
     let common = std::fs::read_to_string(dir.join("common.wgsl")).expect("common.wgsl");
     let mut failed = false;
     let mut entries: Vec<_> = std::fs::read_dir(&dir).expect("shader dir").flatten().map(|e| e.path()).collect();

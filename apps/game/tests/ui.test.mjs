@@ -1,7 +1,7 @@
 // Pure browser modules that do not need a DOM.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CURSORS, ACTION_CURSORS, ACTION } from '../../web/js/cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION } from '../js/cursors.js';
 
 test('every cursor is a valid SVG data URL with a hotspot and fallback', () => {
   for (const [name, css] of Object.entries(CURSORS)) {

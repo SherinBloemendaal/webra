@@ -247,7 +247,7 @@ pub struct PendingImpact {
     pub owner: u8,
 }
 
-/// Lobby options (see web/js/lobby.js). Defaults follow OpenRA's.
+/// Lobby options (see apps/game/js/lobby.js). Defaults follow OpenRA's.
 #[derive(Clone, Debug)]
 pub struct GameOptions {
     pub starting_cash: i32,

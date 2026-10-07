@@ -116,5 +116,5 @@ export const CURSORS = {
 /** Cursor for a smart action code from Game.cursor_action (0 none ... 5 repair). */
 export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair];
 
-/** Smart action codes, matching SmartAction in sim/src/world.rs. */
+/** Smart action codes, matching SmartAction in engine/src/world.rs. */
 export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5 };

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate sim/rules.json from the resolved OpenRA catalog in data/.
+"""Generate engine/rules.json from the resolved OpenRA catalog in data/.
 
 The simulation embeds this file at compile time. Only the actors in ACTORS are
 exported, together with every weapon and locomotor they reference, so the game
@@ -13,7 +13,7 @@ import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
-OUT = os.path.join(ROOT, 'sim', 'rules.json')
+OUT = os.path.join(ROOT, 'engine', 'rules.json')
 
 # Actors that are part of the current milestone.
 ACTORS = [
