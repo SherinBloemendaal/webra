@@ -28,10 +28,14 @@ ACTORS = [
     # Ground vehicles
     'HARV', 'MCV', 'TRUK', 'JEEP', 'APC', 'FTRK', '1TNK', '2TNK', '3TNK', '4TNK', 'V2RL', 'ARTY', 'MNLY',
     'MRJ', 'MGG', 'TTNK', 'DTRK', 'CTNK', 'STNK', 'QTNK',
+    # Ships
+    'LST', 'PT', 'SS', 'DD', 'CA', 'MSUB',
+    # Aircraft: helicopters, then planes
+    'TRAN', 'HIND', 'MH60', 'HELI', 'YAK', 'MIG',
 ]
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
 ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete']
-TERRAIN_TYPES = ['Clear', 'Rough', 'Ore']
+TERRAIN_TYPES = ['Clear', 'Rough', 'Ore', 'Water']
 DEFAULT_FALLOFF = [100, 37, 14, 5]  # OpenRA SpreadDamageWarhead default
 DEFAULT_BURST_DELAY = 5             # OpenRA WeaponInfo default
 BUILD_DURATION_MODIFIER = 60        # OpenRA BuildableInfo default (percent)
@@ -82,6 +86,9 @@ def load_ftl():
     return out
 
 
+AIR_LOCOMOTOR = 'air'
+
+
 def parse_locomotors():
     """Read Locomotor terrain speeds from world.yaml (not part of actors.json)."""
     path = os.path.join(DATA, 'source', 'rules', 'world.yaml')
@@ -115,7 +122,8 @@ def parse_locomotors():
 
 # Target classes, as bit flags shared with the simulation (rules.rs).
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
-               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 0, 'Bridge': 0,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
+               'Ship': 16, 'Submarine': 64,
                'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
 
 
@@ -133,6 +141,18 @@ def target_mask(v):
 
 
 UNKNOWN_TARGETS = set()
+
+
+def locomotor_info(name, locos):
+    """Speeds per terrain class and the movement domain (ground, water or air)."""
+    if name == AIR_LOCOMOTOR:
+        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': []}
+    l = locos[name]
+    speeds = [l.get(tt, 0) for tt in TERRAIN_TYPES]
+    on_land = any(speeds[:3])
+    on_water = speeds[3] > 0
+    domain = 'water' if on_water and not on_land else 'ground'
+    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
 
 
 def weapon_info(name, weapons):
@@ -220,7 +240,7 @@ def main():
     for aid in ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else ('infantry' if a['queue'] == 'Infantry' else 'vehicle')
+        kind = 'building' if 'Building' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -383,18 +403,34 @@ def main():
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
         else:
-            m = t['Mobile']
-            loco = m['Locomotor']
+            if kind == 'aircraft':
+                # Aircraft have no Mobile trait: they fly over everything.
+                m = t['Aircraft']
+                loco = AIR_LOCOMOTOR
+            else:
+                m = t['Mobile']
+                loco = m['Locomotor']
             if loco not in used_locos:
                 used_locos.append(loco)
             e['unit'] = {
                 'speed': int(m['Speed']),
                 'turn_speed': int(m.get('TurnSpeed', 512)),
-                'turn_in_place': m.get('AlwaysTurnInPlace', 'false').lower() == 'true' or kind == 'infantry',
+                'turn_in_place': str(m.get('AlwaysTurnInPlace', 'false')).lower() == 'true' or kind == 'infantry',
                 'locomotor': used_locos.index(loco),
                 'radius': 128 if kind == 'infantry' else (512 if a['cost'] >= 1500 and aid != 'DTRK' else 384),
                 'passenger': t.get('Passenger', {}).get('CargoType') if isinstance(t.get('Passenger'), dict) else None,
             }
+            if kind == 'aircraft':
+                ammo = t.get('AmmoPool') if isinstance(t.get('AmmoPool'), dict) else {}
+                rearm = t.get('Rearmable') if isinstance(t.get('Rearmable'), dict) else {}
+                e['unit']['aircraft'] = {
+                    'cruise_altitude': wdist(m.get('CruiseAltitude', '1c0')),
+                    'can_hover': str(m.get('CanHover', 'false')).lower() == 'true',
+                    'vtol': str(m.get('VTOL', 'false')).lower() == 'true',
+                    'landable': tokens(m.get('LandableTerrainTypes', '')),
+                    'ammo': int(ammo.get('Ammo', 0) or 0),
+                    'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower],
+                }
             if 'Harvester' in t:
                 hv = t['Harvester']
                 e['unit']['harvester'] = {
@@ -428,10 +464,7 @@ def main():
         'player': player,
         'actors': out_actors,
         'weapons': [weapon_info(w, weapons) for w in used_weapons],
-        'locomotors': [
-            {'name': l, 'speeds': [locos[l].get(tt, 0) for tt in TERRAIN_TYPES], 'crushes': locos[l]['_crushes']}
-            for l in used_locos
-        ],
+        'locomotors': [locomotor_info(l, locos) for l in used_locos],
     }
     with open(OUT, 'w') as fh:
         json.dump(rules, fh, indent=1)

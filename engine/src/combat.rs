@@ -5,7 +5,6 @@
 //! burst, projectile speed and inaccuracy, and damage warheads with spread,
 //! falloff, an armour-type versus table, target classes and delays.
 
-use crate::flowfield::nearest_in_component;
 use crate::math::{dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
 use crate::rules::{Kind, Projectile as ProjKind, WarheadKind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
@@ -132,8 +131,8 @@ impl World {
             if self.actors[i].attack_move {
                 // Resume the attack-move toward the original destination.
                 let (dx, dy) = self.actors[i].dest;
-                let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
-                let goal = nearest_in_component(&self.map, &self.pass, self.cell_of(dx, dy), comp).unwrap_or(NONE);
+                let (gx, gy) = self.cell_of(dx, dy);
+                let goal = self.path_goal(i, gx, gy);
                 let a = &mut self.actors[i];
                 a.goal = goal;
                 a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
@@ -178,8 +177,7 @@ impl World {
         let (tcx, tcy) = self.cell_of(self.actors[t].x, self.actors[t].y);
         let tcell = self.map.idx(tcx, tcy) as u32;
         if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
-            let comp = self.pass.component[self.cell_index(x, y)];
-            let goal = nearest_in_component(&self.map, &self.pass, (tcx, tcy), comp).unwrap_or(NONE);
+            let goal = self.path_goal(i, tcx, tcy);
             let a = &mut self.actors[i];
             a.chase_cell = tcell;
             a.goal = goal;
@@ -296,7 +294,7 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };

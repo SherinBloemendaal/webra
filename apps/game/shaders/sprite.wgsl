@@ -46,7 +46,8 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     let team = g.team_colors[min(in.team, 7u)].rgb;
     // Team areas are painted grey in the atlas; the grey level becomes shading.
     var rgb = mix(base.rgb, team * (0.35 + base.r * 1.05), m);
-    rgb = mix(rgb, vec3f(1.0), in.flash * 0.55);
+    // flash > 0: white hit flash; flash < 0: solid black (aircraft shadows).
+    rgb = select(mix(rgb, vec3f(1.0), in.flash * 0.55), vec3f(0.0), in.flash < 0.0);
     let a = base.a * in.alpha;
     return vec4f(rgb * a, a);
 }

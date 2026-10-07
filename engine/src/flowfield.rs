@@ -36,8 +36,18 @@ pub struct Passability {
 }
 
 impl Passability {
+    /// Passability for land units.
     pub fn new(map: &Map) -> Self {
-        let blocked = map.terrain.iter().map(|t| !t.passable()).collect();
+        Passability::with(map, |t| t.passable())
+    }
+
+    /// Passability for ships: open water only.
+    pub fn water(map: &Map) -> Self {
+        Passability::with(map, |t| t == crate::map::Terrain::Water)
+    }
+
+    fn with(map: &Map, open: impl Fn(crate::map::Terrain) -> bool) -> Self {
+        let blocked = map.terrain.iter().map(|&t| !open(t)).collect();
         let mut p = Passability { blocked, component: vec![0; map.cells()], version: 1, dirty: true };
         p.refresh(map);
         p
@@ -269,7 +279,12 @@ mod tests {
             map.terrain[i] = Terrain::Rock;
         }
         let pass = Passability::new(&map);
-        let locos = vec![Locomotor { name: "t".into(), speeds: vec![100, 50, 88], crushes_infantry: true }];
+        let locos = vec![Locomotor {
+            name: "t".into(),
+            domain: crate::rules::Domain::Ground,
+            speeds: vec![100, 50, 88, 0],
+            crushes_infantry: true,
+        }];
         let mut cache = FlowCache::new();
         let goal = map.idx(15, 2) as u32;
         let steps = walk(&map, &pass, &mut cache, &locos, (2, 2), goal);

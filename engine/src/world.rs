@@ -13,7 +13,7 @@ pub const NONE: u32 = u32::MAX;
 const IDX_BITS: u32 = 22;
 const IDX_MASK: u32 = (1 << IDX_BITS) - 1;
 const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
-pub const MAX_WEAPONS: usize = 2;
+pub const MAX_WEAPONS: usize = 4;
 const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
 
@@ -94,6 +94,8 @@ pub struct Actor {
     pub heal_timer: i32,
     /// Iron Curtain: no damage until this tick.
     pub invulnerable_until: u32,
+    /// Height above ground in world units (aircraft); 0 on the ground.
+    pub altitude: i32,
 }
 
 impl Actor {
@@ -143,6 +145,7 @@ impl Actor {
             last_damaged: 0,
             heal_timer: 0,
             invulnerable_until: 0,
+            altitude: 0,
         }
     }
 
@@ -431,7 +434,10 @@ pub enum SmartAction {
 pub struct World {
     pub rules: Rules,
     pub map: Map,
+    /// Passability for land units.
     pub pass: Passability,
+    /// Passability for ships.
+    pub pass_water: Passability,
     pub flow: FlowCache,
     pub actors: Vec<Actor>,
     free: Vec<u32>,
@@ -575,10 +581,12 @@ impl World {
 
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
         let pass = Passability::new(&map);
+        let pass_water = Passability::water(&map);
         let cells = map.cells();
         World {
             rules,
             pass,
+            pass_water,
             flow: FlowCache::new(),
             actors: Vec::new(),
             free: Vec::new(),
@@ -698,6 +706,10 @@ impl World {
         a.pturret = facing;
         a.hp = info.hp;
         a.scan_cooldown = (i as i32) % 8;
+        // Aircraft enter the world flying at their cruise altitude.
+        a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
+        // Aircraft enter the world flying at their cruise altitude.
+        a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
         if info.unit.as_ref().is_some_and(|u| u.harvester.is_some()) {
             a.activity = Activity::Harvest;
             a.harv = HarvState::Search;
@@ -735,9 +747,11 @@ impl World {
             self.building_at[ci] = i as u32;
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);
+                self.pass_water.set_blocked(ci, true);
             }
         }
         self.pass.refresh(&self.map);
+        self.pass_water.refresh(&self.map);
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -786,6 +800,7 @@ impl World {
                     if self.building_at[ci] == i as u32 {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
+                        self.pass_water.set_blocked(ci, self.map.terrain[ci] != crate::map::Terrain::Water);
                     }
                 }
                 self.tokens_dirty = true;
@@ -801,6 +816,36 @@ impl World {
             self.free.push(i as u32);
         }
         self.pass.refresh(&self.map);
+        self.pass_water.refresh(&self.map);
+    }
+
+    // ---- Domains (ground, water, air) -----------------------------------------
+
+    /// Movement domain of an actor (structures count as ground).
+    pub fn domain_of(&self, i: usize) -> crate::rules::Domain {
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        info.unit.as_ref().map_or(crate::rules::Domain::Ground, |u| self.rules.locomotors[u.locomotor].domain)
+    }
+
+    /// Passability for a domain. Aircraft ignore it (callers check for Air first).
+    pub fn pass_for(&self, d: crate::rules::Domain) -> &Passability {
+        match d {
+            crate::rules::Domain::Water => &self.pass_water,
+            _ => &self.pass,
+        }
+    }
+
+    /// Goal cell for moving actor `i` toward cell (gx, gy): the nearest cell it
+    /// can actually reach in its domain (any cell for aircraft), or NONE.
+    pub fn path_goal(&self, i: usize, gx: i32, gy: i32) -> u32 {
+        let d = self.domain_of(i);
+        let (gx, gy) = (gx.clamp(0, self.map.width - 1), gy.clamp(0, self.map.height - 1));
+        if d == crate::rules::Domain::Air {
+            return self.map.idx(gx, gy) as u32;
+        }
+        let pass = self.pass_for(d);
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci]).unwrap_or(NONE)
     }
 
     // ---- Geometry helpers --------------------------------------------------
@@ -1005,15 +1050,21 @@ impl World {
         let group = self.next_group;
         self.next_group += 1;
         let (gx, gy) = self.cell_of(x, y);
-        let mut goals: Vec<(u32, u32)> = Vec::new();
+        // Reachable goals per (domain, component), shared by the group.
+        let mut goals: Vec<((crate::rules::Domain, u32), u32)> = Vec::new();
         for &i in units {
             self.release_dock(i);
-            let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
-            let goal = match goals.iter().find(|(c, _)| *c == comp) {
+            let d = self.domain_of(i);
+            let comp = if d == crate::rules::Domain::Air {
+                0
+            } else {
+                self.pass_for(d).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
+            };
+            let goal = match goals.iter().find(|(k, _)| *k == (d, comp)) {
                 Some(&(_, g)) => g,
                 None => {
-                    let g = nearest_in_component(&self.map, &self.pass, (gx, gy), comp).unwrap_or(NONE);
-                    goals.push((comp, g));
+                    let g = self.path_goal(i, gx, gy);
+                    goals.push(((d, comp), g));
                     g
                 }
             };
@@ -1204,6 +1255,7 @@ impl World {
         }
         for p in 0..self.players.len() {
             self.tick_production(p as u8);
+            self.tick_powers(p as u8);
         }
         self.tick_units();
         self.tick_projectiles();

@@ -4,12 +4,17 @@
 //! at 25 Hz, queues player orders, and reads flat instance buffers straight
 //! out of WebAssembly memory every frame.
 
+mod abilities;
 mod ai;
+mod air;
 mod combat;
 pub mod flowfield;
+mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod math;
+mod naval;
+mod plane;
 mod production;
 pub mod render;
 pub mod rng;
@@ -21,6 +26,14 @@ pub mod world;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_abilities;
+#[cfg(test)]
+mod tests_helis;
+#[cfg(test)]
+mod tests_naval;
+#[cfg(test)]
+mod tests_planes;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -32,6 +45,13 @@ use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World,
 /// Version shown in the game: the crate version plus the git commit it was built from.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_HASH: &str = env!("WEBRA_GIT_HASH");
+
+/// The built-in rules (engine/rules.json) as JSON: the base that map rules
+/// overrides apply to. Used by the map editor to validate and show defaults.
+#[wasm_bindgen]
+pub fn base_rules_json() -> String {
+    rules::RULES_JSON.to_string()
+}
 
 #[wasm_bindgen]
 pub fn version() -> String {
@@ -230,7 +250,14 @@ impl Game {
                     "id": a.id,
                     "name": a.name,
                     "description": a.description,
-                    "kind": match a.kind { Kind::Building => "building", Kind::Infantry => "infantry", Kind::Vehicle => "vehicle" },
+                    "kind": match a.kind {
+                        Kind::Building => "building",
+                        Kind::Infantry => "infantry",
+                        Kind::Vehicle => "vehicle",
+                        Kind::Ship => "ship",
+                        Kind::Aircraft => "aircraft",
+                    },
+                    "altitude": a.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude),
                     "queue": a.queue as usize,
                     "cost": a.cost,
                     "hp": a.hp,

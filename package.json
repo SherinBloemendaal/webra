@@ -12,6 +12,7 @@
   "scripts": {
     "build:wasm": "cd engine && wasm-pack build --release --target web --out-dir ../apps/game/pkg --no-typescript",
     "rules": "python3 tools/gen_rules.py",
+    "build": "node tools/build-dist.mjs",
     "check:js": "node tools/check-js.mjs",
     "test:engine": "cargo test -p webra-sim --release",
     "test:web": "node --test apps/game/tests/*.test.mjs",

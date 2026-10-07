@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# github.workflow is the caller's name when deploy.yml runs this file, so the
+# push run of CI and the CI inside a deploy never cancel each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

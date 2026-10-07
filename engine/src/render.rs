@@ -34,6 +34,11 @@ pub struct SpriteIds {
     pub shell: f32,
     pub chrono: f32,
     pub nuke: f32,
+    /// First of 8 reserved special slots per art module (apps/game/js/art/*.js).
+    pub naval_base: f32,
+    pub planes_base: f32,
+    pub helis_base: f32,
+    pub abilities_base: f32,
 }
 
 impl SpriteIds {
@@ -52,6 +57,10 @@ impl SpriteIds {
             shell: b + 9.0,
             chrono: b + 10.0,
             nuke: b + 11.0,
+            naval_base: b + 12.0,
+            planes_base: b + 20.0,
+            helis_base: b + 28.0,
+            abilities_base: b + 36.0,
         }
     }
 }
@@ -134,10 +143,40 @@ impl World {
 
         sprites.extend_from_slice(&building_turrets);
 
-        // Units: bodies, then turrets on top.
+        // Units: bodies, then turrets on top; aircraft after everything on the
+        // ground, raised by their altitude, with a dark shadow underneath.
         let mut turrets: Vec<f32> = Vec::new();
+        let mut aircraft: Vec<f32> = Vec::new();
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.kind == Kind::Building {
+                continue;
+            }
+            if a.kind == Kind::Aircraft {
+                if a.owner != player && !self.is_visible_to(i, player) {
+                    continue;
+                }
+                let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
+                if !view.contains(x, y, 64.0) {
+                    continue;
+                }
+                let lift = px(a.altitude);
+                let ang = lerp_angle(a.pfacing, a.facing, alpha);
+                // Shadow: the same sprite, transparent, at ground level.
+                push_sprite(sprites, x + lift * 0.4, y, ang, (a.ty * 2) as f32, a.owner as f32, 0.9, 0.25, -1.0);
+                push_sprite(&mut aircraft, x, y - lift, ang, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, (a.flash > 0) as i32 as f32);
+                if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
+                    push_sprite(
+                        &mut aircraft,
+                        x,
+                        y - lift,
+                        lerp_angle(a.pturret, a.turret, alpha),
+                        (a.ty * 2 + 1) as f32,
+                        a.owner as f32,
+                        1.0,
+                        1.0,
+                        0.0,
+                    );
+                }
                 continue;
             }
             if a.owner != player && !self.is_visible_to(i, player) {
@@ -164,6 +203,7 @@ impl World {
             }
         }
         sprites.extend_from_slice(&turrets);
+        sprites.extend_from_slice(&aircraft);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));

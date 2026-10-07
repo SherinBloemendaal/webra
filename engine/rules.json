@@ -10,7 +10,8 @@
  "terrain_types": [
   "Clear",
   "Rough",
-  "Ore"
+  "Ore",
+  "Water"
  ],
  "factions": [
   "allies",
@@ -4312,6 +4313,570 @@
     "radius": 512,
     "passenger": "Vehicle"
    }
+  },
+  {
+   "id": "LST",
+   "name": "Transport",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 10,
+   "prerequisites": [
+    "~techlevel.low"
+   ],
+   "build_at": "Ship",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 29,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry",
+      "Vehicle"
+     ],
+     "max": 5,
+     "garrison": false,
+     "initial": []
+    }
+   },
+   "unit": {
+    "speed": 115,
+    "turn_speed": 512,
+    "turn_in_place": false,
+    "locomotor": 6,
+    "radius": 384,
+    "passenger": null
+   }
+  },
+  {
+   "id": "PT",
+   "name": "Gunboat",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 20,
+   "prerequisites": [
+    "~syrd",
+    "~techlevel.low"
+   ],
+   "build_at": "Boat",
+   "hp": 20000,
+   "armor": 3,
+   "sight": 8192,
+   "weapons": [
+    30,
+    31
+   ],
+   "turret_turn_speed": 28,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 29,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 4096
+    }
+   },
+   "unit": {
+    "speed": 142,
+    "turn_speed": 28,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null
+   }
+  },
+  {
+   "id": "SS",
+   "name": "Submarine",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 950,
+   "build_ticks": 570,
+   "palette_order": 30,
+   "prerequisites": [
+    "~spen",
+    "~techlevel.low"
+   ],
+   "build_at": "Submarine",
+   "hp": 25000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [
+    32
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 33,
+   "self_heal": null,
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 50,
+     "uncloak_on": [
+      "Attack"
+     ]
+    },
+    "detect_cloaked": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 78,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null
+   }
+  },
+  {
+   "id": "DD",
+   "name": "Destroyer",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 40,
+   "prerequisites": [
+    "~syrd",
+    "dome",
+    "~techlevel.medium"
+   ],
+   "build_at": "Boat",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 5120,
+   "weapons": [
+    34,
+    31,
+    35
+   ],
+   "turret_turn_speed": 28,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 29,
+   "self_heal": null,
+   "abilities": {
+    "detect_cloaked": {
+     "range": 4096
+    }
+   },
+   "unit": {
+    "speed": 92,
+    "turn_speed": 28,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null
+   }
+  },
+  {
+   "id": "CA",
+   "name": "Cruiser",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 2400,
+   "build_ticks": 1440,
+   "palette_order": 50,
+   "prerequisites": [
+    "~syrd",
+    "atek",
+    "~techlevel.high"
+   ],
+   "build_at": "Boat",
+   "hp": 80000,
+   "armor": 3,
+   "sight": 7168,
+   "weapons": [
+    36,
+    36
+   ],
+   "turret_turn_speed": 12,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 29,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 44,
+    "turn_speed": 12,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 512,
+    "passenger": null
+   }
+  },
+  {
+   "id": "MSUB",
+   "name": "Missile Submarine",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 60,
+   "prerequisites": [
+    "~spen",
+    "stek",
+    "~techlevel.high"
+   ],
+   "build_at": "Submarine",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [
+    37,
+    38
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 33,
+   "self_heal": null,
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 100,
+     "uncloak_on": [
+      "Attack"
+     ]
+    },
+    "detect_cloaked": {
+     "range": 4096
+    }
+   },
+   "unit": {
+    "speed": 44,
+    "turn_speed": 12,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 512,
+    "passenger": null
+   }
+  },
+  {
+   "id": "TRAN",
+   "name": "Chinook",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 900,
+   "build_ticks": 540,
+   "palette_order": 10,
+   "prerequisites": [
+    "~hpad",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 14000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 8,
+     "garrison": false,
+     "initial": []
+    }
+   },
+   "unit": {
+    "speed": 128,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 0,
+     "rearm_actors": []
+    }
+   }
+  },
+  {
+   "id": "HIND",
+   "name": "Hind",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 20,
+   "prerequisites": [
+    "~disabled",
+    "~hpad",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 10000,
+   "armor": 2,
+   "sight": 10240,
+   "weapons": [
+    40
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 112,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 24,
+     "rearm_actors": [
+      "HPAD"
+     ]
+    }
+   }
+  },
+  {
+   "id": "MH60",
+   "name": "Black Hawk",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 20,
+   "prerequisites": [
+    "~hpad",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 10000,
+   "armor": 2,
+   "sight": 10240,
+   "weapons": [
+    40
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 112,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 24,
+     "rearm_actors": [
+      "HPAD"
+     ]
+    }
+   }
+  },
+  {
+   "id": "HELI",
+   "name": "Longbow",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 40,
+   "prerequisites": [
+    "~hpad",
+    "atek",
+    "~techlevel.high"
+   ],
+   "build_at": "Helicopter",
+   "hp": 12000,
+   "armor": 2,
+   "sight": 12288,
+   "weapons": [
+    41,
+    42
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 149,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 8,
+     "rearm_actors": [
+      "HPAD"
+     ]
+    }
+   }
+  },
+  {
+   "id": "YAK",
+   "name": "Yak Attack Plane",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1350,
+   "build_ticks": 810,
+   "palette_order": 30,
+   "prerequisites": [
+    "~afld",
+    "~techlevel.medium"
+   ],
+   "build_at": "Plane",
+   "hp": 6000,
+   "armor": 2,
+   "sight": 11264,
+   "weapons": [
+    43
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 178,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 18,
+     "rearm_actors": [
+      "AFLD",
+      "AFLD.Ukraine"
+     ]
+    }
+   }
+  },
+  {
+   "id": "MIG",
+   "name": "MiG Attack Plane",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 50,
+   "prerequisites": [
+    "~afld",
+    "stek",
+    "~techlevel.high"
+   ],
+   "build_at": "Plane",
+   "hp": 8000,
+   "armor": 2,
+   "sight": 13312,
+   "weapons": [
+    44
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 39,
+   "self_heal": null,
+   "abilities": {},
+   "unit": {
+    "speed": 223,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 8,
+     "rearm_actors": [
+      "AFLD",
+      "AFLD.Ukraine"
+     ]
+    }
+   }
   }
  ],
  "weapons": [
@@ -5375,7 +5940,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 95,
    "invalid": 0,
    "warheads": [
     {
@@ -5399,7 +5964,7 @@
       25
      ],
      "delay": 0,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5423,7 +5988,7 @@
       25
      ],
      "delay": 5,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5447,7 +6012,7 @@
       25
      ],
      "delay": 10,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5471,7 +6036,7 @@
       25
      ],
      "delay": 15,
-     "valid": 23,
+     "valid": 87,
      "invalid": 0
     }
    ]
@@ -5631,15 +6196,653 @@
      "invalid": 1
     }
    ]
+  },
+  {
+   "name": "UnitExplodeShip",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "2Inch",
+   "range": 5632,
+   "min_range": 0,
+   "reload": 60,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 682,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      28,
+      72,
+      72,
+      100,
+      48
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "DepthCharge",
+   "range": 5120,
+   "min_range": 0,
+   "reload": 60,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 125,
+   "inaccuracy": 128,
+   "arc": true,
+   "valid": 64,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      40,
+      100,
+      25,
+      50
+     ],
+     "delay": 0,
+     "valid": 64,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "TorpTube",
+   "range": 9216,
+   "min_range": 0,
+   "reload": 100,
+   "burst": 2,
+   "burst_delays": [
+    15
+   ],
+   "projectile": "missile",
+   "speed": 85,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 80,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 18000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      75,
+      75,
+      100,
+      500
+     ],
+     "delay": 0,
+     "valid": 80,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplodeSubmarine",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Stinger",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 170,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      36,
+      88,
+      66,
+      120,
+      60
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "StingerAA",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 255,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1650,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      36,
+      88,
+      100,
+      120,
+      60
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "8Inch",
+   "range": 20480,
+   "min_range": 3072,
+   "reload": 250,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 204,
+   "inaccuracy": 1962,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 213,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      60,
+      35,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "SubMissile",
+   "range": 20480,
+   "min_range": 512,
+   "reload": 300,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 215,
+   "inaccuracy": 614,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      80,
+      50,
+      48,
+      30,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "SubMissileAA",
+   "range": 8192,
+   "min_range": 512,
+   "reload": 300,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 234,
+   "inaccuracy": 614,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 450,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      80,
+      50,
+      100,
+      30,
+      100
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplode",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ChainGun",
+   "range": 5120,
+   "min_range": 768,
+   "reload": 10,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      144,
+      60,
+      72,
+      28,
+      28
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "HellfireAA",
+   "range": 4096,
+   "min_range": 1280,
+   "reload": 30,
+   "burst": 2,
+   "burst_delays": [
+    10
+   ],
+   "projectile": "missile",
+   "speed": 492,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 3000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      100,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "HellfireAG",
+   "range": 5120,
+   "min_range": 1280,
+   "reload": 34,
+   "burst": 2,
+   "burst_delays": [
+    10
+   ],
+   "projectile": "missile",
+   "speed": 256,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      90,
+      90,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ChainGun.Yak",
+   "range": 5120,
+   "min_range": 2560,
+   "reload": 3,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      50,
+      60,
+      25,
+      25
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Maverick",
+   "range": 9216,
+   "min_range": 2048,
+   "reload": 50,
+   "burst": 2,
+   "burst_delays": [
+    7
+   ],
+   "projectile": "missile",
+   "speed": 256,
+   "inaccuracy": 316,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 7000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      90,
+      90,
+      115,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
   }
  ],
  "locomotors": [
   {
    "name": "foot",
+   "domain": "ground",
    "speeds": [
     100,
     89,
-    89
+    89,
+    0
    ],
    "crushes": [
     "mine",
@@ -5648,10 +6851,12 @@
   },
   {
    "name": "heavywheeled",
+   "domain": "ground",
    "speeds": [
     100,
     50,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5662,10 +6867,12 @@
   },
   {
    "name": "wheeled",
+   "domain": "ground",
    "speeds": [
     100,
     50,
-    88
+    88,
+    0
    ],
    "crushes": [
     "mine",
@@ -5674,10 +6881,12 @@
   },
   {
    "name": "tracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5688,10 +6897,12 @@
   },
   {
    "name": "heavytracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5703,16 +6914,55 @@
   },
   {
    "name": "lighttracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
     "mine",
     "crate"
    ]
+  },
+  {
+   "name": "lcraft",
+   "domain": "water",
+   "speeds": [
+    0,
+    0,
+    0,
+    100
+   ],
+   "crushes": [
+    "crate"
+   ]
+  },
+  {
+   "name": "naval",
+   "domain": "water",
+   "speeds": [
+    0,
+    0,
+    0,
+    100
+   ],
+   "crushes": [
+    "crate"
+   ]
+  },
+  {
+   "name": "air",
+   "domain": "air",
+   "speeds": [
+    100,
+    100,
+    100,
+    100
+   ],
+   "crushes": []
   }
  ]
 }
