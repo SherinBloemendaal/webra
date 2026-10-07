@@ -317,6 +317,10 @@ impl World {
             None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
         };
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), 512);
+        // Planes park on their airfield (plane.rs).
+        if self.plane_produced(u, b) {
+            return true;
+        }
         if self.is_harvester(u) {
             return true;
         }

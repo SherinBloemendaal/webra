@@ -55,6 +55,8 @@ impl World {
                 }
             }
         }
+        // Support power cameras and spy planes (powers.rs).
+        self.apply_power_reveals();
         // Allies share vision (OpenRA default for teams).
         if self.players.iter().any(|p| p.team != 0) {
             let own: Vec<Vec<u8>> = self.players.iter().map(|p| p.visible.clone()).collect();

@@ -122,6 +122,8 @@ test('orders and hash', () => {
     { o: 'rally', player: 1, building: 4, x: 1, y: 1 },
     { o: 'sell', player: 1, building: 4 },
     { o: 'deploy', player: 1, ids: [4] },
+    { o: 'support_power', player: 1, key: 'AirstrikePower@spyplane', x: 1024, y: 2048 },
+    { o: 'support_power', player: 1, key: 'ParatroopersPower@paratroopers', x: 0, y: 0, x2: 4096, y2: 0 },
   ]) {
     ok({ t: 'orders', tick: 1, orders: [o] });
   }
@@ -134,6 +136,9 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ ...move, ids: [-1] }] });
   bad({ t: 'orders', tick: 3, orders: [{ ...move, player: 8 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'stop', player: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'Nuke Power!', x: 0, y: 0 }] }, /power key/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'x'.repeat(65), x: 0, y: 0 }] }, /power key/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'GpsPower', x: 0, y: 0, x2: 0.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');

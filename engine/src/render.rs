@@ -186,7 +186,8 @@ impl World {
                 }
                 continue;
             }
-            if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
+            // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
+            if a.air.parachute || (a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player))) {
                 continue;
             }
             let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
@@ -214,6 +215,8 @@ impl World {
         sprites.extend_from_slice(&turrets);
         // Mines, ability effects and decorations (abilities.rs).
         self.render_abilities(player, view, selected, sprites, rects);
+        // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
+        self.render_air_extras(player, alpha, view, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
 
         for pr in &self.projectiles {

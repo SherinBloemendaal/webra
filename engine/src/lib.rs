@@ -16,6 +16,7 @@ pub mod mapdata;
 pub mod math;
 mod naval;
 mod plane;
+mod powers;
 mod production;
 pub mod render;
 pub mod rng;
@@ -366,7 +367,14 @@ impl Game {
         (0..w.actors.len())
             .filter(|&i| {
                 let a = &w.actors[i];
-                a.alive && a.owner == player && a.is_unit() && a.x >= ax && a.x <= bx && a.y >= ay && a.y <= by
+                a.alive
+                    && a.owner == player
+                    && a.is_unit()
+                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
+                    && a.x >= ax
+                    && a.x <= bx
+                    && a.y >= ay
+                    && a.y <= by
             })
             .collect()
     }
@@ -464,6 +472,20 @@ impl Game {
         }
     }
 
+    /// Fire a support power (`key` from `player_json().powers`) at a world-pixel
+    /// position. The optional second point sets the direction (aircraft fly
+    /// from the target toward it). See engine/src/powers.rs.
+    pub fn activate_power(&mut self, player: u8, key: &str, x: f32, y: f32, x2: Option<f32>, y2: Option<f32>) {
+        self.submit(Order::SupportPower {
+            player,
+            key: key.chars().take(64).collect(),
+            x: to_wu(x),
+            y: to_wu(y),
+            x2: x2.map(to_wu),
+            y2: y2.map(to_wu),
+        });
+    }
+
     pub fn set_rally(&mut self, player: u8, building: u32, x: f32, y: f32) {
         self.submit(Order::Rally { player, building, x: to_wu(x), y: to_wu(y) });
     }
@@ -537,6 +559,24 @@ impl Game {
             })
             .collect();
         let units = w.actors.iter().filter(|a| a.alive && a.owner == player && a.is_unit()).count();
+        // Support powers (powers.rs): one entry per power the player has.
+        let powers: Vec<_> = w
+            .power_instances(player)
+            .iter()
+            .map(|inst| {
+                let info = w.power_info(inst);
+                json!({
+                    "key": inst.key,
+                    "kind": info.kind,
+                    "name": info.name,
+                    "description": info.description,
+                    "progress": inst.progress_permille() as f32 / 1000.0,
+                    "ready": inst.ready(),
+                    "charging": inst.charging,
+                    "remainingTicks": inst.remaining,
+                })
+            })
+            .collect();
         json!({
             "cash": p.cash,
             "resources": p.resources,
@@ -553,6 +593,7 @@ impl Game {
             "won": w.has_won(player),
             "team": p.team,
             "units": units,
+            "powers": powers,
             "tick": w.tick,
             "flowFields": w.flow.computed,
         })

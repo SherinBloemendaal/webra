@@ -100,6 +100,8 @@ pub struct Actor {
     pub altitude: i32,
     /// Ability state (abilities.rs).
     pub ab: crate::abilities::ActorAbility,
+    /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
+    pub air: crate::plane::AirState,
 }
 
 impl Actor {
@@ -151,6 +153,7 @@ impl Actor {
             invulnerable_until: 0,
             altitude: 0,
             ab: crate::abilities::ActorAbility::default(),
+            air: crate::plane::AirState::default(),
         }
     }
 
@@ -375,6 +378,18 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// Fire a support power (powers.rs) at (x, y); (x2, y2) optionally sets a
+    /// direction (the flight direction of aircraft powers).
+    SupportPower {
+        player: u8,
+        key: String,
+        x: i32,
+        y: i32,
+        #[serde(default)]
+        x2: Option<i32>,
+        #[serde(default)]
+        y2: Option<i32>,
+    },
     /// Minelayers mine the cell rectangle (x0, y0)-(x1, y1) (abilities.rs).
     LayMines {
         player: u8,
@@ -407,6 +422,7 @@ impl Order {
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
+            | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. } => *player,
         }
@@ -425,6 +441,7 @@ impl Order {
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
+            | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. } => *player = p,
         }
@@ -445,6 +462,7 @@ impl Order {
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
             }
             Order::StartProduction { count, .. } => (1..=50).contains(count),
+            Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
         }
     }
@@ -498,6 +516,8 @@ pub struct World {
     pub options: GameOptions,
     /// Ability and support power state (abilities.rs).
     pub abil: crate::abilities::AbilityState,
+    /// Support power timers, cameras and falling bombs (powers.rs).
+    pub powers: crate::powers::PowersState,
 }
 
 impl World {
@@ -645,6 +665,7 @@ impl World {
             pending: Vec::new(),
             options: GameOptions::default(),
             abil: Default::default(),
+            powers: Default::default(),
             map,
         }
     }
@@ -799,6 +820,10 @@ impl World {
 
     pub fn kill(&mut self, i: usize) {
         if !self.actors[i].alive {
+            return;
+        }
+        // Airborne planes fall first and die where they hit the ground (plane.rs).
+        if self.begin_crash(i) {
             return;
         }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
@@ -1009,8 +1034,12 @@ impl World {
     }
 
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
-        let mut out: Vec<usize> =
-            ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit()).collect();
+        // Support power aircraft reject orders (OpenRA RejectsOrders).
+        let mut out: Vec<usize> = ids
+            .iter()
+            .filter_map(|&r| self.resolve(r))
+            .filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit() && !self.is_support_aircraft(i))
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
@@ -1041,6 +1070,7 @@ impl World {
                         a.activity = Activity::Idle;
                         a.target = NONE;
                         a.attack_move = false;
+                        a.air.new_order();
                     }
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
@@ -1074,6 +1104,9 @@ impl World {
                             self.actors[b].rally = Some((x, y));
                         }
                     }
+                }
+                Order::SupportPower { player, key, x, y, x2, y2 } => {
+                    self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
             }
         }
@@ -1124,6 +1157,7 @@ impl World {
             a.forced = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
@@ -1143,6 +1177,7 @@ impl World {
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
@@ -1190,6 +1225,10 @@ impl World {
         if units.is_empty() {
             return SmartAction::None;
         }
+        // Planes over an own airfield: return to base (plane.rs).
+        if let Some(act) = self.plane_smart_action(player, units, x, y) {
+            return act;
+        }
         let (cx, cy) = self.cell_of(x, y);
         let ci = self.map.idx(cx, cy);
         let any_weapon = units.iter().any(|&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
@@ -1226,6 +1265,9 @@ impl World {
     }
 
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
+        // Planes clicked onto an own airfield return to base there (plane.rs).
+        let rest = self.plane_smart_rtb(player, units, x, y);
+        let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
             SmartAction::Move => self.order_move(units, x, y, false),
@@ -1319,6 +1361,8 @@ impl World {
             self.tick_production(p as u8);
             self.tick_powers(p as u8);
         }
+        // Support power timers, cameras and falling bombs (powers.rs).
+        self.tick_support_powers();
         self.tick_abilities_world();
         self.tick_units();
         self.tick_projectiles();
