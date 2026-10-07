@@ -1,0 +1,81 @@
+name: Deploy
+
+# Deploys https://webra.sherin.dev (one Cloudflare Worker: static site, game,
+# API and Durable Objects) after the full CI passes. See docs/deploy.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once; a newer push waits for the running deploy
+# instead of cancelling it halfway through migrations or an upload.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://webra.sherin.dev
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the engine (WebAssembly)
+        run: npm run build:wasm
+        env:
+          WEBRA_GIT_HASH: ${{ github.sha }}
+
+      - name: Assemble dist/
+        run: npm run build
+
+      - name: Check secrets and wrangler
+        working-directory: apps/server
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required (see docs/deploy.md)."
+            exit 1
+          fi
+          # Use the wrangler version pinned in package-lock.json, never a fresh download.
+          npx --no-install wrangler --version
+
+      - name: Apply D1 migrations
+        working-directory: apps/server
+        run: |
+          if [ -d migrations ]; then
+            npx --no-install wrangler d1 migrations apply webra --remote
+          else
+            echo "No apps/server/migrations directory, skipping."
+          fi
+
+      - name: Deploy the Worker
+        working-directory: apps/server
+        run: npx --no-install wrangler deploy
