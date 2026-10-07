@@ -128,6 +128,8 @@ export class Session extends DurableObject {
     if (!parsed.ok) return this.reject(ws, parsed.code, parsed.message, false);
     const msg = parsed.msg;
     const att = this.attachment(ws);
+    // Kicked, dropped or departed connections are closing: ignore their messages.
+    if (att.gone) return;
 
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (att.client === null) {
