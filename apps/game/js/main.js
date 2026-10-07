@@ -95,8 +95,8 @@ function setupOnline(lobby, gpuError) {
     }
   };
   entry.addEventListener('click', open);
-  // Invite links (#join=<session id>) open the online screen directly.
-  if (/^#join=[0-9a-f]{64}$/.test(location.hash)) open();
+  // Invite links (?join=<session id>, also #join=) open the online screen directly.
+  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash)) open();
 }
 
 /** Resolve "random" factions deterministically from the seed. */

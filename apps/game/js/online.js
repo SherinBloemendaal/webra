@@ -127,6 +127,14 @@ function saveName(name) {
   }
 }
 
+/** Session id from an invite link (?join=<id> or #join=<id>), or null. */
+function inviteId() {
+  const q = new URLSearchParams(location.search).get('join');
+  if (q && SESSION_ID_RE.test(q)) return q;
+  const m = /^#join=([0-9a-f]{64})$/.exec(location.hash);
+  return m ? m[1] : null;
+}
+
 function randomSeed() {
   return crypto.getRandomValues(new Uint32Array(1))[0] & SEED_MAX;
 }
@@ -233,8 +241,8 @@ export class OnlineUI {
     const joinId = el('input', 'online-input online-join-id');
     joinId.placeholder = 'Session ID or invite link';
     joinId.spellcheck = false;
-    const m = /#join=([0-9a-f]{64})$/.exec(location.hash);
-    if (m) joinId.value = m[1];
+    const invite = inviteId();
+    if (invite) joinId.value = invite;
     const joinById = () => {
       const id = (/([0-9a-f]{64})/.exec(joinId.value.trim()) || [])[1];
       if (!id || !SESSION_ID_RE.test(id)) return this.setError('That is not a valid session ID.');
@@ -403,7 +411,7 @@ export class OnlineUI {
     clearInterval(this.refreshTimer);
     this.conn = conn;
     this.state = { you: welcome.you, hostId: welcome.hostId, session: welcome.session, slots: [], options: null, map: null };
-    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    if (inviteId()) history.replaceState(null, '', location.pathname);
     this.buildLobby();
     this.loadServerMaps();
   }
@@ -462,7 +470,7 @@ export class OnlineUI {
     const title = el('div');
     title.append(el('h1', 'online-title', s.name), el('p', 'online-muted', s.public ? 'Public session' : 'Private session'));
     const invite = button('Copy invite link', null, async () => {
-      const link = `${location.origin}${location.pathname}#join=${s.id}`;
+      const link = `${location.origin}${location.pathname}?join=${s.id}`;
       try {
         await navigator.clipboard.writeText(link);
         invite.textContent = 'Copied';
