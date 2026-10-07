@@ -1,13 +1,14 @@
 //! Mirror matches over many seeds: counts how often each slot wins.
-//! Usage: cargo run -p webra-sim --release --example fairness -- [seeds] [faction] [map size]
+//! Usage: cargo run -p webra-sim --release --example fairness -- [seeds] [faction] [map size] [first seed]
 use webra_sim::world::World;
 
 fn main() {
     let seeds: u64 = std::env::args().nth(1).map(|s| s.parse().expect("seeds is a number")).unwrap_or(10);
     let f = std::env::args().nth(2).unwrap_or_else(|| "allies".into());
     let size: i32 = std::env::args().nth(3).map(|s| s.parse().expect("size is a number")).unwrap_or(80);
+    let first: u64 = std::env::args().nth(4).map(|s| s.parse().expect("first seed is a number")).unwrap_or(0);
     let mut wins = [0u32; 3];
-    for seed in 0..seeds {
+    for seed in first..first + seeds {
         let mut w = World::new(seed, size, &[(f.as_str(), true), (f.as_str(), true)]);
         let mut t = 0;
         while w.winner.is_none() && t < 25 * 60 * 25 {

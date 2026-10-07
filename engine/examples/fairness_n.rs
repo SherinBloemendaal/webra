@@ -74,8 +74,10 @@ fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
 fn main() {
     let teams_arg = std::env::args().nth(1).unwrap_or_else(|| "0000".into());
     let seeds: u64 = std::env::args().nth(2).map(|s| s.parse().expect("seeds is a number")).unwrap_or(16);
-    // FAIR_SEED plays that one seed only (handy with FAIR_VERBOSE).
+    // FAIR_SEED plays that one seed only (handy with FAIR_VERBOSE); FAIR_FIRST
+    // starts the seeds there instead of at 0 (a fresh sample).
     let only: Option<u64> = std::env::var("FAIR_SEED").ok().map(|s| s.parse().expect("FAIR_SEED is a number"));
+    let first: u64 = std::env::var("FAIR_FIRST").ok().map_or(0, |s| s.parse().expect("FAIR_FIRST is a number"));
     let teams: Vec<u8> = teams_arg.chars().map(|c| c.to_digit(10).expect("team digit") as u8).collect();
     let n = teams.len();
     let default_size = if n <= 4 { 96 } else { 128 };
@@ -88,7 +90,7 @@ fn main() {
             .map(|k| {
                 let (teams, faction) = (&teams, faction.as_str());
                 s.spawn(move || {
-                    (0..seeds)
+                    (first..first + seeds)
                         .filter(|seed| seed % threads as u64 == k && only.is_none_or(|o| o == *seed))
                         .map(|seed| (seed, play(seed, size, teams, faction)))
                         .collect::<Vec<_>>()
