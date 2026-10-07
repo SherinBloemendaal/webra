@@ -484,3 +484,44 @@ fn render_draws_rotors_crashes_and_ammo_pips() {
     assert_eq!(count(&sprites, (ty(&w, "HIND") * 2) as f32), 2, "husk and its shadow");
     assert_eq!(count(&sprites, ids.helis_base + 2.0), 1, "smoke");
 }
+
+#[test]
+fn chinook_lands_to_load_and_unload_infantry() {
+    let mut w = flat_world();
+    let tran = heli(&mut w, "TRAN", 0, 20, 20);
+    let soldiers: Vec<usize> = (0..3).map(|k| w.spawn_unit(ty(&w, "E1"), 0, cell_center(17 + k), cell_center(24), 0)).collect();
+    // Hovering: soldiers cannot get in until it lands.
+    let ids: Vec<u32> = soldiers.iter().map(|&s| w.make_ref(s)).collect();
+    w.queue_order(Order::Smart { player: 0, ids: ids.clone(), x: w.actors[tran].x, y: w.actors[tran].y });
+    run(&mut w, 60);
+    assert!(w.passengers(tran).is_empty(), "no boarding in the air");
+    // Deploy on the empty Chinook lands it; then they board.
+    w.queue_order(Order::Deploy { player: 0, ids: r(&w, tran) });
+    run_until(&mut w, 100, |w| w.actors[tran].heli.landed);
+    w.queue_order(Order::Smart { player: 0, ids, x: w.actors[tran].x, y: w.actors[tran].y });
+    run_until(&mut w, 300, |w| w.passengers(tran).len() == 3);
+    assert!(soldiers.iter().all(|&s| !w.actors[s].in_world()), "passengers are out of the world");
+    // Fly elsewhere: passengers ride along, hidden.
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tran), x: cell_center(32), y: cell_center(30), attack_move: false });
+    run(&mut w, 150);
+    assert_eq!(w.actors[tran].altitude, cruise(&w, tran));
+    assert!(soldiers.iter().all(|&s| (w.actors[s].x, w.actors[s].y) == (w.actors[tran].x, w.actors[tran].y)));
+    // Deploy on the loaded Chinook: lands and unloads, then takes off.
+    w.queue_order(Order::Deploy { player: 0, ids: r(&w, tran) });
+    run_until(&mut w, 300, |w| w.passengers(w.resolve(w.make_ref(tran)).unwrap()).is_empty());
+    assert!(soldiers.iter().all(|&s| w.actors[s].in_world()));
+    let (tx, ty_) = w.cell_of(w.actors[tran].x, w.actors[tran].y);
+    assert!((tx - 32).abs() <= 3 && (ty_ - 30).abs() <= 3, "unloaded at the destination");
+    run(&mut w, 120);
+    assert!(!w.actors[tran].heli.landed && w.actors[tran].altitude > 0, "took off after unloading");
+}
+
+#[test]
+fn passengers_die_when_the_chinook_is_shot_down() {
+    let mut w = flat_world();
+    let tran = heli(&mut w, "TRAN", 0, 20, 20);
+    let s = w.spawn_unit(ty(&w, "E1"), 0, cell_center(20), cell_center(20), 0);
+    assert!(w.load_passenger(tran, s));
+    w.damage(tran, 1_000_000);
+    assert!(!w.actors[s].alive, "went down with the Chinook");
+}
