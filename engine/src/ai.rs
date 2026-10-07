@@ -10,7 +10,7 @@
 
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
-use crate::world::{cell_center, Activity, AiDifficulty, Order, World};
+use crate::world::{cell_center, Activity, AiDifficulty, HarvState, Order, World};
 
 const DEFEND_RADIUS: i32 = 14 * CELL;
 /// Enemy bases within this distance of the nearest one count as equally near.
@@ -57,6 +57,7 @@ pub fn think(w: &mut World, player: u8) {
     cancel_blocked(w, player);
     place_ready_building(w, player, QueueType::Building);
     place_ready_building(w, player, QueueType::Defense);
+    send_idle_harvesters(w, player);
     queue_buildings(w, player);
     queue_defenses(w, player);
     queue_units(w, player);
@@ -98,6 +99,55 @@ fn cancel_blocked(w: &mut World, player: u8) {
         let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { continue };
         if !w.availability(player, item.ty).enabled {
             w.cancel_production(player, item.ty);
+        }
+    }
+}
+
+/// Ore trucks that found nothing near their refinery (the fields there are
+/// mined out) drive to the nearest explored ore they can reach, away from
+/// enemy structures, instead of waiting for regrowth.
+fn send_idle_harvesters(w: &mut World, player: u8) {
+    let waiting: Vec<usize> = (0..w.actors.len())
+        .filter(|&i| {
+            let a = &w.actors[i];
+            a.alive
+                && a.owner == player
+                && a.in_world()
+                && w.is_harvester(i)
+                && a.activity == Activity::Harvest
+                && a.harv == HarvState::Wait
+        })
+        .collect();
+    if waiting.is_empty() {
+        return;
+    }
+    let enemy_buildings: Vec<(i32, i32)> = w
+        .actors
+        .iter()
+        .filter(|a| a.alive && a.kind == Kind::Building && w.are_enemies(player, a.owner))
+        .map(|a| w.cell_of(a.x, a.y))
+        .collect();
+    for i in waiting {
+        let (ux, uy) = w.cell_of(w.actors[i].x, w.actors[i].y);
+        let comp = w.pass.component[w.map.idx(ux, uy)];
+        let mut best: Option<(i64, usize)> = None;
+        for ci in 0..w.map.cells() {
+            if w.map.ore[ci] == 0 || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0 {
+                continue;
+            }
+            let (x, y) = (ci as i32 % w.map.width, ci as i32 / w.map.width);
+            if enemy_buildings.iter().any(|&(bx, by)| (bx - x).abs() <= 10 && (by - y).abs() <= 10) {
+                continue;
+            }
+            let d = ((x - ux) * (x - ux) + (y - uy) * (y - uy)) as i64;
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, ci));
+            }
+        }
+        if let Some((_, ci)) = best {
+            let (x, y) = (cell_center(ci as i32 % w.map.width), cell_center(ci as i32 / w.map.width));
+            let r = w.make_ref(i);
+            w.queue_order(Order::Smart { player, ids: vec![r], x, y });
         }
     }
 }
