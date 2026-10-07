@@ -137,11 +137,19 @@ impl MapData {
             errors.push("a map needs 2 to 8 spawn points".into());
         }
         if let Some(m) = &map {
+            // Games start with a Construction Yard on the spawn (World::spawn_start)
+            // or an MCV on the yard's second cell, so both must fit on open
+            // ground. The yard is measured with this map's rules (overrides can
+            // resize it); without valid rules the built-in 3x4 stands in.
+            let yard: Vec<(i32, i32)> = rules
+                .as_ref()
+                .and_then(|r| r.actor_index("FACT").and_then(|f| r.actors[f].building.as_ref()))
+                .map_or_else(|| (0..3).flat_map(|dx| (0..4).map(move |dy| (dx, dy))).collect(), |b| b.cells().collect());
+            let (w, h) = yard.iter().fold((0, 0), |(w, h), &(dx, dy)| (w.max(dx + 1), h.max(dy + 1)));
             for (i, &[x, y]) in self.spawns.iter().enumerate() {
-                // The 3x4 construction yard footprint must be on open ground.
-                let open = (0..3).all(|dx| (0..4).all(|dy| m.contains(x + dx, y + dy) && m.terrain[m.idx(x + dx, y + dy)].buildable()));
-                if !open {
-                    errors.push(format!("spawn {} needs 3x4 clear ground at its position", i + 1));
+                let open = |(cx, cy): (i32, i32)| m.contains(cx, cy) && m.terrain[m.idx(cx, cy)].buildable();
+                if !yard.iter().all(|&(dx, dy)| open((x + dx, y + dy))) || !open((x + 1, y + 1)) {
+                    errors.push(format!("spawn {} needs {w}x{h} clear ground at its position", i + 1));
                 }
             }
             if self.spawns.len() >= 2 && errors.is_empty() {
@@ -274,6 +282,34 @@ mod tests {
             MapActor { ty: "FACT".into(), owner: -1, x: 45, y: 44, facing: 0 },
         ];
         assert!(d.validate().errors.iter().all(|e| !e.contains("does not fit") && !e.contains("outside")));
+    }
+
+    #[test]
+    fn spawns_must_fit_the_construction_yard_of_the_map_rules() {
+        // Re-audit: the yard footprint was a fixed 3x4, so a modded 8x8 yard on
+        // an edge spawn did not fit and the player silently started without one.
+        let m = Map::generate_for(48, 48, 2, 12, 2);
+        let mut d = MapData::from_map(&m, "Edge", "x", "");
+        // Clear ground at the bottom right corner and a spawn whose 3x4 yard just fits there.
+        let n = 48 * 48;
+        d.terrain = b64().encode(vec![0u8; n]);
+        d.ore = b64().encode(vec![0u8; n]);
+        d.spawns[1] = [45, 44];
+        assert!(d.validate().ok, "{:?}", d.validate().errors);
+        let big = serde_json::json!({ "actors": { "FACT": { "building": {
+            "width": 8, "height": 8, "footprint": vec!["xxxxxxxx"; 8], "center_offset": [0, 0]
+        } } } });
+        d.rules = Some(big);
+        let v = d.validate();
+        assert!(v.errors.iter().any(|e| e.contains("spawn 2 needs 8x8 clear ground")), "{:?}", v.errors);
+        d.spawns[1] = [38, 38];
+        assert!(d.validate().ok, "{:?}", d.validate().errors);
+        // The MCV start puts the MCV on the yard's second cell, which must be open as well.
+        d.rules = Some(serde_json::json!({ "actors": { "FACT": { "building": {
+            "width": 1, "height": 1, "footprint": ["x"], "center_offset": [0, 0]
+        } } } }));
+        d.spawns[1] = [47, 47];
+        assert!(d.validate().errors.iter().any(|e| e.contains("spawn 2 needs 1x1")), "{:?}", d.validate().errors);
     }
 
     #[test]
