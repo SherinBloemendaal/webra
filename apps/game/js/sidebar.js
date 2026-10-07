@@ -6,7 +6,7 @@ import { drawIcon } from './sprites.js';
 import { TEAM_COLORS } from './renderer.js';
 
 // Must match QueueType in engine/src/rules.rs.
-const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles'];
+const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'];
 const QUEUE_BUILDINGS = 0;
 /** Buildings and Defense items are placed on the map when finished (one at a time). */
 const isStructureQueue = (q) => q === 0 || q === 1;

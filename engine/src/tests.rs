@@ -262,7 +262,9 @@ fn every_actor_is_reachable_for_the_right_factions() {
     let can = |faction: &str, id: &str| r.obtainable[r.faction_index(faction).unwrap()][r.actor_index(id).unwrap()];
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
-        assert!(any || a.id == "FACT", "{} is buildable by some faction", a.id);
+        // FACT comes from deploying an MCV; the Hind is disabled in OpenRA's rules
+        // until the helicopter work enables it.
+        assert!(any || a.id == "FACT" || a.id == "HIND", "{} is buildable by some faction", a.id);
     }
     assert!(can("germany", "CTNK") && !can("england", "CTNK") && !can("russia", "CTNK"));
     assert!(can("russia", "TTNK") && !can("ukraine", "TTNK"));
@@ -644,4 +646,78 @@ fn four_player_free_for_all_ai_game_finishes() {
     assert!(killed > 20, "fighting happened: {killed}");
     let defeated = w.players.iter().filter(|p| p.defeated).count();
     assert!(defeated >= 1, "at least one player was eliminated in 25 minutes");
+}
+
+// ---- Domains: water and air ---------------------------------------------------------
+
+/// A 64x64 map with a lake in the middle and a rock wall, for domain tests.
+fn lake_world() -> World {
+    use crate::map::Terrain;
+    let mut w = World::new(31, 64, &[("allies", false), ("soviet", false)]);
+    for y in 20..44 {
+        for x in 20..44 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = Terrain::Water;
+            w.map.ore[i] = 0;
+        }
+    }
+    for y in 0..64 {
+        let i = w.map.idx(10, y);
+        w.map.terrain[i] = Terrain::Rock;
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+    w
+}
+
+#[test]
+fn ships_sail_on_water_and_stay_off_land() {
+    let mut w = lake_world();
+    let dd = w.spawn_unit(ty(&w, "DD"), 0, cell_center(22), cell_center(22), 256);
+    let r = w.make_ref(dd);
+    // Ordered onto land: the destroyer stops at the nearest water instead.
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(50), y: cell_center(40), attack_move: false });
+    run(&mut w, 25 * 20);
+    let (cx, cy) = w.cell_of(w.actors[dd].x, w.actors[dd].y);
+    assert_eq!(w.map.terrain[w.map.idx(cx, cy)], crate::map::Terrain::Water, "still on water at {cx},{cy}");
+    assert!(cx >= 40, "sailed to the east shore, at {cx}");
+}
+
+#[test]
+fn naval_yard_produces_ships() {
+    let mut w = lake_world();
+    full_base(&mut w, 0);
+    w.spawn_building(ty(&w, "SYRD"), 0, 30, 30);
+    w.refresh_tokens();
+    let pt = ty(&w, "PT");
+    assert!(w.availability(0, pt).enabled);
+    w.queue_order(Order::StartProduction { player: 0, ty: pt, count: 1 });
+    run(&mut w, 400);
+    let boat = w.actors.iter().position(|a| a.alive && a.ty == pt).expect("gunboat built");
+    run(&mut w, 50);
+    let (cx, cy) = w.cell_of(w.actors[boat].x, w.actors[boat].y);
+    assert_eq!(w.map.terrain[w.map.idx(cx, cy)], crate::map::Terrain::Water);
+}
+
+#[test]
+fn aircraft_fly_over_rock_and_only_anti_air_hits_them() {
+    let mut w = lake_world();
+    let heli = w.spawn_unit(ty(&w, "MH60"), 0, cell_center(5), cell_center(5), 256);
+    assert!(w.actors[heli].altitude > 0, "flying");
+    let r = w.make_ref(heli);
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(15), y: cell_center(5), attack_move: false });
+    run(&mut w, 25 * 8);
+    let (cx, _) = w.cell_of(w.actors[heli].x, w.actors[heli].y);
+    assert!(cx >= 13, "crossed the rock wall at x=10, now at {cx}");
+    // A tank cannot target it; a flak truck can.
+    let tank = &w.rules.actors[ty(&w, "3TNK") as usize];
+    assert!(!tank.can_attack(&w.rules, Kind::Aircraft));
+    let flak = &w.rules.actors[ty(&w, "FTRK") as usize];
+    assert!(flak.can_attack(&w.rules, Kind::Aircraft));
+    let sam = w.spawn_unit(ty(&w, "FTRK"), 1, cell_center(16), cell_center(8), 0);
+    let hp = w.actors[heli].hp;
+    let _ = sam;
+    run(&mut w, 25 * 6);
+    assert!(!w.actors[heli].alive || w.actors[heli].hp < hp, "flak hit the helicopter");
 }

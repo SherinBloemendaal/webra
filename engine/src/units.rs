@@ -175,7 +175,15 @@ impl World {
         let ci = self.cell_index(x, y);
         let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
         let loco = unit.locomotor as u8;
-        let dir = self.flow.dir(&self.map, &self.pass, &self.rules.locomotors, goal, loco, ci);
+        let domain = self.rules.locomotors[unit.locomotor].domain;
+        if domain == crate::rules::Domain::Air {
+            // Aircraft fly straight to their goal.
+            let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
+            self.step_toward(i, gx, gy, &unit);
+            return;
+        }
+        let pass = if domain == crate::rules::Domain::Water { &self.pass_water } else { &self.pass };
+        let dir = self.flow.dir(&self.map, pass, &self.rules.locomotors, goal, loco, ci);
         let (wx, wy) = if dir == DIR_GOAL {
             (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
         } else if dir == DIR_NONE {
@@ -185,7 +193,7 @@ impl World {
                 let (dx, dy) = DIRS[d];
                 let (cx, cy) = self.cell_of(x, y);
                 let (nx, ny) = (cx + dx, cy + dy);
-                (self.map.contains(nx, ny) && !self.pass.blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
+                (self.map.contains(nx, ny) && !self.pass_for(domain).blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
             });
             match comp_cell {
                 Some((nx, ny)) => (cell_center(nx), cell_center(ny)),
@@ -250,7 +258,8 @@ impl World {
             let (tx, ty) = (tx.clamp(0, max_x), ty.clamp(0, max_y));
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
-            if to == from || !self.pass.blocked[to] {
+            let d = self.domain_of(i);
+            if to == from || d == crate::rules::Domain::Air || !self.pass_for(d).blocked[to] {
                 let a = &mut self.actors[i];
                 a.x = tx;
                 a.y = ty;
@@ -551,7 +560,9 @@ impl World {
                             continue;
                         }
                         let b = &self.actors[j];
-                        if !b.alive {
+                        // Only units in the same domain bump into each other
+                        // (aircraft fly over tanks, ships never meet tanks).
+                        if !b.alive || self.domain_of(i) != self.domain_of(j) {
                             continue;
                         }
                         let rb = self.rules.actors[b.ty as usize].unit.as_ref().unwrap().radius;

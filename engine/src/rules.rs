@@ -195,6 +195,18 @@ pub struct UnitInfo {
     pub radius: i32,
     pub passenger: Option<String>,
     pub harvester: Option<HarvesterInfo>,
+    pub aircraft: Option<AircraftInfo>,
+}
+
+/// OpenRA `Aircraft` trait values (planes and helicopters).
+#[derive(Deserialize, Clone)]
+pub struct AircraftInfo {
+    pub cruise_altitude: i32,
+    pub can_hover: bool,
+    pub vtol: bool,
+    pub landable: Vec<String>,
+    pub ammo: i32,
+    pub rearm_actors: Vec<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -238,8 +250,17 @@ struct RawWarhead {
 #[derive(Deserialize)]
 struct RawLocomotor {
     name: String,
+    domain: String,
     speeds: Vec<i32>,
     crushes: Vec<String>,
+}
+
+/// Where a unit moves: on land (ground flow fields), on water (naval flow fields) or in the air.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Domain {
+    Ground,
+    Water,
+    Air,
 }
 
 /// Target classes (bit flags, same values as gen_rules.py TARGET_BITS).
@@ -247,12 +268,16 @@ pub const TARGET_INFANTRY: u32 = 1;
 pub const TARGET_VEHICLE: u32 = 2;
 pub const TARGET_STRUCTURE: u32 = 4;
 pub const TARGET_AIR: u32 = 8;
+pub const TARGET_WATER: u32 = 16;
+pub const TARGET_UNDERWATER: u32 = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     Building,
     Infantry,
     Vehicle,
+    Ship,
+    Aircraft,
 }
 
 impl Kind {
@@ -261,6 +286,8 @@ impl Kind {
             Kind::Building => TARGET_STRUCTURE,
             Kind::Infantry => TARGET_INFANTRY,
             Kind::Vehicle => TARGET_VEHICLE,
+            Kind::Ship => TARGET_WATER,
+            Kind::Aircraft => TARGET_AIR,
         }
     }
 }
@@ -272,8 +299,10 @@ pub enum QueueType {
     Defense = 1,
     Infantry = 2,
     Vehicle = 3,
+    Aircraft = 4,
+    Ship = 5,
 }
-pub const QUEUE_COUNT: usize = 4;
+pub const QUEUE_COUNT: usize = 6;
 
 impl QueueType {
     pub fn from_index(i: usize) -> QueueType {
@@ -281,7 +310,9 @@ impl QueueType {
             0 => QueueType::Building,
             1 => QueueType::Defense,
             2 => QueueType::Infantry,
-            _ => QueueType::Vehicle,
+            3 => QueueType::Vehicle,
+            4 => QueueType::Aircraft,
+            _ => QueueType::Ship,
         }
     }
 
@@ -291,6 +322,8 @@ impl QueueType {
             "Defense" => Some(QueueType::Defense),
             "Infantry" => Some(QueueType::Infantry),
             "Vehicle" => Some(QueueType::Vehicle),
+            "Aircraft" => Some(QueueType::Aircraft),
+            "Ship" => Some(QueueType::Ship),
             _ => None,
         }
     }
@@ -496,6 +529,7 @@ impl WeaponInfo {
 
 pub struct Locomotor {
     pub name: String,
+    pub domain: Domain,
     /// Speed percent per terrain class (Clear, Rough, Ore).
     pub speeds: Vec<i32>,
     /// OpenRA `Crushes: infantry`: drives over enemy soldiers.
@@ -555,6 +589,8 @@ impl Rules {
                 "building" => Kind::Building,
                 "infantry" => Kind::Infantry,
                 "vehicle" => Kind::Vehicle,
+                "ship" => Kind::Ship,
+                "aircraft" => Kind::Aircraft,
                 k => panic!("unknown kind {k}"),
             };
             let mut prerequisites = Vec::new();
@@ -690,7 +726,16 @@ impl Rules {
         let locomotors = raw
             .locomotors
             .into_iter()
-            .map(|l| Locomotor { crushes_infantry: l.crushes.iter().any(|c| c == "infantry"), name: l.name, speeds: l.speeds })
+            .map(|l| Locomotor {
+                crushes_infantry: l.crushes.iter().any(|c| c == "infantry"),
+                domain: match l.domain.as_str() {
+                    "water" => Domain::Water,
+                    "air" => Domain::Air,
+                    _ => Domain::Ground,
+                },
+                name: l.name,
+                speeds: l.speeds,
+            })
             .collect();
         let mut rules = Rules { factions: raw.factions, player: raw.player, actors, weapons, locomotors, tokens, obtainable: Vec::new() };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();

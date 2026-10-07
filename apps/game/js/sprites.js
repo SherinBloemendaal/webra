@@ -1083,7 +1083,7 @@ function spriteList(actors) {
       list.push([a.width * 24, a.height * 24, draw]);
       list.push(BUILDING_TURRET[key] ?? null);
     } else {
-      const d = UNIT_DRAW[key];
+      const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
       list.push(d.turret ?? null);
@@ -1157,6 +1157,32 @@ export function buildAtlas(actors) {
   return { color, mask, frames };
 }
 
+/**
+ * Generic art for ships and aircraft without a dedicated drawing (also used
+ * for actors added by modded maps): a plain hull or a plane silhouette.
+ */
+function fallbackUnit(actor) {
+  if (actor.kind === 'ship') {
+    return {
+      body: [22, 40, (ctx, P) => {
+        poly(ctx, P.c(C.steelDark), [11, 0, 21, 12, 21, 38, 1, 38, 1, 12]);
+        poly(ctx, P.team(0.6), [11, 3, 19, 13, 19, 36, 3, 36, 3, 13]);
+        rect(ctx, P.c(C.steel), 7, 16, 8, 12);
+      }],
+    };
+  }
+  if (actor.kind === 'aircraft') {
+    return {
+      body: [30, 30, (ctx, P) => {
+        rect(ctx, P.team(0.6), 13, 2, 4, 26);
+        poly(ctx, P.team(0.8), [15, 9, 29, 17, 29, 20, 15, 16, 1, 20, 1, 17]);
+        poly(ctx, P.team(0.5), [15, 23, 22, 28, 8, 28]);
+      }],
+    };
+  }
+  return null;
+}
+
 /** Sidebar icon: body + turret composited in a team colour. */
 export function drawIcon(canvas, actor, teamRgb) {
   const ctx = canvas.getContext('2d');
@@ -1181,7 +1207,7 @@ export function drawIcon(canvas, actor, teamRgb) {
     const t = BUILDING_TURRET[key];
     if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
   } else {
-    const d = UNIT_DRAW[key];
+    const d = UNIT_DRAW[key] ?? fallbackUnit(actor);
     [w, h] = d.body;
     parts.push([d.body[2], 0, 0]);
     if (d.turret) parts.push([d.turret[2], (w - d.turret[0]) / 2, (h - d.turret[1]) / 2]);
