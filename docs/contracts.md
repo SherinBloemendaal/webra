@@ -52,7 +52,11 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 - `rules` overrides (the rules.ini story): a partial copy of `engine/rules.json`
   keyed by id: `{ "actors": { "1TNK": { "cost": 400, "unit": { "speed": 150 } } }, "weapons": { "25mm": { "range": 6000 } } }`.
   Deep-merged over the built-in rules before the game starts. Unknown ids or
-  fields are rejected. **Any map with `rules` is a modded map**: the client
+  fields are rejected. Arrays are replaced whole; `kind` and `queue` never
+  change, so objects inside a replaced array (warheads, support powers) must
+  repeat the built-in `kind` at the same position. The engine then checks
+  every merged value (ranges, list lengths, shapes, references to weapons and
+  actors). **Any map with `rules` is a modded map**: the client
   shows a warning ("This map changes game rules (costs, damage, speed...). It
   can be unfair or act as a cheat.") and the player must accept before the map
   is installed. The lobby shows a MODDED badge for such maps.
@@ -131,7 +135,8 @@ Server to client: `welcome {you, hostId, session}`, `lobby {slots, options, map}
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
 `packages/protocol`, limits message size (8 KiB) and rate, compares hashes and
-reports desyncs, and drops a player who stops sending orders for 10 s.
+reports desyncs, and drops a player who holds the game up for 10 s without
+letting at least 25 frames (one second of game time) through in that time.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
