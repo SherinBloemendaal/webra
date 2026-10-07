@@ -707,3 +707,127 @@ fn mirror_matches_are_fair() {
     }
     assert!(wins[0] <= 7 && wins[1] <= 7, "wins per slot over 10 mirror matches: {wins:?}");
 }
+
+// ---- AI in free for all and team games ----------------------------------------
+
+fn spawn_tanks(w: &mut World, owner: u8, cell: (i32, i32), n: i32) -> Vec<usize> {
+    let tnk = ty(w, "1TNK");
+    (0..n).map(|k| w.spawn_unit(tnk, owner, cell_center(cell.0 + k % 3), cell_center(cell.1 + k / 3), 512)).collect()
+}
+
+#[test]
+fn ai_attacks_the_nearest_enemy_base_and_the_weakest_of_equally_near_ones() {
+    // Four players on a square map: 1 and 3 are 0's neighbours, 2 sits across.
+    let list = [("england", true, 0), ("russia", false, 0), ("germany", false, 0), ("ukraine", false, 0)];
+    let mut w = World::with_options(7, 96, &setups(&list), opts());
+    let first = crate::ai::choose_target_player(&w, 0).unwrap();
+    assert!(first == 1 || first == 3, "a neighbour, not the far base: {first}");
+    // The stronger neighbour is left alone while an equally near one is weaker.
+    let (sx, sy) = w.players[1].start;
+    spawn_tanks(&mut w, 1, (sx, sy + 5), 4);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(3));
+    let (sx, sy) = w.players[3].start;
+    spawn_tanks(&mut w, 3, (sx, sy + 5), 6);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(1));
+    // Far bases only count once the near ones are gone.
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && (w.actors[i].owner == 1 || w.actors[i].owner == 3) {
+            w.kill(i);
+        }
+    }
+    run(&mut w, 25);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(2));
+}
+
+#[test]
+fn ai_teammates_follow_their_leaders_attack_target() {
+    // Teams across the diagonals: 0 and 2 against 1 and 3.
+    let list = [("england", true, 1), ("russia", false, 2), ("germany", true, 1), ("ukraine", false, 2)];
+    let mut w = World::with_options(4, 96, &setups(&list), opts());
+    // On its own, player 2 would go for the weaker of its two equally near enemies.
+    let (sx, sy) = w.players[1].start;
+    spawn_tanks(&mut w, 1, (sx, sy + 5), 6);
+    assert_eq!(crate::ai::choose_target_player(&w, 2), Some(3));
+    // The leader (lowest slot AI of the team) attacks player 1: so does player 2.
+    w.ai[0].target_player = Some(1);
+    assert_eq!(crate::ai::update_target_player(&mut w, 2), Some(1));
+    // Once that enemy is out, the teammate chooses again.
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.actors[i].owner == 1 {
+            w.kill(i);
+        }
+    }
+    run(&mut w, 25);
+    assert_eq!(crate::ai::update_target_player(&mut w, 2), Some(3));
+}
+
+#[test]
+fn ai_team_game_never_targets_an_ally() {
+    let list = [("england", true, 1), ("russia", true, 2), ("germany", true, 1), ("ukraine", true, 2)];
+    let mut w = World::with_options(4, 96, &setups(&list), opts());
+    for t in 1..=(25 * 60 * 8) {
+        w.step();
+        if t % 25 != 0 {
+            continue;
+        }
+        for (p, ai) in w.ai.iter().enumerate() {
+            if let Some(target) = ai.target_player {
+                assert!(w.are_enemies(p as u8, target), "tick {t}: player {p} targets ally {target}");
+            }
+        }
+        for a in w.actors.iter().filter(|a| a.alive && a.activity == Activity::Attack) {
+            if let Some(v) = w.resolve(a.target) {
+                assert!(w.are_enemies(a.owner, w.actors[v].owner), "tick {t}: a unit of {} attacks an ally", a.owner);
+            }
+        }
+        if w.winner.is_some() {
+            break;
+        }
+    }
+    let killed: u32 = w.losses.iter().sum();
+    assert!(killed > 20, "the teams fought: {killed} losses");
+}
+
+#[test]
+fn ai_sends_idle_units_to_an_ally_whose_base_is_attacked() {
+    // AI 0 and human 1 against human 2.
+    let list = [("england", true, 1), ("germany", false, 1), ("russia", false, 2)];
+    let mut w = World::with_options(2, 96, &setups(&list), opts());
+    let (ax, ay) = w.players[0].start;
+    let helpers = spawn_tanks(&mut w, 0, (ax + 1, ay + 6), 6);
+    let (bx, by) = w.players[1].start;
+    let raiders = spawn_tanks(&mut w, 2, (bx + 1, by + 6), 2);
+    let ally_base = (cell_center(bx + 1), cell_center(by + 2));
+    run(&mut w, 30);
+    // Every tank is on an attack-move to the ally's base or already fighting the raiders.
+    let helping = helpers
+        .iter()
+        .filter(|&&i| {
+            let a = &w.actors[i];
+            let to_ally = a.activity == Activity::Move
+                && a.attack_move
+                && crate::math::dist(a.dest.0, a.dest.1, ally_base.0, ally_base.1) < 16 * CELL;
+            let fighting = a.activity == Activity::Attack && w.resolve(a.target).is_some_and(|t| raiders.contains(&t));
+            to_ally || fighting
+        })
+        .count();
+    assert_eq!(helping, 6, "tanks sent to help the ally");
+}
+
+#[test]
+fn ai_leaves_neutral_actors_alone() {
+    use crate::mapdata::{MapActor, MapData};
+    let m = crate::map::Map::generate_for(64, 64, 6, 12, 2);
+    let mut d = MapData::from_map(&m, "Neutral", "Me", "");
+    let (x, y) = (d.spawns[0][0] + 5, d.spawns[0][1] + 6);
+    d.actors.push(MapActor { ty: "1TNK".into(), owner: -1, x, y, facing: 0 });
+    let mut w = World::from_map(&d, 1, &setups(&[("england", true, 0), ("russia", true, 0)]), opts()).unwrap();
+    let neutral = w.players.len() as u8 - 1;
+    let tank = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == neutral).unwrap();
+    let hp = w.actors[tank].hp;
+    run(&mut w, 25 * 60 * 4);
+    assert!(w.actors[tank].alive && w.actors[tank].hp == hp, "nobody shoots the neutral tank");
+    for p in 0..2u8 {
+        assert_eq!(crate::ai::choose_target_player(&w, p), Some(1 - p));
+    }
+}

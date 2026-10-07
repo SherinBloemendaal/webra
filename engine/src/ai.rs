@@ -2,12 +2,21 @@
 //! builds an army and a few defences, and attacks in growing waves. It plays by
 //! the same rules and economy as a human; difficulty changes how fast it reacts
 //! and how large its waves are.
+//!
+//! In free for all and team games it picks one enemy player to attack (the
+//! nearest hostile base, the weakest of equally near ones), AI teammates attack
+//! the same enemy as their team leader, and idle units help allies whose base
+//! is under attack. Allies and neutral actors are never targeted.
 
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
 use crate::world::{cell_center, Activity, AiDifficulty, Order, World};
 
 const DEFEND_RADIUS: i32 = 14 * CELL;
+/// Enemy bases within this distance of the nearest one count as equally near.
+const NEAR_TIE: i32 = 8 * CELL;
+/// How long an attack target is kept before it is reconsidered (one minute).
+const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
 
 pub struct AiState {
     offset: u32,
@@ -16,6 +25,9 @@ pub struct AiState {
     max_wave: usize,
     /// Defensive structures to keep around the base.
     defenses: usize,
+    /// Enemy player the waves go to, and when to reconsider it.
+    pub target_player: Option<u8>,
+    retarget_at: u32,
 }
 
 impl AiState {
@@ -25,7 +37,7 @@ impl AiState {
             AiDifficulty::Normal => (25, 6, 20, 2),
             AiDifficulty::Hard => (15, 5, 30, 4),
         };
-        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses }
+        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses, target_player: None, retarget_at: 0 }
     }
 }
 
@@ -384,27 +396,42 @@ fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
     true
 }
 
-fn command_army(w: &mut World, player: u8) {
+/// Centre of a player's starting yard.
+fn base_point(w: &World, player: u8) -> (i32, i32) {
     let (sx, sy) = w.players[player as usize].start;
-    let base = (cell_center(sx + 1), cell_center(sy + 2));
+    (cell_center(sx + 1), cell_center(sy + 2))
+}
+
+/// First visible enemy unit within `DEFEND_RADIUS` of a point.
+fn threat_near(w: &World, player: u8, at: (i32, i32)) -> Option<usize> {
+    (0..w.actors.len()).find(|&i| {
+        let a = &w.actors[i];
+        a.alive
+            && a.kind != Kind::Building
+            && w.are_enemies(player, a.owner)
+            && w.is_visible_to(i, player)
+            && dist(a.x, a.y, at.0, at.1) <= DEFEND_RADIUS
+    })
+}
+
+fn command_army(w: &mut World, player: u8) {
+    let base = base_point(w, player);
     let army: Vec<usize> = (0..w.actors.len())
         .filter(|&i| {
             let a = &w.actors[i];
             a.alive && a.owner == player && a.kind != Kind::Building && is_army_unit(w, a.ty as usize)
         })
         .collect();
+    let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
 
-    // Defend: enemies near our buildings pull idle units in.
-    let threat = (0..w.actors.len()).find(|&i| {
-        let a = &w.actors[i];
-        a.alive
-            && w.are_enemies(player, a.owner)
-            && a.kind != Kind::Building
-            && w.is_visible_to(i, player)
-            && dist(a.x, a.y, base.0, base.1) <= DEFEND_RADIUS
-    });
-    if let Some(t) = threat {
-        let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
+    // Defend: enemies near our base pull idle units in.
+    if let Some(t) = threat_near(w, player, base) {
+        let (tx, ty) = (w.actors[t].x, w.actors[t].y);
+        w.order_move(&idle, tx, ty, true);
+        return;
+    }
+    // Help allies: enemies near a teammate's base pull idle units there too.
+    if let Some(t) = allied_base_threat(w, player) {
         let (tx, ty) = (w.actors[t].x, w.actors[t].y);
         w.order_move(&idle, tx, ty, true);
         return;
@@ -413,9 +440,9 @@ fn command_army(w: &mut World, player: u8) {
     // Gather idle units at a rally point toward the map center, attack in waves.
     let (mx, my) = (w.map.width * CELL / 2, w.map.height * CELL / 2);
     let rally = (base.0 + (mx - base.0) / 4, base.1 + (my - base.1) / 4);
-    let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
     let gathered: Vec<usize> = idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) < 6 * CELL).collect();
-    let target = enemy_target(w, player, base);
+    let target_player = update_target_player(w, player);
+    let target = enemy_target(w, player, target_player, base);
     let (wave, max_wave) = (w.ai[player as usize].wave_size, w.ai[player as usize].max_wave);
     if gathered.len() >= wave {
         if let Some((tx, ty)) = target {
@@ -433,12 +460,108 @@ fn command_army(w: &mut World, player: u8) {
     w.order_move(&home, rally.0, rally.1, false);
 }
 
-/// Where to send attacks: the enemy building closest to our base, else any enemy unit.
-/// Like most skirmish AIs, it knows where the enemy base is.
-fn enemy_target(w: &World, player: u8, base: (i32, i32)) -> Option<(i32, i32)> {
+/// A visible enemy unit near the base of a living ally, nearest ally base first.
+fn allied_base_threat(w: &World, player: u8) -> Option<usize> {
+    let base = base_point(w, player);
+    let mut allies: Vec<(i64, u8)> = (0..w.players.len() as u8)
+        .filter(|&p| p != player && w.are_allies(player, p) && !w.players[p as usize].defeated && has_buildings(w, p))
+        .map(|p| {
+            let b = base_point(w, p);
+            (crate::math::dist_sq(base.0, base.1, b.0, b.1), p)
+        })
+        .collect();
+    allies.sort_unstable();
+    allies.into_iter().find_map(|(_, p)| threat_near(w, player, base_point(w, p)))
+}
+
+fn has_buildings(w: &World, player: u8) -> bool {
+    w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == Kind::Building)
+}
+
+/// A player still in the game that `player` may attack.
+fn is_live_enemy(w: &World, player: u8, p: u8) -> bool {
+    w.are_enemies(player, p) && !w.players[p as usize].defeated && w.actors.iter().any(|a| a.alive && a.owner == p)
+}
+
+/// Military strength: value of armed units and armed structures.
+fn strength(w: &World, player: u8) -> i64 {
+    w.actors
+        .iter()
+        .filter(|a| a.alive && a.owner == player)
+        .filter(|a| {
+            let info = &w.rules.actors[a.ty as usize];
+            !info.weapons.is_empty() && !info.is_wall()
+        })
+        .map(|a| w.rules.actors[a.ty as usize].cost as i64)
+        .sum()
+}
+
+/// Distance from a point to a player's nearest building, or nearest unit when
+/// it has no buildings left.
+fn distance_to_player(w: &World, from: (i32, i32), p: u8) -> i32 {
+    let mut best: Option<(bool, i32)> = None;
+    for a in w.actors.iter().filter(|a| a.alive && a.owner == p) {
+        let key = (a.kind != Kind::Building, dist(from.0, from.1, a.x, a.y));
+        if best.is_none_or(|b| key < b) {
+            best = Some(key);
+        }
+    }
+    best.map_or(i32::MAX, |(_, d)| d)
+}
+
+/// The enemy player to attack from `player`'s point of view: the nearest
+/// hostile base; among bases about as near as that one, the weakest player.
+pub(crate) fn choose_target_player(w: &World, player: u8) -> Option<u8> {
+    let base = base_point(w, player);
+    let enemies: Vec<(u8, i32)> =
+        (0..w.players.len() as u8).filter(|&p| is_live_enemy(w, player, p)).map(|p| (p, distance_to_player(w, base, p))).collect();
+    let nearest = enemies.iter().map(|&(_, d)| d).min()?;
+    enemies.iter().filter(|&&(_, d)| d <= nearest.saturating_add(NEAR_TIE)).min_by_key(|&&(p, d)| (strength(w, p), d, p)).map(|&(p, _)| p)
+}
+
+/// The team leader: the lowest slot AI player still alive on `player`'s team.
+fn team_leader(w: &World, player: u8) -> u8 {
+    if w.players[player as usize].team == 0 {
+        return player;
+    }
+    (0..w.players.len() as u8)
+        .find(|&p| w.are_allies(player, p) && w.players[p as usize].is_ai && !w.players[p as usize].defeated)
+        .unwrap_or(player)
+}
+
+/// Keep (or pick) the enemy player this AI attacks. AI teammates follow their
+/// leader's choice so the team attacks one enemy together.
+pub(crate) fn update_target_player(w: &mut World, player: u8) -> Option<u8> {
+    let leader = team_leader(w, player);
+    if leader != player {
+        if let Some(t) = w.ai[leader as usize].target_player.filter(|&t| is_live_enemy(w, player, t)) {
+            w.ai[player as usize].target_player = Some(t);
+            return Some(t);
+        }
+    }
+    let state = &w.ai[player as usize];
+    let current = state.target_player.filter(|&t| is_live_enemy(w, player, t));
+    if current.is_some() && w.tick < state.retarget_at {
+        return current;
+    }
+    let chosen = choose_target_player(w, player);
+    let state = &mut w.ai[player as usize];
+    state.target_player = chosen;
+    state.retarget_at = w.tick + RETARGET_TICKS;
+    chosen
+}
+
+/// Where to send attacks: the target player's building closest to our base,
+/// else its nearest unit; without a target player, the nearest enemy building.
+/// Like most skirmish AIs, it knows where the enemy bases are.
+fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i32)) -> Option<(i32, i32)> {
     let mut best: Option<(i64, (i32, i32))> = None;
     for a in &w.actors {
-        if !a.alive || !w.are_enemies(player, a.owner) || w.players[a.owner as usize].defeated {
+        let wanted = match target_player {
+            Some(t) => a.owner == t,
+            None => w.are_enemies(player, a.owner) && !w.players[a.owner as usize].defeated,
+        };
+        if !a.alive || !wanted {
             continue;
         }
         let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };
