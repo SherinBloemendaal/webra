@@ -1,5 +1,5 @@
 // Protocol constants shared by the game client and the server
-// (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby.js.
+// (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
 export const PROTOCOL_VERSION = 1;
@@ -46,7 +46,7 @@ export const TICKS_PER_SECOND = 25;
 export const RATE_PER_SECOND = 60;
 export const RATE_BURST = 120;
 
-// ---- Value sets (from apps/game/js/lobby.js) ----------------------------------------
+// ---- Value sets (from apps/game/js/lobby-state.js) ----------------------------------
 
 export const MAP_SIZES = [64, 96, 128, 160];
 export const STARTING_CASH = [2500, 5000, 7500, 10000, 20000];

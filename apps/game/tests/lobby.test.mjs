@@ -5,9 +5,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
+import * as protocol from '../../../packages/protocol/src/constants.js';
 import {
   MAX_SLOTS,
   MAP_FILE_MAX_BYTES,
+  MAP_SIZES,
+  STARTING_CASH,
+  STARTING_UNITS,
+  TECH_LEVELS,
+  GAME_SPEEDS,
+  DIFFICULTIES,
+  TEAM_COUNT,
+  FACTIONS,
   sanitizeState,
   addSlot,
   canAddSlot,
@@ -261,4 +270,16 @@ test('spawn markers follow the playing slots in order', () => {
   );
   assert.equal(markers[0].left, ((8 + 1.5) / 64) * 100);
   assert.equal(markers[0].top, ((8 + 2) / 64) * 100);
+});
+
+test('value sets match the multiplayer protocol', () => {
+  assert.deepEqual(MAP_SIZES.map((m) => m.value), protocol.MAP_SIZES);
+  assert.deepEqual(STARTING_CASH, protocol.STARTING_CASH);
+  assert.deepEqual(STARTING_UNITS.map((o) => o.value), protocol.STARTING_UNITS);
+  assert.deepEqual(TECH_LEVELS.map((o) => o.value), protocol.TECH_LEVELS);
+  assert.deepEqual(GAME_SPEEDS.map((o) => o.value), protocol.GAME_SPEEDS);
+  assert.deepEqual(DIFFICULTIES.map((o) => o.value), protocol.DIFFICULTIES);
+  assert.deepEqual([...FACTIONS.keys()].sort(), [...protocol.FACTIONS].sort());
+  assert.equal(TEAM_COUNT, protocol.TEAM_MAX);
+  assert.equal(MAX_SLOTS, protocol.MAX_PLAYERS);
 });
