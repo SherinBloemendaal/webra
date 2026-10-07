@@ -1,0 +1,13 @@
+# Excerpt of OpenRA mods/ra/rules/misc.yaml: the mines laid by the Minelayer
+# (they inherit ^Mine from defaults.yaml). Not buildable, so data/source/parse.py
+# leaves them out of data/actors.json; tools/gen_rules.py reads them from here.
+
+MINP:
+	Inherits: ^Mine
+	FireWarheadsOnDeath:
+		Weapon: APMine
+
+MINV:
+	Inherits: ^Mine
+	FireWarheadsOnDeath:
+		Weapon: ATMine

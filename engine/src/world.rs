@@ -24,6 +24,8 @@ pub enum Activity {
     Attack,
     Harvest,
     Repair,
+    /// Unit ability task (abilities.rs: minefields, cash delivery, MAD tank).
+    Ability,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -96,6 +98,8 @@ pub struct Actor {
     pub invulnerable_until: u32,
     /// Height above ground in world units (aircraft); 0 on the ground.
     pub altitude: i32,
+    /// Ability state (abilities.rs).
+    pub ab: crate::abilities::ActorAbility,
 }
 
 impl Actor {
@@ -146,11 +150,12 @@ impl Actor {
             heal_timer: 0,
             invulnerable_until: 0,
             altitude: 0,
+            ab: crate::abilities::ActorAbility::default(),
         }
     }
 
     pub fn is_unit(&self) -> bool {
-        self.kind != Kind::Building
+        !matches!(self.kind, Kind::Building | Kind::Mine)
     }
 }
 
@@ -370,6 +375,22 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// Minelayers mine the cell rectangle (x0, y0)-(x1, y1) (abilities.rs).
+    LayMines {
+        player: u8,
+        ids: Vec<u32>,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+    },
+    /// Chrono tanks teleport to a world position (abilities.rs).
+    Teleport {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
 }
 
 impl Order {
@@ -385,7 +406,9 @@ impl Order {
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
-            | Order::Deploy { player, .. } => *player,
+            | Order::Deploy { player, .. }
+            | Order::LayMines { player, .. }
+            | Order::Teleport { player, .. } => *player,
         }
     }
 
@@ -401,7 +424,9 @@ impl Order {
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
-            | Order::Deploy { player, .. } => *player = p,
+            | Order::Deploy { player, .. }
+            | Order::LayMines { player, .. }
+            | Order::Teleport { player, .. } => *player = p,
         }
     }
 
@@ -413,7 +438,12 @@ impl Order {
             | Order::Smart { ids, .. }
             | Order::Attack { ids, .. }
             | Order::Stop { ids, .. }
-            | Order::Deploy { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::Deploy { ids, .. }
+            | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
+            Order::LayMines { ids, x0, y0, x1, y1, .. } => {
+                let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
+                ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
+            }
             Order::StartProduction { count, .. } => (1..=50).contains(count),
             _ => true,
         }
@@ -429,6 +459,8 @@ pub enum SmartAction {
     Harvest = 3,
     Dock = 4,
     Repair = 5,
+    /// Supply truck onto an own or allied structure (abilities.rs).
+    DeliverCash = 6,
 }
 
 pub struct World {
@@ -464,6 +496,8 @@ pub struct World {
     pub losses: Vec<u32>,
     pub pending: Vec<PendingImpact>,
     pub options: GameOptions,
+    /// Ability and support power state (abilities.rs).
+    pub abil: crate::abilities::AbilityState,
 }
 
 impl World {
@@ -610,6 +644,7 @@ impl World {
             losses: Vec::new(),
             pending: Vec::new(),
             options: GameOptions::default(),
+            abil: Default::default(),
             map,
         }
     }
@@ -715,6 +750,7 @@ impl World {
             a.harv = HarvState::Search;
         }
         self.actors[i] = a;
+        self.init_abilities(i);
         i
     }
 
@@ -739,6 +775,7 @@ impl World {
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
         self.actors[i] = a;
+        self.init_abilities(i);
         for (dx, dy, c) in footprint {
             if c == FootCell::Empty {
                 continue;
@@ -864,6 +901,9 @@ impl World {
     /// Distance from a point to the actor's hit shape.
     pub fn hit_distance(&self, i: usize, x: i32, y: i32) -> i32 {
         let a = &self.actors[i];
+        if a.kind == Kind::Mine {
+            return dist(x, y, a.x, a.y);
+        }
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
             let mut best = i32::MAX;
@@ -908,7 +948,8 @@ impl World {
         let mut counts = vec![0u32; cells + 1];
         let mut cell_of = Vec::with_capacity(self.actors.len());
         for a in &self.actors {
-            if a.alive && a.kind != Kind::Building {
+            // Mines are tracked per cell by abilities.rs, not in the unit hash.
+            if a.alive && a.kind != Kind::Building && a.kind != Kind::Mine {
                 let ci = self.cell_index(a.x, a.y);
                 counts[ci] += 1;
                 cell_of.push(ci as u32);
@@ -1020,9 +1061,13 @@ impl World {
                     actors.sort_unstable();
                     actors.dedup();
                     for i in actors {
-                        self.deploy(i);
+                        if !self.ability_deploy(i) {
+                            self.deploy(i);
+                        }
                     }
                 }
+                Order::LayMines { player, ids, x0, y0, x1, y1 } => self.order_lay_mines(player, &ids, x0, y0, x1, y1),
+                Order::Teleport { player, ids, x, y } => self.order_teleport(player, &ids, x, y),
                 Order::Rally { player, building, x, y } => {
                     if let Some(b) = self.resolve(building) {
                         if self.actors[b].owner == player && self.actors[b].kind == Kind::Building {
@@ -1113,7 +1158,7 @@ impl World {
                 for &u in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
                     let u = u as usize;
                     let a = &self.actors[u];
-                    if !a.alive || !self.is_visible_to(u, player) {
+                    if !a.alive || !self.is_visible_to(u, player) || self.is_cloaked_from(u, player) {
                         continue;
                     }
                     let r = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius.max(256);
@@ -1128,8 +1173,15 @@ impl World {
             return Some(u);
         }
         let b = self.building_at[self.map.idx(cx, cy)];
-        if b != NONE && self.actors[b as usize].alive && self.is_visible_to(b as usize, player) {
+        if b != NONE && self.actors[b as usize].alive && self.is_visible_to(b as usize, player) && !self.is_cloaked_from(b as usize, player)
+        {
             return Some(b as usize);
+        }
+        // Mines: own, allied or detected ones (abilities.rs).
+        if let Some(m) = self.mine_at(self.map.idx(cx, cy)) {
+            if self.is_visible_to(m, player) && !self.is_cloaked_from(m, player) {
+                return Some(m);
+            }
         }
         None
     }
@@ -1145,6 +1197,12 @@ impl World {
         let any_vehicle = units.iter().any(|&i| self.actors[i].kind == Kind::Vehicle);
         if let Some(t) = self.actor_at(player, x, y) {
             let ta = &self.actors[t];
+            if self.can_deliver_cash(player, units, t) {
+                return SmartAction::DeliverCash;
+            }
+            if ta.kind == Kind::Mine && self.are_allies(player, ta.owner) {
+                return SmartAction::Move;
+            }
             if self.are_enemies(player, ta.owner) {
                 return if any_weapon { SmartAction::Attack } else { SmartAction::Move };
             }
@@ -1209,6 +1267,10 @@ impl World {
                 }
                 self.order_move(&others, x, y, false);
             }
+            SmartAction::DeliverCash => {
+                let t = self.actor_at(player, x, y).unwrap();
+                self.order_deliver_cash(units, t, x, y);
+            }
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let tref = self.make_ref(t);
@@ -1257,6 +1319,7 @@ impl World {
             self.tick_production(p as u8);
             self.tick_powers(p as u8);
         }
+        self.tick_abilities_world();
         self.tick_units();
         self.tick_projectiles();
         self.cleanup_dead();
@@ -1287,7 +1350,8 @@ impl World {
         }
         let mut alive_count = vec![0u32; self.players.len()];
         for a in &self.actors {
-            if a.alive {
+            // Mines alone do not keep a player in the game.
+            if a.alive && a.kind != Kind::Mine {
                 alive_count[a.owner as usize] += 1;
             }
         }

@@ -88,6 +88,60 @@ def load_ftl():
 
 AIR_LOCOMOTOR = 'air'
 
+# Actors that are not buildable (so not in data/actors.json) but placed by
+# abilities: the Minelayer's mines. Read straight from the MiniYaml sources.
+YAML_ACTORS = ['MINV', 'MINP']
+
+
+def parse_miniyaml(text):
+    """MiniYaml to nested dicts: {key: [value, children]} (same model as data/source/parse.py)."""
+    root = {}
+    stack = [(-1, root)]
+    for raw in text.splitlines():
+        line = raw.split('#', 1)[0].rstrip()
+        if not line.strip():
+            continue
+        depth = len(line) - len(line.lstrip('\t'))
+        k, _, v = line.strip().partition(':')
+        while stack[-1][0] >= depth:
+            stack.pop()
+        node = [v.strip(), {}]
+        stack[-1][1][k.strip()] = node
+        stack.append((depth, node[1]))
+    return root
+
+
+def yaml_actor_traits(name):
+    """Resolve one actor (with Inherits) from defaults.yaml and misc.yaml into actors.json trait form."""
+    defs = {}
+    for f in ('defaults', 'misc'):
+        defs.update(parse_miniyaml(open(os.path.join(DATA, 'source', 'rules', f + '.yaml')).read()))
+
+    def merge(base, over):
+        out = {k: [v, dict(ch)] for k, (v, ch) in base.items()}
+        for k, (v, ch) in over.items():
+            if k.startswith('-'):
+                out.pop(k[1:], None)
+            elif k in out:
+                out[k] = [v or out[k][0], merge(out[k][1], ch)]
+            else:
+                out[k] = [v, merge({}, ch)]
+        return out
+
+    def resolve(n):
+        result, own = {}, {}
+        for k, (v, ch) in defs[n][1].items():
+            if k == 'Inherits' or k.startswith('Inherits@'):
+                result = merge(result, resolve(v))
+            else:
+                own[k] = [v, ch]
+        return merge(result, own)
+
+    def to_json(tree):
+        return {k: ({**({'_': v} if v else {}), **to_json(ch)} if ch else v) for k, (v, ch) in tree.items()}
+
+    return to_json(resolve(name))
+
 
 def parse_locomotors():
     """Read Locomotor terrain speeds from world.yaml (not part of actors.json)."""
@@ -237,10 +291,19 @@ def main():
             used_weapons.append(wn)
         return used_weapons.index(wn)
 
-    for aid in ACTORS:
+    for aid in YAML_ACTORS:
+        t = yaml_actor_traits(aid)
+        tip = t.get('Tooltip', {})
+        # Not buildable: listed under Defense but locked behind the 'disabled' prerequisite.
+        actors[aid] = {'id': aid, 'name': ftl.get(tip.get('Name', ''), aid), 'description': '', 'queue': 'Defense',
+                       'cost': 0, 'buildDuration': None, 'buildDurationModifier': None, 'buildPaletteOrder': 0,
+                       'prerequisites': ['disabled'], 'hp': int(t['Health']['HP']), 'armor': t['Armor']['Type'],
+                       'sight': None, 'traits': t}
+
+    for aid in ACTORS + YAML_ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
+        kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -253,7 +316,7 @@ def main():
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
             'prerequisites': a['prerequisites'],
-            'build_at': t['Buildable'].get('BuildAtProductionType') or a['queue'],
+            'build_at': t.get('Buildable', {}).get('BuildAtProductionType') or a['queue'],
             'hp': a['hp'],
             'armor': ARMOR_TYPES.index(a['armor'] or 'None'),
             'sight': wdist(a['sight']),
@@ -295,23 +358,51 @@ def main():
                            'garrison': 'AttackGarrisoned' in t,
                            'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))]}
         if 'Minelayer' in t:
-            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(t.get('AmmoPool', {}).get('Ammo', 5))}
+            pool = t.get('AmmoPool', {}) if isinstance(t.get('AmmoPool'), dict) else {}
+            rearm = t.get('Rearmable', {}) if isinstance(t.get('Rearmable'), dict) else {}
+            # AmmoPoolInfo defaults: ReloadDelay 50 ticks per ReloadCount (1) at a rearm actor.
+            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(pool.get('Ammo', 5)),
+                               'reload_delay': int(pool.get('ReloadDelay', 50)),
+                               'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
+                               'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        # AutoTarget.InitialStance HoldFire (Phase Transport): never picks targets on its own.
+        if isinstance(t.get('AutoTarget'), dict) and t['AutoTarget'].get('InitialStance') == 'HoldFire':
+            ab['hold_fire'] = {}
+        if 'MineImmune' in t:
+            ab['mine_immune'] = {}
+        if 'AcceptsDeliveredCash' in t:
+            ab['accepts_cash'] = {}
         if 'JamsMissiles' in t:
             ab['jams_missiles'] = {'range': wdist(t['JamsMissiles'].get('Range'))}
         if has(t, 'CreatesShroud'):
             ab['creates_shroud'] = {'range': wdist(next(iter(trait(t, 'CreatesShroud').values())).get('Range'))}
         if has(t, 'Cloak'):
             c = next(iter(trait(t, 'Cloak').values()))
+            # OpenRA CloakInfo defaults: UncloakOn Attack, Unload, Infiltrate, Demolish, Dock; DetectionTypes Cloak.
+            critical = any(isinstance(g, dict) and g.get('Condition') == c.get('PauseOnCondition') and 'Critical' in tokens(g.get('ValidDamageStates'))
+                           for g in trait(t, 'GrantConditionOnDamageState').values())
             ab['cloak'] = {'initial_delay': int(c.get('InitialDelay', 10)), 'cloak_delay': int(c.get('CloakDelay', 30)),
-                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack'))}
+                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack, Unload, Infiltrate, Demolish, Dock')),
+                           'types': tokens(c.get('DetectionTypes', 'Cloak')), 'off_when_critical': critical}
         if has(t, 'DetectCloaked'):
-            ab['detect_cloaked'] = {'range': wdist(next(iter(trait(t, 'DetectCloaked').values())).get('Range', '5c0'))}
+            d = next(iter(trait(t, 'DetectCloaked').values()))
+            d = d if isinstance(d, dict) else {}
+            ab['detect_cloaked'] = {'range': wdist(d.get('Range', '5c0')), 'types': tokens(d.get('DetectionTypes', 'Cloak')),
+                                    'needs_power': 'disabled' in d.get('RequiresCondition', '')}
+        # Vision through gap generator shroud: RevealsShroud instances that keep
+        # the default RevealGeneratedShroud: True (e.g. RevealsShroud@GAPGEN).
+        gap = [wdist(r.get('Range')) for r in trait(t, 'RevealsShroud').values()
+               if isinstance(r, dict) and str(r.get('RevealGeneratedShroud', 'True')).lower() == 'true']
+        if gap:
+            ab['gap_sight'] = {'range': max(gap)}
         if 'PortableChrono' in t:
             c = t['PortableChrono'] if isinstance(t['PortableChrono'], dict) else {}
             ab['portable_chrono'] = {'charge_delay': int(c.get('ChargeDelay', 500)), 'max_distance': int(c.get('MaxDistance', 12))}
         if 'MadTank' in t:
             m = t['MadTank'] if isinstance(t['MadTank'], dict) else {}
+            # MadTankInfo defaults: DetonationDelay 42, DriverActor e1.
             ab['mad_tank'] = {'charge_delay': int(m.get('ChargeDelay', 96)), 'thump_interval': int(m.get('ThumpInterval', 8)),
+                              'detonation_delay': int(m.get('DetonationDelay', 42)), 'driver': ids_lower[m.get('DriverActor', 'e1').lower()],
                               'thump_weapon': weapon_index(m.get('ThumpDamageWeapon', 'MADTankThump')),
                               'detonation_weapon': weapon_index(m.get('DetonationWeapon', 'MADTankDetonate'))}
         if a['id'] == 'DTRK':
@@ -402,6 +493,8 @@ def main():
                 }
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
+        elif kind == 'mine':
+            pass  # Immobile: no unit info.
         else:
             if kind == 'aircraft':
                 # Aircraft have no Mobile trait: they fly over everything.

@@ -45,6 +45,8 @@ impl World {
             match self.actors[i].kind {
                 Kind::Aircraft => self.tick_aircraft(i),
                 Kind::Ship => self.tick_ship(i),
+                // Mines only wait to be driven over (abilities.rs).
+                Kind::Mine => continue,
                 _ => self.tick_unit_activity(i),
             }
             if self.actors[i].alive {
@@ -67,6 +69,7 @@ impl World {
             Activity::Attack => self.tick_attack(i),
             Activity::Harvest => self.tick_harvest(i),
             Activity::Repair => self.tick_repair(i),
+            Activity::Ability => self.tick_ability_activity(i),
         }
     }
 
@@ -546,6 +549,7 @@ impl World {
         let owner = a.owner;
         if self.spend(owner, price) {
             self.actors[i].hp += step;
+            self.uncloak_on(i, "Heal");
         }
     }
 
@@ -558,7 +562,7 @@ impl World {
         let mut crushed: Vec<usize> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
-            if !a.alive || a.kind == Kind::Building {
+            if !a.alive || !a.is_unit() {
                 continue;
             }
             let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;

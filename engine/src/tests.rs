@@ -264,7 +264,8 @@ fn every_actor_is_reachable_for_the_right_factions() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
         // FACT comes from deploying an MCV; the Hind is disabled in OpenRA's rules
         // until the helicopter work enables it.
-        assert!(any || a.id == "FACT" || a.id == "HIND", "{} is buildable by some faction", a.id);
+        // Mines are laid by the Minelayer, never built.
+        assert!(any || a.id == "FACT" || a.id == "HIND" || a.kind == Kind::Mine, "{} is buildable by some faction", a.id);
     }
     assert!(can("germany", "CTNK") && !can("england", "CTNK") && !can("russia", "CTNK"));
     assert!(can("russia", "TTNK") && !can("ukraine", "TTNK"));

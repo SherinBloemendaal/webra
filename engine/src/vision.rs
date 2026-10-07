@@ -5,7 +5,7 @@ use crate::rules::{FootCell, Kind};
 use crate::world::{Ghost, World};
 
 impl World {
-    fn circle(&mut self, sight: i32) -> usize {
+    pub(crate) fn circle(&mut self, sight: i32) -> usize {
         let r = (sight + CELL - 1) / CELL;
         let r_us = r as usize;
         while self.circle_cache.len() <= r_us {
@@ -80,6 +80,8 @@ impl World {
                 }
             }
         }
+        // Gap generators re-shroud cells for their enemies (abilities.rs).
+        self.apply_generated_shroud();
         self.update_ghosts();
     }
 
@@ -108,7 +110,7 @@ impl World {
                 if !a.alive || a.kind != Kind::Building || a.owner == pid {
                     continue;
                 }
-                if self.is_visible_to(i, pid) {
+                if self.is_visible_to(i, pid) && !self.is_cloaked_from(i, pid) {
                     let g = Ghost { actor: self.make_ref(i), ty: a.ty, owner: a.owner, cx: a.cx, cy: a.cy };
                     self.players[p].ghosts.insert(g.actor, g);
                 }

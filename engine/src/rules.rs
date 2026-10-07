@@ -66,7 +66,7 @@ pub struct Abilities {
     pub jams_missiles: Option<RangeInfo>,
     pub creates_shroud: Option<RangeInfo>,
     pub cloak: Option<CloakInfo>,
-    pub detect_cloaked: Option<RangeInfo>,
+    pub detect_cloaked: Option<DetectCloakedInfo>,
     pub portable_chrono: Option<PortableChronoInfo>,
     pub mad_tank: Option<MadTankInfo>,
     pub demo_truck: Option<serde_json::Value>,
@@ -76,6 +76,16 @@ pub struct Abilities {
     pub provides_radar: Option<serde_json::Value>,
     pub crushable: Option<Vec<String>>,
     pub support_powers: Option<Vec<SupportPowerInfo>>,
+    /// OpenRA `MineImmune`: drives over mines without setting them off (Minelayer).
+    pub mine_immune: Option<serde_json::Value>,
+    /// AutoTarget.InitialStance HoldFire: no automatic targeting for human
+    /// players (the AI uses InitialStanceAI ReturnFire, approximated as normal).
+    pub hold_fire: Option<serde_json::Value>,
+    /// OpenRA `AcceptsDeliveredCash`: a Supply Truck can deliver its payload here.
+    pub accepts_cash: Option<serde_json::Value>,
+    /// Vision range that also sees through gap generator shroud
+    /// (`RevealsShroud` with `RevealGeneratedShroud: True`, e.g. `@GAPGEN`).
+    pub gap_sight: Option<RangeInfo>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -90,6 +100,10 @@ pub struct CargoInfo {
 pub struct MinelayerInfo {
     pub mine: String,
     pub ammo: i32,
+    /// Ticks per mine reloaded at a rearm actor (AmmoPool.ReloadDelay).
+    pub reload_delay: i32,
+    pub terrain: Vec<String>,
+    pub rearm_actors: Vec<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -102,6 +116,18 @@ pub struct CloakInfo {
     pub initial_delay: i32,
     pub cloak_delay: i32,
     pub uncloak_on: Vec<String>,
+    /// Detection types that reveal it (Cloak, Underwater, Mine).
+    pub types: Vec<String>,
+    /// Cloaking pauses while the actor is critically damaged.
+    pub off_when_critical: bool,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct DetectCloakedInfo {
+    pub range: i32,
+    pub types: Vec<String>,
+    /// Only works while the owner has enough power (Tesla Coil).
+    pub needs_power: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -114,6 +140,9 @@ pub struct PortableChronoInfo {
 pub struct MadTankInfo {
     pub charge_delay: i32,
     pub thump_interval: i32,
+    pub detonation_delay: i32,
+    /// Actor that bails out before the detonation.
+    pub driver: String,
     pub thump_weapon: usize,
     pub detonation_weapon: usize,
 }
@@ -269,6 +298,7 @@ pub const TARGET_VEHICLE: u32 = 2;
 pub const TARGET_STRUCTURE: u32 = 4;
 pub const TARGET_AIR: u32 = 8;
 pub const TARGET_WATER: u32 = 16;
+pub const TARGET_MINE: u32 = 32;
 pub const TARGET_UNDERWATER: u32 = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -278,6 +308,8 @@ pub enum Kind {
     Vehicle,
     Ship,
     Aircraft,
+    /// Mines laid by a Minelayer: immobile, cloaked, not units.
+    Mine,
 }
 
 impl Kind {
@@ -288,8 +320,21 @@ impl Kind {
             Kind::Vehicle => TARGET_VEHICLE,
             Kind::Ship => TARGET_WATER,
             Kind::Aircraft => TARGET_AIR,
+            Kind::Mine => TARGET_MINE,
         }
     }
+}
+
+/// Whether a valid/invalid target mask pair accepts `kind`. Mines carry the
+/// OpenRA target types `GroundActor, Mine`; the generator folds GroundActor
+/// into infantry|vehicle|structure, so a mask with all three accepts mines.
+fn mask_accepts(valid: u32, invalid: u32, kind: Kind) -> bool {
+    let c = kind.target_class();
+    if kind == Kind::Mine {
+        let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
+        return (valid & c != 0 || valid & ground == ground) && invalid & c == 0;
+    }
+    valid & c != 0 && invalid & c == 0
 }
 
 /// Production queue types of the classic sidebar (tabs).
@@ -489,8 +534,7 @@ impl Warhead {
     }
 
     pub fn affects(&self, kind: Kind) -> bool {
-        let c = kind.target_class();
-        self.valid & c != 0 && self.invalid & c == 0
+        mask_accepts(self.valid, self.invalid, kind)
     }
 }
 
@@ -517,8 +561,7 @@ impl WeaponInfo {
     }
 
     pub fn can_target(&self, kind: Kind) -> bool {
-        let c = kind.target_class();
-        self.valid & c != 0 && self.invalid & c == 0
+        mask_accepts(self.valid, self.invalid, kind)
     }
 
     /// Strongest single-hit damage, used to size impact effects.
@@ -542,6 +585,8 @@ pub struct Rules {
     pub actors: Vec<ActorInfo>,
     pub weapons: Vec<WeaponInfo>,
     pub locomotors: Vec<Locomotor>,
+    /// Per locomotor: `Crushes: mine` (sets off mines it drives over).
+    pub locomotor_crushes_mines: Vec<bool>,
     pub tokens: Vec<String>,
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
@@ -591,6 +636,7 @@ impl Rules {
                 "vehicle" => Kind::Vehicle,
                 "ship" => Kind::Ship,
                 "aircraft" => Kind::Aircraft,
+                "mine" => Kind::Mine,
                 k => panic!("unknown kind {k}"),
             };
             let mut prerequisites = Vec::new();
@@ -723,6 +769,7 @@ impl Rules {
                     .collect(),
             })
             .collect();
+        let locomotor_crushes_mines = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "mine")).collect();
         let locomotors = raw
             .locomotors
             .into_iter()
@@ -737,7 +784,16 @@ impl Rules {
                 speeds: l.speeds,
             })
             .collect();
-        let mut rules = Rules { factions: raw.factions, player: raw.player, actors, weapons, locomotors, tokens, obtainable: Vec::new() };
+        let mut rules = Rules {
+            factions: raw.factions,
+            player: raw.player,
+            actors,
+            weapons,
+            locomotors,
+            locomotor_crushes_mines,
+            tokens,
+            obtainable: Vec::new(),
+        };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();
         rules
     }

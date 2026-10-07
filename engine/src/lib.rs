@@ -5,6 +5,7 @@
 //! out of WebAssembly memory every frame.
 
 mod abilities;
+mod abilities_api;
 mod ai;
 mod air;
 mod combat;
@@ -249,6 +250,7 @@ impl Game {
                         Kind::Vehicle => "vehicle",
                         Kind::Ship => "ship",
                         Kind::Aircraft => "aircraft",
+                        Kind::Mine => "mine",
                     },
                     "altitude": a.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude),
                     "queue": a.queue as usize,
@@ -357,7 +359,7 @@ impl Game {
         (0..w.actors.len())
             .filter(|&i| {
                 let a = &w.actors[i];
-                a.alive && a.owner == player && a.kind != Kind::Building && a.x >= ax && a.x <= bx && a.y >= ay && a.y <= by
+                a.alive && a.owner == player && a.is_unit() && a.x >= ax && a.x <= bx && a.y >= ay && a.y <= by
             })
             .collect()
     }
@@ -388,6 +390,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "ability": self.world.ability_json(i),
         })
         .to_string()
     }
@@ -526,7 +529,7 @@ impl Game {
                 })
             })
             .collect();
-        let units = w.actors.iter().filter(|a| a.alive && a.owner == player && a.kind != Kind::Building).count();
+        let units = w.actors.iter().filter(|a| a.alive && a.owner == player && a.is_unit()).count();
         json!({
             "cash": p.cash,
             "resources": p.resources,

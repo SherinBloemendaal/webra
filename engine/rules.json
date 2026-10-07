@@ -61,6 +61,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    },
     "transforms": {
      "into": "MCV",
      "offset": [
@@ -162,7 +166,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -237,7 +246,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -312,7 +326,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 4,
@@ -399,7 +418,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -459,7 +483,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -562,7 +591,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -663,7 +697,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -772,7 +811,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -868,7 +912,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -949,6 +998,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 6144
+    },
     "provides_radar": {}
    },
    "building": {
@@ -1026,7 +1079,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -1120,6 +1178,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "AirstrikePower@spyplane",
@@ -1251,6 +1313,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "AirstrikePower@spyplane",
@@ -1382,8 +1448,16 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "building": {
@@ -1494,8 +1568,16 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "building": {
@@ -1621,6 +1703,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "GpsPower",
@@ -1718,7 +1804,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -1804,6 +1895,9 @@
    "abilities": {
     "creates_shroud": {
      "range": 6144
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -1866,6 +1960,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "ChronoshiftPower@chronoshift",
@@ -1971,6 +2069,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "GrantExternalConditionPower@IRONCURTAIN",
@@ -2045,6 +2147,10 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "NukePower",
@@ -2332,7 +2438,14 @@
      ]
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2411,11 +2524,26 @@
      "initial_delay": 125,
      "cloak_delay": 60,
      "uncloak_on": [
-      "Attack"
-     ]
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Cloak"
+     ],
+     "off_when_critical": true
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2481,7 +2609,14 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2547,6 +2682,13 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
+     "range": 5120,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
      "range": 5120
     }
    },
@@ -2627,6 +2769,13 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": true
+    },
+    "gap_sight": {
      "range": 6144
     }
    },
@@ -2705,7 +2854,11 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -2767,7 +2920,11 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 2,
     "height": 1,
@@ -2826,7 +2983,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -2887,7 +3049,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -2948,7 +3115,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3008,7 +3180,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3069,7 +3246,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -3130,7 +3312,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3191,7 +3378,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3252,7 +3444,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -3313,7 +3510,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 2,
@@ -3373,7 +3575,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 1,
@@ -3432,7 +3639,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "accepts_cash": {},
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 4,
@@ -3498,7 +3710,14 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
-     "range": 1536
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     },
     "crushable": [
      "infantry"
@@ -3541,7 +3760,11 @@
     "start_if_below": 50,
     "damage_cooldown": 500
    },
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -3582,6 +3805,9 @@
    "death_weapon": 8,
    "self_heal": null,
    "abilities": {
+    "gap_sight": {
+     "range": 4096
+    },
     "transforms": {
      "into": "FACT",
      "offset": [
@@ -3624,6 +3850,9 @@
    "death_weapon": 8,
    "self_heal": null,
    "abilities": {
+    "gap_sight": {
+     "range": 4096
+    },
     "delivers_cash": {
      "payload": 500
     }
@@ -3670,6 +3899,9 @@
      "max": 1,
      "garrison": false,
      "initial": []
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -3714,6 +3946,9 @@
      "max": 5,
      "garrison": false,
      "initial": []
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -3751,7 +3986,11 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -3786,7 +4025,11 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -3822,7 +4065,11 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -3858,7 +4105,11 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -3901,7 +4152,11 @@
     "start_if_below": 50,
     "damage_cooldown": 150
    },
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -3937,7 +4192,11 @@
    "requires_power": false,
    "death_weapon": 18,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -3973,7 +4232,11 @@
    "requires_power": false,
    "death_weapon": 20,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -4009,10 +4272,31 @@
    "abilities": {
     "minelayer": {
      "mine": "MINV",
-     "ammo": 5
+     "ammo": 5,
+     "reload_delay": 50,
+     "terrain": [
+      "Clear",
+      "Road",
+      "Beach",
+      "Ore",
+      "Gems",
+      "Rough",
+      "Bridge"
+     ],
+     "rearm_actors": [
+      "FIX"
+     ]
     },
+    "mine_immune": {},
     "detect_cloaked": {
-     "range": 5120
+     "range": 5120,
+     "types": [
+      "Mine"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4051,6 +4335,9 @@
    "abilities": {
     "jams_missiles": {
      "range": 5120
+    },
+    "gap_sight": {
+     "range": 7168
     }
    },
    "unit": {
@@ -4089,6 +4376,9 @@
    "abilities": {
     "creates_shroud": {
      "range": 7168
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4127,7 +4417,11 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 6144
+    }
+   },
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -4164,6 +4458,9 @@
    "death_weapon": 24,
    "self_heal": null,
    "abilities": {
+    "gap_sight": {
+     "range": 4096
+    },
     "demo_truck": {}
    },
    "unit": {
@@ -4202,6 +4499,9 @@
    "death_weapon": 8,
    "self_heal": null,
    "abilities": {
+    "gap_sight": {
+     "range": 4096
+    },
     "portable_chrono": {
      "charge_delay": 250,
      "max_distance": 12
@@ -4251,6 +4551,7 @@
      "garrison": false,
      "initial": []
     },
+    "hold_fire": {},
     "cloak": {
      "initial_delay": 125,
      "cloak_delay": 175,
@@ -4260,7 +4561,14 @@
       "Unload",
       "Heal",
       "Dock"
-     ]
+     ],
+     "types": [
+      "Cloak"
+     ],
+     "off_when_critical": true
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4298,9 +4606,14 @@
    "death_weapon": 8,
    "self_heal": null,
    "abilities": {
+    "gap_sight": {
+     "range": 4096
+    },
     "mad_tank": {
      "charge_delay": 96,
      "thump_interval": 8,
+     "detonation_delay": 42,
+     "driver": "E1",
      "thump_weapon": 27,
      "detonation_weapon": 28
     }
@@ -4345,6 +4658,9 @@
      "max": 5,
      "garrison": false,
      "initial": []
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "unit": {
@@ -4384,7 +4700,14 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
-     "range": 4096
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 6144
     }
    },
    "unit": {
@@ -4426,10 +4749,25 @@
      "initial_delay": 0,
      "cloak_delay": 50,
      "uncloak_on": [
-      "Attack"
-     ]
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
+     ],
+     "off_when_critical": true
     },
     "detect_cloaked": {
+     "range": 5120,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
      "range": 5120
     }
    },
@@ -4472,6 +4810,13 @@
    "self_heal": null,
    "abilities": {
     "detect_cloaked": {
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
      "range": 4096
     }
    },
@@ -4511,7 +4856,11 @@
    "requires_power": false,
    "death_weapon": 29,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -4549,15 +4898,31 @@
    "death_weapon": 33,
    "self_heal": null,
    "abilities": {
+    "hold_fire": {},
     "cloak": {
      "initial_delay": 0,
      "cloak_delay": 100,
      "uncloak_on": [
-      "Attack"
-     ]
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
+     ],
+     "off_when_critical": true
     },
     "detect_cloaked": {
-     "range": 4096
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "unit": {
@@ -4600,6 +4965,9 @@
      "max": 8,
      "garrison": false,
      "initial": []
+    },
+    "gap_sight": {
+     "range": 6144
     }
    },
    "unit": {
@@ -4652,7 +5020,12 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 8192
+    }
+   },
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -4704,7 +5077,12 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 8192
+    }
+   },
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -4758,7 +5136,12 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 10240
+    }
+   },
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -4810,7 +5193,12 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 9216
+    }
+   },
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -4857,7 +5245,12 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
-   "abilities": {},
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 11264
+    }
+   },
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -4875,6 +5268,86 @@
       "AFLD",
       "AFLD.Ukraine"
      ]
+    }
+   }
+  },
+  {
+   "id": "MINV",
+   "name": "Mine",
+   "description": "",
+   "kind": "mine",
+   "queue": "Defense",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "disabled"
+   ],
+   "build_at": "Defense",
+   "hp": 5000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 21,
+   "self_heal": null,
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 30,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Mine"
+     ],
+     "off_when_critical": false
+    }
+   }
+  },
+  {
+   "id": "MINP",
+   "name": "Mine",
+   "description": "",
+   "kind": "mine",
+   "queue": "Defense",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "disabled"
+   ],
+   "build_at": "Defense",
+   "hp": 5000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 45,
+   "self_heal": null,
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 30,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Mine"
+     ],
+     "off_when_critical": false
     }
    }
   }
@@ -6830,6 +7303,45 @@
      "delay": 0,
      "valid": 23,
      "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "APMine",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 40000,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 32
     }
    ]
   }
