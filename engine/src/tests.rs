@@ -264,7 +264,9 @@ fn every_actor_is_reachable_for_the_right_factions() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
         // FACT comes from deploying an MCV; the Hind is disabled in OpenRA's rules
         // until the helicopter work enables it.
-        assert!(any || a.id == "FACT" || a.id == "HIND", "{} is buildable by some faction", a.id);
+        // Support power actors (paratroopers, spy plane, Badgers) are never built.
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str());
+        assert!(any || support || a.id == "FACT" || a.id == "HIND", "{} is buildable by some faction", a.id);
     }
     assert!(can("germany", "CTNK") && !can("england", "CTNK") && !can("russia", "CTNK"));
     assert!(can("russia", "TTNK") && !can("ukraine", "TTNK"));

@@ -91,6 +91,17 @@ const UNIT_DRAW = {
       circle(ctx, P.c('#5d6b3a'), 5, 5.5, 1.7); // helmet
     }],
   },
+  // Rocket soldier: an E1 silhouette with a launch tube over the right shoulder.
+  E3: {
+    body: [10, 12, (ctx, P) => {
+      circle(ctx, P.c(C.shadow), 5.6, 7, 3.6);
+      poly(ctx, P.team(0.7), [1.5, 5.5, 8.5, 5.5, 8, 9.5, 2, 9.5]);
+      rect(ctx, P.c(C.steelDark), 6.2, 0.5, 2, 9); // launcher
+      rect(ctx, P.c(C.steelLight), 6.6, 0.5, 1.2, 1.2);
+      circle(ctx, P.team(0.55), 5, 6, 2.2);
+      circle(ctx, P.c('#5d6b3a'), 4.6, 5.5, 1.7); // helmet
+    }],
+  },
   JEEP: {
     body: [18, 22, (ctx, P) => {
       wheels(ctx, P, 18, [3, 15]);
@@ -768,6 +779,10 @@ const BUILDING_TURRET = {
 /** Fakes and variants that reuse another actor's art. Keys are upper-case. */
 const SPRITE_ALIAS = {
   'AFLD.UKRAINE': 'AFLD',
+  // Paratroopers (support power) and the parabomb Badger look like their base actors.
+  E1R1: 'E1',
+  E3R1: 'E3',
+  'BADR.BOMBER': 'BADR',
   FPWR: 'POWR',
   TENF: 'TENT',
   SYRF: 'SYRD',
