@@ -32,6 +32,8 @@ export class Input {
     this.placing = null; // actor id being placed
     this.sellMode = false;
     this.attackMove = false;
+    this.power = null; // support power being targeted: { key, name } (js/powers.js)
+    this.powerDrag = null; // target picked, mouse still down: { x, y, sx, sy }
     this.lastClick = { time: 0, id: NONE };
     this.bind();
   }
@@ -132,7 +134,27 @@ export class Input {
   startPlacing(actorId) {
     this.placing = actorId;
     this.attackMove = false;
+    this.cancelPower();
     this.setSellMode(false);
+  }
+
+  // ---- Support powers (engine/src/powers.rs, js/powers.js) -------------------------
+
+  /** Target a ready support power: click the map, or drag to set the flight direction. */
+  startPowerTargeting(power) {
+    this.placing = null;
+    this.attackMove = false;
+    this.setSellMode(false);
+    this.power = { key: power.key, name: power.name };
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(power.key);
+  }
+
+  cancelPower() {
+    if (!this.power) return;
+    this.power = null;
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(null);
   }
 
   setSellMode(on) {
@@ -207,6 +229,10 @@ export class Input {
       return;
     }
     if (e.button === 2) {
+      if (this.power) {
+        this.cancelPower();
+        return;
+      }
       if (this.placing) {
         this.cancelPlacing();
         return;
@@ -223,6 +249,11 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
+    if (this.power) {
+      // Target picked; mouse up fires it (a drag sets the direction).
+      this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
+      return;
+    }
     if (this.sellMode) {
       const hit = this.game.pick(this.player, w.x, w.y);
       if (hit !== NONE && this.game.sell_value(this.player, hit) > 0) {
@@ -274,6 +305,16 @@ export class Input {
   onMouseUp(e) {
     if (e.button === 1) {
       this.pan = null;
+      return;
+    }
+    if (e.button === 0 && this.power && this.powerDrag) {
+      const p = this.local(e);
+      const t = this.powerDrag;
+      const w = this.toWorld(p.x, p.y);
+      const dragged = Math.abs(p.x - t.sx) + Math.abs(p.y - t.sy) >= 12;
+      this.game.activate_power(this.player, this.power.key, t.x, t.y, dragged ? w.x : undefined, dragged ? w.y : undefined);
+      this.flashOrder(t, ACTION.ATTACK);
+      this.cancelPower();
       return;
     }
     if (e.button !== 0 || !this.drag) return;
@@ -368,7 +409,8 @@ export class Input {
     }
     const k = e.key.toLowerCase();
     if (k === 'escape') {
-      if (this.sellMode) this.setSellMode(false);
+      if (this.power) this.cancelPower();
+      else if (this.sellMode) this.setSellMode(false);
       else if (this.placing) this.cancelPlacing();
       else if (this.attackMove) this.attackMove = false;
       else this.setSelection([]);
@@ -429,7 +471,8 @@ export class Input {
       const w = this.toWorld(this.mouse.x, this.mouse.y);
       const hit = this.game.pick(this.player, w.x, w.y);
       cursor = hit !== NONE && this.game.sell_value(this.player, hit) > 0 ? CURSORS.sell : CURSORS.blocked;
-    } else if (this.placing) cursor = 'none';
+    } else if (this.power) cursor = CURSORS.attack;
+    else if (this.placing) cursor = 'none';
     else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
       const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
@@ -477,6 +520,17 @@ export class Input {
       push(f.x - r, f.y + r - th, 2 * r, th, ...col, t);
       push(f.x - r, f.y - r, th, 2 * r, ...col, t);
       push(f.x + r - th, f.y - r, th, 2 * r, ...col, t);
+    }
+    if (this.power && this.powerDrag) {
+      // Direction preview: dots from the target toward the mouse.
+      const t = this.powerDrag;
+      const m = this.toWorld(this.mouse.x, this.mouse.y);
+      const s = 2 / this.camera.zoom + 1;
+      for (let i = 0; i <= 8; i++) {
+        const x = t.x + ((m.x - t.x) * i) / 8;
+        const y = t.y + ((m.y - t.y) * i) / 8;
+        push(x - s / 2, y - s / 2, s, s, 1, 0.8, 0.3, 0.9 - i * 0.06);
+      }
     }
     if (this.placing && this.mouse.inside) {
       const w = this.toWorld(this.mouse.x, this.mouse.y);
