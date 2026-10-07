@@ -976,6 +976,13 @@ impl World {
     /// Goal cell for moving actor `i` toward cell (gx, gy): the nearest cell it
     /// can actually reach in its domain (any cell for aircraft), or NONE.
     pub fn path_goal(&self, i: usize, gx: i32, gy: i32) -> u32 {
+        let from = self.cell_of(self.actors[i].x, self.actors[i].y);
+        self.path_goal_from(i, gx, gy, from)
+    }
+
+    /// `path_goal`, with ties between equally near reachable cells broken
+    /// toward cell `from` (where the units come from), not by scan order.
+    pub fn path_goal_from(&self, i: usize, gx: i32, gy: i32, from: (i32, i32)) -> u32 {
         let d = self.domain_of(i);
         let (gx, gy) = (gx.clamp(0, self.map.width - 1), gy.clamp(0, self.map.height - 1));
         if d == crate::rules::Domain::Air {
@@ -983,7 +990,7 @@ impl World {
         }
         let pass = self.pass_for(d);
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci]).unwrap_or(NONE)
+        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci], from).unwrap_or(NONE)
     }
 
     // ---- Geometry helpers --------------------------------------------------
@@ -991,6 +998,14 @@ impl World {
     #[inline]
     pub fn cell_of(&self, x: i32, y: i32) -> (i32, i32) {
         ((x.div_euclid(CELL)).clamp(0, self.map.width - 1), (y.div_euclid(CELL)).clamp(0, self.map.height - 1))
+    }
+
+    /// Cell of a target point as seen from (fx, fy): a point exactly on a cell
+    /// border counts for the cell on the viewer's side. Unlike `cell_of`, this
+    /// gives mirrored answers for mirrored situations.
+    pub fn cell_toward(&self, x: i32, y: i32, fx: i32, fy: i32) -> (i32, i32) {
+        let toward = |v: i32, f: i32| if v.rem_euclid(CELL) == 0 { v - (v - f).signum() } else { v };
+        self.cell_of(toward(x, fx), toward(y, fy))
     }
 
     #[inline]
@@ -1232,7 +1247,13 @@ impl World {
         }
         let group = self.next_group;
         self.next_group += 1;
-        let (gx, gy) = self.cell_of(x, y);
+        // The group's centre decides ties (border targets, blocked goals), so a
+        // mirrored order on a symmetric map picks the mirrored cell.
+        let n = units.len() as i64;
+        let cx = (units.iter().map(|&i| self.actors[i].x as i64).sum::<i64>() / n) as i32;
+        let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
+        let from = self.cell_of(cx, cy);
+        let (gx, gy) = self.cell_toward(x, y, cx, cy);
         // Reachable goals per (domain, component), shared by the group.
         let mut goals: Vec<((crate::rules::Domain, u32), u32)> = Vec::new();
         for &i in units {
@@ -1249,7 +1270,7 @@ impl World {
             let goal = match goals.iter().find(|(k, _)| *k == (d, comp)) {
                 Some(&(_, g)) => g,
                 None => {
-                    let g = self.path_goal(i, gx, gy);
+                    let g = self.path_goal_from(i, gx, gy, from);
                     goals.push(((d, comp), g));
                     g
                 }

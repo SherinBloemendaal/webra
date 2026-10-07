@@ -22,7 +22,7 @@ WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and 
 
 ## Features (milestone 1)
 
-- [x] Procedural, 180-degree symmetric 2-player maps (clear, rough, rock, water, trees, ore fields), seeded
+- [x] Procedural, left-right mirrored 2-player maps (fair for both sides) (clear, rough, rock, water, trees, ore fields), seeded
 - [x] Ore harvesting: harvesters search, harvest bale by bale, queue at the refinery dock and unload; ore regrows and spreads; refinery storage limit
 - [x] Credits and power (power plants scale with health, low power slows production 3x like OpenRA)
 - [x] Classic sidebar production queues (Buildings / Infantry / Vehicles), pay-as-you-build, build-time speedup with multiple factories, queue/cancel with refund

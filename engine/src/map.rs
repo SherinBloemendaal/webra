@@ -76,12 +76,16 @@ impl Map {
         }
     }
 
-    /// Generate a two-player map with 180 degree rotational symmetry.
+    /// Generate a two-player map, mirrored left to right, with both bases at
+    /// the same height. Red Alert buildings are not symmetric: production
+    /// exits, refinery docks and bibs all face south. On a point symmetric
+    /// map the top base's exits and docks face the enemy and its ore while
+    /// the bottom base's face the map edge, which decided most mirror
+    /// matches. A left to right mirror gives both sides the same layout.
     pub fn generate(width: i32, height: i32, seed: u64, ore_max: u8) -> Map {
         let mut rng = Rng::new(seed);
         let n = (width * height) as usize;
-        let mut m =
-            Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: vec![(8, 8), (width - 11, height - 12)] };
+        let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
 
         let area = width * height;
         // Rough patches.
@@ -116,21 +120,27 @@ impl Map {
             }
         }
 
-        // Clear the bases.
-        let spawns = m.spawns.clone();
-        for &(sx, sy) in &spawns {
-            m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
-        }
-        // Ore: one field next to each base (toward the map center), plus contested fields.
+        // Bases on the left and right edge; the seed picks the height.
+        let sy = match rng.range(0, 3) {
+            0 => 8,
+            1 => height / 2 - 2,
+            _ => height - 12,
+        };
+        let sx = 8;
+        m.spawns = vec![(sx, sy), (width - 3 - sx, sy)];
+        m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
+        // Ore: one field beside the base toward the middle, one above or below
+        // it toward the centre row, and contested fields on the centre line
+        // (the mirror joins the halves).
         let (mx, my) = (width / 2, height / 2);
-        let (sx, sy) = spawns[0];
-        m.ore_field(&mut rng, sx + 13, sy + 4, 4, ore_max);
-        m.ore_field(&mut rng, sx + 3, sy + 13, 3, ore_max);
-        m.ore_field(&mut rng, mx - 6, my + 4, 5, ore_max);
-        m.ore_field(&mut rng, mx + 10, my - 12, 4, ore_max);
+        let toward_centre = if sy + 2 > my { -1 } else { 1 };
+        m.ore_field(&mut rng, sx + 13, sy + 2, 4, ore_max);
+        m.ore_field(&mut rng, sx + 3, sy + 2 + toward_centre * 13, 3, ore_max);
+        m.ore_field(&mut rng, mx - 3, sy + 2 + toward_centre * 6, 4, ore_max);
+        m.ore_field(&mut rng, mx - 9, my + toward_centre * (height / 4), 4, ore_max);
 
-        m.mirror();
-        m.ensure_connected(spawns[0], spawns[1]);
+        m.mirror_x();
+        m.ensure_connected(m.spawns[0], m.spawns[1]);
         m
     }
 
@@ -286,23 +296,26 @@ impl Map {
         }
     }
 
-    /// Copy the first half onto the second half, rotated 180 degrees.
-    fn mirror(&mut self) {
-        let n = self.cells();
-        for i in 0..n / 2 {
-            let j = n - 1 - i;
-            self.terrain[j] = self.terrain[i];
-            self.ore[j] = self.ore[i];
+    /// Copy the left half onto the right half, mirrored.
+    fn mirror_x(&mut self) {
+        for y in 0..self.height {
+            for x in 0..self.width / 2 {
+                let (i, j) = (self.idx(x, y), self.idx(self.width - 1 - x, y));
+                self.terrain[j] = self.terrain[i];
+                self.ore[j] = self.ore[i];
+            }
         }
     }
 
     /// Carve a 3-cell wide corridor between the bases if ground units could not
-    /// otherwise reach each other.
+    /// otherwise reach each other. The corridor is carved both ways so it is
+    /// as symmetric as the bases are.
     fn ensure_connected(&mut self, a: (i32, i32), b: (i32, i32)) {
         if self.reachable(a, b) {
             return;
         }
         self.carve((a.0 + 1, a.1 + 1), (b.0 + 1, b.1 + 1));
+        self.carve((b.0 + 1, b.1 + 1), (a.0 + 1, a.1 + 1));
     }
 
     /// Clear a 3-cell wide straight-ish road between two cells.
@@ -404,15 +417,23 @@ mod tests {
     }
 
     #[test]
-    fn generated_map_is_symmetric_and_connected() {
-        for seed in 0..20 {
-            let m = Map::generate(96, 96, seed, 12);
-            let n = m.cells();
-            for i in 0..n {
-                assert_eq!(m.terrain[i], m.terrain[n - 1 - i]);
+    fn generated_map_is_mirrored_left_to_right_and_connected() {
+        for size in [64, 80, 96, 128] {
+            for seed in 0..20 {
+                let m = Map::generate(size, size, seed, 12);
+                for y in 0..size {
+                    for x in 0..size {
+                        let (i, j) = (m.idx(x, y), m.idx(size - 1 - x, y));
+                        assert_eq!(m.terrain[i], m.terrain[j], "size {size} seed {seed} terrain at {x},{y}");
+                        assert_eq!(m.ore[i], m.ore[j], "size {size} seed {seed} ore at {x},{y}");
+                    }
+                }
+                // The yards are mirror images: 3 cells wide, same row.
+                let ((x0, y0), (x1, y1)) = (m.spawns[0], m.spawns[1]);
+                assert_eq!((y0, x0 + x1 + 2), (y1, size - 1), "size {size} seed {seed}");
+                assert!(m.reachable(m.spawns[0], m.spawns[1]), "size {size} seed {seed}");
+                assert!(m.ore.iter().filter(|&&o| o > 0).count() > 50);
             }
-            assert!(m.reachable(m.spawns[0], m.spawns[1]), "seed {seed}");
-            assert!(m.ore.iter().filter(|&&o| o > 0).count() > 50);
         }
     }
 }

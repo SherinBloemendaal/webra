@@ -67,12 +67,21 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 
 ## 3. Game options (lobby to engine)
 
-`options` JSON as produced by `apps/game/js/lobby.js` (see that file for value
-sets): `seed, mapSize, players[{slot, type: human|ai|closed, name, faction,
-color, team, difficulty}], startingCash, startingUnits, techLevel, gameSpeed,
-fog, explored, buildRadius, redeployableMcv, oreRegrowth`. `team` 0 means no
-team (free for all); players with the same non-zero team are allies (shared
-vision, no auto-targeting, win together). 2..8 players.
+`options` JSON as produced by `apps/game/js/lobby.js` (value sets in
+`apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
+human|ai|closed, name, faction, color, team, difficulty}], startingCash,
+startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
+redeployableMcv, oreRegrowth, map`. `team` 0 means no team (free for all);
+players with the same non-zero team are allies (shared vision, no
+auto-targeting, win together). 2..8 players. Closed slots are listed as
+`{slot, type: "closed"}` and do not play: engine player N is the N-th slot
+that is not closed, and it takes spawn N. `map` is the map file JSON string
+(the client starts `Game.from_map(map, options)`) or null for a generated map
+(`Game.from_options(options)`); it is not passed on to the engine options.
+
+Generated 2-player maps are mirrored left to right with both bases at the
+same height, so mirror matches are fair: Red Alert structures face south
+(exits, refinery docks), which favours one side on a point symmetric map.
 
 ## 4. Online multiplayer
 

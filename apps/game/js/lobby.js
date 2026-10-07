@@ -1,86 +1,50 @@
 // Pre-game skirmish lobby: map preview, player slots and game options.
-// All DOM is built once inside the given root. The chosen setup is reported
+// All DOM is built inside the given root. The chosen setup is reported
 // through onStart / onStress; the last used setup is kept in localStorage
-// when it is available and the lobby works the same without it.
+// when it is available and the lobby works the same without it. Slot rules,
+// stored-settings migration and the options shape live in lobby-state.js.
 
-const STORAGE_KEY = 'webra.lobby.v1';
-
-// Seeds stay within int32 so they survive any wasm integer parameter.
-const SEED_MAX = 0x7fffffff;
-const NAME_MAX = 20;
-const DEFAULT_NAME = 'Commander';
-
-const UNITS_MIN = 1;
-const UNITS_MAX = 20000;
-const UNITS_DEFAULT = 1000;
-
-const MAP_SIZES = [
-  { value: 64, label: 'Small' },
-  { value: 96, label: 'Medium' },
-  { value: 128, label: 'Large' },
-  { value: 160, label: 'Huge' },
-];
-
-const STARTING_CASH = [2500, 5000, 7500, 10000, 20000];
-
-const STARTING_UNITS = [
-  { value: 'mcv', label: 'MCV only' },
-  { value: 'light', label: 'Light support' },
-  { value: 'heavy', label: 'Heavy support' },
-  { value: 'base', label: 'Construction Yard' },
-];
-
-const TECH_LEVELS = [
-  { value: 'infonly', label: 'Infantry only' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'No superweapons' },
-  { value: 'unrestricted', label: 'Unrestricted' },
-];
-
-const GAME_SPEEDS = [
-  { value: 'slowest', label: 'Slowest' },
-  { value: 'slower', label: 'Slower' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'fast', label: 'Fast' },
-  { value: 'faster', label: 'Faster' },
-  { value: 'fastest', label: 'Fastest' },
-];
-
-const DIFFICULTIES = [
-  { value: 'easy', label: 'Easy' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'hard', label: 'Hard' },
-];
-
-const FACTION_GROUPS = [
-  {
-    label: 'Random',
-    items: [
-      { value: 'random', label: 'Random', desc: 'Random country' },
-      { value: 'randomallies', label: 'Random Allies', desc: 'Random country' },
-      { value: 'randomsoviet', label: 'Random Soviet', desc: 'Random country' },
-    ],
-  },
-  {
-    label: 'Allies',
-    items: [
-      { value: 'england', label: 'England', desc: 'Allies: British Spy and Mobile Gap Generator' },
-      { value: 'france', label: 'France', desc: 'Allies: Phase Transport and fake structures' },
-      { value: 'germany', label: 'Germany', desc: 'Allies: Chrono Tank and Advanced Chronoshift' },
-    ],
-  },
-  {
-    label: 'Soviet',
-    items: [
-      { value: 'russia', label: 'Russia', desc: 'Soviet: Tesla Tank and Shock Trooper' },
-      { value: 'ukraine', label: 'Ukraine', desc: 'Soviet: Demolition Truck and Parabombs' },
-    ],
-  },
-];
-
-const FACTIONS = new Map();
-for (const g of FACTION_GROUPS) for (const f of g.items) FACTIONS.set(f.value, f);
+import {
+  STORAGE_KEY,
+  LEGACY_STORAGE_KEYS,
+  MAP_STORAGE_KEY,
+  NAME_MAX,
+  DEFAULT_NAME,
+  UNITS_MIN,
+  UNITS_MAX,
+  MAX_SLOTS,
+  MAP_FILE_MAX_BYTES,
+  MODDED_WARNING,
+  MAP_SIZES,
+  STARTING_CASH,
+  STARTING_UNITS,
+  TECH_LEVELS,
+  GAME_SPEEDS,
+  SLOT_TYPES,
+  TEAMS,
+  FACTION_GROUPS,
+  FACTIONS,
+  randomSeed,
+  parseSeed,
+  parseUnits,
+  cleanName,
+  minMapSize,
+  suggestedMapSize,
+  slotTypeValue,
+  activeCount,
+  sanitizeState,
+  canAddSlot,
+  addSlot,
+  canRemoveSlot,
+  removeSlot,
+  setSlotType,
+  setColor,
+  startProblem,
+  buildOptions,
+  storedSettings,
+  inspectMapFile,
+  spawnMarkers,
+} from './lobby-state.js';
 
 // Game option rows: the key in options, its label, tooltip and choices.
 const SELECT_OPTIONS = [
@@ -118,24 +82,6 @@ const TOGGLE_OPTIONS = [
   { key: 'oreRegrowth', label: 'Ore regrowth', title: 'Ore fields slowly grow back after they have been harvested.' },
 ];
 
-const DEFAULTS = {
-  mapSize: 96,
-  startingCash: 5000,
-  startingUnits: 'mcv',
-  techLevel: 'unrestricted',
-  gameSpeed: 'normal',
-  fog: true,
-  explored: false,
-  buildRadius: true,
-  redeployableMcv: true,
-  oreRegrowth: true,
-};
-
-const DEFAULT_PLAYERS = [
-  { type: 'human', name: DEFAULT_NAME, faction: 'germany', color: 0 },
-  { type: 'ai', difficulty: 'normal', faction: 'randomsoviet', color: 1 },
-];
-
 let uid = 0;
 
 /** Create an element with an optional class and text. */
@@ -144,33 +90,6 @@ function el(tag, className, text) {
   if (className) e.className = className;
   if (text !== undefined) e.textContent = text;
   return e;
-}
-
-function randomSeed() {
-  if (globalThis.crypto && crypto.getRandomValues) {
-    return crypto.getRandomValues(new Uint32Array(1))[0] & SEED_MAX;
-  }
-  return Math.floor(Math.random() * (SEED_MAX + 1));
-}
-
-/** Parse a non-negative integer seed; null when the text is not one. */
-function parseSeed(text) {
-  const s = String(text).trim();
-  if (!/^\d{1,10}$/.test(s)) return null;
-  const n = Number(s);
-  return n <= SEED_MAX ? n : null;
-}
-
-function parseUnits(text) {
-  const s = String(text).trim();
-  if (!/^\d{1,6}$/.test(s)) return null;
-  const n = Number(s);
-  return n >= UNITS_MIN && n <= UNITS_MAX ? n : null;
-}
-
-function cleanName(text) {
-  const s = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
-  return s || DEFAULT_NAME;
 }
 
 function rgbCss(c) {
@@ -199,16 +118,12 @@ function buildSelect(choices, className) {
   return select;
 }
 
-function oneOf(value, allowed, fallback) {
-  return allowed.includes(value) ? value : fallback;
-}
-
 // ---- Storage ---------------------------------------------------------------
 
-function loadStored() {
+function readJson(key) {
   let raw = null;
   try {
-    raw = globalThis.localStorage ? localStorage.getItem(STORAGE_KEY) : null;
+    raw = globalThis.localStorage ? localStorage.getItem(key) : null;
   } catch {
     return null;
   }
@@ -221,65 +136,23 @@ function loadStored() {
   }
 }
 
-function saveStored(data) {
+function writeJson(key, data) {
   try {
-    if (globalThis.localStorage) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (!globalThis.localStorage) return;
+    if (data === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(data));
   } catch {
     // Storage full, blocked or unavailable: the lobby simply forgets.
   }
 }
 
-/** Turn stored (untrusted) data into a complete, valid lobby state. */
-function sanitizeState(stored, colorCount) {
-  const s = stored || {};
-  const bool = (key) => (typeof s[key] === 'boolean' ? s[key] : DEFAULTS[key]);
-  const seed = Number.isInteger(s.seed) && s.seed >= 0 && s.seed <= SEED_MAX ? s.seed : randomSeed();
-
-  const state = {
-    seed,
-    mapSize: oneOf(s.mapSize, MAP_SIZES.map((m) => m.value), DEFAULTS.mapSize),
-    startingCash: oneOf(s.startingCash, STARTING_CASH, DEFAULTS.startingCash),
-    startingUnits: oneOf(s.startingUnits, STARTING_UNITS.map((o) => o.value), DEFAULTS.startingUnits),
-    techLevel: oneOf(s.techLevel, TECH_LEVELS.map((o) => o.value), DEFAULTS.techLevel),
-    gameSpeed: oneOf(s.gameSpeed, GAME_SPEEDS.map((o) => o.value), DEFAULTS.gameSpeed),
-    fog: bool('fog'),
-    explored: bool('explored'),
-    buildRadius: bool('buildRadius'),
-    redeployableMcv: bool('redeployableMcv'),
-    oreRegrowth: bool('oreRegrowth'),
-    stressUnits: Number.isInteger(s.stressUnits) && s.stressUnits >= UNITS_MIN && s.stressUnits <= UNITS_MAX
-      ? s.stressUnits
-      : UNITS_DEFAULT,
-    players: [],
-  };
-
-  const storedPlayers = Array.isArray(s.players) ? s.players : [];
-  const used = new Set();
-  DEFAULT_PLAYERS.forEach((def, i) => {
-    const p = storedPlayers[i] && typeof storedPlayers[i] === 'object' ? storedPlayers[i] : {};
-    const player = {
-      type: def.type,
-      faction: FACTIONS.has(p.faction) ? p.faction : def.faction,
-      color: Number.isInteger(p.color) && p.color >= 0 && p.color < colorCount ? p.color : def.color,
-    };
-    if (def.type === 'human') player.name = cleanName(p.name);
-    else player.difficulty = oneOf(p.difficulty, DIFFICULTIES.map((d) => d.value), def.difficulty);
-    state.players.push(player);
-  });
-
-  // Colours must be unique; give any duplicate the first free colour.
-  for (const p of state.players) {
-    if (used.has(p.color)) {
-      for (let c = 0; c < colorCount; c++) {
-        if (!used.has(c)) {
-          p.color = c;
-          break;
-        }
-      }
-    }
-    used.add(p.color);
+/** Current settings, else the newest legacy ones (sanitizeState migrates them). */
+function loadStored() {
+  for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
+    const data = readJson(key);
+    if (data) return data;
   }
-  return state;
+  return null;
 }
 
 // ---- Colour picker -----------------------------------------------------------
@@ -445,28 +318,41 @@ export class Lobby {
    * @param {{
    *   colors: number[][],
    *   colorNames: string[],
-   *   mapPreview: (seed: number, size: number) => Uint8Array,
+   *   maps?: {
+   *     preview: (seed: number, size: number, players: number) => Uint8Array,
+   *     spawns: (seed: number, size: number, players: number) => number[][],
+   *     validate: (json: string) => {ok: boolean, errors: string[], modded: boolean, hash: string},
+   *     filePreview: (json: string) => Uint8Array,
+   *   },
+   *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
-   * }} config
+   * }} config `maps` gives player-count previews and map files; without it
+   *   only `mapPreview` (two players) is used and map files are unavailable.
    */
   constructor(root, config) {
     this.root = root;
     this.colors = config.colors;
     this.colorNames = config.colorNames || [];
-    this.mapPreview = config.mapPreview;
+    this.maps = config.maps || null;
+    this.legacyPreview = config.mapPreview || null;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
     this.blocked = false;
     this.previewFrame = 0;
+    this.spawnCache = { key: '', cells: [] };
 
     this.state = sanitizeState(loadStored(), this.colors.length);
+    /** Installed map file: { json, info, accepted } or null. */
+    this.mapFile = this.loadStoredMap();
+    /** A modded map waiting for the player to accept its rules. */
+    this.pendingMap = null;
+    if (this.state.mapSource === 'file' && !this.mapFile) this.state.mapSource = 'random';
     this.pickers = [];
     this.slotRows = [];
 
     this.build();
     this.renderAll();
-    this.schedulePreview();
 
     this.onDocKey = (e) => this.handleEnter(e);
     document.addEventListener('keydown', this.onDocKey);
@@ -489,28 +375,84 @@ export class Lobby {
 
   /** The current setup in the shape onStart receives. */
   getOptions() {
-    const s = this.state;
-    return {
-      seed: s.seed,
-      mapSize: s.mapSize,
-      players: s.players.map((p, slot) =>
-        p.type === 'human'
-          ? { slot, type: 'human', name: cleanName(p.name), faction: p.faction, color: p.color }
-          : { slot, type: 'ai', difficulty: p.difficulty, faction: p.faction, color: p.color },
-      ),
-      startingCash: s.startingCash,
-      startingUnits: s.startingUnits,
-      techLevel: s.techLevel,
-      gameSpeed: s.gameSpeed,
-      fog: s.fog,
-      explored: s.explored,
-      buildRadius: s.buildRadius,
-      redeployableMcv: s.redeployableMcv,
-      oreRegrowth: s.oreRegrowth,
-    };
+    return buildOptions(this.state, this.mapFile ? this.mapFile.json : null);
   }
 
-  // ---- DOM construction (once) ---------------------------------------------
+  // ---- Map files ---------------------------------------------------------------
+
+  loadStoredMap() {
+    if (!this.maps) return null;
+    const stored = readJson(MAP_STORAGE_KEY);
+    if (!stored || typeof stored.json !== 'string') return null;
+    const info = inspectMapFile(stored.json, this.maps.validate);
+    // Only a map that still validates, and whose rules were accepted, comes back.
+    if (!info.ok || (info.modded && stored.accepted !== info.hash)) return null;
+    return { json: stored.json, info, accepted: true };
+  }
+
+  /** Spawn count and acceptance of the installed map, for startProblem. */
+  mapFileStatus() {
+    return this.mapFile ? { spawns: this.mapFile.info.spawns, accepted: this.mapFile.accepted } : null;
+  }
+
+  spawnLimit() {
+    return this.state.mapSource === 'file' && this.mapFile ? this.mapFile.info.spawns : MAX_SLOTS;
+  }
+
+  async loadMapFile(file) {
+    this.mapErrors = [];
+    if (file.size > MAP_FILE_MAX_BYTES) {
+      this.mapErrors = ['The map file is larger than 1 MiB.'];
+      this.renderMapSource();
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch (err) {
+      this.mapErrors = [`Could not read the file: ${err?.message ?? err}`];
+      this.renderMapSource();
+      return;
+    }
+    const info = inspectMapFile(text, this.maps.validate);
+    if (!info.ok) {
+      this.mapErrors = info.errors;
+      this.renderMapSource();
+      return;
+    }
+    if (info.modded) {
+      // Modded maps are installed only after the player accepts the warning.
+      this.pendingMap = { json: text, info };
+      this.renderMapSource();
+      this.acceptBtn.focus();
+      return;
+    }
+    this.installMap(text, info);
+  }
+
+  installMap(json, info) {
+    this.pendingMap = null;
+    this.mapErrors = [];
+    this.mapFile = { json, info, accepted: true };
+    this.state.mapSource = 'file';
+    writeJson(MAP_STORAGE_KEY, { json, accepted: info.modded ? info.hash : true });
+    this.renderMapSource();
+    this.renderSlots();
+    this.schedulePreview();
+  }
+
+  setMapSource(source) {
+    if (source === 'file' && !this.mapFile) {
+      this.fileInput.click();
+      return;
+    }
+    this.state.mapSource = source;
+    this.renderMapSource();
+    this.renderSlots();
+    this.schedulePreview();
+  }
+
+  // ---- DOM construction --------------------------------------------------------
 
   build() {
     this.root.textContent = '';
@@ -558,19 +500,35 @@ export class Lobby {
   buildMapPanel() {
     const { section, content } = this.panel('Battlefield', 'lobby-map');
 
+    // Map source: generated from a seed, or a map file.
+    const source = el('div', 'lobby-source');
+    source.setAttribute('role', 'group');
+    source.setAttribute('aria-label', 'Map');
+    this.sourceBtns = {};
+    for (const [value, label, title] of [
+      ['random', 'Random map', 'A generated map from the seed and size below.'],
+      ['file', 'Map file', 'Play on a .webra-map.json file, for example one made in the map editor.'],
+    ]) {
+      const b = el('button', 'lobby-btn lobby-source-btn', label);
+      b.type = 'button';
+      b.title = title;
+      b.addEventListener('click', () => this.setMapSource(value));
+      this.sourceBtns[value] = b;
+      source.append(b);
+    }
+    if (!this.maps) this.sourceBtns.file.disabled = true;
+
     const frame = el('div', 'lobby-preview');
     this.canvas = el('canvas', 'lobby-preview-canvas');
     this.canvas.setAttribute('role', 'img');
     this.ctx = this.canvas.getContext('2d');
+    this.markers = el('div', 'lobby-markers');
     this.previewFail = el('div', 'lobby-preview-fail', 'Preview unavailable');
     this.previewFail.hidden = true;
-    frame.append(this.canvas, this.previewFail);
+    frame.append(this.canvas, this.markers, this.previewFail);
     this.caption = el('p', 'lobby-preview-caption');
 
-    this.mapSizeSelect = buildSelect(
-      MAP_SIZES.map((m) => ({ value: m.value, label: `${m.label} (${m.value} x ${m.value})` })),
-      'lobby-select',
-    );
+    this.mapSizeSelect = el('select', 'lobby-select');
     this.mapSizeSelect.addEventListener('change', () => {
       this.state.mapSize = Number(this.mapSizeSelect.value);
       this.renderCaption();
@@ -613,13 +571,63 @@ export class Lobby {
     const seedRow = el('div', 'lobby-seed-row');
     seedRow.append(this.seedInput, this.diceBtn);
 
+    // Map file: load button, details, modded warning and errors.
+    this.fileInput = el('input');
+    this.fileInput.type = 'file';
+    this.fileInput.accept = '.json,application/json';
+    this.fileInput.hidden = true;
+    this.fileInput.addEventListener('change', () => {
+      const file = this.fileInput.files && this.fileInput.files[0];
+      this.fileInput.value = '';
+      if (file) this.loadMapFile(file);
+    });
+    this.loadBtn = el('button', 'lobby-btn', 'Load map file');
+    this.loadBtn.type = 'button';
+    this.loadBtn.title = 'Pick a .webra-map.json file';
+    this.loadBtn.addEventListener('click', () => this.fileInput.click());
+    this.mapInfo = el('div', 'lobby-mapinfo');
+    this.mapInfo.setAttribute('aria-live', 'polite');
+
+    this.moddedBox = el('div', 'lobby-modded');
+    this.moddedBox.setAttribute('role', 'alertdialog');
+    this.moddedBox.hidden = true;
+    const moddedTitle = el('strong', null, 'Modded map');
+    moddedTitle.id = `lobby-modded-${++uid}`;
+    this.moddedBox.setAttribute('aria-labelledby', moddedTitle.id);
+    this.moddedName = el('p', 'lobby-modded-name');
+    const moddedButtons = el('div', 'lobby-modded-buttons');
+    this.acceptBtn = el('button', 'lobby-btn lobby-btn-danger', 'Accept and install');
+    this.acceptBtn.type = 'button';
+    this.acceptBtn.addEventListener('click', () => {
+      if (this.pendingMap) this.installMap(this.pendingMap.json, this.pendingMap.info);
+    });
+    const cancel = el('button', 'lobby-btn', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => {
+      this.pendingMap = null;
+      this.renderMapSource();
+      this.loadBtn.focus();
+    });
+    moddedButtons.append(this.acceptBtn, cancel);
+    this.moddedBox.append(moddedTitle, this.moddedName, el('p', null, MODDED_WARNING), moddedButtons);
+
+    this.mapErrorList = el('ul', 'lobby-map-errors');
+    this.mapErrorList.setAttribute('role', 'alert');
+    this.mapErrors = [];
+
+    const fileRow = el('div', 'lobby-file-row');
+    fileRow.append(this.loadBtn, this.fileInput);
+
     const fields = el('div', 'lobby-fields');
+    this.sizeField = this.field('Map size', this.mapSizeSelect, 'Width and height of the generated map, in cells. More players need more room.');
+    this.fileField = this.field('Map file', fileRow, 'A map file (.webra-map.json). Players take its start positions in slot order.');
     fields.append(
-      this.field('Map size', this.mapSizeSelect, 'Width and height of the generated map, in cells.'),
+      this.sizeField,
+      this.fileField,
       this.field('Seed', seedRow, 'The same seed and map size always generate the same map. Share it to replay a battlefield.'),
     );
 
-    content.append(frame, this.caption, fields);
+    content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, fields);
     return section;
   }
 
@@ -631,21 +639,50 @@ export class Lobby {
 
   buildPlayersPanel() {
     const { section, content } = this.panel('Players', 'lobby-players');
-    const table = el('div', 'lobby-slots');
-    table.setAttribute('role', 'table');
+    this.slotTable = el('div', 'lobby-slots');
+    this.slotTable.setAttribute('role', 'table');
+    this.slotTable.setAttribute('aria-label', 'Player slots');
 
+    this.addBtn = el('button', 'lobby-btn lobby-add', 'Add player');
+    this.addBtn.type = 'button';
+    this.addBtn.addEventListener('click', () => {
+      const slot = addSlot(this.state, this.colors.length, this.spawnLimit());
+      if (slot < 0) return;
+      this.afterPlayerCountChange();
+      this.slotRows[slot]?.type?.focus();
+    });
+    this.slotHint = el('span', 'lobby-muted lobby-slot-hint');
+    const foot = el('div', 'lobby-slots-foot');
+    foot.append(this.addBtn, this.slotHint);
+
+    content.append(this.slotTable, foot);
+    return section;
+  }
+
+  /** (Re)build every slot row; slots come and go, so rows are not kept. */
+  renderSlots() {
+    this.closePickers(null);
+    this.slotTable.textContent = '';
+    this.pickers = [];
+    this.slotRows = [];
     const header = el('div', 'lobby-slot lobby-slot-head');
     header.setAttribute('role', 'row');
-    for (const h of ['Player', 'Color', 'Faction', 'Difficulty']) {
+    for (const h of ['Player', 'Color', 'Faction', 'Team', '']) {
       const c = el('div', 'lobby-cell', h);
       c.setAttribute('role', 'columnheader');
       header.append(c);
     }
-    table.append(header);
-
-    this.state.players.forEach((p, slot) => table.append(this.buildSlot(p, slot)));
-    content.append(table);
-    return section;
+    this.slotTable.append(header);
+    this.state.players.forEach((p, slot) => this.slotTable.append(this.buildSlot(p, slot)));
+    this.state.players.forEach((_, slot) => this.renderSlot(slot));
+    const limit = this.spawnLimit();
+    this.addBtn.disabled = !canAddSlot(this.state, limit);
+    const n = activeCount(this.state);
+    this.slotHint.textContent =
+      this.state.mapSource === 'file' && this.mapFile
+        ? `${n} of ${limit} start positions used`
+        : `${n} of ${MAX_SLOTS} players`;
+    this.renderProblem();
   }
 
   buildSlot(player, slot) {
@@ -659,10 +696,11 @@ export class Lobby {
       return c;
     };
     const rec = { row };
+    const closed = player.type === 'closed';
 
-    // Player name / type.
+    // Player: name for you, slot type for the others.
     const who = cell('lobby-cell-player', 'Player');
-    const badge = el('span', 'lobby-badge', `P${slot + 1}`);
+    who.append(el('span', 'lobby-badge', `P${slot + 1}`));
     if (player.type === 'human') {
       const name = el('input', 'lobby-input lobby-name');
       name.type = 'text';
@@ -670,8 +708,9 @@ export class Lobby {
       name.autocomplete = 'off';
       name.spellcheck = false;
       name.placeholder = DEFAULT_NAME;
-      name.setAttribute('aria-label', 'Player name');
-      name.title = 'Your name in this game';
+      name.value = player.name;
+      name.setAttribute('aria-label', 'Your name');
+      name.title = 'Your name in this game. Pick "You" on another slot to play from that start position.';
       name.addEventListener('input', () => {
         this.state.players[slot].name = name.value;
       });
@@ -680,25 +719,41 @@ export class Lobby {
         name.value = this.state.players[slot].name;
       });
       rec.name = name;
-      who.append(badge, name);
+      who.append(name);
     } else {
-      const label = el('span', 'lobby-ai-name');
-      label.append(el('span', null, 'Computer'), el('small', null, 'AI opponent'));
-      who.append(badge, label);
+      const type = buildSelect(SLOT_TYPES, 'lobby-select lobby-type');
+      type.value = slotTypeValue(player);
+      type.setAttribute('aria-label', `Player ${slot + 1} type`);
+      type.title = 'An AI opponent or ally, you (moves you to this slot), or closed (nobody plays here).';
+      type.addEventListener('change', () => {
+        if (setSlotType(this.state, slot, type.value, this.spawnLimit())) {
+          this.afterPlayerCountChange();
+          this.slotRows[slot]?.name?.focus();
+          this.slotRows[slot]?.type?.focus();
+        } else {
+          type.value = slotTypeValue(this.state.players[slot]);
+          this.renderProblem(this.typeRefusal(slot, type.value));
+        }
+      });
+      rec.type = type;
+      who.append(type);
     }
 
     // Colour.
     const colorCell = cell('lobby-cell-color', 'Color');
     const picker = new ColorPicker(this, slot);
+    picker.button.disabled = closed;
     this.pickers[slot] = picker;
     colorCell.append(picker.root);
 
     // Faction.
     const factionCell = cell('lobby-cell-faction', 'Faction');
-    factionCell.title = 'Your country. Random picks are resolved when the game starts.';
+    factionCell.title = 'Country. Random picks are resolved when the game starts.';
     const flag = el('span', 'lobby-flag');
     flag.setAttribute('aria-hidden', 'true');
     const faction = buildSelect(FACTION_GROUPS, 'lobby-select');
+    faction.value = player.faction;
+    faction.disabled = closed;
     faction.setAttribute('aria-label', `Player ${slot + 1} faction`);
     faction.addEventListener('change', () => {
       this.state.players[slot].faction = faction.value;
@@ -710,24 +765,44 @@ export class Lobby {
     factionCell.append(factionRow, desc);
     Object.assign(rec, { flag, faction, desc });
 
-    // Difficulty (AI only).
-    const diffCell = cell('lobby-cell-diff', 'Difficulty');
-    if (player.type === 'ai') {
-      const diff = buildSelect(DIFFICULTIES, 'lobby-select');
-      diff.setAttribute('aria-label', `Player ${slot + 1} difficulty`);
-      diff.title = 'How aggressively and efficiently the AI plays.';
-      diff.addEventListener('change', () => {
-        this.state.players[slot].difficulty = diff.value;
-      });
-      rec.difficulty = diff;
-      diffCell.append(diff);
-    } else {
-      diffCell.classList.add('lobby-cell-empty');
-      diffCell.append(el('span', 'lobby-muted', 'Human'));
-    }
+    // Team.
+    const teamCell = cell('lobby-cell-team', 'Team');
+    const team = buildSelect(TEAMS, 'lobby-select');
+    team.value = String(player.team);
+    team.disabled = closed;
+    team.setAttribute('aria-label', `Player ${slot + 1} team`);
+    team.title = 'Players on the same team are allies: shared vision, no friendly fire, they win together. None: free for all.';
+    team.addEventListener('change', () => {
+      this.state.players[slot].team = Number(team.value);
+      this.renderProblem();
+    });
+    teamCell.append(team);
+    rec.team = team;
+
+    // Remove.
+    const removeCell = cell('lobby-cell-remove', '');
+    const remove = el('button', 'lobby-btn lobby-remove');
+    remove.type = 'button';
+    remove.append(el('span', 'lobby-remove-x'));
+    remove.setAttribute('aria-label', `Remove player ${slot + 1}`);
+    remove.title = player.type === 'human' ? 'You cannot remove your own slot' : 'Remove this slot';
+    remove.disabled = !canRemoveSlot(this.state, slot);
+    remove.addEventListener('click', () => {
+      if (!removeSlot(this.state, slot)) return;
+      this.afterPlayerCountChange();
+      const next = this.slotRows[Math.min(slot, this.slotRows.length - 1)];
+      (next?.type ?? next?.name ?? this.addBtn).focus();
+    });
+    removeCell.append(remove);
 
     this.slotRows[slot] = rec;
     return row;
+  }
+
+  /** Explain why a slot type change was refused. */
+  typeRefusal(slot, value) {
+    if (value === 'closed') return 'At least two players must take part.';
+    return `This map has ${this.spawnLimit()} start positions; they are all taken.`;
   }
 
   buildOptionsPanel() {
@@ -799,12 +874,16 @@ export class Lobby {
     this.stressBtn.addEventListener('click', () => this.stress());
     stress.append(label, unitsField, this.stressBtn);
 
+    const go = el('div', 'lobby-go');
+    this.problemText = el('p', 'lobby-problem');
+    this.problemText.setAttribute('role', 'status');
     this.startBtn = el('button', 'lobby-btn lobby-btn-primary', 'Start game');
     this.startBtn.type = 'button';
     this.startBtn.title = 'Start the skirmish (Enter)';
     this.startBtn.addEventListener('click', () => this.start());
+    go.append(this.problemText, this.startBtn);
 
-    bar.append(stress, this.startBtn);
+    bar.append(stress, go);
     return bar;
   }
 
@@ -814,16 +893,75 @@ export class Lobby {
     const s = this.state;
     this.renderSeed();
     this.renderUnits();
-    this.mapSizeSelect.value = String(s.mapSize);
     for (const opt of SELECT_OPTIONS) this.optionSelects[opt.key].value = String(s[opt.key]);
     for (const opt of TOGGLE_OPTIONS) this.optionToggles[opt.key].checked = s[opt.key];
-    s.players.forEach((p, slot) => {
-      const rec = this.slotRows[slot];
-      if (rec.name) rec.name.value = p.name;
-      if (rec.difficulty) rec.difficulty.value = p.difficulty;
-      rec.faction.value = p.faction;
-      this.renderSlot(slot);
-    });
+    this.renderMapSizes();
+    this.renderMapSource();
+    this.renderSlots();
+    this.schedulePreview();
+  }
+
+  /** Slots were added, removed, opened or closed: sizes, rows and preview follow. */
+  afterPlayerCountChange() {
+    const n = activeCount(this.state);
+    if (this.state.mapSize < minMapSize(n)) this.state.mapSize = suggestedMapSize(n);
+    this.renderMapSizes();
+    this.renderSlots();
+    this.renderCaption();
+    this.schedulePreview();
+  }
+
+  /** Size choices with the recommendation for the current player count. */
+  renderMapSizes() {
+    const n = activeCount(this.state);
+    const min = minMapSize(n);
+    const suggested = suggestedMapSize(n);
+    this.mapSizeSelect.textContent = '';
+    for (const m of MAP_SIZES) {
+      const o = el('option', null, `${m.label} (${m.value} x ${m.value})${m.value === suggested ? ', recommended' : ''}`);
+      o.value = String(m.value);
+      o.disabled = m.value < min;
+      if (o.disabled) o.textContent += ', too small';
+      this.mapSizeSelect.append(o);
+    }
+    this.mapSizeSelect.value = String(this.state.mapSize);
+  }
+
+  renderMapSource() {
+    const file = this.state.mapSource === 'file';
+    for (const [value, b] of Object.entries(this.sourceBtns)) {
+      b.setAttribute('aria-pressed', value === this.state.mapSource ? 'true' : 'false');
+    }
+    this.sizeField.hidden = file;
+    this.fileField.hidden = !file && !this.pendingMap;
+
+    this.mapInfo.textContent = '';
+    this.mapInfo.hidden = !file || !this.mapFile;
+    if (file && this.mapFile) {
+      const i = this.mapFile.info;
+      const title = el('div', 'lobby-mapinfo-title');
+      title.append(el('strong', null, i.name));
+      if (i.modded) {
+        const badge = el('span', 'lobby-modded-badge', 'MODDED');
+        badge.title = MODDED_WARNING;
+        title.append(badge);
+      }
+      this.mapInfo.append(
+        title,
+        el('span', 'lobby-muted', `by ${i.author}, ${i.width} x ${i.height}, ${i.spawns} start positions`),
+      );
+    }
+
+    this.moddedBox.hidden = !this.pendingMap;
+    if (this.pendingMap) {
+      const i = this.pendingMap.info;
+      this.moddedName.textContent = `"${i.name}" by ${i.author}`;
+      this.fileField.hidden = false;
+    }
+
+    this.mapErrorList.textContent = '';
+    this.mapErrorList.hidden = this.mapErrors.length === 0;
+    for (const e of this.mapErrors) this.mapErrorList.append(el('li', null, e));
     this.renderCaption();
   }
 
@@ -841,15 +979,29 @@ export class Lobby {
     const p = this.state.players[slot];
     const rec = this.slotRows[slot];
     const f = FACTIONS.get(p.faction);
-    rec.row.style.setProperty('--slot-color', rgbCss(this.colors[p.color]));
+    rec.row.className = `lobby-slot lobby-slot-${p.type}`;
+    rec.row.style.setProperty('--slot-color', p.type === 'closed' ? 'var(--l-edge)' : rgbCss(this.colors[p.color]));
     rec.flag.dataset.faction = p.faction;
-    rec.desc.textContent = f.desc;
+    rec.desc.textContent = p.type === 'closed' ? 'Nobody plays in this slot.' : f.desc;
     this.pickers[slot].render();
   }
 
+  /** Show why the game cannot start (or a one-off message), and gate the start button. */
+  renderProblem(message) {
+    const problem = startProblem(this.state, this.mapFileStatus());
+    this.problemText.textContent = message || problem || '';
+    if (!this.blocked) this.startBtn.disabled = Boolean(problem);
+  }
+
   renderCaption() {
-    const m = MAP_SIZES.find((x) => x.value === this.state.mapSize);
-    const text = `${m.label} ${m.value} x ${m.value}, seed ${this.state.seed}`;
+    let text;
+    if (this.state.mapSource === 'file' && this.mapFile) {
+      const i = this.mapFile.info;
+      text = `${i.name}, ${i.width} x ${i.height}, seed ${this.state.seed}`;
+    } else {
+      const m = MAP_SIZES.find((x) => x.value === this.state.mapSize);
+      text = `${m.label} ${m.value} x ${m.value}, ${activeCount(this.state)} players, seed ${this.state.seed}`;
+    }
     this.caption.textContent = text;
     this.canvas.setAttribute('aria-label', `Map preview: ${text}`);
   }
@@ -862,37 +1014,76 @@ export class Lobby {
     });
   }
 
+  /** Spawn cells of the generated map, cached per seed, size and player count. */
+  generatedSpawns(seed, size, players) {
+    const key = `${seed}/${size}/${players}`;
+    if (this.spawnCache.key !== key) this.spawnCache = { key, cells: this.maps.spawns(seed, size, players) };
+    return this.spawnCache.cells;
+  }
+
   drawPreview() {
-    const size = this.state.mapSize;
-    if (this.canvas.width !== size) this.canvas.width = size;
-    if (this.canvas.height !== size) this.canvas.height = size;
+    const file = this.state.mapSource === 'file' && this.mapFile;
+    const n = activeCount(this.state);
+    let width;
+    let height;
+    let spawns = [];
     try {
-      const data = this.mapPreview(this.state.seed, size);
-      const expected = size * size * 4;
+      let data;
+      if (file) {
+        ({ width, height } = this.mapFile.info);
+        data = this.maps.filePreview(this.mapFile.json);
+        spawns = this.mapFile.info.spawnCells;
+      } else {
+        width = height = this.state.mapSize;
+        if (this.maps) {
+          data = this.maps.preview(this.state.seed, width, n);
+          spawns = this.generatedSpawns(this.state.seed, width, n);
+        } else {
+          data = this.legacyPreview(this.state.seed, width);
+        }
+      }
+      if (this.canvas.width !== width) this.canvas.width = width;
+      if (this.canvas.height !== height) this.canvas.height = height;
+      this.canvas.style.aspectRatio = `${width} / ${height}`;
+      const expected = width * height * 4;
       if (!data || typeof data.length !== 'number' || data.length !== expected) {
         throw new Error(`map preview returned ${data ? data.length : data} bytes, expected ${expected}`);
       }
       // Copy: the source may be a view into wasm memory that can move.
-      this.ctx.putImageData(new ImageData(new Uint8ClampedArray(data), size, size), 0, 0);
+      this.ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
       this.previewFail.hidden = true;
     } catch (err) {
       console.error('Lobby map preview failed:', err);
-      this.ctx.clearRect(0, 0, size, size);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.previewFail.hidden = false;
+      spawns = [];
+    }
+    this.renderMarkers(spawns, width, height);
+  }
+
+  renderMarkers(spawns, width, height) {
+    this.markers.textContent = '';
+    for (const m of spawnMarkers(spawns, width, height, this.state)) {
+      const dot = el('span', 'lobby-marker', m.number === null ? '' : String(m.number));
+      dot.style.left = `${m.left}%`;
+      dot.style.top = `${m.top}%`;
+      if (m.slot === null) {
+        dot.classList.add('lobby-marker-empty');
+        dot.title = 'Empty start position';
+      } else {
+        dot.style.setProperty('--marker-color', rgbCss(this.colors[m.color]));
+        dot.title = `Player ${m.number} starts here`;
+      }
+      this.markers.append(dot);
     }
   }
 
   // ---- Actions -------------------------------------------------------------------
 
   setColor(slot, color) {
-    const players = this.state.players;
-    const prev = players[slot].color;
-    if (prev === color) return;
-    for (let s = 0; s < players.length; s++) {
-      if (s !== slot && players[s].color === color) players[s].color = prev;
-    }
-    players[slot].color = color;
-    players.forEach((_, s) => this.renderSlot(s));
+    if (!setColor(this.state, slot, color)) return;
+    this.state.players.forEach((_, s) => this.renderSlot(s));
+    this.schedulePreview();
   }
 
   closePickers(except) {
@@ -912,8 +1103,7 @@ export class Lobby {
   }
 
   persist() {
-    const s = this.state;
-    saveStored({ ...this.getOptions(), stressUnits: s.stressUnits });
+    writeJson(STORAGE_KEY, storedSettings(this.state));
   }
 
   start() {
@@ -924,6 +1114,11 @@ export class Lobby {
       const slot = this.slotRows.indexOf(human);
       this.state.players[slot].name = cleanName(human.name.value);
       human.name.value = this.state.players[slot].name;
+    }
+    const problem = startProblem(this.state, this.mapFileStatus());
+    if (problem) {
+      this.renderProblem();
+      return;
     }
     this.closePickers(null);
     const options = this.getOptions();

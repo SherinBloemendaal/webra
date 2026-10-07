@@ -38,6 +38,13 @@ async function boot() {
     colors: TEAM_COLORS,
     colorNames: COLOR_NAMES,
     mapPreview: (seed, size) => Game.map_preview(seed, size),
+    // Skirmish lobby: previews per player count and map files.
+    maps: {
+      preview: (seed, size, players) => Game.map_preview_players(seed, size, players),
+      spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
+      validate: (json) => JSON.parse(Game.validate_map(json)),
+      filePreview: (json) => Game.map_file_preview(json),
+    },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
   });
@@ -128,16 +135,21 @@ function applyColors(players) {
 
 function startSkirmish(options, lobby) {
   if (!renderer) return;
-  const resolved = resolveFactions(options);
+  // Skirmish slots: closed slots do not play, so engine players are the
+  // remaining slots in order; a map file (options.map) replaces the generated map.
+  const { map, ...rest } = options;
+  const resolved = resolveFactions(rest);
+  const playing = resolved.players.filter((p) => p.type !== 'closed');
   let game;
   try {
-    game = Game.from_options(JSON.stringify(resolved));
+    game = map ? Game.from_map(map, JSON.stringify(resolved)) : Game.from_options(JSON.stringify(resolved));
   } catch (err) {
     lobby.showError(`Could not start the game: ${err.message ?? err}`);
     return;
   }
-  applyColors(resolved.players);
-  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal });
+  applyColors(playing);
+  const player = Math.max(0, playing.findIndex((p) => p.type === 'human'));
+  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal, player });
 }
 
 function startStress(seed, units, lobby) {

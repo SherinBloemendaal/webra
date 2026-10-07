@@ -161,7 +161,7 @@ impl World {
             if self.actors[i].attack_move {
                 // Resume the attack-move toward the original destination.
                 let (dx, dy) = self.actors[i].dest;
-                let (gx, gy) = self.cell_of(dx, dy);
+                let (gx, gy) = self.cell_toward(dx, dy, self.actors[i].x, self.actors[i].y);
                 let goal = self.path_goal(i, gx, gy);
                 let a = &mut self.actors[i];
                 a.goal = goal;
@@ -204,7 +204,7 @@ impl World {
             return;
         }
         // Chase: path toward the target's cell (or the nearest reachable one).
-        let (tcx, tcy) = self.cell_of(self.actors[t].x, self.actors[t].y);
+        let (tcx, tcy) = self.cell_toward(self.actors[t].x, self.actors[t].y, x, y);
         let tcell = self.map.idx(tcx, tcy) as u32;
         if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
             let goal = self.path_goal(i, tcx, tcy);
