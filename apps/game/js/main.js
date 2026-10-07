@@ -6,6 +6,7 @@ import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
+import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
 
 const PLAYER = 0;
@@ -160,7 +161,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
+  let powerBar = null;
   const input = new Input($('view'), game, rules, player, {
+    onPowerTargeting: (key) => powerBar?.setTargeting(key),
     onSelectionChanged: (ids) => {
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
@@ -183,8 +186,14 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSell: () => input.toggleSellMode(),
     onDeploy: () => input.deploySelection(),
   });
+  // Support power bar (js/powers.js): pick a ready power, then a target on the map.
+  powerBar = new PowerBar($('field'), {
+    ticksPerSecond: Game.ticks_per_second(),
+    onSelect: (power) => input.startPowerTargeting(power),
+    onTargetLost: () => input.cancelPower(),
+  });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, renderer, wasm, rules };
+  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -281,6 +290,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       input.refreshSelection();
       const state = JSON.parse(game.player_json(player));
       sidebar.update(state);
+      powerBar.update(state.powers ?? []);
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);

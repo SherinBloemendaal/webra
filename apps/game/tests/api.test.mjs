@@ -200,3 +200,44 @@ test('lockstep: orders go to the outbox and frames are re-stamped', () => {
   assert.throws(() => a.apply_frame('not json'));
   assert.equal(a.apply_frame('[[0,[{"o":"nope"}]],[99,[]]]'), 0, 'invalid entries skipped');
 });
+
+test('support powers: airfield timers in player_json and activate_power', async () => {
+  const { validOrder } = await import('../../../packages/protocol/src/index.js');
+  const map = JSON.parse(Game.generated_map(5, 64, 2));
+  const [sx, sy] = map.spawns[0];
+  map.actors = [
+    { type: 'AFLD', owner: 0, x: sx + 4, y: sy, facing: 0 },
+    { type: 'POWR', owner: 0, x: sx + 4, y: sy + 3, facing: 0 },
+  ];
+  const options = {
+    ...OPTIONS,
+    startingUnits: 'base',
+    players: [
+      { slot: 0, type: 'human', faction: 'russia', color: 0 },
+      { slot: 1, type: 'human', faction: 'england', color: 1 },
+    ],
+  };
+  const game = Game.from_map(JSON.stringify(map), JSON.stringify(options));
+  ticks(game, 2);
+  let powers = JSON.parse(game.player_json(0)).powers;
+  assert.deepEqual(powers.map((p) => p.key), ['ParatroopersPower@paratroopers', 'AirstrikePower@spyplane']);
+  assert.ok(powers.every((p) => p.name && !p.ready && p.charging && p.progress > 0 && p.progress < 0.01));
+  assert.deepEqual(JSON.parse(game.player_json(1)).powers, [], 'no airfield, no powers');
+  ticks(game, 3750);
+  powers = JSON.parse(game.player_json(0)).powers;
+  const spy = powers.find((p) => p.key === 'AirstrikePower@spyplane');
+  assert.equal(spy.ready, true);
+  assert.equal(spy.progress, 1);
+  assert.equal(powers.find((p) => p.key === 'ParatroopersPower@paratroopers').ready, false);
+  const before = game.actor_count();
+  game.activate_power(0, spy.key, 10 * 24, 10 * 24);
+  ticks(game, 1);
+  assert.equal(game.actor_count(), before + 1, 'the spy plane flies in');
+  assert.equal(JSON.parse(game.player_json(0)).powers.find((p) => p.key === spy.key).ready, false, 'timer restarted');
+  // Online: the order goes out with its direction and passes the protocol check.
+  game.set_lockstep(true);
+  game.activate_power(0, 'ParatroopersPower@paratroopers', 240, 240, 480, 240);
+  const [order] = JSON.parse(game.take_orders());
+  assert.deepEqual(order, { o: 'support_power', player: 0, key: 'ParatroopersPower@paratroopers', x: 10240, y: 10240, x2: 20480, y2: 10240 });
+  assert.deepEqual(validOrder(order), order);
+});

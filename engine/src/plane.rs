@@ -296,18 +296,31 @@ impl World {
         a.moved = true;
     }
 
-    /// Turn toward (tx, ty) unless the point lies inside the turning circle
-    /// (then fly straight on until it is reachable), then fly one tick.
+    /// Fly one tick toward (tx, ty). A point inside the turning circle cannot
+    /// be reached by turning: the plane then flies straight on (OpenRA's
+    /// planes overshoot the same way) until the point is far enough behind to
+    /// come around, then turns toward it again.
     fn fly_toward(&mut self, i: usize, f: &Flight, tx: i32, ty: i32, alt: i32) {
+        // Turning radius: speed * 1024 / (2 pi * turn), 1024 / (2 pi) ~ 163.
+        let r = f.speed * 163 / f.turn;
+        let a = &self.actors[i];
+        let d = dist(a.x, a.y, tx, ty);
+        if a.air.overshoot {
+            if d < 2 * r + CELL {
+                self.fly_forward(i, f, alt, true);
+                return;
+            }
+            self.actors[i].air.overshoot = false;
+        }
         let a = &self.actors[i];
         if let Some(desired) = facing_of(tx - a.x, ty - a.y) {
             let diff = angle_diff(a.facing, desired);
             if diff != 0 {
-                // Turning radius: speed * 1024 / (2 pi * turn), 1024 / (2 pi) ~ 163.
-                let r = f.speed * 163 / f.turn;
                 let (px, py) = facing_vec(a.facing + 256 * diff.signum());
                 let (cx, cy) = (a.x + px * r / 1024, a.y + py * r / 1024);
-                if dist(cx, cy, tx, ty) >= r {
+                if dist(cx, cy, tx, ty) < r && d > f.speed {
+                    self.actors[i].air.overshoot = true;
+                } else {
                     self.actors[i].facing = turn_toward(a.facing, desired, f.turn);
                 }
             }
@@ -621,13 +634,13 @@ impl World {
         let (planes, rest): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.is_plane(i) && self.is_rearm_base_for(i, t));
         let tref = self.make_ref(t);
         for i in planes {
-            self.order_return_to_base(i, Some(tref));
+            self.plane_return_to_base(i, Some(tref));
         }
         rest
     }
 
     /// Send a plane home to rearm (to `base` when free, else the nearest free base).
-    pub fn order_return_to_base(&mut self, i: usize, base: Option<u32>) {
+    pub fn plane_return_to_base(&mut self, i: usize, base: Option<u32>) {
         if !self.is_plane(i) || self.is_support_aircraft(i) || self.actors[i].air.phase == Phase::Crashing {
             return;
         }

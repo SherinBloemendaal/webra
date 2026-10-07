@@ -52,8 +52,6 @@ AIRSTRIKE_UNIT = 'badr.bomber'
 PARATROOPERS_UNIT = 'badr'
 POWER_SQUAD_OFFSET = [-1536, 1536]
 POWER_CAMERA_REMOVE_DELAY = 25
-AMMO_RELOAD_DELAY = 50              # OpenRA AmmoPoolInfo.ReloadDelay default
-AMMO_RELOAD_COUNT = 1               # OpenRA AmmoPoolInfo.ReloadCount default
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
 ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete']
 TERRAIN_TYPES = ['Clear', 'Rough', 'Ore', 'Water']
@@ -63,6 +61,24 @@ BUILD_DURATION_MODIFIER = 60        # OpenRA BuildableInfo default (percent)
 BALE_LOAD_DELAY = 4                 # OpenRA HarvesterInfo default
 HARVESTER_SEARCH_FROM_PROC = 15
 HARVESTER_SEARCH_FROM_HARV = 8
+AMMO_RELOAD_DELAY = 50              # OpenRA AmmoPoolInfo.ReloadDelay default
+AMMO_RELOAD_COUNT = 1               # OpenRA AmmoPoolInfo.ReloadCount default
+ALTITUDE_VELOCITY = '0c43'          # OpenRA AircraftInfo.AltitudeVelocity default
+WAIT_DISTANCE_FROM_RESUPPLY = '3c0'  # OpenRA AircraftInfo.WaitDistanceFromResupplyBase default
+FACING_TOLERANCE = 512              # OpenRA AttackBaseInfo.FacingTolerance default
+
+# Deliberate deviations from OpenRA's rules, applied to the exported actors
+# after extraction (shallow: each key replaces the exported field). Every entry
+# says why; docs/contracts.md section 5 lists them too.
+OVERRIDES = {
+    # OpenRA's RA mod gives only the Allies a helipad and disables the Hind
+    # (`~disabled`). In classic Red Alert (1996) both sides build the helipad:
+    # the Soviets fly the Hind from it, both sides the Chinook. Restore that.
+    'HPAD': {'prerequisites': ['dome', '~techlevel.medium']},
+    'HIND': {'prerequisites': ['~hpad', '~structures.soviet', '~techlevel.medium']},
+    # The Black Hawk stays Allied, as in OpenRA where only the Allies have a helipad.
+    'MH60': {'prerequisites': ['~hpad', '~structures.allies', '~techlevel.medium']},
+}
 
 
 def wdist(v):
@@ -563,6 +579,7 @@ def main():
                 ammo = t.get('AmmoPool') if isinstance(t.get('AmmoPool'), dict) else {}
                 rearm = t.get('Rearmable') if isinstance(t.get('Rearmable'), dict) else {}
                 can_hover = str(m.get('CanHover', 'false')).lower() == 'true'
+                repairable = t.get('Repairable') if isinstance(t.get('Repairable'), dict) else {}
                 e['unit']['aircraft'] = {
                     'cruise_altitude': wdist(m.get('CruiseAltitude', '1c0')),
                     'can_hover': can_hover,
@@ -570,9 +587,21 @@ def main():
                     'landable': tokens(m.get('LandableTerrainTypes', '')),
                     'ammo': int(ammo.get('Ammo', 0) or 0),
                     'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower],
-                    # Rearming: ReloadCount rounds every ReloadDelay ticks (OpenRA Rearm activity).
+                    # AmmoPool: one reload step (ReloadCount rounds) every ReloadDelay ticks while resupplying.
                     'reload_delay': int(ammo.get('ReloadDelay', AMMO_RELOAD_DELAY)),
                     'reload_count': int(ammo.get('ReloadCount', AMMO_RELOAD_COUNT)),
+                    'repair_actors': [ids_lower[x.lower()] for x in tokens(repairable.get('RepairActors')) if x.lower() in ids_lower],
+                    'altitude_velocity': wdist(m.get('AltitudeVelocity', ALTITUDE_VELOCITY)),
+                    'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),
+                    'take_off_on_resupply': str(m.get('TakeOffOnResupply', 'false')).lower() == 'true',
+                    # AutoTarget InitialStance HoldFire: idle aircraft never pick targets on their own.
+                    'hold_fire': str(first(t, 'AutoTarget').get('InitialStance', '')) == 'HoldFire',
+                    'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
+                    # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
+                    # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).
+                    'ammo_pips': int(first(t, 'WithAmmoPipsDecoration').get('PipCount', ammo.get('Ammo', 0) or 0)),
+                    'rotors': [ints(v.get('Offset', '0'))[0] for k, v in sorted(trait(t, 'WithIdleOverlay').items())
+                               if isinstance(v, dict) and v.get('RequiresCondition') == 'airborne'],
                     # ParaDrop.DropRange: paratroopers jump within this distance of the target.
                     'drop_range': wdist(t['ParaDrop'].get('DropRange', '4c0')) if isinstance(t.get('ParaDrop'), dict) else 0,
                     # Airborne planes leave a husk that falls (FallsToEarth of ^PlaneHusk) and explodes.
@@ -593,6 +622,11 @@ def main():
                     'search_from_harv': int(hv.get('SearchFromHarvesterRadius', HARVESTER_SEARCH_FROM_HARV)),
                 }
         out_actors.append(e)
+
+    for e in out_actors:
+        for field, value in OVERRIDES.get(e['id'], {}).items():
+            assert field in e, f'override of unknown field {e["id"]}.{field}'
+            e[field] = value
 
     # Resolve refinery free actors to ids that exist in the export.
     for e in out_actors:

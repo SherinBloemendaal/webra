@@ -104,8 +104,6 @@ pub struct Actor {
     pub altitude: i32,
     /// Ability state (abilities.rs).
     pub ab: crate::abilities::ActorAbility,
-    /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
-    pub air: crate::plane::AirState,
 
     // Transports and passengers (cargo.rs)
     /// Transport this unit rides in, or NONE. Passengers are out of the world.
@@ -122,6 +120,11 @@ pub struct Actor {
     pub cloak_timer: i32,
     /// Players (one bit per slot) whose detectors reveal this submerged submarine.
     pub detected_by: u32,
+
+    /// Helicopter state (helicopter.rs): task, ammo, reserved helipad.
+    pub heli: crate::helicopter::HeliState,
+    /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
+    pub air: crate::plane::AirState,
 }
 
 impl Actor {
@@ -173,7 +176,7 @@ impl Actor {
             invulnerable_until: 0,
             altitude: 0,
             ab: crate::abilities::ActorAbility::default(),
-            air: crate::plane::AirState::default(),
+            heli: crate::helicopter::HeliState::default(),
             carrier: NONE,
             board_target: NONE,
             cargo: Vec::new(),
@@ -181,6 +184,7 @@ impl Actor {
             submerged: false,
             cloak_timer: 0,
             detected_by: 0,
+            air: crate::plane::AirState::default(),
         }
     }
 
@@ -409,7 +413,20 @@ pub enum Order {
         building: u32,
     },
     /// Deploy an MCV into a Construction Yard, or pack a Construction Yard up.
+    /// Helicopters land where they hover, or take off again.
     Deploy {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Helicopters: land on (or next to) a cell.
+    Land {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
+    /// Aircraft: fly back to a free rearm structure (helipad) and resupply.
+    ReturnToBase {
         player: u8,
         ids: Vec<u32>,
     },
@@ -457,6 +474,8 @@ impl Order {
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
+            | Order::Land { player, .. }
+            | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. } => *player,
@@ -476,6 +495,8 @@ impl Order {
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
+            | Order::Land { player, .. }
+            | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. } => *player = p,
@@ -491,6 +512,8 @@ impl Order {
             | Order::Attack { ids, .. }
             | Order::Stop { ids, .. }
             | Order::Deploy { ids, .. }
+            | Order::Land { ids, .. }
+            | Order::ReturnToBase { ids, .. }
             | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
@@ -553,6 +576,8 @@ pub struct World {
     pub options: GameOptions,
     /// Ability and support power state (abilities.rs).
     pub abil: crate::abilities::AbilityState,
+    /// Helicopters falling after being shot down (helicopter.rs).
+    pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
 }
@@ -702,6 +727,7 @@ impl World {
             pending: Vec::new(),
             options: GameOptions::default(),
             abil: Default::default(),
+            crashes: Vec::new(),
             powers: Default::default(),
             map,
         }
@@ -801,8 +827,6 @@ impl World {
         a.scan_cooldown = (i as i32) % 8;
         // Aircraft enter the world flying at their cruise altitude.
         a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
-        // Aircraft enter the world flying at their cruise altitude.
-        a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
         if info.unit.as_ref().is_some_and(|u| u.harvester.is_some()) {
             a.activity = Activity::Harvest;
             a.harv = HarvState::Search;
@@ -870,6 +894,12 @@ impl World {
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
+        if self.begin_heli_crash(i) {
+            // Passengers go down with it (cargo.rs).
+            self.cargo_on_death(i);
+            return;
+        }
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
         let ttl = if kind == Kind::Building { 30 } else { 18 };
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
@@ -1081,12 +1111,13 @@ impl World {
     }
 
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
-        // Support power aircraft reject orders (OpenRA RejectsOrders).
         let mut out: Vec<usize> = ids
             .iter()
             .filter_map(|&r| self.resolve(r))
             .filter(|&i| {
-                self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world() && !self.is_support_aircraft(i)
+                self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world()
+                    // Support power aircraft reject orders (OpenRA RejectsOrders).
+                    && !self.is_support_aircraft(i)
             })
             .collect();
         out.sort_unstable();
@@ -1143,10 +1174,13 @@ impl World {
                     actors.sort_unstable();
                     actors.dedup();
                     for i in actors {
-                        // Deploy on a loaded transport unloads it (cargo.rs); ability
+                        // Deploy on a loaded transport unloads it (cargo.rs); a
+                        // helicopter lands or takes off (helicopter.rs); ability
                         // units deploy their ability (abilities.rs).
                         if self.can_unload(i) {
                             self.order_unload(i);
+                        } else if self.actors[i].kind == Kind::Aircraft && self.is_helicopter(i) {
+                            self.heli_deploy(i);
                         } else if !self.ability_deploy(i) {
                             self.deploy(i);
                         }
@@ -1154,6 +1188,18 @@ impl World {
                 }
                 Order::LayMines { player, ids, x0, y0, x1, y1 } => self.order_lay_mines(player, &ids, x0, y0, x1, y1),
                 Order::Teleport { player, ids, x, y } => self.order_teleport(player, &ids, x, y),
+                Order::Land { player, ids, x, y } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_land(&units, x, y);
+                }
+                Order::ReturnToBase { player, ids } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_return_to_base(&units);
+                    // Planes fly home to a free airfield (plane.rs).
+                    for &i in &units {
+                        self.plane_return_to_base(i, None);
+                    }
+                }
                 Order::Rally { player, building, x, y } => {
                     if let Some(b) = self.resolve(building) {
                         if self.actors[b].owner == player && self.actors[b].kind == Kind::Building {
@@ -1168,6 +1214,8 @@ impl World {
         }
     }
 
+    /// Called for every new order to a unit: frees the refinery dock it held
+    /// and ends helicopter tasks (landing, resupply) with their helipad reservation.
     pub(crate) fn release_dock(&mut self, i: usize) {
         if let Some(r) = self.resolve(self.actors[i].refinery) {
             let me = self.make_ref(i);
@@ -1175,6 +1223,7 @@ impl World {
                 self.actors[r].dock_user = NONE;
             }
         }
+        self.heli_cancel(i);
     }
 
     pub fn order_move(&mut self, units: &[usize], x: i32, y: i32, attack_move: bool) {
@@ -1288,6 +1337,10 @@ impl World {
         if let Some(act) = self.plane_smart_action(player, units, x, y) {
             return act;
         }
+        // Helicopters on an own helipad (dock) or service depot (repair).
+        if let Some(action) = self.heli_smart_action(player, units, x, y) {
+            return action;
+        }
         let (cx, cy) = self.cell_of(x, y);
         let ci = self.map.idx(cx, cy);
         let any_weapon = units.iter().any(|&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
@@ -1329,6 +1382,8 @@ impl World {
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
         // Planes clicked onto an own airfield return to base there (plane.rs).
         let rest = self.plane_smart_rtb(player, units, x, y);
+        // Helicopters sent to an own helipad or service depot (helicopter.rs).
+        let rest = self.heli_order_smart(player, &rest, x, y);
         let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
@@ -1432,6 +1487,7 @@ impl World {
         self.tick_abilities_world();
         self.tick_units();
         self.tick_projectiles();
+        self.tick_crashes();
         self.cleanup_dead();
         if self.tokens_dirty {
             self.refresh_tokens();

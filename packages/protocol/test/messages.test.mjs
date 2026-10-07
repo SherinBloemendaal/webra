@@ -122,6 +122,8 @@ test('orders and hash', () => {
     { o: 'rally', player: 1, building: 4, x: 1, y: 1 },
     { o: 'sell', player: 1, building: 4 },
     { o: 'deploy', player: 1, ids: [4] },
+    { o: 'land', player: 1, ids: [4], x: 100, y: 200 },
+    { o: 'return_to_base', player: 1, ids: [4] },
     { o: 'support_power', player: 1, key: 'AirstrikePower@spyplane', x: 1024, y: 2048 },
     { o: 'support_power', player: 1, key: 'ParatroopersPower@paratroopers', x: 0, y: 0, x2: 4096, y2: 0 },
     { o: 'lay_mines', player: 1, ids: [4], x0: 3, y0: 4, x1: 6, y1: 4 },

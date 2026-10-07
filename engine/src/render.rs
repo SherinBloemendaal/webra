@@ -184,6 +184,8 @@ impl World {
                         0.0,
                     );
                 }
+                // Helicopter rotors and rotor wash (helicopter.rs).
+                self.push_heli_rotors(i, x, y - lift, alpha, sprites, &mut aircraft);
                 continue;
             }
             // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
@@ -217,6 +219,8 @@ impl World {
                 );
             }
         }
+        // Shot-down helicopters falling (helicopter.rs).
+        self.push_heli_crashes(player, alpha, view, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
         // Mines, ability effects and decorations (abilities.rs).
         self.render_abilities(player, view, selected, sprites, rects);
@@ -332,6 +336,7 @@ impl World {
                 rects.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
                 rects.extend_from_slice(&[l, t + h + 2.0, w * load, 2.0, 0.95, 0.75, 0.2, 1.0]);
             }
+            self.push_heli_ammo_pips(i, l, t + h, w, rects);
             if a.kind == Kind::Building && a.owner == player {
                 if let Some((rx, ry)) = a.rally {
                     push_sprite(sprites, px(rx), px(ry), 0.0, ids.rally, a.owner as f32, 1.0, 1.0, 0.0);

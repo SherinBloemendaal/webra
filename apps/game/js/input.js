@@ -32,6 +32,8 @@ export class Input {
     this.placing = null; // actor id being placed
     this.sellMode = false;
     this.attackMove = false;
+    this.power = null; // support power being targeted: { key, name } (js/powers.js)
+    this.powerDrag = null; // target picked, mouse still down: { x, y, sx, sy }
     this.lastClick = { time: 0, id: NONE };
     // Ability and support power targeting: { kind: 'teleport', ids } (chrono tank)
     // or { kind: 'power', key, power, src } (src: Chronosphere source area, once picked).
@@ -137,7 +139,37 @@ export class Input {
   startPlacing(actorId) {
     this.placing = actorId;
     this.attackMove = false;
+    this.cancelPower();
+    this.cancelTargeting();
     this.setSellMode(false);
+  }
+
+  // ---- Support powers (engine/src/powers.rs, js/powers.js) -------------------------
+
+  /** Target a ready support power: click the map, or drag to set the flight direction. */
+  startPowerTargeting(power) {
+    this.placing = null;
+    this.attackMove = false;
+    this.setSellMode(false);
+    // Superweapons have their own targeting (abilities: Chronosphere source then
+    // destination, Iron Curtain and nuke targets) and cursors.
+    if (POWER_CURSORS[power.kind]) {
+      this.cancelPower();
+      this.targeting = { kind: 'power', key: power.key, power: power.kind, src: null };
+      this.hooks.onPowerTargeting?.(power.key);
+      return;
+    }
+    this.targeting = null;
+    this.power = { key: power.key, name: power.name };
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(power.key);
+  }
+
+  cancelPower() {
+    if (!this.power) return;
+    this.power = null;
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(null);
   }
 
   setSellMode(on) {
@@ -158,6 +190,7 @@ export class Input {
     // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy).
     const chrono = this.selection.filter((id) => this.game.ability_deploy_state(this.player, id) === 3);
     if (chrono.length) {
+      this.cancelPower();
       this.targeting = { kind: 'teleport', ids: chrono };
       this.attackMove = false;
       return;
@@ -167,28 +200,19 @@ export class Input {
     if (ids.length) this.game.deploy(this.player, Uint32Array.from(ids));
   }
 
-  /** Start targeting a support power (called by the support power bar). */
-  startPowerTargeting(key, power) {
-    if (!POWER_CURSORS[power]) return false;
-    this.targeting = { kind: 'power', key, power, src: null };
-    this.placing = null;
-    this.attackMove = false;
-    this.setSellMode(false);
-    return true;
-  }
-
   cancelTargeting() {
+    if (this.targeting?.kind === 'power') this.hooks.onPowerTargeting?.(null);
     this.targeting = null;
   }
 
   /** Click while targeting an ability or support power. */
-  targetClick(w, shift) {
+  targetClick(w) {
     const t = this.targeting;
     if (t.kind === 'teleport') {
       if (this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y)) {
         this.game.order_teleport(this.player, Uint32Array.from(t.ids), w.x, w.y);
         this.flashOrder(w, ACTION.MOVE);
-        this.targeting = null;
+        this.cancelTargeting();
       }
       return;
     }
@@ -200,7 +224,7 @@ export class Input {
     if (t.src) this.game.activate_power(this.player, t.key, w.x, w.y, t.src.x, t.src.y);
     else this.game.activate_power(this.player, t.key, w.x, w.y);
     this.flashOrder(w, ACTION.ATTACK);
-    if (!shift) this.targeting = null;
+    this.cancelTargeting();
   }
 
   /** 0: nothing selected can deploy, 1: something can deploy now, 2: blocked. */
@@ -235,7 +259,15 @@ export class Input {
     c.addEventListener('mousedown', (e) => this.onMouseDown(e));
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
     window.addEventListener('mouseup', (e) => this.onMouseUp(e));
-    c.addEventListener('mouseenter', () => (this.mouse.inside = true));
+    // Take the position from the enter event itself: until the first move the
+    // stored position would be stale (-1, -1 at start), which reads as "at the
+    // top-left edge" and scrolled the view by itself.
+    c.addEventListener('mouseenter', (e) => {
+      const p = this.local(e);
+      this.mouse.x = p.x;
+      this.mouse.y = p.y;
+      this.mouse.inside = true;
+    });
     c.addEventListener('mouseleave', () => (this.mouse.inside = false));
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
@@ -258,7 +290,11 @@ export class Input {
     }
     if (e.button === 2) {
       if (this.targeting) {
-        this.targeting = null;
+        this.cancelTargeting();
+        return;
+      }
+      if (this.power) {
+        this.cancelPower();
         return;
       }
       if (this.placing) {
@@ -277,6 +313,11 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
+    if (this.power) {
+      // Target picked; mouse up fires it (a drag sets the direction).
+      this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
+      return;
+    }
     if (this.sellMode) {
       const hit = this.game.pick(this.player, w.x, w.y);
       if (hit !== NONE && this.game.sell_value(this.player, hit) > 0) {
@@ -299,7 +340,7 @@ export class Input {
       return;
     }
     if (this.targeting) {
-      this.targetClick(w, e.shiftKey);
+      this.targetClick(w);
       return;
     }
     if ((e.ctrlKey || e.metaKey) && this.selectedMinelayers().length) {
@@ -354,6 +395,16 @@ export class Input {
       this.mineDrag = null;
       this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
       this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+      return;
+    }
+    if (e.button === 0 && this.power && this.powerDrag) {
+      const p = this.local(e);
+      const t = this.powerDrag;
+      const w = this.toWorld(p.x, p.y);
+      const dragged = Math.abs(p.x - t.sx) + Math.abs(p.y - t.sy) >= 12;
+      this.game.activate_power(this.player, this.power.key, t.x, t.y, dragged ? w.x : undefined, dragged ? w.y : undefined);
+      this.flashOrder(t, ACTION.ATTACK);
+      this.cancelPower();
       return;
     }
     if (e.button !== 0 || !this.drag) return;
@@ -448,7 +499,8 @@ export class Input {
     }
     const k = e.key.toLowerCase();
     if (k === 'escape') {
-      if (this.targeting) this.targeting = null;
+      if (this.targeting) this.cancelTargeting();
+      else if (this.power) this.cancelPower();
       else if (this.sellMode) this.setSellMode(false);
       else if (this.placing) this.cancelPlacing();
       else if (this.attackMove) this.attackMove = false;
@@ -517,7 +569,8 @@ export class Input {
       else cursor = POWER_CURSORS[t.power] ?? CURSORS.select;
     } else if (this.mineDrag || ((this.keys.has('Control') || this.keys.has('Meta')) && this.mouse.inside && !this.drag && this.selectedMinelayers().length)) {
       cursor = CURSORS.mine;
-    } else if (this.placing) cursor = 'none';
+    } else if (this.power) cursor = CURSORS.attack;
+    else if (this.placing) cursor = 'none';
     else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
       const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
@@ -581,6 +634,17 @@ export class Input {
       // Chronosphere: the picked source area.
       const s = this.targeting.src;
       push(Math.floor(s.x / CELL - 1) * CELL, Math.floor(s.y / CELL - 1) * CELL, 3 * CELL, 3 * CELL, 0.45, 0.9, 1, 0.25);
+    }
+    if (this.power && this.powerDrag) {
+      // Direction preview: dots from the target toward the mouse.
+      const t = this.powerDrag;
+      const m = this.toWorld(this.mouse.x, this.mouse.y);
+      const s = 2 / this.camera.zoom + 1;
+      for (let i = 0; i <= 8; i++) {
+        const x = t.x + ((m.x - t.x) * i) / 8;
+        const y = t.y + ((m.y - t.y) * i) / 8;
+        push(x - s / 2, y - s / 2, s, s, 1, 0.8, 0.3, 0.9 - i * 0.06);
+      }
     }
     if (this.placing && this.mouse.inside) {
       const w = this.toWorld(this.mouse.x, this.mouse.y);

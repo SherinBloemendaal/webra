@@ -452,7 +452,7 @@ fn smart_order_on_an_own_airfield_returns_the_plane_to_base() {
     assert_eq!((w.actors[p].x, w.actors[p].y, w.actors[p].altitude), (bx, by, 0));
     // A move order while returning cancels the landing.
     let q = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 0);
-    w.order_return_to_base(q, None);
+    w.plane_return_to_base(q, None);
     assert_eq!(w.actors[q].air.phase, Phase::Returning);
     w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(q)], x, y, attack_move: false });
     run(&mut w, 1);

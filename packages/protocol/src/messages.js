@@ -117,6 +117,9 @@ const ORDER_SCHEMA = {
   rally: { building: u32, x: i32, y: i32 },
   sell: { building: u32 },
   deploy: { ids: idList },
+  // Helicopters (engine/src/helicopter.rs).
+  land: { ids: idList, x: i32, y: i32 },
+  return_to_base: { ids: idList },
   // engine/src/powers.rs: (x2, y2) optionally gives aircraft powers their direction.
   support_power: { key: powerKey, x: i32, y: i32, x2: optional(i32), y2: optional(i32) },
   // engine/src/abilities.rs: minefield cell rectangle (at most MINEFIELD_MAX_CELLS) and chrono tank jump.

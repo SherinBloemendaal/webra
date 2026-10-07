@@ -23,6 +23,9 @@ impl World {
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
+            // Landed aircraft are ground targets, paratroopers under their
+            // parachute airborne ones (plane.rs, target_kind).
+            Kind::Aircraft | Kind::Infantry => self.target_kind(i).target_class(),
             // Naval yards are WaterActor and Structure in OpenRA (torpedoes hit them).
             Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
                 crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
