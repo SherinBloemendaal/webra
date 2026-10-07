@@ -58,11 +58,10 @@ pub struct ActorAbility {
     pub timer: i32,
     /// Deliver or rearm target (actor reference).
     pub target: u32,
-    /// Cloak: ticks until (re)cloaking.
-    pub cloak_remaining: i32,
+    /// Cloaked right now (land units and structures; submarines use
+    /// `Actor::submerged`). Timer and detection live in the shared
+    /// `Actor::cloak_timer` / `Actor::detected_by` (naval.rs uses them too).
     pub cloaked: bool,
-    /// Bit per player whose own detectors reveal this cloaked actor.
-    pub detected_by: u32,
     /// Chrono tank: ticks until it can teleport again.
     pub chrono_charge: i32,
 }
@@ -96,19 +95,6 @@ pub struct AbilityState {
     pub fx: Vec<AbilityFx>,
 }
 
-/// Cloak and detection type bits (OpenRA DetectionTypes).
-fn detection_bits(types: &[String]) -> u32 {
-    types
-        .iter()
-        .map(|t| match t.as_str() {
-            "Cloak" => 1,
-            "Underwater" => 2,
-            "Mine" => 4,
-            _ => 8,
-        })
-        .fold(0, |a, b| a | b)
-}
-
 /// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes).
 fn terrain_allowed(names: &[String], t: Terrain, ore: bool) -> bool {
     let name = match t {
@@ -128,12 +114,13 @@ impl World {
     pub(crate) fn init_abilities(&mut self, i: usize) {
         let info = &self.rules.actors[self.actors[i].ty as usize].abilities;
         let ammo = info.minelayer.as_ref().map_or(0, |m| m.ammo);
-        let cloak = info.cloak.as_ref().map(|c| c.initial_delay);
-        let ab = &mut self.actors[i].ab;
-        *ab = crate::abilities::ActorAbility { ammo, mine_cell: NONE, target: NONE, ..Default::default() };
+        // Submarines keep their own cloak start (naval.rs).
+        let cloak = info.cloak.as_ref().map(|c| c.initial_delay).filter(|_| self.actors[i].kind != Kind::Ship);
+        let a = &mut self.actors[i];
+        a.ab = crate::abilities::ActorAbility { ammo, mine_cell: NONE, target: NONE, ..Default::default() };
         if let Some(d) = cloak {
-            ab.cloak_remaining = d;
-            ab.cloaked = d <= 0;
+            a.cloak_timer = d;
+            a.ab.cloaked = d <= 0;
         }
     }
 
@@ -163,46 +150,32 @@ impl World {
 
     // ---- Cloak and detection ------------------------------------------------------
 
+    /// OpenRA Cloak for land units, structures and mines (submarines: naval.rs).
+    /// Detection uses the shared `detectors_of` helper.
     fn tick_cloaks(&mut self) {
-        // Detectors: (x, y, owner, range, type bits).
-        let mut detectors: Vec<(i32, i32, u8, i32, u32)> = Vec::new();
-        for (i, a) in self.actors.iter().enumerate() {
-            if !a.alive {
-                continue;
-            }
-            if let Some(d) = &self.rules.actors[a.ty as usize].abilities.detect_cloaked {
-                if d.needs_power && self.is_powered_down(i) {
-                    continue;
-                }
-                detectors.push((a.x, a.y, a.owner, d.range, detection_bits(&d.types)));
-            }
-        }
         for i in 0..self.actors.len() {
-            if !self.actors[i].alive {
+            if !self.actors[i].alive || self.actors[i].kind == Kind::Ship {
                 continue;
             }
             let info = &self.rules.actors[self.actors[i].ty as usize];
             let Some(c) = info.abilities.cloak.as_ref() else { continue };
             let paused = c.off_when_critical && self.actors[i].hp * 100 <= info.hp * CRITICAL_PERCENT;
-            let bits = detection_bits(&c.types);
             let a = &mut self.actors[i];
             if paused {
                 a.ab.cloaked = false;
             } else {
-                if a.ab.cloak_remaining > 0 {
-                    a.ab.cloak_remaining -= 1;
+                if a.cloak_timer > 0 {
+                    a.cloak_timer -= 1;
                 }
-                a.ab.cloaked = a.ab.cloak_remaining <= 0;
+                a.ab.cloaked = a.cloak_timer <= 0;
             }
-            let mut mask = 0u32;
-            if a.ab.cloaked {
-                for &(x, y, owner, range, types) in &detectors {
-                    if types & bits != 0 && dist_sq(x, y, a.x, a.y) <= range as i64 * range as i64 {
-                        mask |= 1 << (owner as u32).min(31);
-                    }
-                }
-            }
-            a.ab.detected_by = mask;
+            let mask = if self.actors[i].ab.cloaked {
+                let types = self.rules.actors[self.actors[i].ty as usize].abilities.cloak.as_ref().unwrap().types.clone();
+                self.detectors_of(i, &types)
+            } else {
+                0
+            };
+            self.actors[i].detected_by = mask;
         }
     }
 
@@ -211,10 +184,13 @@ impl World {
     /// targeting (`targetable`), picking and rendering.
     pub fn is_cloaked_from(&self, i: usize, player: u8) -> bool {
         let a = &self.actors[i];
+        if a.kind == Kind::Ship {
+            return !self.naval_visible(i, player);
+        }
         if !a.ab.cloaked || self.are_allies(a.owner, player) {
             return false;
         }
-        let mask = a.ab.detected_by;
+        let mask = a.detected_by;
         !(0..self.players.len().min(32)).any(|q| mask & (1 << q) != 0 && self.are_allies(q as u8, player))
     }
 
@@ -225,11 +201,14 @@ impl World {
         if !c.uncloak_on.iter().any(|u| u == reason) {
             return;
         }
+        if self.actors[i].kind == Kind::Ship {
+            return; // submarines surface through naval.rs
+        }
         let delay = c.cloak_delay;
-        let ab = &mut self.actors[i].ab;
-        ab.cloak_remaining = ab.cloak_remaining.max(delay);
-        ab.cloaked = false;
-        ab.detected_by = 0;
+        let a = &mut self.actors[i];
+        a.cloak_timer = a.cloak_timer.max(delay);
+        a.ab.cloaked = false;
+        a.detected_by = 0;
     }
 
     /// Called right after actor `i` fired a weapon.

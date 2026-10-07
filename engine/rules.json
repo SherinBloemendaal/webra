@@ -60,6 +60,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -169,6 +170,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -252,6 +254,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -335,6 +338,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -430,6 +434,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -498,6 +503,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -609,6 +615,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -718,6 +725,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -835,6 +843,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -939,6 +948,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1027,6 +1037,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1112,6 +1123,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1213,6 +1225,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1390,6 +1403,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1567,6 +1581,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1690,6 +1705,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1828,6 +1844,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1936,6 +1953,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2027,6 +2045,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2097,6 +2116,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2227,6 +2247,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2315,6 +2336,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2404,6 +2426,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2471,6 +2494,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2537,6 +2561,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2606,6 +2631,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2615,7 +2646,11 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "iron_curtainable": {
      "kills": false
@@ -2692,6 +2727,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2701,7 +2742,11 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "iron_curtainable": {
      "kills": false
@@ -2793,6 +2838,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2869,6 +2920,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2959,6 +3016,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3049,6 +3107,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3118,6 +3182,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3184,6 +3254,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3253,6 +3324,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3322,6 +3394,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3390,6 +3463,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3459,6 +3533,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3528,6 +3603,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3597,6 +3673,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3666,6 +3743,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3735,6 +3813,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3803,6 +3882,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3870,6 +3950,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3942,6 +4023,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -3963,7 +4045,10 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -3992,6 +4077,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -4013,7 +4099,10 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -4044,6 +4133,7 @@
     "start_if_below": 50,
     "damage_cooldown": 500
    },
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4063,6 +4153,11 @@
     "locomotor": 1,
     "radius": 384,
     "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "harvester": {
      "capacity": 20,
      "bale_load_delay": 4,
@@ -4095,6 +4190,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4122,7 +4218,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4147,6 +4248,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4168,7 +4270,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4196,6 +4303,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4203,7 +4316,11 @@
      ],
      "max": 1,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "iron_curtainable": {
      "kills": false
@@ -4222,7 +4339,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4250,6 +4372,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -4257,7 +4380,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "iron_curtainable": {
      "kills": false
@@ -4276,7 +4403,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4305,6 +4437,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     -298,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4323,7 +4461,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4351,6 +4494,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4369,7 +4518,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4398,6 +4552,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4416,7 +4576,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4445,6 +4610,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4463,7 +4634,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4499,6 +4675,12 @@
     "start_if_below": 50,
     "damage_cooldown": 150
    },
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4517,7 +4699,12 @@
     "turn_in_place": false,
     "locomotor": 4,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4546,6 +4733,7 @@
    "requires_power": false,
    "death_weapon": 21,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4564,7 +4752,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4593,6 +4786,7 @@
    "requires_power": false,
    "death_weapon": 23,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4611,7 +4805,12 @@
     "turn_in_place": false,
     "locomotor": 5,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4637,6 +4836,7 @@
    "requires_power": false,
    "death_weapon": 24,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "minelayer": {
      "mine": "MINV",
@@ -4680,7 +4880,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4707,6 +4912,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4728,7 +4934,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4755,6 +4966,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4776,7 +4988,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4806,6 +5023,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4824,7 +5042,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4853,6 +5076,7 @@
    "requires_power": false,
    "death_weapon": 27,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": true
@@ -4872,7 +5096,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4901,6 +5130,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4923,7 +5153,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4952,6 +5187,12 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4959,7 +5200,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "hold_fire": {},
     "iron_curtainable": {
@@ -4994,7 +5239,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -5022,6 +5272,7 @@
    "requires_power": false,
    "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5048,7 +5299,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -5073,6 +5329,7 @@
    "requires_power": false,
    "death_weapon": 32,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -5081,7 +5338,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "iron_curtainable": {
      "kills": false
@@ -5096,7 +5357,13 @@
     "turn_in_place": false,
     "locomotor": 6,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5125,6 +5392,12 @@
    "requires_power": false,
    "death_weapon": 32,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     512,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5150,7 +5423,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5178,6 +5457,7 @@
    "requires_power": false,
    "death_weapon": 36,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5218,7 +5498,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5249,6 +5535,12 @@
    "requires_power": false,
    "death_weapon": 32,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     469,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5274,7 +5566,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5304,6 +5602,16 @@
    "requires_power": false,
    "death_weapon": 32,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     -896,
+     0
+    ],
+    [
+     768,
+     0
+    ]
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5322,7 +5630,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 512,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5352,6 +5666,7 @@
    "requires_power": false,
    "death_weapon": 36,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "iron_curtainable": {
@@ -5393,7 +5708,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 512,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -5419,6 +5740,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -5426,7 +5748,11 @@
      ],
      "max": 8,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 40,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "gap_sight": {
      "range": 6144
@@ -5439,6 +5765,11 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -5487,6 +5818,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "gap_sight": {
@@ -5500,6 +5832,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -5549,6 +5886,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "gap_sight": {
@@ -5562,6 +5900,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -5613,6 +5956,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "gap_sight": {
@@ -5626,6 +5970,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -5675,6 +6024,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "gap_sight": {
@@ -5688,6 +6038,11 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -5732,6 +6087,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "hold_fire": {},
     "gap_sight": {
@@ -5745,6 +6101,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -5787,6 +6148,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -5808,7 +6170,10 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -5836,6 +6201,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -5857,7 +6223,10 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -5882,6 +6251,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 373,
@@ -5890,6 +6260,9 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -5927,12 +6300,17 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [],
      "max": 10,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     }
    },
    "unit": {
@@ -5942,6 +6320,9 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -5981,6 +6362,7 @@
    "requires_power": false,
    "death_weapon": 42,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 180,
@@ -5989,6 +6371,9 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -6026,6 +6411,7 @@
    "requires_power": false,
    "death_weapon": 24,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -6066,6 +6452,7 @@
    "requires_power": false,
    "death_weapon": 50,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -7731,7 +8118,7 @@
       50
      ],
      "delay": 0,
-     "valid": 64,
+     "valid": 128,
      "invalid": 0
     }
    ]

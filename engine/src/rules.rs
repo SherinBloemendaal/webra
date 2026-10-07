@@ -45,6 +45,7 @@ struct RawActor {
     requires_power: bool,
     death_weapon: Option<usize>,
     self_heal: Option<SelfHeal>,
+    turret_offsets: Vec<Vec<i32>>,
     abilities: Abilities,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
@@ -106,12 +107,18 @@ pub struct ChronoshiftableInfo {
     pub not_deployed: bool,
 }
 
+/// OpenRA `Cargo` (transports and garrisons). See cargo.rs.
 #[derive(Deserialize, Clone)]
 pub struct CargoInfo {
     pub types: Vec<String>,
+    /// MaxWeight: sum of the passengers' `passenger_weight`.
     pub max: i32,
     pub garrison: bool,
     pub initial: Vec<String>,
+    pub before_unload_delay: i32,
+    pub after_unload_delay: i32,
+    pub eject_on_sell: bool,
+    pub eject_on_death: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -140,6 +147,7 @@ pub struct CloakInfo {
     pub off_when_critical: bool,
 }
 
+/// OpenRA `DetectCloaked`: reveals cloaked actors whose cloak types match.
 #[derive(Deserialize, Clone)]
 pub struct DetectCloakedInfo {
     pub range: i32,
@@ -286,6 +294,12 @@ pub struct UnitInfo {
     pub locomotor: usize,
     pub radius: i32,
     pub passenger: Option<String>,
+    /// OpenRA Passenger.Weight (counts against the transport's MaxWeight).
+    pub passenger_weight: i32,
+    /// Repairable / RepairableNear RepairActors (actor ids).
+    pub repair_at: Vec<String>,
+    /// RepairableNear (ships): repaired within range of the repairer, not on a pad.
+    pub repair_near: bool,
     pub harvester: Option<HarvesterInfo>,
     pub aircraft: Option<AircraftInfo>,
 }
@@ -378,6 +392,8 @@ pub const TARGET_AIR: u32 = 8;
 pub const TARGET_WATER: u32 = 16;
 pub const TARGET_MINE: u32 = 32;
 pub const TARGET_UNDERWATER: u32 = 64;
+/// Submarines, surfaced or submerged (depth charge warheads).
+pub const TARGET_SUBMARINE: u32 = 128;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -403,14 +419,14 @@ impl Kind {
     }
 }
 
-/// Whether a valid/invalid target mask pair accepts `kind`. Mines carry the
-/// OpenRA target types `GroundActor, Mine`; the generator folds GroundActor
-/// into infantry|vehicle|structure, so a mask with all three accepts mines.
-fn mask_accepts(valid: u32, invalid: u32, kind: Kind) -> bool {
-    let c = kind.target_class();
-    if kind == Kind::Mine {
+/// Whether a valid/invalid target mask pair accepts target classes `c`.
+/// Mines carry the OpenRA target types `GroundActor, Mine`; the generator
+/// folds GroundActor into infantry|vehicle|structure, so a mask with all three
+/// accepts mines.
+fn class_accepts(valid: u32, invalid: u32, c: u32) -> bool {
+    if c & TARGET_MINE != 0 {
         let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
-        return (valid & c != 0 || valid & ground == ground) && invalid & c == 0;
+        return (valid & TARGET_MINE != 0 || valid & ground == ground) && invalid & TARGET_MINE == 0;
     }
     valid & c != 0 && invalid & c == 0
 }
@@ -529,6 +545,8 @@ pub struct ActorInfo {
     pub requires_power: bool,
     pub death_weapon: Option<usize>,
     pub self_heal: Option<SelfHeal>,
+    /// (forward, lateral) offset of each turret from the actor's centre (OpenRA Turreted.Offset).
+    pub turret_offsets: Vec<(i32, i32)>,
     pub abilities: Abilities,
     pub building: Option<BuildingInfo>,
     pub unit: Option<UnitInfo>,
@@ -537,19 +555,20 @@ pub struct ActorInfo {
 }
 
 impl ActorInfo {
-    /// Longest range among weapons that can hit ground targets.
+    /// Longest range among weapons that can hit surface targets (ground, ships, submarines).
     pub fn max_range(&self, rules: &Rules) -> i32 {
-        self.weapons
-            .iter()
-            .filter(|&&w| rules.weapons[w].valid & (TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE) != 0)
-            .map(|&w| rules.weapons[w].range)
-            .max()
-            .unwrap_or(0)
+        const SURFACE: u32 = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE | TARGET_WATER | TARGET_UNDERWATER | TARGET_SUBMARINE;
+        self.weapons.iter().filter(|&&w| rules.weapons[w].valid & SURFACE != 0).map(|&w| rules.weapons[w].range).max().unwrap_or(0)
     }
 
     /// Whether any weapon can attack an actor of `kind`.
     pub fn can_attack(&self, rules: &Rules, kind: Kind) -> bool {
         self.weapons.iter().any(|&w| rules.weapons[w].can_target(kind))
+    }
+
+    /// Whether any weapon can attack an actor with target classes `class` (see `World::target_class`).
+    pub fn can_attack_class(&self, rules: &Rules, class: u32) -> bool {
+        self.weapons.iter().any(|&w| rules.weapons[w].can_target_class(class))
     }
 
     pub fn is_wall(&self) -> bool {
@@ -614,7 +633,12 @@ impl Warhead {
     }
 
     pub fn affects(&self, kind: Kind) -> bool {
-        mask_accepts(self.valid, self.invalid, kind)
+        self.affects_class(kind.target_class())
+    }
+
+    /// Whether this warhead damages an actor with target classes `c` (any valid bit, no invalid bit).
+    pub fn affects_class(&self, c: u32) -> bool {
+        class_accepts(self.valid, self.invalid, c)
     }
 }
 
@@ -641,7 +665,12 @@ impl WeaponInfo {
     }
 
     pub fn can_target(&self, kind: Kind) -> bool {
-        mask_accepts(self.valid, self.invalid, kind)
+        self.can_target_class(kind.target_class())
+    }
+
+    /// Whether this weapon may fire at an actor with target classes `c`.
+    pub fn can_target_class(&self, c: u32) -> bool {
+        class_accepts(self.valid, self.invalid, c)
     }
 
     /// Strongest single-hit damage, used to size impact effects.
@@ -802,6 +831,11 @@ impl Rules {
                 requires_power: a.requires_power,
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
+                turret_offsets: a
+                    .turret_offsets
+                    .iter()
+                    .map(|o| (o.first().copied().unwrap_or(0), o.get(1).copied().unwrap_or(0)))
+                    .collect(),
                 abilities: a.abilities,
                 building,
                 unit: a.unit,

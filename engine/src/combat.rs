@@ -16,6 +16,22 @@ impl World {
         !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty()
     }
 
+    /// Current target classes of actor `i` (rules::TARGET_* bits). Most actors
+    /// use their kind's class; submarines switch between surfaced and
+    /// submerged classes (naval.rs).
+    pub fn target_class(&self, i: usize) -> u32 {
+        let a = &self.actors[i];
+        match a.kind {
+            Kind::Ship => self.ship_target_class(i),
+            // Naval yards are WaterActor and Structure in OpenRA (torpedoes hit them).
+            Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
+                crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
+            }
+            // Landed aircraft count as vehicles, paratroopers in the air as air (plane.rs).
+            _ => self.target_kind(i).target_class(),
+        }
+    }
+
     /// Structures that need power (Tesla Coil, AA, superweapons) shut down on low power.
     pub fn is_powered_down(&self, i: usize) -> bool {
         let a = &self.actors[i];
@@ -54,7 +70,7 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
-                        || !info.can_attack(&self.rules, self.target_kind(u))
+                        || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
                         continue;
@@ -155,9 +171,8 @@ impl World {
             return;
         };
         let info = &self.rules.actors[self.actors[i].ty as usize];
-        // Landed aircraft count as vehicles, airborne ones as air (plane.rs).
-        let tkind = self.target_kind(t);
-        let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target(tkind)).collect();
+        let tclass = self.target_class(t);
+        let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target_class(tclass)).collect();
         if usable.is_empty() {
             self.actors[i].target = NONE;
             self.actors[i].activity = Activity::Idle;
@@ -275,15 +290,17 @@ impl World {
         if !aligned {
             return;
         }
-        let tkind = self.target_kind(t);
+        let tclass = self.target_class(t);
         let reload_override = self.rules.actors[ty].reload_override;
         let weapons = self.rules.actors[ty].weapons.clone();
         let d = self.hit_distance(t, x, y);
         for (slot, &w) in weapons.iter().enumerate().take(MAX_WEAPONS) {
             let wi = &self.rules.weapons[w];
-            if self.actors[i].reload[slot] > 0 || !wi.can_target(tkind) || d > wi.range || d < wi.min_range {
+            if self.actors[i].reload[slot] > 0 || !wi.can_target_class(tclass) || d > wi.range || d < wi.min_range {
                 continue;
             }
+            // Submarines surface to fire (Cloak UncloakOn: Attack).
+            self.naval_on_fire(i);
             self.fire(i, t, w);
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
             self.on_fire(i);
@@ -417,6 +434,8 @@ impl World {
         } else {
             (EffectKind::Piff, 6)
         };
+        // Shells landing in open water splash instead (naval.rs).
+        let (kind, ttl) = self.water_impact_effect(x, y, ttl).unwrap_or((kind, ttl));
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
@@ -444,7 +463,7 @@ impl World {
                 let ci = self.map.idx(xx, yy);
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
-                    if self.actors[u].alive && wh.affects(self.target_kind(u)) {
+                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) {
                         let d = self.hit_distance(u, x, y);
                         if d <= radius {
                             hits.push((u, d));
@@ -455,7 +474,7 @@ impl World {
                 if b != NONE && !seen_buildings.contains(&(b as usize)) {
                     let b = b as usize;
                     seen_buildings.push(b);
-                    if self.actors[b].alive && wh.affects(Kind::Building) {
+                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
                         let d = self.hit_distance(b, x, y);
                         if d <= radius {
                             hits.push((b, d));
