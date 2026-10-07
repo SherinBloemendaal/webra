@@ -414,6 +414,17 @@ export class Lobby {
       this.renderMapSource();
       return;
     }
+    this.offerMapText(text);
+  }
+
+  /**
+   * Offer a map (file contents, editor test play or a published map from a
+   * link): validate it, and install it right away, or after the player
+   * accepts the warning when it is modded.
+   */
+  offerMapText(text) {
+    this.mapErrors = [];
+    this.state.mapSource = 'file';
     const info = inspectMapFile(text, this.maps.validate);
     if (!info.ok) {
       this.mapErrors = info.errors;
@@ -428,6 +439,13 @@ export class Lobby {
       return;
     }
     this.installMap(text, info);
+  }
+
+  /** Show why a requested map (for example from a link) could not be loaded. */
+  reportMapProblem(message) {
+    this.mapErrors = [String(message)];
+    this.state.mapSource = 'file';
+    this.renderMapSource();
   }
 
   installMap(json, info) {

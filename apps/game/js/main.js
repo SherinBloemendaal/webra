@@ -57,6 +57,24 @@ async function boot() {
   }
   if (gpuError) lobby.showError(gpuError);
   setupOnline(lobby, gpuError);
+  offerLinkedMap(lobby);
+}
+
+/**
+ * A map handed over by the URL (`?editorTest=1` from the map editor, or
+ * `?map=<id>` from the website's map list) goes through the lobby's normal map
+ * flow: validation, and the modded-map warning before it is installed.
+ */
+async function offerLinkedMap(lobby) {
+  const params = new URLSearchParams(location.search);
+  if (params.get('editorTest') !== '1' && !params.get('map')) return;
+  try {
+    const { loadPendingMap } = await import('./maploader.js');
+    const map = await loadPendingMap(params);
+    if (map) lobby.offerMapText(JSON.stringify(map));
+  } catch (err) {
+    lobby.reportMapProblem(err?.message ?? err);
+  }
 }
 
 // ---- Online multiplayer hook --------------------------------------------------
@@ -121,7 +139,10 @@ function resolveFactions(options) {
  * The renderer and sidebar colour player N with TEAM_COLORS[N]; reorder the
  * shared palette in place so each slot gets the colour picked in the lobby.
  */
-function applyColors(players) {
+function applyColors(slots) {
+  // Engine player N is the N-th slot that actually plays (closed and open
+  // slots are left out by the engine too), so skip them here as well.
+  const players = slots.filter((p) => p && p.type !== 'closed' && p.type !== 'open' && Number.isInteger(p.color));
   const palette = TEAM_COLORS.map((c) => c.slice());
   const used = new Set(players.map((p) => p.color));
   const rest = palette.map((_, i) => i).filter((i) => !used.has(i));
