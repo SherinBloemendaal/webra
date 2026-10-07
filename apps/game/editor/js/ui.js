@@ -12,6 +12,8 @@ export function el(tag, attrs = {}, children = []) {
     if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
     else if (k === 'class') node.className = v;
     else if (k === 'value') node.value = v;
+    // Through the CSSOM: the Content-Security-Policy blocks style attributes.
+    else if (k === 'style') node.style.cssText = String(v);
     else if (typeof v === 'boolean') node[k] = v;
     else node.setAttribute(k, String(v));
   }

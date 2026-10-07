@@ -731,7 +731,112 @@ impl Rules {
             apply_overrides(&mut base, o)?;
         }
         let raw: RawRules = serde_json::from_value(base).map_err(|e| format!("rules overrides produce invalid rules: {e}"))?;
-        Ok(Rules::from_raw(raw))
+        let rules = Rules::from_raw(raw);
+        // Custom maps come from strangers: every value must be safe to simulate.
+        rules.validate()?;
+        Ok(rules)
+    }
+
+    /// Semantic checks that keep the simulation panic-free and bounded, whatever
+    /// a modded map sets: value ranges, table lengths and cross references.
+    pub fn validate(&self) -> Result<(), String> {
+        fn within(what: &str, v: i64, lo: i64, hi: i64) -> Result<(), String> {
+            if v < lo || v > hi {
+                return Err(format!("{what} must be between {lo} and {hi}, is {v}"));
+            }
+            Ok(())
+        }
+        const CELLS: i64 = 1024;
+        let armors = self.weapons.iter().flat_map(|w| w.warheads.iter()).map(|h| h.versus.len()).min().unwrap_or(5);
+        let max_armor = self.actors.iter().map(|a| a.armor).max().unwrap_or(0);
+        if max_armor >= armors {
+            return Err(format!("armor index {max_armor} has no versus entry"));
+        }
+        for a in &self.actors {
+            let n = |f: &str| format!("actors.{}.{f}", a.id);
+            within(&n("cost"), a.cost as i64, 0, 1_000_000)?;
+            within(&n("build_ticks"), a.build_ticks as i64, 0, 100_000)?;
+            within(&n("hp"), a.hp as i64, 1, 100_000_000)?;
+            within(&n("sight"), a.sight as i64, 0, 40 * CELLS)?;
+            if let Some(t) = a.turret_turn_speed {
+                within(&n("turret_turn_speed"), t as i64, 1, 1024)?;
+            }
+            if let Some(r) = a.reload_override {
+                within(&n("reload_override"), r as i64, 1, 100_000)?;
+            }
+            if let Some(h) = &a.self_heal {
+                within(&n("self_heal.step"), h.step as i64, 0, 100_000_000)?;
+                within(&n("self_heal.delay"), h.delay as i64, 1, 100_000)?;
+            }
+            if a.weapons.iter().chain(a.death_weapon.iter()).any(|&w| w >= self.weapons.len()) {
+                return Err(n("weapons: unknown weapon"));
+            }
+            if let Some(u) = &a.unit {
+                within(&n("unit.speed"), u.speed as i64, 0, 2 * CELLS)?;
+                within(&n("unit.turn_speed"), u.turn_speed as i64, 1, 1024)?;
+                within(&n("unit.radius"), u.radius as i64, 1, 2 * CELLS)?;
+                if u.locomotor >= self.locomotors.len() {
+                    return Err(n("unit.locomotor: unknown locomotor"));
+                }
+                if let Some(hv) = &u.harvester {
+                    within(&n("harvester.capacity"), hv.capacity as i64, 1, 10_000)?;
+                    within(&n("harvester.bale_load_delay"), hv.bale_load_delay as i64, 1, 10_000)?;
+                    within(&n("harvester.bale_unload_delay"), hv.bale_unload_delay as i64, 0, 10_000)?;
+                    within(&n("harvester.search_from_proc"), hv.search_from_proc as i64, 0, 256)?;
+                    within(&n("harvester.search_from_harv"), hv.search_from_harv as i64, 0, 256)?;
+                }
+                if let Some(ac) = &u.aircraft {
+                    within(&n("aircraft.cruise_altitude"), ac.cruise_altitude as i64, 0, 20 * CELLS)?;
+                    within(&n("aircraft.ammo"), ac.ammo as i64, 0, 1000)?;
+                }
+            }
+            if let Some(b) = &a.building {
+                within(&n("building.width"), b.width as i64, 1, 8)?;
+                within(&n("building.height"), b.height as i64, 1, 8)?;
+                if b.footprint.len() != (b.width * b.height) as usize {
+                    return Err(n("building.footprint does not match its size"));
+                }
+                within(&n("building.power"), b.power as i64, -100_000, 100_000)?;
+                within(&n("building.storage"), b.storage as i64, 0, 10_000_000)?;
+                within(&n("building.sell_refund"), b.sell_refund as i64, 0, 100)?;
+                within(&n("building.adjacent"), b.adjacent as i64, 0, 16)?;
+                within(&n("building.base_provider_range"), b.base_provider_range as i64, 0, 128 * CELLS)?;
+                if let Some(r) = &b.repairs {
+                    within(&n("repairs.hp_per_step"), r.hp_per_step as i64, 0, 100_000_000)?;
+                    within(&n("repairs.interval"), r.interval as i64, 1, 100_000)?;
+                    within(&n("repairs.value_percent"), r.value_percent as i64, 0, 1000)?;
+                }
+            }
+        }
+        for w in &self.weapons {
+            let n = |f: &str| format!("weapons.{}.{f}", w.name);
+            within(&n("range"), w.range as i64, 0, 64 * CELLS)?;
+            within(&n("min_range"), w.min_range as i64, 0, 64 * CELLS)?;
+            within(&n("reload"), w.reload as i64, 1, 100_000)?;
+            within(&n("burst"), w.burst as i64, 1, 100)?;
+            within(&n("speed"), w.speed as i64, 0, 64 * CELLS)?;
+            within(&n("inaccuracy"), w.inaccuracy as i64, 0, 64 * CELLS)?;
+            if w.burst_delays.is_empty() || w.burst_delays.iter().any(|&d| !(0..=100_000).contains(&d)) {
+                return Err(n("burst_delays must be 1 or more values between 0 and 100000"));
+            }
+            for h in &w.warheads {
+                within(&n("warheads.damage"), h.damage as i64, -10_000_000, 100_000_000)?;
+                within(&n("warheads.spread"), h.spread as i64, 0, 32 * CELLS)?;
+                within(&n("warheads.delay"), h.delay as i64, 0, 10_000)?;
+                if h.falloff.is_empty() || h.falloff.len() > 64 || h.falloff.iter().any(|&f| !(0..=10_000).contains(&f)) {
+                    return Err(n("warheads.falloff must be 1 to 64 values between 0 and 10000"));
+                }
+                if h.versus.len() < armors || h.versus.iter().any(|&v| !(0..=10_000).contains(&v)) {
+                    return Err(n("warheads.versus needs a value between 0 and 10000 per armor type"));
+                }
+            }
+        }
+        for l in &self.locomotors {
+            if l.speeds.len() < 4 || l.speeds.iter().any(|&v| !(0..=1000).contains(&v)) {
+                return Err(format!("locomotors.{}: speeds must be 4 values between 0 and 1000", l.name));
+            }
+        }
+        Ok(())
     }
 
     fn from_raw(raw: RawRules) -> Rules {
@@ -862,8 +967,8 @@ impl Rules {
                 range: w.range,
                 min_range: w.min_range,
                 reload: w.reload,
-                burst: w.burst.max(1),
-                burst_delays: if w.burst_delays.is_empty() { vec![5] } else { w.burst_delays },
+                burst: w.burst,
+                burst_delays: w.burst_delays,
                 projectile: match w.projectile.as_str() {
                     "bullet" => Projectile::Bullet,
                     "missile" => Projectile::Missile,
@@ -1062,6 +1167,25 @@ fn truncate(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn built_in_rules_pass_validation() {
+        Rules::load().validate().unwrap();
+    }
+
+    #[test]
+    fn overrides_with_unsafe_values_are_rejected() {
+        for bad in [
+            serde_json::json!({ "actors": { "POWR": { "hp": 0 } } }),
+            serde_json::json!({ "actors": { "1TNK": { "cost": -5 } } }),
+            serde_json::json!({ "actors": { "1TNK": { "unit": { "speed": 100000 } } } }),
+            serde_json::json!({ "weapons": { "25mm": { "burst": 0 } } }),
+            serde_json::json!({ "weapons": { "25mm": { "burst_delays": [] } } }),
+            serde_json::json!({ "weapons": { "25mm": { "range": 2000000000 } } }),
+        ] {
+            assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn overrides_change_values_and_reject_bad_input() {

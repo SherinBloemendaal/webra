@@ -12,7 +12,7 @@ import {
 } from '../src/crypto.js';
 import { checkOrigin, HttpError, readJson, readText } from '../src/http.js';
 import { prepareMap } from '../src/maps.js';
-import { validateCreateSession } from '../src/validate.js';
+import { ordersFitRules, validateCreateSession } from '../src/validate.js';
 import { HOST_KEY_RE } from '@webra/protocol';
 
 test('passwords: salted PBKDF2, constant-time verify', async () => {
@@ -145,4 +145,10 @@ test('uploads the engine would refuse are rejected by the server too', async () 
   map.terrain = terrain.toString('base64');
   map.ore = ore.toString('base64');
   await assert.rejects(prepareMap(JSON.stringify(map)), (e) => e instanceof HttpError && e.status === 422 && /spawn 2/.test(e.message));
+});
+
+test('orders must name actor types the engine knows', () => {
+  assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }, { o: 'stop', player: 0, ids: [] }], 84), true);
+  assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 84, cx: 1, cy: 1 }], 84), false);
+  assert.equal(ordersFitRules([{ o: 'start_production', player: 0, ty: 65535, count: 1 }], 84), false);
 });

@@ -82,7 +82,7 @@ test('state hashes: matching reports pass, the first mismatch is reported once',
   assert.equal(ls.hash(1, 0, 'aa'), null);
   assert.throws(() => ls.hash(0, 0, 'aa'), /increase/);
   assert.equal(ls.hash(0, 25, 'aa'), null);
-  assert.equal(ls.hash(1, 25, 'bb'), 25);
+  assert.deepEqual(ls.hash(1, 25, 'bb'), { tick: 25, players: [0, 1] }, '1 against 1: nobody knows who is right, tell both');
   assert.equal(ls.hash(0, 50, 'cc'), null, 'reported only once');
   assert.equal(ls.desyncTick, 25);
 });
@@ -98,4 +98,14 @@ test('token bucket: burst, steady rate, refusals counted', () => {
   // 25 orders + 1 hash per second for a minute stays well within the limit.
   const g = new TokenBucket(60, 120, 0);
   for (let t = 0; t < 60_000; t += 38) assert.equal(g.take(t), true);
+});
+
+test('one lying player cannot raise a desync for everyone', () => {
+  const ls = new Lockstep({ players: [0, 1, 2], delay: 3 });
+  ls.initialFrames();
+  for (let t = 0; t < 30; t++) for (const p of [0, 1, 2]) ls.submit(p, t + 3, []);
+  assert.equal(ls.hash(0, 25, 'good'), null);
+  assert.equal(ls.hash(2, 25, 'lie'), null, 'waits for everyone');
+  assert.deepEqual(ls.hash(1, 25, 'good'), { tick: 25, players: [2] }, 'only the outlier is told');
+  assert.equal(ls.desyncTick, null, 'the game is not declared out of sync');
 });

@@ -31,3 +31,12 @@ export function validateCreateSession(body) {
     throw err;
   }
 }
+
+/**
+ * Orders must name actor types that exist in the engine's rules. Honest
+ * clients never send anything else, so a mismatch is a protocol violation.
+ * (Modded maps can change values, never the set of actors.)
+ */
+export function ordersFitRules(orders, actorCount) {
+  return orders.every((o) => !('ty' in o) || (Number.isInteger(o.ty) && o.ty >= 0 && o.ty < actorCount));
+}

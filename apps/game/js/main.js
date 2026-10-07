@@ -155,6 +155,9 @@ function startStress(seed, units, lobby) {
 // lockstep driver then decides when the simulation ticks and there is no pause.
 function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   $('menu').hidden = true;
+  // The lobby's "Play online" entry must not float over the game (any mode).
+  const onlineEntry = $('online-button');
+  if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
   renderer.setAtlas(buildAtlas(rules.actors));

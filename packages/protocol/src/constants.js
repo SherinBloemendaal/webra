@@ -30,6 +30,9 @@ export const MAX_ORDERS_PER_TICK = 32;
 /** Engine caps (Order::is_reasonable in engine/src/world.rs). */
 export const ORDER_MAX_IDS = 2000;
 export const ORDER_MAX_COUNT = 50;
+/** Highest actor type id an order may name. The engine has far fewer; the
+ * server additionally checks against the real count (apps/server/src/validate.js). */
+export const ACTOR_TYPE_MAX = 1023;
 
 // ---- Lockstep -------------------------------------------------------------------
 

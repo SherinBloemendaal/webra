@@ -35,6 +35,8 @@ export class Lockstep {
     this.pending = new Map();
     /** tick -> Map(player -> hash) */
     this.hashes = new Map();
+    /** Players already told that their game diverged from the majority. */
+    this.diverged = new Set();
     this.lastHashTick = new Map(players.map((p) => [p, -1]));
     /** First tick with mismatching hashes, or null. */
     this.desyncTick = null;
@@ -110,8 +112,12 @@ export class Lockstep {
   }
 
   /**
-   * Record a state hash a player computed after running `tick`. Returns the
-   * desync tick when this report reveals the first mismatch, else null.
+   * Record a state hash a player computed after running `tick`. Once every
+   * active player reported for that tick, compare: when a strict majority
+   * agrees, only the players outside it diverged (or lied); without a
+   * majority (e.g. 1 against 1) nobody can tell who is right, so everyone is
+   * told. Returns `{ tick, players }` to notify, or null. A single player can
+   * therefore no longer raise a false alarm for the whole game.
    */
   hash(player, tick, hash) {
     if (!this.active.has(player)) throw new LockstepError('you are not an active player', 'bad_state');
@@ -126,16 +132,27 @@ export class Lockstep {
       this.hashes.set(tick, byTick);
     }
     byTick.set(player, hash);
-    const values = new Set(byTick.values());
-    if (values.size > 1) {
-      this.desyncTick = tick;
-      this.hashes.clear();
-      return tick;
-    }
-    if ([...this.active].every((p) => byTick.has(p))) this.hashes.delete(tick);
     // Players that stop reporting must not grow memory without bound.
     for (const t of this.hashes.keys()) if (t < this.next - 100 * HASH_INTERVAL) this.hashes.delete(t);
-    return null;
+    if (![...this.active].every((p) => byTick.has(p))) return null;
+    this.hashes.delete(tick);
+    const groups = new Map();
+    for (const [p, h] of byTick) {
+      if (!this.active.has(p)) continue;
+      if (!groups.has(h)) groups.set(h, []);
+      groups.get(h).push(p);
+    }
+    if (groups.size <= 1) return null;
+    const voters = [...groups.values()].reduce((n, g) => n + g.length, 0);
+    const majority = [...groups.values()].find((g) => g.length * 2 > voters);
+    if (majority) {
+      const outliers = [...byTick.keys()].filter((p) => this.active.has(p) && !majority.includes(p) && !this.diverged.has(p));
+      for (const p of outliers) this.diverged.add(p);
+      return outliers.length ? { tick, players: outliers } : null;
+    }
+    this.desyncTick = tick;
+    this.hashes.clear();
+    return { tick, players: [...this.active] };
   }
 
   get finished() {

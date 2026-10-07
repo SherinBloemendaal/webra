@@ -103,6 +103,8 @@ function el(tag, attrs = {}, ...children) {
     if (value === undefined || value === null || value === false) continue;
     if (key === 'class') node.className = value;
     else if (key === 'text') node.textContent = value;
+    // Through the CSSOM: the Content-Security-Policy blocks style attributes.
+    else if (key === 'style') node.style.cssText = String(value);
     else node.setAttribute(key, value === true ? '' : String(value));
   }
   for (const child of children) {

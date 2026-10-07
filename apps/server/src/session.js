@@ -25,6 +25,8 @@ import { Lockstep, LockstepError } from './lockstep.js';
 import { lookupMap } from './maps.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
+import { ordersFitRules } from './validate.js';
+import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 
 /** Unused sessions (nobody ever joined) are deleted after this long. */
 const UNUSED_TTL_MS = 5 * 60 * 1000;
@@ -318,6 +320,11 @@ export class Session extends DurableObject {
     const seat = this.room.seatOf(client);
     switch (msg.t) {
       case C2S.ORDERS: {
+        if (!ordersFitRules(msg.orders, ENGINE_RULES.actors.length)) {
+          this.reject(ws, 'bad_message', 'Order names an unknown actor type.', true);
+          await this.disconnect(ws, 'dropped');
+          return;
+        }
         let frames;
         try {
           frames = this.lockstep.submit(seat, msg.tick, msg.orders);
@@ -333,7 +340,14 @@ export class Session extends DurableObject {
       }
       case C2S.HASH: {
         const desync = this.lockstep.hash(seat, msg.tick, msg.hash);
-        if (desync !== null) this.broadcast({ t: S2C.DESYNC, tick: desync });
+        if (desync !== null) {
+          // Tell only the players whose state left the majority (all of them without one).
+          const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
+          for (const other of this.ctx.getWebSockets()) {
+            const att = this.attachment(other);
+            if (att.client !== null && !att.gone && desync.players.includes(this.room.seatOf(att.client))) this.sendRaw(other, raw);
+          }
+        }
         return;
       }
       case C2S.CHAT:

@@ -7,6 +7,7 @@
 // side can emit a message the other side would reject.
 
 import {
+  ACTOR_TYPE_MAX,
   C2S,
   CHAT_MAX,
   COLOR_COUNT,
@@ -111,9 +112,9 @@ const ORDER_SCHEMA = {
   smart: { ids: idList, x: i32, y: i32 },
   attack: { ids: idList, target: u32 },
   stop: { ids: idList },
-  start_production: { ty: (v, w) => int(v, 0, 0xffff, w), count: (v, w) => int(v, 1, ORDER_MAX_COUNT, w) },
-  cancel_production: { ty: (v, w) => int(v, 0, 0xffff, w) },
-  place: { ty: (v, w) => int(v, 0, 0xffff, w), cx: i32, cy: i32 },
+  start_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), count: (v, w) => int(v, 1, ORDER_MAX_COUNT, w) },
+  cancel_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w) },
+  place: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), cx: i32, cy: i32 },
   rally: { building: u32, x: i32, y: i32 },
   sell: { building: u32 },
   deploy: { ids: idList },

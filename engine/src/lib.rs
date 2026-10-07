@@ -37,6 +37,8 @@ mod tests_helis;
 mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
+#[cfg(test)]
+mod tests_security;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};

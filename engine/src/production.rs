@@ -82,7 +82,7 @@ impl World {
             let b = info.building.as_ref().unwrap();
             let p = &mut self.players[a.owner as usize];
             if b.power > 0 {
-                p.power_gen += if b.power_scales_with_health { b.power * a.hp / info.hp } else { b.power };
+                p.power_gen += if b.power_scales_with_health { b.power * a.hp / info.hp.max(1) } else { b.power };
             } else {
                 p.power_use -= b.power;
             }
@@ -423,6 +423,10 @@ impl World {
     }
 
     pub fn place_building(&mut self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
+        // Orders come from the network: never trust the type id.
+        if ty as usize >= self.rules.actors.len() || player as usize >= self.players.len() {
+            return false;
+        }
         let qi = self.rules.actors[ty as usize].queue as usize;
         let ready = self.players[player as usize].queues[qi].items.first().is_some_and(|it| it.ty == ty && it.done);
         if !ready || !self.can_place(player, ty, cx, cy) {
