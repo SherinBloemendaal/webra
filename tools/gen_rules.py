@@ -460,6 +460,8 @@ def main():
                     'hold_fire': str(first(t, 'AutoTarget').get('InitialStance', '')) == 'HoldFire',
                     'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
                     # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
+                    # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).
+                    'ammo_pips': int(first(t, 'WithAmmoPipsDecoration').get('PipCount', ammo.get('Ammo', 0) or 0)),
                     'rotors': [ints(v.get('Offset', '0'))[0] for k, v in sorted(trait(t, 'WithIdleOverlay').items())
                                if isinstance(v, dict) and v.get('RequiresCondition') == 'airborne'],
                 }

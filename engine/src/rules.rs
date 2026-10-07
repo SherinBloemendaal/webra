@@ -221,6 +221,8 @@ pub struct AircraftInfo {
     pub hold_fire: bool,
     /// AttackAircraft FacingTolerance: may fire while this far off the target's bearing.
     pub facing_tolerance: i32,
+    /// Ammo pips shown under a selected aircraft.
+    pub ammo_pips: i32,
     /// Forward offsets (world units) of the rotors drawn while airborne.
     pub rotors: Vec<i32>,
 }
