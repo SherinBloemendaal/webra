@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebRA: Red Alert in your browser</title>
+    <meta name="description" content="WebRA is a free, open-source real-time strategy game in the spirit of Red Alert (1996) that runs in a browser tab: a deterministic Rust simulation compiled to WebAssembly, drawn with WebGPU, with online multiplayer and a map editor." />
+    <meta name="theme-color" content="#0d0f0b" />
+    <link rel="canonical" href="https://webra.sherin.dev/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WebRA" />
+    <meta property="og:title" content="WebRA: Red Alert in your browser" />
+    <meta property="og:description" content="Classic RTS in a browser tab. Rust + WebAssembly + WebGPU, deterministic simulation, online multiplayer and a map editor. No install." />
+    <meta property="og:url" content="https://webra.sherin.dev/" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%231a1f17'/%3E%3Crect x='1.5' y='1.5' width='29' height='29' rx='4' fill='none' stroke='%23d9b23a' stroke-width='2'/%3E%3Cpath d='M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z' fill='%23e2321f'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script>document.documentElement.classList.add('js');</script>
+    <script type="module" src="/assets/site.js"></script>
+  </head>
+  <body data-page="home">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="WebRA home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="5" fill="#1a1f17" /><rect x="1.5" y="1.5" width="29" height="29" rx="4" fill="none" stroke="#d9b23a" stroke-width="2" /><path d="M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z" fill="#e2321f" /></svg>
+          <span>Web<b>RA</b></span>
+        </a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <nav class="site-nav" id="site-nav" aria-label="Main">
+          <ul>
+            <li><a href="/#features">Features</a></li>
+            <li><a href="/#factions">Factions</a></li>
+            <li><a href="/maps.html">Maps</a></li>
+            <li><a href="/multiplayer.html">Multiplayer</a></li>
+            <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play now</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-scene-bg" aria-hidden="true"></div>
+        <canvas class="hero-scene" aria-hidden="true"></canvas>
+        <div class="hero-shade" aria-hidden="true"></div>
+        <div class="wrap hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">Free and open source</p>
+            <h1 id="hero-title">WebRA</h1>
+            <p class="tagline">Red Alert in your browser.</p>
+            <p class="lede">
+              Build a base, harvest ore and send your armour across the map, all in a browser tab. No install, no
+              plugin: a deterministic Rust simulation compiled to WebAssembly and drawn with WebGPU.
+            </p>
+            <ul class="tech-tags" aria-label="Built with">
+              <li>Rust</li>
+              <li>WebAssembly</li>
+              <li>WebGPU</li>
+              <li>Lockstep multiplayer</li>
+            </ul>
+            <div class="hero-actions">
+              <a class="btn btn-primary btn-big" href="/play/">
+                <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor" /></svg>
+                Play now
+              </a>
+              <a class="btn" href="/multiplayer.html">Find a game</a>
+            </div>
+            <p class="hero-note">Runs in Chrome or Edge 113+, Safari 26+ and Firefox 141+ on Windows (WebGPU).</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="kicker">Briefing</span>
+            <h2 id="features-title">The classic, rebuilt for the web</h2>
+            <p>
+              The gameplay of 1996, with the numbers from OpenRA, on an engine built for today: thousands of units,
+              exact replays of every order and games with friends from a single link.
+            </p>
+          </div>
+          <ul class="features">
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="7" width="34" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="3" /><path d="M14 36h12M20 31v5" stroke="currentColor" stroke-width="3" /><path d="M16 14v10l9-5z" fill="#e2321f" /></svg>
+              <h3>Plays in a browser tab</h3>
+              <p>Open the page and play. The game is a few hundred kilobytes of WebAssembly and JavaScript, rendered on the GPU with WebGPU.</p>
+            </li>
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20a12 12 0 0 1 21-8M32 20a12 12 0 0 1-21 8" fill="none" stroke="currentColor" stroke-width="3" /><path d="M29 4v8h-8M11 36v-8h8" fill="none" stroke="currentColor" stroke-width="3" /><rect x="17" y="17" width="6" height="6" fill="#e2321f" /></svg>
+              <h3>Deterministic simulation</h3>
+              <p>A Rust engine with integer math only, 25 ticks per second. The same orders always produce the same battle, on every machine.</p>
+            </li>
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><circle cx="10" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="3" /><circle cx="30" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="3" /><path d="M2 32c1-6 4-9 8-9s7 3 8 9M22 32c1-6 4-9 8-9s7 3 8 9" fill="none" stroke="currentColor" stroke-width="3" /><path d="M16 12h8" stroke="#e2321f" stroke-width="3" stroke-dasharray="3 2" /></svg>
+              <h3>Online multiplayer</h3>
+              <p>Lockstep multiplayer for up to eight players: only orders travel over the network, and state hashes catch any desync.</p>
+            </li>
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M4 8l10-4 12 4 10-4v28l-10 4-12-4-10 4z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" /><path d="M14 4v28M26 8v28" stroke="currentColor" stroke-width="2" /><circle cx="20" cy="19" r="3" fill="#e2321f" /></svg>
+              <h3>Map editor</h3>
+              <p>Paint terrain, ore and spawns, test-play your map on the spot and share it with the community. Modded rules are clearly marked.</p>
+            </li>
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="6" y="4" width="28" height="32" rx="2" fill="none" stroke="currentColor" stroke-width="3" /><path d="M12 13h16M12 20h16M12 27h9" stroke="currentColor" stroke-width="3" /><circle cx="28" cy="28" r="3" fill="#e2321f" /></svg>
+              <h3>Faithful rules</h3>
+              <p>Costs, build times, armour, weapons and the full tech tree for seven factions come straight from OpenRA's Red Alert rules.</p>
+            </li>
+            <li class="feature panel">
+              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M4 20h8M28 20h8M20 4v8M20 28v8" stroke="currentColor" stroke-width="3" /><path d="M8 8l6 6M32 8l-6 6M8 32l6-6M32 32l-6-6" stroke="currentColor" stroke-width="2" /><circle cx="20" cy="20" r="4" fill="#e2321f" /></svg>
+              <h3>Huge battles</h3>
+              <p>Shared flow fields and a spatial hash keep tens of thousands of units moving: 20,000 units simulate in about 7 ms per tick natively.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="gallery" aria-labelledby="gallery-title" data-gallery>
+        <div class="wrap">
+          <div class="section-head">
+            <span class="kicker">Field manual</span>
+            <h2 id="gallery-title">Flat, readable, 1996</h2>
+            <p>
+              Every unit and building below is drawn live in your browser by the game's own sprite code: plain shapes
+              and solid team colours, so you can tell a Heavy Tank from a Mammoth at a glance. The game ships no image
+              files at all.
+            </p>
+          </div>
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Show">
+              <button type="button" data-filter="all" aria-pressed="true">All</button>
+              <button type="button" data-filter="unit" aria-pressed="false">Units</button>
+              <button type="button" data-filter="structure" aria-pressed="false">Structures</button>
+            </div>
+            <fieldset class="swatches">
+              <legend>Team colour</legend>
+            </fieldset>
+          </div>
+          <div>
+            <ul class="gallery" aria-label="Units and structures">
+              <li class="panel skeleton" aria-hidden="true"></li>
+              <li class="panel skeleton" aria-hidden="true"></li>
+              <li class="panel skeleton" aria-hidden="true"></li>
+              <li class="panel skeleton" aria-hidden="true"></li>
+              <li class="panel skeleton" aria-hidden="true"></li>
+              <li class="panel skeleton" aria-hidden="true"></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="factions" aria-labelledby="factions-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="kicker">Choose your side</span>
+            <h2 id="factions-title">Two sides, five countries</h2>
+            <p>
+              Pick a side for its army, then a country for its special weapon. The tech tree follows OpenRA: what you
+              can build depends on your side, your country and the buildings you own.
+            </p>
+          </div>
+          <div class="sides">
+            <article class="side side-allies panel" aria-labelledby="allies-title">
+              <div class="side-head">
+                <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="20" fill="#1c2d4d" stroke="#4d8cf2" stroke-width="3" /><path d="M22 9l3.8 9.5 10.2.6-7.9 6.5 2.6 9.9L22 30l-8.7 5.5 2.6-9.9-7.9-6.5 10.2-.6z" fill="#e8e6d8" /></svg>
+                <h3 id="allies-title">Allies</h3>
+              </div>
+              <p>Fast, flexible and high-tech: light armour, artillery, radar jamming and the Chronosphere.</p>
+              <ul class="side-roster" aria-label="Allied units and structures">
+                <li><canvas width="112" height="112" data-actor="JEEP" role="img" aria-label="Ranger"></canvas>Ranger</li>
+                <li><canvas width="112" height="112" data-actor="1TNK" role="img" aria-label="Light Tank"></canvas>Light Tank</li>
+                <li><canvas width="112" height="112" data-actor="2TNK" role="img" aria-label="Medium Tank"></canvas>Medium Tank</li>
+                <li><canvas width="112" height="112" data-actor="ARTY" role="img" aria-label="Artillery"></canvas>Artillery</li>
+                <li><canvas width="112" height="112" data-actor="ATEK" role="img" aria-label="Allied Tech Center"></canvas>Tech Center</li>
+                <li><canvas width="112" height="112" data-actor="PDOX" role="img" aria-label="Chronosphere"></canvas>Chrono&shy;sphere</li>
+              </ul>
+              <ul class="countries">
+                <li class="country">
+                  <canvas width="144" height="144" data-actor="MGG" role="img" aria-label="Mobile Gap Generator"></canvas>
+                  <div>
+                    <h4>England</h4>
+                    <p><strong>Mobile Gap Generator</strong>: hides nearby units under a moving cloud of shroud. British spies come cheaper.</p>
+                  </div>
+                </li>
+                <li class="country">
+                  <canvas width="144" height="144" data-actor="STNK" role="img" aria-label="Phase Transport"></canvas>
+                  <div>
+                    <h4>France</h4>
+                    <p><strong>Phase Transport</strong>: a cloaked armoured transport. France also builds decoy structures to fool the enemy.</p>
+                  </div>
+                </li>
+                <li class="country">
+                  <canvas width="144" height="144" data-actor="CTNK" role="img" aria-label="Chrono Tank"></canvas>
+                  <div>
+                    <h4>Germany</h4>
+                    <p><strong>Chrono Tank</strong>: teleports itself across the battlefield. Germany's Chronosphere gets the advanced chronoshift.</p>
+                  </div>
+                </li>
+              </ul>
+            </article>
+
+            <article class="side side-soviet panel" aria-labelledby="soviet-title">
+              <div class="side-head">
+                <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="20" fill="#4a1410" stroke="#ff5a3c" stroke-width="3" /><path d="M22 9l3.8 9.5 10.2.6-7.9 6.5 2.6 9.9L22 30l-8.7 5.5 2.6-9.9-7.9-6.5 10.2-.6z" fill="#f2cf5b" /></svg>
+                <h3 id="soviet-title">Soviet</h3>
+              </div>
+              <p>Heavy armour and raw firepower: Heavy and Mammoth tanks, V2 rockets, Tesla coils and the Iron Curtain.</p>
+              <ul class="side-roster" aria-label="Soviet units and structures">
+                <li><canvas width="112" height="112" data-actor="APC" role="img" aria-label="Armored Personnel Carrier"></canvas>APC</li>
+                <li><canvas width="112" height="112" data-actor="3TNK" role="img" aria-label="Heavy Tank"></canvas>Heavy Tank</li>
+                <li><canvas width="112" height="112" data-actor="4TNK" role="img" aria-label="Mammoth Tank"></canvas>Mammoth Tank</li>
+                <li><canvas width="112" height="112" data-actor="V2RL" role="img" aria-label="V2 Rocket Launcher"></canvas>V2 Rocket</li>
+                <li><canvas width="112" height="112" data-actor="TSLA" role="img" aria-label="Tesla Coil"></canvas>Tesla Coil</li>
+                <li><canvas width="112" height="112" data-actor="IRON" role="img" aria-label="Iron Curtain"></canvas>Iron Curtain</li>
+              </ul>
+              <ul class="countries">
+                <li class="country">
+                  <canvas width="144" height="144" data-actor="TTNK" role="img" aria-label="Tesla Tank"></canvas>
+                  <div>
+                    <h4>Russia</h4>
+                    <p><strong>Tesla Tank</strong>: takes the Tesla coil's lightning onto the battlefield. Russia also trains Shock Troopers.</p>
+                  </div>
+                </li>
+                <li class="country">
+                  <canvas width="144" height="144" data-actor="DTRK" role="img" aria-label="Demolition Truck"></canvas>
+                  <div>
+                    <h4>Ukraine</h4>
+                    <p><strong>Demolition Truck</strong>: a rolling bomb driven into the enemy base. Ukraine's Airfield calls in parabombs.</p>
+                  </div>
+                </li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="how-it-works" aria-labelledby="how-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="kicker">Under the hood</span>
+            <h2 id="how-title">How it works</h2>
+            <p>
+              One deterministic simulation, shared by every player. The browser draws it, the server only relays
+              orders.
+            </p>
+          </div>
+          <ol class="pipeline">
+            <li class="panel">
+              <h3>Rules from OpenRA</h3>
+              <p>OpenRA's Red Alert YAML is extracted into a catalog, then <code>gen_rules.py</code> writes <code>rules.json</code>, embedded in the engine.</p>
+            </li>
+            <li class="panel">
+              <h3>Rust simulation</h3>
+              <p>The <code>webra-sim</code> crate runs 25 fixed ticks per second with integer math only: 1024 units per cell, an integer sine table and a seeded RNG.</p>
+            </li>
+            <li class="panel">
+              <h3>WebAssembly</h3>
+              <p>Compiled with <code>wasm-pack</code>. Rust writes instance data into flat buffers that go straight from WebAssembly memory to the GPU.</p>
+            </li>
+            <li class="panel">
+              <h3>WebGPU renderer</h3>
+              <p>WGSL shaders draw terrain, instanced sprites with team colour masks and fog of war. Sprites are generated with Canvas2D at startup.</p>
+            </li>
+          </ol>
+          <div class="stack">
+            <div class="panel">
+              <h3>Multiplayer</h3>
+              <dl>
+                <dt>Model</dt>
+                <dd>Deterministic lockstep: every client runs the same simulation, only orders travel.</dd>
+                <dt>Server</dt>
+                <dd>A Cloudflare Worker with one Durable Object per game session. It relays orders and never runs the game.</dd>
+                <dt>Safety</dt>
+                <dd>Orders are stamped with the sender, validated and rate limited. State hashes every 25 ticks catch desyncs.</dd>
+              </dl>
+            </div>
+            <div class="panel">
+              <h3>Engine</h3>
+              <dl>
+                <dt>Pathfinding</dt>
+                <dd>Flow fields per goal and locomotor, cached and shared by every unit with the same destination.</dd>
+                <dt>Queries</dt>
+                <dd>A spatial hash rebuilt every tick serves separation, targeting and splash damage.</dd>
+                <dt>Maps</dt>
+                <dd>Plain JSON maps identified by a SHA-256 hash, so every player provably runs the same battlefield.</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="releases" aria-labelledby="releases-title">
+        <div class="wrap">
+          <div class="cta-band panel">
+            <div>
+              <h2 id="releases-title">Open source, GPLv3</h2>
+              <p>Follow development, read the changelog or grab a release. Every change goes through CI before it ships here.</p>
+            </div>
+            <div class="link-row">
+              <a class="btn btn-gold" href="https://github.com/SherinBloemendaal/webra/releases">Releases</a>
+              <a class="btn" href="https://github.com/SherinBloemendaal/webra/blob/main/CHANGELOG.md">Changelog</a>
+              <a class="btn" href="https://github.com/SherinBloemendaal/webra">Source code</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="credits" aria-labelledby="credits-title">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="kicker">Credits</span>
+            <h2 id="credits-title">Standing on the shoulders of giants</h2>
+          </div>
+          <div class="credits">
+            <div>
+              <h3>OpenRA</h3>
+              <p>
+                <a href="https://www.openra.net/">OpenRA</a> is the open-source reimplementation of the classic Westwood
+                strategy games. WebRA's gameplay values (costs, build times, health, armour, weapons, prerequisites and
+                timing) come from OpenRA's <code>mods/ra</code> rules, licensed under the GPLv3. Many thanks to the
+                OpenRA contributors.
+              </p>
+            </div>
+            <div>
+              <h3>Westwood Studios</h3>
+              <p>
+                For the original <cite>Command &amp; Conquer: Red Alert</cite> (1996), the game that inspired all of this.
+              </p>
+            </div>
+            <div class="legal">
+              <h3>Legal</h3>
+              <p>
+                WebRA is an unofficial fan project, not affiliated with or endorsed by Electronic Arts or the OpenRA
+                project. <cite>Command &amp; Conquer</cite> and <cite>Red Alert</cite>, and the names of their units,
+                buildings and factions, are trademarks or property of Electronic Arts. WebRA contains no EA game assets:
+                all graphics are generated by the game at runtime.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>WebRA, a free fan project. Licensed under the GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
+        <ul class="footer-links">
+          <li><a href="/play/">Play</a></li>
+          <li><a href="/maps.html">Maps</a></li>
+          <li><a href="/multiplayer.html">Multiplayer</a></li>
+          <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+          <li><a href="/#credits">Credits</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>
