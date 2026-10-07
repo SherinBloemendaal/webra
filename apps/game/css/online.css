@@ -1,0 +1,454 @@
+/* Online multiplayer screens (js/online.js): server browser, online lobby,
+   dialogs and the in-game overlay. Same flat 1996 look as the skirmish lobby. */
+
+#online-button {
+  position: fixed;
+  right: 16px;
+  top: 14px;
+  z-index: 30;
+  padding: 9px 16px;
+  background: #7a2a20;
+  color: var(--text);
+  border: 1px solid #a63a2c;
+  border-top-color: #c25a48;
+  border-radius: 2px;
+  font: 700 13px system-ui, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+#online-button:hover {
+  filter: brightness(1.2);
+}
+
+#online-root {
+  --o-panel: #1f241b;
+  --o-field: #0f120d;
+  --o-edge: #3a4233;
+  --o-gold: var(--accent, #d9b23a);
+  --o-red: #7a2a20;
+  --o-red-edge: #a63a2c;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: start center;
+  overflow: auto;
+  padding: 24px 16px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    radial-gradient(ellipse at top, #263022, var(--bg) 70%);
+  user-select: text;
+}
+
+.online-page {
+  width: min(1080px, 100%);
+  padding: 18px 20px 20px;
+  background: linear-gradient(180deg, #20251c, #171a14);
+  border: 1px solid #000;
+  border-top: 3px solid var(--o-gold);
+  border-radius: 2px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+
+.online-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--o-edge);
+}
+
+.online-head > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.online-title {
+  margin: 0;
+  font: 900 30px/1.1 Impact, 'Arial Black', sans-serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.online-muted {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.online-warning {
+  color: #f0c060;
+}
+
+.online-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: rgba(140, 44, 31, 0.35);
+  border: 1px solid #8c2c1f;
+  border-radius: 2px;
+  color: #ffd9cf;
+  overflow-wrap: anywhere;
+}
+
+.online-btn {
+  padding: 7px 14px;
+  background: #2b3226;
+  color: var(--text);
+  border: 1px solid var(--o-edge);
+  border-radius: 2px;
+  font: 700 12px system-ui, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.online-btn-primary,
+.online-btn-danger {
+  background: var(--o-red);
+  border-color: var(--o-red-edge);
+}
+
+.online-btn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.online-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.online-input,
+.online-select {
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--o-field);
+  color: var(--text);
+  border: 1px solid var(--o-edge);
+  border-radius: 2px;
+  font: inherit;
+}
+
+.online-select:disabled {
+  opacity: 0.75;
+}
+
+.online-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.online-field-label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--o-gold);
+}
+
+.online-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.online-tools .online-field {
+  flex: 1 1 200px;
+}
+
+.online-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--o-edge);
+  border-radius: 2px;
+  font: 700 10px/16px system-ui, sans-serif;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.online-badge-modded {
+  color: #ffd27a;
+  border-color: #8f6a1c;
+  background: rgba(143, 106, 28, 0.25);
+}
+
+.online-badge-you {
+  color: var(--o-gold);
+}
+
+/* ---- Tables ------------------------------------------------------------- */
+
+.online-sessions,
+.online-slots {
+  display: grid;
+  gap: 2px;
+}
+
+.online-row,
+.online-slot {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 80px minmax(0, 1.4fr) 90px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--o-panel);
+  border-left: 3px solid var(--slot-color, transparent);
+}
+
+.online-slot {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+.online-row-head {
+  background: transparent;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--o-gold);
+}
+
+.online-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.online-cell .online-select {
+  width: 100%;
+}
+
+.online-cell-player {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.online-cell-player .online-badge:first-child {
+  margin-left: 0;
+}
+
+.online-cell-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.online-slot-open,
+.online-slot-closed {
+  opacity: 0.8;
+}
+
+.online-ready {
+  color: #8fd47a;
+  font-weight: 700;
+}
+
+/* ---- Lobby -------------------------------------------------------------- */
+
+.online-lobby-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.online-col {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.online-panel {
+  padding: 12px;
+  background: var(--o-panel);
+  border: 1px solid #000;
+  min-width: 0;
+}
+
+.online-panel-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--o-gold);
+}
+
+.online-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.online-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.online-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.online-preview {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  image-rendering: pixelated;
+  background: #000;
+  border: 1px solid var(--o-edge);
+}
+
+.online-caption {
+  margin: 8px 0 4px;
+  text-align: center;
+}
+
+.online-seed {
+  display: flex;
+  gap: 6px;
+}
+
+.online-seed .online-input {
+  flex: 1;
+}
+
+.online-chat-log {
+  height: 180px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding: 6px;
+  background: var(--o-field);
+  border: 1px solid var(--o-edge);
+  overflow-wrap: anywhere;
+}
+
+.online-chat .online-input {
+  width: 100%;
+}
+
+.online-chat-system {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.online-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--o-edge);
+}
+
+.online-bar .online-muted {
+  flex: 1;
+  margin: 0;
+}
+
+/* ---- Dialogs ------------------------------------------------------------ */
+
+.online-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 18px 20px;
+  background: #1b1f19;
+  color: var(--text);
+  border: 1px solid #000;
+  border-top: 3px solid var(--accent, #d9b23a);
+  border-radius: 2px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+.online-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.online-dialog-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent, #d9b23a);
+}
+
+.online-dialog-body {
+  display: grid;
+  gap: 12px;
+}
+
+.online-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---- In game -------------------------------------------------------------- */
+
+.online-game {
+  position: absolute;
+  left: 8px;
+  bottom: 28px;
+  z-index: 20;
+  width: min(420px, calc(100% - 16px));
+  display: grid;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.online-game-log {
+  display: grid;
+  gap: 2px;
+}
+
+.online-game-line,
+.online-game-wait {
+  justify-self: start;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  color: #e6e4d6;
+  overflow-wrap: anywhere;
+}
+
+.online-game-important,
+.online-game-wait {
+  color: #ffd27a;
+}
+
+.online-game-chat {
+  pointer-events: auto;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .online-lobby-body {
+    grid-template-columns: 1fr;
+  }
+
+  .online-row,
+  .online-slot {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .online-row-head {
+    display: none;
+  }
+}

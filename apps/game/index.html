@@ -7,10 +7,15 @@
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/lobby.css" />
+    <link rel="stylesheet" href="css/online.css" />
   </head>
   <body>
     <!-- Pre-game lobby, built by js/lobby.js -->
     <section id="menu"></section>
+
+    <!-- Online multiplayer (js/online.js, loaded on demand by js/main.js) -->
+    <button id="online-button" type="button" title="Play against other people over the internet" hidden>Play online</button>
+    <section id="online-root" hidden></section>
 
     <div id="app" hidden>
       <main id="field">
