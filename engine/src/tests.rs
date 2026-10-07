@@ -861,6 +861,24 @@ fn ai_ignores_enemies_it_cannot_see_or_target_near_its_base() {
 }
 
 #[test]
+fn ai_fires_ready_support_powers_at_its_target() {
+    let list = [("russia", true, 0), ("england", false, 0)];
+    let mut w = World::with_options(2, 96, &setups(&list), opts());
+    let (sx, sy) = w.players[0].start;
+    for (id, x, y) in [("MSLO", sx + 5, sy), ("APWR", sx, sy + 5), ("APWR", sx + 4, sy + 5)] {
+        w.spawn_building(ty(&w, id), 0, x, y);
+    }
+    run(&mut w, 2);
+    let nuke = |w: &World| w.power_instances(0).iter().find(|p| p.key == "NukePower").cloned();
+    let inst = nuke(&w).expect("the missile silo provides the nuke");
+    assert!(!inst.ready(), "charging");
+    w.powers.players[0].iter_mut().find(|p| p.key == "NukePower").unwrap().remaining = 0;
+    run(&mut w, 30);
+    let after = nuke(&w).unwrap();
+    assert!(!after.ready() && after.remaining > after.total - 40, "the AI launched the nuke: {after:?}");
+}
+
+#[test]
 fn ai_leaves_neutral_actors_alone() {
     use crate::mapdata::{MapActor, MapData};
     let m = crate::map::Map::generate_for(64, 64, 6, 12, 2);

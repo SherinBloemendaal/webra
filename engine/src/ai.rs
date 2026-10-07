@@ -58,6 +58,7 @@ pub fn think(w: &mut World, player: u8) {
     queue_defenses(w, player);
     queue_units(w, player);
     command_army(w, player);
+    use_support_powers(w, player);
 }
 
 /// Without a Construction Yard, deploy an MCV (starting units "MCV only").
@@ -575,4 +576,45 @@ fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i3
         }
     }
     best.map(|(_, p)| p)
+}
+
+// ---- Support powers ------------------------------------------------------------
+
+/// The target player's building with the most of its other buildings within
+/// 5 cells: where a nuke or a bomb run hurts most. Ties go to the lower index.
+fn densest_building(w: &World, target: u8) -> Option<(i32, i32)> {
+    let buildings: Vec<usize> =
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == target && w.actors[i].kind == Kind::Building).collect();
+    let near = |i: usize| {
+        let a = &w.actors[i];
+        buildings.iter().filter(|&&j| dist(a.x, a.y, w.actors[j].x, w.actors[j].y) <= 5 * CELL).count()
+    };
+    let best = buildings.iter().copied().max_by_key(|&i| (near(i), std::cmp::Reverse(i)))?;
+    Some((w.actors[best].x, w.actors[best].y))
+}
+
+/// Fire every ready support power that has a sensible target: the GPS
+/// satellite at once, the spy plane over the target player's base, bombs,
+/// paratroopers and the nuke on its densest building. The Chronosphere and
+/// the Iron Curtain need unit tactics the AI does not have yet; it leaves them.
+fn use_support_powers(w: &mut World, player: u8) {
+    let ready: Vec<(String, String)> =
+        w.power_instances(player).iter().filter(|p| p.ready()).map(|p| (p.key.clone(), w.power_info(p).kind.clone())).collect();
+    if ready.is_empty() {
+        return;
+    }
+    let base = base_point(w, player);
+    let target_player =
+        w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t)).or_else(|| choose_target_player(w, player));
+    for (key, kind) in ready {
+        let at = match kind.as_str() {
+            "GpsPower" => Some(base),
+            "AirstrikePower" if key.ends_with("@spyplane") => enemy_target(w, player, target_player, base),
+            "AirstrikePower" | "ParatroopersPower" | "NukePower" => target_player.and_then(|t| densest_building(w, t)),
+            _ => None,
+        };
+        if let Some((x, y)) = at {
+            w.queue_order(Order::SupportPower { player, key, x, y, x2: None, y2: None });
+        }
+    }
 }
