@@ -527,7 +527,7 @@ impl World {
         }
         let (max, delay, count, take_off) = {
             let air = self.heli_air(i);
-            (air.ammo, air.rearm_delay.max(1), air.rearm_count.max(1), air.take_off_on_resupply)
+            (air.ammo, air.reload_delay.max(1), air.reload_count.max(1), air.take_off_on_resupply)
         };
         let h = &mut self.actors[i].heli;
         if h.ammo_used > 0 && max > 0 {

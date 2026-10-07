@@ -145,7 +145,7 @@ Landed aircraft (altitude 0) count as vehicles for targeting (OpenRA
 Idle armed helicopters hold fire (OpenRA `InitialStance: HoldFire`) and only
 engage on attack-move or an attack order. Rounds are spent per shot; an empty
 helicopter reserves a free helipad (one per pad), lands, reloads
-`rearm_count` rounds every `rearm_delay` ticks (OpenRA AmmoPool) and takes
+`reload_count` rounds every `reload_delay` ticks (OpenRA AmmoPool) and takes
 off again. Damaged helicopters land on the service depot to be repaired.
 Shot down in the air they fall and explode on impact.
 

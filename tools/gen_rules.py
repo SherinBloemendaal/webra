@@ -450,8 +450,8 @@ def main():
                     'ammo': int(ammo.get('Ammo', 0) or 0),
                     'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower],
                     # AmmoPool: one reload step (ReloadCount rounds) every ReloadDelay ticks while resupplying.
-                    'rearm_delay': int(ammo.get('ReloadDelay', AMMO_RELOAD_DELAY)),
-                    'rearm_count': int(ammo.get('ReloadCount', AMMO_RELOAD_COUNT)),
+                    'reload_delay': int(ammo.get('ReloadDelay', AMMO_RELOAD_DELAY)),
+                    'reload_count': int(ammo.get('ReloadCount', AMMO_RELOAD_COUNT)),
                     'repair_actors': [ids_lower[x.lower()] for x in tokens(repairable.get('RepairActors')) if x.lower() in ids_lower],
                     'altitude_velocity': wdist(m.get('AltitudeVelocity', ALTITUDE_VELOCITY)),
                     'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),

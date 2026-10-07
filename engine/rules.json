@@ -4622,8 +4622,8 @@
      ],
      "ammo": 0,
      "rearm_actors": [],
-     "rearm_delay": 50,
-     "rearm_count": 1,
+     "reload_delay": 50,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],
@@ -4690,8 +4690,8 @@
      "rearm_actors": [
       "HPAD"
      ],
-     "rearm_delay": 8,
-     "rearm_count": 1,
+     "reload_delay": 8,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],
@@ -4757,8 +4757,8 @@
      "rearm_actors": [
       "HPAD"
      ],
-     "rearm_delay": 8,
-     "rearm_count": 1,
+     "reload_delay": 8,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],
@@ -4825,8 +4825,8 @@
      "rearm_actors": [
       "HPAD"
      ],
-     "rearm_delay": 50,
-     "rearm_count": 1,
+     "reload_delay": 50,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],
@@ -4885,8 +4885,8 @@
       "AFLD",
       "AFLD.Ukraine"
      ],
-     "rearm_delay": 11,
-     "rearm_count": 1,
+     "reload_delay": 11,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],
@@ -4944,8 +4944,8 @@
       "AFLD",
       "AFLD.Ukraine"
      ],
-     "rearm_delay": 50,
-     "rearm_count": 1,
+     "reload_delay": 50,
+     "reload_count": 1,
      "repair_actors": [
       "FIX"
      ],

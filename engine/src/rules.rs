@@ -207,9 +207,9 @@ pub struct AircraftInfo {
     pub landable: Vec<String>,
     pub ammo: i32,
     pub rearm_actors: Vec<String>,
-    /// AmmoPool: `rearm_count` rounds come back every `rearm_delay` ticks while resupplying.
-    pub rearm_delay: i32,
-    pub rearm_count: i32,
+    /// AmmoPool: `reload_count` rounds come back every `reload_delay` ticks while resupplying.
+    pub reload_delay: i32,
+    pub reload_count: i32,
     /// Repairable: structures that repair this aircraft (service depot).
     pub repair_actors: Vec<String>,
     /// World units climbed or descended per tick.
