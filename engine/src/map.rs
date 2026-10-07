@@ -87,38 +87,7 @@ impl Map {
         let n = (width * height) as usize;
         let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
 
-        let area = width * height;
-        // Rough patches.
-        for _ in 0..(area / 900).max(2) {
-            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
-            let r = rng.range(2, 6);
-            m.blob(&mut rng, cx, cy, r, Terrain::Rough);
-        }
-        // Lakes.
-        for _ in 0..(area / 3500).max(1) {
-            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
-            let r = rng.range(3, 7);
-            m.blob(&mut rng, cx, cy, r, Terrain::Water);
-        }
-        // Rock ridges as random walks.
-        for _ in 0..(area / 1400).max(2) {
-            let (mut x, mut y) = (rng.range(0, width), rng.range(0, height));
-            let (dx, dy) = (rng.range(-1, 2), rng.range(-1, 2));
-            for _ in 0..rng.range(6, 18) {
-                for (ox, oy) in [(0, 0), (1, 0), (0, 1)] {
-                    m.set_terrain(x + ox, y + oy, Terrain::Rock);
-                }
-                x += dx + rng.range(-1, 2);
-                y += dy + rng.range(-1, 2);
-            }
-        }
-        // Tree clusters.
-        for _ in 0..(area / 500).max(4) {
-            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
-            for _ in 0..rng.range(3, 12) {
-                m.set_terrain(cx + rng.range(-3, 4), cy + rng.range(-3, 4), Terrain::Tree);
-            }
-        }
+        m.scatter(&mut rng);
 
         // Bases on the left and right edge; the seed picks the height.
         let sy = match rng.range(0, 3) {
@@ -144,95 +113,205 @@ impl Map {
         m
     }
 
-    /// Map for `players` starting positions (2..8). Two players keep the
-    /// classic 180 degree symmetric layout; four players on a square map get
-    /// 90 degree rotational symmetry; other counts sit on a ring around the
-    /// centre with identical base surroundings.
+    /// Map for `players` starting positions (2..8). Two players get the
+    /// mirrored map of [`Map::generate`]; more players get [`Map::generate_pockets`].
     pub fn generate_for(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
         let players = players.clamp(2, 8);
         if players == 2 {
             return Map::generate(width, height, seed, ore_max);
         }
-        let mut m = Map::generate(width, height, seed, ore_max);
-        // Wipe the 2-player bases and ore; rebuild for N players below.
-        m.ore.iter_mut().for_each(|o| *o = 0);
+        Map::generate_pockets(width, height, seed, ore_max, players)
+    }
+
+    /// Map for 3 to 8 players with equivalent starting positions.
+    ///
+    /// Red Alert structures face south (exits, refinery docks, bibs), so two
+    /// bases only have the same surroundings when one is the other shifted or
+    /// mirrored left to right, never rotated or flipped upside down. Every
+    /// base gets the same pocket: a clearing with two ore fields south-west
+    /// and south-east of the yard (where refinery docks face), rock walls to
+    /// the north and the south, and open sides, so enemies come in from the
+    /// east or the west. The random terrain is mirrored left to right.
+    ///
+    /// Three and four players sit in two rows, one in the middle of each half
+    /// of the map, and the bottom half repeats the top half (three players:
+    /// two on top, one below between them). Five to eight players sit on a
+    /// ring around the centre, so every base has exactly two nearest
+    /// neighbours; in rows of three or four the middle bases would have more
+    /// and lose most free for alls. Contested ore lies halfway between
+    /// neighbouring bases. Spawns are listed by column, top first, so the
+    /// common split of the first half of the slots against the second half
+    /// puts mirror images against each other. The AI makes up for the rest:
+    /// its rally point and defences face the enemy, not a map side.
+    pub fn generate_pockets(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
+        let n = (width * height) as usize;
+        let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
         let mut rng = Rng::new(seed ^ 0x5eed_0000_0000_0004);
-        let (cx, cy) = (width / 2, height / 2);
-        let radius = (width.min(height) / 2 - 12).max(10);
-        let mut spawns = Vec::new();
-        for i in 0..players {
-            // Angle in 1024 units, starting top-left like the 2-player map.
-            let a = 896 + (i as i32 * 1024) / players as i32;
-            let (vx, vy) = crate::math::facing_vec(a);
-            let sx = cx + vx * radius / 1024 - 1;
-            let sy = cy + vy * radius / 1024 - 2;
-            spawns.push((sx.clamp(2, width - 5), sy.clamp(2, height - 6)));
+        m.scatter(&mut rng);
+        m.mirror_x();
+        // Three or four players: two rows, the bottom half repeating the top
+        // half. Five to eight: a ring, so every base has two nearest
+        // neighbours (a base in the middle of a row would have more).
+        let rows = players <= 4;
+        let mut centres = if rows { row_layout(width, height, players) } else { ring_layout(width, height, players) };
+        if rows {
+            m.repeat_top_half();
         }
-        m.spawns = spawns.clone();
-        if players == 4 && width == height {
-            m.rotate_symmetric();
-            // Recompute the spawns as exact rotations of the first one.
-            let (x0, y0) = m.spawns[0];
-            let rot = |x: i32, y: i32| (width - 1 - y, x);
-            let mut s = vec![(x0, y0)];
-            let (mut x, mut y) = (x0 + 1, y0 + 1); // centre-ish cell of the 3x4 yard
-            for _ in 0..3 {
-                let (nx, ny) = rot(x, y);
-                x = nx;
-                y = ny;
-                s.push((x - 1, y - 1));
+        centres.sort_by_key(|&(x, y)| (x, y));
+        let r = pocket_radius(&centres);
+        let pocket_seed = seed ^ 0x90c3_e700_0000_0001;
+        for &(cx, cy) in &centres {
+            m.stamp_pocket(cx, cy, r, ore_max, pocket_seed);
+        }
+        // Contested ore halfway between neighbouring bases, where it fits.
+        let d2 = |a: (i32, i32), b: (i32, i32)| (a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1);
+        let mut contested: Vec<(i32, i32, i32)> = Vec::new();
+        for (k, &a) in centres.iter().enumerate() {
+            let near = centres.iter().filter(|&&b| b != a).map(|&b| d2(a, b)).min().unwrap_or(0);
+            for &b in &centres[k + 1..] {
+                // Neighbours: at most a quarter farther than the nearest base.
+                if d2(a, b) * 16 > near * 25 {
+                    continue;
+                }
+                let mid = ((a.0 + b.0) / 2, (a.1 + b.1) / 2);
+                // Room: the field stays clear of every pocket.
+                let room = centres.iter().map(|&c| (mid.0 - c.0).abs().max((mid.1 - c.1).abs()) - r - 5).min().unwrap_or(0);
+                if room >= 2 {
+                    contested.push((mid.0, mid.1, room.min(3)));
+                }
             }
-            m.spawns = s;
         }
+        contested.sort_unstable();
+        contested.dedup();
+        for (k, &(x, y, fr)) in contested.iter().enumerate() {
+            m.ore_field_mirrored(&mut Rng::new(pocket_seed ^ (k as u64 + 1)), x, y, fr, ore_max);
+        }
+        // The pockets are symmetric already; this makes the contested fields
+        // of the right half the mirror images of the left half's.
+        m.mirror_x();
+        m.spawns = centres.iter().map(|&(cx, cy)| (cx - 1, cy - 2)).collect();
         let spawns = m.spawns.clone();
-        if players == 4 && width == height {
-            // Build one base in the top-left quadrant, carve a road to the
-            // centre, then rotate it into the other three quadrants.
-            let (sx, sy) = spawns[0];
-            m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
-            m.ore_field(&mut rng, sx + 1 + 12, sy + 2 + 4, 4, ore_max);
-            m.ore_field(&mut rng, sx + 1 + 3, sy + 2 + 13, 3, ore_max);
-            m.ore_field(&mut rng, cx - 6, cy - 6, 4, ore_max);
-            m.carve((sx + 1, sy + 1), (cx - 1, cy - 1));
-            m.rotate_symmetric();
-            m.fill_circle(cx, cy, 3, Terrain::Clear);
-            return m;
-        }
-        for &(sx, sy) in &spawns {
-            m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
-            // Two ore fields per base, toward the centre.
-            let (dx, dy) = ((cx - sx).signum(), (cy - sy).signum());
-            m.ore_field(&mut rng, sx + 1 + dx * 12, sy + 2 + dy * 4, 4, ore_max);
-            m.ore_field(&mut rng, sx + 1 + dx * 3, sy + 2 + dy * 13, 3, ore_max);
-        }
-        // Contested ore in the middle.
-        m.ore_field(&mut rng, cx, cy, 5, ore_max);
-        for &(sx, sy) in &spawns[1..] {
-            m.ensure_connected(spawns[0], (sx, sy));
+        for &s in &spawns[1..] {
+            m.ensure_connected_mirrored(spawns[0], s);
         }
         m
     }
 
-    /// Make the map 90 degree rotationally symmetric by copying the top-left quadrant.
-    fn rotate_symmetric(&mut self) {
-        let w = self.width;
-        let src_t = self.terrain.clone();
-        let src_o = self.ore.clone();
-        for y in 0..w {
-            for x in 0..w {
-                // Rotate (x, y) back into the top-left quadrant.
-                let (mut qx, mut qy) = (x, y);
-                for _ in 0..4 {
-                    if qx < w / 2 && qy < w / 2 {
-                        break;
-                    }
-                    let (nx, ny) = (qy, w - 1 - qx);
-                    qx = nx;
-                    qy = ny;
+    /// One base pocket around the yard centre (cx, cy) with radius `r`: a
+    /// clearing, two ore fields south-west and south-east of the yard, rock
+    /// walls north and south. Left-right symmetric around column `cx`, and
+    /// the same for every base of a map (same `seed`).
+    fn stamp_pocket(&mut self, cx: i32, cy: i32, r: i32, ore_max: u8, seed: u64) {
+        let half = r - 2;
+        for dy in -r..=r + 2 {
+            for dx in -half..=half {
+                if self.contains(cx + dx, cy + dy) {
+                    let i = self.idx(cx + dx, cy + dy);
+                    self.terrain[i] = Terrain::Clear;
+                    self.ore[i] = 0;
                 }
-                let (i, j) = (self.idx(x, y), self.idx(qx, qy));
-                self.terrain[i] = src_t[j];
-                self.ore[i] = src_o[j];
+            }
+        }
+        self.fill_circle(cx, cy, r, Terrain::Clear);
+        for dx in -half..=half {
+            for dy in [-r - 1, -r - 2, r + 3, r + 4] {
+                self.set_terrain(cx + dx, cy + dy, Terrain::Rock);
+            }
+        }
+        let (fx, fy) = (r * 7 / 10, r * 8 / 10);
+        let mut rng = Rng::new(seed);
+        self.ore_field_pair(&mut rng, cx, fx, cy + fy, 4, ore_max);
+    }
+
+    /// Ore field centred on (x, y), mirrored onto itself around column `x`.
+    fn ore_field_mirrored(&mut self, rng: &mut Rng, x: i32, y: i32, r: i32, max: u8) {
+        self.ore_field_pair(rng, x, 0, y, r, max);
+    }
+
+    /// Two ore fields at (axis - off, y) and (axis + off, y) that are mirror
+    /// images around column `axis` (one field when `off` is 0).
+    fn ore_field_pair(&mut self, rng: &mut Rng, axis: i32, off: i32, y: i32, r: i32, max: u8) {
+        for oy in -r..=r {
+            for ox in -r..=r {
+                let d = ox * ox + oy * oy;
+                let fuzz = rng.range(0, r + 1);
+                let value = (max as i32 - (d * max as i32) / (r * r + 1) + rng.range(-2, 2)).clamp(2, max as i32) as u8;
+                // Left field cell (axis - off + ox) and its mirror (axis + off - ox).
+                if (off == 0 && ox > 0) || d > r * r + fuzz {
+                    continue;
+                }
+                for x in [axis - off + ox, axis + off - ox] {
+                    if self.contains(x, y + oy) {
+                        let i = self.idx(x, y + oy);
+                        if !self.terrain[i].passable() {
+                            self.terrain[i] = Terrain::Clear;
+                        }
+                        self.ore[i] = value;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Copy the top half of the map onto the bottom half (same picture, shifted down).
+    fn repeat_top_half(&mut self) {
+        let band = self.height / 2;
+        for y in 0..band {
+            for x in 0..self.width {
+                let (i, j) = (self.idx(x, y), self.idx(x, y + band));
+                self.terrain[j] = self.terrain[i];
+                self.ore[j] = self.ore[i];
+            }
+        }
+    }
+
+    /// Like `ensure_connected`, with the road also carved mirrored left to right.
+    fn ensure_connected_mirrored(&mut self, a: (i32, i32), b: (i32, i32)) {
+        if self.reachable(a, b) {
+            return;
+        }
+        let w = self.width;
+        let mirror = |p: (i32, i32)| (w - 3 - p.0, p.1);
+        for (p, q) in [(a, b), (mirror(a), mirror(b))] {
+            self.carve((p.0 + 1, p.1 + 1), (q.0 + 1, q.1 + 1));
+            self.carve((q.0 + 1, q.1 + 1), (p.0 + 1, p.1 + 1));
+        }
+    }
+
+    /// Random terrain over the whole map: rough patches, lakes, rock ridges
+    /// and tree clusters.
+    fn scatter(&mut self, rng: &mut Rng) {
+        let (width, height) = (self.width, self.height);
+        let area = width * height;
+        // Rough patches.
+        for _ in 0..(area / 900).max(2) {
+            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
+            let r = rng.range(2, 6);
+            self.blob(rng, cx, cy, r, Terrain::Rough);
+        }
+        // Lakes.
+        for _ in 0..(area / 3500).max(1) {
+            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
+            let r = rng.range(3, 7);
+            self.blob(rng, cx, cy, r, Terrain::Water);
+        }
+        // Rock ridges as random walks.
+        for _ in 0..(area / 1400).max(2) {
+            let (mut x, mut y) = (rng.range(0, width), rng.range(0, height));
+            let (dx, dy) = (rng.range(-1, 2), rng.range(-1, 2));
+            for _ in 0..rng.range(6, 18) {
+                for (ox, oy) in [(0, 0), (1, 0), (0, 1)] {
+                    self.set_terrain(x + ox, y + oy, Terrain::Rock);
+                }
+                x += dx + rng.range(-1, 2);
+                y += dy + rng.range(-1, 2);
+            }
+        }
+        // Tree clusters.
+        for _ in 0..(area / 500).max(4) {
+            let (cx, cy) = (rng.range(0, width), rng.range(0, height));
+            for _ in 0..rng.range(3, 12) {
+                self.set_terrain(cx + rng.range(-3, 4), cy + rng.range(-3, 4), Terrain::Tree);
             }
         }
     }
@@ -392,6 +471,74 @@ impl Map {
     }
 }
 
+/// Pocket radius for bases at these yard centres: as large as the distance
+/// to the nearest neighbour allows, 6 to 10 cells.
+fn pocket_radius(centres: &[(i32, i32)]) -> i32 {
+    let nearest = centres
+        .iter()
+        .enumerate()
+        .flat_map(|(k, a)| centres[k + 1..].iter().map(move |b| (a.0 - b.0).abs().max((a.1 - b.1).abs())))
+        .min()
+        .unwrap_or(24);
+    ((nearest - 4) / 2).clamp(6, 10)
+}
+
+/// Column `x` mirrored: a base at yard centre `x` and one at `mirror(x)` are mirror images.
+fn mirror_col(width: i32, x: i32) -> i32 {
+    width - 1 - x
+}
+
+/// Yard centres for two rows: the top row in the middle of the top half,
+/// the bottom row in the middle of the bottom half, `ceil(n / 2)` bases
+/// evenly over the width (half a spacing from each edge), the bottom row
+/// aligned below them or staggered between them when it has one base fewer.
+fn row_layout(width: i32, height: i32, players: usize) -> Vec<(i32, i32)> {
+    let band = height / 2;
+    let top = players.div_ceil(2) as i32;
+    let bottom = players as i32 - top;
+    let spacing = width / top;
+    // `k2` is twice the column position in spacings from the left edge;
+    // right-half columns are the mirror images of left-half ones.
+    let left = |k2: i32| k2 * spacing / 2;
+    let column = |k2: i32| if 2 * left(k2) < width { left(k2) } else { mirror_col(width, left(2 * top - k2)) };
+    let mut centres = Vec::new();
+    for j in 0..top {
+        centres.push((column(2 * j + 1), band / 2));
+    }
+    for j in 0..bottom {
+        let k2 = if bottom == top { 2 * j + 1 } else { 2 * j + 2 };
+        centres.push((column(k2), band + band / 2));
+    }
+    centres
+}
+
+/// Yards on a ring around the centre, mirror symmetric left to right.
+fn ring_layout(width: i32, height: i32, players: usize) -> Vec<(i32, i32)> {
+    let n = players as i32;
+    // Room for a pocket: 11 cells to the sides, 13 above and 15 below the yard centre.
+    let ry = (height / 2 - 15).max(10);
+    let rx = (width / 2 - 12).max(10);
+    let mut centres = Vec::new();
+    for k in 0..n {
+        // Angles (1024 = full turn, 0 = north) symmetric around the north-south axis.
+        let a = (1024 * (2 * k + 1) / (2 * n)) % 1024;
+        let (vx, vy) = crate::math::facing_vec(a);
+        let x = width / 2 + vx * rx / 1024;
+        let y = height / 2 + vy * ry / 1024;
+        centres.push((x, y));
+    }
+    // Exact mirror pairs: rebuild the right half from the left half.
+    let left: Vec<(i32, i32)> = centres.iter().copied().filter(|&(x, _)| 2 * x < width - 1).collect();
+    let mut out: Vec<(i32, i32)> = left.clone();
+    out.extend(left.iter().map(|&(x, y)| (mirror_col(width, x), y)));
+    for &(x, y) in &centres {
+        if 2 * x >= width - 1 && 2 * x <= width + 1 && !out.iter().any(|&(ox, oy)| oy == y && (ox - x).abs() <= 1) {
+            out.push((width / 2 - 1, y));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,11 +554,65 @@ mod tests {
                 assert!(m.connected(m.spawns[0], s), "{players}: spawn {s:?} reachable");
             }
         }
-        let m = Map::generate_for(96, 96, 9, 12, 4);
-        let w = 96;
-        for y in 0..w {
-            for x in 0..w {
-                assert_eq!(m.terrain[m.idx(x, y)], m.terrain[m.idx(w - 1 - y, x)], "4-way symmetric");
+    }
+
+    /// 3 to 8 players: the map is mirrored left to right, every base has the
+    /// same surroundings (shifted, never rotated, because structures face
+    /// south), mirrored spawns pair up, and every spawn is reachable.
+    #[test]
+    fn multi_player_bases_are_equivalent() {
+        for players in 3..=8 {
+            for size in [64, 96, 128, 160] {
+                if players > 4 && size < 96 {
+                    continue;
+                }
+                for seed in 0..6 {
+                    let m = Map::generate_for(size, size, seed, 12, players);
+                    let what = format!("{players} players, size {size}, seed {seed}");
+                    assert_eq!(m.spawns.len(), players, "{what}");
+                    for y in 0..size {
+                        for x in 0..size {
+                            let (i, j) = (m.idx(x, y), m.idx(size - 1 - x, y));
+                            assert_eq!((m.terrain[i], m.ore[i]), (m.terrain[j], m.ore[j]), "{what}: mirror at {x},{y}");
+                        }
+                    }
+                    let (x0, y0) = m.spawns[0];
+                    let centres: Vec<(i32, i32)> = m.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
+                    let r = pocket_radius(&centres);
+                    for &(sx, sy) in &m.spawns {
+                        assert!(m.contains(sx, sy) && m.contains(sx + 2, sy + 3), "{what}: spawn {sx},{sy} in bounds");
+                        assert!(m.connected(m.spawns[0], (sx, sy)), "{what}: spawn {sx},{sy} reachable");
+                        // A base on the middle column is its own mirror image, up to
+                        // half a cell (the map has an even width, the yard is 3 wide).
+                        let centred = ((sx + 1) * 2 - (size - 1)).abs() <= 1;
+                        assert!(centred || m.spawns.contains(&(size - 3 - sx, sy)), "{what}: spawn {sx},{sy} has a mirror image");
+                        // The pocket around the yard (clearing, ore fields, walls) is the
+                        // same picture; the right half of a centred base is shifted by a cell.
+                        for dy in -r - 2..=r + 4 {
+                            for dx in -r..=if centred { 0 } else { r } {
+                                // The clearing and the band of the walls.
+                                if dx * dx + dy * dy > r * r && dx.abs() > r - 2 {
+                                    continue;
+                                }
+                                let (a, b) = ((x0 + 1 + dx, y0 + 2 + dy), (sx + 1 + dx, sy + 2 + dy));
+                                if !m.contains(a.0, a.1) || !m.contains(b.0, b.1) {
+                                    continue;
+                                }
+                                let (i, j) = (m.idx(a.0, a.1), m.idx(b.0, b.1));
+                                assert_eq!(
+                                    (m.terrain[i], m.ore[i] > 0),
+                                    (m.terrain[j], m.ore[j] > 0),
+                                    "{what}: base at {sx},{sy} differs at offset {dx},{dy}"
+                                );
+                            }
+                        }
+                    }
+                    // Listed by column, top row first.
+                    let mut sorted = m.spawns.clone();
+                    sorted.sort_unstable();
+                    assert_eq!(sorted, m.spawns, "{what}");
+                    assert!(m.ore.iter().filter(|&&o| o > 0).count() > 40 * players, "{what}: enough ore");
+                }
             }
         }
     }

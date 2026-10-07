@@ -727,34 +727,35 @@ fn spawn_tanks(w: &mut World, owner: u8, cell: (i32, i32), n: i32) -> Vec<usize>
 
 #[test]
 fn ai_attacks_the_nearest_enemy_base_and_the_weakest_of_equally_near_ones() {
-    // Four players on a square map: 1 and 3 are 0's neighbours, 2 sits across.
+    // Four players in two rows (spawns by column, top first): 1 (below) and
+    // 2 (beside) are 0's neighbours, 3 sits across.
     let list = [("england", true, 0), ("russia", false, 0), ("germany", false, 0), ("ukraine", false, 0)];
     let mut w = World::with_options(7, 96, &setups(&list), opts());
     let first = crate::ai::choose_target_player(&w, 0).unwrap();
-    assert!(first == 1 || first == 3, "a neighbour, not the far base: {first}");
+    assert!(first == 1 || first == 2, "a neighbour, not the far base: {first}");
     // The stronger neighbour is left alone while an equally near one is weaker.
     let (sx, sy) = w.players[1].start;
     spawn_tanks(&mut w, 1, (sx, sy + 5), 4);
-    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(3));
-    let (sx, sy) = w.players[3].start;
-    spawn_tanks(&mut w, 3, (sx, sy + 5), 6);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(2));
+    let (sx, sy) = w.players[2].start;
+    spawn_tanks(&mut w, 2, (sx, sy + 5), 6);
     assert_eq!(crate::ai::choose_target_player(&w, 0), Some(1));
     // Far bases only count once the near ones are gone.
     for i in 0..w.actors.len() {
-        if w.actors[i].alive && (w.actors[i].owner == 1 || w.actors[i].owner == 3) {
+        if w.actors[i].alive && (w.actors[i].owner == 1 || w.actors[i].owner == 2) {
             w.kill(i);
         }
     }
     run(&mut w, 25);
-    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(2));
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(3));
 }
 
 #[test]
 fn ai_teammates_follow_their_leaders_attack_target() {
-    // Teams across the diagonals: 0 and 2 against 1 and 3.
+    // Teams by row: 0 and 2 (top) against 1 and 3 (bottom).
     let list = [("england", true, 1), ("russia", false, 2), ("germany", true, 1), ("ukraine", false, 2)];
     let mut w = World::with_options(4, 96, &setups(&list), opts());
-    // On its own, player 2 would go for the weaker of its two equally near enemies.
+    // On its own, player 2 would go for the enemy below it, even when the far one is weaker.
     let (sx, sy) = w.players[1].start;
     spawn_tanks(&mut w, 1, (sx, sy + 5), 6);
     assert_eq!(crate::ai::choose_target_player(&w, 2), Some(3));
