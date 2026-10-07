@@ -70,4 +70,6 @@ jobs:
         env:
           WEBRA_GIT_HASH: ${{ github.sha }}
       - run: npm run check:js
+      - run: npm run test:protocol
+      - run: npm run test:server
       - run: npm run test:web
