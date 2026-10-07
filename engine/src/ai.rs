@@ -28,6 +28,9 @@ pub struct AiState {
     /// Enemy player the waves go to, and when to reconsider it.
     pub target_player: Option<u8>,
     retarget_at: u32,
+    /// Game seed, to break ties between equally good choices without
+    /// favouring low player slots.
+    pub salt: u64,
 }
 
 impl AiState {
@@ -37,7 +40,7 @@ impl AiState {
             AiDifficulty::Normal => (25, 6, 20, 2),
             AiDifficulty::Hard => (15, 5, 30, 4),
         };
-        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses, target_player: None, retarget_at: 0 }
+        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses, target_player: None, retarget_at: 0, salt: 0 }
     }
 }
 
@@ -264,21 +267,25 @@ fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
         return;
     }
     let (sx, sy) = w.players[player as usize].start;
-    // Defences go out toward the map centre; everything else around the yard.
-    let (ax, ay) = if q == QueueType::Defense {
-        let (mx, my) = (w.map.width / 2, w.map.height / 2);
-        (sx + (mx - sx).signum() * 7, sy + (my - sy).signum() * 7)
+    // Gun and Tesla defences go out toward the enemy; everything else
+    // (superweapons, gap generators) around the yard.
+    let info = &w.rules.actors[item.ty as usize];
+    let (ax, ay) = if q == QueueType::Defense && info.can_attack(&w.rules, Kind::Vehicle) {
+        let (dx, dy) = enemy_direction(w, player);
+        (sx + dx * 7 / 1024, sy + dy * 7 / 1024)
     } else {
         (sx, sy)
     };
-    let b = w.rules.actors[item.ty as usize].building.as_ref().unwrap();
+    let b = info.building.as_ref().unwrap();
     let (bw, bh) = (b.width, b.height);
-    // Mirror the scan per axis for bases in the right or bottom half of the
-    // map, so players on mirrored spawns lay out mirrored bases.
-    let (flip_x, flip_y) = (sx * 2 > w.map.width, sy * 2 > w.map.height);
+    // Mirror the scan for bases in the right half of the map, so players on
+    // mirrored spawns lay out mirrored bases. Never flip it vertically:
+    // structures face south, so a base laid out upside down is not
+    // equivalent (generated maps repeat their top half in the bottom half).
+    let (flip_x, flip_y) = (sx * 2 > w.map.width, false);
     // Refineries go where the dock is closest to ore, so trips stay short
     // whichever way the dock faces relative to the base.
-    let ore = if b.refinery.is_some() { ore_distance_field(w, sx, sy, 26) } else { Vec::new() };
+    let ore = if b.refinery.is_some() { ore_distance_field(w, sx + 1, sy + 2, 26) } else { Vec::new() };
     // Spiral outward from the anchor. Prefer spots that leave a one cell gap so
     // units can still pass; fall back to any legal spot.
     for strict in [true, false] {
@@ -316,7 +323,7 @@ fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
 }
 
 /// Ground distance (10 per straight step, 14 per diagonal) from every cell to
-/// the nearest ore cell within `radius` cells of a base; `i32::MAX` where no
+/// the nearest ore cell within `radius` cells of a yard centre; `i32::MAX` where no
 /// ore is reachable. Empty when there is no ore near the base.
 fn ore_distance_field(w: &World, sx: i32, sy: i32, radius: i32) -> Vec<i32> {
     let mut d = vec![i32::MAX; w.map.cells()];
@@ -427,23 +434,33 @@ fn command_army(w: &mut World, player: u8) {
         })
         .collect();
     let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
+    let rally = rally_point(w, player);
+    // Units at home: idle, or on their way to the rally point (new units).
+    let home_units: Vec<usize> = army
+        .iter()
+        .copied()
+        .filter(|&i| {
+            let a = &w.actors[i];
+            a.activity == Activity::Idle
+                || (a.activity == Activity::Move && !a.attack_move && dist(a.dest.0, a.dest.1, rally.0, rally.1) < 2 * CELL)
+        })
+        .collect();
 
-    // Defend: enemies near our base pull idle units in.
+    // Defend: enemies near our base pull the units at home in.
     if let Some(t) = threat_near(w, player, base) {
         let (tx, ty) = (w.actors[t].x, w.actors[t].y);
-        w.order_move(&idle, tx, ty, true);
+        w.order_move(&home_units, tx, ty, true);
         return;
     }
-    // Help allies: enemies near a teammate's base pull idle units there too.
+    // Help allies: enemies near a teammate's base pull them there too.
     if let Some(t) = allied_base_threat(w, player) {
         let (tx, ty) = (w.actors[t].x, w.actors[t].y);
-        w.order_move(&idle, tx, ty, true);
+        w.order_move(&home_units, tx, ty, true);
         return;
     }
 
-    // Gather idle units at a rally point toward the map center, attack in waves.
-    let (mx, my) = (w.map.width * CELL / 2, w.map.height * CELL / 2);
-    let rally = (base.0 + (mx - base.0) / 4, base.1 + (my - base.1) / 4);
+    // Gather idle units at a rally point toward the enemy, attack in waves.
+    set_factory_rally(w, player, rally);
     let gathered: Vec<usize> = idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) < 6 * CELL).collect();
     let target_player = update_target_player(w, player);
     let target = enemy_target(w, player, target_player, base);
@@ -462,6 +479,53 @@ fn command_army(w: &mut World, player: u8) {
         w.order_move(&forward, tx, ty, true);
     }
     w.order_move(&home, rally.0, rally.1, false);
+}
+
+/// Where the army gathers between waves: six cells from the yard centre
+/// toward the enemy it fights.
+fn rally_point(w: &World, player: u8) -> (i32, i32) {
+    let base = base_point(w, player);
+    let (dx, dy) = enemy_direction(w, player);
+    (base.0 + dx * 6 * CELL / 1024, base.1 + dy * 6 * CELL / 1024)
+}
+
+/// Point every own factory's rally point at `rally`, so new units leave by
+/// the exit nearest to it and drive there.
+fn set_factory_rally(w: &mut World, player: u8, rally: (i32, i32)) {
+    let factories: Vec<usize> = owned_buildings(w, player)
+        .into_iter()
+        .filter(|&b| {
+            let info = w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap();
+            info.produces.iter().any(|q| matches!(q, QueueType::Infantry | QueueType::Vehicle)) && w.actors[b].rally != Some(rally)
+        })
+        .collect();
+    for b in factories {
+        w.actors[b].rally = Some(rally);
+    }
+}
+
+/// Direction (length 1024) from `player`'s yard toward the enemy it fights:
+/// its target player's base, else the nearest hostile base, else the map
+/// centre. Rally points and defences face the enemy, not a map side, so
+/// bases in the top and bottom rows of a map behave alike.
+fn enemy_direction(w: &World, player: u8) -> (i32, i32) {
+    let base = base_point(w, player);
+    let enemy = w.ai[player as usize]
+        .target_player
+        .filter(|&t| is_live_enemy(w, player, t))
+        .or_else(|| {
+            (0..w.players.len() as u8)
+                .filter(|&p| is_live_enemy(w, player, p))
+                .min_by_key(|&p| (crate::math::dist_sq(base.0, base.1, base_point(w, p).0, base_point(w, p).1), p))
+        })
+        .map(|p| base_point(w, p));
+    let (tx, ty) = enemy.unwrap_or((w.map.width * CELL / 2, w.map.height * CELL / 2));
+    let (dx, dy) = (tx - base.0, ty - base.1);
+    let len = dist(0, 0, dx, dy);
+    if len == 0 {
+        return (0, 1024);
+    }
+    ((dx as i64 * 1024 / len as i64) as i32, (dy as i64 * 1024 / len as i64) as i32)
 }
 
 /// A visible enemy unit near the base of a living ally, nearest ally base first.
@@ -520,7 +584,18 @@ pub(crate) fn choose_target_player(w: &World, player: u8) -> Option<u8> {
     let enemies: Vec<(u8, i32)> =
         (0..w.players.len() as u8).filter(|&p| is_live_enemy(w, player, p)).map(|p| (p, distance_to_player(w, base, p))).collect();
     let nearest = enemies.iter().map(|&(_, d)| d).min()?;
-    enemies.iter().filter(|&&(_, d)| d <= nearest.saturating_add(NEAR_TIE)).min_by_key(|&&(p, d)| (strength(w, p), d, p)).map(|&(p, _)| p)
+    let tie = |p: u8| tie_break(w, player, p as u64, (w.tick / RETARGET_TICKS) as u64);
+    enemies.iter().filter(|&&(_, d)| d <= nearest.saturating_add(NEAR_TIE)).min_by_key(|&&(p, _)| (strength(w, p), tie(p))).map(|&(p, _)| p)
+}
+
+/// Deterministic pseudo-random key for breaking ties between equal choices
+/// (seeded by the game, so no player slot or map side is favoured).
+fn tie_break(w: &World, player: u8, choice: u64, round: u64) -> u64 {
+    let salt = w.ai.get(player as usize).map_or(0, |a| a.salt);
+    let mut z = salt ^ (round << 24) ^ ((player as u64) << 16) ^ choice;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 /// The team leader: the lowest slot AI player still alive on `player`'s team.

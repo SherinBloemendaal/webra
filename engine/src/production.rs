@@ -300,16 +300,18 @@ impl World {
         let exits = binfo.exits.clone();
         let height = binfo.height;
         let width = binfo.width;
-        // Pick the exit with the fewest units on it.
-        let mut best: Option<(usize, (i32, i32))> = None;
+        // Pick the exit with the fewest units on it; among those, the one
+        // nearest the rally point (so mirrored bases use mirrored exits).
+        let mut best: Option<((usize, i64), (i32, i32))> = None;
         for &(ex, ey) in &exits {
             let (cx, cy) = (bcx + ex, bcy + ey);
             if !self.map.contains(cx, cy) {
                 continue;
             }
             let n = self.units_in_cell(self.map.idx(cx, cy)).len();
-            if best.is_none_or(|(bn, _)| n < bn) {
-                best = Some((n, (cx, cy)));
+            let to_rally = rally.map_or(0, |(rx, ry)| crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry));
+            if best.is_none_or(|(bk, _)| (n, to_rally) < bk) {
+                best = Some(((n, to_rally), (cx, cy)));
             }
         }
         let (mut ex, mut ey) = match best {

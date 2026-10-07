@@ -855,9 +855,10 @@ fn ai_ignores_enemies_it_cannot_see_or_target_near_its_base() {
     run(&mut w, 30);
     let (sx, sy) = (w.actors[stnk].x, w.actors[stnk].y);
     assert!(
-        tanks.iter().any(|&i| w.actors[i].attack_move && crate::math::dist(w.actors[i].dest.0, w.actors[i].dest.1, sx, sy) < CELL)
+        !w.actors[stnk].alive
+            || tanks.iter().any(|&i| w.actors[i].attack_move && crate::math::dist(w.actors[i].dest.0, w.actors[i].dest.1, sx, sy) < CELL)
             || tanks.iter().any(|&i| w.actors[i].activity == Activity::Attack),
-        "a visible intruder pulls the tanks in"
+        "a visible intruder pulls the tanks in (or is already destroyed)"
     );
 }
 

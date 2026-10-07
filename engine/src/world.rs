@@ -634,6 +634,9 @@ impl World {
             .enumerate()
             .map(|(slot, p)| crate::ai::AiState::new(slot as u32, p.ai.unwrap_or(AiDifficulty::Normal)))
             .collect();
+        for a in w.ai.iter_mut() {
+            a.salt = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+        }
         for slot in 0..players.len() {
             w.spawn_start(slot as u8);
         }
