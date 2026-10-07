@@ -158,3 +158,9 @@ write migrations so that the previous Worker version still works with them.
   the API is unavailable.
 - Everything, including the API and Durable Objects: `npm run build`, then
   `npx wrangler dev` from `apps/server` (local D1 and Durable Objects).
+
+## Turning automatic deploys on
+
+The deploy job only runs when the repository variable `DEPLOY_ENABLED` is
+`true` (Settings, Secrets and variables, Actions, Variables). Set it after the
+two secrets above exist, so pushes before hosting is ready do not fail.

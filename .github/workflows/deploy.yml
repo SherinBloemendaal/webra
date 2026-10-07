@@ -24,6 +24,9 @@ jobs:
   deploy:
     name: Deploy to Cloudflare
     needs: ci
+    # Off until hosting is set up: set the repository variable DEPLOY_ENABLED
+    # to "true" once the secrets below exist (docs/deploy.md).
+    if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
