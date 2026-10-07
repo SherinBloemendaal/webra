@@ -583,6 +583,14 @@ export class Sidebar {
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
     if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    // Ability state (engine actor_json().ability).
+    const ab = info.ability;
+    if (ab && info.owner === this.playerId) {
+      if (ab.maxAmmo !== undefined) detail += `   Mines ${ab.ammo}/${ab.maxAmmo}`;
+      if (ab.chargeMax !== undefined) detail += ab.charge >= ab.chargeMax ? '   Chrono ready' : `   Chrono ${Math.floor((100 * ab.charge) / ab.chargeMax)}%`;
+      if (ab.cloaked) detail += '   Cloaked';
+      if (ab.deployed) detail += `   Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`;
+    }
     setText(this.selDetailEl, detail);
   }
 

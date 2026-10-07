@@ -124,6 +124,8 @@ test('orders and hash', () => {
     { o: 'deploy', player: 1, ids: [4] },
     { o: 'support_power', player: 1, key: 'AirstrikePower@spyplane', x: 1024, y: 2048 },
     { o: 'support_power', player: 1, key: 'ParatroopersPower@paratroopers', x: 0, y: 0, x2: 4096, y2: 0 },
+    { o: 'lay_mines', player: 1, ids: [4], x0: 3, y0: 4, x1: 6, y1: 4 },
+    { o: 'teleport', player: 1, ids: [4], x: 1024, y: 2048 },
   ]) {
     ok({ t: 'orders', tick: 1, orders: [o] });
   }
@@ -140,6 +142,7 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'x'.repeat(65), x: 0, y: 0 }] }, /power key/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'GpsPower', x: 0, y: 0, x2: 0.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'lay_mines', player: 0, ids: [1], x0: 0, y0: 0, x1: 63, y1: 63 }] }, /minefield/);
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');
   assert.deepEqual(ok({ t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' }), { t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' });
