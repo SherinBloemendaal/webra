@@ -192,18 +192,21 @@ test('spawns must be reachable from each other by ground', () => {
   assert.equal(seen[0 * 48 + 24], 0);
 });
 
-test('spawns need 3x4 clear ground; overlapping spawns are a warning', () => {
+test('spawns need 3x4 clear ground; overlapping spawns are an error, close ones a warning', () => {
   const rough = makeMap({}, (t, _o, w) => (t[13 * w + 12] = TERRAIN.ROUGH));
   rough.spawns = [[10, 10], [30, 30]];
   assert.ok(validateMap(rough).errors.some((e) => e.includes('Spawn 1 at 10,10 needs 3x4 clear ground')));
   const edge = makeMap();
   edge.spawns = [[46, 10], [30, 30]];
   assert.ok(validateMap(edge).errors.some((e) => e.includes('Spawn 1 at 46,10 needs 3x4 clear ground')));
+  const overlapping = makeMap();
+  overlapping.spawns = [[10, 10], [12, 12]];
+  assert.ok(validateMap(overlapping, { catalog: CATALOG }).errors.some((e) => e.includes('Spawns 1 and 2 overlap')));
   const close = makeMap();
-  close.spawns = [[10, 10], [12, 12]];
+  close.spawns = [[10, 10], [13, 10]];
   const r = validateMap(close, { catalog: CATALOG });
   assert.ok(r.ok, r.errors.join('; '));
-  assert.ok(r.warnings.some((w) => w.includes('Spawns 1 and 2 overlap')));
+  assert.ok(r.warnings.some((w) => w.includes('Spawns 1 and 2 are very close')));
 });
 
 test('actors: type, owner, facing and footprint checks', () => {

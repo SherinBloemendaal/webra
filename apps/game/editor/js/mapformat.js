@@ -331,8 +331,11 @@ export function validateMap(map, opts = {}) {
       for (let b = a + 1; b < goodSpawns.length; b++) {
         const A = goodSpawns[a];
         const B = goodSpawns[b];
-        if (Math.abs(A.x - B.x) < 4 && Math.abs(A.y - B.y) < 5) {
-          warn(`Spawns ${A.n} and ${B.n} overlap.`, B.x, B.y);
+        // Overlapping yards are refused by the engine (the second start would get no yard).
+        if (Math.abs(A.x - B.x) < 3 && Math.abs(A.y - B.y) < 4) {
+          error(`Spawns ${A.n} and ${B.n} overlap.`, B.x, B.y);
+        } else if (Math.abs(A.x - B.x) < 4 && Math.abs(A.y - B.y) < 5) {
+          warn(`Spawns ${A.n} and ${B.n} are very close.`, B.x, B.y);
         }
       }
     }
