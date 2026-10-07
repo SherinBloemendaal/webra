@@ -567,7 +567,7 @@ impl Game {
                     "kind": info.kind,
                     "name": info.name,
                     "description": info.description,
-                    "progress": inst.progress_permille() as f32 / 1000.0,
+                    "progress": (inst.total - inst.remaining) as f32 / inst.total.max(1) as f32,
                     "ready": inst.ready(),
                     "charging": inst.charging,
                     "remainingTicks": inst.remaining,
