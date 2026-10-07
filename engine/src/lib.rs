@@ -47,6 +47,13 @@ use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World,
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_HASH: &str = env!("WEBRA_GIT_HASH");
 
+/// The built-in rules (engine/rules.json) as JSON: the base that map rules
+/// overrides apply to. Used by the map editor to validate and show defaults.
+#[wasm_bindgen]
+pub fn base_rules_json() -> String {
+    rules::RULES_JSON.to_string()
+}
+
 #[wasm_bindgen]
 pub fn version() -> String {
     format!("{VERSION}+{GIT_HASH}")
