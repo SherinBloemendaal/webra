@@ -23,8 +23,9 @@ impl World {
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
-            // Landed aircraft are ground targets (air.rs).
-            Kind::Aircraft => self.target_kind(i).target_class(),
+            // Landed aircraft are ground targets, paratroopers under their
+            // parachute airborne ones (plane.rs, target_kind).
+            Kind::Aircraft | Kind::Infantry => self.target_kind(i).target_class(),
             // Naval yards are WaterActor and Structure in OpenRA (torpedoes hit them).
             Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
                 crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
@@ -103,7 +104,8 @@ impl World {
 
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
     pub(crate) fn targetable(&self, t: usize, player: u8) -> bool {
-        self.is_visible_to(t, player)
+        // Falling wrecks and the spy plane cannot be targeted (plane.rs).
+        self.is_visible_to(t, player) && !self.untargetable_aircraft(t)
     }
 
     pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
@@ -339,6 +341,11 @@ impl World {
                 let tref = self.make_ref(t);
                 self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
             }
+            // GravityBomb: falls from the shooter's altitude where it was released (plane.rs).
+            ProjKind::Bomb => {
+                let alt = self.actors[i].altitude;
+                self.drop_bomb(w, sx, sy, owner, alt);
+            }
         }
     }
 
@@ -497,6 +504,10 @@ impl World {
 
     /// Death explosion of a unit (e.g. Demolition Truck's mini nuke, V2 warhead).
     pub(crate) fn death_explosion(&mut self, i: usize) {
+        // A plane shot down in the air already exploded where it crashed (plane.rs).
+        if self.crashed(i) {
+            return;
+        }
         let a = &self.actors[i];
         if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
             // One tick later, so chain reactions ripple outward instead of recursing.

@@ -43,6 +43,11 @@ impl World {
                 self.tick_defense(i);
                 continue;
             }
+            // Paratroopers sink on their parachute until they land (plane.rs).
+            if self.actors[i].air.parachute {
+                self.tick_parachute(i);
+                continue;
+            }
             match self.actors[i].kind {
                 Kind::Aircraft => self.tick_aircraft(i),
                 Kind::Ship => self.tick_ship(i),
@@ -585,7 +590,8 @@ impl World {
         let mut crushed: Vec<usize> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
-            if !a.alive || a.kind == Kind::Building {
+            // Planes and paratroopers in the air never bump into anything (plane.rs).
+            if !a.alive || a.kind == Kind::Building || a.air.parachute || self.is_plane(i) {
                 continue;
             }
             let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
@@ -603,7 +609,7 @@ impl World {
                         let b = &self.actors[j];
                         // Only units in the same domain bump into each other
                         // (aircraft fly over tanks, ships never meet tanks).
-                        if !b.alive || self.domain_of(i) != self.domain_of(j) {
+                        if !b.alive || self.domain_of(i) != self.domain_of(j) || b.air.parachute || self.is_plane(j) {
                             continue;
                         }
                         // A landed helicopter and one flying over it do not touch.

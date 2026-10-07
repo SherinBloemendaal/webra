@@ -182,7 +182,8 @@ impl World {
                 self.push_heli_rotors(i, x, y - lift, alpha, sprites, &mut aircraft);
                 continue;
             }
-            if a.owner != player && !self.is_visible_to(i, player) {
+            // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
+            if a.air.parachute || (a.owner != player && !self.is_visible_to(i, player)) {
                 continue;
             }
             let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
@@ -213,6 +214,8 @@ impl World {
         // Shot-down helicopters falling (helicopter.rs).
         self.push_heli_crashes(player, alpha, view, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
+        // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
+        self.render_air_extras(player, alpha, view, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
 
         for pr in &self.projectiles {

@@ -262,8 +262,10 @@ fn every_actor_is_reachable_for_the_right_factions() {
     let can = |faction: &str, id: &str| r.obtainable[r.faction_index(faction).unwrap()][r.actor_index(id).unwrap()];
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
-        // FACT comes from deploying an MCV.
-        assert!(any || a.id == "FACT", "{} is buildable by some faction", a.id);
+        // FACT comes from deploying an MCV; support power actors (paratroopers,
+        // spy plane, Badgers) are never built.
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str());
+        assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
     // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the
     // Chinook, the Soviets fly the Hind, the Allies the Black Hawk and Longbow.

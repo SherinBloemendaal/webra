@@ -156,64 +156,72 @@ def available(faction):
             new = provides(n, t, faction, S) - S
             if new: S |= new; changed = True
     return {n for n in owned if n == 'FACT' or ok(prereq_list(rules[n]), S, final=True)}
-AVAIL = {f: available(f) for f in FACTIONS}
 
-units = []
-for name, t in rules.items():
-    if name.startswith('^') or 'Buildable' not in t: continue
-    queue = g(t, 'Buildable/Queue')
-    if not queue: continue
-    prereq = g(t, 'Buildable/Prerequisites') or ''
-    if 'Valued' not in t: continue
-    arms = []
-    for k, (v, ch) in all_traits(t, 'Armament').items():
-        w = ch.get('Weapon', [''])[0]
-        if w and 'RequiresCondition' in ch and False: pass
-        if w: arms.append({'slot': k, 'weapon': w, 'condition': ch.get('RequiresCondition', [''])[0] or None})
-    power = sum(int(ch.get('Amount', ['0'])[0]) for k, (v, ch) in all_traits(t, 'Power').items())
-    fs = [f for f in FACTIONS if name in AVAIL[f]]
-    a, so = set(fs) & ALLIES, set(fs) & SOVIET
-    side = 'Both' if a and so else 'Allies' if a else 'Soviet' if so else 'Unavailable'
-    tech = next((x for x in TECH if '~techlevel.' + x in prereq), None)
-    tk = g(t, 'Tooltip/Name') or g(t, 'DisguiseTooltip/Name')
-    units.append({
-        'id': name,
-        'name': tr(tk),
-        'description': tr(g(t, 'Buildable/Description')),
-        'queue': queue,
-        'side': side,
-        'factions': fs,
-        'fake': (tk or '').startswith('actor-fake') or 'Fake' in (tr(tk) or ''),
-        'techLevel': tech,
-        'cost': int(g(t, 'Valued/Cost') or 0),
-        'buildDuration': g(t, 'Buildable/BuildDuration'),
-        'buildDurationModifier': g(t, 'Buildable/BuildDurationModifier'),
-        'buildPaletteOrder': int(g(t, 'Buildable/BuildPaletteOrder') or 0),
-        'prerequisites': [p.strip() for p in prereq.split(',') if p.strip()],
-        'hp': int(g(t, 'Health/HP') or 0) or None,
-        'armor': g(t, 'Armor/Type'),
-        'speed': int(g(t, 'Mobile/Speed') or g(t, 'Aircraft/Speed') or 0) or None,
-        'locomotor': g(t, 'Mobile/Locomotor'),
-        'sight': g(t, 'RevealsShroud/Range'),
-        'power': power or None,
-        'footprint': g(t, 'Building/Footprint'),
-        'dimensions': g(t, 'Building/Dimensions'),
-        'weapons': arms,
-        'cargo': g(t, 'Cargo/MaxWeight'),
-        'garrison': g(t, 'Cargo/InitialUnits') if 'AttackGarrisoned' in t else None,
-        'supportPowers': [{'trait': k, 'name': tr(ch.get('Name', [''])[0]), 'chargeInterval': ch.get('ChargeInterval', [''])[0] or None,
-                           'prerequisites': ch.get('Prerequisites', [''])[0] or None}
-                          for k, (v, ch) in t.items() if re.match(r'^[A-Za-z]+Power(@|$)', k) and k.split('@')[0] not in ('Power', 'ScalePowerWithHealth', 'InfiltrateForSupportPower')],
-        'traits': to_json(t),
-    })
+def main():
+    """Write actors.json and weapons.json for every buildable actor into sys.argv[1]."""
+    global AVAIL
+    AVAIL = {f: available(f) for f in FACTIONS}
 
-order = {'Building': 0, 'Defense': 1, 'Infantry': 2, 'Vehicle': 3, 'Aircraft': 4, 'Ship': 5}
-units.sort(key=lambda u: (u['fake'], order.get(u['queue'], 9), u['queue'], u['buildPaletteOrder']))
+    units = []
+    for name, t in rules.items():
+        if name.startswith('^') or 'Buildable' not in t: continue
+        queue = g(t, 'Buildable/Queue')
+        if not queue: continue
+        prereq = g(t, 'Buildable/Prerequisites') or ''
+        if 'Valued' not in t: continue
+        arms = []
+        for k, (v, ch) in all_traits(t, 'Armament').items():
+            w = ch.get('Weapon', [''])[0]
+            if w and 'RequiresCondition' in ch and False: pass
+            if w: arms.append({'slot': k, 'weapon': w, 'condition': ch.get('RequiresCondition', [''])[0] or None})
+        power = sum(int(ch.get('Amount', ['0'])[0]) for k, (v, ch) in all_traits(t, 'Power').items())
+        fs = [f for f in FACTIONS if name in AVAIL[f]]
+        a, so = set(fs) & ALLIES, set(fs) & SOVIET
+        side = 'Both' if a and so else 'Allies' if a else 'Soviet' if so else 'Unavailable'
+        tech = next((x for x in TECH if '~techlevel.' + x in prereq), None)
+        tk = g(t, 'Tooltip/Name') or g(t, 'DisguiseTooltip/Name')
+        units.append({
+            'id': name,
+            'name': tr(tk),
+            'description': tr(g(t, 'Buildable/Description')),
+            'queue': queue,
+            'side': side,
+            'factions': fs,
+            'fake': (tk or '').startswith('actor-fake') or 'Fake' in (tr(tk) or ''),
+            'techLevel': tech,
+            'cost': int(g(t, 'Valued/Cost') or 0),
+            'buildDuration': g(t, 'Buildable/BuildDuration'),
+            'buildDurationModifier': g(t, 'Buildable/BuildDurationModifier'),
+            'buildPaletteOrder': int(g(t, 'Buildable/BuildPaletteOrder') or 0),
+            'prerequisites': [p.strip() for p in prereq.split(',') if p.strip()],
+            'hp': int(g(t, 'Health/HP') or 0) or None,
+            'armor': g(t, 'Armor/Type'),
+            'speed': int(g(t, 'Mobile/Speed') or g(t, 'Aircraft/Speed') or 0) or None,
+            'locomotor': g(t, 'Mobile/Locomotor'),
+            'sight': g(t, 'RevealsShroud/Range'),
+            'power': power or None,
+            'footprint': g(t, 'Building/Footprint'),
+            'dimensions': g(t, 'Building/Dimensions'),
+            'weapons': arms,
+            'cargo': g(t, 'Cargo/MaxWeight'),
+            'garrison': g(t, 'Cargo/InitialUnits') if 'AttackGarrisoned' in t else None,
+            'supportPowers': [{'trait': k, 'name': tr(ch.get('Name', [''])[0]), 'chargeInterval': ch.get('ChargeInterval', [''])[0] or None,
+                               'prerequisites': ch.get('Prerequisites', [''])[0] or None}
+                              for k, (v, ch) in t.items() if re.match(r'^[A-Za-z]+Power(@|$)', k) and k.split('@')[0] not in ('Power', 'ScalePowerWithHealth', 'InfiltrateForSupportPower')],
+            'traits': to_json(t),
+        })
 
-out = sys.argv[1]
-os.makedirs(out, exist_ok=True)
-json.dump(units, open(os.path.join(out, 'actors.json'), 'w'), indent=2)
-json.dump(weapons_json, open(os.path.join(out, 'weapons.json'), 'w'), indent=2)
-print(len(units), 'buildables,', len(weapons_json), 'weapons')
-from collections import Counter
-print(Counter((u['queue'], u['side'], u['fake']) for u in units))
+    order = {'Building': 0, 'Defense': 1, 'Infantry': 2, 'Vehicle': 3, 'Aircraft': 4, 'Ship': 5}
+    units.sort(key=lambda u: (u['fake'], order.get(u['queue'], 9), u['queue'], u['buildPaletteOrder']))
+
+    out = sys.argv[1]
+    os.makedirs(out, exist_ok=True)
+    json.dump(units, open(os.path.join(out, 'actors.json'), 'w'), indent=2)
+    json.dump(weapons_json, open(os.path.join(out, 'weapons.json'), 'w'), indent=2)
+    print(len(units), 'buildables,', len(weapons_json), 'weapons')
+    from collections import Counter
+    print(Counter((u['queue'], u['side'], u['fake']) for u in units))
+
+
+if __name__ == '__main__':
+    main()

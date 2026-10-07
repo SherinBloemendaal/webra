@@ -119,6 +119,8 @@ pub struct Actor {
 
     /// Helicopter state (helicopter.rs): task, ammo, reserved helipad.
     pub heli: crate::helicopter::HeliState,
+    /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
+    pub air: crate::plane::AirState,
 }
 
 impl Actor {
@@ -177,6 +179,7 @@ impl Actor {
             submerged: false,
             cloak_timer: 0,
             detected_by: 0,
+            air: crate::plane::AirState::default(),
         }
     }
 
@@ -422,6 +425,18 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// Fire a support power (powers.rs) at (x, y); (x2, y2) optionally sets a
+    /// direction (the flight direction of aircraft powers).
+    SupportPower {
+        player: u8,
+        key: String,
+        x: i32,
+        y: i32,
+        #[serde(default)]
+        x2: Option<i32>,
+        #[serde(default)]
+        y2: Option<i32>,
+    },
 }
 
 impl Order {
@@ -439,7 +454,8 @@ impl Order {
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
             | Order::Land { player, .. }
-            | Order::ReturnToBase { player, .. } => *player,
+            | Order::ReturnToBase { player, .. }
+            | Order::SupportPower { player, .. } => *player,
         }
     }
 
@@ -457,7 +473,8 @@ impl Order {
             | Order::Sell { player, .. }
             | Order::Deploy { player, .. }
             | Order::Land { player, .. }
-            | Order::ReturnToBase { player, .. } => *player = p,
+            | Order::ReturnToBase { player, .. }
+            | Order::SupportPower { player, .. } => *player = p,
         }
     }
 
@@ -473,6 +490,7 @@ impl Order {
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. } => ids.len() <= MAX_IDS,
             Order::StartProduction { count, .. } => (1..=50).contains(count),
+            Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
         }
     }
@@ -526,6 +544,8 @@ pub struct World {
     pub options: GameOptions,
     /// Helicopters falling after being shot down (helicopter.rs).
     pub crashes: Vec<crate::helicopter::Crash>,
+    /// Support power timers, cameras and falling bombs (powers.rs).
+    pub powers: crate::powers::PowersState,
 }
 
 impl World {
@@ -673,6 +693,7 @@ impl World {
             pending: Vec::new(),
             options: GameOptions::default(),
             crashes: Vec::new(),
+            powers: Default::default(),
             map,
         }
     }
@@ -825,6 +846,10 @@ impl World {
 
     pub fn kill(&mut self, i: usize) {
         if !self.actors[i].alive {
+            return;
+        }
+        // Airborne planes fall first and die where they hit the ground (plane.rs).
+        if self.begin_crash(i) {
             return;
         }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
@@ -1048,7 +1073,11 @@ impl World {
         let mut out: Vec<usize> = ids
             .iter()
             .filter_map(|&r| self.resolve(r))
-            .filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world())
+            .filter(|&i| {
+                self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world()
+                    // Support power aircraft reject orders (OpenRA RejectsOrders).
+                    && !self.is_support_aircraft(i)
+            })
             .collect();
         out.sort_unstable();
         out.dedup();
@@ -1080,6 +1109,7 @@ impl World {
                         a.activity = Activity::Idle;
                         a.target = NONE;
                         a.attack_move = false;
+                        a.air.new_order();
                     }
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
@@ -1121,6 +1151,10 @@ impl World {
                 Order::ReturnToBase { player, ids } => {
                     let units = self.owned_units(player, &ids);
                     self.order_return_to_base(&units);
+                    // Planes fly home to a free airfield (plane.rs).
+                    for &i in &units {
+                        self.plane_return_to_base(i, None);
+                    }
                 }
                 Order::Rally { player, building, x, y } => {
                     if let Some(b) = self.resolve(building) {
@@ -1128,6 +1162,9 @@ impl World {
                             self.actors[b].rally = Some((x, y));
                         }
                     }
+                }
+                Order::SupportPower { player, key, x, y, x2, y2 } => {
+                    self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
             }
         }
@@ -1184,6 +1221,7 @@ impl World {
             a.forced = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
@@ -1203,6 +1241,7 @@ impl World {
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
@@ -1243,6 +1282,10 @@ impl World {
         if units.is_empty() {
             return SmartAction::None;
         }
+        // Planes over an own airfield: return to base (plane.rs).
+        if let Some(act) = self.plane_smart_action(player, units, x, y) {
+            return act;
+        }
         // Helicopters on an own helipad (dock) or service depot (repair).
         if let Some(action) = self.heli_smart_action(player, units, x, y) {
             return action;
@@ -1280,8 +1323,10 @@ impl World {
     }
 
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
+        // Planes clicked onto an own airfield return to base there (plane.rs).
+        let rest = self.plane_smart_rtb(player, units, x, y);
         // Helicopters sent to an own helipad or service depot (helicopter.rs).
-        let rest = self.heli_order_smart(player, units, x, y);
+        let rest = self.heli_order_smart(player, &rest, x, y);
         let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
@@ -1376,6 +1421,8 @@ impl World {
             self.tick_production(p as u8);
             self.tick_powers(p as u8);
         }
+        // Support power timers, cameras and falling bombs (powers.rs).
+        self.tick_support_powers();
         self.tick_units();
         self.tick_projectiles();
         self.tick_crashes();

@@ -184,6 +184,18 @@ when it is shot down.
 
 Not modelled: landed helicopters do not block ground units' paths.
 
+Aircraft are targeted by their state: airborne ones are `air`, landed ones
+count as `vehicle` (OpenRA `Targetable@AIRBORNE` / `Targetable@GROUND`).
+
+Support powers (engine/src/powers.rs, API documented at the top of that
+file): one timer per player per power key (the OpenRA trait name, e.g.
+`AirstrikePower@spyplane`), however many structures provide it. Order
+`{"o": "support_power", player, key, x, y, x2?, y2?}` (world units; the
+optional second point gives aircraft powers their flight direction), wasm
+`Game.activate_power(player, key, x, y, x2?, y2?)` (world pixels), and
+`player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
+ready, charging, remainingTicks }]`.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves

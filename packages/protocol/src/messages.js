@@ -95,6 +95,13 @@ function idList(v, what) {
 
 const i32 = (v, what) => int(v, I32_MIN, I32_MAX, what);
 const u32 = (v, what) => int(v, 0, U32_MAX, what);
+/** Field that may be left out (serde `Option` with a default in the engine). */
+const optional = (check) => Object.assign((v, what) => check(v, what), { optional: true });
+/** Support power key: an OpenRA trait name such as `AirstrikePower@spyplane`. */
+const powerKey = (v, what) => {
+  if (typeof v !== 'string' || !/^[A-Za-z0-9@._-]{1,64}$/.test(v)) fail(`${what} must be a power key`);
+  return v;
+};
 
 // Mirrors `Order` in engine/src/world.rs (serde tag "o", snake_case variants,
 // deny_unknown_fields) including its is_reasonable() caps. `player` is
@@ -113,6 +120,8 @@ const ORDER_SCHEMA = {
   // Helicopters (engine/src/helicopter.rs).
   land: { ids: idList, x: i32, y: i32 },
   return_to_base: { ids: idList },
+  // engine/src/powers.rs: (x2, y2) optionally gives aircraft powers their direction.
+  support_power: { key: powerKey, x: i32, y: i32, x2: optional(i32), y2: optional(i32) },
 };
 
 export const ORDER_KINDS = Object.keys(ORDER_SCHEMA);
@@ -126,6 +135,7 @@ export function validOrder(o, what = 'order') {
   object(o, ['o', 'player', ...Object.keys(schema)], what);
   const out = { o: o.o, player: int(o.player, 0, MAX_PLAYERS - 1, `${what}.player`) };
   for (const [k, check] of Object.entries(schema)) {
+    if (!has(o, k) && check.optional) continue;
     if (!has(o, k)) fail(`${what}.${k} is required`);
     out[k] = check(o[k], `${what}.${k}`);
   }
