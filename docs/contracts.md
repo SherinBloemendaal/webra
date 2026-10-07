@@ -137,8 +137,9 @@ cannot send orders for others), validates every message against
 `packages/protocol`, limits message size (8 KiB) and rate, compares hashes and
 reports desyncs, and drops a player who, while fewer than 25 frames (one
 second of game time) went out, held the game up for more than 10 s in total,
-or held it up longest in such a window older than 10 s (time within 1 s of
-the frame a client needed going out does not count).
+or whose stall debt (the same time, draining by 1 s every 20 s) passes 10 s.
+Time within 1 s of the frame a client needed going out does not count; the
+client runs waiting frames at once as soon as more than `delay` are queued.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
