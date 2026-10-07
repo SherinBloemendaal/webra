@@ -136,6 +136,39 @@ fields on water cells, naval yards are their docks) and `air` (free flight,
 no pathfinding). Queue types: Building, Defense, Infantry, Vehicle, Aircraft,
 Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16.
 
+### Helicopters (`engine/src/helicopter.rs`)
+
+Built at the Helipad (HPAD) and start landed on it. VTOL: take off and land
+vertically, hover in place when idle, turn in place, slide toward their goal.
+Landed aircraft (altitude 0) count as vehicles for targeting (OpenRA
+`Targetable@GROUND`), so anti-air cannot hit them and ground weapons can.
+Idle armed helicopters hold fire (OpenRA `InitialStance: HoldFire`) and only
+engage on attack-move or an attack order. Rounds are spent per shot; an empty
+helicopter reserves a free helipad (one per pad), lands, reloads
+`rearm_count` rounds every `rearm_delay` ticks (OpenRA AmmoPool) and takes
+off again. Damaged helicopters land on the service depot to be repaired.
+Shot down in the air they fall and explode on impact.
+
+Orders (`Order` in engine/src/world.rs, validated by `packages/protocol`):
+`{"o": "land", ids, x, y}` lands on or next to a cell (on an own helipad or
+service depot: reload or repair there), `{"o": "return_to_base", ids}` flies
+to a free helipad (a full helicopter only waits near the base), `deploy`
+lands where the helicopter hovers or takes off again. A smart order on an own
+helipad docks (cursor 4), on an own service depot repairs (cursor 5). Engine
+API: `Game.order_land(player, ids, x, y)`, `Game.order_return_to_base(player,
+ids)`; `actor_json` reports `ammo`, `maxAmmo` and `landed`.
+
+Deliberate deviations from OpenRA (the `OVERRIDES` table in
+`tools/gen_rules.py`):
+
+- The Helipad is buildable by both sides (OpenRA: Allies only), as in classic
+  Red Alert (1996), where the Soviets fly the Hind from it.
+- The Hind is enabled for the Soviets (OpenRA: `~disabled`).
+- The Black Hawk requires `structures.allies`, so it stays Allied as in
+  OpenRA; the Chinook is available to both sides, as in classic Red Alert.
+
+Not modelled: landed helicopters do not block ground units' paths.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
