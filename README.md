@@ -26,6 +26,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Game modes
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
+- [x] The AI uses the whole arsenal: helicopters and planes (away from heavy anti-air), naval yards and warships where water reaches the enemy, minefields, chrono tanks, MAD tanks and demolition trucks, radar jammers, and on Hard (Normal after 15 minutes) the Iron Curtain, Chronosphere and Atom Bomb, never where allies would be hit
 - [x] **Online multiplayer**: anyone can host a session, public (listed in the server browser) or private, optionally password protected; deterministic lockstep over WebSockets on Cloudflare Durable Objects, with desync detection
 - [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
@@ -47,7 +48,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Classic production queues (Buildings, Defense, Infantry, Vehicles, Aircraft, Naval), OpenRA placement rules, selling, MCV deploy and pack-up
 - [x] OpenRA weapon data: range and minimum range, burst, projectile speed and inaccuracy, warheads with spread, falloff, delays and armour versus tables, death explosions, crushing
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
-- [x] Fair generated maps (left-right mirrored for 2 players, symmetric layouts for more)
+- [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
 
 ### Engineering
 - [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
@@ -57,7 +58,6 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ## Roadmap
 
-- [ ] AI that uses aircraft, ships, mines and superweapons (in progress)
 - [ ] Minimap / radar (Radar Dome) and radar jamming
 - [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
 - [ ] Sound effects and music (user-supplied original content; the repository ships no EA assets)
@@ -109,7 +109,7 @@ webra/
 ├── engine/                 webra-sim: deterministic simulation (Rust, compiled to WebAssembly)
 │   ├── rules.json          generated rules, embedded in the wasm
 │   ├── src/                world, units, combat, production, map, flowfield, vision, ai, render, tests
-│   └── examples/           ai_vs_ai.rs (headless match), stress.rs (benchmark), ai_probe.rs
+│   └── examples/           ai_vs_ai.rs (headless match), stress.rs (benchmark), fairness_n.rs (N-player fairness probe), ai_probe.rs
 ├── apps/
 │   ├── game/               browser client, served at /play (ES modules, WebGPU, no bundler)
 │   ├── website/            landing site, served at /
@@ -142,6 +142,7 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 | Everything CI runs (engine tests, wasm build, JS checks, API tests) | `npm test` |
 | Run the simulation tests | `cargo test -p webra-sim --release` |
 | Headless AI vs AI match (seed 7) | `cargo run -p webra-sim --release --example ai_vs_ai -- 7` |
+| Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
