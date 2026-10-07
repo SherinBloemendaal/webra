@@ -177,6 +177,11 @@ Deliberate deviations from OpenRA (the `OVERRIDES` table in
 - The Black Hawk requires `structures.allies`, so it stays Allied as in
   OpenRA; the Chinook is available to both sides, as in classic Red Alert.
 
+The Chinook is a transport (cargo.rs): infantry board it only while it is
+landed (Deploy on the empty Chinook lands it); Deploy on a loaded Chinook
+lands it on or next to its spot, unloads and takes off again. Passengers die
+when it is shot down.
+
 Not modelled: landed helicopters do not block ground units' paths.
 
 ## 6. Deployment
