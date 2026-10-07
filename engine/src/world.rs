@@ -13,7 +13,7 @@ pub const NONE: u32 = u32::MAX;
 const IDX_BITS: u32 = 22;
 const IDX_MASK: u32 = (1 << IDX_BITS) - 1;
 const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
-pub const MAX_WEAPONS: usize = 2;
+pub const MAX_WEAPONS: usize = 4;
 const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
 
@@ -24,6 +24,12 @@ pub enum Activity {
     Attack,
     Harvest,
     Repair,
+    /// Walking to a transport to get in (cargo.rs).
+    Board,
+    /// Transport letting its passengers out (cargo.rs).
+    Unload,
+    /// Unit ability task (abilities.rs: minefields, cash delivery, MAD tank).
+    Ability,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -94,6 +100,31 @@ pub struct Actor {
     pub heal_timer: i32,
     /// Iron Curtain: no damage until this tick.
     pub invulnerable_until: u32,
+    /// Height above ground in world units (aircraft); 0 on the ground.
+    pub altitude: i32,
+    /// Ability state (abilities.rs).
+    pub ab: crate::abilities::ActorAbility,
+
+    // Transports and passengers (cargo.rs)
+    /// Transport this unit rides in, or NONE. Passengers are out of the world.
+    pub carrier: u32,
+    /// Transport this unit walks to while boarding (Activity::Board), or NONE.
+    pub board_target: u32,
+    /// Passengers of a transport, in loading order.
+    pub cargo: Vec<u32>,
+    pub unload_timer: i32,
+
+    // Submarines (naval.rs)
+    pub submerged: bool,
+    /// Ticks until a surfaced submarine submerges (OpenRA Cloak remaining time).
+    pub cloak_timer: i32,
+    /// Players (one bit per slot) whose detectors reveal this submerged submarine.
+    pub detected_by: u32,
+
+    /// Helicopter state (helicopter.rs): task, ammo, reserved helipad.
+    pub heli: crate::helicopter::HeliState,
+    /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
+    pub air: crate::plane::AirState,
 }
 
 impl Actor {
@@ -143,11 +174,28 @@ impl Actor {
             last_damaged: 0,
             heal_timer: 0,
             invulnerable_until: 0,
+            altitude: 0,
+            ab: crate::abilities::ActorAbility::default(),
+            heli: crate::helicopter::HeliState::default(),
+            carrier: NONE,
+            board_target: NONE,
+            cargo: Vec::new(),
+            unload_timer: 0,
+            submerged: false,
+            cloak_timer: 0,
+            detected_by: 0,
+            air: crate::plane::AirState::default(),
         }
     }
 
     pub fn is_unit(&self) -> bool {
-        self.kind != Kind::Building
+        !matches!(self.kind, Kind::Building | Kind::Mine)
+    }
+
+    /// False for passengers inside a transport (out of the world: not ticked,
+    /// not in the spatial hash, not drawn, not targetable).
+    pub fn in_world(&self) -> bool {
+        self.carrier == NONE
     }
 }
 
@@ -228,6 +276,8 @@ pub enum EffectKind {
     ChronoShimmer,
     /// Dust cloud of a sold or packed-up structure.
     Dust,
+    /// Naval special effect (index into NAVAL_SPECIALS, see naval.rs).
+    Naval(u8),
 }
 
 pub struct Effect {
@@ -363,9 +413,50 @@ pub enum Order {
         building: u32,
     },
     /// Deploy an MCV into a Construction Yard, or pack a Construction Yard up.
+    /// Helicopters land where they hover, or take off again.
     Deploy {
         player: u8,
         ids: Vec<u32>,
+    },
+    /// Helicopters: land on (or next to) a cell.
+    Land {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
+    /// Aircraft: fly back to a free rearm structure (helipad) and resupply.
+    ReturnToBase {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Fire a support power (powers.rs) at (x, y); (x2, y2) optionally sets a
+    /// direction (the flight direction of aircraft powers).
+    SupportPower {
+        player: u8,
+        key: String,
+        x: i32,
+        y: i32,
+        #[serde(default)]
+        x2: Option<i32>,
+        #[serde(default)]
+        y2: Option<i32>,
+    },
+    /// Minelayers mine the cell rectangle (x0, y0)-(x1, y1) (abilities.rs).
+    LayMines {
+        player: u8,
+        ids: Vec<u32>,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+    },
+    /// Chrono tanks teleport to a world position (abilities.rs).
+    Teleport {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
     },
 }
 
@@ -382,7 +473,12 @@ impl Order {
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
-            | Order::Deploy { player, .. } => *player,
+            | Order::Deploy { player, .. }
+            | Order::Land { player, .. }
+            | Order::ReturnToBase { player, .. }
+            | Order::SupportPower { player, .. }
+            | Order::LayMines { player, .. }
+            | Order::Teleport { player, .. } => *player,
         }
     }
 
@@ -398,7 +494,12 @@ impl Order {
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
-            | Order::Deploy { player, .. } => *player = p,
+            | Order::Deploy { player, .. }
+            | Order::Land { player, .. }
+            | Order::ReturnToBase { player, .. }
+            | Order::SupportPower { player, .. }
+            | Order::LayMines { player, .. }
+            | Order::Teleport { player, .. } => *player = p,
         }
     }
 
@@ -410,8 +511,16 @@ impl Order {
             | Order::Smart { ids, .. }
             | Order::Attack { ids, .. }
             | Order::Stop { ids, .. }
-            | Order::Deploy { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::Deploy { ids, .. }
+            | Order::Land { ids, .. }
+            | Order::ReturnToBase { ids, .. }
+            | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
+            Order::LayMines { ids, x0, y0, x1, y1, .. } => {
+                let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
+                ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
+            }
             Order::StartProduction { count, .. } => (1..=50).contains(count),
+            Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
         }
     }
@@ -426,12 +535,19 @@ pub enum SmartAction {
     Harvest = 3,
     Dock = 4,
     Repair = 5,
+    /// Get into an own transport (cargo.rs).
+    Load = 6,
+    /// Supply truck onto an own or allied structure (abilities.rs).
+    DeliverCash = 7,
 }
 
 pub struct World {
     pub rules: Rules,
     pub map: Map,
+    /// Passability for land units.
     pub pass: Passability,
+    /// Passability for ships.
+    pub pass_water: Passability,
     pub flow: FlowCache,
     pub actors: Vec<Actor>,
     free: Vec<u32>,
@@ -458,6 +574,12 @@ pub struct World {
     pub losses: Vec<u32>,
     pub pending: Vec<PendingImpact>,
     pub options: GameOptions,
+    /// Ability and support power state (abilities.rs).
+    pub abil: crate::abilities::AbilityState,
+    /// Helicopters falling after being shot down (helicopter.rs).
+    pub crashes: Vec<crate::helicopter::Crash>,
+    /// Support power timers, cameras and falling bombs (powers.rs).
+    pub powers: crate::powers::PowersState,
 }
 
 impl World {
@@ -575,10 +697,12 @@ impl World {
 
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
         let pass = Passability::new(&map);
+        let pass_water = Passability::water(&map);
         let cells = map.cells();
         World {
             rules,
             pass,
+            pass_water,
             flow: FlowCache::new(),
             actors: Vec::new(),
             free: Vec::new(),
@@ -602,6 +726,9 @@ impl World {
             losses: Vec::new(),
             pending: Vec::new(),
             options: GameOptions::default(),
+            abil: Default::default(),
+            crashes: Vec::new(),
+            powers: Default::default(),
             map,
         }
     }
@@ -698,11 +825,16 @@ impl World {
         a.pturret = facing;
         a.hp = info.hp;
         a.scan_cooldown = (i as i32) % 8;
+        // Aircraft enter the world flying at their cruise altitude.
+        a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
         if info.unit.as_ref().is_some_and(|u| u.harvester.is_some()) {
             a.activity = Activity::Harvest;
             a.harv = HarvState::Search;
         }
+        // Cloaked actors (submarines) hide after their InitialDelay.
+        a.cloak_timer = info.abilities.cloak.as_ref().map_or(0, |c| c.initial_delay);
         self.actors[i] = a;
+        self.init_abilities(i);
         i
     }
 
@@ -727,6 +859,7 @@ impl World {
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
         self.actors[i] = a;
+        self.init_abilities(i);
         for (dx, dy, c) in footprint {
             if c == FootCell::Empty {
                 continue;
@@ -735,9 +868,11 @@ impl World {
             self.building_at[ci] = i as u32;
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);
+                self.pass_water.set_blocked(ci, true);
             }
         }
         self.pass.refresh(&self.map);
+        self.pass_water.refresh(&self.map);
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -750,15 +885,30 @@ impl World {
         if !self.actors[i].alive {
             return;
         }
+        // Airborne planes fall first and die where they hit the ground (plane.rs).
+        if self.begin_crash(i) {
+            return;
+        }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
         self.actors[i].alive = false;
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
+        if self.begin_heli_crash(i) {
+            // Passengers go down with it (cargo.rs).
+            self.cargo_on_death(i);
+            return;
+        }
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
         let ttl = if kind == Kind::Building { 30 } else { 18 };
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        if kind == Kind::Ship {
+            self.ship_death_effect(i);
+        }
         self.death_explosion(i);
+        // Passengers die with their transport, or get out (Cargo.EjectOnDeath).
+        self.cargo_on_death(i);
     }
 
     /// Remove an actor without it dying (sold, deployed, packed up).
@@ -768,6 +918,8 @@ impl World {
         }
         self.actors[i].alive = false;
         self.dying.push(i as u32);
+        // Passengers get out (Cargo.EjectOnSell).
+        self.cargo_on_remove(i);
     }
 
     /// Free storage and cells of actors killed this tick.
@@ -786,6 +938,7 @@ impl World {
                     if self.building_at[ci] == i as u32 {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
+                        self.pass_water.set_blocked(ci, self.map.terrain[ci] != crate::map::Terrain::Water);
                     }
                 }
                 self.tokens_dirty = true;
@@ -801,6 +954,43 @@ impl World {
             self.free.push(i as u32);
         }
         self.pass.refresh(&self.map);
+        self.pass_water.refresh(&self.map);
+    }
+
+    // ---- Domains (ground, water, air) -----------------------------------------
+
+    /// Movement domain of an actor (structures count as ground).
+    pub fn domain_of(&self, i: usize) -> crate::rules::Domain {
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        info.unit.as_ref().map_or(crate::rules::Domain::Ground, |u| self.rules.locomotors[u.locomotor].domain)
+    }
+
+    /// Passability for a domain. Aircraft ignore it (callers check for Air first).
+    pub fn pass_for(&self, d: crate::rules::Domain) -> &Passability {
+        match d {
+            crate::rules::Domain::Water => &self.pass_water,
+            _ => &self.pass,
+        }
+    }
+
+    /// Goal cell for moving actor `i` toward cell (gx, gy): the nearest cell it
+    /// can actually reach in its domain (any cell for aircraft), or NONE.
+    pub fn path_goal(&self, i: usize, gx: i32, gy: i32) -> u32 {
+        let from = self.cell_of(self.actors[i].x, self.actors[i].y);
+        self.path_goal_from(i, gx, gy, from)
+    }
+
+    /// `path_goal`, with ties between equally near reachable cells broken
+    /// toward cell `from` (where the units come from), not by scan order.
+    pub fn path_goal_from(&self, i: usize, gx: i32, gy: i32, from: (i32, i32)) -> u32 {
+        let d = self.domain_of(i);
+        let (gx, gy) = (gx.clamp(0, self.map.width - 1), gy.clamp(0, self.map.height - 1));
+        if d == crate::rules::Domain::Air {
+            return self.map.idx(gx, gy) as u32;
+        }
+        let pass = self.pass_for(d);
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci], from).unwrap_or(NONE)
     }
 
     // ---- Geometry helpers --------------------------------------------------
@@ -827,6 +1017,9 @@ impl World {
     /// Distance from a point to the actor's hit shape.
     pub fn hit_distance(&self, i: usize, x: i32, y: i32) -> i32 {
         let a = &self.actors[i];
+        if a.kind == Kind::Mine {
+            return dist(x, y, a.x, a.y);
+        }
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
             let mut best = i32::MAX;
@@ -854,7 +1047,8 @@ impl World {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
             b.footprint.iter().any(|&(dx, dy, c)| c != FootCell::Empty && vis[self.map.idx(a.cx + dx, a.cy + dy)] != 0)
         } else {
-            vis[self.cell_index(a.x, a.y)] != 0
+            // Passengers are inside their transport; submerged submarines need a detector.
+            a.in_world() && self.naval_visible(i, player) && vis[self.cell_index(a.x, a.y)] != 0
         }
     }
 
@@ -871,7 +1065,8 @@ impl World {
         let mut counts = vec![0u32; cells + 1];
         let mut cell_of = Vec::with_capacity(self.actors.len());
         for a in &self.actors {
-            if a.alive && a.kind != Kind::Building {
+            // Mines are tracked per cell by abilities.rs, not in the unit hash.
+            if a.alive && a.kind != Kind::Building && a.kind != Kind::Mine && a.in_world() {
                 let ci = self.cell_index(a.x, a.y);
                 counts[ci] += 1;
                 cell_of.push(ci as u32);
@@ -931,8 +1126,15 @@ impl World {
     }
 
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
-        let mut out: Vec<usize> =
-            ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit()).collect();
+        let mut out: Vec<usize> = ids
+            .iter()
+            .filter_map(|&r| self.resolve(r))
+            .filter(|&i| {
+                self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world()
+                    // Support power aircraft reject orders (OpenRA RejectsOrders).
+                    && !self.is_support_aircraft(i)
+            })
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
@@ -963,6 +1165,7 @@ impl World {
                         a.activity = Activity::Idle;
                         a.target = NONE;
                         a.attack_move = false;
+                        a.air.new_order();
                     }
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
@@ -978,12 +1181,38 @@ impl World {
                     }
                 }
                 Order::Deploy { player, ids } => {
-                    let mut actors: Vec<usize> =
-                        ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player).collect();
+                    let mut actors: Vec<usize> = ids
+                        .iter()
+                        .filter_map(|&r| self.resolve(r))
+                        .filter(|&i| self.actors[i].owner == player && self.actors[i].in_world())
+                        .collect();
                     actors.sort_unstable();
                     actors.dedup();
                     for i in actors {
-                        self.deploy(i);
+                        // Deploy on a loaded transport unloads it (cargo.rs); a
+                        // helicopter lands or takes off (helicopter.rs); ability
+                        // units deploy their ability (abilities.rs).
+                        if self.can_unload(i) {
+                            self.order_unload(i);
+                        } else if self.actors[i].kind == Kind::Aircraft && self.is_helicopter(i) {
+                            self.heli_deploy(i);
+                        } else if !self.ability_deploy(i) {
+                            self.deploy(i);
+                        }
+                    }
+                }
+                Order::LayMines { player, ids, x0, y0, x1, y1 } => self.order_lay_mines(player, &ids, x0, y0, x1, y1),
+                Order::Teleport { player, ids, x, y } => self.order_teleport(player, &ids, x, y),
+                Order::Land { player, ids, x, y } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_land(&units, x, y);
+                }
+                Order::ReturnToBase { player, ids } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_return_to_base(&units);
+                    // Planes fly home to a free airfield (plane.rs).
+                    for &i in &units {
+                        self.plane_return_to_base(i, None);
                     }
                 }
                 Order::Rally { player, building, x, y } => {
@@ -993,10 +1222,15 @@ impl World {
                         }
                     }
                 }
+                Order::SupportPower { player, key, x, y, x2, y2 } => {
+                    self.activate_support_power(player, &key, x, y, x2.zip(y2));
+                }
             }
         }
     }
 
+    /// Called for every new order to a unit: frees the refinery dock it held
+    /// and ends helicopter tasks (landing, resupply) with their helipad reservation.
     pub(crate) fn release_dock(&mut self, i: usize) {
         if let Some(r) = self.resolve(self.actors[i].refinery) {
             let me = self.make_ref(i);
@@ -1004,6 +1238,7 @@ impl World {
                 self.actors[r].dock_user = NONE;
             }
         }
+        self.heli_cancel(i);
     }
 
     pub fn order_move(&mut self, units: &[usize], x: i32, y: i32, attack_move: bool) {
@@ -1013,21 +1248,30 @@ impl World {
         let group = self.next_group;
         self.next_group += 1;
         // The group's centre decides ties (border targets, blocked goals), so a
-        // mirrored order on a point symmetric map picks the mirrored cell.
+        // mirrored order on a symmetric map picks the mirrored cell.
         let n = units.len() as i64;
         let cx = (units.iter().map(|&i| self.actors[i].x as i64).sum::<i64>() / n) as i32;
         let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
         let from = self.cell_of(cx, cy);
         let (gx, gy) = self.cell_toward(x, y, cx, cy);
-        let mut goals: Vec<(u32, u32)> = Vec::new();
+        // Reachable goals per (domain, component), shared by the group.
+        let mut goals: Vec<((crate::rules::Domain, u32), u32)> = Vec::new();
         for &i in units {
+            if !self.actors[i].in_world() {
+                continue;
+            }
             self.release_dock(i);
-            let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
-            let goal = match goals.iter().find(|(c, _)| *c == comp) {
+            let d = self.domain_of(i);
+            let comp = if d == crate::rules::Domain::Air {
+                0
+            } else {
+                self.pass_for(d).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
+            };
+            let goal = match goals.iter().find(|(k, _)| *k == (d, comp)) {
                 Some(&(_, g)) => g,
                 None => {
-                    let g = nearest_in_component(&self.map, &self.pass, (gx, gy), comp, from).unwrap_or(NONE);
-                    goals.push((comp, g));
+                    let g = self.path_goal_from(i, gx, gy, from);
+                    goals.push(((d, comp), g));
                     g
                 }
             };
@@ -1042,13 +1286,14 @@ impl World {
             a.forced = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
     pub fn order_attack(&mut self, units: &[usize], target: usize, forced: bool) {
         let tref = self.make_ref(target);
         for &i in units {
-            if self.rules.actors[self.actors[i].ty as usize].weapons.is_empty() || i == target {
+            if self.rules.actors[self.actors[i].ty as usize].weapons.is_empty() || i == target || !self.actors[i].in_world() {
                 continue;
             }
             self.release_dock(i);
@@ -1061,6 +1306,7 @@ impl World {
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
+            a.air.new_order();
         }
     }
 
@@ -1076,7 +1322,7 @@ impl World {
                 for &u in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
                     let u = u as usize;
                     let a = &self.actors[u];
-                    if !a.alive || !self.is_visible_to(u, player) {
+                    if !a.alive || !self.is_visible_to(u, player) || self.is_cloaked_from(u, player) {
                         continue;
                     }
                     let r = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius.max(256);
@@ -1091,8 +1337,15 @@ impl World {
             return Some(u);
         }
         let b = self.building_at[self.map.idx(cx, cy)];
-        if b != NONE && self.actors[b as usize].alive && self.is_visible_to(b as usize, player) {
+        if b != NONE && self.actors[b as usize].alive && self.is_visible_to(b as usize, player) && !self.is_cloaked_from(b as usize, player)
+        {
             return Some(b as usize);
+        }
+        // Mines: own, allied or detected ones (abilities.rs).
+        if let Some(m) = self.mine_at(self.map.idx(cx, cy)) {
+            if self.is_visible_to(m, player) && !self.is_cloaked_from(m, player) {
+                return Some(m);
+            }
         }
         None
     }
@@ -1101,25 +1354,42 @@ impl World {
         if units.is_empty() {
             return SmartAction::None;
         }
+        // Planes over an own airfield: return to base (plane.rs).
+        if let Some(act) = self.plane_smart_action(player, units, x, y) {
+            return act;
+        }
+        // Helicopters on an own helipad (dock) or service depot (repair).
+        if let Some(action) = self.heli_smart_action(player, units, x, y) {
+            return action;
+        }
         let (cx, cy) = self.cell_of(x, y);
         let ci = self.map.idx(cx, cy);
         let any_weapon = units.iter().any(|&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
         let any_harv = units.iter().any(|&i| self.is_harvester(i));
-        let any_vehicle = units.iter().any(|&i| self.actors[i].kind == Kind::Vehicle);
         if let Some(t) = self.actor_at(player, x, y) {
             let ta = &self.actors[t];
+            if self.can_deliver_cash(player, units, t) {
+                return SmartAction::DeliverCash;
+            }
+            if ta.kind == Kind::Mine && self.are_allies(player, ta.owner) {
+                return SmartAction::Move;
+            }
             if self.are_enemies(player, ta.owner) {
                 return if any_weapon { SmartAction::Attack } else { SmartAction::Move };
             }
             if ta.owner != player {
                 return SmartAction::Move; // allied or neutral: just move there
             }
+            if units.iter().any(|&u| self.can_enter(u, t)) {
+                return SmartAction::Load;
+            }
             if ta.kind == Kind::Building {
                 let b = self.rules.actors[ta.ty as usize].building.as_ref().unwrap();
                 if b.refinery.is_some() && any_harv {
                     return SmartAction::Dock;
                 }
-                if b.repairs.is_some() && any_vehicle {
+                // Vehicles repair on a service depot pad, ships near a naval yard (Repairable(Near).RepairActors).
+                if b.repairs.is_some() && units.iter().any(|&u| self.repairs_at(u, t)) {
                     return SmartAction::Repair;
                 }
             }
@@ -1131,6 +1401,11 @@ impl World {
     }
 
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
+        // Planes clicked onto an own airfield return to base there (plane.rs).
+        let rest = self.plane_smart_rtb(player, units, x, y);
+        // Helicopters sent to an own helipad or service depot (helicopter.rs).
+        let rest = self.heli_order_smart(player, &rest, x, y);
+        let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
             SmartAction::Move => self.order_move(units, x, y, false),
@@ -1172,10 +1447,18 @@ impl World {
                 }
                 self.order_move(&others, x, y, false);
             }
+            SmartAction::DeliverCash => {
+                let t = self.actor_at(player, x, y).unwrap();
+                self.order_deliver_cash(units, t, x, y);
+            }
+            SmartAction::Load => {
+                let t = self.actor_at(player, x, y).unwrap();
+                self.order_load(units, t);
+            }
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let tref = self.make_ref(t);
-                let (veh, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.actors[i].kind == Kind::Vehicle);
+                let (veh, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.repairs_at(i, t));
                 for i in veh {
                     self.release_dock(i);
                     let a = &mut self.actors[i];
@@ -1218,9 +1501,14 @@ impl World {
         }
         for p in 0..self.players.len() {
             self.tick_production(p as u8);
+            self.tick_powers(p as u8);
         }
+        // Support power timers, cameras and falling bombs (powers.rs).
+        self.tick_support_powers();
+        self.tick_abilities_world();
         self.tick_units();
         self.tick_projectiles();
+        self.tick_crashes();
         self.cleanup_dead();
         if self.tokens_dirty {
             self.refresh_tokens();
@@ -1249,7 +1537,8 @@ impl World {
         }
         let mut alive_count = vec![0u32; self.players.len()];
         for a in &self.actors {
-            if a.alive {
+            // Mines alone do not keep a player in the game.
+            if a.alive && a.kind != Kind::Mine {
                 alive_count[a.owner as usize] += 1;
             }
         }
@@ -1285,6 +1574,9 @@ impl World {
                 for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
                     mix(v as i64);
                 }
+                // Transports and submarines (cargo.rs, naval.rs).
+                mix(a.carrier as i64);
+                mix(a.submerged as i64);
             }
         }
         for p in &self.players {

@@ -102,6 +102,67 @@ export const CURSORS = {
     16,
     'pointer',
   ),
+  // Enter a transport: a chevron diving into an open hatch.
+  load: cursor(
+    `<path d="M4 14 L4 28 L28 28 L28 14" fill="#3d4a3a" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/>` +
+      `<rect x="9" y="20" width="14" height="8" fill="#1d241c" stroke="${OUTLINE}" stroke-width="1.5"/>` +
+      `<path d="M9 4 L16 12 L23 4 M9 10 L16 18 L23 10" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="M9 4 L16 12 L23 4 M9 10 L16 18 L23 10" fill="none" stroke="#5fe36a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+    16,
+    16,
+    'pointer',
+  ),
+  // Supply truck: a coin dropping into a structure.
+  deliver: cursor(
+    `<rect x="5" y="16" width="22" height="12" rx="2" fill="#5a5f66" stroke="${OUTLINE}" stroke-width="2"/>` +
+      `<rect x="11" y="20" width="10" height="3" fill="#1d241c"/>` +
+      `<circle cx="16" cy="9" r="6.5" fill="#d9b23a" stroke="${OUTLINE}" stroke-width="2"/>` +
+      `<text x="16" y="12.5" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="9" font-weight="900" fill="${OUTLINE}">$</text>`,
+    16,
+    16,
+    'copy',
+  ),
+  // Minelayer: Ctrl + drag a minefield.
+  mine: cursor(
+    `<ellipse cx="16" cy="20" rx="11" ry="6" fill="#4a4a32" stroke="${OUTLINE}" stroke-width="2"/>` +
+      `<ellipse cx="16" cy="18" rx="6" ry="3" fill="#77775a" stroke="${OUTLINE}" stroke-width="1.5"/>` +
+      `<path d="M16 2 L16 11 M12 7 L16 11 L20 7" fill="none" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="M16 2 L16 11 M12 7 L16 11 L20 7" fill="none" stroke="#f2c94c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+    16,
+    18,
+    'crosshair',
+  ),
+  // Chrono tank teleport and Chronosphere targets: a cyan vortex.
+  teleport: cursor(
+    `<circle cx="16" cy="16" r="12" fill="none" stroke="${OUTLINE}" stroke-width="5"/>` +
+      `<circle cx="16" cy="16" r="12" fill="none" stroke="#7fe8ff" stroke-width="2.4" stroke-dasharray="6 3"/>` +
+      `<circle cx="16" cy="16" r="6" fill="none" stroke="${OUTLINE}" stroke-width="4"/>` +
+      `<circle cx="16" cy="16" r="6" fill="none" stroke="#c8f6ff" stroke-width="2"/>` +
+      `<circle cx="16" cy="16" r="2" fill="#ffffff" stroke="${OUTLINE}" stroke-width="1"/>`,
+    16,
+    16,
+    'crosshair',
+  ),
+  // Iron Curtain target: a red shield.
+  ironCurtain: cursor(
+    `<path d="M16 3 L27 7 L26 17 Q24 25 16 29 Q8 25 6 17 L5 7 Z" fill="#c8281e" stroke="${OUTLINE}" stroke-width="2.2" stroke-linejoin="round"/>` +
+      `<path d="M16 7 L23 9.5 L22.3 17 Q21 22 16 25" fill="none" stroke="#ff9a8a" stroke-width="1.6" stroke-linecap="round"/>`,
+    16,
+    16,
+    'crosshair',
+  ),
+  // Atom bomb target: radiation reticle.
+  nuke: cursor(
+    reticle(
+      '#ffd23a',
+      [0, 120, 240]
+        .map((r) => `<path d="M16 16 L16 9 A7 7 0 0 1 22.06 12.5 Z" transform="rotate(${r} 16 16)" fill="#ffd23a" stroke="${OUTLINE}" stroke-width="1"/>`)
+        .join(''),
+    ),
+    16,
+    16,
+    'crosshair',
+  ),
   blocked: cursor(
     `<circle cx="16" cy="16" r="11" fill="none" stroke="${OUTLINE}" stroke-width="6"/>` +
       `<circle cx="16" cy="16" r="11" fill="none" stroke="#ff4a3a" stroke-width="3"/>` +
@@ -113,8 +174,15 @@ export const CURSORS = {
   ),
 };
 
-/** Cursor for a smart action code from Game.cursor_action (0 none ... 5 repair). */
-export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair];
+/** Cursor for a smart action code from Game.cursor_action (0 none ... 7 deliver cash). */
+export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair, CURSORS.load, CURSORS.deliver];
 
 /** Smart action codes, matching SmartAction in engine/src/world.rs. */
-export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5 };
+export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5, LOAD: 6, DELIVER_CASH: 7 };
+
+/** Targeting cursor per support power kind (OpenRA trait name). */
+export const POWER_CURSORS = {
+  ChronoshiftPower: CURSORS.teleport,
+  GrantExternalConditionPower: CURSORS.ironCurtain,
+  NukePower: CURSORS.nuke,
+};

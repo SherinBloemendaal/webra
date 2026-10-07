@@ -10,6 +10,7 @@ Usage: python3 tools/gen_rules.py
 import json
 import os
 import re
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -24,20 +25,60 @@ ACTORS = [
     # France: decoy structures
     'FPWR', 'TENF', 'SYRF', 'WEAF', 'DOMF', 'FIXF', 'FAPW', 'ATEF', 'PDOF', 'MSLF', 'FACF',
     # Infantry (more later)
-    'E1',
+    'E1', 'E3',
     # Ground vehicles
     'HARV', 'MCV', 'TRUK', 'JEEP', 'APC', 'FTRK', '1TNK', '2TNK', '3TNK', '4TNK', 'V2RL', 'ARTY', 'MNLY',
     'MRJ', 'MGG', 'TTNK', 'DTRK', 'CTNK', 'STNK', 'QTNK',
+    # Ships
+    'LST', 'PT', 'SS', 'DD', 'CA', 'MSUB',
+    # Aircraft: helicopters, then planes
+    'TRAN', 'HIND', 'MH60', 'HELI', 'YAK', 'MIG',
 ]
+# Actors that are never built but take part in the game (support powers): they
+# are not in data/actors.json, so they are resolved from the OpenRA YAML in
+# data/source with its parser. They get the `~disabled` prerequisite, so the
+# sidebar never offers them.
+EXTRA_ACTORS = [
+    'E1R1', 'E3R1',            # paratroopers (ParatroopersPower DropItems)
+    'U2', 'BADR', 'BADR.Bomber',  # spy plane, paratrooper transport, parabomb bomber
+    'MINV', 'MINP',            # Minelayer mines (data/source/rules/misc.yaml)
+]
+# Reveal range of OpenRA's support power camera actors. They live in
+# mods/ra/rules/misc.yaml, of which data/source only has the mines; OpenRA's CAMERA
+# actor reveals 10c0 and the power cameras inherit it.
+CAMERA_RANGE = 10 * 1024
+# OpenRA defaults of AirstrikePowerInfo / ParatroopersPowerInfo.
+AIRSTRIKE_UNIT = 'badr.bomber'
+PARATROOPERS_UNIT = 'badr'
+POWER_SQUAD_OFFSET = [-1536, 1536]
+POWER_CAMERA_REMOVE_DELAY = 25
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
 ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete']
-TERRAIN_TYPES = ['Clear', 'Rough', 'Ore']
+TERRAIN_TYPES = ['Clear', 'Rough', 'Ore', 'Water']
 DEFAULT_FALLOFF = [100, 37, 14, 5]  # OpenRA SpreadDamageWarhead default
 DEFAULT_BURST_DELAY = 5             # OpenRA WeaponInfo default
 BUILD_DURATION_MODIFIER = 60        # OpenRA BuildableInfo default (percent)
 BALE_LOAD_DELAY = 4                 # OpenRA HarvesterInfo default
 HARVESTER_SEARCH_FROM_PROC = 15
 HARVESTER_SEARCH_FROM_HARV = 8
+AMMO_RELOAD_DELAY = 50              # OpenRA AmmoPoolInfo.ReloadDelay default
+AMMO_RELOAD_COUNT = 1               # OpenRA AmmoPoolInfo.ReloadCount default
+ALTITUDE_VELOCITY = '0c43'          # OpenRA AircraftInfo.AltitudeVelocity default
+WAIT_DISTANCE_FROM_RESUPPLY = '3c0'  # OpenRA AircraftInfo.WaitDistanceFromResupplyBase default
+FACING_TOLERANCE = 512              # OpenRA AttackBaseInfo.FacingTolerance default
+
+# Deliberate deviations from OpenRA's rules, applied to the exported actors
+# after extraction (shallow: each key replaces the exported field). Every entry
+# says why; docs/contracts.md section 5 lists them too.
+OVERRIDES = {
+    # OpenRA's RA mod gives only the Allies a helipad and disables the Hind
+    # (`~disabled`). In classic Red Alert (1996) both sides build the helipad:
+    # the Soviets fly the Hind from it, both sides the Chinook. Restore that.
+    'HPAD': {'prerequisites': ['dome', '~techlevel.medium']},
+    'HIND': {'prerequisites': ['~hpad', '~structures.soviet', '~techlevel.medium']},
+    # The Black Hawk stays Allied, as in OpenRA where only the Allies have a helipad.
+    'MH60': {'prerequisites': ['~hpad', '~structures.allies', '~techlevel.medium']},
+}
 
 
 def wdist(v):
@@ -82,6 +123,9 @@ def load_ftl():
     return out
 
 
+AIR_LOCOMOTOR = 'air'
+
+
 def parse_locomotors():
     """Read Locomotor terrain speeds from world.yaml (not part of actors.json)."""
     path = os.path.join(DATA, 'source', 'rules', 'world.yaml')
@@ -115,7 +159,10 @@ def parse_locomotors():
 
 # Target classes, as bit flags shared with the simulation (rules.rs).
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
-               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 0, 'Bridge': 0,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
+               # Submarine is its own class (surfaced and submerged subs): depth charge
+               # warheads hit it, while Underwater only matches submerged subs.
+               'Ship': 16, 'Submarine': 128,
                'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
 
 
@@ -133,6 +180,18 @@ def target_mask(v):
 
 
 UNKNOWN_TARGETS = set()
+
+
+def locomotor_info(name, locos):
+    """Speeds per terrain class and the movement domain (ground, water or air)."""
+    if name == AIR_LOCOMOTOR:
+        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': []}
+    l = locos[name]
+    speeds = [l.get(tt, 0) for tt in TERRAIN_TYPES]
+    on_land = any(speeds[:3])
+    on_water = speeds[3] > 0
+    domain = 'water' if on_water and not on_land else 'ground'
+    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
 
 
 def weapon_info(name, weapons):
@@ -159,10 +218,14 @@ def weapon_info(name, weapons):
         })
     if not warheads:
         raise SystemExit(f'weapon {name} has no damage warhead')
-    projectile = {'Bullet': 'bullet', 'Missile': 'missile', 'InstantHit': 'instant', 'TeslaZap': 'tesla', None: 'instant'}[ptype]
+    projectile = {'Bullet': 'bullet', 'Missile': 'missile', 'InstantHit': 'instant', 'TeslaZap': 'tesla', 'GravityBomb': 'bomb',
+                  None: 'instant'}[ptype]
     speed = 0
     if isinstance(proj, dict) and projectile in ('bullet', 'missile'):
         speed = ints(proj.get('Speed', '213'))[0] if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
+    if projectile == 'bomb':
+        # GravityBomb: falls straight down at Velocity (world units per tick, z component).
+        speed = abs(ints(proj.get('Velocity', '0, 0, -50'))[2])
     return {
         'name': name,
         'range': wdist(w.get('Range')),
@@ -202,8 +265,40 @@ def has(t, name):
     return bool(trait(t, name))
 
 
+def load_source_rules():
+    """Resolved OpenRA actor rules from data/source (parse.py), keyed by actor name."""
+    sys.path.insert(0, os.path.join(DATA, 'source'))
+    import parse  # noqa: E402 (data/source/parse.py, only its parser is used)
+    return parse
+
+
+def extra_actor(src, aid):
+    """An actors.json-style record for a non-buildable actor, from the OpenRA YAML."""
+    tree = src.rules[aid]
+    t = src.to_json(tree)
+    name = src.tr(src.g(tree, 'Tooltip/Name')) or aid
+    return {
+        'id': aid,
+        'name': name,
+        'description': '',
+        'queue': 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t else 'Vehicle',
+        'cost': int(src.g(tree, 'Valued/Cost') or 0),
+        'buildDuration': None,
+        'buildDurationModifier': None,
+        'buildPaletteOrder': 0,
+        'prerequisites': ['~disabled'],
+        'hp': int(src.g(tree, 'Health/HP') or 0),
+        'armor': src.g(tree, 'Armor/Type'),
+        'sight': src.g(tree, 'RevealsShroud/Range'),
+        'traits': t,
+    }
+
+
 def main():
     actors = {a['id']: a for a in json.load(open(os.path.join(DATA, 'actors.json')))}
+    src = load_source_rules()
+    for aid in EXTRA_ACTORS:
+        actors[aid] = extra_actor(src, aid)
     weapons = json.load(open(os.path.join(DATA, 'weapons.json')))
     wl = {k.lower(): k for k in weapons}
     locos = parse_locomotors()
@@ -217,10 +312,10 @@ def main():
             used_weapons.append(wn)
         return used_weapons.index(wn)
 
-    for aid in ACTORS:
+    for aid in ACTORS + EXTRA_ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else ('infantry' if a['queue'] == 'Infantry' else 'vehicle')
+        kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -233,7 +328,7 @@ def main():
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
             'prerequisites': a['prerequisites'],
-            'build_at': t['Buildable'].get('BuildAtProductionType') or a['queue'],
+            'build_at': (t['Buildable'].get('BuildAtProductionType') if isinstance(t.get('Buildable'), dict) else None) or a['queue'],
             'hp': a['hp'],
             'armor': ARMOR_TYPES.index(a['armor'] or 'None'),
             'sight': wdist(a['sight']),
@@ -243,6 +338,8 @@ def main():
             'requires_power': has(t, 'GrantConditionOnPowerState'),
             'death_weapon': None,
             'self_heal': None,
+            # Forward/lateral offsets of each Turreted trait (render: ship turrets).
+            'turret_offsets': [ints(v.get('Offset', '0,0,0'))[:2] for k, v in sorted(trait(t, 'Turreted').items()) if isinstance(v, dict)],
             'abilities': {},
         }
         for slot, arm in trait(t, 'Armament').items():
@@ -271,27 +368,70 @@ def main():
         ab = e['abilities']
         if has(t, 'Cargo'):
             c = first(t, 'Cargo')
+            # OpenRA CargoInfo defaults: BeforeUnloadDelay 8, AfterUnloadDelay 25,
+            # EjectOnSell true, EjectOnDeath false.
             ab['cargo'] = {'types': tokens(c.get('Types')), 'max': int(c.get('MaxWeight', 1)),
                            'garrison': 'AttackGarrisoned' in t,
-                           'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))]}
+                           'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))],
+                           'before_unload_delay': int(c.get('BeforeUnloadDelay', 8)),
+                           'after_unload_delay': int(c.get('AfterUnloadDelay', 25)),
+                           'eject_on_sell': str(c.get('EjectOnSell', 'true')).lower() == 'true',
+                           'eject_on_death': str(c.get('EjectOnDeath', 'false')).lower() == 'true'}
         if 'Minelayer' in t:
-            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(t.get('AmmoPool', {}).get('Ammo', 5))}
+            pool = t.get('AmmoPool', {}) if isinstance(t.get('AmmoPool'), dict) else {}
+            rearm = t.get('Rearmable', {}) if isinstance(t.get('Rearmable'), dict) else {}
+            # AmmoPoolInfo defaults: ReloadDelay 50 ticks per ReloadCount (1) at a rearm actor.
+            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(pool.get('Ammo', 5)),
+                               'reload_delay': int(pool.get('ReloadDelay', 50)),
+                               'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
+                               'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        # AutoTarget.InitialStance HoldFire (Phase Transport): never picks targets on its own.
+        if isinstance(t.get('AutoTarget'), dict) and t['AutoTarget'].get('InitialStance') == 'HoldFire':
+            ab['hold_fire'] = {}
+        if 'MineImmune' in t:
+            ab['mine_immune'] = {}
+        if 'AcceptsDeliveredCash' in t:
+            ab['accepts_cash'] = {}
+        # Iron Curtain (ExternalCondition@INVULNERABILITY): the Demolition Truck's
+        # KillsSelf fires on it instead. Chronosphere: Chronoshiftable.
+        if 'ExternalCondition@INVULNERABILITY' in t:
+            ks = t.get('KillsSelf', {}) if isinstance(t.get('KillsSelf'), dict) else {}
+            ab['iron_curtainable'] = {'kills': 'invulnerability' in ks.get('RequiresCondition', '')}
+        if 'Chronoshiftable' in t:
+            cs = t['Chronoshiftable'] if isinstance(t['Chronoshiftable'], dict) else {}
+            ab['chronoshiftable'] = {'explode_instead': str(cs.get('ExplodeInstead', 'False')).lower() == 'true',
+                                     'not_deployed': 'deployed' in cs.get('RequiresCondition', '')}
         if 'JamsMissiles' in t:
             ab['jams_missiles'] = {'range': wdist(t['JamsMissiles'].get('Range'))}
         if has(t, 'CreatesShroud'):
             ab['creates_shroud'] = {'range': wdist(next(iter(trait(t, 'CreatesShroud').values())).get('Range'))}
         if has(t, 'Cloak'):
             c = next(iter(trait(t, 'Cloak').values()))
+            # OpenRA CloakInfo defaults: UncloakOn Attack, Unload, Infiltrate, Demolish, Dock; DetectionTypes Cloak.
+            critical = any(isinstance(g, dict) and g.get('Condition') == c.get('PauseOnCondition') and 'Critical' in tokens(g.get('ValidDamageStates'))
+                           for g in trait(t, 'GrantConditionOnDamageState').values())
             ab['cloak'] = {'initial_delay': int(c.get('InitialDelay', 10)), 'cloak_delay': int(c.get('CloakDelay', 30)),
-                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack'))}
+                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack, Unload, Infiltrate, Demolish, Dock')),
+                           'types': tokens(c.get('DetectionTypes', 'Cloak')), 'off_when_critical': critical}
         if has(t, 'DetectCloaked'):
-            ab['detect_cloaked'] = {'range': wdist(next(iter(trait(t, 'DetectCloaked').values())).get('Range', '5c0'))}
+            d = next(iter(trait(t, 'DetectCloaked').values()))
+            d = d if isinstance(d, dict) else {}
+            ab['detect_cloaked'] = {'range': wdist(d.get('Range', '5c0')), 'types': tokens(d.get('DetectionTypes', 'Cloak')),
+                                    'needs_power': 'disabled' in d.get('RequiresCondition', '')}
+        # Vision through gap generator shroud: RevealsShroud instances that keep
+        # the default RevealGeneratedShroud: True (e.g. RevealsShroud@GAPGEN).
+        gap = [wdist(r.get('Range')) for r in trait(t, 'RevealsShroud').values()
+               if isinstance(r, dict) and str(r.get('RevealGeneratedShroud', 'True')).lower() == 'true']
+        if gap:
+            ab['gap_sight'] = {'range': max(gap)}
         if 'PortableChrono' in t:
             c = t['PortableChrono'] if isinstance(t['PortableChrono'], dict) else {}
             ab['portable_chrono'] = {'charge_delay': int(c.get('ChargeDelay', 500)), 'max_distance': int(c.get('MaxDistance', 12))}
         if 'MadTank' in t:
             m = t['MadTank'] if isinstance(t['MadTank'], dict) else {}
+            # MadTankInfo defaults: DetonationDelay 42, DriverActor e1.
             ab['mad_tank'] = {'charge_delay': int(m.get('ChargeDelay', 96)), 'thump_interval': int(m.get('ThumpInterval', 8)),
+                              'detonation_delay': int(m.get('DetonationDelay', 42)), 'driver': ids_lower[m.get('DriverActor', 'e1').lower()],
                               'thump_weapon': weapon_index(m.get('ThumpDamageWeapon', 'MADTankThump')),
                               'detonation_weapon': weapon_index(m.get('DetonationWeapon', 'MADTankDetonate'))}
         if a['id'] == 'DTRK':
@@ -315,11 +455,38 @@ def main():
             base = k.split('@')[0]
             if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower'):
                 v = v if isinstance(v, dict) else {}
-                powers.append({'key': k, 'kind': base, 'name': ftl.get(v.get('Name', ''), v.get('Name', base)),
-                               'description': ftl.get(v.get('Description', ''), ''),
-                               'charge': int(v.get('ChargeInterval', 0)), 'prerequisites': tokens(v.get('Prerequisites')),
-                               'duration': int(v.get('Duration', 0)), 'range': int(ints(v.get('Range', '1'))[0]) if v.get('Range') and 'c' not in v.get('Range') else wdist(v.get('Range')) // 1024 if v.get('Range') else 1,
-                               'max_distance': int(v.get('MaxDistance', 0) or 0)})
+                power = {'key': k, 'kind': base, 'name': ftl.get(v.get('Name', ''), v.get('Name', base)),
+                         'description': ftl.get(v.get('Description', ''), ''),
+                         'charge': int(v.get('ChargeInterval', 0)), 'prerequisites': tokens(v.get('Prerequisites')),
+                         'duration': int(v.get('Duration', 0)), 'range': int(ints(v.get('Range', '1'))[0]) if v.get('Range') and 'c' not in v.get('Range') else wdist(v.get('Range')) // 1024 if v.get('Range') else 1,
+                         'max_distance': int(v.get('MaxDistance', 0) or 0),
+                         'palette_order': int(v.get('SupportPowerPaletteOrder', 0) or 0)}
+                if base in ('AirstrikePower', 'ParatroopersPower'):
+                    # Aircraft powers: which plane flies in, how many, and what they drop.
+                    unit = v.get('UnitType') or (AIRSTRIKE_UNIT if base == 'AirstrikePower' else PARATROOPERS_UNIT)
+                    power['unit_type'] = ids_lower[unit.lower()]
+                    power['squad_size'] = int(v.get('SquadSize', 1))
+                    power['squad_offset'] = ints(v['SquadOffset'])[:2] if 'SquadOffset' in v else POWER_SQUAD_OFFSET
+                    power['drop_items'] = [ids_lower[x.lower()] for x in tokens(v.get('DropItems'))]
+                    power['camera_range'] = CAMERA_RANGE if v.get('CameraActor') else 0
+                    power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', POWER_CAMERA_REMOVE_DELAY))
+                # Superweapons (abilities.rs). Defaults from OpenRA's ChronoshiftPowerInfo,
+                # GrantExternalConditionPowerInfo, NukePowerInfo and GpsPowerInfo.
+                if 'Footprint' in v:
+                    power['footprint'] = footprint_rows(v['Footprint'])
+                if base == 'ChronoshiftPower':
+                    power['kill_cargo'] = str(v.get('KillCargo', 'True')).lower() == 'true'
+                if base == 'NukePower':
+                    power['missile_weapon'] = weapon_index(v.get('MissileWeapon', 'atomic'))
+                    power['missile_delay'] = int(v.get('MissileDelay', 0))
+                    power['flight_delay'] = int(v.get('FlightDelay', 400))
+                    power['camera_range'] = wdist(v.get('CameraRange', '0'))
+                    power['camera_spawn_advance'] = int(v.get('CameraSpawnAdvance', 25))
+                    power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
+                if base == 'GpsPower':
+                    power['reveal_delay'] = int(v.get('RevealDelay', 0))
+                power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
+                powers.append(power)
         if powers:
             ab['support_powers'] = powers
 
@@ -382,19 +549,69 @@ def main():
                 }
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
+        elif kind == 'mine':
+            pass  # Immobile: no unit info.
         else:
-            m = t['Mobile']
-            loco = m['Locomotor']
+            if kind == 'aircraft':
+                # Aircraft have no Mobile trait: they fly over everything.
+                m = t['Aircraft']
+                loco = AIR_LOCOMOTOR
+            else:
+                m = t['Mobile']
+                loco = m['Locomotor']
             if loco not in used_locos:
                 used_locos.append(loco)
             e['unit'] = {
                 'speed': int(m['Speed']),
                 'turn_speed': int(m.get('TurnSpeed', 512)),
-                'turn_in_place': m.get('AlwaysTurnInPlace', 'false').lower() == 'true' or kind == 'infantry',
+                'turn_in_place': str(m.get('AlwaysTurnInPlace', 'false')).lower() == 'true' or kind == 'infantry',
                 'locomotor': used_locos.index(loco),
                 'radius': 128 if kind == 'infantry' else (512 if a['cost'] >= 1500 and aid != 'DTRK' else 384),
                 'passenger': t.get('Passenger', {}).get('CargoType') if isinstance(t.get('Passenger'), dict) else None,
+                # OpenRA PassengerInfo.Weight default 1.
+                'passenger_weight': int(t['Passenger'].get('Weight', 1)) if isinstance(t.get('Passenger'), dict) else 1,
             }
+            # Where the unit is repaired: Repairable (on the pad) or RepairableNear (ships, within range).
+            rep = t.get('RepairableNear') if isinstance(t.get('RepairableNear'), dict) else t.get('Repairable') if isinstance(t.get('Repairable'), dict) else {}
+            e['unit']['repair_at'] = [ids_lower[x.lower()] for x in tokens(rep.get('RepairActors')) if x.lower() in ids_lower]
+            e['unit']['repair_near'] = isinstance(t.get('RepairableNear'), dict)
+            if kind == 'aircraft':
+                ammo = t.get('AmmoPool') if isinstance(t.get('AmmoPool'), dict) else {}
+                rearm = t.get('Rearmable') if isinstance(t.get('Rearmable'), dict) else {}
+                can_hover = str(m.get('CanHover', 'false')).lower() == 'true'
+                repairable = t.get('Repairable') if isinstance(t.get('Repairable'), dict) else {}
+                e['unit']['aircraft'] = {
+                    'cruise_altitude': wdist(m.get('CruiseAltitude', '1c0')),
+                    'can_hover': can_hover,
+                    'vtol': str(m.get('VTOL', 'false')).lower() == 'true',
+                    'landable': tokens(m.get('LandableTerrainTypes', '')),
+                    'ammo': int(ammo.get('Ammo', 0) or 0),
+                    'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower],
+                    # AmmoPool: one reload step (ReloadCount rounds) every ReloadDelay ticks while resupplying.
+                    'reload_delay': int(ammo.get('ReloadDelay', AMMO_RELOAD_DELAY)),
+                    'reload_count': int(ammo.get('ReloadCount', AMMO_RELOAD_COUNT)),
+                    'repair_actors': [ids_lower[x.lower()] for x in tokens(repairable.get('RepairActors')) if x.lower() in ids_lower],
+                    'altitude_velocity': wdist(m.get('AltitudeVelocity', ALTITUDE_VELOCITY)),
+                    'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),
+                    'take_off_on_resupply': str(m.get('TakeOffOnResupply', 'false')).lower() == 'true',
+                    # AutoTarget InitialStance HoldFire: idle aircraft never pick targets on their own.
+                    'hold_fire': str(first(t, 'AutoTarget').get('InitialStance', '')) == 'HoldFire',
+                    'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
+                    # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
+                    # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).
+                    'ammo_pips': int(first(t, 'WithAmmoPipsDecoration').get('PipCount', ammo.get('Ammo', 0) or 0)),
+                    'rotors': [ints(v.get('Offset', '0'))[0] for k, v in sorted(trait(t, 'WithIdleOverlay').items())
+                               if isinstance(v, dict) and v.get('RequiresCondition') == 'airborne'],
+                    # ParaDrop.DropRange: paratroopers jump within this distance of the target.
+                    'drop_range': wdist(t['ParaDrop'].get('DropRange', '4c0')) if isinstance(t.get('ParaDrop'), dict) else 0,
+                    # Airborne planes leave a husk that falls (FallsToEarth of ^PlaneHusk) and explodes.
+                    'crash_velocity': 0,
+                    'crash_weapon': None,
+                }
+                if not can_hover and has(t, 'SpawnActorOnDeath'):
+                    falls = src.to_json(src.rules['^PlaneHusk'])['FallsToEarth']
+                    e['unit']['aircraft']['crash_velocity'] = int(falls['Velocity'])
+                    e['unit']['aircraft']['crash_weapon'] = weapon_index(falls['Explosion'])
             if 'Harvester' in t:
                 hv = t['Harvester']
                 e['unit']['harvester'] = {
@@ -405,6 +622,11 @@ def main():
                     'search_from_harv': int(hv.get('SearchFromHarvesterRadius', HARVESTER_SEARCH_FROM_HARV)),
                 }
         out_actors.append(e)
+
+    for e in out_actors:
+        for field, value in OVERRIDES.get(e['id'], {}).items():
+            assert field in e, f'override of unknown field {e["id"]}.{field}'
+            e[field] = value
 
     # Resolve refinery free actors to ids that exist in the export.
     for e in out_actors:
@@ -428,10 +650,7 @@ def main():
         'player': player,
         'actors': out_actors,
         'weapons': [weapon_info(w, weapons) for w in used_weapons],
-        'locomotors': [
-            {'name': l, 'speeds': [locos[l].get(tt, 0) for tt in TERRAIN_TYPES], 'crushes': locos[l]['_crushes']}
-            for l in used_locos
-        ],
+        'locomotors': [locomotor_info(l, locos) for l in used_locos],
     }
     with open(OUT, 'w') as fh:
         json.dump(rules, fh, indent=1)

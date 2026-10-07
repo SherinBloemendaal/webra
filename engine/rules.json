@@ -10,7 +10,8 @@
  "terrain_types": [
   "Clear",
   "Rough",
-  "Ore"
+  "Ore",
+  "Water"
  ],
  "factions": [
   "allies",
@@ -59,7 +60,15 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "transforms": {
      "into": "MCV",
      "offset": [
@@ -161,7 +170,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -236,7 +254,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -311,7 +338,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 4,
@@ -398,7 +434,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -458,7 +503,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -561,7 +615,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -662,7 +725,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -771,7 +843,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -867,7 +948,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -947,7 +1037,15 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 6144
+    },
     "provides_radar": {}
    },
    "building": {
@@ -1012,7 +1110,6 @@
    "palette_order": 120,
    "prerequisites": [
     "dome",
-    "~structures.allies",
     "~techlevel.medium"
    ],
    "build_at": "Building",
@@ -1025,7 +1122,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -1118,7 +1224,15 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "AirstrikePower@spyplane",
@@ -1131,7 +1245,18 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 60,
+      "unit_type": "U2",
+      "squad_size": 1,
+      "squad_offset": [
+       -1536,
+       1536
+      ],
+      "drop_items": [],
+      "camera_range": 10240,
+      "camera_remove_delay": 150,
+      "one_shot": false
      },
      {
       "key": "ParatroopersPower@paratroopers",
@@ -1144,7 +1269,24 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 50,
+      "unit_type": "BADR",
+      "squad_size": 1,
+      "squad_offset": [
+       -1536,
+       1536
+      ],
+      "drop_items": [
+       "E1R1",
+       "E1R1",
+       "E1R1",
+       "E3R1",
+       "E3R1"
+      ],
+      "camera_range": 10240,
+      "camera_remove_delay": 25,
+      "one_shot": false
      },
      {
       "key": "AirstrikePower@parabombs",
@@ -1157,7 +1299,18 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 40,
+      "unit_type": "BADR.Bomber",
+      "squad_size": 1,
+      "squad_offset": [
+       1792,
+       1792
+      ],
+      "drop_items": [],
+      "camera_range": 10240,
+      "camera_remove_delay": 150,
+      "one_shot": false
      }
     ]
    },
@@ -1249,7 +1402,15 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "AirstrikePower@spyplane",
@@ -1262,7 +1423,18 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 60,
+      "unit_type": "U2",
+      "squad_size": 1,
+      "squad_offset": [
+       -1536,
+       1536
+      ],
+      "drop_items": [],
+      "camera_range": 10240,
+      "camera_remove_delay": 150,
+      "one_shot": false
      },
      {
       "key": "ParatroopersPower@paratroopers",
@@ -1275,7 +1447,24 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 50,
+      "unit_type": "BADR",
+      "squad_size": 1,
+      "squad_offset": [
+       -1536,
+       1536
+      ],
+      "drop_items": [
+       "E1R1",
+       "E1R1",
+       "E1R1",
+       "E3R1",
+       "E3R1"
+      ],
+      "camera_range": 10240,
+      "camera_remove_delay": 25,
+      "one_shot": false
      },
      {
       "key": "AirstrikePower@parabombs",
@@ -1288,7 +1477,18 @@
       ],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 40,
+      "unit_type": "BADR.Bomber",
+      "squad_size": 1,
+      "squad_offset": [
+       1792,
+       1792
+      ],
+      "drop_items": [],
+      "camera_range": 10240,
+      "camera_remove_delay": 150,
+      "one_shot": false
      }
     ]
    },
@@ -1380,9 +1580,21 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "building": {
@@ -1492,9 +1704,21 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "building": {
@@ -1619,7 +1843,15 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "support_powers": [
      {
       "key": "GpsPower",
@@ -1630,7 +1862,10 @@
       "prerequisites": [],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 90,
+      "reveal_delay": 375,
+      "one_shot": true
      }
     ]
    },
@@ -1717,7 +1952,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -1800,9 +2044,16 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "creates_shroud": {
      "range": 6144
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -1864,7 +2115,15 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "ChronoshiftPower@chronoshift",
@@ -1877,7 +2136,15 @@
       ],
       "duration": 400,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 20,
+      "footprint": [
+       "_x_",
+       "xxx",
+       "_x_"
+      ],
+      "kill_cargo": true,
+      "one_shot": false
      },
      {
       "key": "ChronoshiftPower@advancedchronoshift",
@@ -1890,7 +2157,17 @@
       ],
       "duration": 400,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 30,
+      "footprint": [
+       "__x__",
+       "_xxx_",
+       "xxxxx",
+       "_xxx_",
+       "__x__"
+      ],
+      "kill_cargo": true,
+      "one_shot": false
      }
     ]
    },
@@ -1969,7 +2246,15 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "GrantExternalConditionPower@IRONCURTAIN",
@@ -1980,7 +2265,14 @@
       "prerequisites": [],
       "duration": 400,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 10,
+      "footprint": [
+       "_x_",
+       "xxx",
+       "_x_"
+      ],
+      "one_shot": false
      }
     ]
    },
@@ -2043,7 +2335,15 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
     "support_powers": [
      {
       "key": "NukePower",
@@ -2054,7 +2354,15 @@
       "prerequisites": [],
       "duration": 0,
       "range": 1,
-      "max_distance": 0
+      "max_distance": 0,
+      "palette_order": 70,
+      "missile_weapon": 0,
+      "missile_delay": 5,
+      "flight_delay": 400,
+      "camera_range": 10240,
+      "camera_spawn_advance": 25,
+      "camera_remove_delay": 25,
+      "one_shot": false
      }
     ]
    },
@@ -2117,6 +2425,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2184,6 +2493,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2250,6 +2560,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2312,13 +2623,19 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    0
+    1
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2328,10 +2645,24 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "iron_curtainable": {
+     "kills": false
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2388,13 +2719,19 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    0
+    1
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2404,17 +2741,39 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "iron_curtainable": {
+     "kills": false
     },
     "cloak": {
      "initial_delay": 125,
      "cloak_delay": 60,
      "uncloak_on": [
-      "Attack"
-     ]
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Cloak"
+     ],
+     "off_when_critical": true
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2471,16 +2830,32 @@
    "armor": 3,
    "sight": 6656,
    "weapons": [
-    1
+    2
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
     }
    },
    "building": {
@@ -2537,15 +2912,31 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    2
+    3
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
+     "range": 5120,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
      "range": 5120
     }
    },
@@ -2617,15 +3008,26 @@
    "armor": 3,
    "sight": 7168,
    "weapons": [
-    3
+    4
    ],
    "turret_turn_speed": null,
    "reload_override": 120,
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": true
+    },
+    "gap_sight": {
      "range": 6144
     }
    },
@@ -2697,14 +3099,27 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    4
+    5
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 1,
     "height": 1,
@@ -2759,14 +3174,27 @@
    "armor": 3,
    "sight": 8192,
    "weapons": [
-    5
+    6
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
    "building": {
     "width": 2,
     "height": 1,
@@ -2825,7 +3253,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -2886,7 +3323,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -2947,7 +3393,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3007,7 +3462,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3068,7 +3532,16 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -3129,7 +3602,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3190,7 +3672,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 3,
@@ -3251,7 +3742,16 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 3,
@@ -3312,7 +3812,16 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 2,
@@ -3372,7 +3881,16 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 2,
     "height": 1,
@@ -3431,7 +3949,16 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 1024
+    }
+   },
    "building": {
     "width": 3,
     "height": 4,
@@ -3488,16 +4015,24 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    6
+    7
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
-     "range": 1536
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     },
     "crushable": [
      "infantry"
@@ -3509,7 +4044,64 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E3",
+   "name": "Rocket Soldier",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 300,
+   "build_ticks": 180,
+   "palette_order": 30,
+   "prerequisites": [
+    "~barracks",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Soldier",
+   "hp": 4500,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [
+    8,
+    9
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -3533,14 +4125,26 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 7,
+   "death_weapon": 10,
    "self_heal": {
     "step": 100,
     "delay": 25,
     "start_if_below": 50,
     "damage_cooldown": 500
    },
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -3548,6 +4152,11 @@
     "locomotor": 1,
     "radius": 384,
     "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "harvester": {
      "capacity": 20,
      "bale_load_delay": 4,
@@ -3578,9 +4187,20 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "transforms": {
      "into": "FACT",
      "offset": [
@@ -3597,7 +4217,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3620,9 +4245,20 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "delivers_cash": {
      "payload": 500
     }
@@ -3633,7 +4269,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3654,13 +4295,19 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    9
+    12
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -3668,7 +4315,21 @@
      ],
      "max": 1,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -3677,7 +4338,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3698,13 +4364,14 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    9
+    12
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -3712,7 +4379,21 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -3721,7 +4402,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3742,22 +4428,44 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    10,
-    11
+    13,
+    14
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     -298,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 113,
     "turn_speed": 40,
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3778,21 +4486,43 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    12
+    15
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 113,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3814,21 +4544,43 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    13
+    16
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3850,21 +4602,43 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    14
+    17
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 64,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3887,27 +4661,49 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    15,
-    16
+    18,
+    19
    ],
    "turret_turn_speed": 8,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": {
     "step": 100,
     "delay": 3,
     "start_if_below": 50,
     "damage_cooldown": 150
    },
-   "abilities": {},
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 43,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 4,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3929,21 +4725,38 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    17
+    20
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 18,
+   "death_weapon": 21,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3965,21 +4778,38 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    19
+    22
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 20,
+   "death_weapon": 23,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
    "unit": {
     "speed": 72,
     "turn_speed": 8,
     "turn_in_place": false,
     "locomotor": 5,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4003,15 +4833,44 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 21,
+   "death_weapon": 24,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "minelayer": {
      "mine": "MINV",
-     "ammo": 5
+     "ammo": 5,
+     "reload_delay": 50,
+     "terrain": [
+      "Clear",
+      "Road",
+      "Beach",
+      "Ore",
+      "Gems",
+      "Rough",
+      "Bridge"
+     ],
+     "rearm_actors": [
+      "FIX"
+     ]
+    },
+    "mine_immune": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
     },
     "detect_cloaked": {
-     "range": 5120
+     "range": 5120,
+     "types": [
+      "Mine"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4020,7 +4879,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4045,11 +4909,22 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "jams_missiles": {
      "range": 5120
+    },
+    "gap_sight": {
+     "range": 7168
     }
    },
    "unit": {
@@ -4058,7 +4933,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4083,11 +4963,22 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "creates_shroud": {
      "range": 7168
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4096,7 +4987,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4119,21 +5015,38 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    22
+    25
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
-   "abilities": {},
+   "turret_offsets": [],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 6144
+    }
+   },
    "unit": {
     "speed": 92,
     "turn_speed": 20,
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4155,14 +5068,25 @@
    "armor": 2,
    "sight": 4096,
    "weapons": [
-    23
+    26
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 24,
+   "death_weapon": 27,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": true
+    },
+    "chronoshiftable": {
+     "explode_instead": true,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "demo_truck": {}
    },
    "unit": {
@@ -4171,7 +5095,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4193,14 +5122,25 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    25
+    28
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "portable_chrono": {
      "charge_delay": 250,
      "max_distance": 12
@@ -4212,7 +5152,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4234,13 +5179,19 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    26
+    29
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4248,7 +5199,19 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "hold_fire": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
     },
     "cloak": {
      "initial_delay": 125,
@@ -4259,7 +5222,14 @@
       "Unload",
       "Heal",
       "Dock"
-     ]
+     ],
+     "types": [
+      "Cloak"
+     ],
+     "off_when_critical": true
+    },
+    "gap_sight": {
+     "range": 4096
     }
    },
    "unit": {
@@ -4268,7 +5238,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4294,14 +5269,27 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 8,
+   "death_weapon": 11,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": true
+    },
+    "gap_sight": {
+     "range": 4096
+    },
     "mad_tank": {
      "charge_delay": 96,
      "thump_interval": 8,
-     "thump_weapon": 27,
-     "detonation_weapon": 28
+     "detonation_delay": 42,
+     "driver": "E1",
+     "thump_weapon": 30,
+     "detonation_weapon": 31
     }
    },
    "unit": {
@@ -4310,11 +5298,1412 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "LST",
+   "name": "Transport",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 10,
+   "prerequisites": [
+    "~techlevel.low"
+   ],
+   "build_at": "Ship",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 6144,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 32,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry",
+      "Vehicle"
+     ],
+     "max": 5,
+     "garrison": false,
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 115,
+    "turn_speed": 512,
+    "turn_in_place": false,
+    "locomotor": 6,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "PT",
+   "name": "Gunboat",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 20,
+   "prerequisites": [
+    "~syrd",
+    "~techlevel.low"
+   ],
+   "build_at": "Boat",
+   "hp": 20000,
+   "armor": 3,
+   "sight": 8192,
+   "weapons": [
+    33,
+    34
+   ],
+   "turret_turn_speed": 28,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 32,
+   "self_heal": null,
+   "turret_offsets": [
+    [
+     512,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "detect_cloaked": {
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 6144
+    }
+   },
+   "unit": {
+    "speed": 142,
+    "turn_speed": 28,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "SS",
+   "name": "Submarine",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 950,
+   "build_ticks": 570,
+   "palette_order": 30,
+   "prerequisites": [
+    "~spen",
+    "~techlevel.low"
+   ],
+   "build_at": "Submarine",
+   "hp": 25000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [
+    35
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 36,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 50,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
+     ],
+     "off_when_critical": true
+    },
+    "detect_cloaked": {
+     "range": 5120,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 78,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "DD",
+   "name": "Destroyer",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 1000,
+   "build_ticks": 600,
+   "palette_order": 40,
+   "prerequisites": [
+    "~syrd",
+    "dome",
+    "~techlevel.medium"
+   ],
+   "build_at": "Boat",
+   "hp": 40000,
+   "armor": 3,
+   "sight": 5120,
+   "weapons": [
+    37,
+    34,
+    38
+   ],
+   "turret_turn_speed": 28,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 32,
+   "self_heal": null,
+   "turret_offsets": [
+    [
+     469,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "detect_cloaked": {
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
+   "unit": {
+    "speed": 92,
+    "turn_speed": 28,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "CA",
+   "name": "Cruiser",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 2400,
+   "build_ticks": 1440,
+   "palette_order": 50,
+   "prerequisites": [
+    "~syrd",
+    "atek",
+    "~techlevel.high"
+   ],
+   "build_at": "Boat",
+   "hp": 80000,
+   "armor": 3,
+   "sight": 7168,
+   "weapons": [
+    39,
+    39
+   ],
+   "turret_turn_speed": 12,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 32,
+   "self_heal": null,
+   "turret_offsets": [
+    [
+     -896,
+     0
+    ],
+    [
+     768,
+     0
+    ]
+   ],
+   "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 44,
+    "turn_speed": 12,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "MSUB",
+   "name": "Missile Submarine",
+   "description": "",
+   "kind": "ship",
+   "queue": "Ship",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 60,
+   "prerequisites": [
+    "~spen",
+    "stek",
+    "~techlevel.high"
+   ],
+   "build_at": "Submarine",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [
+    40,
+    41
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 36,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 100,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
+     ],
+     "off_when_critical": true
+    },
+    "detect_cloaked": {
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    }
+   },
+   "unit": {
+    "speed": 44,
+    "turn_speed": 12,
+    "turn_in_place": false,
+    "locomotor": 7,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
+   }
+  },
+  {
+   "id": "TRAN",
+   "name": "Chinook",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 900,
+   "build_ticks": 540,
+   "palette_order": 10,
+   "prerequisites": [
+    "~hpad",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 14000,
+   "armor": 2,
+   "sight": 8192,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "cargo": {
+     "types": [
+      "Infantry"
+     ],
+     "max": 8,
+     "garrison": false,
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 40,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    },
+    "gap_sight": {
+     "range": 6144
+    }
+   },
+   "unit": {
+    "speed": 128,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 0,
+     "rearm_actors": [],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 58,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": false,
+     "facing_tolerance": 512,
+     "ammo_pips": 0,
+     "rotors": [
+      597,
+      -597
+     ],
+     "drop_range": 0,
+     "crash_velocity": 0,
+     "crash_weapon": null
+    }
+   }
+  },
+  {
+   "id": "HIND",
+   "name": "Hind",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 20,
+   "prerequisites": [
+    "~hpad",
+    "~structures.soviet",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 10000,
+   "armor": 2,
+   "sight": 10240,
+   "weapons": [
+    43
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 8192
+    }
+   },
+   "unit": {
+    "speed": 112,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 24,
+     "rearm_actors": [
+      "HPAD"
+     ],
+     "reload_delay": 8,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": [
+      0
+     ],
+     "drop_range": 0,
+     "crash_velocity": 0,
+     "crash_weapon": null
+    }
+   }
+  },
+  {
+   "id": "MH60",
+   "name": "Black Hawk",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1500,
+   "build_ticks": 900,
+   "palette_order": 20,
+   "prerequisites": [
+    "~hpad",
+    "~structures.allies",
+    "~techlevel.medium"
+   ],
+   "build_at": "Helicopter",
+   "hp": 10000,
+   "armor": 2,
+   "sight": 10240,
+   "weapons": [
+    43
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 8192
+    }
+   },
+   "unit": {
+    "speed": 112,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 24,
+     "rearm_actors": [
+      "HPAD"
+     ],
+     "reload_delay": 8,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": [
+      0
+     ],
+     "drop_range": 0,
+     "crash_velocity": 0,
+     "crash_weapon": null
+    }
+   }
+  },
+  {
+   "id": "HELI",
+   "name": "Longbow",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 40,
+   "prerequisites": [
+    "~hpad",
+    "atek",
+    "~techlevel.high"
+   ],
+   "build_at": "Helicopter",
+   "hp": 12000,
+   "armor": 2,
+   "sight": 12288,
+   "weapons": [
+    44,
+    45
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 10240
+    }
+   },
+   "unit": {
+    "speed": 149,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 1024,
+     "can_hover": true,
+     "vtol": true,
+     "landable": [
+      "Clear",
+      "Rough",
+      "Road",
+      "Ore",
+      "Beach",
+      "Gems"
+     ],
+     "ammo": 8,
+     "rearm_actors": [
+      "HPAD"
+     ],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 4096,
+     "take_off_on_resupply": true,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 8,
+     "rotors": [
+      0
+     ],
+     "drop_range": 0,
+     "crash_velocity": 0,
+     "crash_weapon": null
+    }
+   }
+  },
+  {
+   "id": "YAK",
+   "name": "Yak Attack Plane",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 1350,
+   "build_ticks": 810,
+   "palette_order": 30,
+   "prerequisites": [
+    "~afld",
+    "~techlevel.medium"
+   ],
+   "build_at": "Plane",
+   "hp": 6000,
+   "armor": 2,
+   "sight": 11264,
+   "weapons": [
+    46
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 9216
+    }
+   },
+   "unit": {
+    "speed": 178,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 18,
+     "rearm_actors": [
+      "AFLD",
+      "AFLD.Ukraine"
+     ],
+     "reload_delay": 11,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 6,
+     "rotors": [],
+     "drop_range": 0,
+     "crash_velocity": 86,
+     "crash_weapon": 47
+    }
+   }
+  },
+  {
+   "id": "MIG",
+   "name": "MiG Attack Plane",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 2000,
+   "build_ticks": 1200,
+   "palette_order": 50,
+   "prerequisites": [
+    "~afld",
+    "stek",
+    "~techlevel.high"
+   ],
+   "build_at": "Plane",
+   "hp": 8000,
+   "armor": 2,
+   "sight": 13312,
+   "weapons": [
+    48
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "hold_fire": {},
+    "gap_sight": {
+     "range": 11264
+    }
+   },
+   "unit": {
+    "speed": 223,
+    "turn_speed": 16,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 512,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 8,
+     "rearm_actors": [
+      "AFLD",
+      "AFLD.Ukraine"
+     ],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [
+      "FIX"
+     ],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": true,
+     "facing_tolerance": 80,
+     "ammo_pips": 8,
+     "rotors": [],
+     "drop_range": 0,
+     "crash_velocity": 86,
+     "crash_weapon": 47
+    }
+   }
+  },
+  {
+   "id": "E1R1",
+   "name": "Rifle Infantry",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 100,
+   "build_ticks": 60,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Infantry",
+   "hp": 5000,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [
+    7
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E3R1",
+   "name": "Rocket Soldier",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 300,
+   "build_ticks": 180,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Infantry",
+   "hp": 4500,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [
+    8,
+    9
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "U2",
+   "name": "Spy Plane",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Aircraft",
+   "hp": 200000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {},
+   "unit": {
+    "speed": 373,
+    "turn_speed": 28,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 0,
+     "rearm_actors": [],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": false,
+     "facing_tolerance": 512,
+     "ammo_pips": 0,
+     "rotors": [],
+     "drop_range": 0,
+     "crash_velocity": 86,
+     "crash_weapon": 47
+    }
+   }
+  },
+  {
+   "id": "BADR",
+   "name": "Badger",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Aircraft",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "cargo": {
+     "types": [],
+     "max": 10,
+     "garrison": false,
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
+    }
+   },
+   "unit": {
+    "speed": 180,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 0,
+     "rearm_actors": [],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": false,
+     "facing_tolerance": 512,
+     "ammo_pips": 0,
+     "rotors": [],
+     "drop_range": 4096,
+     "crash_velocity": 86,
+     "crash_weapon": 47
+    }
+   }
+  },
+  {
+   "id": "BADR.Bomber",
+   "name": "Badger",
+   "description": "",
+   "kind": "aircraft",
+   "queue": "Aircraft",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Aircraft",
+   "hp": 40000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [
+    49
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 42,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {},
+   "unit": {
+    "speed": 180,
+    "turn_speed": 20,
+    "turn_in_place": false,
+    "locomotor": 8,
+    "radius": 384,
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false,
+    "aircraft": {
+     "cruise_altitude": 2560,
+     "can_hover": false,
+     "vtol": false,
+     "landable": [],
+     "ammo": 10,
+     "rearm_actors": [],
+     "reload_delay": 50,
+     "reload_count": 1,
+     "repair_actors": [],
+     "altitude_velocity": 43,
+     "wait_distance": 3072,
+     "take_off_on_resupply": false,
+     "hold_fire": false,
+     "facing_tolerance": 512,
+     "ammo_pips": 10,
+     "rotors": [],
+     "drop_range": 0,
+     "crash_velocity": 86,
+     "crash_weapon": 47
+    }
+   }
+  },
+  {
+   "id": "MINV",
+   "name": "Mine",
+   "description": "",
+   "kind": "mine",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 5000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 24,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 30,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Mine"
+     ],
+     "off_when_critical": false
+    }
+   }
+  },
+  {
+   "id": "MINP",
+   "name": "Mine",
+   "description": "",
+   "kind": "mine",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 5000,
+   "armor": 2,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "death_weapon": 50,
+   "self_heal": null,
+   "turret_offsets": [],
+   "abilities": {
+    "cloak": {
+     "initial_delay": 0,
+     "cloak_delay": 30,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Mine"
+     ],
+     "off_when_critical": false
+    }
    }
   }
  ],
  "weapons": [
+  {
+   "name": "Atomic",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 95,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 15000,
+     "spread": 1024,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      25,
+      100,
+      100,
+      25
+     ],
+     "delay": 0,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 2048,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      25,
+      100,
+      100,
+      25
+     ],
+     "delay": 5,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 3072,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      50,
+      100,
+      100,
+      25
+     ],
+     "delay": 10,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 4096,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      25
+     ],
+     "delay": 15,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 5120,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      25
+     ],
+     "delay": 20,
+     "valid": 95,
+     "invalid": 0
+    }
+   ]
+  },
   {
    "name": "Vulcan",
    "range": 6144,
@@ -4686,6 +7075,84 @@
       40,
       10,
       10
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "RedEye",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 50,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 298,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2400,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      100,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Dragon",
+   "range": 5120,
+   "min_range": 512,
+   "reload": 50,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 213,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      34,
+      100,
+      50
      ],
      "delay": 0,
      "valid": 23,
@@ -5375,7 +7842,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 95,
    "invalid": 0,
    "warheads": [
     {
@@ -5399,7 +7866,7 @@
       25
      ],
      "delay": 0,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5423,7 +7890,7 @@
       25
      ],
      "delay": 5,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5447,7 +7914,7 @@
       25
      ],
      "delay": 10,
-     "valid": 31,
+     "valid": 95,
      "invalid": 0
     },
     {
@@ -5471,7 +7938,7 @@
       25
      ],
      "delay": 15,
-     "valid": 23,
+     "valid": 87,
      "invalid": 0
     }
    ]
@@ -5631,15 +8098,773 @@
      "invalid": 1
     }
    ]
+  },
+  {
+   "name": "UnitExplodeShip",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "2Inch",
+   "range": 5632,
+   "min_range": 0,
+   "reload": 60,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 682,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      28,
+      72,
+      72,
+      100,
+      48
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "DepthCharge",
+   "range": 5120,
+   "min_range": 0,
+   "reload": 60,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 125,
+   "inaccuracy": 128,
+   "arc": true,
+   "valid": 64,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      40,
+      100,
+      25,
+      50
+     ],
+     "delay": 0,
+     "valid": 128,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "TorpTube",
+   "range": 9216,
+   "min_range": 0,
+   "reload": 100,
+   "burst": 2,
+   "burst_delays": [
+    15
+   ],
+   "projectile": "missile",
+   "speed": 85,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 80,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 18000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      75,
+      75,
+      100,
+      500
+     ],
+     "delay": 0,
+     "valid": 80,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplodeSubmarine",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Stinger",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 170,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      36,
+      88,
+      66,
+      120,
+      60
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "StingerAA",
+   "range": 7680,
+   "min_range": 512,
+   "reload": 60,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "missile",
+   "speed": 255,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 8,
+   "invalid": 64,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 1650,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      36,
+      88,
+      100,
+      120,
+      60
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "8Inch",
+   "range": 20480,
+   "min_range": 3072,
+   "reload": 250,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 204,
+   "inaccuracy": 1962,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 213,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      60,
+      35,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "SubMissile",
+   "range": 20480,
+   "min_range": 512,
+   "reload": 300,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 215,
+   "inaccuracy": 614,
+   "arc": true,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      80,
+      50,
+      48,
+      30,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "SubMissileAA",
+   "range": 8192,
+   "min_range": 512,
+   "reload": 300,
+   "burst": 2,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "missile",
+   "speed": 234,
+   "inaccuracy": 614,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 450,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      80,
+      50,
+      100,
+      30,
+      100
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplode",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ChainGun",
+   "range": 5120,
+   "min_range": 768,
+   "reload": 10,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 2500,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      144,
+      60,
+      72,
+      28,
+      28
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "HellfireAA",
+   "range": 4096,
+   "min_range": 1280,
+   "reload": 30,
+   "burst": 2,
+   "burst_delays": [
+    10
+   ],
+   "projectile": "missile",
+   "speed": 492,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 8,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 3000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      10,
+      74,
+      100,
+      100,
+      50
+     ],
+     "delay": 0,
+     "valid": 8,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "HellfireAG",
+   "range": 5120,
+   "min_range": 1280,
+   "reload": 34,
+   "burst": 2,
+   "burst_delays": [
+    10
+   ],
+   "projectile": "missile",
+   "speed": 256,
+   "inaccuracy": 128,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      90,
+      90,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ChainGun.Yak",
+   "range": 5120,
+   "min_range": 2560,
+   "reload": 3,
+   "burst": 2,
+   "burst_delays": [
+    0
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 4000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      50,
+      60,
+      25,
+      25
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "UnitExplodePlane",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 31,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "Maverick",
+   "range": 9216,
+   "min_range": 2048,
+   "reload": 50,
+   "burst": 2,
+   "burst_delays": [
+    7
+   ],
+   "projectile": "missile",
+   "speed": 256,
+   "inaccuracy": 316,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 7000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      30,
+      90,
+      90,
+      115,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "ParaBomb",
+   "range": 6144,
+   "min_range": 0,
+   "reload": 8,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bomb",
+   "speed": 50,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 30000,
+     "spread": 1000,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      40,
+      60,
+      75,
+      100,
+      25
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0
+    }
+   ]
+  },
+  {
+   "name": "APMine",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 23,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 40000,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 32
+    }
+   ]
   }
  ],
  "locomotors": [
   {
    "name": "foot",
+   "domain": "ground",
    "speeds": [
     100,
     89,
-    89
+    89,
+    0
    ],
    "crushes": [
     "mine",
@@ -5648,10 +8873,12 @@
   },
   {
    "name": "heavywheeled",
+   "domain": "ground",
    "speeds": [
     100,
     50,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5662,10 +8889,12 @@
   },
   {
    "name": "wheeled",
+   "domain": "ground",
    "speeds": [
     100,
     50,
-    88
+    88,
+    0
    ],
    "crushes": [
     "mine",
@@ -5674,10 +8903,12 @@
   },
   {
    "name": "tracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5688,10 +8919,12 @@
   },
   {
    "name": "heavytracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
@@ -5703,16 +8936,55 @@
   },
   {
    "name": "lighttracked",
+   "domain": "ground",
    "speeds": [
     100,
     88,
-    88
+    88,
+    0
    ],
    "crushes": [
     "wall",
     "mine",
     "crate"
    ]
+  },
+  {
+   "name": "lcraft",
+   "domain": "water",
+   "speeds": [
+    0,
+    0,
+    0,
+    100
+   ],
+   "crushes": [
+    "crate"
+   ]
+  },
+  {
+   "name": "naval",
+   "domain": "water",
+   "speeds": [
+    0,
+    0,
+    0,
+    100
+   ],
+   "crushes": [
+    "crate"
+   ]
+  },
+  {
+   "name": "air",
+   "domain": "air",
+   "speeds": [
+    100,
+    100,
+    100,
+    100
+   ],
+   "crushes": []
   }
  ]
 }

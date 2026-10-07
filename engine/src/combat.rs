@@ -5,7 +5,6 @@
 //! burst, projectile speed and inaccuracy, and damage warheads with spread,
 //! falloff, an armour-type versus table, target classes and delays.
 
-use crate::flowfield::nearest_in_component;
 use crate::math::{dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
 use crate::rules::{Kind, Projectile as ProjKind, WarheadKind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
@@ -15,6 +14,25 @@ const SCAN_INTERVAL: i32 = 8;
 impl World {
     pub(crate) fn has_weapons(&self, i: usize) -> bool {
         !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty()
+    }
+
+    /// Current target classes of actor `i` (rules::TARGET_* bits). Most actors
+    /// use their kind's class; submarines switch between surfaced and
+    /// submerged classes (naval.rs).
+    pub fn target_class(&self, i: usize) -> u32 {
+        let a = &self.actors[i];
+        match a.kind {
+            Kind::Ship => self.ship_target_class(i),
+            // Landed aircraft are ground targets, paratroopers under their
+            // parachute airborne ones (plane.rs, target_kind).
+            Kind::Aircraft | Kind::Infantry => self.target_kind(i).target_class(),
+            // Naval yards are WaterActor and Structure in OpenRA (torpedoes hit them).
+            Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
+                crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
+            }
+            // Landed aircraft count as vehicles, paratroopers in the air as air (plane.rs).
+            _ => self.target_kind(i).target_class(),
+        }
     }
 
     /// Structures that need power (Tesla Coil, AA, superweapons) shut down on low power.
@@ -55,7 +73,7 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
-                        || !info.can_attack(&self.rules, t.kind)
+                        || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
                         continue;
@@ -71,6 +89,7 @@ impl World {
                     let t = &self.actors[b];
                     if t.alive
                         && self.are_enemies(a.owner, t.owner)
+                        && !self.is_cloaked_from(b, a.owner)
                         && !self.rules.actors[t.ty as usize].is_wall()
                         && info.can_attack(&self.rules, Kind::Building)
                     {
@@ -87,11 +106,21 @@ impl World {
 
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
     pub(crate) fn targetable(&self, t: usize, player: u8) -> bool {
-        self.is_visible_to(t, player)
+        // Falling wrecks and the spy plane cannot be targeted (plane.rs); cloaked actors neither (abilities.rs).
+        self.is_visible_to(t, player) && !self.untargetable_aircraft(t) && !self.is_cloaked_from(t, player)
     }
 
     pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
         if !self.has_weapons(i) {
+            return false;
+        }
+        // HoldFire stance (Phase Transport stays cloaked until ordered to attack).
+        // Ground units only: ships and aircraft belong to their own modules.
+        let a = &self.actors[i];
+        if matches!(a.kind, crate::rules::Kind::Vehicle | crate::rules::Kind::Infantry)
+            && self.rules.actors[a.ty as usize].abilities.hold_fire.is_some()
+            && !self.players[a.owner as usize].is_ai
+        {
             return false;
         }
         let a = &mut self.actors[i];
@@ -115,7 +144,7 @@ impl World {
     }
 
     /// Current valid target of `i`, if any.
-    fn live_target(&self, i: usize) -> Option<usize> {
+    pub(crate) fn live_target(&self, i: usize) -> Option<usize> {
         let owner = self.actors[i].owner;
         // Forced attacks may target anyone but yourself (e.g. a neutral wall).
         let forced = self.actors[i].forced;
@@ -132,10 +161,8 @@ impl World {
             if self.actors[i].attack_move {
                 // Resume the attack-move toward the original destination.
                 let (dx, dy) = self.actors[i].dest;
-                let (x, y) = (self.actors[i].x, self.actors[i].y);
-                let comp = self.pass.component[self.cell_index(x, y)];
-                let goal =
-                    nearest_in_component(&self.map, &self.pass, self.cell_toward(dx, dy, x, y), comp, self.cell_of(x, y)).unwrap_or(NONE);
+                let (gx, gy) = self.cell_toward(dx, dy, self.actors[i].x, self.actors[i].y);
+                let goal = self.path_goal(i, gx, gy);
                 let a = &mut self.actors[i];
                 a.goal = goal;
                 a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
@@ -147,8 +174,8 @@ impl World {
             return;
         };
         let info = &self.rules.actors[self.actors[i].ty as usize];
-        let tkind = self.actors[t].kind;
-        let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target(tkind)).collect();
+        let tclass = self.target_class(t);
+        let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target_class(tclass)).collect();
         if usable.is_empty() {
             self.actors[i].target = NONE;
             self.actors[i].activity = Activity::Idle;
@@ -180,8 +207,7 @@ impl World {
         let (tcx, tcy) = self.cell_toward(self.actors[t].x, self.actors[t].y, x, y);
         let tcell = self.map.idx(tcx, tcy) as u32;
         if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
-            let comp = self.pass.component[self.cell_index(x, y)];
-            let goal = nearest_in_component(&self.map, &self.pass, (tcx, tcy), comp, self.cell_of(x, y)).unwrap_or(NONE);
+            let goal = self.path_goal(i, tcx, tcy);
             let a = &mut self.actors[i];
             a.chase_cell = tcell;
             a.goal = goal;
@@ -267,16 +293,23 @@ impl World {
         if !aligned {
             return;
         }
-        let tkind = self.actors[t].kind;
+        let tclass = self.target_class(t);
         let reload_override = self.rules.actors[ty].reload_override;
         let weapons = self.rules.actors[ty].weapons.clone();
         let d = self.hit_distance(t, x, y);
         for (slot, &w) in weapons.iter().enumerate().take(MAX_WEAPONS) {
             let wi = &self.rules.weapons[w];
-            if self.actors[i].reload[slot] > 0 || !wi.can_target(tkind) || d > wi.range || d < wi.min_range {
+            if self.actors[i].reload[slot] > 0 || !wi.can_target_class(tclass) || d > wi.range || d < wi.min_range {
                 continue;
             }
+            // Submarines surface to fire (Cloak UncloakOn: Attack).
+            self.naval_on_fire(i);
             self.fire(i, t, w);
+            // Uncloak on attack; a demolition truck detonates (abilities.rs).
+            self.on_fire(i);
+            if !self.actors[i].alive {
+                return;
+            }
             let wi = &self.rules.weapons[w];
             let a = &mut self.actors[i];
             a.burst_shot[slot] += 1;
@@ -289,7 +322,7 @@ impl World {
         }
     }
 
-    fn fire(&mut self, i: usize, t: usize, w: usize) {
+    pub(crate) fn fire(&mut self, i: usize, t: usize, w: usize) {
         let (sx, sy, facing, owner) = {
             let a = &self.actors[i];
             let info = &self.rules.actors[a.ty as usize];
@@ -298,7 +331,7 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
@@ -323,6 +356,11 @@ impl World {
             ProjKind::Bullet | ProjKind::Missile => {
                 let tref = self.make_ref(t);
                 self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
+            }
+            // GravityBomb: falls from the shooter's altitude where it was released (plane.rs).
+            ProjKind::Bomb => {
+                let alt = self.actors[i].altitude;
+                self.drop_bomb(w, sx, sy, owner, alt);
             }
         }
     }
@@ -399,6 +437,8 @@ impl World {
         } else {
             (EffectKind::Piff, 6)
         };
+        // Shells landing in open water splash instead (naval.rs).
+        let (kind, ttl) = self.water_impact_effect(x, y, ttl).unwrap_or((kind, ttl));
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
@@ -426,7 +466,7 @@ impl World {
                 let ci = self.map.idx(xx, yy);
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
-                    if self.actors[u].alive && wh.affects(self.actors[u].kind) {
+                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) {
                         let d = self.hit_distance(u, x, y);
                         if d <= radius {
                             hits.push((u, d));
@@ -437,10 +477,19 @@ impl World {
                 if b != NONE && !seen_buildings.contains(&(b as usize)) {
                     let b = b as usize;
                     seen_buildings.push(b);
-                    if self.actors[b].alive && wh.affects(Kind::Building) {
+                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
                         let d = self.hit_distance(b, x, y);
                         if d <= radius {
                             hits.push((b, d));
+                        }
+                    }
+                }
+                // Mines (abilities.rs) are GroundActor targets too.
+                if let Some(m) = self.mine_at(ci) {
+                    if wh.affects(Kind::Mine) {
+                        let d = self.hit_distance(m, x, y);
+                        if d <= radius {
+                            hits.push((m, d));
                         }
                     }
                 }
@@ -480,6 +529,10 @@ impl World {
 
     /// Death explosion of a unit (e.g. Demolition Truck's mini nuke, V2 warhead).
     pub(crate) fn death_explosion(&mut self, i: usize) {
+        // A plane shot down in the air already exploded where it crashed (plane.rs).
+        if self.crashed(i) {
+            return;
+        }
         let a = &self.actors[i];
         if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
             // One tick later, so chain reactions ripple outward instead of recursing.

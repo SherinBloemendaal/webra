@@ -5,7 +5,7 @@
 // order (move, attack, harvest, dock, repair) and left click on one of your
 // own units selects it instead. Right click clears the selection.
 
-import { CURSORS, ACTION_CURSORS, ACTION } from './cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS } from './cursors.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
@@ -32,7 +32,13 @@ export class Input {
     this.placing = null; // actor id being placed
     this.sellMode = false;
     this.attackMove = false;
+    this.power = null; // support power being targeted: { key, name } (js/powers.js)
+    this.powerDrag = null; // target picked, mouse still down: { x, y, sx, sy }
     this.lastClick = { time: 0, id: NONE };
+    // Ability and support power targeting: { kind: 'teleport', ids } (chrono tank)
+    // or { kind: 'power', key, power, src } (src: Chronosphere source area, once picked).
+    this.targeting = null;
+    this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
     this.bind();
   }
 
@@ -118,9 +124,10 @@ export class Input {
     const units = this.selectedOwnUnits();
     if (units.length) {
       const action = this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y);
-      // Own units and buildings are selected, unless the order targets them (dock, repair).
+      // Own units and buildings are selected, unless the order targets them (dock, repair, enter a transport).
       const ownHit = hitInfo && hitInfo.owner === this.player;
-      if (ownHit && action !== ACTION.DOCK && action !== ACTION.REPAIR) return { kind: 'select', id: hit };
+      const targetsOwn = action === ACTION.DOCK || action === ACTION.REPAIR || action === ACTION.LOAD || action === ACTION.DELIVER_CASH;
+      if (ownHit && !targetsOwn) return { kind: 'select', id: hit };
       return { kind: 'order', action, units };
     }
     if (this.selectedRallyBuilding() !== null && !hitInfo) return { kind: 'rally' };
@@ -132,7 +139,37 @@ export class Input {
   startPlacing(actorId) {
     this.placing = actorId;
     this.attackMove = false;
+    this.cancelPower();
+    this.cancelTargeting();
     this.setSellMode(false);
+  }
+
+  // ---- Support powers (engine/src/powers.rs, js/powers.js) -------------------------
+
+  /** Target a ready support power: click the map, or drag to set the flight direction. */
+  startPowerTargeting(power) {
+    this.placing = null;
+    this.attackMove = false;
+    this.setSellMode(false);
+    // Superweapons have their own targeting (abilities: Chronosphere source then
+    // destination, Iron Curtain and nuke targets) and cursors.
+    if (POWER_CURSORS[power.kind]) {
+      this.cancelPower();
+      this.targeting = { kind: 'power', key: power.key, power: power.kind, src: null };
+      this.hooks.onPowerTargeting?.(power.key);
+      return;
+    }
+    this.targeting = null;
+    this.power = { key: power.key, name: power.name };
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(power.key);
+  }
+
+  cancelPower() {
+    if (!this.power) return;
+    this.power = null;
+    this.powerDrag = null;
+    this.hooks.onPowerTargeting?.(null);
   }
 
   setSellMode(on) {
@@ -148,10 +185,46 @@ export class Input {
     this.setSellMode(!this.sellMode);
   }
 
-  /** Deploy selected MCVs, or pack up a selected Construction Yard. */
+  /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
   deploySelection() {
-    const ids = this.selection.filter((id) => this.game.deploy_state(this.player, id) !== 0);
+    // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy).
+    const chrono = this.selection.filter((id) => this.game.ability_deploy_state(this.player, id) === 3);
+    if (chrono.length) {
+      this.cancelPower();
+      this.targeting = { kind: 'teleport', ids: chrono };
+      this.attackMove = false;
+      return;
+    }
+    // MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
+    const ids = this.selection.filter((id) => this.game.deploy_state(this.player, id) !== 0 || this.game.ability_deploy_state(this.player, id) === 1);
     if (ids.length) this.game.deploy(this.player, Uint32Array.from(ids));
+  }
+
+  cancelTargeting() {
+    if (this.targeting?.kind === 'power') this.hooks.onPowerTargeting?.(null);
+    this.targeting = null;
+  }
+
+  /** Click while targeting an ability or support power. */
+  targetClick(w) {
+    const t = this.targeting;
+    if (t.kind === 'teleport') {
+      if (this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y)) {
+        this.game.order_teleport(this.player, Uint32Array.from(t.ids), w.x, w.y);
+        this.flashOrder(w, ACTION.MOVE);
+        this.cancelTargeting();
+      }
+      return;
+    }
+    if (t.power === 'ChronoshiftPower' && !t.src) {
+      // First click: the units to send; second click: where to.
+      t.src = { x: w.x, y: w.y };
+      return;
+    }
+    if (t.src) this.game.activate_power(this.player, t.key, w.x, w.y, t.src.x, t.src.y);
+    else this.game.activate_power(this.player, t.key, w.x, w.y);
+    this.flashOrder(w, ACTION.ATTACK);
+    this.cancelTargeting();
   }
 
   /** 0: nothing selected can deploy, 1: something can deploy now, 2: blocked. */
@@ -159,8 +232,9 @@ export class Input {
     let best = 0;
     for (const id of this.selection) {
       const st = this.game.deploy_state(this.player, id);
-      if (st === 1) return 1;
-      if (st === 2) best = 2;
+      const ab = this.game.ability_deploy_state(this.player, id);
+      if (st === 1 || ab === 1 || ab === 3) return 1;
+      if (st === 2 || ab === 2) best = 2;
     }
     return best;
   }
@@ -185,7 +259,15 @@ export class Input {
     c.addEventListener('mousedown', (e) => this.onMouseDown(e));
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
     window.addEventListener('mouseup', (e) => this.onMouseUp(e));
-    c.addEventListener('mouseenter', () => (this.mouse.inside = true));
+    // Take the position from the enter event itself: until the first move the
+    // stored position would be stale (-1, -1 at start), which reads as "at the
+    // top-left edge" and scrolled the view by itself.
+    c.addEventListener('mouseenter', (e) => {
+      const p = this.local(e);
+      this.mouse.x = p.x;
+      this.mouse.y = p.y;
+      this.mouse.inside = true;
+    });
     c.addEventListener('mouseleave', () => (this.mouse.inside = false));
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
@@ -207,6 +289,14 @@ export class Input {
       return;
     }
     if (e.button === 2) {
+      if (this.targeting) {
+        this.cancelTargeting();
+        return;
+      }
+      if (this.power) {
+        this.cancelPower();
+        return;
+      }
       if (this.placing) {
         this.cancelPlacing();
         return;
@@ -223,6 +313,11 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
+    if (this.power) {
+      // Target picked; mouse up fires it (a drag sets the direction).
+      this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
+      return;
+    }
     if (this.sellMode) {
       const hit = this.game.pick(this.player, w.x, w.y);
       if (hit !== NONE && this.game.sell_value(this.player, hit) > 0) {
@@ -242,6 +337,14 @@ export class Input {
         this.placing = null;
         this.hooks.onPlaced();
       }
+      return;
+    }
+    if (this.targeting) {
+      this.targetClick(w);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && this.selectedMinelayers().length) {
+      this.mineDrag = { sx: w.x, sy: w.y, ex: w.x, ey: w.y, units: this.selectedMinelayers() };
       return;
     }
     if (this.attackMove) {
@@ -269,11 +372,39 @@ export class Input {
       this.drag.ex = p.x;
       this.drag.ey = p.y;
     }
+    if (this.mineDrag) {
+      const w = this.toWorld(p.x, p.y);
+      this.mineDrag.ex = w.x;
+      this.mineDrag.ey = w.y;
+    }
+  }
+
+  /** Selected own Minelayers (Ctrl + drag lays a minefield). */
+  selectedMinelayers() {
+    const units = this.selectedOwnUnits();
+    return units.length && this.game.has_minelayer(this.player, Uint32Array.from(units)) ? units : [];
   }
 
   onMouseUp(e) {
     if (e.button === 1) {
       this.pan = null;
+      return;
+    }
+    if (e.button === 0 && this.mineDrag) {
+      const m = this.mineDrag;
+      this.mineDrag = null;
+      this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
+      this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+      return;
+    }
+    if (e.button === 0 && this.power && this.powerDrag) {
+      const p = this.local(e);
+      const t = this.powerDrag;
+      const w = this.toWorld(p.x, p.y);
+      const dragged = Math.abs(p.x - t.sx) + Math.abs(p.y - t.sy) >= 12;
+      this.game.activate_power(this.player, this.power.key, t.x, t.y, dragged ? w.x : undefined, dragged ? w.y : undefined);
+      this.flashOrder(t, ACTION.ATTACK);
+      this.cancelPower();
       return;
     }
     if (e.button !== 0 || !this.drag) return;
@@ -368,7 +499,9 @@ export class Input {
     }
     const k = e.key.toLowerCase();
     if (k === 'escape') {
-      if (this.sellMode) this.setSellMode(false);
+      if (this.targeting) this.cancelTargeting();
+      else if (this.power) this.cancelPower();
+      else if (this.sellMode) this.setSellMode(false);
       else if (this.placing) this.cancelPlacing();
       else if (this.attackMove) this.attackMove = false;
       else this.setSelection([]);
@@ -429,7 +562,15 @@ export class Input {
       const w = this.toWorld(this.mouse.x, this.mouse.y);
       const hit = this.game.pick(this.player, w.x, w.y);
       cursor = hit !== NONE && this.game.sell_value(this.player, hit) > 0 ? CURSORS.sell : CURSORS.blocked;
-    } else if (this.placing) cursor = 'none';
+    } else if (this.targeting && this.mouse.inside) {
+      const w = this.toWorld(this.mouse.x, this.mouse.y);
+      const t = this.targeting;
+      if (t.kind === 'teleport') cursor = this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y) ? CURSORS.teleport : CURSORS.blocked;
+      else cursor = POWER_CURSORS[t.power] ?? CURSORS.select;
+    } else if (this.mineDrag || ((this.keys.has('Control') || this.keys.has('Meta')) && this.mouse.inside && !this.drag && this.selectedMinelayers().length)) {
+      cursor = CURSORS.mine;
+    } else if (this.power) cursor = CURSORS.attack;
+    else if (this.placing) cursor = 'none';
     else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
       const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
@@ -477,6 +618,33 @@ export class Input {
       push(f.x - r, f.y + r - th, 2 * r, th, ...col, t);
       push(f.x - r, f.y - r, th, 2 * r, ...col, t);
       push(f.x + r - th, f.y - r, th, 2 * r, ...col, t);
+    }
+    if (this.mineDrag) {
+      // Minefield preview: the cells that will be mined.
+      const m = this.mineDrag;
+      const [x0, x1] = [Math.floor(Math.min(m.sx, m.ex) / CELL), Math.floor(Math.max(m.sx, m.ex) / CELL)];
+      const [y0, y1] = [Math.floor(Math.min(m.sy, m.ey) / CELL), Math.floor(Math.max(m.sy, m.ey) / CELL)];
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 1024) {
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) push(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4, 0.95, 0.8, 0.25, 0.35);
+      } else {
+        push(x0 * CELL, y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL, 0.95, 0.25, 0.2, 0.25);
+      }
+    }
+    if (this.targeting?.src) {
+      // Chronosphere: the picked source area.
+      const s = this.targeting.src;
+      push(Math.floor(s.x / CELL - 1) * CELL, Math.floor(s.y / CELL - 1) * CELL, 3 * CELL, 3 * CELL, 0.45, 0.9, 1, 0.25);
+    }
+    if (this.power && this.powerDrag) {
+      // Direction preview: dots from the target toward the mouse.
+      const t = this.powerDrag;
+      const m = this.toWorld(this.mouse.x, this.mouse.y);
+      const s = 2 / this.camera.zoom + 1;
+      for (let i = 0; i <= 8; i++) {
+        const x = t.x + ((m.x - t.x) * i) / 8;
+        const y = t.y + ((m.y - t.y) * i) / 8;
+        push(x - s / 2, y - s / 2, s, s, 1, 0.8, 0.3, 0.9 - i * 0.06);
+      }
     }
     if (this.placing && this.mouse.inside) {
       const w = this.toWorld(this.mouse.x, this.mouse.y);

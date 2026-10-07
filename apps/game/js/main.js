@@ -6,10 +6,10 @@ import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
+import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
 
-// Local player index in the engine; a skirmish sets it from the lobby's "You" slot.
-let PLAYER = 0;
+const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
 
 // OpenRA game speeds: milliseconds per simulation tick.
@@ -56,6 +56,55 @@ async function boot() {
     }
   }
   if (gpuError) lobby.showError(gpuError);
+  setupOnline(lobby, gpuError);
+}
+
+// ---- Online multiplayer hook --------------------------------------------------
+// The "Play online" entry point. js/online.js (and the protocol package) load
+// only when used, so local skirmish keeps working when they are unavailable.
+function setupOnline(lobby, gpuError) {
+  const entry = $('online-button');
+  const root = $('online-root');
+  if (!entry || !root) return;
+  entry.hidden = false;
+  let ui = null;
+  const open = async () => {
+    if (gpuError || !renderer) {
+      lobby.showError(gpuError || 'WebGPU is not available.');
+      return;
+    }
+    $('menu').hidden = true;
+    entry.hidden = true;
+    root.hidden = false;
+    if (ui) return;
+    try {
+      const { mountOnline } = await import('./online.js');
+      ui = mountOnline(root, {
+        Game,
+        version: version(),
+        colors: TEAM_COLORS,
+        colorNames: COLOR_NAMES,
+        onBack: () => {
+          root.hidden = true;
+          $('menu').hidden = false;
+          entry.hidden = false;
+        },
+        onStartGame: ({ game, player, driver, options, onQuit }) => {
+          entry.hidden = true;
+          applyColors(options.players);
+          start(game, { stress: false, tickMs: driver.tickMs, player, online: { driver, onQuit } });
+        },
+      });
+    } catch (err) {
+      root.hidden = true;
+      $('menu').hidden = false;
+      entry.hidden = false;
+      lobby.showError(`Online play is unavailable: ${err.message ?? err}`);
+    }
+  };
+  entry.addEventListener('click', open);
+  // Invite links (?join=<session id>, also #join=) open the online screen directly.
+  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash)) open();
 }
 
 /** Resolve "random" factions deterministically from the seed. */
@@ -98,9 +147,9 @@ function startSkirmish(options, lobby) {
     lobby.showError(`Could not start the game: ${err.message ?? err}`);
     return;
   }
-  PLAYER = Math.max(0, playing.findIndex((p) => p.type === 'human'));
   applyColors(playing);
-  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal });
+  const player = Math.max(0, playing.findIndex((p) => p.type === 'human'));
+  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal, player });
 }
 
 function startStress(seed, units, lobby) {
@@ -114,7 +163,9 @@ function startStress(seed, units, lobby) {
   }
 }
 
-function start(game, { stress, tickMs }) {
+// `player` and `online` are set for online games (see setupOnline): the
+// lockstep driver then decides when the simulation ticks and there is no pause.
+function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   $('menu').hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
@@ -122,7 +173,9 @@ function start(game, { stress, tickMs }) {
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
-  const input = new Input($('view'), game, rules, PLAYER, {
+  let powerBar = null;
+  const input = new Input($('view'), game, rules, player, {
+    onPowerTargeting: (key) => powerBar?.setTargeting(key),
     onSelectionChanged: (ids) => {
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
@@ -133,7 +186,7 @@ function start(game, { stress, tickMs }) {
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
   });
-  sidebar = new Sidebar($('sidebar'), game, rules, PLAYER, {
+  sidebar = new Sidebar($('sidebar'), game, rules, player, {
     onPlace: (id) => {
       input.startPlacing(id);
       sidebar.setPlacing(id);
@@ -145,9 +198,15 @@ function start(game, { stress, tickMs }) {
     onSell: () => input.toggleSellMode(),
     onDeploy: () => input.deploySelection(),
   });
+  // Support power bar (js/powers.js): pick a ready power, then a target on the map.
+  powerBar = new PowerBar($('field'), {
+    ticksPerSecond: Game.ticks_per_second(),
+    onSelect: (power) => input.startPowerTargeting(power),
+    onTargetLost: () => input.cancelPower(),
+  });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, renderer, wasm, rules };
-  const [sx, sy] = game.start_position(PLAYER);
+  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules };
+  const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
@@ -158,13 +217,18 @@ function start(game, { stress, tickMs }) {
     $('pause').hidden = !on;
     $('pause-button').textContent = on ? 'Resume' : 'Pause';
   };
-  $('pause-button').hidden = false;
+  const leave = () => {
+    online?.onQuit();
+    location.reload();
+  };
+  // Online games cannot pause: the other players keep going.
+  $('pause-button').hidden = !!online;
   $('pause-button').addEventListener('click', () => setPaused(!paused));
   $('resume').addEventListener('click', () => setPaused(false));
-  $('quit').addEventListener('click', () => location.reload());
-  $('again').addEventListener('click', () => location.reload());
+  $('quit').addEventListener('click', leave);
+  $('again').addEventListener('click', leave);
   window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLInputElement) return;
+    if (online || e.target instanceof HTMLInputElement) return;
     if (e.key === 'p' || e.key === 'P' || e.key === 'Pause' || e.key === 'F10') {
       e.preventDefault();
       setPaused(!paused);
@@ -172,7 +236,7 @@ function start(game, { stress, tickMs }) {
   });
   // A single-player game pauses when its tab is hidden.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !stress) setPaused(true);
+    if (document.hidden && !stress && !online) setPaused(true);
   });
 
   let acc = 0;
@@ -187,7 +251,13 @@ function start(game, { stress, tickMs }) {
   function frame(now) {
     const dt = Math.min(now - last, 250);
     last = now;
-    if (!paused) {
+    let alpha = paused ? 1 : acc / tickMs;
+    if (online) {
+      const t0 = performance.now();
+      const r = online.driver.advance(dt);
+      if (r.ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / r.ticks) * 0.1;
+      alpha = r.alpha;
+    } else if (!paused) {
       acc += dt;
       let ticks = 0;
       const t0 = performance.now();
@@ -198,6 +268,7 @@ function start(game, { stress, tickMs }) {
       }
       if (ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / ticks) * 0.1;
       if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
+      alpha = acc / tickMs;
     }
 
     input.update(dt / 1000);
@@ -205,14 +276,14 @@ function start(game, { stress, tickMs }) {
       const ptr = game.terrain_ptr();
       renderer.uploadTerrain(new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len()));
     }
-    const fogPtr = game.fog_ptr(PLAYER);
+    const fogPtr = game.fog_ptr(player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
 
     // UI rects call into wasm (placement preview), which may grow its memory and
     // detach existing views, so collect them before taking views of wasm memory.
     const uiRects = input.uiRects();
     const v = input.viewRect();
-    const spriteCount = game.build_render(PLAYER, paused ? 1 : acc / tickMs, v.x0, v.y0, v.x1, v.y1);
+    const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
     const simRectCount = game.rect_count();
     const rects = new Float32Array(simRectCount * 8 + uiRects.length);
@@ -229,8 +300,9 @@ function start(game, { stress, tickMs }) {
     if (now - uiTime >= 100) {
       uiTime = now;
       input.refreshSelection();
-      const state = JSON.parse(game.player_json(PLAYER));
+      const state = JSON.parse(game.player_json(player));
       sidebar.update(state);
+      powerBar.update(state.powers ?? []);
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);

@@ -43,6 +43,7 @@ WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and 
 
 ## Roadmap
 
+- [x] Helicopters: Chinook, Hind, Black Hawk and Longbow with hovering flight, landing, ammo and rearming at helipads (the Hind and a Soviet helipad are restored from classic Red Alert; see docs/contracts.md section 5)
 - [ ] All remaining Red Alert units and buildings from [data/CATALOG.md](data/CATALOG.md) (defences, aircraft, naval, superweapons, support powers)
 - [ ] Minimap / radar (requires Radar Dome)
 - [ ] Run the simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds

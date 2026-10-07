@@ -263,8 +263,18 @@ fn every_actor_is_reachable_for_the_right_factions() {
     let can = |faction: &str, id: &str| r.obtainable[r.faction_index(faction).unwrap()][r.actor_index(id).unwrap()];
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
-        assert!(any || a.id == "FACT", "{} is buildable by some faction", a.id);
+        // FACT comes from deploying an MCV; support power actors (paratroopers,
+        // spy plane, Badgers) and mines are never built.
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str()) || a.kind == Kind::Mine;
+        assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
+    // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the
+    // Chinook, the Soviets fly the Hind, the Allies the Black Hawk and Longbow.
+    for f in ["allies", "england", "france", "germany", "soviet", "russia", "ukraine"] {
+        assert!(can(f, "HPAD") && can(f, "TRAN"), "{f} builds helipads and Chinooks");
+    }
+    assert!(can("soviet", "HIND") && can("russia", "HIND") && can("ukraine", "HIND") && !can("allies", "HIND"));
+    assert!(can("allies", "MH60") && can("england", "HELI") && !can("soviet", "MH60") && !can("russia", "HELI"));
     assert!(can("germany", "CTNK") && !can("england", "CTNK") && !can("russia", "CTNK"));
     assert!(can("russia", "TTNK") && !can("ukraine", "TTNK"));
     assert!(can("ukraine", "DTRK") && !can("russia", "DTRK"));
@@ -830,4 +840,78 @@ fn ai_leaves_neutral_actors_alone() {
     for p in 0..2u8 {
         assert_eq!(crate::ai::choose_target_player(&w, p), Some(1 - p));
     }
+}
+
+// ---- Domains: water and air ---------------------------------------------------------
+
+/// A 64x64 map with a lake in the middle and a rock wall, for domain tests.
+fn lake_world() -> World {
+    use crate::map::Terrain;
+    let mut w = World::new(31, 64, &[("allies", false), ("soviet", false)]);
+    for y in 20..44 {
+        for x in 20..44 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = Terrain::Water;
+            w.map.ore[i] = 0;
+        }
+    }
+    for y in 0..64 {
+        let i = w.map.idx(10, y);
+        w.map.terrain[i] = Terrain::Rock;
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+    w
+}
+
+#[test]
+fn ships_sail_on_water_and_stay_off_land() {
+    let mut w = lake_world();
+    let dd = w.spawn_unit(ty(&w, "DD"), 0, cell_center(22), cell_center(22), 256);
+    let r = w.make_ref(dd);
+    // Ordered onto land: the destroyer stops at the nearest water instead.
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(50), y: cell_center(40), attack_move: false });
+    run(&mut w, 25 * 20);
+    let (cx, cy) = w.cell_of(w.actors[dd].x, w.actors[dd].y);
+    assert_eq!(w.map.terrain[w.map.idx(cx, cy)], crate::map::Terrain::Water, "still on water at {cx},{cy}");
+    assert!(cx >= 40, "sailed to the east shore, at {cx}");
+}
+
+#[test]
+fn naval_yard_produces_ships() {
+    let mut w = lake_world();
+    full_base(&mut w, 0);
+    w.spawn_building(ty(&w, "SYRD"), 0, 30, 30);
+    w.refresh_tokens();
+    let pt = ty(&w, "PT");
+    assert!(w.availability(0, pt).enabled);
+    w.queue_order(Order::StartProduction { player: 0, ty: pt, count: 1 });
+    run(&mut w, 400);
+    let boat = w.actors.iter().position(|a| a.alive && a.ty == pt).expect("gunboat built");
+    run(&mut w, 50);
+    let (cx, cy) = w.cell_of(w.actors[boat].x, w.actors[boat].y);
+    assert_eq!(w.map.terrain[w.map.idx(cx, cy)], crate::map::Terrain::Water);
+}
+
+#[test]
+fn aircraft_fly_over_rock_and_only_anti_air_hits_them() {
+    let mut w = lake_world();
+    let heli = w.spawn_unit(ty(&w, "MH60"), 0, cell_center(5), cell_center(5), 256);
+    assert!(w.actors[heli].altitude > 0, "flying");
+    let r = w.make_ref(heli);
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(15), y: cell_center(5), attack_move: false });
+    run(&mut w, 25 * 8);
+    let (cx, _) = w.cell_of(w.actors[heli].x, w.actors[heli].y);
+    assert!(cx >= 13, "crossed the rock wall at x=10, now at {cx}");
+    // A tank cannot target it; a flak truck can.
+    let tank = &w.rules.actors[ty(&w, "3TNK") as usize];
+    assert!(!tank.can_attack(&w.rules, Kind::Aircraft));
+    let flak = &w.rules.actors[ty(&w, "FTRK") as usize];
+    assert!(flak.can_attack(&w.rules, Kind::Aircraft));
+    let sam = w.spawn_unit(ty(&w, "FTRK"), 1, cell_center(16), cell_center(8), 0);
+    let hp = w.actors[heli].hp;
+    let _ = sam;
+    run(&mut w, 25 * 6);
+    assert!(!w.actors[heli].alive || w.actors[heli].hp < hp, "flak hit the helicopter");
 }

@@ -36,6 +36,7 @@ impl Terrain {
 pub const SPEED_CLEAR: usize = 0;
 pub const SPEED_ROUGH: usize = 1;
 pub const SPEED_ORE: usize = 2;
+pub const SPEED_WATER: usize = 3;
 
 pub struct Map {
     pub width: i32,
@@ -64,7 +65,9 @@ impl Map {
     }
 
     pub fn speed_class(&self, i: usize) -> usize {
-        if self.ore[i] > 0 {
+        if self.terrain[i] == Terrain::Water {
+            SPEED_WATER
+        } else if self.ore[i] > 0 {
             SPEED_ORE
         } else if self.terrain[i] == Terrain::Rough {
             SPEED_ROUGH

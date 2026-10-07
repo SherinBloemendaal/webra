@@ -1,7 +1,7 @@
 // Pure browser modules that do not need a DOM.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CURSORS, ACTION_CURSORS, ACTION } from '../js/cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS } from '../js/cursors.js';
 
 test('every cursor is a valid SVG data URL with a hotspot and fallback', () => {
   for (const [name, css] of Object.entries(CURSORS)) {
@@ -14,7 +14,14 @@ test('every cursor is a valid SVG data URL with a hotspot and fallback', () => {
 });
 
 test('smart actions map to cursors', () => {
-  assert.equal(ACTION_CURSORS.length, 6);
+  assert.equal(ACTION_CURSORS.length, 8);
   assert.equal(ACTION_CURSORS[ACTION.ATTACK], CURSORS.attack);
   assert.equal(ACTION_CURSORS[ACTION.REPAIR], CURSORS.repair);
+  assert.equal(ACTION_CURSORS[ACTION.LOAD], CURSORS.load);
+  assert.equal(ACTION_CURSORS[ACTION.DELIVER_CASH], CURSORS.deliver);
+});
+
+test('targeted support powers have their own cursors', () => {
+  for (const kind of ['ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower']) assert.ok(POWER_CURSORS[kind], kind);
+  for (const name of ['mine', 'teleport', 'ironCurtain', 'nuke', 'deliver']) assert.ok(CURSORS[name], name);
 });

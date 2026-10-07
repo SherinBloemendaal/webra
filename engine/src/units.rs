@@ -35,25 +35,53 @@ impl World {
         let forward = self.tick.is_multiple_of(2);
         for k in 0..n {
             let i = if forward { k } else { n - 1 - k };
-            if !self.actors[i].alive {
+            // Passengers sit out of the world inside their transport.
+            if !self.actors[i].alive || !self.actors[i].in_world() {
                 continue;
             }
             if self.actors[i].kind == Kind::Building {
                 self.tick_defense(i);
                 continue;
             }
-            match self.actors[i].activity {
-                Activity::Idle => self.tick_idle(i),
-                Activity::Move => self.tick_move(i),
-                Activity::Attack => self.tick_attack(i),
-                Activity::Harvest => self.tick_harvest(i),
-                Activity::Repair => self.tick_repair(i),
+            // Paratroopers sink on their parachute until they land (plane.rs).
+            if self.actors[i].air.parachute {
+                self.tick_parachute(i);
+                continue;
+            }
+            match self.actors[i].kind {
+                Kind::Aircraft => self.tick_aircraft(i),
+                Kind::Ship => self.tick_ship(i),
+                // Mines only wait to be driven over (abilities.rs).
+                Kind::Mine => continue,
+                _ => self.tick_unit_activity(i),
+            }
+            if self.actors[i].alive {
+                self.tick_abilities(i);
             }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
             }
+            if self.actors[i].alive && !self.actors[i].cargo.is_empty() {
+                self.tick_cargo(i);
+            }
         }
         self.separate_units();
+    }
+
+    /// The shared activity state machine (idle, move, attack, harvest, repair).
+    /// Domain modules (plane.rs, helicopter.rs, naval.rs) call it for the parts
+    /// they do not override.
+    pub(crate) fn tick_unit_activity(&mut self, i: usize) {
+        match self.actors[i].activity {
+            Activity::Idle => self.tick_idle(i),
+            Activity::Move => self.tick_move(i),
+            Activity::Attack => self.tick_attack(i),
+            Activity::Harvest => self.tick_harvest(i),
+            Activity::Repair => self.tick_repair(i),
+            Activity::Board => self.tick_board(i),
+            Activity::Unload => self.tick_unload(i),
+            Activity::Ability => self.tick_ability_activity(i),
+        }
     }
 
     // ---- Activities --------------------------------------------------------
@@ -121,7 +149,7 @@ impl World {
 
     /// Arrival test, including crowd arrival: a unit that bumps into a stopped
     /// member of its own group near the goal stops too.
-    fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
+    pub(crate) fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
         let gx = cell_center(goal as i32 % self.map.width);
         let gy = cell_center(goal as i32 / self.map.width);
         let (x, y) = (self.actors[i].x, self.actors[i].y);
@@ -175,7 +203,15 @@ impl World {
         let ci = self.cell_index(x, y);
         let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
         let loco = unit.locomotor as u8;
-        let dir = self.flow.dir(&self.map, &self.pass, &self.rules.locomotors, goal, loco, ci);
+        let domain = self.rules.locomotors[unit.locomotor].domain;
+        if domain == crate::rules::Domain::Air {
+            // Aircraft fly straight to their goal.
+            let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
+            self.step_toward(i, gx, gy, &unit);
+            return;
+        }
+        let pass = if domain == crate::rules::Domain::Water { &self.pass_water } else { &self.pass };
+        let dir = self.flow.dir(&self.map, pass, &self.rules.locomotors, goal, loco, ci);
         let (wx, wy) = if dir == DIR_GOAL {
             (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
         } else if dir == DIR_NONE {
@@ -185,7 +221,7 @@ impl World {
                 let (dx, dy) = DIRS[d];
                 let (cx, cy) = self.cell_of(x, y);
                 let (nx, ny) = (cx + dx, cy + dy);
-                (self.map.contains(nx, ny) && !self.pass.blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
+                (self.map.contains(nx, ny) && !self.pass_for(domain).blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
             });
             match comp_cell {
                 Some((nx, ny)) => (cell_center(nx), cell_center(ny)),
@@ -253,7 +289,8 @@ impl World {
             let (tx, ty) = (off_border(x, tx).clamp(1, max_x), off_border(y, ty).clamp(1, max_y));
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
-            if to == from || !self.pass.blocked[to] {
+            let d = self.domain_of(i);
+            if to == from || d == crate::rules::Domain::Air || !self.pass_for(d).blocked[to] {
                 let a = &mut self.actors[i];
                 a.x = tx;
                 a.y = ty;
@@ -393,7 +430,7 @@ impl World {
         }
     }
 
-    fn at_cell_center(&self, i: usize, cell: u32) -> bool {
+    pub(crate) fn at_cell_center(&self, i: usize, cell: u32) -> bool {
         let a = &self.actors[i];
         let (cx, cy) = (cell_center(cell as i32 % self.map.width), cell_center(cell as i32 / self.map.width));
         dist(a.x, a.y, cx, cy) <= 96
@@ -498,6 +535,21 @@ impl World {
 
     // ---- Repair ------------------------------------------------------------
 
+    /// Whether unit `u` (vehicle or ship) is repaired by building `b`
+    /// (OpenRA Repairable / RepairableNear RepairActors).
+    pub(crate) fn repairs_at(&self, u: usize, b: usize) -> bool {
+        let (ua, ba) = (&self.actors[u], &self.actors[b]);
+        if !matches!(ua.kind, Kind::Vehicle | Kind::Ship) || ba.kind != Kind::Building {
+            return false;
+        }
+        let binfo = &self.rules.actors[ba.ty as usize];
+        binfo.building.as_ref().is_some_and(|bi| bi.repairs.is_some())
+            && self.rules.actors[ua.ty as usize]
+                .unit
+                .as_ref()
+                .is_some_and(|un| un.repair_at.iter().any(|id| id.eq_ignore_ascii_case(&binfo.id)))
+    }
+
     fn tick_repair(&mut self, i: usize) {
         let Some(d) = self.resolve(self.actors[i].depot) else {
             self.actors[i].activity = Activity::Idle;
@@ -515,10 +567,8 @@ impl World {
             self.move_toward(i, pad);
             return;
         }
-        let ty = self.actors[i].ty as usize;
-        let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
-        let a = &mut self.actors[i];
-        if a.hp >= max_hp {
+        let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
+        if self.actors[i].hp >= max_hp {
             // Done: leave the pad toward the depot's rally point (or just below it).
             let (rx, ry) = self.actors[d]
                 .rally
@@ -526,6 +576,14 @@ impl World {
             self.order_move(&[i], rx, ry, false);
             return;
         }
+        self.repair_step(i, &rep);
+    }
+
+    /// One RepairsUnits interval on unit `i`: heal HpPerStep when the owner can pay.
+    pub(crate) fn repair_step(&mut self, i: usize, rep: &crate::rules::RepairInfo) {
+        let ty = self.actors[i].ty as usize;
+        let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
+        let a = &mut self.actors[i];
         a.repair_timer -= 1;
         if a.repair_timer > 0 {
             return;
@@ -537,6 +595,7 @@ impl World {
         let owner = a.owner;
         if self.spend(owner, price) {
             self.actors[i].hp += step;
+            self.uncloak_on(i, "Heal");
         }
     }
 
@@ -549,7 +608,8 @@ impl World {
         let mut crushed: Vec<usize> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
-            if !a.alive || a.kind == Kind::Building {
+            // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
+            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) {
                 continue;
             }
             let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
@@ -565,7 +625,13 @@ impl World {
                             continue;
                         }
                         let b = &self.actors[j];
-                        if !b.alive {
+                        // Only units in the same domain bump into each other
+                        // (aircraft fly over tanks, ships never meet tanks).
+                        if !b.alive || self.domain_of(i) != self.domain_of(j) || b.air.parachute || self.is_plane(j) {
+                            continue;
+                        }
+                        // A landed helicopter and one flying over it do not touch.
+                        if (a.altitude == 0) != (b.altitude == 0) {
                             continue;
                         }
                         let rb = self.rules.actors[b.ty as usize].unit.as_ref().unwrap().radius;

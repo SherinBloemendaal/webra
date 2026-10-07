@@ -6,7 +6,7 @@ import { drawIcon } from './sprites.js';
 import { TEAM_COLORS } from './renderer.js';
 
 // Must match QueueType in engine/src/rules.rs.
-const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles'];
+const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'];
 const QUEUE_BUILDINGS = 0;
 /** Buildings and Defense items are placed on the map when finished (one at a time). */
 const isStructureQueue = (q) => q === 0 || q === 1;
@@ -169,7 +169,7 @@ export class Sidebar {
     this.sellBtn.addEventListener('click', () => this.callbacks.onSell?.());
     this.deployBtn = el('button', 'sb-tool', 'Deploy');
     this.deployBtn.type = 'button';
-    this.deployBtn.title = 'Deploy the selected MCV, or pack up the selected Construction Yard. Hotkey: D';
+    this.deployBtn.title = 'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: D';
     this.deployBtn.addEventListener('click', () => this.callbacks.onDeploy?.());
     tools.append(this.sellBtn, this.deployBtn);
 
@@ -583,6 +583,14 @@ export class Sidebar {
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
     if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    // Ability state (engine actor_json().ability).
+    const ab = info.ability;
+    if (ab && info.owner === this.playerId) {
+      if (ab.maxAmmo !== undefined) detail += `   Mines ${ab.ammo}/${ab.maxAmmo}`;
+      if (ab.chargeMax !== undefined) detail += ab.charge >= ab.chargeMax ? '   Chrono ready' : `   Chrono ${Math.floor((100 * ab.charge) / ab.chargeMax)}%`;
+      if (ab.cloaked) detail += '   Cloaked';
+      if (ab.deployed) detail += `   Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`;
+    }
     setText(this.selDetailEl, detail);
   }
 

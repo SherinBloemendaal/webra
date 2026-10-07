@@ -12,9 +12,12 @@
   "scripts": {
     "build:wasm": "cd engine && wasm-pack build --release --target web --out-dir ../apps/game/pkg --no-typescript",
     "rules": "python3 tools/gen_rules.py",
+    "build": "node tools/build-dist.mjs",
     "check:js": "node tools/check-js.mjs",
     "test:engine": "cargo test -p webra-sim --release",
     "test:web": "node --test apps/game/tests/*.test.mjs",
-    "test": "npm run test:engine && npm run build:wasm && npm run check:js && npm run test:web"
+    "test": "npm run test:engine && npm run test:protocol && npm run test:server && npm run build:wasm && npm run check:js && npm run test:web",
+    "test:protocol": "node --test packages/protocol/test/*.test.mjs",
+    "test:server": "node --test apps/server/test/*.test.mjs"
   }
 }
