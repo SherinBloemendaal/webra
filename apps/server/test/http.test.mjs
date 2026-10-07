@@ -131,3 +131,18 @@ test('map uploads are validated against the engine rules and hashed canonically'
   // The engine rules file the server bundles is the real one.
   assert.ok(readFileSync(new URL('../../../engine/rules.json', import.meta.url)).length > 1000);
 });
+
+test('uploads the engine would refuse are rejected by the server too', async () => {
+  const { initSync, Game } = await import('../../game/pkg/webra_sim.js');
+  initSync({ module: readFileSync(new URL('../../game/pkg/webra_sim_bg.wasm', import.meta.url)) });
+  const map = JSON.parse(Game.generated_map(9, 48, 2));
+  // Structurally fine, but spawn 2 sits in open water: only the engine knows.
+  const terrain = Buffer.from(map.terrain, 'base64');
+  const [sx, sy] = map.spawns[1];
+  for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 3; dx++) terrain[(sy + dy) * map.width + sx + dx] = 3;
+  const ore = Buffer.from(map.ore, 'base64');
+  for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 3; dx++) ore[(sy + dy) * map.width + sx + dx] = 0;
+  map.terrain = terrain.toString('base64');
+  map.ore = ore.toString('base64');
+  await assert.rejects(prepareMap(JSON.stringify(map)), (e) => e instanceof HttpError && e.status === 422 && /spawn 2/.test(e.message));
+});

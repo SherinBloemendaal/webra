@@ -2,7 +2,7 @@
 //   dist/               apps/website (landing site)
 //   dist/play/          apps/game (client, wasm package from wasm-pack)
 //   dist/play/protocol/ packages/protocol/src
-//   dist/version.json   { version, commit, builtAt }
+//   dist/version.json   { version, commit, build, builtAt }
 // No bundler: files are copied as they are.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
@@ -84,7 +84,10 @@ copyTree(game, join(dist, 'play'), new Set(['tests', 'protocol']));
 copyTree(protocol, join(dist, 'play/protocol'));
 
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-const info = { version, commit: gitCommit(), builtAt: new Date().toISOString() };
+const commit = gitCommit();
+// `build` equals the engine's version() string; multiplayer sessions and the
+// website compare it, because only identical builds stay in lockstep.
+const info = { version, commit, build: `${version}+${commit.slice(0, 8)}`, builtAt: new Date().toISOString() };
 writeFileSync(join(dist, 'version.json'), `${JSON.stringify(info, null, 2)}\n`);
 
 const total = countFiles(dist);

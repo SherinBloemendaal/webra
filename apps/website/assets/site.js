@@ -672,7 +672,8 @@ async function initLobbies() {
       const [data, info] = await Promise.all([getJson('/api/sessions'), siteVersion()]);
       if (!Array.isArray(data)) throw new ApiError('The server sent an unexpected answer.');
       const sessions = data.filter((s) => s && typeof s === 'object' && typeof s.id === 'string');
-      const ourVersion = info && typeof info.version === 'string' ? info.version : null;
+      // Sessions report the exact build (version+commit); only identical builds can play together.
+      const ourVersion = info && typeof info.build === 'string' ? info.build : null;
       const count = `${sessions.length} open ${sessions.length === 1 ? 'game' : 'games'}`;
       status.textContent = `${count}. Updated ${timeFormat.format(new Date())}.`;
       if (sessions.length === 0) {

@@ -10,5 +10,11 @@
   },
   "devDependencies": {
     "wrangler": "4.148.0"
+  },
+  "imports": {
+    "#engine-wasm": {
+      "workerd": "./src/engine-wasm.worker.js",
+      "default": "./src/engine-wasm.node.js"
+    }
   }
 }

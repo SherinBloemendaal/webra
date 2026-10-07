@@ -1,10 +1,11 @@
-// Uploaded maps in D1. Uploads are validated with packages/protocol against
-// the engine's built-in rules, stored as canonical JSON, deduplicated by hash
+// Uploaded maps in D1. Uploads are validated with packages/protocol and then by
+// the engine itself (WebAssembly), stored as canonical JSON, deduplicated by hash
 // and rate limited per IP.
 
 import { MAP_ID_RE, MAP_MAX_BYTES, parseMap, sha256Hex } from '@webra/protocol';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { randomHex } from './crypto.js';
+import { engineValidateMap } from './engine.js';
 import { HttpError, json, jsonText, readText } from './http.js';
 import { takeQuota } from './quota.js';
 
@@ -19,6 +20,15 @@ export async function prepareMap(textValue) {
     throw new HttpError(422, 'invalid', `Invalid map: ${r.errors.slice(0, 5).join('; ')}`);
   }
   const hash = await sha256Hex(r.canonical);
+  // Second gate: the engine itself (spawn ground, connectivity, actor types,
+  // rules overrides), so nothing reaches players that their client would refuse.
+  const verdict = engineValidateMap(r.canonical);
+  if (!verdict.ok) {
+    throw new HttpError(422, 'invalid', `Invalid map: ${verdict.errors.slice(0, 5).map((e) => String(e).slice(0, 120)).join('; ')}`);
+  }
+  if (verdict.hash !== hash || verdict.modded !== r.modded) {
+    throw new HttpError(500, 'internal', 'Map identity check failed.');
+  }
   return { map: r.map, canonical: r.canonical, hash, modded: r.modded, players: r.players };
 }
 
