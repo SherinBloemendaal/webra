@@ -307,6 +307,119 @@
   background: linear-gradient(180deg, #c2402c, #9e3423);
 }
 
+/* ---- Map source and map files ------------------------------------------------ */
+
+#menu .lobby-source {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 10px;
+}
+
+#menu .lobby-source-btn[aria-pressed='true'] {
+  background: linear-gradient(180deg, #5a4a1c, #3d3213);
+  border-color: var(--l-gold-dim);
+  color: #fff;
+}
+
+#menu .lobby-source-btn + .lobby-source-btn {
+  border-left: 0;
+}
+
+#menu .lobby-mapinfo {
+  display: grid;
+  gap: 2px;
+  margin: -4px 0 12px;
+  text-align: center;
+  user-select: text;
+}
+
+#menu .lobby-mapinfo-title {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#menu .lobby-mapinfo-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#menu .lobby-modded-badge {
+  flex: none;
+  padding: 2px 5px;
+  background: var(--l-danger);
+  color: #1a0b08;
+  font: 900 10px/1 'Arial Black', sans-serif;
+  letter-spacing: 1px;
+  cursor: help;
+}
+
+#menu .lobby-modded {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #2a1310;
+  border: 1px solid #6e2418;
+  border-left: 4px solid var(--l-danger);
+  color: #f3cfc7;
+  font-size: 13px;
+}
+
+#menu .lobby-modded[hidden],
+#menu .lobby-map-errors[hidden],
+#menu .lobby-mapinfo[hidden],
+#menu .lobby-field[hidden] {
+  display: none;
+}
+
+#menu .lobby-modded p {
+  margin: 0;
+}
+
+#menu .lobby-modded-name {
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+#menu .lobby-modded-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+#menu .lobby-btn-danger {
+  background: linear-gradient(180deg, #a83524, var(--l-red));
+  border-color: #2b0c07;
+}
+
+#menu .lobby-btn-danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, #c2402c, #9e3423);
+}
+
+#menu .lobby-map-errors {
+  margin: 0 0 12px;
+  padding: 8px 12px 8px 28px;
+  background: #2a1310;
+  border: 1px solid #6e2418;
+  color: #f3cfc7;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+#menu .lobby-file-row {
+  display: flex;
+  min-width: 0;
+}
+
+#menu .lobby-file-row .lobby-btn {
+  flex: 1;
+}
+
 /* ---- Map preview ------------------------------------------------------------ */
 
 #menu .lobby-preview {
@@ -345,6 +458,40 @@
   background: #0a0c09;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
+}
+
+/* Numbered start markers in player colours, laid over the preview canvas. */
+#menu .lobby-markers {
+  position: absolute;
+  inset: 4px;
+  pointer-events: none;
+}
+
+#menu .lobby-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  background: var(--marker-color, #444);
+  border: 2px solid #000;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+  color: #fff;
+  font: 900 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  pointer-events: auto;
+  cursor: default;
+}
+
+#menu .lobby-marker-empty {
+  background: rgba(0, 0, 0, 0.55);
+  border-style: dashed;
+  border-color: var(--l-muted);
+  box-shadow: none;
+  color: var(--l-muted);
+  text-shadow: none;
 }
 
 #menu .lobby-preview-fail {
@@ -402,7 +549,7 @@
 
 #menu .lobby-slot {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) 68px minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) 68px minmax(0, 1.5fr) minmax(0, 0.9fr) 32px;
   gap: 10px;
   align-items: start;
 }
@@ -457,10 +604,63 @@
   font-size: 11px;
 }
 
-#menu .lobby-cell-empty {
+#menu .lobby-type {
+  flex: 1;
+}
+
+/* Closed slots: nobody plays there, so their settings fade out. */
+#menu .lobby-slot-closed .lobby-cell-color,
+#menu .lobby-slot-closed .lobby-cell-faction,
+#menu .lobby-slot-closed .lobby-cell-team {
+  opacity: 0.4;
+}
+
+#menu .lobby-select:disabled,
+#menu .lobby-color-btn:disabled {
+  cursor: not-allowed;
+}
+
+#menu .lobby-remove {
+  width: 32px;
+  padding: 0;
+}
+
+/* A drawn cross, so the button needs no icon font. */
+#menu .lobby-remove-x {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+#menu .lobby-remove-x::before,
+#menu .lobby-remove-x::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: -1px;
+  width: 14px;
+  height: 2px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+#menu .lobby-remove-x::after {
+  transform: rotate(-45deg);
+}
+
+#menu .lobby-slots-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  min-height: 32px;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+#menu .lobby-add::before {
+  content: '+';
+  font-size: 16px;
+  line-height: 1;
+  color: var(--l-gold);
 }
 
 #menu .lobby-faction-row {
@@ -727,6 +927,28 @@
   font-family: ui-monospace, Menlo, Consolas, monospace;
 }
 
+#menu .lobby-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+#menu .lobby-problem {
+  margin: 0;
+  max-width: 340px;
+  color: var(--l-gold);
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-align: right;
+}
+
+#menu .lobby-problem:empty {
+  display: none;
+}
+
 /* ---- Responsive ------------------------------------------------------------------ */
 
 /* Player slots stack into cards when their panel gets narrow. */
@@ -736,36 +958,46 @@
   }
 
   #menu .lobby-slot:not(.lobby-slot-head) {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: 68px minmax(0, 1fr) 32px;
     gap: 8px 10px;
   }
 
-  #menu .lobby-cell-player,
+  #menu .lobby-cell-player {
+    grid-area: 1 / 1 / 2 / 3;
+  }
+
+  #menu .lobby-cell-remove {
+    grid-area: 1 / 3;
+  }
+
+  #menu .lobby-cell-color {
+    grid-area: 2 / 1;
+  }
+
+  #menu .lobby-cell-team {
+    grid-area: 2 / 2 / 3 / 4;
+  }
+
   #menu .lobby-cell-faction {
-    grid-column: 1 / -1;
+    grid-area: 3 / 1 / 4 / 4;
   }
 
   #menu .lobby-cell-color,
   #menu .lobby-cell-faction,
-  #menu .lobby-cell-diff {
+  #menu .lobby-cell-team {
     display: grid;
     gap: 4px;
   }
 
   #menu .lobby-cell-color::before,
   #menu .lobby-cell-faction::before,
-  #menu .lobby-cell-diff::before {
+  #menu .lobby-cell-team::before {
     content: attr(data-label);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 1.2px;
     text-transform: uppercase;
     color: var(--l-muted);
-  }
-
-  #menu .lobby-cell-empty {
-    align-items: start;
-    min-height: 0;
   }
 
   #menu .lobby-option-grid {
@@ -820,6 +1052,16 @@
 
   #menu .lobby-stress .lobby-btn {
     flex: 1 1 100%;
+  }
+
+  #menu .lobby-go {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  #menu .lobby-problem {
+    max-width: none;
+    text-align: left;
   }
 
   #menu .lobby-dice-text {
