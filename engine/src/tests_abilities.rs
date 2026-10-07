@@ -644,3 +644,63 @@ fn superweapons_need_their_structure_and_validate() {
     run(&mut w, 1);
     assert!(w.power_instances(0).iter().find(|p| p.key == "ChronoshiftPower@chronoshift").unwrap().ready());
 }
+
+#[test]
+fn unpowered_tesla_coil_stops_detecting_cloaked_units() {
+    let mut w = flat_world(["france", "russia"]);
+    let plant = w.spawn_building(ty(&w, "APWR"), 1, 40, 20);
+    w.spawn_building(ty(&w, "TSLA"), 1, 30, 30);
+    w.refresh_tokens();
+    let stnk = passive(&mut w, "STNK", 0, 33, 30);
+    run(&mut w, 200);
+    assert!(w.actors[stnk].ab.cloaked, "the phase transport cloaked");
+    assert!(!w.is_cloaked_from(stnk, 1), "a powered Tesla Coil detects it 3 cells away");
+    w.remove(plant);
+    run(&mut w, 30);
+    assert!(w.players[1].low_power());
+    assert!(w.is_cloaked_from(stnk, 1), "without power the coil detects nothing");
+}
+
+#[test]
+fn loading_uncloaks_the_phase_transport() {
+    let mut w = flat_world(["france", "russia"]);
+    let stnk = passive(&mut w, "STNK", 0, 30, 30);
+    run(&mut w, 200);
+    assert!(w.actors[stnk].ab.cloaked);
+    let e1 = passive(&mut w, "E1", 0, 30, 31);
+    assert!(w.load_passenger(stnk, e1));
+    assert!(!w.actors[stnk].ab.cloaked, "loading reveals it (UncloakOn: Load)");
+}
+
+#[test]
+fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let (sx, sy) = w.players[0].start;
+    w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
+    w.refresh_tokens();
+    let own_layer = passive(&mut w, "MNLY", 0, sx + 9, sy);
+    let enemy_layer = passive(&mut w, "MNLY", 1, sx + 9, sy + 2);
+    let (own_cell, enemy_cell) = (w.map.idx(sx + 4, sy - 2), w.map.idx(sx + 6, sy - 2));
+    assert!(w.lay_mine(own_layer, own_cell));
+    assert!(w.lay_mine(enemy_layer, enemy_cell));
+    // Minelayers detect mines nearby: take both away so only the mines remain.
+    w.remove(enemy_layer);
+    w.remove(own_layer);
+    run(&mut w, 150);
+    let gun = ty(&w, "PBOX");
+    let cells = |w: &World, x: i32, y: i32| w.placement_cells(0, gun, x, y).iter().all(|c| c.2);
+    assert!(cells(&w, sx + 5, sy - 2), "the spot next to it is buildable (control)");
+    assert!(!cells(&w, sx + 4, sy - 2), "own mine blocks the cell");
+    assert!(w.is_cloaked_from(w.mine_at(enemy_cell).unwrap(), 0), "the enemy mine is hidden from player 0");
+    assert!(cells(&w, sx + 6, sy - 2), "a hidden enemy mine does not give itself away");
+    // Placing on it crushes the mine.
+    w.players[0].cash = 10_000;
+    w.spawn_building(ty(&w, "TENT"), 0, sx - 4, sy + 5);
+    w.refresh_tokens();
+    w.queue_order(Order::StartProduction { player: 0, ty: gun, count: 1 });
+    run(&mut w, 600);
+    w.queue_order(Order::Place { player: 0, ty: gun, cx: sx + 6, cy: sy - 2 });
+    run(&mut w, 2);
+    assert!(w.building_at[enemy_cell] != crate::world::NONE, "pillbox placed");
+    assert!(w.mine_at(enemy_cell).is_none(), "the hidden mine was crushed");
+}

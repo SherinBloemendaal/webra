@@ -366,6 +366,22 @@ impl World {
             && self.building_at[i] == NONE
             && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
             && self.players[player as usize].explored[i] != 0
+            // A mine the player can see (own, allied or detected) blocks the cell;
+            // hidden enemy mines must not, or placement would reveal them.
+            && self.mine_at(i).is_none_or(|m| self.is_cloaked_from(m, player))
+    }
+
+    /// Mines under a new structure's footprint are crushed (hidden enemy mines included).
+    fn clear_mines_under(&mut self, b: usize) {
+        let a = &self.actors[b];
+        let info = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+        let cells: Vec<usize> =
+            info.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|&(dx, dy, _)| self.map.idx(a.cx + dx, a.cy + dy)).collect();
+        for ci in cells {
+            if let Some(m) = self.mine_at(ci) {
+                self.remove(m);
+            }
+        }
     }
 
     pub fn can_place(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
@@ -413,7 +429,8 @@ impl World {
             return false;
         }
         self.players[player as usize].queues[qi].items.remove(0);
-        self.spawn_building(ty, player, cx, cy);
+        let b = self.spawn_building(ty, player, cx, cy);
+        self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);
         }

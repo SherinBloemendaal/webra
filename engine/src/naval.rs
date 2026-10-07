@@ -193,6 +193,10 @@ impl World {
             if !det.types.iter().any(|t| cloak_types.contains(t)) {
                 continue;
             }
+            // Detection that needs power (Tesla Coil) stops on low power.
+            if det.needs_power && self.players[d.owner as usize].low_power() {
+                continue;
+            }
             if dist(x, y, d.x, d.y) <= det.range {
                 mask |= 1 << d.owner;
             }

@@ -186,6 +186,8 @@ impl World {
             return false;
         }
         self.release_dock(p);
+        // Cloaked transports (Phase Transport) show themselves while loading.
+        self.uncloak_on(t, "Load");
         let (tref, pref) = (self.make_ref(t), self.make_ref(p));
         let (x, y) = (self.actors[t].x, self.actors[t].y);
         self.actors[t].cargo.push(pref);
@@ -323,6 +325,7 @@ impl World {
     /// Let the last passenger of `t` out toward `cell`. Returns it.
     pub fn unload_passenger(&mut self, t: usize, cell: usize) -> Option<usize> {
         let r = self.actors[t].cargo.pop()?;
+        self.uncloak_on(t, "Unload");
         let p = self.resolve(r)?;
         let (tx, ty) = (self.actors[t].x, self.actors[t].y);
         let (gx, gy) = (cell_center(cell as i32 % self.map.width), cell_center(cell as i32 / self.map.width));
