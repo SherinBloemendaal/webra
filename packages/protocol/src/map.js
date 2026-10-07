@@ -28,6 +28,10 @@ const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
 const RULE_KEY_RE = /^[A-Za-z0-9_.-]{1,40}$/;
 const RULE_MAX_DEPTH = 6;
+/** Fields that identify an entry and can never change (see checkPatch). */
+const RULE_FIXED_FIELDS = ['kind', 'queue'];
+/** Marks "validated without the engine rules", as opposed to "no built-in value here". */
+const NO_BASE = Symbol('no base');
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 const B64_CODES = (() => {
   const t = new Int16Array(128).fill(-1);
@@ -102,9 +106,9 @@ function checkPatch(patch, target, path, keyField, depth) {
   for (const k of Object.keys(patch)) {
     const p = `${path}.${k}`;
     if (!RULE_KEY_RE.test(k)) fail(`rules ${excerpt(path, 60)}: invalid field name`);
-    if (k === keyField || k === 'kind' || k === 'queue') fail(`rules ${excerpt(p, 60)}: cannot be changed`);
+    if (k === keyField || RULE_FIXED_FIELDS.includes(k)) fail(`rules ${excerpt(p, 60)}: cannot be changed`);
     const v = patch[k];
-    checkRuleValue(v, p, depth - 1);
+    checkRuleValue(v, p, depth - 1, target === undefined ? NO_BASE : target[k]);
     if (target !== undefined) {
       if (!Object.hasOwn(target, k)) fail(`rules ${excerpt(path, 60)}: unknown field ${excerpt(k)}`);
       const cur = target[k];
@@ -115,7 +119,21 @@ function checkPatch(patch, target, path, keyField, depth) {
   }
 }
 
-function checkRuleValue(v, path, depth) {
+/**
+ * Shape checks for any override value. `base` is the built-in value at the
+ * same position, or NO_BASE when no engine rules were given. Arrays are
+ * replaced whole, so objects inside them get the same guard as patches: an
+ * identity field (`kind`, `queue`) may only repeat the built-in value at the
+ * same position (a warhead or support power can be tuned, never change kind).
+ * Without the engine rules that comparison is left to the engine, which
+ * applies the same rule.
+ */
+function checkRuleValue(v, path, depth, base) {
+  const at = (key) => {
+    if (base === NO_BASE) return NO_BASE;
+    if (typeof key === 'number') return Array.isArray(base) ? base[key] : undefined;
+    return isPlainObject(base) && Object.hasOwn(base, key) ? base[key] : undefined;
+  };
   switch (kindOf(v)) {
     case 'number':
       if (!Number.isSafeInteger(v)) fail(`rules ${excerpt(path, 60)}: numbers must be integers`);
@@ -127,13 +145,15 @@ function checkRuleValue(v, path, depth) {
       return;
     case 'array':
       if (depth <= 0 || v.length > 256) fail(`rules ${excerpt(path, 60)}: array too large or deep`);
-      for (const x of v) checkRuleValue(x, path, depth - 1);
+      v.forEach((x, i) => checkRuleValue(x, path, depth - 1, at(i)));
       return;
     case 'object':
       if (depth <= 0) fail(`rules ${excerpt(path, 60)}: nested too deeply`);
       for (const k of Object.keys(v)) {
         if (!RULE_KEY_RE.test(k)) fail(`rules ${excerpt(path, 60)}: invalid field name`);
-        checkRuleValue(v[k], `${path}.${k}`, depth - 1);
+        const b = at(k);
+        if (RULE_FIXED_FIELDS.includes(k) && b !== NO_BASE && b !== v[k]) fail(`rules ${excerpt(`${path}.${k}`, 60)}: cannot be changed`);
+        checkRuleValue(v[k], `${path}.${k}`, depth - 1, b);
       }
       return;
     default:

@@ -130,6 +130,25 @@ test('rules overrides are checked against the engine rules like the engine does'
   ]) {
     assert.throws(() => validateRules(bad, ENGINE_RULES), JSON.stringify(bad));
   }
+  // Arrays are replaced whole: objects inside keep their kind (engine keep_identity).
+  const warheads = structuredClone(ENGINE_RULES.weapons.find((w) => w.name === '25mm').warheads);
+  warheads[0].damage = 77;
+  validateRules({ weapons: { '25mm': { warheads } } }, ENGINE_RULES);
+  const silo = ENGINE_RULES.actors.find((a) => a.abilities.support_powers?.some((p) => p.kind === 'NukePower'));
+  const powers = structuredClone(silo.abilities.support_powers);
+  powers[0].charge = 10;
+  validateRules({ actors: { [silo.id]: { abilities: { support_powers: powers } } } }, ENGINE_RULES);
+  for (const [section, id, field, value] of [
+    ['weapons', '25mm', 'warheads', [{ ...warheads[0], kind: 'percent' }]],
+    ['weapons', '25mm', 'warheads', [...warheads, { ...warheads[0] }]],
+    ['actors', silo.id, 'abilities', { support_powers: [{ ...powers[0], kind: 'GpsPower' }] }],
+    ['actors', silo.id, 'abilities', { support_powers: [[{ kind: 'NukePower' }]] }],
+  ]) {
+    const bad = { [section]: { [id]: { [field]: value } } };
+    assert.throws(() => validateRules(bad, ENGINE_RULES), /cannot be changed/, JSON.stringify(bad).slice(0, 120));
+  }
+  // Without the engine rules only shapes are checked; the engine decides the rest.
+  validateRules({ weapons: { '25mm': { warheads: [{ ...warheads[0], kind: 'percent' }] } } });
   const r = validateMap(makeMap(32, 32, { rules: ok }), { rules: ENGINE_RULES });
   assert.ok(r.ok, r.errors.join('; '));
   assert.equal(r.modded, true);
