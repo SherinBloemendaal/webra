@@ -95,7 +95,7 @@ fn hind_is_buildable_for_the_soviets_at_their_helipad() {
 #[test]
 fn hind_is_built_landed_on_the_helipad_then_takes_off() {
     let mut w = flat_world();
-    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
     w.refresh_tokens();
     w.update_power();
     let hind = ty(&w, "HIND");
@@ -222,7 +222,7 @@ fn idle_helicopters_hold_fire_but_attack_move_engages() {
 #[test]
 fn empty_helicopter_returns_to_the_helipad_reloads_and_takes_off() {
     let mut w = flat_world();
-    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
     w.update_power();
     let i = heli(&mut w, "HIND", 0, 24, 20);
     w.actors[i].heli.ammo_used = 24;
@@ -253,7 +253,7 @@ fn empty_helicopter_returns_to_the_helipad_reloads_and_takes_off() {
 #[test]
 fn return_to_base_with_full_ammo_waits_near_the_helipad() {
     let mut w = flat_world();
-    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
     w.update_power();
     let i = heli(&mut w, "HIND", 0, 30, 20);
     w.queue_order(Order::ReturnToBase { player: 0, ids: r(&w, i) });
@@ -269,7 +269,7 @@ fn return_to_base_with_full_ammo_waits_near_the_helipad() {
 #[test]
 fn one_helicopter_per_helipad() {
     let mut w = flat_world();
-    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
     w.update_power();
     let a = heli(&mut w, "HIND", 0, 24, 20);
     let b = heli(&mut w, "HIND", 0, 26, 20);
@@ -367,7 +367,7 @@ fn landed_helicopters_are_hit_by_ground_weapons_not_anti_air() {
 #[test]
 fn smart_order_on_own_helipad_lands_and_reloads() {
     let mut w = flat_world();
-    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
     w.update_power();
     w.update_vision();
     let i = heli(&mut w, "HIND", 0, 20, 20);
@@ -387,7 +387,7 @@ fn smart_order_on_own_helipad_lands_and_reloads() {
 #[test]
 fn damaged_helicopter_is_repaired_on_the_service_depot() {
     let mut w = flat_world();
-    let fix = w.spawn_building(ty(&w, "FIX"), 0, 12, 12);
+    let fix = w.spawn_building(ty(&w, "FIX"), 0, 12, 12).unwrap();
     w.update_vision();
     let i = heli(&mut w, "HIND", 0, 24, 20);
     let max = w.actors[i].hp;

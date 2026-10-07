@@ -35,7 +35,7 @@ fn place(w: &mut World, player: u8, id: &str) -> usize {
         for dy in -r..=r {
             for dx in -r..=r {
                 if w.can_place(player, t, sx + dx, sy + dy) {
-                    let b = w.spawn_building(t, player, sx + dx, sy + dy);
+                    let b = w.spawn_building(t, player, sx + dx, sy + dy).unwrap();
                     w.refresh_tokens();
                     w.update_power();
                     return b;
@@ -138,7 +138,7 @@ fn yak_attack_runs_use_ammo_then_it_rearms_and_returns_to_the_target() {
     let p = parked_plane(&mut w, "YAK", afld);
     // An enemy power plant (40000 HP): one AmmoPool does not destroy it.
     let (tx, ty_) = open_ground(&w, 18);
-    let powr = w.spawn_building(ty(&w, "POWR"), 1, tx / CELL, ty_ / CELL);
+    let powr = w.spawn_building(ty(&w, "POWR"), 1, tx / CELL, ty_ / CELL).unwrap();
     // Planes attack what their owner can see.
     w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
     w.update_vision();
@@ -371,7 +371,7 @@ fn parabombs_are_ukrainian_and_damage_the_target_area() {
 
     charge_all(&mut w, 0);
     let (tx, ty_) = open_ground(&w, 14);
-    let powr = w.spawn_building(ty(&w, "POWR"), 1, tx / CELL, ty_ / CELL);
+    let powr = w.spawn_building(ty(&w, "POWR"), 1, tx / CELL, ty_ / CELL).unwrap();
     let hp0 = w.actors[powr].hp;
     let (px, py) = (w.actors[powr].x, w.actors[powr].y);
     w.queue_order(Order::SupportPower { player: 0, key: "AirstrikePower@parabombs".into(), x: px, y: py, x2: None, y2: None });

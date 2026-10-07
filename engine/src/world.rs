@@ -841,11 +841,20 @@ impl World {
         i
     }
 
-    pub fn spawn_building(&mut self, ty: u16, owner: u8, cx: i32, cy: i32) -> usize {
+    /// Put a structure with its top-left at (cx, cy). Returns None, and
+    /// changes nothing, when `ty` is not a structure or its footprint does not
+    /// fit inside the map: every footprint cell of a live structure indexes
+    /// the cell tables, so none may lie outside.
+    pub fn spawn_building(&mut self, ty: u16, owner: u8, cx: i32, cy: i32) -> Option<usize> {
+        let info = self.rules.actors.get(ty as usize)?;
+        let b = info.building.as_ref()?;
+        if !b.fits(&self.map, cx, cy) {
+            return None;
+        }
         let i = self.alloc();
         let gen = self.actors[i].gen;
         let info = &self.rules.actors[ty as usize];
-        let b = info.building.as_ref().expect("building info");
+        let b = info.building.as_ref()?;
         let mut a = Actor::blank();
         a.alive = true;
         a.gen = gen;
@@ -867,6 +876,7 @@ impl World {
             if c == FootCell::Empty {
                 continue;
             }
+            // Checked by `fits` above.
             let ci = self.map.idx(cx + dx, cy + dy);
             self.building_at[ci] = i as u32;
             if c == FootCell::Occupied {
@@ -881,7 +891,7 @@ impl World {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
             self.spawn_unit(ty as u16, owner, x, y, 512);
         }
-        i
+        Some(i)
     }
 
     pub fn kill(&mut self, i: usize) {

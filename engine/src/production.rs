@@ -2,7 +2,7 @@
 
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
-use crate::rules::{FootCell, Kind, QueueType};
+use crate::rules::{Kind, QueueType};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -348,10 +348,7 @@ impl World {
         };
         let in_area = self.in_build_area(player, ty, cx, cy);
         let mut out = Vec::new();
-        for &(dx, dy, c) in &b.footprint {
-            if c == FootCell::Empty {
-                continue;
-            }
+        for (dx, dy) in b.cells() {
             let (x, y) = (cx + dx, cy + dy);
             let ok = in_area && self.map.contains(x, y) && self.cell_free_for(player, b.on_water, self.map.idx(x, y), None);
             out.push((x, y, ok));
@@ -377,8 +374,7 @@ impl World {
     fn clear_mines_under(&mut self, b: usize) {
         let a = &self.actors[b];
         let info = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-        let cells: Vec<usize> =
-            info.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|&(dx, dy, _)| self.map.idx(a.cx + dx, a.cy + dy)).collect();
+        let cells: Vec<usize> = info.cells().map(|(dx, dy)| self.map.idx(a.cx + dx, a.cy + dy)).collect();
         for ci in cells {
             if let Some(m) = self.mine_at(ci) {
                 self.remove(m);
@@ -434,8 +430,8 @@ impl World {
         if !ready || !self.can_place(player, ty, cx, cy) {
             return false;
         }
+        let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
         self.players[player as usize].queues[qi].items.remove(0);
-        let b = self.spawn_building(ty, player, cx, cy);
         self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);
@@ -527,7 +523,7 @@ impl World {
         let a = &self.actors[i];
         match &self.rules.actors[into as usize].building {
             // MCV: the yard's footprint must be free (the MCV itself may stand on it).
-            Some(b) => b.footprint.iter().filter(|c| c.2 != FootCell::Empty).all(|&(dx, dy, _)| {
+            Some(b) => b.cells().all(|(dx, dy)| {
                 let (x, y) = (cx + dx, cy + dy);
                 self.map.contains(x, y) && self.cell_free_for(a.owner, b.on_water, self.map.idx(x, y), Some(i))
             }),
@@ -550,7 +546,9 @@ impl World {
         // Free the cells now so the new actor can take them in the same tick.
         self.cleanup_dead();
         let j = if self.rules.actors[into as usize].kind == Kind::Building {
-            self.spawn_building(into, owner, cx, cy)
+            // can_deploy checked that the footprint fits and is free.
+            let Some(j) = self.spawn_building(into, owner, cx, cy) else { return false };
+            j
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)
         };

@@ -323,7 +323,7 @@ fn turret_defense_destroys_an_approaching_tank() {
     let mut w = World::new(4, 64, &[("allies", false), ("soviet", false)]);
     full_base(&mut w, 0);
     let (sx, sy) = w.players[0].start;
-    let gun = w.spawn_building(ty(&w, "GUN"), 0, sx + 12, sy + 2);
+    let gun = w.spawn_building(ty(&w, "GUN"), 0, sx + 12, sy + 2).unwrap();
     let tank = w.spawn_unit(ty(&w, "1TNK"), 1, cell_center(sx + 17), cell_center(sy + 2), 768);
     let tref = w.make_ref(tank);
     w.actors[tank].reload = [1_000_000; crate::world::MAX_WEAPONS];
@@ -337,7 +337,7 @@ fn turret_defense_destroys_an_approaching_tank() {
 fn tesla_coil_needs_power() {
     let mut w = World::new(5, 64, &[("russia", false), ("england", false)]);
     let (sx, sy) = w.players[0].start;
-    let coil = w.spawn_building(ty(&w, "TSLA"), 0, sx + 12, sy + 2);
+    let coil = w.spawn_building(ty(&w, "TSLA"), 0, sx + 12, sy + 2).unwrap();
     w.refresh_tokens();
     w.update_power();
     assert!(w.players[0].low_power(), "no power plant: the Tesla Coil (-80) is unpowered");
@@ -357,7 +357,7 @@ fn tesla_coil_needs_power() {
 fn selling_refunds_half_the_value_scaled_by_health() {
     let mut w = World::new(6, 64, &[("allies", false), ("soviet", true)]);
     let (sx, sy) = w.players[0].start;
-    let p = w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
+    let p = w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy).unwrap();
     let pref = w.make_ref(p);
     w.actors[p].hp = w.rules.actors[ty(&w, "POWR") as usize].hp / 2;
     let cash = w.players[0].cash;

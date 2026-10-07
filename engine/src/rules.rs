@@ -531,6 +531,20 @@ pub struct BuildingInfo {
     pub center_offset: (i32, i32),
 }
 
+impl BuildingInfo {
+    /// Footprint cells that belong to the structure (not `_`), as offsets
+    /// from its top-left cell. Placement, spawning and map validation all use
+    /// these, so a structure only ever covers cells that were checked.
+    pub fn cells(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+        self.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1))
+    }
+
+    /// Whether the structure fits inside `map` with its top-left at (cx, cy).
+    pub fn fits(&self, map: &crate::map::Map, cx: i32, cy: i32) -> bool {
+        self.cells().all(|(dx, dy)| map.contains(cx + dx, cy + dy))
+    }
+}
+
 pub struct RefineryInfo {
     pub dock_offset: (i32, i32),
     pub free_actor: usize,
@@ -731,7 +745,7 @@ impl Rules {
             apply_overrides(&mut base, o)?;
         }
         let raw: RawRules = serde_json::from_value(base).map_err(|e| format!("rules overrides produce invalid rules: {e}"))?;
-        let rules = Rules::from_raw(raw);
+        let rules = Rules::from_raw(raw)?;
         // Custom maps come from strangers: every value must be safe to simulate.
         rules.validate()?;
         Ok(rules)
@@ -739,96 +753,44 @@ impl Rules {
 
     /// Semantic checks that keep the simulation panic-free and bounded, whatever
     /// a modded map sets: value ranges, table lengths and cross references.
+    /// Every field an override can reach is covered: indices into the weapon
+    /// and actor tables must resolve (to the right kind of actor where the
+    /// simulation spawns it), arrays with a fixed shape must have it, and
+    /// ranges, counts and timers stay within bounds that keep loops and
+    /// allocations small (vision circles, blast scans, squads, pips).
     pub fn validate(&self) -> Result<(), String> {
-        fn within(what: &str, v: i64, lo: i64, hi: i64) -> Result<(), String> {
-            if v < lo || v > hi {
-                return Err(format!("{what} must be between {lo} and {hi}, is {v}"));
-            }
-            Ok(())
-        }
-        const CELLS: i64 = 1024;
         let armors = self.weapons.iter().flat_map(|w| w.warheads.iter()).map(|h| h.versus.len()).min().unwrap_or(5);
         let max_armor = self.actors.iter().map(|a| a.armor).max().unwrap_or(0);
         if max_armor >= armors {
             return Err(format!("armor index {max_armor} has no versus entry"));
         }
         for a in &self.actors {
-            let n = |f: &str| format!("actors.{}.{f}", a.id);
-            within(&n("cost"), a.cost as i64, 0, 1_000_000)?;
-            within(&n("build_ticks"), a.build_ticks as i64, 0, 100_000)?;
-            within(&n("hp"), a.hp as i64, 1, 100_000_000)?;
-            within(&n("sight"), a.sight as i64, 0, 40 * CELLS)?;
-            if let Some(t) = a.turret_turn_speed {
-                within(&n("turret_turn_speed"), t as i64, 1, 1024)?;
-            }
-            if let Some(r) = a.reload_override {
-                within(&n("reload_override"), r as i64, 1, 100_000)?;
-            }
-            if let Some(h) = &a.self_heal {
-                within(&n("self_heal.step"), h.step as i64, 0, 100_000_000)?;
-                within(&n("self_heal.delay"), h.delay as i64, 1, 100_000)?;
-            }
-            if a.weapons.iter().chain(a.death_weapon.iter()).any(|&w| w >= self.weapons.len()) {
-                return Err(n("weapons: unknown weapon"));
-            }
-            if let Some(u) = &a.unit {
-                within(&n("unit.speed"), u.speed as i64, 0, 2 * CELLS)?;
-                within(&n("unit.turn_speed"), u.turn_speed as i64, 1, 1024)?;
-                within(&n("unit.radius"), u.radius as i64, 1, 2 * CELLS)?;
-                if u.locomotor >= self.locomotors.len() {
-                    return Err(n("unit.locomotor: unknown locomotor"));
-                }
-                if let Some(hv) = &u.harvester {
-                    within(&n("harvester.capacity"), hv.capacity as i64, 1, 10_000)?;
-                    within(&n("harvester.bale_load_delay"), hv.bale_load_delay as i64, 1, 10_000)?;
-                    within(&n("harvester.bale_unload_delay"), hv.bale_unload_delay as i64, 0, 10_000)?;
-                    within(&n("harvester.search_from_proc"), hv.search_from_proc as i64, 0, 256)?;
-                    within(&n("harvester.search_from_harv"), hv.search_from_harv as i64, 0, 256)?;
-                }
-                if let Some(ac) = &u.aircraft {
-                    within(&n("aircraft.cruise_altitude"), ac.cruise_altitude as i64, 0, 20 * CELLS)?;
-                    within(&n("aircraft.ammo"), ac.ammo as i64, 0, 1000)?;
-                }
-            }
-            if let Some(b) = &a.building {
-                within(&n("building.width"), b.width as i64, 1, 8)?;
-                within(&n("building.height"), b.height as i64, 1, 8)?;
-                if b.footprint.len() != (b.width * b.height) as usize {
-                    return Err(n("building.footprint does not match its size"));
-                }
-                within(&n("building.power"), b.power as i64, -100_000, 100_000)?;
-                within(&n("building.storage"), b.storage as i64, 0, 10_000_000)?;
-                within(&n("building.sell_refund"), b.sell_refund as i64, 0, 100)?;
-                within(&n("building.adjacent"), b.adjacent as i64, 0, 16)?;
-                within(&n("building.base_provider_range"), b.base_provider_range as i64, 0, 128 * CELLS)?;
-                if let Some(r) = &b.repairs {
-                    within(&n("repairs.hp_per_step"), r.hp_per_step as i64, 0, 100_000_000)?;
-                    within(&n("repairs.interval"), r.interval as i64, 1, 100_000)?;
-                    within(&n("repairs.value_percent"), r.value_percent as i64, 0, 1000)?;
-                }
-            }
+            self.validate_actor(a)?;
         }
         for w in &self.weapons {
             let n = |f: &str| format!("weapons.{}.{f}", w.name);
-            within(&n("range"), w.range as i64, 0, 64 * CELLS)?;
-            within(&n("min_range"), w.min_range as i64, 0, 64 * CELLS)?;
-            within(&n("reload"), w.reload as i64, 1, 100_000)?;
-            within(&n("burst"), w.burst as i64, 1, 100)?;
-            within(&n("speed"), w.speed as i64, 0, 64 * CELLS)?;
-            within(&n("inaccuracy"), w.inaccuracy as i64, 0, 64 * CELLS)?;
-            if w.burst_delays.is_empty() || w.burst_delays.iter().any(|&d| !(0..=100_000).contains(&d)) {
-                return Err(n("burst_delays must be 1 or more values between 0 and 100000"));
+            within(&n("range"), w.range, 0, 64 * CELLS)?;
+            within(&n("min_range"), w.min_range, 0, 64 * CELLS)?;
+            within(&n("reload"), w.reload, 1, TIMER)?;
+            within(&n("burst"), w.burst, 1, 100)?;
+            within(&n("speed"), w.speed, 0, 64 * CELLS)?;
+            within(&n("inaccuracy"), w.inaccuracy, 0, 64 * CELLS)?;
+            if w.burst_delays.is_empty() || w.burst_delays.len() > 100 || w.burst_delays.iter().any(|&d| !(0..=TIMER).contains(&d)) {
+                return Err(n("burst_delays must be 1 to 100 values between 0 and 100000"));
             }
+            count(&n("warheads"), w.warheads.len(), 16)?;
             for h in &w.warheads {
-                within(&n("warheads.damage"), h.damage as i64, -10_000_000, 100_000_000)?;
-                within(&n("warheads.spread"), h.spread as i64, 0, 32 * CELLS)?;
-                within(&n("warheads.delay"), h.delay as i64, 0, 10_000)?;
+                within(&n("warheads.damage"), h.damage, -10_000_000, 100_000_000)?;
+                within(&n("warheads.spread"), h.spread, 0, 32 * CELLS)?;
+                within(&n("warheads.delay"), h.delay, 0, 10_000)?;
                 if h.falloff.is_empty() || h.falloff.len() > 64 || h.falloff.iter().any(|&f| !(0..=10_000).contains(&f)) {
                     return Err(n("warheads.falloff must be 1 to 64 values between 0 and 10000"));
                 }
-                if h.versus.len() < armors || h.versus.iter().any(|&v| !(0..=10_000).contains(&v)) {
+                if h.versus.len() < armors || h.versus.len() > 64 || h.versus.iter().any(|&v| !(0..=10_000).contains(&v)) {
                     return Err(n("warheads.versus needs a value between 0 and 10000 per armor type"));
                 }
+                // Impacts scan every cell within this radius.
+                within(&n("warheads: spread times falloff steps"), h.damage_radius(), 0, 64 * CELLS)?;
             }
         }
         for l in &self.locomotors {
@@ -839,7 +801,289 @@ impl Rules {
         Ok(())
     }
 
-    fn from_raw(raw: RawRules) -> Rules {
+    fn validate_actor(&self, a: &ActorInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.{f}", a.id);
+        within(&n("cost"), a.cost, 0, 1_000_000)?;
+        within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
+        within(&n("hp"), a.hp, 1, 100_000_000)?;
+        within(&n("sight"), a.sight, 0, MAX_VISION)?;
+        count(&n("prerequisites"), a.prerequisites.len(), 32)?;
+        if let Some(t) = a.turret_turn_speed {
+            within(&n("turret_turn_speed"), t, 1, 1024)?;
+        }
+        if let Some(r) = a.reload_override {
+            within(&n("reload_override"), r, 1, TIMER)?;
+        }
+        if let Some(h) = &a.self_heal {
+            within(&n("self_heal.step"), h.step, 0, 100_000_000)?;
+            within(&n("self_heal.delay"), h.delay, 1, TIMER)?;
+            within(&n("self_heal.start_if_below"), h.start_if_below, 0, 100)?;
+            within(&n("self_heal.damage_cooldown"), h.damage_cooldown, 0, TIMER)?;
+        }
+        count(&n("weapons"), a.weapons.len(), crate::world::MAX_WEAPONS)?;
+        for &w in &a.weapons {
+            self.weapon_ref(&n("weapons"), w)?;
+        }
+        if let Some(w) = a.death_weapon {
+            self.weapon_ref(&n("death_weapon"), w)?;
+        }
+        count(&n("turret_offsets"), a.turret_offsets.len(), 8)?;
+        for &(f, l) in &a.turret_offsets {
+            within(&n("turret_offsets"), f, -8 * CELLS, 8 * CELLS)?;
+            within(&n("turret_offsets"), l, -8 * CELLS, 8 * CELLS)?;
+        }
+        if let Some(u) = &a.unit {
+            self.validate_unit(a, u)?;
+        }
+        if let Some(b) = &a.building {
+            self.validate_building(a, b)?;
+        }
+        self.validate_abilities(a)
+    }
+
+    fn validate_unit(&self, a: &ActorInfo, u: &UnitInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.unit.{f}", a.id);
+        within(&n("speed"), u.speed, 0, 2 * CELLS)?;
+        within(&n("turn_speed"), u.turn_speed, 1, 1024)?;
+        within(&n("radius"), u.radius, 1, 2 * CELLS)?;
+        within(&n("passenger_weight"), u.passenger_weight, 1, 100)?;
+        if u.locomotor >= self.locomotors.len() {
+            return Err(n("locomotor: unknown locomotor"));
+        }
+        count(&n("repair_at"), u.repair_at.len(), 32)?;
+        if let Some(hv) = &u.harvester {
+            within(&n("harvester.capacity"), hv.capacity, 1, 10_000)?;
+            within(&n("harvester.bale_load_delay"), hv.bale_load_delay, 1, 10_000)?;
+            within(&n("harvester.bale_unload_delay"), hv.bale_unload_delay, 0, 10_000)?;
+            within(&n("harvester.search_from_proc"), hv.search_from_proc, 0, 256)?;
+            within(&n("harvester.search_from_harv"), hv.search_from_harv, 0, 256)?;
+        }
+        if let Some(ac) = &u.aircraft {
+            within(&n("aircraft.cruise_altitude"), ac.cruise_altitude, 0, 20 * CELLS)?;
+            within(&n("aircraft.ammo"), ac.ammo, 0, 1000)?;
+            within(&n("aircraft.reload_delay"), ac.reload_delay, 0, TIMER)?;
+            within(&n("aircraft.reload_count"), ac.reload_count, 0, 1000)?;
+            within(&n("aircraft.altitude_velocity"), ac.altitude_velocity, 0, 4 * CELLS)?;
+            within(&n("aircraft.wait_distance"), ac.wait_distance, 0, 64 * CELLS)?;
+            within(&n("aircraft.facing_tolerance"), ac.facing_tolerance, 0, 512)?;
+            within(&n("aircraft.ammo_pips"), ac.ammo_pips, 0, 100)?;
+            within(&n("aircraft.drop_range"), ac.drop_range, 0, 64 * CELLS)?;
+            within(&n("aircraft.crash_velocity"), ac.crash_velocity, 0, 20 * CELLS)?;
+            count(&n("aircraft.landable"), ac.landable.len(), 32)?;
+            count(&n("aircraft.rearm_actors"), ac.rearm_actors.len(), 32)?;
+            count(&n("aircraft.repair_actors"), ac.repair_actors.len(), 32)?;
+            count(&n("aircraft.rotors"), ac.rotors.len(), 8)?;
+            for &r in &ac.rotors {
+                within(&n("aircraft.rotors"), r, -4 * CELLS, 4 * CELLS)?;
+            }
+            if let Some(w) = ac.crash_weapon {
+                self.weapon_ref(&n("aircraft.crash_weapon"), w)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_building(&self, a: &ActorInfo, b: &BuildingInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.building.{f}", a.id);
+        within(&n("width"), b.width, 1, 8)?;
+        within(&n("height"), b.height, 1, 8)?;
+        let inside = |x: i32, y: i32| (0..b.width).contains(&x) && (0..b.height).contains(&y);
+        if b.footprint.len() != (b.width * b.height) as usize || b.footprint.iter().any(|&(x, y, _)| !inside(x, y)) {
+            return Err(n("footprint does not match its size"));
+        }
+        if b.cells().next().is_none() {
+            return Err(n("footprint needs at least one cell"));
+        }
+        within(&n("power"), b.power, -100_000, 100_000)?;
+        within(&n("storage"), b.storage, 0, 10_000_000)?;
+        within(&n("sell_refund"), b.sell_refund, 0, 100)?;
+        within(&n("adjacent"), b.adjacent, 0, 16)?;
+        within(&n("base_provider_range"), b.base_provider_range, 0, 128 * CELLS)?;
+        count(&n("produces"), b.production_types.len(), 16)?;
+        for p in &b.provides {
+            count(&n("provides"), p.len(), 32)?;
+        }
+        // Exits and the free actor's spot sit on or next to the footprint.
+        let near = |what: &str, (x, y): (i32, i32)| -> Result<(), String> {
+            within(&n(what), x, -4, b.width + 3)?;
+            within(&n(what), y, -4, b.height + 3)
+        };
+        count(&n("exits"), b.exits.len(), 16)?;
+        for &e in &b.exits {
+            near("exits", e)?;
+        }
+        within(&n("center_offset"), b.center_offset.0, -4 * CELLS, 4 * CELLS)?;
+        within(&n("center_offset"), b.center_offset.1, -4 * CELLS, 4 * CELLS)?;
+        if let Some(r) = &b.repairs {
+            within(&n("repairs.hp_per_step"), r.hp_per_step, 0, 100_000_000)?;
+            within(&n("repairs.interval"), r.interval, 1, TIMER)?;
+            within(&n("repairs.value_percent"), r.value_percent, 0, 1000)?;
+        }
+        if let Some(r) = &b.refinery {
+            within(&n("refinery.dock_offset"), r.dock_offset.0, -4 * CELLS, 4 * CELLS)?;
+            within(&n("refinery.dock_offset"), r.dock_offset.1, -4 * CELLS, 4 * CELLS)?;
+            near("refinery.free_actor_offset", r.free_actor_offset)?;
+            self.actor_ref(&n("refinery.free_actor"), r.free_actor, &[Kind::Infantry, Kind::Vehicle])?;
+        }
+        Ok(())
+    }
+
+    fn validate_abilities(&self, a: &ActorInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.abilities.{f}", a.id);
+        let ab = &a.abilities;
+        let units = [Kind::Infantry, Kind::Vehicle];
+        if let Some(c) = &ab.cargo {
+            within(&n("cargo.max"), c.max, 0, 100)?;
+            within(&n("cargo.before_unload_delay"), c.before_unload_delay, 0, TIMER)?;
+            within(&n("cargo.after_unload_delay"), c.after_unload_delay, 0, TIMER)?;
+            count(&n("cargo.types"), c.types.len(), 16)?;
+            count(&n("cargo.initial"), c.initial.len(), 16)?;
+            for id in &c.initial {
+                self.actor_id_ref(&n("cargo.initial"), id, &units)?;
+            }
+        }
+        if let Some(m) = &ab.minelayer {
+            self.actor_id_ref(&n("minelayer.mine"), &m.mine, &[Kind::Mine])?;
+            within(&n("minelayer.ammo"), m.ammo, 0, 100)?;
+            within(&n("minelayer.reload_delay"), m.reload_delay, 0, TIMER)?;
+            count(&n("minelayer.terrain"), m.terrain.len(), 32)?;
+            count(&n("minelayer.rearm_actors"), m.rearm_actors.len(), 32)?;
+        }
+        if let Some(r) = &ab.jams_missiles {
+            within(&n("jams_missiles.range"), r.range, 0, 64 * CELLS)?;
+        }
+        // Shroud and gap sight ranges size the cached vision circles.
+        if let Some(r) = &ab.creates_shroud {
+            within(&n("creates_shroud.range"), r.range, 0, MAX_VISION)?;
+        }
+        if let Some(r) = &ab.gap_sight {
+            within(&n("gap_sight.range"), r.range, 0, MAX_VISION)?;
+        }
+        if let Some(c) = &ab.cloak {
+            within(&n("cloak.initial_delay"), c.initial_delay, 0, TIMER)?;
+            within(&n("cloak.cloak_delay"), c.cloak_delay, 0, TIMER)?;
+            count(&n("cloak.uncloak_on"), c.uncloak_on.len(), 16)?;
+            count(&n("cloak.types"), c.types.len(), 16)?;
+        }
+        if let Some(d) = &ab.detect_cloaked {
+            within(&n("detect_cloaked.range"), d.range, 0, 64 * CELLS)?;
+            count(&n("detect_cloaked.types"), d.types.len(), 16)?;
+        }
+        if let Some(pc) = &ab.portable_chrono {
+            within(&n("portable_chrono.charge_delay"), pc.charge_delay, 0, TIMER)?;
+            within(&n("portable_chrono.max_distance"), pc.max_distance, 0, 256)?;
+        }
+        if let Some(m) = &ab.mad_tank {
+            within(&n("mad_tank.charge_delay"), m.charge_delay, 0, TIMER)?;
+            within(&n("mad_tank.thump_interval"), m.thump_interval, 1, TIMER)?;
+            within(&n("mad_tank.detonation_delay"), m.detonation_delay, 0, TIMER)?;
+            self.actor_id_ref(&n("mad_tank.driver"), &m.driver, &units)?;
+            self.weapon_ref(&n("mad_tank.thump_weapon"), m.thump_weapon)?;
+            self.weapon_ref(&n("mad_tank.detonation_weapon"), m.detonation_weapon)?;
+        }
+        if let Some(d) = &ab.delivers_cash {
+            within(&n("delivers_cash.payload"), d.payload, 0, 1_000_000)?;
+        }
+        if let Some(t) = &ab.transforms {
+            let Some(into) = a.transforms_into else { return Err(n("transforms.into: unknown actor")) };
+            self.actor_ref(&n("transforms.into"), into, &[Kind::Building, Kind::Infantry, Kind::Vehicle])?;
+            if t.offset.len() != 2 {
+                return Err(n("transforms.offset must be [x, y]"));
+            }
+            for &o in &t.offset {
+                within(&n("transforms.offset"), o, -8, 8)?;
+            }
+            within(&n("transforms.facing"), t.facing, 0, 1023)?;
+        }
+        if let Some(l) = &ab.line_build {
+            within(&n("line_build.range"), l.range, 0, 16)?;
+        }
+        if let Some(c) = &ab.crushable {
+            count(&n("crushable"), c.len(), 16)?;
+        }
+        if let Some(list) = &ab.support_powers {
+            count(&n("support_powers"), list.len(), 8)?;
+            for p in list {
+                self.validate_power(a, p)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_power(&self, a: &ActorInfo, p: &SupportPowerInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.abilities.support_powers.{}.{f}", a.id, truncate(&p.key));
+        if !(1..=64).contains(&p.key.chars().count()) {
+            return Err(format!("actors.{}.abilities.support_powers: keys must be 1 to 64 characters", a.id));
+        }
+        within(&n("charge"), p.charge, 0, 1_000_000)?;
+        within(&n("duration"), p.duration, 0, TIMER)?;
+        within(&n("range"), p.range, 0, 64 * CELLS)?;
+        within(&n("max_distance"), p.max_distance, 0, 256)?;
+        count(&n("prerequisites"), p.prerequisites.len(), 16)?;
+        // Aircraft powers spawn a squad of planes that fly in from the map edge.
+        let air = matches!(p.kind.as_str(), "AirstrikePower" | "ParatroopersPower");
+        within(&n("squad_size"), p.squad_size, if air { 1 } else { 0 }, 16)?;
+        if air {
+            let plane = self
+                .actor_index(&p.unit_type)
+                .and_then(|t| self.actors[t].unit.as_ref())
+                .and_then(|u| u.aircraft.as_ref())
+                .is_some_and(|ac| !ac.can_hover);
+            if !plane {
+                return Err(n("unit_type must be a plane"));
+            }
+        }
+        count(&n("squad_offset"), p.squad_offset.len(), 2)?;
+        for &o in &p.squad_offset {
+            within(&n("squad_offset"), o, -16 * CELLS, 16 * CELLS)?;
+        }
+        count(&n("drop_items"), p.drop_items.len(), 16)?;
+        for id in &p.drop_items {
+            self.actor_id_ref(&n("drop_items"), id, &[Kind::Infantry, Kind::Vehicle])?;
+        }
+        within(&n("camera_range"), p.camera_range, 0, 64 * CELLS)?;
+        within(&n("camera_remove_delay"), p.camera_remove_delay, 0, TIMER)?;
+        count(&n("footprint"), p.footprint.len(), 16)?;
+        if p.footprint.iter().any(|row| row.chars().count() > 16 || row.chars().any(|c| c != 'x' && c != '_')) {
+            return Err(n("footprint rows must be at most 16 cells of x or _"));
+        }
+        if let Some(w) = p.missile_weapon {
+            self.weapon_ref(&n("missile_weapon"), w)?;
+        }
+        within(&n("missile_delay"), p.missile_delay, 0, TIMER)?;
+        within(&n("flight_delay"), p.flight_delay, 0, TIMER)?;
+        within(&n("camera_spawn_advance"), p.camera_spawn_advance, 0, TIMER)?;
+        within(&n("reveal_delay"), p.reveal_delay, 0, TIMER)
+    }
+
+    fn weapon_ref(&self, what: &str, w: usize) -> Result<(), String> {
+        if w >= self.weapons.len() {
+            return Err(format!("{what}: unknown weapon {w}"));
+        }
+        Ok(())
+    }
+
+    /// Actor table index `ty` must be an actor of one of `kinds`.
+    fn actor_ref(&self, what: &str, ty: usize, kinds: &[Kind]) -> Result<(), String> {
+        match self.actors.get(ty) {
+            Some(t) if kinds.contains(&t.kind) => Ok(()),
+            Some(_) => Err(format!("{what}: wrong kind of actor")),
+            None => Err(format!("{what}: unknown actor")),
+        }
+    }
+
+    /// Actor id `id` must name an actor of one of `kinds`.
+    fn actor_id_ref(&self, what: &str, id: &str, kinds: &[Kind]) -> Result<(), String> {
+        match self.actor_index(id) {
+            Some(t) => self.actor_ref(what, t, kinds),
+            None => Err(format!("{what}: unknown actor {}", truncate(id))),
+        }
+    }
+
+    /// Resolve the raw JSON shapes (footprint rows, offsets, actor ids) into
+    /// lookup structures. Overrides can reshape any array, so every shape is
+    /// checked here and reported as an error, never assumed.
+    fn from_raw(raw: RawRules) -> Result<Rules, String> {
         let mut tokens: Vec<String> = vec![TOKEN_DISABLED.to_string()];
         for t in TECH_LEVELS {
             tokens.push(format!("techlevel.{t}"));
@@ -856,6 +1100,7 @@ impl Rules {
         let index_of = |id: &str| ids.iter().position(|i| i.eq_ignore_ascii_case(id));
         let mut actors = Vec::new();
         for a in raw.actors {
+            let n = |f: &str| format!("actors.{}.{f}", truncate(&a.id));
             let kind = match a.kind.as_str() {
                 "building" => Kind::Building,
                 "infantry" => Kind::Infantry,
@@ -863,7 +1108,7 @@ impl Rules {
                 "ship" => Kind::Ship,
                 "aircraft" => Kind::Aircraft,
                 "mine" => Kind::Mine,
-                k => panic!("unknown kind {k}"),
+                _ => return Err(n("kind: unknown kind")),
             };
             let mut prerequisites = Vec::new();
             for p in &a.prerequisites {
@@ -874,66 +1119,88 @@ impl Rules {
                 s = s.trim_start_matches('!');
                 prerequisites.push(Prereq { token: intern(s), hidden, negate });
             }
-            let building = a.building.map(|b| {
-                let mut footprint = Vec::new();
-                for (y, row) in b.footprint.iter().enumerate() {
-                    for (x, c) in row.chars().enumerate() {
-                        let cell = match c {
-                            '_' => FootCell::Empty,
-                            'x' | 'X' => FootCell::Occupied,
-                            '=' | '+' => FootCell::Passable,
-                            other => panic!("unknown footprint cell {other} in {}", a.id),
-                        };
-                        footprint.push((x as i32, y as i32, cell));
+            let building = match a.building {
+                None => None,
+                Some(b) => {
+                    if b.footprint.len() != b.height.max(0) as usize
+                        || b.footprint.iter().any(|row| row.chars().count() != b.width.max(0) as usize)
+                    {
+                        return Err(n("building.footprint must have `height` rows of `width` cells"));
                     }
+                    let mut footprint = Vec::new();
+                    for (y, row) in b.footprint.iter().enumerate() {
+                        for (x, c) in row.chars().enumerate() {
+                            let cell = match c {
+                                '_' => FootCell::Empty,
+                                'x' | 'X' => FootCell::Occupied,
+                                '=' | '+' => FootCell::Passable,
+                                _ => return Err(n("building.footprint: cells must be one of _ x X = +")),
+                            };
+                            footprint.push((x as i32, y as i32, cell));
+                        }
+                    }
+                    let provides = raw
+                        .factions
+                        .iter()
+                        .map(|f| b.provides.get(f).map(|v| v.iter().map(|t| intern(t)).collect()).unwrap_or_default())
+                        .collect();
+                    let solid: Vec<(i32, i32)> = footprint.iter().filter(|c| c.2 == FootCell::Occupied).map(|c| (c.0, c.1)).collect();
+                    let hit_cells = if solid.is_empty() {
+                        footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1)).collect()
+                    } else {
+                        solid
+                    };
+                    let mut produces: Vec<QueueType> = b.produces.iter().filter_map(|p| QueueType::parse(p)).collect();
+                    produces.dedup();
+                    let mut exits = Vec::new();
+                    for e in &b.exits {
+                        exits.push(pair(e).ok_or_else(|| n("building.exits: each exit must be [x, y]"))?);
+                    }
+                    let refinery = match b.refinery {
+                        None => None,
+                        Some(r) => Some(RefineryInfo {
+                            dock_offset: pair(&r.dock_offset).ok_or_else(|| n("building.refinery.dock_offset must be [x, y]"))?,
+                            free_actor: index_of(&r.free_actor).ok_or_else(|| n("building.refinery.free_actor: unknown actor"))?,
+                            free_actor_offset: pair(&r.free_actor_offset)
+                                .ok_or_else(|| n("building.refinery.free_actor_offset must be [x, y]"))?,
+                        }),
+                    };
+                    Some(BuildingInfo {
+                        width: b.width,
+                        height: b.height,
+                        footprint,
+                        hit_cells,
+                        on_water: b.terrain.iter().any(|t| t == "Water"),
+                        requires_base_provider: b.requires_base_provider,
+                        power: b.power,
+                        power_scales_with_health: b.power_scales_with_health,
+                        produces,
+                        production_types: b.produces.clone(),
+                        exits,
+                        gives_buildable_area: b.gives_buildable_area,
+                        base_provider_range: b.base_provider_range,
+                        adjacent: b.adjacent,
+                        storage: b.storage,
+                        sell_refund: b.sell_refund,
+                        provides,
+                        refinery,
+                        repairs: b.repairs,
+                        center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
+                    })
                 }
-                let provides = raw
-                    .factions
-                    .iter()
-                    .map(|f| b.provides.get(f).map(|v| v.iter().map(|t| intern(t)).collect()).unwrap_or_default())
-                    .collect();
-                let solid: Vec<(i32, i32)> = footprint.iter().filter(|c| c.2 == FootCell::Occupied).map(|c| (c.0, c.1)).collect();
-                let hit_cells = if solid.is_empty() {
-                    footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1)).collect()
-                } else {
-                    solid
-                };
-                let mut produces: Vec<QueueType> = b.produces.iter().filter_map(|p| QueueType::parse(p)).collect();
-                produces.dedup();
-                BuildingInfo {
-                    width: b.width,
-                    height: b.height,
-                    footprint,
-                    hit_cells,
-                    on_water: b.terrain.iter().any(|t| t == "Water"),
-                    requires_base_provider: b.requires_base_provider,
-                    power: b.power,
-                    power_scales_with_health: b.power_scales_with_health,
-                    produces,
-                    production_types: b.produces.clone(),
-                    exits: b.exits.iter().map(|e| (e[0], e[1])).collect(),
-                    gives_buildable_area: b.gives_buildable_area,
-                    base_provider_range: b.base_provider_range,
-                    adjacent: b.adjacent,
-                    storage: b.storage,
-                    sell_refund: b.sell_refund,
-                    provides,
-                    refinery: b.refinery.map(|r| RefineryInfo {
-                        dock_offset: (r.dock_offset[0], r.dock_offset[1]),
-                        free_actor: index_of(&r.free_actor).expect("free actor exists"),
-                        free_actor_offset: (r.free_actor_offset[0], r.free_actor_offset[1]),
-                    }),
-                    repairs: b.repairs,
-                    center_offset: (b.center_offset[0], b.center_offset[1]),
-                }
-            });
+            };
+            let mut turret_offsets = Vec::new();
+            for o in &a.turret_offsets {
+                turret_offsets.push(pair(o).ok_or_else(|| n("turret_offsets: each offset must be [forward, lateral]"))?);
+            }
+            let queue = QueueType::parse(&a.queue).ok_or_else(|| n("queue: unsupported queue"))?;
             let transforms_into = a.abilities.transforms.as_ref().and_then(|t| index_of(&t.into));
             actors.push(ActorInfo {
                 id: a.id,
                 name: a.name,
                 description: a.description,
                 kind,
-                queue: QueueType::parse(&a.queue).unwrap_or_else(|| panic!("unsupported queue {}", a.queue)),
+                queue,
                 cost: a.cost,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
@@ -948,11 +1215,7 @@ impl Rules {
                 requires_power: a.requires_power,
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
-                turret_offsets: a
-                    .turret_offsets
-                    .iter()
-                    .map(|o| (o.first().copied().unwrap_or(0), o.get(1).copied().unwrap_or(0)))
-                    .collect(),
+                turret_offsets,
                 abilities: a.abilities,
                 building,
                 unit: a.unit,
@@ -1027,7 +1290,7 @@ impl Rules {
             obtainable: Vec::new(),
         };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();
-        rules
+        Ok(rules)
     }
 
     /// Fixed point over the tech tree: which actors a faction can ever build.
@@ -1077,7 +1340,9 @@ impl Rules {
 
     /// Whether `token` is given to `faction` by its Construction Yard (faction tokens).
     fn always_provided(&self, faction: usize, token: u16) -> bool {
-        self.actor_index("FACT").is_some_and(|f| self.actors[f].building.as_ref().unwrap().provides[faction].contains(&token))
+        self.actor_index("FACT")
+            .and_then(|f| self.actors[f].building.as_ref())
+            .is_some_and(|b| b.provides.get(faction).is_some_and(|p| p.contains(&token)))
     }
 
     pub fn actor_index(&self, id: &str) -> Option<usize> {
@@ -1099,6 +1364,28 @@ impl Rules {
             _ => 0,
         }
     }
+}
+
+/// World units per cell, for range bounds.
+const CELLS: i32 = 1024;
+/// Upper bound for timers and delays, in ticks (over an hour of game time).
+const TIMER: i32 = 100_000;
+/// Largest vision-like radius (sight, gap generator shroud and sight): vision
+/// circles are cached per radius and cost (2r + 1)^2 cells.
+const MAX_VISION: i32 = 40 * CELLS;
+
+fn within(what: &str, v: i32, lo: i32, hi: i32) -> Result<(), String> {
+    if v < lo || v > hi {
+        return Err(format!("{what} must be between {lo} and {hi}, is {v}"));
+    }
+    Ok(())
+}
+
+fn count(what: &str, len: usize, max: usize) -> Result<(), String> {
+    if len > max {
+        return Err(format!("{what} may have at most {max} entries, has {len}"));
+    }
+    Ok(())
 }
 
 /// Deep-merge `overrides` into the rules JSON. Only `actors` (by id) and
@@ -1147,6 +1434,8 @@ fn apply_overrides(base: &mut serde_json::Value, overrides: &serde_json::Value) 
             if v.is_object() {
                 merge(cur, v, &format!("{path}.{}", truncate(k)), "")?;
             } else {
+                // Arrays are replaced whole; objects inside them keep their identity.
+                keep_identity(Some(&*cur), v, &format!("{path}.{}", truncate(k)))?;
                 if let Value::Number(n) = v {
                     if !(n.is_i64() || n.is_u64()) {
                         return Err(format!("{path}.{}: numbers must be integers", truncate(k)));
@@ -1157,7 +1446,38 @@ fn apply_overrides(base: &mut serde_json::Value, overrides: &serde_json::Value) 
         }
         Ok(())
     }
+    /// `kind` and `queue` cannot be changed anywhere: inside a replaced array an
+    /// object may only repeat the built-in value at the same position (so a
+    /// warhead or support power list can be tuned, but no entry changes kind).
+    fn keep_identity(cur: Option<&Value>, v: &Value, path: &str) -> Result<(), String> {
+        match v {
+            Value::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    keep_identity(cur.and_then(|c| c.get(i)), item, path)?;
+                }
+            }
+            Value::Object(o) => {
+                for (k, x) in o {
+                    let base = cur.and_then(|c| c.get(k));
+                    if (k == "kind" || k == "queue") && base != Some(x) {
+                        return Err(format!("{path}.{}: cannot be changed", truncate(k)));
+                    }
+                    keep_identity(base, x, path)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
     Ok(())
+}
+
+/// A two-element `[x, y]` array as a tuple.
+fn pair(v: &[i32]) -> Option<(i32, i32)> {
+    match *v {
+        [x, y] => Some((x, y)),
+        _ => None,
+    }
 }
 
 fn truncate(s: &str) -> String {

@@ -236,7 +236,7 @@ fn phase_transport_cloaks_uncloaks_when_firing_and_is_detected_up_close() {
 #[test]
 fn camo_pillbox_is_invisible_to_enemy_tanks() {
     let mut w = flat_world(["allies", "soviet"]);
-    let hbox = w.spawn_building(ty(&w, "HBOX"), 0, 30, 30);
+    let hbox = w.spawn_building(ty(&w, "HBOX"), 0, 30, 30).unwrap();
     w.actors[hbox].reload = [1_000_000; MAX_WEAPONS];
     run(&mut w, 130);
     assert!(w.actors[hbox].ab.cloaked);
@@ -309,7 +309,7 @@ fn gap_generator_structure_needs_power_and_hides_enemy_ghosts() {
     let mut w = flat_world(["allies", "soviet"]);
     w.spawn_building(ty(&w, "POWR"), 0, 40, 40);
     w.spawn_building(ty(&w, "GAP"), 0, 44, 44);
-    let silo = w.spawn_building(ty(&w, "SILO"), 0, 46, 44);
+    let silo = w.spawn_building(ty(&w, "SILO"), 0, 46, 44).unwrap();
     w.update_power();
     // The enemy scouted the base earlier: it remembers the silo.
     let scout = unit(&mut w, "E1", 1, 46, 47);
@@ -382,7 +382,7 @@ fn demolition_truck_detonates_on_deploy_and_when_it_reaches_its_target() {
     assert!(w.resolve(vr).is_none(), "MiniNuke destroyed the tank next to it");
     // Attack order: drives up to the target and detonates within 2c0.
     let dt = unit(&mut w, "DTRK", 0, 20, 40);
-    let pow = w.spawn_building(ty(&w, "POWR"), 1, 32, 40);
+    let pow = w.spawn_building(ty(&w, "POWR"), 1, 32, 40).unwrap();
     passive(&mut w, "E1", 0, 30, 44); // spotter: attacks need the target in sight
     w.update_vision();
     let (dr, pr) = (w.make_ref(dt), w.make_ref(pow));
@@ -436,10 +436,10 @@ fn supply_truck_delivers_cash_to_own_and_allied_structures_only() {
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
     flatten(&mut w);
-    let proc_own = w.spawn_building(ty(&w, "POWR"), 0, 30, 20);
-    let ally_b = w.spawn_building(ty(&w, "POWR"), 1, 30, 30);
-    let enemy_b = w.spawn_building(ty(&w, "POWR"), 2, 30, 40);
-    let enemy_def = w.spawn_building(ty(&w, "PBOX"), 0, 36, 20);
+    let proc_own = w.spawn_building(ty(&w, "POWR"), 0, 30, 20).unwrap();
+    let ally_b = w.spawn_building(ty(&w, "POWR"), 1, 30, 30).unwrap();
+    let enemy_b = w.spawn_building(ty(&w, "POWR"), 2, 30, 40).unwrap();
+    let enemy_def = w.spawn_building(ty(&w, "PBOX"), 0, 36, 20).unwrap();
     let t1 = unit(&mut w, "TRUK", 0, 26, 21);
     let t2 = unit(&mut w, "TRUK", 0, 26, 31);
     w.rebuild_hash();
@@ -596,7 +596,7 @@ fn iron_curtain_blocks_damage_for_its_duration() {
 fn atom_bomb_lands_after_its_flight_time() {
     let mut w = flat_world(["soviet", "allies"]);
     superweapon(&mut w, 0, "MSLO", 8, 50, "NukePower");
-    let target = w.spawn_building(ty(&w, "POWR"), 1, 40, 20);
+    let target = w.spawn_building(ty(&w, "POWR"), 1, 40, 20).unwrap();
     let tank = passive(&mut w, "2TNK", 1, 44, 21);
     let tr = w.make_ref(tank);
     let hp = w.actors[target].hp;
@@ -648,7 +648,7 @@ fn superweapons_need_their_structure_and_validate() {
 #[test]
 fn unpowered_tesla_coil_stops_detecting_cloaked_units() {
     let mut w = flat_world(["france", "russia"]);
-    let plant = w.spawn_building(ty(&w, "APWR"), 1, 40, 20);
+    let plant = w.spawn_building(ty(&w, "APWR"), 1, 40, 20).unwrap();
     w.spawn_building(ty(&w, "TSLA"), 1, 30, 30);
     w.refresh_tokens();
     let stnk = passive(&mut w, "STNK", 0, 33, 30);

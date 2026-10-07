@@ -163,8 +163,14 @@ impl MapData {
                     errors.push(format!("actor {} has an invalid owner {}", short(&a.ty), a.owner));
                 }
                 if let Some(r) = &rules {
-                    if r.actor_index(&a.ty).is_none() {
-                        errors.push(format!("unknown actor type {}", short(&a.ty)));
+                    match r.actor_index(&a.ty) {
+                        None => errors.push(format!("unknown actor type {}", short(&a.ty))),
+                        // The whole footprint of a structure must lie on the map, not only its top-left cell.
+                        Some(t) => {
+                            if m.contains(a.x, a.y) && r.actors[t].building.as_ref().is_some_and(|b| !b.fits(m, a.x, a.y)) {
+                                errors.push(format!("structure {} at {},{} does not fit inside the map", short(&a.ty), a.x, a.y));
+                            }
+                        }
                     }
                 }
             }
@@ -249,6 +255,25 @@ mod tests {
         assert!(!v.ok && v.modded && v.hash.is_none());
         assert!(v.errors.len() >= 4, "{:?}", v.errors);
         assert!(MapData::parse(r#"{"format":1,"evil":true}"#).is_err(), "unknown fields are rejected");
+    }
+
+    #[test]
+    fn structures_must_fit_inside_the_map() {
+        // N1: only the top-left cell used to be checked, so a Construction Yard
+        // (3x4) at 45,46 on a 48x48 map passed and trapped every client at start.
+        let m = Map::generate_for(48, 48, 2, 12, 2);
+        let mut d = MapData::from_map(&m, "Edge", "x", "");
+        d.actors.push(MapActor { ty: "FACT".into(), owner: 0, x: 45, y: 46, facing: 0 });
+        let v = d.validate();
+        assert!(!v.ok && v.errors.iter().any(|e| e.contains("does not fit")), "{:?}", v.errors);
+        let players = [crate::world::PlayerSetup::new("russia", None), crate::world::PlayerSetup::new("england", None)];
+        assert!(crate::world::World::from_map(&d, 1, &players, Default::default()).is_err());
+        // Units only need their own cell; a structure that fits exactly is fine.
+        d.actors = vec![
+            MapActor { ty: "E1".into(), owner: 0, x: 47, y: 47, facing: 0 },
+            MapActor { ty: "FACT".into(), owner: -1, x: 45, y: 44, facing: 0 },
+        ];
+        assert!(d.validate().errors.iter().all(|e| !e.contains("does not fit") && !e.contains("outside")));
     }
 
     #[test]

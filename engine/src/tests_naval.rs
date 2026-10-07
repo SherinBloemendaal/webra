@@ -64,10 +64,10 @@ fn naval_yards_launch_ships_onto_open_water() {
     // Power and a construction yard for the prerequisites; yards on the water.
     w.spawn_building(ty(&w, "FACT"), 0, 4, 4);
     w.spawn_building(ty(&w, "POWR"), 0, 9, 4);
-    let syrd = w.spawn_building(ty(&w, "SYRD"), 0, 26, 8);
+    let syrd = w.spawn_building(ty(&w, "SYRD"), 0, 26, 8).unwrap();
     w.spawn_building(ty(&w, "FACT"), 1, 4, 30);
     w.spawn_building(ty(&w, "POWR"), 1, 9, 30);
-    let spen = w.spawn_building(ty(&w, "SPEN"), 1, 26, 28);
+    let spen = w.spawn_building(ty(&w, "SPEN"), 1, 26, 28).unwrap();
     w.refresh_tokens();
     let (pt, ss) = (ty(&w, "PT"), ty(&w, "SS"));
     assert!(w.availability(0, pt).enabled, "gunboat buildable with a naval yard");
@@ -239,7 +239,7 @@ fn cruiser_respects_minimum_range() {
 #[test]
 fn ships_get_repaired_at_their_naval_yard() {
     let mut w = coast();
-    let syrd = w.spawn_building(ty(&w, "SYRD"), 0, 26, 8);
+    let syrd = w.spawn_building(ty(&w, "SYRD"), 0, 26, 8).unwrap();
     let dd = unit(&mut w, "DD", 0, 40, 28);
     let max = w.actors[dd].hp;
     w.actors[dd].hp = max / 4;
