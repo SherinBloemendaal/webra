@@ -223,7 +223,8 @@ async function main() {
   // Silence: the host stops sending and is dropped after about 10 s.
   const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', 15000);
   assert.equal(dropped.code, 'dropped');
-  await new Promise((r) => setTimeout(r, 300));
+  // The close frame needs a network round trip, much longer against a deployed Worker.
+  for (let i = 0; i < 50 && !host.closed; i++) await new Promise((r) => setTimeout(r, 100));
   assert.equal(host.closed, true);
 
   // The session is gone afterwards.

@@ -132,12 +132,19 @@ WEBRA_GIT_HASH=$(git rev-parse HEAD) npm run build:wasm
 npm run build
 cd apps/server
 npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+# The d1 commands ignore account_id in wrangler.jsonc; with a login that sees
+# several accounts they need it in the environment.
+export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
 npx wrangler d1 migrations apply webra --remote   # only when apps/server/migrations exists
 npx wrangler deploy
 ```
 
 Then check <https://webra.sherin.dev/version.json> for the deployed commit and
-<https://webra.sherin.dev/api/version> for the API.
+<https://webra.sherin.dev/api/version> for the API. The end-to-end smoke test
+also runs against the live site (`node test/e2e/smoke.mjs
+https://webra.sherin.dev` in `apps/server`); it uploads maps named
+`Smoke <timestamp>` by `Tester`, so delete those from the `maps` table
+afterwards.
 
 ### Rolling back
 
