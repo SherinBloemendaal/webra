@@ -34,6 +34,11 @@ pub struct SpriteIds {
     pub shell: f32,
     pub chrono: f32,
     pub nuke: f32,
+    /// First of 8 reserved special slots per art module (apps/game/js/art/*.js).
+    pub naval_base: f32,
+    pub planes_base: f32,
+    pub helis_base: f32,
+    pub abilities_base: f32,
 }
 
 impl SpriteIds {
@@ -52,6 +57,10 @@ impl SpriteIds {
             shell: b + 9.0,
             chrono: b + 10.0,
             nuke: b + 11.0,
+            naval_base: b + 12.0,
+            planes_base: b + 20.0,
+            helis_base: b + 28.0,
+            abilities_base: b + 36.0,
         }
     }
 }

@@ -1255,6 +1255,7 @@ impl World {
         }
         for p in 0..self.players.len() {
             self.tick_production(p as u8);
+            self.tick_powers(p as u8);
         }
         self.tick_units();
         self.tick_projectiles();

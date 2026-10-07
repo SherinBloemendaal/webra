@@ -4,12 +4,17 @@
 //! at 25 Hz, queues player orders, and reads flat instance buffers straight
 //! out of WebAssembly memory every frame.
 
+mod abilities;
 mod ai;
+mod air;
 mod combat;
 pub mod flowfield;
+mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod math;
+mod naval;
+mod plane;
 mod production;
 pub mod render;
 pub mod rng;
@@ -21,6 +26,14 @@ pub mod world;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_abilities;
+#[cfg(test)]
+mod tests_helis;
+#[cfg(test)]
+mod tests_naval;
+#[cfg(test)]
+mod tests_planes;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};

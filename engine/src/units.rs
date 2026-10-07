@@ -42,18 +42,32 @@ impl World {
                 self.tick_defense(i);
                 continue;
             }
-            match self.actors[i].activity {
-                Activity::Idle => self.tick_idle(i),
-                Activity::Move => self.tick_move(i),
-                Activity::Attack => self.tick_attack(i),
-                Activity::Harvest => self.tick_harvest(i),
-                Activity::Repair => self.tick_repair(i),
+            match self.actors[i].kind {
+                Kind::Aircraft => self.tick_aircraft(i),
+                Kind::Ship => self.tick_ship(i),
+                _ => self.tick_unit_activity(i),
+            }
+            if self.actors[i].alive {
+                self.tick_abilities(i);
             }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
             }
         }
         self.separate_units();
+    }
+
+    /// The shared activity state machine (idle, move, attack, harvest, repair).
+    /// Domain modules (plane.rs, helicopter.rs, naval.rs) call it for the parts
+    /// they do not override.
+    pub(crate) fn tick_unit_activity(&mut self, i: usize) {
+        match self.actors[i].activity {
+            Activity::Idle => self.tick_idle(i),
+            Activity::Move => self.tick_move(i),
+            Activity::Attack => self.tick_attack(i),
+            Activity::Harvest => self.tick_harvest(i),
+            Activity::Repair => self.tick_repair(i),
+        }
     }
 
     // ---- Activities --------------------------------------------------------
