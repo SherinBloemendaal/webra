@@ -842,13 +842,14 @@ impl World {
     }
 
     /// Put a structure with its top-left at (cx, cy). Returns None, and
-    /// changes nothing, when `ty` is not a structure or its footprint does not
-    /// fit inside the map: every footprint cell of a live structure indexes
-    /// the cell tables, so none may lie outside.
+    /// changes nothing, when `ty` is not a structure, its footprint does not
+    /// fit inside the map (every footprint cell of a live structure indexes
+    /// the cell tables) or another structure already covers one of its cells
+    /// (each cell has one owner in `building_at`).
     pub fn spawn_building(&mut self, ty: u16, owner: u8, cx: i32, cy: i32) -> Option<usize> {
         let info = self.rules.actors.get(ty as usize)?;
         let b = info.building.as_ref()?;
-        if !b.fits(&self.map, cx, cy) {
+        if !b.fits(&self.map, cx, cy) || b.cells().any(|(dx, dy)| self.building_at[self.map.idx(cx + dx, cy + dy)] != NONE) {
             return None;
         }
         let i = self.alloc();

@@ -476,7 +476,10 @@ impl World {
                             // A piece may cover more than its gap cell (modded walls):
                             // every cell must be free, also of pieces placed just now.
                             if self.footprint_free(player, ty, gx, gy) {
-                                self.spawn_building(ty, player, gx, gy);
+                                // Like a placed piece, a filled one crushes mines under it.
+                                if let Some(b) = self.spawn_building(ty, player, gx, gy) {
+                                    self.clear_mines_under(b);
+                                }
                             }
                         }
                     }

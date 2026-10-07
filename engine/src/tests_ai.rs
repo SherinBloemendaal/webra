@@ -343,13 +343,25 @@ fn hard_ai_builds_superweapons_and_normal_waits() {
     }
 }
 
+/// Put a structure at (x, y), or at the nearest spot after it where no other
+/// structure is in the way (structures never share cells).
+fn put(w: &mut World, id: &str, player: u8, x: i32, y: i32) -> usize {
+    let t = ty(w, id);
+    for k in 0..400 {
+        if let Some(b) = w.spawn_building(t, player, x + k % 20, y + k / 20) {
+            return b;
+        }
+    }
+    panic!("no room for {id} near {x},{y}");
+}
+
 #[test]
 fn ai_fires_iron_curtain_on_its_army_and_the_nuke_at_enemy_structures() {
     let mut w = arena(64, &[("russia", Some(AiDifficulty::Hard), 0, (4, 4)), ("england", None, 0, (48, 48))]);
     complete_base(&mut w, 0);
     complete_base(&mut w, 1);
     for (id, x, y) in [("IRON", 20, 4), ("MSLO", 20, 9)] {
-        w.spawn_building(ty(&w, id), 0, x, y);
+        put(&mut w, id, 0, x, y);
     }
     w.refresh_tokens();
     w.update_power();
@@ -386,7 +398,7 @@ fn ai_chronoshifts_its_gathered_army_into_the_enemy_base() {
     let mut w = arena(64, &[("england", Some(AiDifficulty::Hard), 0, (4, 4)), ("russia", None, 0, (48, 48))]);
     complete_base(&mut w, 0);
     complete_base(&mut w, 1);
-    w.spawn_building(ty(&w, "PDOX"), 0, 20, 4);
+    put(&mut w, "PDOX", 0, 20, 4);
     w.refresh_tokens();
     w.update_power();
     w.players[0].explored.iter_mut().for_each(|e| *e = 1);
@@ -413,7 +425,7 @@ fn ai_never_bombs_or_attacks_allies() {
     let mut w = arena(64, &[("russia", Some(AiDifficulty::Hard), 1, (4, 4)), ("england", None, 1, (4, 48)), ("france", None, 2, (48, 48))]);
     complete_base(&mut w, 0);
     complete_base(&mut w, 2);
-    w.spawn_building(ty(&w, "MSLO"), 0, 20, 4);
+    put(&mut w, "MSLO", 0, 20, 4);
     w.refresh_tokens();
     w.update_power();
     let (ex, ey) = w.players[2].start;

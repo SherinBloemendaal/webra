@@ -474,6 +474,44 @@ fn walls_fill_the_gap_between_posts() {
 }
 
 #[test]
+fn walls_filled_into_a_gap_crush_mines_like_placed_ones() {
+    let mut w = World::new(10, 64, &[("allies", false), ("soviet", true)]);
+    full_base(&mut w, 0);
+    let (sx, sy) = w.players[0].start;
+    let sbag = ty(&w, "SBAG");
+    let y = sy - 2;
+    // A hidden enemy mine in the gap does not stop the wall (placement must not reveal it).
+    let ml = w.spawn_unit(ty(&w, "MNLY"), 1, cell_center(sx + 2), cell_center(y), 0);
+    let ci = w.map.idx(sx + 2, y);
+    assert!(w.lay_mine(ml, ci));
+    let mine = w.mine_at(ci).unwrap();
+    w.remove(ml);
+    let place = |w: &mut World, x: i32| {
+        w.queue_order(Order::StartProduction { player: 0, ty: sbag, count: 1 });
+        run(w, 40);
+        w.queue_order(Order::Place { player: 0, ty: sbag, cx: x, cy: y });
+        run(w, 1);
+    };
+    place(&mut w, sx);
+    place(&mut w, sx + 5);
+    let b = w.building_at[ci];
+    assert!(b != crate::world::NONE && w.actors[b as usize].ty == sbag, "the gap was filled");
+    assert!(!w.actors[mine].alive && w.mine_at(ci).is_none(), "the mine under the filled piece is gone");
+}
+
+#[test]
+fn structures_never_share_a_cell() {
+    let mut w = World::new(10, 64, &[("allies", false), ("soviet", true)]);
+    let (sx, sy) = w.players[0].start;
+    let fact = w.building_at[w.map.idx(sx, sy)];
+    assert!(fact != crate::world::NONE);
+    // The start's yard covers (sx, sy): nothing may be put over it, not even partly.
+    assert!(w.spawn_building(ty(&w, "POWR"), 1, sx - 1, sy - 1).is_none());
+    assert_eq!(w.building_at[w.map.idx(sx, sy)], fact);
+    assert!(w.spawn_building(ty(&w, "POWR"), 1, sx + 5, sy).is_some());
+}
+
+#[test]
 fn wide_modded_walls_fill_a_line_without_overlapping() {
     // Re-audit: only the gap cell was checked, so a 2-cell wall piece filled
     // into a gap also covered the next cell and overwrote its owner there.

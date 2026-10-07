@@ -146,10 +146,34 @@ impl MapData {
                 .and_then(|r| r.actor_index("FACT").and_then(|f| r.actors[f].building.as_ref()))
                 .map_or_else(|| (0..3).flat_map(|dx| (0..4).map(move |dy| (dx, dy))).collect(), |b| b.cells().collect());
             let (w, h) = yard.iter().fold((0, 0), |(w, h), &(dx, dy)| (w.max(dx + 1), h.max(dy + 1)));
+            // Cells a spawn's yard or MCV or a pre-placed structure takes: 0 free,
+            // 1 + i spawn i, spawns_end + k actor k. No two may share a cell, as
+            // spawn_building refuses taken cells (starts are placed first).
+            let spawns_end = 1 + self.spawns.len();
+            let mut taken = vec![0usize; m.cells()];
             for (i, &[x, y]) in self.spawns.iter().enumerate() {
+                // Range first: huge coordinates must not reach the offset arithmetic.
+                if !m.contains(x, y) {
+                    errors.push(format!("spawn {} is outside the map", i + 1));
+                    continue;
+                }
                 let open = |(cx, cy): (i32, i32)| m.contains(cx, cy) && m.terrain[m.idx(cx, cy)].buildable();
-                if !yard.iter().all(|&(dx, dy)| open((x + dx, y + dy))) || !open((x + 1, y + 1)) {
+                let cells: Vec<(i32, i32)> = yard.iter().map(|&(dx, dy)| (x + dx, y + dy)).chain([(x + 1, y + 1)]).collect();
+                if !cells.iter().all(|&c| open(c)) {
                     errors.push(format!("spawn {} needs {w}x{h} clear ground at its position", i + 1));
+                    continue;
+                }
+                let mut overlap = None;
+                for &(cx, cy) in &cells {
+                    let ci = m.idx(cx, cy);
+                    match taken[ci] {
+                        0 => taken[ci] = 1 + i,
+                        t if t != 1 + i => overlap = Some(t),
+                        _ => {}
+                    }
+                }
+                if let Some(t) = overlap {
+                    errors.push(format!("spawn {} overlaps the start of spawn {t}", i + 1));
                 }
             }
             if self.spawns.len() >= 2 && errors.is_empty() {
@@ -163,7 +187,7 @@ impl MapData {
             if self.actors.len() > MAX_ACTORS {
                 errors.push(format!("at most {MAX_ACTORS} pre-placed actors"));
             }
-            for a in self.actors.iter().take(MAX_ACTORS) {
+            for (k, a) in self.actors.iter().take(MAX_ACTORS).enumerate() {
                 if !m.contains(a.x, a.y) {
                     errors.push(format!("actor {} at {},{} is outside the map", short(&a.ty), a.x, a.y));
                 }
@@ -175,8 +199,25 @@ impl MapData {
                         None => errors.push(format!("unknown actor type {}", short(&a.ty))),
                         // The whole footprint of a structure must lie on the map, not only its top-left cell.
                         Some(t) => {
-                            if m.contains(a.x, a.y) && r.actors[t].building.as_ref().is_some_and(|b| !b.fits(m, a.x, a.y)) {
+                            let Some(b) = r.actors[t].building.as_ref().filter(|_| m.contains(a.x, a.y)) else { continue };
+                            if !b.fits(m, a.x, a.y) {
                                 errors.push(format!("structure {} at {},{} does not fit inside the map", short(&a.ty), a.x, a.y));
+                                continue;
+                            }
+                            let mut overlap = None;
+                            for (dx, dy) in b.cells() {
+                                let ci = m.idx(a.x + dx, a.y + dy);
+                                match taken[ci] {
+                                    0 => taken[ci] = spawns_end + k,
+                                    t => overlap = Some(t),
+                                }
+                            }
+                            match overlap {
+                                Some(t) if t < spawns_end => {
+                                    errors.push(format!("structure {} at {},{} overlaps the start of spawn {t}", short(&a.ty), a.x, a.y))
+                                }
+                                Some(_) => errors.push(format!("structure {} at {},{} overlaps another structure", short(&a.ty), a.x, a.y)),
+                                None => {}
                             }
                         }
                     }
@@ -310,6 +351,35 @@ mod tests {
         } } } }));
         d.spawns[1] = [47, 47];
         assert!(d.validate().errors.iter().any(|e| e.contains("spawn 2 needs 1x1")), "{:?}", d.validate().errors);
+    }
+
+    #[test]
+    fn starts_and_structures_must_not_overlap_and_spawns_must_be_on_the_map() {
+        let m = Map::generate_for(48, 48, 2, 12, 2);
+        let mut d = MapData::from_map(&m, "Overlap", "x", "");
+        let n = 48 * 48;
+        d.terrain = b64().encode(vec![0u8; n]);
+        d.ore = b64().encode(vec![0u8; n]);
+        d.spawns = vec![[4, 4], [30, 30]];
+        assert!(d.validate().ok, "{:?}", d.validate().errors);
+        let errors = |d: &MapData| d.validate().errors;
+        // Huge spawn coordinates are refused before any offset arithmetic.
+        d.spawns[1] = [i32::MAX, i32::MIN];
+        assert!(errors(&d).iter().any(|e| e.contains("spawn 2 is outside the map")), "{:?}", errors(&d));
+        // Two starts sharing cells.
+        d.spawns[1] = [5, 6];
+        assert!(errors(&d).iter().any(|e| e.contains("spawn 2 overlaps the start of spawn 1")), "{:?}", errors(&d));
+        d.spawns[1] = [30, 30];
+        // A structure on a start's yard, and two structures on each other.
+        d.actors = vec![MapActor { ty: "POWR".into(), owner: -1, x: 5, y: 3, facing: 0 }];
+        assert!(errors(&d).iter().any(|e| e.contains("overlaps the start of spawn 1")), "{:?}", errors(&d));
+        d.actors = vec![
+            MapActor { ty: "POWR".into(), owner: -1, x: 15, y: 15, facing: 0 },
+            MapActor { ty: "FACT".into(), owner: 0, x: 16, y: 13, facing: 0 },
+        ];
+        assert!(errors(&d).iter().any(|e| e.contains("overlaps another structure")), "{:?}", errors(&d));
+        d.actors[1].x = 20;
+        assert!(d.validate().ok, "{:?}", errors(&d));
     }
 
     #[test]
