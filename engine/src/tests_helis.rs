@@ -460,7 +460,7 @@ fn land_and_return_orders_round_trip_as_json() {
 fn render_draws_rotors_crashes_and_ammo_pips() {
     use crate::render::{SpriteIds, View, SPRITE_FLOATS};
     let mut w = flat_world();
-    let tran = heli(&mut w, "TRAN", 0, 20, 20);
+    let _tran = heli(&mut w, "TRAN", 0, 20, 20);
     let hind = heli(&mut w, "HIND", 0, 24, 20);
     w.actors[hind].heli.ammo_used = 12;
     run(&mut w, 2);
