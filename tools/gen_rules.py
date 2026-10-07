@@ -366,6 +366,15 @@ def main():
             ab['mine_immune'] = {}
         if 'AcceptsDeliveredCash' in t:
             ab['accepts_cash'] = {}
+        # Iron Curtain (ExternalCondition@INVULNERABILITY): the Demolition Truck's
+        # KillsSelf fires on it instead. Chronosphere: Chronoshiftable.
+        if 'ExternalCondition@INVULNERABILITY' in t:
+            ks = t.get('KillsSelf', {}) if isinstance(t.get('KillsSelf'), dict) else {}
+            ab['iron_curtainable'] = {'kills': 'invulnerability' in ks.get('RequiresCondition', '')}
+        if 'Chronoshiftable' in t:
+            cs = t['Chronoshiftable'] if isinstance(t['Chronoshiftable'], dict) else {}
+            ab['chronoshiftable'] = {'explode_instead': str(cs.get('ExplodeInstead', 'False')).lower() == 'true',
+                                     'not_deployed': 'deployed' in cs.get('RequiresCondition', '')}
         if 'JamsMissiles' in t:
             ab['jams_missiles'] = {'range': wdist(t['JamsMissiles'].get('Range'))}
         if has(t, 'CreatesShroud'):
@@ -435,6 +444,22 @@ def main():
                     power['drop_items'] = [ids_lower[x.lower()] for x in tokens(v.get('DropItems'))]
                     power['camera_range'] = CAMERA_RANGE if v.get('CameraActor') else 0
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', POWER_CAMERA_REMOVE_DELAY))
+                # Superweapons (abilities.rs). Defaults from OpenRA's ChronoshiftPowerInfo,
+                # GrantExternalConditionPowerInfo, NukePowerInfo and GpsPowerInfo.
+                if 'Footprint' in v:
+                    power['footprint'] = footprint_rows(v['Footprint'])
+                if base == 'ChronoshiftPower':
+                    power['kill_cargo'] = str(v.get('KillCargo', 'True')).lower() == 'true'
+                if base == 'NukePower':
+                    power['missile_weapon'] = weapon_index(v.get('MissileWeapon', 'atomic'))
+                    power['missile_delay'] = int(v.get('MissileDelay', 0))
+                    power['flight_delay'] = int(v.get('FlightDelay', 400))
+                    power['camera_range'] = wdist(v.get('CameraRange', '0'))
+                    power['camera_spawn_advance'] = int(v.get('CameraSpawnAdvance', 25))
+                    power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
+                if base == 'GpsPower':
+                    power['reveal_delay'] = int(v.get('RevealDelay', 0))
+                power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
                 powers.append(power)
         if powers:
             ab['support_powers'] = powers

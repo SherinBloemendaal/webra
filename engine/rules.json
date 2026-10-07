@@ -62,6 +62,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -168,6 +171,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -248,6 +254,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     }
@@ -328,6 +337,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -420,6 +432,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -485,6 +500,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -593,6 +611,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -699,6 +720,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -813,6 +837,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -914,6 +941,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -999,6 +1029,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 6144
     },
@@ -1081,6 +1114,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -1179,6 +1215,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -1204,7 +1243,8 @@
       ],
       "drop_items": [],
       "camera_range": 10240,
-      "camera_remove_delay": 150
+      "camera_remove_delay": 150,
+      "one_shot": false
      },
      {
       "key": "ParatroopersPower@paratroopers",
@@ -1233,7 +1273,8 @@
        "E3R1"
       ],
       "camera_range": 10240,
-      "camera_remove_delay": 25
+      "camera_remove_delay": 25,
+      "one_shot": false
      },
      {
       "key": "AirstrikePower@parabombs",
@@ -1256,7 +1297,8 @@
       ],
       "drop_items": [],
       "camera_range": 10240,
-      "camera_remove_delay": 150
+      "camera_remove_delay": 150,
+      "one_shot": false
      }
     ]
    },
@@ -1350,6 +1392,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -1375,7 +1420,8 @@
       ],
       "drop_items": [],
       "camera_range": 10240,
-      "camera_remove_delay": 150
+      "camera_remove_delay": 150,
+      "one_shot": false
      },
      {
       "key": "ParatroopersPower@paratroopers",
@@ -1404,7 +1450,8 @@
        "E3R1"
       ],
       "camera_range": 10240,
-      "camera_remove_delay": 25
+      "camera_remove_delay": 25,
+      "one_shot": false
      },
      {
       "key": "AirstrikePower@parabombs",
@@ -1427,7 +1474,8 @@
       ],
       "drop_items": [],
       "camera_range": 10240,
-      "camera_remove_delay": 150
+      "camera_remove_delay": 150,
+      "one_shot": false
      }
     ]
    },
@@ -1521,6 +1569,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
      "range": 10240,
      "types": [
@@ -1641,6 +1692,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
      "range": 10240,
      "types": [
@@ -1776,6 +1830,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -1790,7 +1847,9 @@
       "duration": 0,
       "range": 1,
       "max_distance": 0,
-      "palette_order": 90
+      "palette_order": 90,
+      "reveal_delay": 375,
+      "one_shot": true
      }
     ]
    },
@@ -1879,6 +1938,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -1966,6 +2028,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "creates_shroud": {
      "range": 6144
     },
@@ -2034,6 +2099,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     },
@@ -2050,7 +2118,14 @@
       "duration": 400,
       "range": 1,
       "max_distance": 0,
-      "palette_order": 20
+      "palette_order": 20,
+      "footprint": [
+       "_x_",
+       "xxx",
+       "_x_"
+      ],
+      "kill_cargo": true,
+      "one_shot": false
      },
      {
       "key": "ChronoshiftPower@advancedchronoshift",
@@ -2064,7 +2139,16 @@
       "duration": 400,
       "range": 1,
       "max_distance": 0,
-      "palette_order": 30
+      "palette_order": 30,
+      "footprint": [
+       "__x__",
+       "_xxx_",
+       "xxxxx",
+       "_xxx_",
+       "__x__"
+      ],
+      "kill_cargo": true,
+      "one_shot": false
      }
     ]
    },
@@ -2145,6 +2229,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     },
@@ -2159,7 +2246,13 @@
       "duration": 400,
       "range": 1,
       "max_distance": 0,
-      "palette_order": 10
+      "palette_order": 10,
+      "footprint": [
+       "_x_",
+       "xxx",
+       "_x_"
+      ],
+      "one_shot": false
      }
     ]
    },
@@ -2224,6 +2317,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     },
@@ -2238,7 +2334,14 @@
       "duration": 0,
       "range": 1,
       "max_distance": 0,
-      "palette_order": 70
+      "palette_order": 70,
+      "missile_weapon": 0,
+      "missile_delay": 5,
+      "flight_delay": 400,
+      "camera_range": 10240,
+      "camera_spawn_advance": 25,
+      "camera_remove_delay": 25,
+      "one_shot": false
      }
     ]
    },
@@ -2496,7 +2599,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    0
+    1
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2513,6 +2616,9 @@
      "initial": [
       "E1"
      ]
+    },
+    "iron_curtainable": {
+     "kills": false
     },
     "detect_cloaked": {
      "range": 6144,
@@ -2579,7 +2685,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    0
+    1
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2596,6 +2702,9 @@
      "initial": [
       "E1"
      ]
+    },
+    "iron_curtainable": {
+     "kills": false
     },
     "cloak": {
      "initial_delay": 125,
@@ -2677,7 +2786,7 @@
    "armor": 3,
    "sight": 6656,
    "weapons": [
-    1
+    2
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2685,6 +2794,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
      "range": 6144,
      "types": [
@@ -2750,7 +2862,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    2
+    3
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2758,6 +2870,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
      "range": 5120,
      "types": [
@@ -2837,7 +2952,7 @@
    "armor": 3,
    "sight": 7168,
    "weapons": [
-    3
+    4
    ],
    "turret_turn_speed": null,
    "reload_override": 120,
@@ -2845,6 +2960,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "detect_cloaked": {
      "range": 6144,
      "types": [
@@ -2924,7 +3042,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    4
+    5
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2932,6 +3050,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     }
@@ -2990,7 +3111,7 @@
    "armor": 3,
    "sight": 8192,
    "weapons": [
-    5
+    6
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -2998,6 +3119,9 @@
    "death_weapon": null,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 5120
     }
@@ -3062,6 +3186,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3128,6 +3255,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3194,6 +3324,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3259,6 +3392,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3325,6 +3461,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3391,6 +3530,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3457,6 +3599,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3523,6 +3668,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3589,6 +3737,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3654,6 +3805,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3718,6 +3872,9 @@
    "self_heal": null,
    "abilities": {
     "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
     "gap_sight": {
      "range": 1024
     }
@@ -3778,7 +3935,7 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    6
+    7
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -3827,8 +3984,8 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    7,
-    8
+    8,
+    9
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -3880,7 +4037,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 9,
+   "death_weapon": 10,
    "self_heal": {
     "step": 100,
     "delay": 25,
@@ -3888,6 +4045,13 @@
     "damage_cooldown": 500
    },
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -3929,9 +4093,16 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -3974,9 +4145,16 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -4011,12 +4189,12 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    11
+    12
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -4026,6 +4204,13 @@
      "max": 1,
      "garrison": false,
      "initial": []
+    },
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
     },
     "gap_sight": {
      "range": 4096
@@ -4058,12 +4243,12 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    11
+    12
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -4073,6 +4258,13 @@
      "max": 5,
      "garrison": false,
      "initial": []
+    },
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
     },
     "gap_sight": {
      "range": 4096
@@ -4105,15 +4297,22 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    12,
-    13
+    13,
+    14
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4145,14 +4344,21 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    14
+    15
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4185,14 +4391,21 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    15
+    16
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4225,14 +4438,21 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    16
+    17
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4266,13 +4486,13 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    17,
-    18
+    18,
+    19
    ],
    "turret_turn_speed": 8,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": {
     "step": 100,
     "delay": 3,
@@ -4280,6 +4500,13 @@
     "damage_cooldown": 150
    },
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4312,14 +4539,21 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    19
+    20
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 20,
+   "death_weapon": 21,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4352,14 +4586,21 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    21
+    22
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 22,
+   "death_weapon": 23,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     }
@@ -4394,7 +4635,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 23,
+   "death_weapon": 24,
    "self_heal": null,
    "abilities": {
     "minelayer": {
@@ -4415,6 +4656,13 @@
      ]
     },
     "mine_immune": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "detect_cloaked": {
      "range": 5120,
      "types": [
@@ -4457,9 +4705,16 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "jams_missiles": {
      "range": 5120
     },
@@ -4498,9 +4753,16 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "creates_shroud": {
      "range": 7168
     },
@@ -4537,14 +4799,21 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    24
+    25
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 6144
     }
@@ -4577,14 +4846,21 @@
    "armor": 2,
    "sight": 4096,
    "weapons": [
-    25
+    26
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 26,
+   "death_weapon": 27,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": true
+    },
+    "chronoshiftable": {
+     "explode_instead": true,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -4618,14 +4894,21 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    27
+    28
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -4662,12 +4945,12 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    28
+    29
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -4679,6 +4962,13 @@
      "initial": []
     },
     "hold_fire": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "cloak": {
      "initial_delay": 125,
      "cloak_delay": 175,
@@ -4730,9 +5020,16 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 10,
+   "death_weapon": 11,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": true
+    },
     "gap_sight": {
      "range": 4096
     },
@@ -4741,8 +5038,8 @@
      "thump_interval": 8,
      "detonation_delay": 42,
      "driver": "E1",
-     "thump_weapon": 29,
-     "detonation_weapon": 30
+     "thump_weapon": 30,
+     "detonation_weapon": 31
     }
    },
    "unit": {
@@ -4774,7 +5071,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 31,
+   "death_weapon": 32,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -4785,6 +5082,9 @@
      "max": 5,
      "garrison": false,
      "initial": []
+    },
+    "iron_curtainable": {
+     "kills": false
     },
     "gap_sight": {
      "range": 5120
@@ -4817,15 +5117,22 @@
    "armor": 3,
    "sight": 8192,
    "weapons": [
-    32,
-    33
+    33,
+    34
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 31,
+   "death_weapon": 32,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "detect_cloaked": {
      "range": 4096,
      "types": [
@@ -4864,14 +5171,21 @@
    "armor": 2,
    "sight": 8192,
    "weapons": [
-    34
+    35
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 35,
+   "death_weapon": 36,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "cloak": {
      "initial_delay": 0,
      "cloak_delay": 50,
@@ -4926,16 +5240,23 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    36,
-    33,
-    37
+    37,
+    34,
+    38
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 31,
+   "death_weapon": 32,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "detect_cloaked": {
      "range": 4096,
      "types": [
@@ -4975,15 +5296,22 @@
    "armor": 3,
    "sight": 7168,
    "weapons": [
-    38,
-    38
+    39,
+    39
    ],
    "turret_turn_speed": 12,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 31,
+   "death_weapon": 32,
    "self_heal": null,
    "abilities": {
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "gap_sight": {
      "range": 5120
     }
@@ -5016,16 +5344,23 @@
    "armor": 2,
    "sight": 8192,
    "weapons": [
-    39,
-    40
+    40,
+    41
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 35,
+   "death_weapon": 36,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    },
     "cloak": {
      "initial_delay": 0,
      "cloak_delay": 100,
@@ -5082,7 +5417,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -5145,12 +5480,12 @@
    "armor": 2,
    "sight": 10240,
    "weapons": [
-    42
+    43
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
@@ -5207,12 +5542,12 @@
    "armor": 2,
    "sight": 10240,
    "weapons": [
-    42
+    43
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
@@ -5270,13 +5605,13 @@
    "armor": 2,
    "sight": 12288,
    "weapons": [
-    43,
-    44
+    44,
+    45
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
@@ -5333,12 +5668,12 @@
    "armor": 2,
    "sight": 11264,
    "weapons": [
-    45
+    46
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
@@ -5367,7 +5702,7 @@
      "reload_count": 1,
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 46
+     "crash_weapon": 47
     }
    }
   },
@@ -5390,12 +5725,12 @@
    "armor": 2,
    "sight": 13312,
    "weapons": [
-    47
+    48
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "hold_fire": {},
@@ -5424,7 +5759,7 @@
      "reload_count": 1,
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 46
+     "crash_weapon": 47
     }
    }
   },
@@ -5445,7 +5780,7 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    6
+    7
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -5493,8 +5828,8 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    7,
-    8
+    8,
+    9
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -5545,7 +5880,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {},
    "unit": {
@@ -5566,7 +5901,7 @@
      "reload_count": 1,
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 46
+     "crash_weapon": 47
     }
    }
   },
@@ -5590,7 +5925,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {
     "cargo": {
@@ -5618,7 +5953,7 @@
      "reload_count": 1,
      "drop_range": 4096,
      "crash_velocity": 86,
-     "crash_weapon": 46
+     "crash_weapon": 47
     }
    }
   },
@@ -5639,12 +5974,12 @@
    "armor": 2,
    "sight": 0,
    "weapons": [
-    48
+    49
    ],
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 41,
+   "death_weapon": 42,
    "self_heal": null,
    "abilities": {},
    "unit": {
@@ -5665,7 +6000,7 @@
      "reload_count": 1,
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 46
+     "crash_weapon": 47
     }
    }
   },
@@ -5689,7 +6024,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 23,
+   "death_weapon": 24,
    "self_heal": null,
    "abilities": {
     "cloak": {
@@ -5729,7 +6064,7 @@
    "turret_turn_speed": null,
    "reload_override": null,
    "requires_power": false,
-   "death_weapon": 49,
+   "death_weapon": 50,
    "self_heal": null,
    "abilities": {
     "cloak": {
@@ -5751,6 +6086,144 @@
   }
  ],
  "weapons": [
+  {
+   "name": "Atomic",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 95,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 15000,
+     "spread": 1024,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      25,
+      100,
+      100,
+      25
+     ],
+     "delay": 0,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 2048,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      25,
+      100,
+      100,
+      25
+     ],
+     "delay": 5,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 3072,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      50,
+      100,
+      100,
+      25
+     ],
+     "delay": 10,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 4096,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      25
+     ],
+     "delay": 15,
+     "valid": 95,
+     "invalid": 0
+    },
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 5120,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      25
+     ],
+     "delay": 20,
+     "valid": 95,
+     "invalid": 0
+    }
+   ]
+  },
   {
    "name": "Vulcan",
    "range": 6144,

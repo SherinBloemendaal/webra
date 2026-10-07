@@ -86,6 +86,24 @@ pub struct Abilities {
     /// Vision range that also sees through gap generator shroud
     /// (`RevealsShroud` with `RevealGeneratedShroud: True`, e.g. `@GAPGEN`).
     pub gap_sight: Option<RangeInfo>,
+    /// Iron Curtain can make it invulnerable (ExternalCondition@INVULNERABILITY).
+    pub iron_curtainable: Option<IronCurtainableInfo>,
+    /// The Chronosphere can shift it (Chronoshiftable).
+    pub chronoshiftable: Option<ChronoshiftableInfo>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct IronCurtainableInfo {
+    /// KillsSelf on invulnerability (Demolition Truck).
+    pub kills: bool,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ChronoshiftableInfo {
+    /// Explodes instead of teleporting (Demolition Truck).
+    pub explode_instead: bool,
+    /// Only while not deployed (MAD tank).
+    pub not_deployed: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -198,6 +216,30 @@ pub struct SupportPowerInfo {
     /// Ticks the camera stays after the aircraft passed (CameraRemoveDelay).
     #[serde(default)]
     pub camera_remove_delay: i32,
+    // ---- Superweapons (ChronoshiftPower, GrantExternalConditionPower, NukePower, GpsPower); see abilities.rs.
+    /// Target area rows ('x' = affected cell), centred on the target cell.
+    #[serde(default)]
+    pub footprint: Vec<String>,
+    /// Chronoshift: passengers of shifted transports die.
+    #[serde(default)]
+    pub kill_cargo: bool,
+    /// Nuke: weapon index of the missile.
+    #[serde(default)]
+    pub missile_weapon: Option<usize>,
+    /// Nuke: ticks before the missile leaves the silo, and its flight time.
+    #[serde(default)]
+    pub missile_delay: i32,
+    #[serde(default)]
+    pub flight_delay: i32,
+    /// Nuke: the target camera appears this many ticks before impact.
+    #[serde(default)]
+    pub camera_spawn_advance: i32,
+    /// GPS: ticks from launch until the map is revealed.
+    #[serde(default)]
+    pub reveal_delay: i32,
+    /// Fires once per game (GPS Satellite).
+    #[serde(default)]
+    pub one_shot: bool,
 }
 
 #[derive(Deserialize)]
