@@ -558,17 +558,19 @@ impl World {
         let facing = self.rules.actors[self.actors[i].ty as usize].abilities.transforms.as_ref().unwrap().facing;
         let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[self.actors[i].ty as usize].hp as i64);
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        self.release_dock(i);
-        self.remove(i);
-        // Free the cells now so the new actor can take them in the same tick.
-        self.cleanup_dead();
+        // The new form first: should it not fit after all, the old one stays.
+        // (A unit occupies no structure cells, and a structure only turns
+        // into a unit, so the old form is never in the way.)
         let j = if self.rules.actors[into as usize].kind == Kind::Building {
-            // can_deploy checked that the footprint fits and is free.
             let Some(j) = self.spawn_building(into, owner, cx, cy) else { return false };
             j
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)
         };
+        self.release_dock(i);
+        self.remove(i);
+        // Free the old form's cells now, in the same tick.
+        self.cleanup_dead();
         // Damage carries over between the two forms.
         let max = self.rules.actors[into as usize].hp as i64;
         self.actors[j].hp = ((max * hp_ratio.0 / hp_ratio.1.max(1)) as i32).max(1);

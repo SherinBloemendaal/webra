@@ -396,6 +396,33 @@ fn mcv_deploys_and_the_yard_packs_up_again() {
 }
 
 #[test]
+fn a_refused_deploy_keeps_the_mcv() {
+    let mut o = opts();
+    o.starting_units = crate::world::StartingUnits::Mcv;
+    let mut w = world_with(7, ["allies", "soviet"], [false, true], o);
+    let mcv_t = ty(&w, "MCV");
+    let mcv = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == mcv_t).unwrap();
+    let (into, cx, cy) = w.deploy_target(mcv).unwrap();
+    // Another structure on the yard's footprint: the deploy is refused and nothing is lost.
+    let cell = w.rules.actors[into as usize].building.as_ref().unwrap().cells().last().unwrap();
+    assert!(w.spawn_building(ty(&w, "SBAG"), 1, cx + cell.0, cy + cell.1).is_some());
+    let before = w.actors.iter().filter(|a| a.alive).count();
+    assert!(!w.deploy(mcv));
+    assert!(w.actors[mcv].alive && w.actors[mcv].ty == mcv_t);
+    assert_eq!(w.actors.iter().filter(|a| a.alive).count(), before);
+    // Damage carries over when it does deploy.
+    let wall = w.building_at[w.map.idx(cx + cell.0, cy + cell.1)] as usize;
+    w.remove(wall);
+    w.cleanup_dead();
+    w.actors[mcv].hp /= 2;
+    assert!(w.deploy(mcv));
+    assert!(!w.actors[mcv].alive || w.actors[mcv].ty != mcv_t, "the MCV is gone");
+    let fact = w.building_at[w.map.idx(cx + cell.0, cy + cell.1)] as usize;
+    assert_eq!(w.actors[fact].ty, into);
+    assert!((w.actors[fact].hp - w.rules.actors[into as usize].hp / 2).abs() <= 1);
+}
+
+#[test]
 fn lobby_options_apply() {
     use crate::world::StartingUnits;
     let mut o = opts();
