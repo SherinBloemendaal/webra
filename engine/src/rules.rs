@@ -207,6 +207,22 @@ pub struct AircraftInfo {
     pub landable: Vec<String>,
     pub ammo: i32,
     pub rearm_actors: Vec<String>,
+    /// AmmoPool: `rearm_count` rounds come back every `rearm_delay` ticks while resupplying.
+    pub rearm_delay: i32,
+    pub rearm_count: i32,
+    /// Repairable: structures that repair this aircraft (service depot).
+    pub repair_actors: Vec<String>,
+    /// World units climbed or descended per tick.
+    pub altitude_velocity: i32,
+    /// Distance to hold from a busy resupply structure while waiting for it.
+    pub wait_distance: i32,
+    pub take_off_on_resupply: bool,
+    /// AutoTarget InitialStance HoldFire: idle aircraft do not pick targets themselves.
+    pub hold_fire: bool,
+    /// AttackAircraft FacingTolerance: may fire while this far off the target's bearing.
+    pub facing_tolerance: i32,
+    /// Forward offsets (world units) of the rotors drawn while airborne.
+    pub rotors: Vec<i32>,
 }
 
 #[derive(Deserialize, Clone)]
