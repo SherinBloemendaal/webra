@@ -122,6 +122,8 @@ test('orders and hash', () => {
     { o: 'rally', player: 1, building: 4, x: 1, y: 1 },
     { o: 'sell', player: 1, building: 4 },
     { o: 'deploy', player: 1, ids: [4] },
+    { o: 'land', player: 1, ids: [4], x: 100, y: 200 },
+    { o: 'return_to_base', player: 1, ids: [4] },
   ]) {
     ok({ t: 'orders', tick: 1, orders: [o] });
   }

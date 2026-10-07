@@ -110,6 +110,9 @@ const ORDER_SCHEMA = {
   rally: { building: u32, x: i32, y: i32 },
   sell: { building: u32 },
   deploy: { ids: idList },
+  // Helicopters (engine/src/helicopter.rs).
+  land: { ids: idList, x: i32, y: i32 },
+  return_to_base: { ids: idList },
 };
 
 export const ORDER_KINDS = Object.keys(ORDER_SCHEMA);
