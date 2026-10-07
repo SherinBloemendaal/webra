@@ -1,0 +1,28 @@
+// WebRA Worker: serves dist/ (website at /, game at /play/) and the /api/*
+// routes (docs/contracts.md, sections 4 and 6). Deployed by .github/workflows/deploy.yml.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "webra",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "routes": [{ "pattern": "webra.sherin.dev", "custom_domain": true }],
+  "assets": {
+    "directory": "../../dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "404-page"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SESSION", "class_name": "Session" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webra",
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+}
