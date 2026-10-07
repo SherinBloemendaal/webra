@@ -88,7 +88,8 @@ fn units_cross_the_map_with_flow_fields() {
         let u = w.spawn_unit(tnk, 0, cell_center(sx + 5 + k % 4), cell_center(sy + 6 + k / 4), 512);
         ids.push(w.make_ref(u));
     }
-    let (gx, gy) = (cell_center(ex - 4), cell_center(ey - 4));
+    // Just in front of the enemy yard, on the side facing our base.
+    let (gx, gy) = (cell_center(ex - 6), cell_center(ey + 2));
     w.queue_order(Order::Move { player: 0, ids: ids.clone(), x: gx, y: gy, attack_move: false });
     run(&mut w, 25 * 60);
     let fields = w.flow.computed;
@@ -644,4 +645,65 @@ fn four_player_free_for_all_ai_game_finishes() {
     assert!(killed > 20, "fighting happened: {killed}");
     let defeated = w.players.iter().filter(|p| p.defeated).count();
     assert!(defeated >= 1, "at least one player was eliminated in 25 minutes");
+}
+
+// ---- Fairness ------------------------------------------------------------------
+
+/// A unit and its left-right mirror image, each alone on the same generated
+/// map, must drive mirrored paths tick for tick (flow field ties, cell borders
+/// and blocked goals are resolved without a directional bias).
+#[test]
+fn mirrored_units_drive_mirrored_paths() {
+    let routes = [((12, 14), (60, 50)), ((20, 30), (40, 12)), ((5, 40), (40, 5)), ((30, 30), (31, 45)), ((18, 9), (12, 11))];
+    for seed in 0..4u64 {
+        for &(from, to) in &routes {
+            let mut paths = Vec::new();
+            for mirror in [false, true] {
+                let mut w = World::new(seed, 80, &[("allies", false), ("allies", false)]);
+                for i in 0..w.actors.len() {
+                    w.remove(i);
+                }
+                w.step();
+                let width = w.map.width;
+                let m = |c: (i32, i32)| if mirror { (width - 1 - c.0, c.1) } else { c };
+                let (f, t) = (m(from), m(to));
+                // Face the destination: an exact half turn has no mirror-neutral direction.
+                let facing = crate::math::facing_of(t.0 - f.0, t.1 - f.1).unwrap();
+                let u = w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(f.0), cell_center(f.1), facing);
+                w.order_move(&[u], cell_center(t.0), cell_center(t.1), false);
+                let mut path = Vec::new();
+                for _ in 0..1500 {
+                    w.step();
+                    let a = &w.actors[u];
+                    path.push((if mirror { width * CELL - a.x } else { a.x }, a.y));
+                    if a.activity == Activity::Idle {
+                        break;
+                    }
+                }
+                paths.push(path);
+            }
+            let diverge = paths[0].iter().zip(&paths[1]).position(|(p, q)| p != q);
+            assert_eq!(diverge, None, "seed {seed} {from:?} -> {to:?}: mirrored paths diverge");
+            assert_eq!(paths[0].len(), paths[1].len(), "seed {seed} {from:?} -> {to:?}: arrival time");
+        }
+    }
+}
+
+/// Identical AIs on mirrored spawns: neither player slot may win most games.
+#[test]
+fn mirror_matches_are_fair() {
+    let mut wins = [0u32; 2];
+    for seed in 0..10u64 {
+        let mut w = World::new(seed, 80, &[("allies", true), ("allies", true)]);
+        for _ in 0..(25 * 60 * 25) {
+            w.step();
+            if w.winner.is_some() {
+                break;
+            }
+        }
+        if let Some(p) = w.winner {
+            wins[p as usize] += 1;
+        }
+    }
+    assert!(wins[0] <= 7 && wins[1] <= 7, "wins per slot over 10 mirror matches: {wins:?}");
 }

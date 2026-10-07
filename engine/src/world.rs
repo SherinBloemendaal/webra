@@ -810,6 +810,14 @@ impl World {
         ((x.div_euclid(CELL)).clamp(0, self.map.width - 1), (y.div_euclid(CELL)).clamp(0, self.map.height - 1))
     }
 
+    /// Cell of a target point as seen from (fx, fy): a point exactly on a cell
+    /// border counts for the cell on the viewer's side. Unlike `cell_of`, this
+    /// gives mirrored answers for mirrored situations.
+    pub fn cell_toward(&self, x: i32, y: i32, fx: i32, fy: i32) -> (i32, i32) {
+        let toward = |v: i32, f: i32| if v.rem_euclid(CELL) == 0 { v - (v - f).signum() } else { v };
+        self.cell_of(toward(x, fx), toward(y, fy))
+    }
+
     #[inline]
     pub fn cell_index(&self, x: i32, y: i32) -> usize {
         let (cx, cy) = self.cell_of(x, y);
@@ -1004,7 +1012,13 @@ impl World {
         }
         let group = self.next_group;
         self.next_group += 1;
-        let (gx, gy) = self.cell_of(x, y);
+        // The group's centre decides ties (border targets, blocked goals), so a
+        // mirrored order on a point symmetric map picks the mirrored cell.
+        let n = units.len() as i64;
+        let cx = (units.iter().map(|&i| self.actors[i].x as i64).sum::<i64>() / n) as i32;
+        let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
+        let from = self.cell_of(cx, cy);
+        let (gx, gy) = self.cell_toward(x, y, cx, cy);
         let mut goals: Vec<(u32, u32)> = Vec::new();
         for &i in units {
             self.release_dock(i);
@@ -1012,7 +1026,7 @@ impl World {
             let goal = match goals.iter().find(|(c, _)| *c == comp) {
                 Some(&(_, g)) => g,
                 None => {
-                    let g = nearest_in_component(&self.map, &self.pass, (gx, gy), comp).unwrap_or(NONE);
+                    let g = nearest_in_component(&self.map, &self.pass, (gx, gy), comp, from).unwrap_or(NONE);
                     goals.push((comp, g));
                     g
                 }

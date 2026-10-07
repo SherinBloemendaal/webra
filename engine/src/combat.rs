@@ -132,8 +132,10 @@ impl World {
             if self.actors[i].attack_move {
                 // Resume the attack-move toward the original destination.
                 let (dx, dy) = self.actors[i].dest;
-                let comp = self.pass.component[self.cell_index(self.actors[i].x, self.actors[i].y)];
-                let goal = nearest_in_component(&self.map, &self.pass, self.cell_of(dx, dy), comp).unwrap_or(NONE);
+                let (x, y) = (self.actors[i].x, self.actors[i].y);
+                let comp = self.pass.component[self.cell_index(x, y)];
+                let goal =
+                    nearest_in_component(&self.map, &self.pass, self.cell_toward(dx, dy, x, y), comp, self.cell_of(x, y)).unwrap_or(NONE);
                 let a = &mut self.actors[i];
                 a.goal = goal;
                 a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
@@ -175,11 +177,11 @@ impl World {
             return;
         }
         // Chase: path toward the target's cell (or the nearest reachable one).
-        let (tcx, tcy) = self.cell_of(self.actors[t].x, self.actors[t].y);
+        let (tcx, tcy) = self.cell_toward(self.actors[t].x, self.actors[t].y, x, y);
         let tcell = self.map.idx(tcx, tcy) as u32;
         if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
             let comp = self.pass.component[self.cell_index(x, y)];
-            let goal = nearest_in_component(&self.map, &self.pass, (tcx, tcy), comp).unwrap_or(NONE);
+            let goal = nearest_in_component(&self.map, &self.pass, (tcx, tcy), comp, self.cell_of(x, y)).unwrap_or(NONE);
             let a = &mut self.actors[i];
             a.chase_cell = tcell;
             a.goal = goal;

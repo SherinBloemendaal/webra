@@ -193,24 +193,65 @@ fn compute(map: &Map, pass: &Passability, loco: &Locomotor, goal: u32, dirs: &mu
                 let nc = c + base * enter / 100;
                 if nc < cost[j] {
                     cost[j] = nc;
-                    dirs[j] = ((d + 4) % 8) as u8;
                     heap.push(Reverse((nc, j as u32)));
                 }
             }
         }
     }
+    // Pick each cell's direction after the costs are final. Among equally cheap
+    // steps the choice must not depend on the scan order (north first, low cell
+    // index first), or units would move differently on the two halves of a
+    // symmetric map. Prefer the step that ends closest to the goal, then the
+    // one closer to the map centre; both stay the same under the mirrorings
+    // and rotations a fair map uses.
+    let (gx, gy) = ((g as i32) % map.width, (g as i32) / map.width);
+    for j in 0..n {
+        if cost[j] == u32::MAX || j == g {
+            continue;
+        }
+        let (x, y) = ((j as i32) % map.width, (j as i32) / map.width);
+        let mut best: Option<(i32, i32, u8)> = None;
+        for (d, &(dx, dy)) in DIRS.iter().enumerate() {
+            let Some(i) = step(map, &pass.blocked, x, y, d) else { continue };
+            if cost[i] == u32::MAX {
+                continue;
+            }
+            let base = if d % 2 == 0 { COST_STRAIGHT } else { COST_DIAGONAL };
+            if cost[i] + base * cell_cost(i) / 100 != cost[j] {
+                continue;
+            }
+            let to_goal = (gx - x - dx).pow(2) + (gy - y - dy).pow(2);
+            let to_centre = centre_distance(map, x + dx, y + dy);
+            if best.is_none_or(|(bd, bc, _)| (to_goal, to_centre) < (bd, bc)) {
+                best = Some((to_goal, to_centre, d as u8));
+            }
+        }
+        if let Some((_, _, d)) = best {
+            dirs[j] = d;
+        }
+    }
+}
+
+/// Squared distance of a cell to the map centre, in half cells. Used to break
+/// ties the same way on every half of a symmetric map.
+#[inline]
+pub fn centre_distance(map: &Map, x: i32, y: i32) -> i32 {
+    (2 * x - (map.width - 1)).pow(2) + (2 * y - (map.height - 1)).pow(2)
 }
 
 /// Nearest cell to `goal` (by straight distance) that lies in `component`.
-/// Used when a goal is blocked or on an unreachable island.
-pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), component: u32) -> Option<u32> {
+/// Used when a goal is blocked or on an unreachable island. Ties go to the
+/// cell closest to `from` (where the units come from), then to the one
+/// closest to the map centre, so the choice is the same on both halves of a
+/// symmetric map.
+pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), component: u32, from: (i32, i32)) -> Option<u32> {
     let gi = map.idx(goal.0, goal.1);
     if pass.component[gi] == component && !pass.blocked[gi] {
         return Some(gi as u32);
     }
     let max_r = map.width.max(map.height);
     for r in 1..max_r {
-        let mut best: Option<(i32, u32)> = None;
+        let mut best: Option<((i32, i32, i32), u32)> = None;
         for y in goal.1 - r..=goal.1 + r {
             for x in goal.0 - r..=goal.0 + r {
                 if (x - goal.0).abs() != r && (y - goal.1).abs() != r {
@@ -222,8 +263,10 @@ pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), com
                 let i = map.idx(x, y);
                 if pass.component[i] == component && !pass.blocked[i] {
                     let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
-                    if best.is_none_or(|(bd, bi)| d < bd || (d == bd && (i as u32) < bi)) {
-                        best = Some((d, i as u32));
+                    let df = (x - from.0).pow(2) + (y - from.1).pow(2);
+                    let key = (d, df, centre_distance(map, x, y));
+                    if best.is_none_or(|(bk, bi)| key < bk || (key == bk && (i as u32) < bi)) {
+                        best = Some((key, i as u32));
                     }
                 }
             }
@@ -288,7 +331,7 @@ mod tests {
         }
         let pass = Passability::new(&map);
         let comp = pass.component[map.idx(2, 2)];
-        let g = nearest_in_component(&map, &pass, (15, 5), comp).unwrap();
+        let g = nearest_in_component(&map, &pass, (15, 5), comp, (2, 2)).unwrap();
         assert_eq!(g, map.idx(9, 5) as u32);
     }
 }

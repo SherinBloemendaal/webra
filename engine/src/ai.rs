@@ -4,7 +4,7 @@
 //! and how large its waves are.
 
 use crate::math::{dist, CELL};
-use crate::rules::{Kind, QueueType};
+use crate::rules::{FootCell, Kind, QueueType};
 use crate::world::{cell_center, Activity, AiDifficulty, Order, World};
 
 const DEFEND_RADIUS: i32 = 14 * CELL;
@@ -260,12 +260,16 @@ fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
     };
     let b = w.rules.actors[item.ty as usize].building.as_ref().unwrap();
     let (bw, bh) = (b.width, b.height);
-    // Mirror the scan for bases in the other half of the map, so both players
-    // lay out their bases the same way (the map is point symmetric).
-    let m = if sx * 2 > w.map.width { -1 } else { 1 };
+    // Mirror the scan per axis for bases in the right or bottom half of the
+    // map, so players on mirrored spawns lay out mirrored bases.
+    let (flip_x, flip_y) = (sx * 2 > w.map.width, sy * 2 > w.map.height);
+    // Refineries go where the dock is closest to ore, so trips stay short
+    // whichever way the dock faces relative to the base.
+    let ore = if b.refinery.is_some() { ore_distance_field(w, sx, sy, 26) } else { Vec::new() };
     // Spiral outward from the anchor. Prefer spots that leave a one cell gap so
     // units can still pass; fall back to any legal spot.
     for strict in [true, false] {
+        let mut best: Option<(i32, (i32, i32))> = None;
         for r in 0i32..18 {
             for dy in -r..=r {
                 for dx in -r..=r {
@@ -273,17 +277,95 @@ fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
                         continue;
                     }
                     // Mirror around the footprint centre, not the top-left corner.
-                    let (cx, cy) = if m > 0 { (ax + dx, ay + dy) } else { (ax - dx - (bw - 3), ay - dy - (bh - 4)) };
-                    if w.can_place(player, item.ty, cx, cy) && (!strict || has_clearance(w, cx, cy, bw, bh)) {
+                    let cx = if flip_x { ax - dx - (bw - 3) } else { ax + dx };
+                    let cy = if flip_y { ay - dy - (bh - 4) } else { ay + dy };
+                    if !w.can_place(player, item.ty, cx, cy) || (strict && !has_clearance(w, cx, cy, bw, bh)) {
+                        continue;
+                    }
+                    if ore.is_empty() {
                         w.place_building(player, item.ty, cx, cy);
                         return;
+                    }
+                    let score = dock_ore_distance(w, item.ty, cx, cy, &ore);
+                    if best.is_none_or(|(bs, _)| score < bs) {
+                        best = Some((score, (cx, cy)));
                     }
                 }
             }
         }
+        if let Some((_, (cx, cy))) = best {
+            w.place_building(player, item.ty, cx, cy);
+            return;
+        }
     }
     // Nowhere to place: cancel and get the money back.
     w.cancel_production(player, item.ty);
+}
+
+/// Ground distance (10 per straight step, 14 per diagonal) from every cell to
+/// the nearest ore cell within `radius` cells of a base; `i32::MAX` where no
+/// ore is reachable. Empty when there is no ore near the base.
+fn ore_distance_field(w: &World, sx: i32, sy: i32, radius: i32) -> Vec<i32> {
+    let mut d = vec![i32::MAX; w.map.cells()];
+    let mut heap = std::collections::BinaryHeap::new();
+    for y in sy - radius..=sy + radius {
+        for x in sx - radius..=sx + radius {
+            if w.map.contains(x, y) {
+                let i = w.map.idx(x, y);
+                if w.map.ore[i] > 0 && !w.pass.blocked[i] {
+                    d[i] = 0;
+                    heap.push(std::cmp::Reverse((0, i)));
+                }
+            }
+        }
+    }
+    if heap.is_empty() {
+        return Vec::new();
+    }
+    while let Some(std::cmp::Reverse((c, i))) = heap.pop() {
+        if c > d[i] {
+            continue;
+        }
+        let (x, y) = ((i as i32) % w.map.width, (i as i32) / w.map.width);
+        for dir in 0..8 {
+            if let Some(j) = crate::flowfield::step(&w.map, &w.pass.blocked, x, y, dir) {
+                let nc = c + if dir % 2 == 0 { 10 } else { 14 };
+                if nc < d[j] {
+                    d[j] = nc;
+                    heap.push(std::cmp::Reverse((nc, j)));
+                }
+            }
+        }
+    }
+    d
+}
+
+/// How far an ore truck drives from the dock of a refinery placed at (cx, cy)
+/// to the nearest ore. The refinery's own walls count, so a dock that faces
+/// away from the ore scores worse than one that faces it.
+fn dock_ore_distance(w: &World, ty: u16, cx: i32, cy: i32, field: &[i32]) -> i32 {
+    let b = w.rules.actors[ty as usize].building.as_ref().unwrap();
+    let Some(rf) = b.refinery.as_ref() else { return 0 };
+    let x = cx * CELL + b.width * crate::math::HALF_CELL + b.center_offset.0 + rf.dock_offset.0;
+    let y = cy * CELL + b.height * crate::math::HALF_CELL + b.center_offset.1 + rf.dock_offset.1;
+    let (dx, dy) = (x.div_euclid(CELL), y.div_euclid(CELL));
+    let walls = |px: i32, py: i32| b.footprint.iter().any(|&(fx, fy, c)| c == FootCell::Occupied && (cx + fx, cy + fy) == (px, py));
+    let mut best = i32::MAX;
+    for (dir, &(ox, oy)) in crate::flowfield::DIRS.iter().enumerate() {
+        let (nx, ny) = (dx + ox, dy + oy);
+        if !w.map.contains(nx, ny) || walls(nx, ny) {
+            continue;
+        }
+        // No cutting past a wall corner on diagonal steps.
+        if ox != 0 && oy != 0 && (walls(dx + ox, dy) || walls(dx, dy + oy)) {
+            continue;
+        }
+        let f = field[w.map.idx(nx, ny)];
+        if f != i32::MAX {
+            best = best.min(f + if dir % 2 == 0 { 10 } else { 14 });
+        }
+    }
+    best
 }
 
 fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {

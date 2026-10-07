@@ -247,7 +247,10 @@ impl World {
             }
             let max_x = self.map.width * CELL - 1;
             let max_y = self.map.height * CELL - 1;
-            let (tx, ty) = (tx.clamp(0, max_x), ty.clamp(0, max_y));
+            // Never stop exactly on a cell border: `cell_of` would put the unit
+            // in the cell below or right of the border, which is not point
+            // symmetric. Step one unit further, into the cell the unit enters.
+            let (tx, ty) = (off_border(x, tx).clamp(1, max_x), off_border(y, ty).clamp(1, max_y));
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
             if to == from || !self.pass.blocked[to] {
@@ -455,7 +458,17 @@ impl World {
             })
             .map(|(_, o)| o.harv_cell)
             .collect();
-        let mut best: Option<(i32, u32)> = None;
+        // Ties go to the cell nearer the refinery dock (shorter trip back), then
+        // nearer the map centre, never to scan order: mirrored harvesters on a
+        // symmetric map must pick mirrored cells.
+        let dock = match self.resolve(self.actors[i].refinery) {
+            Some(r) => {
+                let d = self.dock_cell(r) as i32;
+                (d % self.map.width, d / self.map.width)
+            }
+            None => (ux, uy),
+        };
+        let mut best: Option<((i32, i32, i32), u32)> = None;
         for y in origin.1 - radius..=origin.1 + radius {
             for x in origin.0 - radius..=origin.0 + radius {
                 if !self.map.contains(x, y) {
@@ -469,8 +482,9 @@ impl World {
                     continue;
                 }
                 let d = (x - ux).pow(2) + (y - uy).pow(2);
-                if best.is_none_or(|(bd, bc)| d < bd || (d == bd && (c as u32) < bc)) {
-                    best = Some((d, c as u32));
+                let key = (d, (x - dock.0).pow(2) + (y - dock.1).pow(2), crate::flowfield::centre_distance(&self.map, x, y));
+                if best.is_none_or(|(bk, bc)| key < bk || (key == bk && (c as u32) < bc)) {
+                    best = Some((key, c as u32));
                 }
             }
         }
@@ -629,5 +643,16 @@ impl World {
         }
         let loco = self.rules.actors[ta.ty as usize].unit.as_ref().unwrap().locomotor;
         self.rules.locomotors[loco].crushes_infantry
+    }
+}
+
+/// `to`, moved one world unit further along the motion from `from` if it lies
+/// exactly on a cell border.
+#[inline]
+fn off_border(from: i32, to: i32) -> i32 {
+    if to.rem_euclid(CELL) == 0 {
+        to + (to - from).signum()
+    } else {
+        to
     }
 }
