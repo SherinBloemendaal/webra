@@ -85,8 +85,10 @@ The deploy job fails early with a clear error when either one is missing.
 
 ### Cloudflare API token permissions
 
-Create a **custom token** (My Profile, API Tokens, Create Token, Custom token)
-with exactly these permissions:
+`tools/create-deploy-token.sh` creates this token from an existing token that
+may create API tokens and stores it as the repository secret without ever
+printing it. To do it by hand, create a **custom token** (My Profile, API
+Tokens, Create Token, Custom token) with exactly these permissions:
 
 | Scope | Resource | Permission |
 |-------|----------|------------|
