@@ -207,7 +207,15 @@ export class Input {
     c.addEventListener('mousedown', (e) => this.onMouseDown(e));
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
     window.addEventListener('mouseup', (e) => this.onMouseUp(e));
-    c.addEventListener('mouseenter', () => (this.mouse.inside = true));
+    // Take the position from the enter event itself: until the first move the
+    // stored position would be stale (-1, -1 at start), which reads as "at the
+    // top-left edge" and scrolled the view by itself.
+    c.addEventListener('mouseenter', (e) => {
+      const p = this.local(e);
+      this.mouse.x = p.x;
+      this.mouse.y = p.y;
+      this.mouse.inside = true;
+    });
     c.addEventListener('mouseleave', () => (this.mouse.inside = false));
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
