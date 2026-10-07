@@ -474,6 +474,42 @@ fn walls_fill_the_gap_between_posts() {
 }
 
 #[test]
+fn wide_modded_walls_fill_a_line_without_overlapping() {
+    // Re-audit: only the gap cell was checked, so a 2-cell wall piece filled
+    // into a gap also covered the next cell and overwrote its owner there.
+    let m = crate::map::Map::generate_for(64, 64, 10, 12, 2);
+    let mut d = crate::mapdata::MapData::from_map(&m, "Walls", "x", "");
+    d.rules = Some(serde_json::json!({ "actors": { "SBAG": { "building": { "width": 2, "footprint": ["xx"] } } } }));
+    let players = [crate::world::PlayerSetup::new("england", None), crate::world::PlayerSetup::new("russia", None)];
+    let mut w = World::from_map(&d, 10, &players, Default::default()).unwrap();
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+    full_base(&mut w, 0);
+    let (sx, sy) = w.players[0].start;
+    let sbag = ty(&w, "SBAG");
+    let y = sy - 2;
+    let place = |w: &mut World, x: i32| {
+        w.queue_order(Order::StartProduction { player: 0, ty: sbag, count: 1 });
+        run(w, 40);
+        w.queue_order(Order::Place { player: 0, ty: sbag, cx: x, cy: y });
+        run(w, 1);
+    };
+    place(&mut w, sx);
+    place(&mut w, sx + 5);
+    let walls: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == sbag).collect();
+    assert!(walls.len() >= 3, "both posts and at least one piece between them: {}", walls.len());
+    // Every structure still owns every cell of its footprint.
+    for i in 0..w.actors.len() {
+        let a = &w.actors[i];
+        if !a.alive || a.kind != Kind::Building {
+            continue;
+        }
+        for (dx, dy) in w.rules.actors[a.ty as usize].building.as_ref().unwrap().cells() {
+            assert_eq!(w.building_at[w.map.idx(a.cx + dx, a.cy + dy)], i as u32, "cell {},{} of actor {i}", a.cx + dx, a.cy + dy);
+        }
+    }
+}
+
+#[test]
 fn naval_yards_go_on_water_only() {
     let mut w = World::new(11, 96, &[("allies", false), ("soviet", true)]);
     full_base(&mut w, 0);

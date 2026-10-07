@@ -382,6 +382,16 @@ impl World {
         }
     }
 
+    /// Whether every footprint cell of `ty` at (cx, cy) is on the map and free
+    /// for `player` (placement without the build area rule; see `cell_free_for`).
+    fn footprint_free(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
+        let Some(b) = self.rules.actors.get(ty as usize).and_then(|a| a.building.as_ref()) else { return false };
+        b.cells().all(|(dx, dy)| {
+            let (x, y) = (cx + dx, cy + dy);
+            self.map.contains(x, y) && self.cell_free_for(player, b.on_water, self.map.idx(x, y), None)
+        })
+    }
+
     pub fn can_place(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
         let cells = self.placement_cells(player, ty, cx, cy);
         !cells.is_empty() && cells.iter().all(|c| c.2)
@@ -463,7 +473,11 @@ impl World {
                     let o = &self.actors[b as usize];
                     if o.alive && o.owner == player && o.ty == ty && !gap.is_empty() {
                         for &(gx, gy) in &gap {
-                            self.spawn_building(ty, player, gx, gy);
+                            // A piece may cover more than its gap cell (modded walls):
+                            // every cell must be free, also of pieces placed just now.
+                            if self.footprint_free(player, ty, gx, gy) {
+                                self.spawn_building(ty, player, gx, gy);
+                            }
                         }
                     }
                     break;
