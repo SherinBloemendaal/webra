@@ -1,4 +1,44 @@
-// WebRA multiplayer protocol (see docs/contracts.md, section 4).
-// Implemented by the online multiplayer work; this file pins the version.
+// WebRA multiplayer protocol (see docs/contracts.md, sections 2 to 4).
+// Pure ES modules without dependencies: runs in browsers, Workers and Node 22.
 
-export const PROTOCOL_VERSION = 1;
+export * from './constants.js';
+export { ProtocolError, truncate, utf8Length } from './check.js';
+export { LOBBY_OPTION_KEYS, validateGameOptions, validateLobbyOptions } from './options.js';
+export {
+  client,
+  encodeClient,
+  encodeServer,
+  errorMessage,
+  parseClientMessage,
+  parseServerMessage,
+  validLobbySlot,
+  validMapRef,
+  validName,
+  ORDER_KINDS,
+  validOrder,
+  validOrders,
+  validPassword,
+  validSessionName,
+} from './messages.js';
+export {
+  base64Length,
+  canonicalMapJson,
+  decodeBase64,
+  isModded,
+  MAP_FORMAT,
+  MAP_MAX_ACTORS,
+  MAP_MAX_BYTES,
+  MAP_MAX_SIZE,
+  MAP_MAX_SPAWNS,
+  MAP_MIN_SIZE,
+  MAP_MIN_SPAWNS,
+  mapHash,
+  mapSummary,
+  MODDED_WARNING,
+  ORE_MAX,
+  parseMap,
+  sha256Hex,
+  TERRAIN_MAX,
+  validateMap,
+  validateRules,
+} from './map.js';
