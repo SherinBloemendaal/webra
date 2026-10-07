@@ -148,6 +148,76 @@ test('two seats taking turns at holding the game up are dropped too', () => {
   assert.ok(ls.next - before > 500);
 });
 
+test('three seats rotating the stall are all dropped, the honest seat plays on', () => {
+  // Re-audit: each seat stayed under its own 10 s, so k seats taking turns
+  // slowed the game to 2.5 / k ticks per second without anyone being dropped.
+  const ls = new Lockstep({ players: [0, 1, 2, 3], delay: 3, now: 0 });
+  ls.initialFrames();
+  const colluders = [1, 2, 3];
+  const fill = (p, t) => {
+    for (let k = 0; k < 3 && ls.expected.get(p) <= ls.next + ls.delay; k++) ls.submit(p, ls.expected.get(p), [], t);
+  };
+  let holder = 1;
+  let since = 0;
+  const dropped = [];
+  let t = 0;
+  for (; t <= 300_000 && dropped.length < 3; t += 100) {
+    fill(0, t);
+    const alive = colluders.filter((c) => ls.isActive(c));
+    if (!ls.isActive(holder)) holder = alive[0];
+    // Every 9 s the holder delivers one frame and the next seat takes over;
+    // the others always stay exactly one frame ahead.
+    if (t - since >= 9000) {
+      while (ls.expected.get(holder) <= ls.next) ls.submit(holder, ls.expected.get(holder), [], t);
+      holder = alive[(alive.indexOf(holder) + 1) % alive.length];
+      since = t;
+    }
+    for (const c of alive) {
+      while (c !== holder && ls.expected.get(c) <= ls.next) ls.submit(c, ls.expected.get(c), [], t);
+    }
+    const silent = ls.silent(t, 10_000);
+    assert.ok(!silent.includes(0), `the honest seat is never blamed (t=${t})`);
+    for (const p of silent) {
+      dropped.push([p, t]);
+      ls.drop(p, t);
+    }
+  }
+  assert.deepEqual(dropped.map(([p]) => p).sort(), colluders, JSON.stringify(dropped));
+  assert.ok(t <= 60_000, `all dropped by ${t}`);
+  const before = ls.next;
+  for (const end = t + 30_000; t <= end; t += 100) {
+    fill(0, t);
+    assert.deepEqual(ls.silent(t, 10_000), []);
+  }
+  assert.ok(ls.next - before > 500);
+});
+
+test('an honest seat answering within the grace is never blamed for others stalling', () => {
+  // Seat 0 sends tick T + delay one round trip (900 ms) after frame T went
+  // out; seat 1 stalls 9.5 s, then releases frames in a burst, so seat 0 is
+  // the last to deliver while it catches up.
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  const out = new Map();
+  for (const f of ls.initialFrames()) out.set(f.tick, 0);
+  const record = (frames, t) => frames.forEach((f) => out.set(f.tick, t));
+  let t = 0;
+  for (; t <= 120_000; t += 50) {
+    for (;;) {
+      const tick = ls.expected.get(0);
+      const e = out.get(tick - ls.delay);
+      if (e === undefined || t < e + 900 || tick > ls.next + ls.delay) break;
+      record(ls.submit(0, tick, [], t), t);
+    }
+    if (ls.isActive(1) && t % 10_000 === 9500) {
+      for (let k = 0; k < 20 && ls.expected.get(1) <= ls.next + ls.delay; k++) record(ls.submit(1, ls.expected.get(1), [], t), t);
+    }
+    const silent = ls.silent(t, 10_000);
+    assert.ok(!silent.includes(0), `the honest seat is never blamed (t=${t})`);
+    for (const p of silent) record(ls.drop(p, t), t);
+  }
+  assert.equal(ls.isActive(1), false, 'the staller is dropped');
+});
+
 test('drop can unblock a frame', () => {
   const ls = new Lockstep({ players: [0, 1], delay: 3 });
   ls.initialFrames();

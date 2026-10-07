@@ -12,15 +12,23 @@
 import { HASH_INTERVAL, TICKS_PER_SECOND } from '@webra/protocol';
 
 /**
- * Each player gets a window that renews whenever this many frames went out
- * since it began (one second of game time at normal speed). A player who,
- * within one window, held the game up for longer than the drop limit in
- * total is reported by `silent`. With a 10 s limit a single slow player can
- * therefore keep the game at about 2.5 ticks per second (10 percent of normal
- * speed) without being dropped: that floor is deliberate, so honest slow
- * machines and hiccups survive.
+ * Drop windows renew whenever this many frames went out since they began
+ * (one second of game time at normal speed). A player who, within one
+ * window, held the game up for longer than the drop limit in total is
+ * reported by `silent`. With a 10 s limit a single slow player can therefore
+ * keep the game at about 2.5 ticks per second (10 percent of normal speed)
+ * without being dropped: that floor is deliberate, so honest slow machines
+ * and hiccups survive. Several seats sharing a stall between them are caught
+ * by the window's age instead (see `silent`).
  */
 export const MIN_PROGRESS_FRAMES = TICKS_PER_SECOND;
+
+/**
+ * A client can only send its orders for tick T once it received frame
+ * T - delay. Holding frame T within this long of that frame going out is a
+ * round trip, not a stall, and is never counted against the player.
+ */
+export const HOLD_GRACE_MS = 1000;
 
 export class LockstepError extends Error {
   constructor(message, code = 'invalid') {
@@ -42,13 +50,19 @@ export class Lockstep {
     /** Next tick each player must submit. */
     this.expected = new Map(players.map((p) => [p, delay]));
     /**
-     * Drop window per player: `frame` is the value of `next` when it began,
-     * `heldMs` how long the player held the game up (did not deliver frame
-     * `next`) since then, `since` when the current hold began (null while the
-     * player is ahead). Going ahead pauses the clock but never resets it, so
-     * players cannot take turns holding the game up.
+     * Drop window per player. `frame` is the value of `next` when it began,
+     * `heldMs` how long the player held the game up in it (did not deliver
+     * frame `next`, beyond HOLD_GRACE_MS after the frame it needed went out),
+     * `at` until when that is counted (null while the player is ahead) and
+     * `ready` when the grace for the frame it holds ends. Going ahead pauses
+     * the count but never resets it, so players cannot take turns.
      */
-    this.windows = new Map(players.map((p) => [p, { frame: delay, heldMs: 0, since: now }]));
+    this.windows = new Map(players.map((p) => [p, { frame: delay, heldMs: 0, at: now, ready: now + HOLD_GRACE_MS }]));
+    /** When the current windows began (they all renew together), or the last drop. */
+    this.windowSince = now;
+    /** tick -> when its frame went out, for the last few frames. */
+    this.emitted = new Map();
+    this.startedAt = now;
     /** tick -> Map(player -> orders) */
     this.pending = new Map();
     /** tick -> Map(player -> hash) */
@@ -63,7 +77,10 @@ export class Lockstep {
   /** The empty frames 0..delay-1 every client needs before its first tick. */
   initialFrames() {
     const frames = [];
-    while (this.next < this.delay) frames.push({ tick: this.next++, orders: [] });
+    while (this.next < this.delay) {
+      this.emitted.set(this.next, this.startedAt);
+      frames.push({ tick: this.next++, orders: [] });
+    }
     return frames;
   }
 
@@ -91,13 +108,13 @@ export class Lockstep {
       player,
       orders.map((o) => ({ ...o, player })),
     );
-    const frames = this.flush();
+    const frames = this.flush(now);
     this.track(now);
     return frames;
   }
 
   /** Emit every frame that all active players have delivered. */
-  flush() {
+  flush(now = Date.now()) {
     const frames = [];
     while (this.active.size > 0) {
       const byPlayer = this.pending.get(this.next);
@@ -109,6 +126,8 @@ export class Lockstep {
         .map((p) => [p, byPlayer.get(p)]);
       frames.push({ tick: this.next, orders });
       this.pending.delete(this.next);
+      this.emitted.set(this.next, now);
+      this.emitted.delete(this.next - this.delay - 1);
       this.next++;
     }
     return frames;
@@ -122,27 +141,30 @@ export class Lockstep {
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
-    const frames = this.flush();
+    const frames = this.flush(now);
     this.track(now);
+    // The game changed: the remaining players get a full stall budget again.
+    this.windowSince = now;
     return frames;
   }
 
   /** Bring the drop windows (see `windows`) up to `now`. */
   track(now) {
+    // When the grace for holding frame `next` ends.
+    const ready = (this.emitted.get(this.next - this.delay) ?? this.startedAt) + HOLD_GRACE_MS;
+    const renew = [...this.windows.values()].some((w) => this.next - w.frame >= MIN_PROGRESS_FRAMES);
+    if (renew) this.windowSince = now;
     for (const p of this.active) {
       const w = this.windows.get(p);
-      const holding = this.expected.get(p) <= this.next;
-      if (this.next - w.frame >= MIN_PROGRESS_FRAMES) {
+      if (w.at !== null) w.heldMs += Math.max(0, now - Math.max(w.at, w.ready));
+      if (renew) {
         // Enough frames went out: a fresh window.
         w.frame = this.next;
         w.heldMs = 0;
-        w.since = holding ? now : null;
-      } else if (holding && w.since === null) {
-        w.since = now;
-      } else if (!holding && w.since !== null) {
-        w.heldMs += now - w.since;
-        w.since = null;
       }
+      const holding = this.expected.get(p) <= this.next;
+      w.at = holding ? now : null;
+      w.ready = ready;
     }
   }
 
@@ -152,12 +174,25 @@ export class Lockstep {
    * `limitMs` in total. Sending a tick now and then does not reset that, and
    * neither does taking turns with another player (a client sending one tick
    * every 9 s, or two seats alternating, used to stall a game forever).
+   *
+   * Several seats can each stay under the limit while handing the stall on
+   * (k seats used to slow the game to 2.5 / k ticks per second). So once a
+   * window is older than the limit without enough progress, whoever held the
+   * game up longest in it is reported too. Round trips are not counted (see
+   * HOLD_GRACE_MS), so an honest seat that answers within the grace is never
+   * the one blamed, however the others time their stalls.
    */
   silent(now, limitMs) {
     this.track(now);
     const out = [];
     for (const [p, w] of this.windows) {
-      if (w.since !== null && w.heldMs + (now - w.since) > limitMs) out.push(p);
+      if (w.at !== null && w.heldMs > limitMs) out.push(p);
+    }
+    if (now - this.windowSince > limitMs) {
+      const longest = Math.max(0, ...[...this.windows.values()].map((w) => w.heldMs));
+      for (const [p, w] of this.windows) {
+        if (longest > 0 && w.heldMs === longest && !out.includes(p)) out.push(p);
+      }
     }
     return out;
   }
