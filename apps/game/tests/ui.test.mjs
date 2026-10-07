@@ -14,7 +14,8 @@ test('every cursor is a valid SVG data URL with a hotspot and fallback', () => {
 });
 
 test('smart actions map to cursors', () => {
-  assert.equal(ACTION_CURSORS.length, 6);
+  assert.equal(ACTION_CURSORS.length, 7);
   assert.equal(ACTION_CURSORS[ACTION.ATTACK], CURSORS.attack);
   assert.equal(ACTION_CURSORS[ACTION.REPAIR], CURSORS.repair);
+  assert.equal(ACTION_CURSORS[ACTION.LOAD], CURSORS.load);
 });

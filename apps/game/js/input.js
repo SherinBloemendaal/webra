@@ -118,9 +118,9 @@ export class Input {
     const units = this.selectedOwnUnits();
     if (units.length) {
       const action = this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y);
-      // Own units and buildings are selected, unless the order targets them (dock, repair).
+      // Own units and buildings are selected, unless the order targets them (dock, repair, enter a transport).
       const ownHit = hitInfo && hitInfo.owner === this.player;
-      if (ownHit && action !== ACTION.DOCK && action !== ACTION.REPAIR) return { kind: 'select', id: hit };
+      if (ownHit && action !== ACTION.DOCK && action !== ACTION.REPAIR && action !== ACTION.LOAD) return { kind: 'select', id: hit };
       return { kind: 'order', action, units };
     }
     if (this.selectedRallyBuilding() !== null && !hitInfo) return { kind: 'rally' };
@@ -148,7 +148,7 @@ export class Input {
     this.setSellMode(!this.sellMode);
   }
 
-  /** Deploy selected MCVs, or pack up a selected Construction Yard. */
+  /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
   deploySelection() {
     const ids = this.selection.filter((id) => this.game.deploy_state(this.player, id) !== 0);
     if (ids.length) this.game.deploy(this.player, Uint32Array.from(ids));
