@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Lockstep, LockstepError, MIN_PROGRESS_FRAMES } from '../src/lockstep.js';
+import { HOLD_GRACE_MS, Lockstep, LockstepError, MIN_PROGRESS_FRAMES } from '../src/lockstep.js';
 import { TokenBucket } from '../src/ratelimit.js';
 
 const stop = (ids, player = 0) => ({ o: 'stop', player, ids });
@@ -216,6 +216,59 @@ test('an honest seat answering within the grace is never blamed for others stall
     for (const p of silent) record(ls.drop(p, t), t);
   }
   assert.equal(ls.isActive(1), false, 'the staller is dropped');
+});
+
+test('a griefer cannot get an honest seat dropped for one freeze', () => {
+  // Re-audit: the age rule dropped whoever held longest in a stalled window.
+  // A griefer playing at the edge of the grace (never counted) stalled just
+  // under the honest seat's hold time after one freeze of the honest client,
+  // and the honest seat was dropped. Now only a seat's own holds count.
+  const held = (ls, p, t) => {
+    const w = ls.windows.get(p);
+    return w.heldMs + (w.at === null ? 0 : Math.max(0, t - Math.max(w.at, w.ready)));
+  };
+  for (const freeze of [1500, 2500, 5000]) {
+    for (let at = 80; at < 107; at += 2) {
+      const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+      const out = new Map();
+      for (const f of ls.initialFrames()) out.set(f.tick, 0);
+      const send = (p, t) => ls.submit(p, ls.expected.get(p), [], t).forEach((f) => out.set(f.tick, t));
+      const due = (p) => out.get(ls.expected.get(p) - ls.delay);
+      for (let t = 0; t <= 60_000; t += 10) {
+        // Honest seat: 300 ms round trip, one freeze of the client at tick `at`.
+        for (let e = due(0); e !== undefined && ls.expected.get(0) <= ls.next + ls.delay; e = due(0)) {
+          if (t < e + 300 + (ls.expected.get(0) === at ? freeze : 0)) break;
+          send(0, t);
+        }
+        // Griefer: answers at the very end of the grace, and keeps holding as
+        // long as its own hold time stays under the honest seat's.
+        for (let e = due(1); e !== undefined && ls.expected.get(1) <= ls.next + ls.delay; e = due(1)) {
+          if (t < e + HOLD_GRACE_MS - 15) break;
+          if (ls.expected.get(1) <= ls.next && held(ls, 1, t) + 75 < held(ls, 0, t)) break;
+          send(1, t);
+        }
+        if (t % 1000 === 0) assert.ok(!ls.silent(t, 10_000).includes(0), `freeze ${freeze} at tick ${at}: honest seat dropped at ${t}`);
+      }
+    }
+  }
+});
+
+test('stalling again and again is dropped even under the per-window limit', () => {
+  // Seat 1 holds the game up 6 s out of every 10 s, each window under the
+  // 10 s limit: its debt grows faster than it drains, and it is dropped.
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  ls.initialFrames();
+  let dropped = null;
+  for (let t = 0; t <= 120_000 && dropped === null; t += 100) {
+    for (let k = 0; k < 3 && ls.expected.get(0) <= ls.next + ls.delay; k++) ls.submit(0, ls.expected.get(0), [], t);
+    if (t % 10_000 >= 6000) {
+      for (let k = 0; k < 3 && ls.expected.get(1) <= ls.next + ls.delay; k++) ls.submit(1, ls.expected.get(1), [], t);
+    }
+    const silent = ls.silent(t, 10_000);
+    assert.ok(!silent.includes(0));
+    if (silent.includes(1)) dropped = t;
+  }
+  assert.ok(dropped !== null && dropped <= 60_000, `dropped at ${dropped}`);
 });
 
 test('drop can unblock a frame', () => {

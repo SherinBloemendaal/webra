@@ -30,6 +30,16 @@ export const MIN_PROGRESS_FRAMES = TICKS_PER_SECOND;
  */
 export const HOLD_GRACE_MS = 1000;
 
+/**
+ * Hold time beyond the grace also goes into a per-player debt that drains
+ * at this rate (milliseconds per millisecond, here 1 s every 20 s) and is
+ * never reset by progress. A seat whose debt passes the drop limit is
+ * dropped. One freeze (a GC pause, a tab switch, a wifi roam) of up to the
+ * limit drains away; seats that stall over and over, alone or taking turns,
+ * pile it up.
+ */
+export const DEBT_DRAIN = 1 / 20;
+
 export class LockstepError extends Error {
   constructor(message, code = 'invalid') {
     super(message);
@@ -57,9 +67,9 @@ export class Lockstep {
      * `ready` when the grace for the frame it holds ends. Going ahead pauses
      * the count but never resets it, so players cannot take turns.
      */
-    this.windows = new Map(players.map((p) => [p, { frame: delay, heldMs: 0, at: now, ready: now + HOLD_GRACE_MS }]));
-    /** When the current windows began (they all renew together), or the last drop. */
-    this.windowSince = now;
+    this.windows = new Map(
+      players.map((p) => [p, { frame: delay, heldMs: 0, at: now, ready: now + HOLD_GRACE_MS, debtMs: 0, drainedAt: now }]),
+    );
     /** tick -> when its frame went out, for the last few frames. */
     this.emitted = new Map();
     this.startedAt = now;
@@ -143,8 +153,6 @@ export class Lockstep {
     for (const byTick of this.hashes.values()) byTick.delete(player);
     const frames = this.flush(now);
     this.track(now);
-    // The game changed: the remaining players get a full stall budget again.
-    this.windowSince = now;
     return frames;
   }
 
@@ -153,10 +161,15 @@ export class Lockstep {
     // When the grace for holding frame `next` ends.
     const ready = (this.emitted.get(this.next - this.delay) ?? this.startedAt) + HOLD_GRACE_MS;
     const renew = [...this.windows.values()].some((w) => this.next - w.frame >= MIN_PROGRESS_FRAMES);
-    if (renew) this.windowSince = now;
     for (const p of this.active) {
       const w = this.windows.get(p);
-      if (w.at !== null) w.heldMs += Math.max(0, now - Math.max(w.at, w.ready));
+      w.debtMs = Math.max(0, w.debtMs - (now - w.drainedAt) * DEBT_DRAIN);
+      w.drainedAt = now;
+      if (w.at !== null) {
+        const held = Math.max(0, now - Math.max(w.at, w.ready));
+        w.heldMs += held;
+        w.debtMs += held;
+      }
       if (renew) {
         // Enough frames went out: a fresh window.
         w.frame = this.next;
@@ -175,24 +188,17 @@ export class Lockstep {
    * neither does taking turns with another player (a client sending one tick
    * every 9 s, or two seats alternating, used to stall a game forever).
    *
-   * Several seats can each stay under the limit while handing the stall on
-   * (k seats used to slow the game to 2.5 / k ticks per second). So once a
-   * window is older than the limit without enough progress, whoever held the
-   * game up longest in it is reported too. Round trips are not counted (see
-   * HOLD_GRACE_MS), so an honest seat that answers within the grace is never
-   * the one blamed, however the others time their stalls.
+   * Several seats can each stay under the limit per window while handing the
+   * stall on, so a seat whose debt (see DEBT_DRAIN) passes `limitMs` is
+   * dropped as well. Only a seat's own hold time counts, never another's: a
+   * griefer cannot time its stalls to get an honest seat with one freeze
+   * dropped. Round trips are not counted (see HOLD_GRACE_MS).
    */
   silent(now, limitMs) {
     this.track(now);
     const out = [];
     for (const [p, w] of this.windows) {
-      if (w.at !== null && w.heldMs > limitMs) out.push(p);
-    }
-    if (now - this.windowSince > limitMs) {
-      const longest = Math.max(0, ...[...this.windows.values()].map((w) => w.heldMs));
-      for (const [p, w] of this.windows) {
-        if (longest > 0 && w.heldMs === longest && !out.includes(p)) out.push(p);
-      }
+      if ((w.at !== null && w.heldMs > limitMs) || w.debtMs > limitMs) out.push(p);
     }
     return out;
   }
