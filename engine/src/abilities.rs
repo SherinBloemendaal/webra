@@ -15,7 +15,7 @@
 
 use crate::map::Terrain;
 use crate::math::{dist, dist_sq, facing_of, facing_vec, CELL};
-use crate::rules::{Domain, Kind, Projectile as ProjKind, WarheadKind};
+use crate::rules::{Domain, Kind, Projectile as ProjKind, SupportPowerInfo, WarheadKind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, World, NONE};
 
 /// Largest minefield one order may cover, in cells (bounds the work per order).
@@ -64,6 +64,8 @@ pub struct ActorAbility {
     pub cloaked: bool,
     /// Chrono tank: ticks until it can teleport again.
     pub chrono_charge: i32,
+    /// Chronosphere: origin (x, y) and the tick the unit is pulled back there.
+    pub chrono_return: Option<(i32, i32, u32)>,
 }
 
 /// Short-lived visuals owned by this module (drawn by `render_abilities`).
@@ -93,6 +95,29 @@ pub struct AbilityState {
     /// generator is active.
     pub gen_shroud: Vec<Vec<u8>>,
     pub fx: Vec<AbilityFx>,
+    /// Atom bombs in flight.
+    pub nukes: Vec<Nuke>,
+    /// Per player: tick from which the GPS satellite reveals the map (None: not launched).
+    pub gps_at: Vec<Option<u32>>,
+}
+
+/// An atom bomb (NukePower) on its way: up from the silo, down on the target.
+#[derive(Clone, Debug)]
+pub struct Nuke {
+    pub owner: u8,
+    /// Launch point (the silo) and target, world units.
+    pub sx: i32,
+    pub sy: i32,
+    pub x: i32,
+    pub y: i32,
+    pub weapon: u16,
+    /// Tick it leaves the silo, tick it lands.
+    pub launch: u32,
+    pub impact: u32,
+    /// Target camera for the owner (CameraRange) and its timing.
+    pub camera_range: i32,
+    pub camera_advance: i32,
+    pub camera_remove: i32,
 }
 
 /// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes).
@@ -146,6 +171,8 @@ impl World {
         }
         self.tick_cloaks();
         self.jam_missiles();
+        self.tick_chrono_returns();
+        self.tick_nukes();
     }
 
     // ---- Cloak and detection ------------------------------------------------------
@@ -262,6 +289,9 @@ impl World {
     /// shrouded for every non-allied player, explored ghosts included, unless
     /// one of their units sees through generated shroud there (gap_sight).
     pub(crate) fn apply_generated_shroud(&mut self) {
+        if !self.abil.gps_at.is_empty() {
+            self.apply_gps();
+        }
         let gens: Vec<(i32, i32, u8, i32)> = (0..self.actors.len())
             .filter(|&i| self.actors[i].alive)
             .filter_map(|i| {
@@ -949,6 +979,46 @@ impl World {
                 sprites.extend_from_slice(&[x, y, (self.tick % 64) as f32 * 0.1, ids.abilities_base + 7.0, 0.0, 1.0, 0.5, 0.0]);
             }
         }
+        // Atom bombs: up from the silo, then down on the target; a beacon marks
+        // the target for the owner and allies (DisplayBeacon).
+        for n in &self.abil.nukes {
+            if self.are_allies(n.owner, player) {
+                let (bx, by) = (px(n.x), px(n.y));
+                if view.contains(bx, by, 32.0) {
+                    let pulse = 0.6 + 0.4 * ((self.tick % 20) as f32 / 20.0);
+                    sprites.extend_from_slice(&[bx, by, 0.0, ids.abilities_base + 5.0, n.owner as f32, 1.0, pulse, 0.0]);
+                }
+            }
+            if self.tick < n.launch {
+                continue;
+            }
+            let half = (n.impact - n.launch) / 2;
+            let t = self.tick - n.launch;
+            let (mx, my, ang, lift) = if t < half {
+                (n.sx, n.sy, -std::f32::consts::FRAC_PI_2, px(CELL * 12) * t as f32 / half.max(1) as f32)
+            } else {
+                (n.x, n.y, std::f32::consts::FRAC_PI_2, px(CELL * 12) * (n.impact - self.tick) as f32 / half.max(1) as f32)
+            };
+            let (x, y) = (px(mx), px(my) - lift);
+            if vis[self.cell_index(mx, my)] != 0 && view.contains(x, y, 32.0) {
+                sprites.extend_from_slice(&[x, y, ang, ids.missile, n.owner as f32, 2.0, 1.0, 0.0]);
+            }
+        }
+        // GPS: enemy units under fog show as dots (GpsDot).
+        if self.has_gps(player) {
+            for (i, a) in self.actors.iter().enumerate() {
+                if !a.alive || !a.is_unit() || !a.in_world() || self.are_allies(a.owner, player) || self.is_visible_to(i, player) {
+                    continue;
+                }
+                if self.is_cloaked_from(i, player) || self.gen_shrouded(player, self.cell_index(a.x, a.y)) {
+                    continue;
+                }
+                let (x, y) = (px(a.x), px(a.y));
+                if view.contains(x, y, 8.0) {
+                    sprites.extend_from_slice(&[x, y, 0.0, ids.abilities_base + 6.0, a.owner as f32, 1.0, 1.0, 0.0]);
+                }
+            }
+        }
         for f in &self.abil.fx {
             let (x, y) = (px(f.x), px(f.y));
             if vis[self.cell_index(f.x, f.y)] == 0 || !view.contains(x, y, 96.0) {
@@ -1008,6 +1078,224 @@ impl World {
         }
     }
 
-    /// Per-player support power upkeep, called every tick.
-    pub(crate) fn tick_powers(&mut self, _player: u8) {}
+    // ---- Superweapons (dispatched from powers.rs) ------------------------------------
+
+    /// Per-player support power upkeep, called every tick: the GPS satellite
+    /// launches by itself once charged (OpenRA GpsPower).
+    pub(crate) fn tick_powers(&mut self, player: u8) {
+        let key = self
+            .power_instances(player)
+            .iter()
+            .find(|inst| inst.ready() && self.power_info(inst).kind == "GpsPower")
+            .map(|inst| inst.key.clone());
+        if let Some(key) = key {
+            self.activate_support_power(player, &key, 0, 0, None);
+        }
+    }
+
+    /// Cells of a power's footprint centred on cell (cx, cy), inside the map.
+    fn power_cells(&self, info: &SupportPowerInfo, cx: i32, cy: i32) -> Vec<(i32, i32)> {
+        let rows = if info.footprint.is_empty() { vec!["x".to_string()] } else { info.footprint.clone() };
+        let (h, w) = (rows.len() as i32, rows[0].len() as i32);
+        let mut out = Vec::new();
+        for (y, row) in rows.iter().enumerate() {
+            for (x, c) in row.chars().enumerate() {
+                let (px, py) = (cx + x as i32 - w / 2, cy + y as i32 - h / 2);
+                if c == 'x' && self.map.contains(px, py) {
+                    out.push((px, py));
+                }
+            }
+        }
+        out
+    }
+
+    /// Actors standing in (units) or covering (structures) the given cells, sorted.
+    fn actors_in_cells(&self, cells: &[(i32, i32)]) -> Vec<usize> {
+        let mut out = Vec::new();
+        for &(x, y) in cells {
+            let ci = self.map.idx(x, y);
+            for &u in self.units_in_cell(ci) {
+                if self.actors[u as usize].alive && self.actors[u as usize].in_world() {
+                    out.push(u as usize);
+                }
+            }
+            let b = self.building_at[ci];
+            if b != NONE && self.actors[b as usize].alive {
+                out.push(b as usize);
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Chronosphere (ChronoshiftPower): units in the footprint around the
+    /// source `src` jump to the same spots around (x, y) and return after
+    /// Duration. Any owner's Chronoshiftable units are taken, like OpenRA.
+    pub(crate) fn fire_chronoshift(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32, src: Option<(i32, i32)>) -> bool {
+        let Some((sx, sy)) = src else { return false };
+        let (scx, scy) = self.cell_of(sx, sy);
+        let (dcx, dcy) = self.cell_of(x, y);
+        let (dx, dy) = (dcx - scx, dcy - scy);
+        let cells = self.power_cells(info, scx, scy);
+        let mut fired = false;
+        for i in self.actors_in_cells(&cells) {
+            let a = &self.actors[i];
+            if a.kind == Kind::Building {
+                continue;
+            }
+            let Some(cs) = self.rules.actors[a.ty as usize].abilities.chronoshiftable.clone() else { continue };
+            if cs.not_deployed && a.ab.task == Task::MadDeploy {
+                continue;
+            }
+            let (ux, uy) = self.cell_of(a.x, a.y);
+            let (tx, ty) = (ux + dx, uy + dy);
+            if !self.map.contains(tx, ty) {
+                continue;
+            }
+            let ci = self.map.idx(tx, ty);
+            let domain = self.domain_of(i);
+            let open = domain == Domain::Air || !self.pass_for(domain).blocked[ci];
+            if !open || self.players[player as usize].explored[ci] == 0 || self.gen_shrouded(player, ci) {
+                continue;
+            }
+            fired = true;
+            if cs.explode_instead {
+                // Demolition truck: Chronoshiftable.ExplodeInstead.
+                self.kill(i);
+                continue;
+            }
+            if info.kill_cargo {
+                for p in self.passengers(i) {
+                    self.kill(p);
+                }
+            }
+            let origin = self.actors[i].ab.chrono_return.map_or((self.actors[i].x, self.actors[i].y), |(ox, oy, _)| (ox, oy));
+            let (ox, oy) = (self.actors[i].x - cell_center(ux), self.actors[i].y - cell_center(uy));
+            self.teleport(i, cell_center(tx) + ox, cell_center(ty) + oy);
+            if info.duration > 0 {
+                self.actors[i].ab.chrono_return = Some((origin.0, origin.1, self.tick + info.duration as u32));
+            }
+        }
+        fired
+    }
+
+    fn tick_chrono_returns(&mut self) {
+        for i in 0..self.actors.len() {
+            let Some((x, y, t)) = self.actors[i].ab.chrono_return else { continue };
+            if !self.actors[i].alive {
+                continue;
+            }
+            if self.tick >= t {
+                self.actors[i].ab.chrono_return = None;
+                self.teleport(i, x, y);
+            }
+        }
+    }
+
+    /// Iron Curtain (GrantExternalConditionPower invulnerability): actors in
+    /// the footprint take no damage for Duration; Demolition Trucks blow up.
+    pub(crate) fn fire_iron_curtain(&mut self, info: &SupportPowerInfo, x: i32, y: i32) -> bool {
+        let (cx, cy) = self.cell_of(x, y);
+        let cells = self.power_cells(info, cx, cy);
+        let until = self.tick + info.duration.max(0) as u32;
+        let mut fired = false;
+        for i in self.actors_in_cells(&cells) {
+            let Some(ic) = self.rules.actors[self.actors[i].ty as usize].abilities.iron_curtainable.clone() else { continue };
+            fired = true;
+            if ic.kills {
+                self.kill(i);
+            } else {
+                let a = &mut self.actors[i];
+                a.invulnerable_until = a.invulnerable_until.max(until);
+            }
+        }
+        fired
+    }
+
+    /// Atom bomb (NukePower): leaves a powered silo after MissileDelay and
+    /// lands FlightDelay ticks later.
+    pub(crate) fn fire_nuke(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32) -> bool {
+        let Some(w) = info.missile_weapon else { return false };
+        let silo = (0..self.actors.len()).find(|&i| {
+            let a = &self.actors[i];
+            a.alive
+                && a.owner == player
+                && a.kind == Kind::Building
+                && !self.is_powered_down(i)
+                && self.rules.actors[a.ty as usize].abilities.support_powers.as_ref().is_some_and(|l| l.iter().any(|p| p.key == info.key))
+        });
+        let Some(silo) = silo else { return false };
+        let launch = self.tick + info.missile_delay.max(0) as u32;
+        self.abil.nukes.push(Nuke {
+            owner: player,
+            sx: self.actors[silo].x,
+            sy: self.actors[silo].y,
+            x,
+            y,
+            weapon: w as u16,
+            launch,
+            impact: launch + info.flight_delay.max(1) as u32,
+            camera_range: info.camera_range,
+            camera_advance: info.camera_spawn_advance,
+            camera_remove: info.camera_remove_delay,
+        });
+        true
+    }
+
+    fn tick_nukes(&mut self) {
+        let tick = self.tick;
+        let mut k = 0;
+        while k < self.abil.nukes.len() {
+            let n = self.abil.nukes[k].clone();
+            if n.camera_range > 0 && tick + n.camera_advance.max(0) as u32 == n.impact {
+                self.add_reveal(n.owner, n.x, n.y, n.camera_range, n.camera_advance + n.camera_remove);
+            }
+            if tick >= n.impact {
+                self.abil.nukes.swap_remove(k);
+                self.effects.push(Effect { x: n.x, y: n.y, tx: n.x, ty: n.y, kind: EffectKind::NukeExplosion, ttl: 50, max: 50 });
+                self.impact(n.weapon as usize, n.x, n.y, n.owner);
+                continue;
+            }
+            k += 1;
+        }
+    }
+
+    /// GPS Satellite (GpsPower): after RevealDelay the whole map is explored
+    /// for the owner and allies while they keep a structure with the power.
+    pub(crate) fn fire_gps(&mut self, player: u8, info: &SupportPowerInfo) -> bool {
+        let n = self.players.len();
+        self.abil.gps_at.resize(n, None);
+        if self.abil.gps_at[player as usize].is_some() {
+            return false;
+        }
+        self.abil.gps_at[player as usize] = Some(self.tick + info.reveal_delay.max(0) as u32);
+        true
+    }
+
+    /// Whether `player` (or an ally) has a working GPS satellite.
+    pub fn has_gps(&self, player: u8) -> bool {
+        (0..self.abil.gps_at.len()).any(|p| {
+            self.abil.gps_at[p].is_some_and(|t| self.tick >= t)
+                && self.are_allies(p as u8, player)
+                && self.actors.iter().any(|a| {
+                    a.alive
+                        && a.owner as usize == p
+                        && self.rules.actors[a.ty as usize]
+                            .abilities
+                            .support_powers
+                            .as_ref()
+                            .is_some_and(|l| l.iter().any(|sp| sp.kind == "GpsPower"))
+                })
+        })
+    }
+
+    /// Vision update: GPS explores the whole map.
+    fn apply_gps(&mut self) {
+        for p in 0..self.players.len() {
+            if self.has_gps(p as u8) {
+                self.players[p].explored.iter_mut().for_each(|e| *e = 1);
+            }
+        }
+    }
 }
