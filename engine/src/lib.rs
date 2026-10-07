@@ -7,6 +7,7 @@
 mod abilities;
 mod abilities_api;
 mod ai;
+mod ai_arsenal;
 mod air;
 mod cargo;
 mod combat;

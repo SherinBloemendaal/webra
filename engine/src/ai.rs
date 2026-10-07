@@ -7,12 +7,15 @@
 //! nearest hostile base, the weakest of equally near ones), AI teammates attack
 //! the same enemy as their team leader, and idle units help allies whose base
 //! is under attack. Allies and neutral actors are never targeted.
+//!
+//! Aircraft, ships, unit abilities and superweapons live in ai_arsenal.rs.
 
+use crate::ai_arsenal as arsenal;
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
 use crate::world::{cell_center, Activity, AiDifficulty, HarvState, Order, World};
 
-const DEFEND_RADIUS: i32 = 14 * CELL;
+pub(crate) const DEFEND_RADIUS: i32 = 14 * CELL;
 /// Enemy bases within this distance of the nearest one count as equally near.
 const NEAR_TIE: i32 = 8 * CELL;
 /// How long an attack target is kept before it is reconsidered (one minute).
@@ -31,6 +34,16 @@ pub struct AiState {
     /// Game seed, to break ties between equally good choices without
     /// favouring low player slots.
     pub salt: u64,
+    pub difficulty: AiDifficulty,
+    /// Naval yard spot (top-left cell) and when it was last looked for.
+    pub(crate) naval_site: Option<(i32, i32)>,
+    pub(crate) naval_checked_at: u32,
+    /// Minefields ordered so far (top-left cells).
+    pub minefields: Vec<(i32, i32)>,
+    /// Earliest tick for the next MAD tank or demolition truck.
+    pub(crate) next_special_at: u32,
+    /// Armed enemy aircraft were seen: build anti-air.
+    pub seen_air: bool,
 }
 
 impl AiState {
@@ -40,7 +53,22 @@ impl AiState {
             AiDifficulty::Normal => (25, 6, 20, 2),
             AiDifficulty::Hard => (15, 5, 30, 4),
         };
-        AiState { offset: player * 7, think_interval, wave_size, max_wave, defenses, target_player: None, retarget_at: 0, salt: 0 }
+        AiState {
+            offset: player * 7,
+            think_interval,
+            wave_size,
+            max_wave,
+            defenses,
+            target_player: None,
+            retarget_at: 0,
+            salt: 0,
+            difficulty,
+            naval_site: None,
+            naval_checked_at: 0,
+            minefields: Vec::new(),
+            next_special_at: 0,
+            seen_air: false,
+        }
     }
 }
 
@@ -57,11 +85,21 @@ pub fn think(w: &mut World, player: u8) {
     cancel_blocked(w, player);
     place_ready_building(w, player, QueueType::Building);
     place_ready_building(w, player, QueueType::Defense);
+    arsenal::watch_the_sky(w, player);
     send_idle_harvesters(w, player);
     queue_buildings(w, player);
     queue_defenses(w, player);
     queue_units(w, player);
+    arsenal::queue_aircraft(w, player);
+    arsenal::queue_ships(w, player);
     command_army(w, player);
+    arsenal::command_aircraft(w, player);
+    arsenal::command_ships(w, player);
+    arsenal::command_minelayers(w, player);
+    arsenal::command_chrono_tanks(w, player);
+    let target_player = w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t));
+    arsenal::command_bombers(w, player, target_player);
+    arsenal::command_jammers(w, player);
     use_support_powers(w, player);
 }
 
@@ -152,16 +190,17 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
     }
 }
 
-/// A unit worth sending into battle (not a harvester, mine layer or suicide unit).
-fn is_army_unit(w: &World, ty: usize) -> bool {
+/// A ground unit worth sending into battle in waves (not a harvester, mine
+/// layer or suicide unit; aircraft and ships have their own orders).
+pub(crate) fn is_army_unit(w: &World, ty: usize) -> bool {
     let info = &w.rules.actors[ty];
-    info.kind != Kind::Building
+    matches!(info.kind, Kind::Infantry | Kind::Vehicle)
         && info.can_attack(&w.rules, Kind::Vehicle)
         && info.abilities.demo_truck.is_none()
         && info.abilities.mad_tank.is_none()
 }
 
-fn owned_buildings(w: &World, player: u8) -> Vec<usize> {
+pub(crate) fn owned_buildings(w: &World, player: u8) -> Vec<usize> {
     (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].kind == Kind::Building).collect()
 }
 
@@ -175,7 +214,7 @@ fn count_providing(w: &World, player: u8, token: &str) -> usize {
 }
 
 /// Cheapest enabled building that provides `token`.
-fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
+pub(crate) fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
     let faction = w.players[player as usize].faction;
     let t = w.rules.token(token)?;
     (0..w.rules.actors.len())
@@ -190,7 +229,7 @@ fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
         .map(|a| a as u16)
 }
 
-fn build_order_done(w: &World, player: u8) -> bool {
+pub(crate) fn build_order_done(w: &World, player: u8) -> bool {
     let mut needed: Vec<(&str, usize)> = Vec::new();
     BUILD_ORDER.iter().all(|&tok| {
         match needed.iter_mut().find(|(t, _)| *t == tok) {
@@ -231,15 +270,20 @@ fn queue_buildings(w: &mut World, player: u8) {
             }
         }
     }
+    // The base stands: helipads, airfields and a naval yard.
+    if let Some(ty) = arsenal::next_building(w, player) {
+        w.start_production(player, ty, 1);
+    }
 }
 
-/// A few gun or Tesla defences once the base stands.
+/// A few gun or Tesla defences once the base stands, anti-air once enemy
+/// aircraft were seen, then superweapons (ai_arsenal.rs).
 fn queue_defenses(w: &mut World, player: u8) {
-    let want = w.ai[player as usize].defenses;
     let dq = QueueType::Defense as usize;
-    if want == 0 || !w.players[player as usize].queues[dq].items.is_empty() || !build_order_done(w, player) {
+    if !w.players[player as usize].queues[dq].items.is_empty() || !build_order_done(w, player) {
         return;
     }
+    let want = w.ai[player as usize].defenses;
     let have = owned_buildings(w, player)
         .iter()
         .filter(|&&b| {
@@ -247,19 +291,22 @@ fn queue_defenses(w: &mut World, player: u8) {
             info.queue == QueueType::Defense && info.can_attack(&w.rules, Kind::Vehicle)
         })
         .count();
-    if have >= want || w.players[player as usize].funds() < 1500 {
-        return;
+    if have < want && w.players[player as usize].funds() >= 1500 {
+        let best = (0..w.rules.actors.len() as u16)
+            .filter(|&a| {
+                let info = &w.rules.actors[a as usize];
+                info.queue == QueueType::Defense
+                    && info.can_attack(&w.rules, Kind::Vehicle)
+                    && !info.is_wall()
+                    && w.availability(player, a).enabled
+            })
+            .max_by_key(|&a| w.rules.actors[a as usize].cost);
+        if let Some(ty) = best {
+            w.start_production(player, ty, 1);
+            return;
+        }
     }
-    let best = (0..w.rules.actors.len() as u16)
-        .filter(|&a| {
-            let info = &w.rules.actors[a as usize];
-            info.queue == QueueType::Defense
-                && info.can_attack(&w.rules, Kind::Vehicle)
-                && !info.is_wall()
-                && w.availability(player, a).enabled
-        })
-        .max_by_key(|&a| w.rules.actors[a as usize].cost);
-    if let Some(ty) = best {
+    if let Some(ty) = arsenal::next_anti_air_defense(w, player).or_else(|| arsenal::next_superweapon(w, player)) {
         w.start_production(player, ty, 1);
     }
 }
@@ -275,10 +322,14 @@ fn queue_units(w: &mut World, player: u8) {
     let (infantry, vehicles) = (count_kind(Kind::Infantry), count_kind(Kind::Vehicle));
     let iq = QueueType::Infantry as usize;
     if w.players[player as usize].queues[iq].items.len() < 2 && infantry < 6 + vehicles * 2 && (order_done || funds >= 600) {
-        if let Some(&inf) = candidates.iter().rev().find(|&&a| {
-            let info = &w.rules.actors[a as usize];
-            info.queue == QueueType::Infantry && !info.weapons.is_empty()
-        }) {
+        // Anti-air soldiers while enemy aircraft are about, else the cheapest soldier.
+        let inf = arsenal::anti_air_infantry(w, player, infantry + vehicles).or_else(|| {
+            candidates.iter().rev().copied().find(|&a| {
+                let info = &w.rules.actors[a as usize];
+                info.queue == QueueType::Infantry && !info.weapons.is_empty()
+            })
+        });
+        if let Some(inf) = inf {
             w.start_production(player, inf, 1);
         }
     }
@@ -296,6 +347,14 @@ fn queue_units(w: &mut World, player: u8) {
                 w.start_production(player, h, 1);
                 return;
             }
+        }
+    }
+    // Now and then a special: Minelayer, radar jammer, MAD tank or demolition truck.
+    if order_done {
+        if let Some(ty) = arsenal::special_vehicle(w, player) {
+            w.start_production(player, ty, 1);
+            arsenal::special_queued(w, player, ty);
+            return;
         }
     }
     // Tanks as soon as there is a war factory and money to spare beyond the
@@ -455,7 +514,7 @@ fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
 }
 
 /// Centre of a player's starting yard.
-fn base_point(w: &World, player: u8) -> (i32, i32) {
+pub(crate) fn base_point(w: &World, player: u8) -> (i32, i32) {
     let (sx, sy) = w.players[player as usize].start;
     (cell_center(sx + 1), cell_center(sy + 2))
 }
@@ -533,7 +592,7 @@ fn command_army(w: &mut World, player: u8) {
 
 /// Where the army gathers between waves: six cells from the yard centre
 /// toward the enemy it fights.
-fn rally_point(w: &World, player: u8) -> (i32, i32) {
+pub(crate) fn rally_point(w: &World, player: u8) -> (i32, i32) {
     let base = base_point(w, player);
     let (dx, dy) = enemy_direction(w, player);
     (base.0 + dx * 6 * CELL / 1024, base.1 + dy * 6 * CELL / 1024)
@@ -597,7 +656,7 @@ fn has_buildings(w: &World, player: u8) -> bool {
 }
 
 /// A player still in the game that `player` may attack.
-fn is_live_enemy(w: &World, player: u8, p: u8) -> bool {
+pub(crate) fn is_live_enemy(w: &World, player: u8, p: u8) -> bool {
     w.are_enemies(player, p) && !w.players[p as usize].defeated && w.actors.iter().any(|a| a.alive && a.owner == p)
 }
 
@@ -705,41 +764,66 @@ fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i3
 
 // ---- Support powers ------------------------------------------------------------
 
-/// The target player's building with the most of its other buildings within
-/// 5 cells: where a nuke or a bomb run hurts most. Ties go to the lower index.
-fn densest_building(w: &World, target: u8) -> Option<(i32, i32)> {
-    let buildings: Vec<usize> =
-        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == target && w.actors[i].kind == Kind::Building).collect();
+/// The target player's buildings, the ones with the most other buildings
+/// within 5 cells first (where a nuke or a bomb run hurts most); ties go to
+/// the lower index. At most the eight densest.
+pub(crate) fn densest_buildings(w: &World, target: u8) -> Vec<(i32, i32)> {
+    let buildings: Vec<usize> = (0..w.actors.len())
+        .filter(|&i| {
+            let a = &w.actors[i];
+            a.alive && a.owner == target && a.kind == Kind::Building && !w.rules.actors[a.ty as usize].is_wall()
+        })
+        .collect();
     let near = |i: usize| {
         let a = &w.actors[i];
         buildings.iter().filter(|&&j| dist(a.x, a.y, w.actors[j].x, w.actors[j].y) <= 5 * CELL).count()
     };
-    let best = buildings.iter().copied().max_by_key(|&i| (near(i), std::cmp::Reverse(i)))?;
-    Some((w.actors[best].x, w.actors[best].y))
+    let mut ranked: Vec<(std::cmp::Reverse<usize>, usize)> = buildings.iter().map(|&i| (std::cmp::Reverse(near(i)), i)).collect();
+    ranked.sort_unstable();
+    ranked.into_iter().take(8).map(|(_, i)| (w.actors[i].x, w.actors[i].y)).collect()
 }
 
 /// Fire every ready support power that has a sensible target: the GPS
 /// satellite at once, the spy plane over the target player's base, bombs,
-/// paratroopers and the nuke on its densest building. The Chronosphere and
-/// the Iron Curtain need unit tactics the AI does not have yet; it leaves them.
+/// paratroopers and the nuke on its densest structures (never where own or
+/// allied units would be hit), the Iron Curtain on the army in a fight, and
+/// the Chronosphere to jump the gathered army into the enemy base.
 fn use_support_powers(w: &mut World, player: u8) {
-    let ready: Vec<(String, String)> =
-        w.power_instances(player).iter().filter(|p| p.ready()).map(|p| (p.key.clone(), w.power_info(p).kind.clone())).collect();
+    let ready: Vec<(String, String, Vec<String>)> = w
+        .power_instances(player)
+        .iter()
+        .filter(|p| p.ready())
+        .map(|p| {
+            let info = w.power_info(p);
+            (p.key.clone(), info.kind.clone(), info.footprint.clone())
+        })
+        .collect();
     if ready.is_empty() {
         return;
     }
     let base = base_point(w, player);
     let target_player =
         w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t)).or_else(|| choose_target_player(w, player));
-    for (key, kind) in ready {
-        let at = match kind.as_str() {
-            "GpsPower" => Some(base),
-            "AirstrikePower" if key.ends_with("@spyplane") => enemy_target(w, player, target_player, base),
-            "AirstrikePower" | "ParatroopersPower" | "NukePower" => target_player.and_then(|t| densest_building(w, t)),
-            _ => None,
+    let hard_enough = w.ai[player as usize].difficulty != AiDifficulty::Easy;
+    for (key, kind, footprint) in ready {
+        let safe_densest = |radius: i32| {
+            target_player.and_then(|t| densest_buildings(w, t).into_iter().find(|&(x, y)| arsenal::safe_to_bomb(w, player, x, y, radius)))
+        };
+        let (at, second) = match kind.as_str() {
+            "GpsPower" => (Some(base), None),
+            "AirstrikePower" if key.ends_with("@spyplane") => (enemy_target(w, player, target_player, base), None),
+            "AirstrikePower" | "ParatroopersPower" => (safe_densest(4 * CELL), None),
+            "NukePower" => (safe_densest(7 * CELL), None),
+            "GrantExternalConditionPower" if hard_enough => (arsenal::iron_curtain_target(w, player, &footprint), None),
+            "ChronoshiftPower" if hard_enough => match target_player.and_then(|t| arsenal::chronoshift_target(w, player, t, &footprint)) {
+                Some((dest, src)) => (Some(dest), Some(src)),
+                None => (None, None),
+            },
+            _ => (None, None),
         };
         if let Some((x, y)) = at {
-            w.queue_order(Order::SupportPower { player, key, x, y, x2: None, y2: None });
+            let (x2, y2) = (second.map(|p| p.0), second.map(|p| p.1));
+            w.queue_order(Order::SupportPower { player, key, x, y, x2, y2 });
         }
     }
 }
