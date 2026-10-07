@@ -5,7 +5,7 @@
 import { MAP_ID_RE, MAP_MAX_BYTES, parseMap, sha256Hex } from '@webra/protocol';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { randomHex } from './crypto.js';
-import { engineValidateMap } from './engine.js';
+import { engine, EngineTrap } from './engine.js';
 import { HttpError, json, jsonText, readText } from './http.js';
 import { takeQuota } from './quota.js';
 
@@ -13,8 +13,11 @@ export const UPLOAD_LIMIT = 10;
 export const UPLOAD_WINDOW_MS = 60 * 60 * 1000;
 const LIST_LIMIT = 200;
 
-/** Validate map text and compute its identity. Pure apart from WebCrypto. */
-export async function prepareMap(textValue) {
+/**
+ * Validate map text and compute its identity. Pure apart from WebCrypto.
+ * `judge` is the engine instance (tests pass their own).
+ */
+export async function prepareMap(textValue, judge = engine()) {
   const r = parseMap(textValue, { rules: ENGINE_RULES });
   if (!r.ok) {
     throw new HttpError(422, 'invalid', `Invalid map: ${r.errors.slice(0, 5).join('; ')}`);
@@ -22,7 +25,14 @@ export async function prepareMap(textValue) {
   const hash = await sha256Hex(r.canonical);
   // Second gate: the engine itself (spawn ground, connectivity, actor types,
   // rules overrides), so nothing reaches players that their client would refuse.
-  const verdict = engineValidateMap(r.canonical);
+  let verdict;
+  try {
+    verdict = judge.validateMap(r.canonical);
+  } catch (err) {
+    // A map the engine traps on would trap every client too: refuse it like any invalid map.
+    if (err instanceof EngineTrap) throw new HttpError(422, 'invalid', 'Invalid map: the engine could not check it.');
+    throw err;
+  }
   if (!verdict.ok) {
     throw new HttpError(422, 'invalid', `Invalid map: ${verdict.errors.slice(0, 5).map((e) => String(e).slice(0, 120)).join('; ')}`);
   }
