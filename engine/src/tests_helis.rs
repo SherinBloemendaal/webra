@@ -455,3 +455,32 @@ fn land_and_return_orders_round_trip_as_json() {
         assert!(s.contains("\"o\":\"land\"") || s.contains("\"o\":\"return_to_base\""), "{s}");
     }
 }
+
+#[test]
+fn render_draws_rotors_crashes_and_ammo_pips() {
+    use crate::render::{SpriteIds, View, SPRITE_FLOATS};
+    let mut w = flat_world();
+    let tran = heli(&mut w, "TRAN", 0, 20, 20);
+    let hind = heli(&mut w, "HIND", 0, 24, 20);
+    w.actors[hind].heli.ammo_used = 12;
+    run(&mut w, 2);
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let view = View { x0: 0.0, y0: 0.0, x1: 48.0 * 24.0, y1: 48.0 * 24.0 };
+    let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+    let selected = vec![w.make_ref(hind)];
+    w.build_render(0, 0.5, &view, &selected, &mut sprites, &mut rects);
+    let count = |s: &[f32], id: f32| s.chunks(SPRITE_FLOATS).filter(|c| c[3] == id).count();
+    let disc = ids.helis_base;
+    assert_eq!(count(&sprites, (ty(&w, "TRAN") * 2 + 1) as f32), 2, "the Chinook has two rotors");
+    assert_eq!(count(&sprites, (ty(&w, "HIND") * 2 + 1) as f32), 1);
+    assert_eq!(count(&sprites, disc), 3, "a blurred disc per rotor in flight");
+    // Ammo pips: 6 for the Hind, 3 of them lit at half ammo (dark backs plus lit fronts).
+    let pips = rects.chunks(8).filter(|r| r[2] == 3.0 && r[3] == 3.0).count();
+    let lit = rects.chunks(8).filter(|r| r[2] == 2.0 && r[3] == 2.0).count();
+    assert_eq!((pips, lit), (6, 3));
+    // A shot-down helicopter is drawn falling with smoke.
+    w.damage(hind, 1_000_000);
+    w.build_render(0, 0.5, &view, &selected, &mut sprites, &mut rects);
+    assert_eq!(count(&sprites, (ty(&w, "HIND") * 2) as f32), 2, "husk and its shadow");
+    assert_eq!(count(&sprites, ids.helis_base + 2.0), 1, "smoke");
+}
