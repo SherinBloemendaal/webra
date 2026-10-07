@@ -62,11 +62,14 @@ pub struct HeliState {
     pub land_y: i32,
     /// Touched down (altitude 0 after a landing), until it takes off again.
     pub landed: bool,
+    /// Resupply ordered onto a chosen helipad: land there even with full ammo
+    /// and stay (OpenRA ReturnToBase `alwaysLand`).
+    pub always_land: bool,
 }
 
 impl Default for HeliState {
     fn default() -> Self {
-        HeliState { task: HeliTask::None, ammo_used: 0, rearm_timer: 0, pad: NONE, land_x: 0, land_y: 0, landed: false }
+        HeliState { task: HeliTask::None, ammo_used: 0, rearm_timer: 0, pad: NONE, land_x: 0, land_y: 0, landed: false, always_land: false }
     }
 }
 
@@ -164,6 +167,7 @@ impl World {
         let h = &mut self.actors[i].heli;
         h.task = HeliTask::None;
         h.rearm_timer = 0;
+        h.always_land = false;
     }
 
     // ---- Tick --------------------------------------------------------------------
@@ -472,6 +476,25 @@ impl World {
     }
 
     fn tick_heli_resupply(&mut self, i: usize) {
+        let h = self.actors[i].heli;
+        if h.ammo_used == 0 && !h.always_land && !h.landed {
+            // Nothing to reload (OpenRA ShouldLandAtBuilding is false): fly
+            // to the base and wait there instead of landing.
+            self.release_pad(i);
+            let near = self.choose_rearm_pad(i).map(|(b, _)| b).filter(|&b| {
+                let (x, y) = self.pad_point(b);
+                dist(self.actors[i].x, self.actors[i].y, x, y) > self.heli_air(i).wait_distance
+            });
+            match near {
+                Some(b) => self.heli_wait_near(i, b),
+                None => {
+                    let a = &mut self.actors[i];
+                    a.heli.task = HeliTask::None;
+                    a.activity = Activity::Idle;
+                }
+            }
+            return;
+        }
         let me = self.make_ref(i);
         let owner = self.actors[i].owner;
         let held = self.resolve(self.actors[i].heli.pad).filter(|&b| self.actors[b].owner == owner && self.actors[b].dock_user == me);
@@ -523,8 +546,10 @@ impl World {
         }
         h.rearm_timer = 0;
         h.task = HeliTask::None;
+        let stay = h.always_land;
+        h.always_land = false;
         self.actors[i].activity = Activity::Idle;
-        if take_off {
+        if take_off && !stay {
             self.release_pad(i);
             self.actors[i].heli.landed = false;
         }
@@ -647,6 +672,7 @@ impl World {
         a.target = NONE;
         a.attack_move = false;
         a.heli.task = HeliTask::Resupply;
+        a.heli.always_land = true;
         if self.pad_free_for(b, me) {
             self.reserve_pad(i, b);
         }

@@ -251,6 +251,22 @@ fn empty_helicopter_returns_to_the_helipad_reloads_and_takes_off() {
 }
 
 #[test]
+fn return_to_base_with_full_ammo_waits_near_the_helipad() {
+    let mut w = flat_world();
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
+    w.update_power();
+    let i = heli(&mut w, "HIND", 0, 30, 20);
+    w.queue_order(Order::ReturnToBase { player: 0, ids: r(&w, i) });
+    run(&mut w, 400);
+    let (px, py) = pad_point(&w, pad);
+    let wait = w.rules.actors[w.actors[i].ty as usize].unit.as_ref().unwrap().aircraft.as_ref().unwrap().wait_distance;
+    let d = dist(w.actors[i].x, w.actors[i].y, px, py);
+    assert!(d <= wait && d > CELL, "hovers near the base ({d})");
+    assert!(!w.actors[i].heli.landed && w.actors[i].heli.task == HeliTask::None);
+    assert!(w.resolve(w.actors[pad].dock_user).is_none(), "the pad stays free");
+}
+
+#[test]
 fn one_helicopter_per_helipad() {
     let mut w = flat_world();
     let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10);
@@ -363,6 +379,9 @@ fn smart_order_on_own_helipad_lands_and_reloads() {
     run_until(&mut w, 600, |w| w.actors[i].heli.landed);
     assert_eq!((w.actors[i].x, w.actors[i].y), (px, py));
     run_until(&mut w, 200, |w| w.heli_ammo(i).0 == 24);
+    run(&mut w, 50);
+    assert!(w.actors[i].heli.landed, "ordered onto this pad: stays there");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(i), "and keeps it reserved");
 }
 
 #[test]
