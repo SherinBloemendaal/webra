@@ -122,7 +122,13 @@ const ORDER_SCHEMA = {
   return_to_base: { ids: idList },
   // engine/src/powers.rs: (x2, y2) optionally gives aircraft powers their direction.
   support_power: { key: powerKey, x: i32, y: i32, x2: optional(i32), y2: optional(i32) },
+  // engine/src/abilities.rs: minefield cell rectangle (at most MINEFIELD_MAX_CELLS) and chrono tank jump.
+  lay_mines: { ids: idList, x0: i32, y0: i32, x1: i32, y1: i32 },
+  teleport: { ids: idList, x: i32, y: i32 },
 };
+
+/** Largest minefield one lay_mines order may cover (engine abilities::MAX_MINEFIELD_CELLS). */
+export const MINEFIELD_MAX_CELLS = 32 * 32;
 
 export const ORDER_KINDS = Object.keys(ORDER_SCHEMA);
 
@@ -138,6 +144,9 @@ export function validOrder(o, what = 'order') {
     if (!has(o, k) && check.optional) continue;
     if (!has(o, k)) fail(`${what}.${k} is required`);
     out[k] = check(o[k], `${what}.${k}`);
+  }
+  if (out.o === 'lay_mines' && (Math.abs(out.x1 - out.x0) + 1) * (Math.abs(out.y1 - out.y0) + 1) > MINEFIELD_MAX_CELLS) {
+    fail(`${what}: minefield larger than ${MINEFIELD_MAX_CELLS} cells`);
   }
   return out;
 }

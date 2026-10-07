@@ -106,7 +106,7 @@ impl World {
             if !a.alive || a.kind != Kind::Building {
                 continue;
             }
-            if a.owner != player && !self.is_visible_to(i, player) {
+            if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
             let (x, y) = (px(a.x), px(a.y));
@@ -114,7 +114,9 @@ impl World {
                 continue;
             }
             let flash = (a.flash > 0) as i32 as f32;
-            push_sprite(sprites, x, y, 0.0, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, flash);
+            // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
+            let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            push_sprite(sprites, x, y, 0.0, (a.ty * 2) as f32, a.owner as f32, 1.0, alpha, flash);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 building_turrets.extend_from_slice(&[
                     x,
@@ -130,11 +132,15 @@ impl World {
         }
         for g in p.ghosts.values() {
             if let Some(i) = self.resolve(g.actor) {
-                if self.is_visible_to(i, player) {
+                if self.is_visible_to(i, player) && !self.is_cloaked_from(i, player) {
                     continue; // drawn live above
                 }
             }
             let b = self.rules.actors[g.ty as usize].building.as_ref().unwrap();
+            // Hidden while an enemy gap generator shrouds it (abilities.rs).
+            if self.gen_shrouded(player, self.map.idx(g.cx, g.cy)) {
+                continue;
+            }
             let (x, y) = (px(g.cx * CELL + b.width * CELL / 2), px(g.cy * CELL + b.height * CELL / 2));
             if view.contains(x, y, 96.0) {
                 push_sprite(sprites, x, y, 0.0, (g.ty * 2) as f32, g.owner as f32, 1.0, 1.0, 0.0);
@@ -148,8 +154,8 @@ impl World {
         let mut turrets: Vec<f32> = Vec::new();
         let mut aircraft: Vec<f32> = Vec::new();
         for (i, a) in self.actors.iter().enumerate() {
-            // Passengers are inside their transport.
-            if !a.alive || a.kind == Kind::Building || !a.in_world() {
+            // Passengers are inside their transport; mines are drawn by render_abilities.
+            if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine || !a.in_world() {
                 continue;
             }
             if a.kind == Kind::Aircraft {
@@ -183,7 +189,7 @@ impl World {
                 continue;
             }
             // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
-            if a.air.parachute || (a.owner != player && !self.is_visible_to(i, player)) {
+            if a.air.parachute || (a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player))) {
                 continue;
             }
             let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
@@ -196,7 +202,9 @@ impl World {
                 self.push_ship(sprites, &mut turrets, a, x, y, body_angle, alpha, flash, &ids);
                 continue;
             }
-            push_sprite(sprites, x, y, body_angle, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, flash);
+            // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
+            let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            push_sprite(sprites, x, y, body_angle, (a.ty * 2) as f32, a.owner as f32, 1.0, body_alpha, flash);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 push_sprite(
                     &mut turrets,
@@ -214,6 +222,8 @@ impl World {
         // Shot-down helicopters falling (helicopter.rs).
         self.push_heli_crashes(player, alpha, view, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
+        // Mines, ability effects and decorations (abilities.rs).
+        self.render_abilities(player, view, selected, sprites, rects);
         // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
         self.render_air_extras(player, alpha, view, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
@@ -273,7 +283,7 @@ impl World {
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
             let a = &self.actors[i];
-            if !a.in_world() || (a.owner != player && !self.is_visible_to(i, player)) {
+            if !a.in_world() || (a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player))) {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
@@ -383,10 +393,11 @@ impl World {
     pub fn fog_bytes(&self, player: u8, out: &mut Vec<u8>) {
         let p = &self.players[player as usize];
         out.clear();
-        out.extend(p.visible.iter().zip(p.explored.iter()).map(|(&v, &e)| {
+        let gen = self.abil.gen_shroud.get(player as usize);
+        out.extend(p.visible.iter().zip(p.explored.iter()).enumerate().map(|(i, (&v, &e))| {
             if v != 0 {
                 255
-            } else if e != 0 {
+            } else if e != 0 && gen.is_none_or(|g| g[i] == 0) {
                 128
             } else {
                 0

@@ -5,6 +5,7 @@
 //! out of WebAssembly memory every frame.
 
 mod abilities;
+mod abilities_api;
 mod ai;
 mod air;
 mod cargo;
@@ -258,6 +259,7 @@ impl Game {
                         Kind::Vehicle => "vehicle",
                         Kind::Ship => "ship",
                         Kind::Aircraft => "aircraft",
+                        Kind::Mine => "mine",
                     },
                     "altitude": a.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude),
                     "queue": a.queue as usize,
@@ -369,9 +371,9 @@ impl Game {
                 let a = &w.actors[i];
                 a.alive
                     && a.owner == player
-                    && a.kind != Kind::Building
+                    && a.is_unit()
                     && a.in_world()
-                    && !w.is_support_aircraft(i)
+                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
                     && a.x >= ax
                     && a.x <= bx
                     && a.y >= ay
@@ -406,6 +408,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "ability": self.world.ability_json(i),
             // Helicopters: AmmoPool rounds left and size, and whether landed.
             "ammo": self.world.heli_ammo(i).0,
             "maxAmmo": self.world.heli_ammo(i).1,
@@ -593,7 +596,7 @@ impl Game {
                 })
             })
             .collect();
-        let units = w.actors.iter().filter(|a| a.alive && a.owner == player && a.kind != Kind::Building).count();
+        let units = w.actors.iter().filter(|a| a.alive && a.owner == player && a.is_unit()).count();
         // Support powers (powers.rs): one entry per power the player has.
         let powers: Vec<_> = w
             .power_instances(player)

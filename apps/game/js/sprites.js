@@ -34,7 +34,7 @@ import {
 import { NAVAL_DRAW, NAVAL_SPECIALS } from './art/naval.js';
 import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
-import { ABILITY_SPECIALS } from './art/abilities.js';
+import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -363,7 +363,7 @@ const UNIT_DRAW = {
 };
 
 // Ships, planes and helicopters are drawn in their own modules (art/*.js).
-Object.assign(UNIT_DRAW, NAVAL_DRAW, PLANE_DRAW, HELI_DRAW);
+Object.assign(UNIT_DRAW, NAVAL_DRAW, PLANE_DRAW, HELI_DRAW, ABILITY_DRAW);
 
 // ---- Buildings ----------------------------------------------------------------
 

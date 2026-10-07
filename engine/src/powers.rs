@@ -108,6 +108,8 @@ pub struct PowersState {
     pub players: Vec<Vec<PowerInstance>>,
     pub reveals: Vec<Reveal>,
     pub bombs: Vec<FallingBomb>,
+    /// One-shot powers already used, per player (OneShot, e.g. the GPS satellite).
+    pub spent: Vec<(u8, String)>,
 }
 
 impl World {
@@ -124,7 +126,14 @@ impl World {
     /// Whether `player` meets the prerequisites of a power.
     fn power_prereqs_met(&self, player: u8, info: &SupportPowerInfo) -> bool {
         let tokens = &self.players[player as usize].tokens;
-        info.prerequisites.iter().all(|p| self.rules.token(p).is_some_and(|t| tokens[t as usize]))
+        // `!token`: must be absent (Chronoshift vs Germany's Advanced Chronoshift); `~` only hides.
+        info.prerequisites.iter().all(|p| {
+            let p = p.trim_start_matches('~');
+            match p.strip_prefix('!') {
+                Some(neg) => !self.rules.token(neg).is_some_and(|t| tokens[t as usize]),
+                None => self.rules.token(p).is_some_and(|t| tokens[t as usize]),
+            }
+        })
     }
 
     /// Per-tick upkeep: charge timers, expiring reveals and falling bombs.
@@ -153,7 +162,9 @@ impl World {
         }
         for p in 0..n {
             let defeated = self.players[p].defeated;
-            let mine: Vec<&(u8, String, u16, usize, bool)> = offered.iter().filter(|o| o.0 as usize == p).collect();
+            let spent = &self.powers.spent;
+            let mine: Vec<&(u8, String, u16, usize, bool)> =
+                offered.iter().filter(|o| o.0 as usize == p && !spent.iter().any(|s| s.0 as usize == p && s.1 == o.1)).collect();
             let list = &mut self.powers.players[p];
             list.retain(|inst| mine.iter().any(|o| o.1 == inst.key));
             for o in &mine {
@@ -200,6 +211,9 @@ impl World {
         if let Some(p) = list.iter_mut().find(|p| p.key == key) {
             p.remaining = p.total;
         }
+        if info.one_shot {
+            self.powers.spent.push((player, key.to_string()));
+        }
         true
     }
 
@@ -224,6 +238,11 @@ impl World {
         match info.kind.as_str() {
             // plane.rs: spy plane, parabombs (AirstrikePower) and paratroopers.
             "AirstrikePower" | "ParatroopersPower" => self.launch_air_power(player, info, x, y, dir),
+            // abilities.rs: superweapons. Chronoshift takes the source area as the second point.
+            "ChronoshiftPower" => self.fire_chronoshift(player, info, x, y, dir),
+            "GrantExternalConditionPower" => self.fire_iron_curtain(info, x, y),
+            "NukePower" => self.fire_nuke(player, info, x, y),
+            "GpsPower" => self.fire_gps(player, info),
             _ => false,
         }
     }

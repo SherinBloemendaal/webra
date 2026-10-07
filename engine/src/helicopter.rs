@@ -201,7 +201,7 @@ impl World {
                 Activity::Attack => self.tick_heli_attack(i),
                 Activity::Repair => self.tick_heli_repair(i),
                 Activity::Unload => self.tick_heli_unload(i),
-                Activity::Harvest | Activity::Board => self.actors[i].activity = Activity::Idle,
+                Activity::Harvest | Activity::Board | Activity::Ability => self.actors[i].activity = Activity::Idle,
             },
         }
     }

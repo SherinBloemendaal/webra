@@ -194,7 +194,23 @@ file): one timer per player per power key (the OpenRA trait name, e.g.
 optional second point gives aircraft powers their flight direction), wasm
 `Game.activate_power(player, key, x, y, x2?, y2?)` (world pixels), and
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
-ready, charging, remainingTicks }]`.
+ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
+`ChronoshiftPower` takes the destination as (x, y) and the source area as
+(x2, y2) (both required), `GrantExternalConditionPower` (Iron Curtain) and
+`NukePower` take the target as (x, y), `GpsPower` launches by itself when
+charged and is `OneShot` (it disappears from `powers` after launch). The
+client starts targeting with `Input.startPowerTargeting(key, kind)`.
+
+Unit abilities (engine/src/abilities.rs): orders `{"o": "lay_mines", player,
+ids, x0, y0, x1, y1}` (cells, at most 32 * 32 cells) and `{"o": "teleport",
+player, ids, x, y}` (world units); `deploy` also lays a mine, deploys a MAD
+tank or detonates a demolition truck. Wasm: `order_lay_mines`,
+`order_teleport`, `teleport_valid`, `ability_deploy_state` (0 none, 1 now, 2
+not now, 3 needs a target), `has_minelayer`; `actor_json(id).ability` holds
+`{ ammo, maxAmmo, charge, chargeMax, maxDistance, cloaked, deployed,
+detonatesIn, payload }` (only the fields that apply). Smart action 7 is
+"deliver cash" (supply truck onto an own or allied structure). Mines are
+actors of kind `mine` (`MINV`, `MINP`).
 
 ## 6. Deployment
 

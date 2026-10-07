@@ -30,7 +30,8 @@ impl World {
             Kind::Building if self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.on_water) => {
                 crate::rules::TARGET_STRUCTURE | crate::rules::TARGET_WATER
             }
-            k => k.target_class(),
+            // Landed aircraft count as vehicles, paratroopers in the air as air (plane.rs).
+            _ => self.target_kind(i).target_class(),
         }
     }
 
@@ -88,6 +89,7 @@ impl World {
                     let t = &self.actors[b];
                     if t.alive
                         && self.are_enemies(a.owner, t.owner)
+                        && !self.is_cloaked_from(b, a.owner)
                         && !self.rules.actors[t.ty as usize].is_wall()
                         && info.can_attack(&self.rules, Kind::Building)
                     {
@@ -104,12 +106,21 @@ impl World {
 
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
     pub(crate) fn targetable(&self, t: usize, player: u8) -> bool {
-        // Falling wrecks and the spy plane cannot be targeted (plane.rs).
-        self.is_visible_to(t, player) && !self.untargetable_aircraft(t)
+        // Falling wrecks and the spy plane cannot be targeted (plane.rs); cloaked actors neither (abilities.rs).
+        self.is_visible_to(t, player) && !self.untargetable_aircraft(t) && !self.is_cloaked_from(t, player)
     }
 
     pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
         if !self.has_weapons(i) {
+            return false;
+        }
+        // HoldFire stance (Phase Transport stays cloaked until ordered to attack).
+        // Ground units only: ships and aircraft belong to their own modules.
+        let a = &self.actors[i];
+        if matches!(a.kind, crate::rules::Kind::Vehicle | crate::rules::Kind::Infantry)
+            && self.rules.actors[a.ty as usize].abilities.hold_fire.is_some()
+            && !self.players[a.owner as usize].is_ai
+        {
             return false;
         }
         let a = &mut self.actors[i];
@@ -294,6 +305,11 @@ impl World {
             // Submarines surface to fire (Cloak UncloakOn: Attack).
             self.naval_on_fire(i);
             self.fire(i, t, w);
+            // Uncloak on attack; a demolition truck detonates (abilities.rs).
+            self.on_fire(i);
+            if !self.actors[i].alive {
+                return;
+            }
             let wi = &self.rules.weapons[w];
             let a = &mut self.actors[i];
             a.burst_shot[slot] += 1;
@@ -315,7 +331,7 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle | Kind::Ship | Kind::Aircraft => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
@@ -465,6 +481,15 @@ impl World {
                         let d = self.hit_distance(b, x, y);
                         if d <= radius {
                             hits.push((b, d));
+                        }
+                    }
+                }
+                // Mines (abilities.rs) are GroundActor targets too.
+                if let Some(m) = self.mine_at(ci) {
+                    if wh.affects(Kind::Mine) {
+                        let d = self.hit_distance(m, x, y);
+                        if d <= radius {
+                            hits.push((m, d));
                         }
                     }
                 }

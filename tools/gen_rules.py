@@ -41,9 +41,10 @@ ACTORS = [
 EXTRA_ACTORS = [
     'E1R1', 'E3R1',            # paratroopers (ParatroopersPower DropItems)
     'U2', 'BADR', 'BADR.Bomber',  # spy plane, paratrooper transport, parabomb bomber
+    'MINV', 'MINP',            # Minelayer mines (data/source/rules/misc.yaml)
 ]
 # Reveal range of OpenRA's support power camera actors. They live in
-# mods/ra/rules/misc.yaml, which is not part of data/source; OpenRA's CAMERA
+# mods/ra/rules/misc.yaml, of which data/source only has the mines; OpenRA's CAMERA
 # actor reveals 10c0 and the power cameras inherit it.
 CAMERA_RANGE = 10 * 1024
 # OpenRA defaults of AirstrikePowerInfo / ParatroopersPowerInfo.
@@ -314,7 +315,7 @@ def main():
     for aid in ACTORS + EXTRA_ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
+        kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -377,26 +378,60 @@ def main():
                            'eject_on_sell': str(c.get('EjectOnSell', 'true')).lower() == 'true',
                            'eject_on_death': str(c.get('EjectOnDeath', 'false')).lower() == 'true'}
         if 'Minelayer' in t:
-            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(t.get('AmmoPool', {}).get('Ammo', 5))}
+            pool = t.get('AmmoPool', {}) if isinstance(t.get('AmmoPool'), dict) else {}
+            rearm = t.get('Rearmable', {}) if isinstance(t.get('Rearmable'), dict) else {}
+            # AmmoPoolInfo defaults: ReloadDelay 50 ticks per ReloadCount (1) at a rearm actor.
+            ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(pool.get('Ammo', 5)),
+                               'reload_delay': int(pool.get('ReloadDelay', 50)),
+                               'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
+                               'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        # AutoTarget.InitialStance HoldFire (Phase Transport): never picks targets on its own.
+        if isinstance(t.get('AutoTarget'), dict) and t['AutoTarget'].get('InitialStance') == 'HoldFire':
+            ab['hold_fire'] = {}
+        if 'MineImmune' in t:
+            ab['mine_immune'] = {}
+        if 'AcceptsDeliveredCash' in t:
+            ab['accepts_cash'] = {}
+        # Iron Curtain (ExternalCondition@INVULNERABILITY): the Demolition Truck's
+        # KillsSelf fires on it instead. Chronosphere: Chronoshiftable.
+        if 'ExternalCondition@INVULNERABILITY' in t:
+            ks = t.get('KillsSelf', {}) if isinstance(t.get('KillsSelf'), dict) else {}
+            ab['iron_curtainable'] = {'kills': 'invulnerability' in ks.get('RequiresCondition', '')}
+        if 'Chronoshiftable' in t:
+            cs = t['Chronoshiftable'] if isinstance(t['Chronoshiftable'], dict) else {}
+            ab['chronoshiftable'] = {'explode_instead': str(cs.get('ExplodeInstead', 'False')).lower() == 'true',
+                                     'not_deployed': 'deployed' in cs.get('RequiresCondition', '')}
         if 'JamsMissiles' in t:
             ab['jams_missiles'] = {'range': wdist(t['JamsMissiles'].get('Range'))}
         if has(t, 'CreatesShroud'):
             ab['creates_shroud'] = {'range': wdist(next(iter(trait(t, 'CreatesShroud').values())).get('Range'))}
         if has(t, 'Cloak'):
             c = next(iter(trait(t, 'Cloak').values()))
-            # OpenRA CloakInfo defaults (DetectionTypes: Cloak).
+            # OpenRA CloakInfo defaults: UncloakOn Attack, Unload, Infiltrate, Demolish, Dock; DetectionTypes Cloak.
+            critical = any(isinstance(g, dict) and g.get('Condition') == c.get('PauseOnCondition') and 'Critical' in tokens(g.get('ValidDamageStates'))
+                           for g in trait(t, 'GrantConditionOnDamageState').values())
             ab['cloak'] = {'initial_delay': int(c.get('InitialDelay', 10)), 'cloak_delay': int(c.get('CloakDelay', 30)),
                            'uncloak_on': tokens(c.get('UncloakOn', 'Attack, Unload, Infiltrate, Demolish, Dock')),
-                           'types': tokens(c.get('DetectionTypes', 'Cloak'))}
+                           'types': tokens(c.get('DetectionTypes', 'Cloak')), 'off_when_critical': critical}
         if has(t, 'DetectCloaked'):
             d = next(iter(trait(t, 'DetectCloaked').values()))
-            ab['detect_cloaked'] = {'range': wdist(d.get('Range', '5c0')), 'types': tokens(d.get('DetectionTypes', 'Cloak'))}
+            d = d if isinstance(d, dict) else {}
+            ab['detect_cloaked'] = {'range': wdist(d.get('Range', '5c0')), 'types': tokens(d.get('DetectionTypes', 'Cloak')),
+                                    'needs_power': 'disabled' in d.get('RequiresCondition', '')}
+        # Vision through gap generator shroud: RevealsShroud instances that keep
+        # the default RevealGeneratedShroud: True (e.g. RevealsShroud@GAPGEN).
+        gap = [wdist(r.get('Range')) for r in trait(t, 'RevealsShroud').values()
+               if isinstance(r, dict) and str(r.get('RevealGeneratedShroud', 'True')).lower() == 'true']
+        if gap:
+            ab['gap_sight'] = {'range': max(gap)}
         if 'PortableChrono' in t:
             c = t['PortableChrono'] if isinstance(t['PortableChrono'], dict) else {}
             ab['portable_chrono'] = {'charge_delay': int(c.get('ChargeDelay', 500)), 'max_distance': int(c.get('MaxDistance', 12))}
         if 'MadTank' in t:
             m = t['MadTank'] if isinstance(t['MadTank'], dict) else {}
+            # MadTankInfo defaults: DetonationDelay 42, DriverActor e1.
             ab['mad_tank'] = {'charge_delay': int(m.get('ChargeDelay', 96)), 'thump_interval': int(m.get('ThumpInterval', 8)),
+                              'detonation_delay': int(m.get('DetonationDelay', 42)), 'driver': ids_lower[m.get('DriverActor', 'e1').lower()],
                               'thump_weapon': weapon_index(m.get('ThumpDamageWeapon', 'MADTankThump')),
                               'detonation_weapon': weapon_index(m.get('DetonationWeapon', 'MADTankDetonate'))}
         if a['id'] == 'DTRK':
@@ -435,6 +470,22 @@ def main():
                     power['drop_items'] = [ids_lower[x.lower()] for x in tokens(v.get('DropItems'))]
                     power['camera_range'] = CAMERA_RANGE if v.get('CameraActor') else 0
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', POWER_CAMERA_REMOVE_DELAY))
+                # Superweapons (abilities.rs). Defaults from OpenRA's ChronoshiftPowerInfo,
+                # GrantExternalConditionPowerInfo, NukePowerInfo and GpsPowerInfo.
+                if 'Footprint' in v:
+                    power['footprint'] = footprint_rows(v['Footprint'])
+                if base == 'ChronoshiftPower':
+                    power['kill_cargo'] = str(v.get('KillCargo', 'True')).lower() == 'true'
+                if base == 'NukePower':
+                    power['missile_weapon'] = weapon_index(v.get('MissileWeapon', 'atomic'))
+                    power['missile_delay'] = int(v.get('MissileDelay', 0))
+                    power['flight_delay'] = int(v.get('FlightDelay', 400))
+                    power['camera_range'] = wdist(v.get('CameraRange', '0'))
+                    power['camera_spawn_advance'] = int(v.get('CameraSpawnAdvance', 25))
+                    power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
+                if base == 'GpsPower':
+                    power['reveal_delay'] = int(v.get('RevealDelay', 0))
+                power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
                 powers.append(power)
         if powers:
             ab['support_powers'] = powers
@@ -498,6 +549,8 @@ def main():
                 }
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
+        elif kind == 'mine':
+            pass  # Immobile: no unit info.
         else:
             if kind == 'aircraft':
                 # Aircraft have no Mobile trait: they fly over everything.
