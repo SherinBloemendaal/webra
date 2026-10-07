@@ -3,6 +3,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "webra",
+  "account_id": "6a1cde1074a1925835edfca0f807efb5",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   "routes": [{ "pattern": "webra.sherin.dev", "custom_domain": true }],
@@ -20,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "webra",
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "51eb9902-c4dc-42fe-a6c5-4b83676ea053",
       "migrations_dir": "migrations"
     }
   ],
