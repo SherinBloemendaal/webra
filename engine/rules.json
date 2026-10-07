@@ -60,6 +60,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "transforms": {
      "into": "MCV",
@@ -162,6 +163,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -237,6 +239,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -312,6 +315,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -399,6 +403,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 1,
@@ -459,6 +464,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -562,6 +568,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -663,6 +670,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 1,
@@ -772,6 +780,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -868,6 +877,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -948,6 +958,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "provides_radar": {}
    },
@@ -1025,6 +1036,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -1118,6 +1130,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -1249,6 +1262,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -1380,9 +1394,13 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "building": {
@@ -1492,9 +1510,13 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
-     "range": 10240
+     "range": 10240,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "building": {
@@ -1619,6 +1641,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -1717,6 +1740,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -1800,6 +1824,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "creates_shroud": {
      "range": 6144
@@ -1864,6 +1889,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -1969,6 +1995,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -2043,6 +2070,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "support_powers": [
      {
@@ -2117,6 +2145,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2184,6 +2213,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2250,6 +2280,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "line_build": {
      "range": 8
@@ -2319,6 +2350,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2328,10 +2365,17 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ]
     }
    },
    "building": {
@@ -2395,6 +2439,12 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2404,17 +2454,31 @@
      "garrison": true,
      "initial": [
       "E1"
-     ]
+     ],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "cloak": {
      "initial_delay": 125,
      "cloak_delay": 60,
      "uncloak_on": [
-      "Attack"
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Cloak"
      ]
     },
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ]
     }
    },
    "building": {
@@ -2478,9 +2542,18 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ]
     }
    },
    "building": {
@@ -2544,9 +2617,18 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "detect_cloaked": {
-     "range": 5120
+     "range": 5120,
+     "types": [
+      "Cloak"
+     ]
     }
    },
    "building": {
@@ -2624,9 +2706,13 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
-     "range": 6144
+     "range": 6144,
+     "types": [
+      "Cloak"
+     ]
     }
    },
    "building": {
@@ -2704,6 +2790,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "building": {
     "width": 1,
@@ -2766,6 +2858,12 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "building": {
     "width": 2,
@@ -2825,6 +2923,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -2886,6 +2985,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -2947,6 +3047,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -3007,6 +3108,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -3068,6 +3170,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -3129,6 +3232,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -3190,6 +3294,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -3251,6 +3356,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -3312,6 +3418,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -3372,6 +3479,7 @@
    "requires_power": true,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 2,
@@ -3431,6 +3539,7 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "building": {
     "width": 3,
@@ -3495,9 +3604,13 @@
    "requires_power": false,
    "death_weapon": null,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "detect_cloaked": {
-     "range": 1536
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ]
     },
     "crushable": [
      "infantry"
@@ -3509,7 +3622,10 @@
     "turn_in_place": true,
     "locomotor": 0,
     "radius": 128,
-    "passenger": "Infantry"
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
    }
   },
   {
@@ -3540,6 +3656,7 @@
     "start_if_below": 50,
     "damage_cooldown": 500
    },
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 72,
@@ -3548,6 +3665,11 @@
     "locomotor": 1,
     "radius": 384,
     "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "harvester": {
      "capacity": 20,
      "bale_load_delay": 4,
@@ -3580,6 +3702,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "transforms": {
      "into": "FACT",
@@ -3597,7 +3720,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3622,6 +3750,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "delivers_cash": {
      "payload": 500
@@ -3633,7 +3762,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3661,6 +3795,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -3668,7 +3808,11 @@
      ],
      "max": 1,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     }
    },
    "unit": {
@@ -3677,7 +3821,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3705,6 +3854,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -3712,7 +3862,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     }
    },
    "unit": {
@@ -3721,7 +3875,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3750,6 +3909,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     -298,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 113,
@@ -3757,7 +3922,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3785,6 +3955,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 113,
@@ -3792,7 +3968,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3821,6 +4002,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 72,
@@ -3828,7 +4015,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3857,6 +4049,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 64,
@@ -3864,7 +4062,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3900,6 +4103,12 @@
     "start_if_below": 50,
     "damage_cooldown": 150
    },
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 43,
@@ -3907,7 +4116,12 @@
     "turn_in_place": false,
     "locomotor": 4,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3936,6 +4150,7 @@
    "requires_power": false,
    "death_weapon": 18,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 72,
@@ -3943,7 +4158,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -3972,6 +4192,7 @@
    "requires_power": false,
    "death_weapon": 20,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 72,
@@ -3979,7 +4200,12 @@
     "turn_in_place": false,
     "locomotor": 5,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4005,13 +4231,17 @@
    "requires_power": false,
    "death_weapon": 21,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "minelayer": {
      "mine": "MINV",
      "ammo": 5
     },
     "detect_cloaked": {
-     "range": 5120
+     "range": 5120,
+     "types": [
+      "Mine"
+     ]
     }
    },
    "unit": {
@@ -4020,7 +4250,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4047,6 +4282,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "jams_missiles": {
      "range": 5120
@@ -4058,7 +4294,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4085,6 +4326,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "creates_shroud": {
      "range": 7168
@@ -4096,7 +4338,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4126,6 +4373,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 92,
@@ -4133,7 +4381,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4162,6 +4415,7 @@
    "requires_power": false,
    "death_weapon": 24,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "demo_truck": {}
    },
@@ -4171,7 +4425,12 @@
     "turn_in_place": false,
     "locomotor": 2,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4200,6 +4459,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "portable_chrono": {
      "charge_delay": 250,
@@ -4212,7 +4472,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4241,6 +4506,12 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     0,
+     0
+    ]
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4248,7 +4519,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     },
     "cloak": {
      "initial_delay": 125,
@@ -4259,6 +4534,9 @@
       "Unload",
       "Heal",
       "Dock"
+     ],
+     "types": [
+      "Cloak"
      ]
     }
    },
@@ -4268,7 +4546,12 @@
     "turn_in_place": false,
     "locomotor": 1,
     "radius": 384,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4296,6 +4579,7 @@
    "requires_power": false,
    "death_weapon": 8,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "mad_tank": {
      "charge_delay": 96,
@@ -4310,7 +4594,12 @@
     "turn_in_place": false,
     "locomotor": 3,
     "radius": 512,
-    "passenger": "Vehicle"
+    "passenger": "Vehicle",
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false
    }
   },
   {
@@ -4335,6 +4624,7 @@
    "requires_power": false,
    "death_weapon": 29,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -4343,7 +4633,11 @@
      ],
      "max": 5,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 25,
+     "eject_on_sell": true,
+     "eject_on_death": false
     }
    },
    "unit": {
@@ -4352,7 +4646,13 @@
     "turn_in_place": false,
     "locomotor": 6,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4381,9 +4681,18 @@
    "requires_power": false,
    "death_weapon": 29,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     512,
+     0
+    ]
+   ],
    "abilities": {
     "detect_cloaked": {
-     "range": 4096
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "unit": {
@@ -4392,7 +4701,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4420,16 +4735,27 @@
    "requires_power": false,
    "death_weapon": 33,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cloak": {
      "initial_delay": 0,
      "cloak_delay": 50,
      "uncloak_on": [
-      "Attack"
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
      ]
     },
     "detect_cloaked": {
-     "range": 5120
+     "range": 5120,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "unit": {
@@ -4438,7 +4764,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4469,9 +4801,18 @@
    "requires_power": false,
    "death_weapon": 29,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     469,
+     0
+    ]
+   ],
    "abilities": {
     "detect_cloaked": {
-     "range": 4096
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "unit": {
@@ -4480,7 +4821,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 384,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4510,6 +4857,16 @@
    "requires_power": false,
    "death_weapon": 29,
    "self_heal": null,
+   "turret_offsets": [
+    [
+     -896,
+     0
+    ],
+    [
+     768,
+     0
+    ]
+   ],
    "abilities": {},
    "unit": {
     "speed": 44,
@@ -4517,7 +4874,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 512,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4547,16 +4910,27 @@
    "requires_power": false,
    "death_weapon": 33,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cloak": {
      "initial_delay": 0,
      "cloak_delay": 100,
      "uncloak_on": [
-      "Attack"
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Dock"
+     ],
+     "types": [
+      "Underwater"
      ]
     },
     "detect_cloaked": {
-     "range": 4096
+     "range": 4096,
+     "types": [
+      "Underwater"
+     ]
     }
    },
    "unit": {
@@ -4565,7 +4939,13 @@
     "turn_in_place": false,
     "locomotor": 7,
     "radius": 512,
-    "passenger": null
+    "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "SPEN",
+     "SYRD"
+    ],
+    "repair_near": true
    }
   },
   {
@@ -4591,6 +4971,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {
     "cargo": {
      "types": [
@@ -4598,7 +4979,11 @@
      ],
      "max": 8,
      "garrison": false,
-     "initial": []
+     "initial": [],
+     "before_unload_delay": 8,
+     "after_unload_delay": 40,
+     "eject_on_sell": true,
+     "eject_on_death": false
     }
    },
    "unit": {
@@ -4608,6 +4993,11 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -4666,6 +5056,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 112,
@@ -4674,6 +5065,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -4733,6 +5129,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 112,
@@ -4741,6 +5138,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -4801,6 +5203,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 149,
@@ -4809,6 +5212,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 1024,
      "can_hover": true,
@@ -4867,6 +5275,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 178,
@@ -4875,6 +5284,11 @@
     "locomotor": 8,
     "radius": 384,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -4926,6 +5340,7 @@
    "requires_power": false,
    "death_weapon": 39,
    "self_heal": null,
+   "turret_offsets": [],
    "abilities": {},
    "unit": {
     "speed": 223,
@@ -4934,6 +5349,11 @@
     "locomotor": 8,
     "radius": 512,
     "passenger": null,
+    "passenger_weight": 1,
+    "repair_at": [
+     "FIX"
+    ],
+    "repair_near": false,
     "aircraft": {
      "cruise_altitude": 2560,
      "can_hover": false,
@@ -6390,7 +6810,7 @@
       50
      ],
      "delay": 0,
-     "valid": 64,
+     "valid": 128,
      "invalid": 0
     }
    ]

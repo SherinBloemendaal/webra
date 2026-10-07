@@ -148,7 +148,8 @@ impl World {
         let mut turrets: Vec<f32> = Vec::new();
         let mut aircraft: Vec<f32> = Vec::new();
         for (i, a) in self.actors.iter().enumerate() {
-            if !a.alive || a.kind == Kind::Building {
+            // Passengers are inside their transport.
+            if !a.alive || a.kind == Kind::Building || !a.in_world() {
                 continue;
             }
             if a.kind == Kind::Aircraft {
@@ -189,7 +190,12 @@ impl World {
                 continue;
             }
             let flash = (a.flash > 0) as i32 as f32;
-            push_sprite(sprites, x, y, lerp_angle(a.pfacing, a.facing, alpha), (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, flash);
+            let body_angle = lerp_angle(a.pfacing, a.facing, alpha);
+            if a.kind == Kind::Ship {
+                self.push_ship(sprites, &mut turrets, a, x, y, body_angle, alpha, flash, &ids);
+                continue;
+            }
+            push_sprite(sprites, x, y, body_angle, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, flash);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 push_sprite(
                     &mut turrets,
@@ -215,8 +221,11 @@ impl World {
             if p.visible[ci] != 0 && view.contains(x, y, 16.0) {
                 let ang = pr.facing as f32 * std::f32::consts::TAU / 1024.0;
                 let wi = &self.rules.weapons[pr.weapon as usize];
-                let (sprite, ang) = match wi.projectile {
-                    crate::rules::Projectile::Missile => (ids.missile, ang - QUARTER_TURN),
+                let (sprite, ang) = match (self.naval_projectile_sprite(pr.weapon as usize), wi.projectile) {
+                    // Torpedoes are drawn pointing east like missiles.
+                    (Some(n), crate::rules::Projectile::Missile) => (ids.naval_base + n as f32, ang - QUARTER_TURN),
+                    (Some(n), _) => (ids.naval_base + n as f32, ang),
+                    (None, crate::rules::Projectile::Missile) => (ids.missile, ang - QUARTER_TURN),
                     _ if wi.arc => (ids.shell, ang),
                     _ => (ids.bullet, ang),
                 };
@@ -251,6 +260,7 @@ impl World {
                 EffectKind::NukeExplosion => (ids.nuke, 0.5 + t * 1.5, fade),
                 EffectKind::ChronoShimmer => (ids.chrono, 0.6 + t * 0.8, fade),
                 EffectKind::Dust => (ids.large_explosion, 1.0 + t * 1.2, fade * 0.35),
+                EffectKind::Naval(n) => (ids.naval_base + n as f32, 0.7 + t * 0.6, fade),
                 EffectKind::TeslaBolt => unreachable!(),
             };
             push_sprite(sprites, x, y, 0.0, sprite, 0.0, scale, a, 0.0);
@@ -260,7 +270,7 @@ impl World {
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
             let a = &self.actors[i];
-            if a.owner != player && !self.is_visible_to(i, player) {
+            if !a.in_world() || (a.owner != player && !self.is_visible_to(i, player)) {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
@@ -297,6 +307,17 @@ impl World {
             };
             rects.extend_from_slice(&[l, t - 5.0, w, 3.0, 0.0, 0.0, 0.0, 0.7]);
             rects.extend_from_slice(&[l, t - 5.0, w * frac, 3.0, col[0], col[1], col[2], 1.0]);
+            // Cargo pips: one per weight unit of Cargo.MaxWeight, filled per passenger.
+            if self.is_transport(i) && self.are_allies(a.owner, player) {
+                let max = self.cargo_max(i).clamp(0, 12);
+                let full = self.cargo_weight(i);
+                for k in 0..max {
+                    let (px_, py_) = (l + 1.0 + k as f32 * 4.0, t + h + 5.0);
+                    rects.extend_from_slice(&[px_ - 0.5, py_ - 0.5, 4.0, 4.0, 0.0, 0.0, 0.0, 0.8]);
+                    let c = if k < full { [0.3, 0.95, 0.35, 1.0] } else { [0.35, 0.35, 0.35, 0.9] };
+                    rects.extend_from_slice(&[px_, py_, 3.0, 3.0, c[0], c[1], c[2], c[3]]);
+                }
+            }
             if let Some(hv) = info.unit.as_ref().and_then(|u| u.harvester.as_ref()) {
                 let load = a.bales as f32 / hv.capacity as f32;
                 rects.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
@@ -313,6 +334,45 @@ impl World {
                 let gy = (a.goal as i32 / self.map.width) as f32 * 24.0 + 12.0;
                 rects.extend_from_slice(&[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);
             }
+        }
+    }
+
+    /// A ship's hull and turrets (OpenRA Turreted offsets along the hull, e.g.
+    /// the Cruiser's two). Submerged submarines are a faint shape with a
+    /// ripple; `build_render` only gets here for players allowed to see them.
+    #[allow(clippy::too_many_arguments)]
+    fn push_ship(
+        &self,
+        sprites: &mut Vec<f32>,
+        turrets: &mut Vec<f32>,
+        a: &crate::world::Actor,
+        x: f32,
+        y: f32,
+        angle: f32,
+        alpha: f32,
+        flash: f32,
+        ids: &SpriteIds,
+    ) {
+        let (team, body) = (a.owner as f32, (a.ty * 2) as f32);
+        if a.submerged {
+            sprites.extend_from_slice(&[x, y, angle, body, team, 1.0, 0.3, 0.0]);
+            let ripple = ids.naval_base + crate::naval::NAVAL_RIPPLE as f32;
+            sprites.extend_from_slice(&[x, y, angle, ripple, team, 1.0, 0.7, 0.0]);
+            return;
+        }
+        sprites.extend_from_slice(&[x, y, angle, body, team, 1.0, 1.0, flash]);
+        let info = &self.rules.actors[a.ty as usize];
+        if info.turret_turn_speed.is_none() {
+            return;
+        }
+        let turret_angle = lerp_angle(a.pturret, a.turret, alpha);
+        // Forward is (sin, -cos) of the body angle, right is (cos, sin).
+        let (s, c) = angle.sin_cos();
+        let offsets: &[(i32, i32)] = if info.turret_offsets.is_empty() { &[(0, 0)] } else { &info.turret_offsets };
+        for &(fwd, side) in offsets {
+            let (f, r) = (px(fwd), px(side));
+            let (tx, ty) = (x + s * f + c * r, y - c * f + s * r);
+            turrets.extend_from_slice(&[tx, ty, turret_angle, body + 1.0, team, 1.0, 1.0, flash]);
         }
     }
 

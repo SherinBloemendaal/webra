@@ -65,11 +65,23 @@ pub struct HeliState {
     /// Resupply ordered onto a chosen helipad: land there even with full ammo
     /// and stay (OpenRA ReturnToBase `alwaysLand`).
     pub always_land: bool,
+    /// `land_x, land_y` holds the spot chosen to land on for unloading.
+    pub unload_spot: bool,
 }
 
 impl Default for HeliState {
     fn default() -> Self {
-        HeliState { task: HeliTask::None, ammo_used: 0, rearm_timer: 0, pad: NONE, land_x: 0, land_y: 0, landed: false, always_land: false }
+        HeliState {
+            task: HeliTask::None,
+            ammo_used: 0,
+            rearm_timer: 0,
+            pad: NONE,
+            land_x: 0,
+            land_y: 0,
+            landed: false,
+            always_land: false,
+            unload_spot: false,
+        }
     }
 }
 
@@ -168,6 +180,7 @@ impl World {
         h.task = HeliTask::None;
         h.rearm_timer = 0;
         h.always_land = false;
+        h.unload_spot = false;
     }
 
     // ---- Tick --------------------------------------------------------------------
@@ -187,7 +200,8 @@ impl World {
                 Activity::Move => self.tick_heli_move(i),
                 Activity::Attack => self.tick_heli_attack(i),
                 Activity::Repair => self.tick_heli_repair(i),
-                Activity::Harvest => self.actors[i].activity = Activity::Idle,
+                Activity::Unload => self.tick_heli_unload(i),
+                Activity::Harvest | Activity::Board => self.actors[i].activity = Activity::Idle,
             },
         }
     }
@@ -447,6 +461,41 @@ impl World {
             // On the pad: the shared repair activity takes over (and sends the
             // helicopter to the rally point when done).
             self.tick_unit_activity(i);
+        }
+    }
+
+    /// Unload (Chinook): land on (or next to) the current spot, let the
+    /// passengers out (cargo.rs), then take off again.
+    fn tick_heli_unload(&mut self, i: usize) {
+        if !self.actors[i].heli.landed {
+            let h = self.actors[i].heli;
+            let (lx, ly) = self.cell_of(h.land_x, h.land_y);
+            if !h.unload_spot || !self.heli_can_land(i, lx, ly) {
+                let (cx, cy) = self.cell_of(self.actors[i].x, self.actors[i].y);
+                match self.heli_landing_spot(i, cx, cy) {
+                    Some((nx, ny)) => {
+                        let h = &mut self.actors[i].heli;
+                        h.land_x = cell_center(nx);
+                        h.land_y = cell_center(ny);
+                        h.unload_spot = true;
+                    }
+                    None => {
+                        // Nowhere to land here: keep the passengers aboard.
+                        self.actors[i].activity = Activity::Idle;
+                        return;
+                    }
+                }
+            }
+            let (x, y) = (self.actors[i].heli.land_x, self.actors[i].heli.land_y);
+            self.heli_approach_and_land(i, x, y);
+            return;
+        }
+        self.tick_unit_activity(i);
+        if self.actors[i].activity != Activity::Unload {
+            // Everyone is out: take off again (helicopters hover when idle).
+            let a = &mut self.actors[i];
+            a.heli.unload_spot = false;
+            a.heli.landed = false;
         }
     }
 

@@ -141,7 +141,9 @@ def parse_locomotors():
 # Target classes, as bit flags shared with the simulation (rules.rs).
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
                'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
-               'Ship': 16, 'Submarine': 64,
+               # Submarine is its own class (surfaced and submerged subs): depth charge
+               # warheads hit it, while Underwater only matches submerged subs.
+               'Ship': 16, 'Submarine': 128,
                'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
 
 
@@ -281,6 +283,8 @@ def main():
             'requires_power': has(t, 'GrantConditionOnPowerState'),
             'death_weapon': None,
             'self_heal': None,
+            # Forward/lateral offsets of each Turreted trait (render: ship turrets).
+            'turret_offsets': [ints(v.get('Offset', '0,0,0'))[:2] for k, v in sorted(trait(t, 'Turreted').items()) if isinstance(v, dict)],
             'abilities': {},
         }
         for slot, arm in trait(t, 'Armament').items():
@@ -309,9 +313,15 @@ def main():
         ab = e['abilities']
         if has(t, 'Cargo'):
             c = first(t, 'Cargo')
+            # OpenRA CargoInfo defaults: BeforeUnloadDelay 8, AfterUnloadDelay 25,
+            # EjectOnSell true, EjectOnDeath false.
             ab['cargo'] = {'types': tokens(c.get('Types')), 'max': int(c.get('MaxWeight', 1)),
                            'garrison': 'AttackGarrisoned' in t,
-                           'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))]}
+                           'initial': [ids_lower[x.lower()] for x in tokens(c.get('InitialUnits'))],
+                           'before_unload_delay': int(c.get('BeforeUnloadDelay', 8)),
+                           'after_unload_delay': int(c.get('AfterUnloadDelay', 25)),
+                           'eject_on_sell': str(c.get('EjectOnSell', 'true')).lower() == 'true',
+                           'eject_on_death': str(c.get('EjectOnDeath', 'false')).lower() == 'true'}
         if 'Minelayer' in t:
             ab['minelayer'] = {'mine': t['Minelayer']['Mine'].upper(), 'ammo': int(t.get('AmmoPool', {}).get('Ammo', 5))}
         if 'JamsMissiles' in t:
@@ -320,10 +330,13 @@ def main():
             ab['creates_shroud'] = {'range': wdist(next(iter(trait(t, 'CreatesShroud').values())).get('Range'))}
         if has(t, 'Cloak'):
             c = next(iter(trait(t, 'Cloak').values()))
+            # OpenRA CloakInfo defaults (DetectionTypes: Cloak).
             ab['cloak'] = {'initial_delay': int(c.get('InitialDelay', 10)), 'cloak_delay': int(c.get('CloakDelay', 30)),
-                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack'))}
+                           'uncloak_on': tokens(c.get('UncloakOn', 'Attack, Unload, Infiltrate, Demolish, Dock')),
+                           'types': tokens(c.get('DetectionTypes', 'Cloak'))}
         if has(t, 'DetectCloaked'):
-            ab['detect_cloaked'] = {'range': wdist(next(iter(trait(t, 'DetectCloaked').values())).get('Range', '5c0'))}
+            d = next(iter(trait(t, 'DetectCloaked').values()))
+            ab['detect_cloaked'] = {'range': wdist(d.get('Range', '5c0')), 'types': tokens(d.get('DetectionTypes', 'Cloak'))}
         if 'PortableChrono' in t:
             c = t['PortableChrono'] if isinstance(t['PortableChrono'], dict) else {}
             ab['portable_chrono'] = {'charge_delay': int(c.get('ChargeDelay', 500)), 'max_distance': int(c.get('MaxDistance', 12))}
@@ -437,7 +450,13 @@ def main():
                 'locomotor': used_locos.index(loco),
                 'radius': 128 if kind == 'infantry' else (512 if a['cost'] >= 1500 and aid != 'DTRK' else 384),
                 'passenger': t.get('Passenger', {}).get('CargoType') if isinstance(t.get('Passenger'), dict) else None,
+                # OpenRA PassengerInfo.Weight default 1.
+                'passenger_weight': int(t['Passenger'].get('Weight', 1)) if isinstance(t.get('Passenger'), dict) else 1,
             }
+            # Where the unit is repaired: Repairable (on the pad) or RepairableNear (ships, within range).
+            rep = t.get('RepairableNear') if isinstance(t.get('RepairableNear'), dict) else t.get('Repairable') if isinstance(t.get('Repairable'), dict) else {}
+            e['unit']['repair_at'] = [ids_lower[x.lower()] for x in tokens(rep.get('RepairActors')) if x.lower() in ids_lower]
+            e['unit']['repair_near'] = isinstance(t.get('RepairableNear'), dict)
             if kind == 'aircraft':
                 ammo = t.get('AmmoPool') if isinstance(t.get('AmmoPool'), dict) else {}
                 rearm = t.get('Rearmable') if isinstance(t.get('Rearmable'), dict) else {}
