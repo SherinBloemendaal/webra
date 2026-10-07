@@ -217,7 +217,7 @@ test('actors: type, owner, facing and footprint checks', () => {
   assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 1.5 }]).errors.some((e) => e.includes('facing')));
   assert.ok(check([{ type: 'sbag', owner: 0, x: 1, y: 1, facing: 0 }]).ok, 'actor ids are case-insensitive');
   assert.ok(check([{ type: 'SBAG', owner: 0, x: 48, y: 1, facing: 0 }]).errors.some((e) => e.includes('outside the map')));
-  assert.ok(check([{ type: 'FACT', owner: 0, x: 46, y: 1, facing: 0 }]).warnings.some((e) => e.includes('does not fit')));
+  assert.ok(check([{ type: 'FACT', owner: 0, x: 46, y: 1, facing: 0 }]).errors.some((e) => e.includes('does not fit')));
   const many = Array.from({ length: 2001 }, (_, i) => ({ type: 'SBAG', owner: -1, x: i % 48, y: Math.floor(i / 48), facing: 0 }));
   assert.ok(check(many).errors.some((e) => e.includes('At most 2000')));
   assert.ok(check([{ type: 'SBAG', owner: 0, x: 1, y: 1, facing: 0, hp: 5 }]).errors.some((e) => e.includes('unknown field "hp"')));

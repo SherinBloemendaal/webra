@@ -380,7 +380,8 @@ export function validateMap(map, opts = {}) {
     if (info) {
       const cells = footprintOf(info);
       if (cells.some(([dx, dy]) => !inside(a.x + dx, a.y + dy))) {
-        warn(`${label} at ${a.x},${a.y} does not fit inside the map.`, a.x, a.y);
+        // The engine refuses such maps (a structure off the edge would break every client).
+        error(`${label} at ${a.x},${a.y} does not fit inside the map.`, a.x, a.y);
         return;
       }
       if (layers) {
