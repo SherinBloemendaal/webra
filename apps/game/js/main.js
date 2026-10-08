@@ -16,6 +16,7 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { Minimap } from './minimap.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -257,6 +258,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSell: () => input.toggleSellMode(),
     onDeploy: () => input.deploySelection(),
   });
+  // Radar minimap at the top of the sidebar (js/minimap.js).
+  const minimap = stress ? null : new Minimap($('sidebar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -285,7 +288,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     },
   });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug };
+  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -404,7 +407,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     input.update(dt / 1000);
     if (game.terrain_dirty()) {
       const ptr = game.terrain_ptr();
-      renderer.uploadTerrain(new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len()));
+      const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
+      renderer.uploadTerrain(terrain);
+      minimap?.terrainChanged(terrain);
     }
     const fogPtr = game.fog_ptr(player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
@@ -425,6 +430,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
+    minimap?.frame(now);
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
