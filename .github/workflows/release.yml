@@ -15,6 +15,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # release-please bumps the versions in package.json and Cargo.toml but
+      # not in the lock files; bring them along on the release PR's branch so
+      # main never carries lock files a version behind.
+      - name: Sync lock files on the release PR
+        if: steps.release.outputs.pr
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+
+      - name: Commit synced lock files
+        if: steps.release.outputs.pr
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          cargo update --workspace
+          if git diff --quiet -- package-lock.json Cargo.lock; then
+            echo "Lock files already in sync."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(repo): sync lock files with the release versions' -- package-lock.json Cargo.lock
+          git push
