@@ -34,6 +34,9 @@ const SKIRMISH = {
   redeployableMcv: true,
   oreRegrowth: true,
   cheats: false,
+  mapStyle: 'land',
+  biome: 'temperate',
+  weather: 'full',
 };
 
 const units = (game, p) => Array.from(game.select_box(p, -1e9, -1e9, 1e9, 1e9));
@@ -189,6 +192,9 @@ const ONLINE = {
   redeployableMcv: true,
   oreRegrowth: true,
   cheats: false,
+  mapStyle: 'land',
+  biome: 'temperate',
+  weather: 'full',
 };
 
 /** The server's relay in memory, with its order log as a list of non-empty frames. */

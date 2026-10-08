@@ -320,7 +320,8 @@ test('game options: concrete factions, unique colours, slots in order', () => {
 
 test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0', name: 'Tanya' };
-  assert.equal(PROTOCOL_VERSION, 3);
+  // Version 4 added the map style, biome and weather lobby options on top.
+  assert.equal(PROTOCOL_VERSION, 4);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);

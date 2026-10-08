@@ -152,7 +152,8 @@ test('render buffers are produced for the view', () => {
 });
 
 test('unit paths: route lines for selected own units only', () => {
-  const game = newGame({ startingUnits: 'light' });
+  // Open land, so the clicked point is reachable ground.
+  const game = newGame({ startingUnits: 'light', mapStyle: 'land' });
   const units = ownUnits(game);
   game.set_selection(Uint32Array.from(units));
   assert.equal(game.build_paths(0, 1), 0, 'idle units have no route');
