@@ -48,6 +48,10 @@ impl World {
                 self.tick_parachute(i);
                 continue;
             }
+            // Idle with queued waypoints: on to the next one (commands.rs).
+            if !self.actors[i].waypoints.is_empty() {
+                self.next_waypoint(i);
+            }
             match self.actors[i].kind {
                 Kind::Aircraft => self.tick_aircraft(i),
                 Kind::Ship => self.tick_ship(i),
@@ -81,13 +85,15 @@ impl World {
             Activity::Board => self.tick_board(i),
             Activity::Unload => self.tick_unload(i),
             Activity::Ability => self.tick_ability_activity(i),
+            Activity::Guard => self.tick_guard(i),
+            Activity::AttackGround => self.tick_attack_ground(i),
         }
     }
 
     // ---- Activities --------------------------------------------------------
 
     fn tick_idle(&mut self, i: usize) {
-        if self.try_auto_target(i) {
+        if self.try_idle_target(i) {
             return;
         }
         // Idle ore trucks go back to work on their own after a short pause,

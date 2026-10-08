@@ -6,10 +6,17 @@
 //! falloff, an armour-type versus table, target classes and delays.
 
 use crate::math::{dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
-use crate::rules::{Kind, Projectile as ProjKind, WarheadKind};
+use crate::rules::{Kind, Projectile as ProjKind, Stance, WarheadKind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
 
 const SCAN_INTERVAL: i32 = 8;
+
+/// What a weapon fires at: an actor, or a point on the ground (force-fire).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum FireTarget {
+    Actor(usize),
+    Ground(i32, i32),
+}
 
 impl World {
     pub(crate) fn has_weapons(&self, i: usize) -> bool {
@@ -110,17 +117,37 @@ impl World {
         self.is_visible_to(t, player) && !self.untargetable_aircraft(t) && !self.is_cloaked_from(t, player)
     }
 
-    pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
-        if !self.has_weapons(i) {
-            return false;
+    // ---- Fire targets -------------------------------------------------------------
+
+    pub(crate) fn fire_target_pos(&self, ft: FireTarget) -> (i32, i32) {
+        match ft {
+            FireTarget::Actor(t) => (self.actors[t].x, self.actors[t].y),
+            FireTarget::Ground(x, y) => (x, y),
         }
-        // HoldFire stance (Phase Transport stays cloaked until ordered to attack).
-        // Ground units only: ships and aircraft belong to their own modules.
-        let a = &self.actors[i];
-        if matches!(a.kind, crate::rules::Kind::Vehicle | crate::rules::Kind::Infantry)
-            && self.rules.actors[a.ty as usize].abilities.hold_fire.is_some()
-            && !self.players[a.owner as usize].is_ai
-        {
+    }
+
+    pub(crate) fn fire_target_class(&self, ft: FireTarget) -> u32 {
+        match ft {
+            FireTarget::Actor(t) => self.target_class(t),
+            FireTarget::Ground(x, y) => self.ground_class(x, y),
+        }
+    }
+
+    /// Distance from (x, y) to the target's hit shape.
+    pub(crate) fn fire_target_distance(&self, ft: FireTarget, x: i32, y: i32) -> i32 {
+        match ft {
+            FireTarget::Actor(t) => self.hit_distance(t, x, y),
+            FireTarget::Ground(gx, gy) => dist(x, y, gx, gy),
+        }
+    }
+
+    // ---- Automatic targeting (OpenRA AutoTarget) -----------------------------------
+
+    /// Attack-move and guard scan: pick the closest enemy in range whatever the
+    /// stance (OpenRA scans on attack-move regardless of it). Actors without
+    /// AutoTarget (Demolition Truck) never pick targets themselves.
+    pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
+        if !self.has_stance(i) {
             return false;
         }
         let a = &mut self.actors[i];
@@ -130,27 +157,89 @@ impl World {
         }
         a.scan_cooldown = SCAN_INTERVAL;
         if let Some(t) = self.scan_for_target(i) {
-            let tref = self.make_ref(t);
-            let a = &mut self.actors[i];
-            a.target = tref;
-            a.forced = false;
-            a.chase_cell = NONE;
-            if a.kind != Kind::Building {
-                a.activity = Activity::Attack;
-            }
+            self.engage(i, t, false);
             return true;
         }
         false
     }
 
+    /// Idle actors by stance (OpenRA AutoTarget TickIdle and Damaged): shoot
+    /// back at an attacker (ReturnFire and up), attack enemies in range
+    /// (Defend and up) and chase them (AttackAnything only).
+    pub(crate) fn try_idle_target(&mut self, i: usize) -> bool {
+        let aggressor = std::mem::replace(&mut self.actors[i].aggressor, NONE);
+        if !self.has_stance(i) {
+            return false;
+        }
+        let stance = self.actors[i].stance;
+        let hold = stance < Stance::AttackAnything;
+        if stance >= Stance::ReturnFire {
+            if let Some(t) = self.retaliation_target(i, aggressor, hold) {
+                self.engage(i, t, hold);
+                return true;
+            }
+        }
+        if stance < Stance::Defend {
+            return false;
+        }
+        let a = &mut self.actors[i];
+        a.scan_cooldown -= 1;
+        if a.scan_cooldown > 0 {
+            return false;
+        }
+        a.scan_cooldown = SCAN_INTERVAL;
+        if let Some(t) = self.scan_for_target(i) {
+            self.engage(i, t, hold);
+            return true;
+        }
+        false
+    }
+
+    /// The enemy to shoot back at after being hit by `aggressor`: it, or what
+    /// the actor would pick anyway under Defend and AttackAnything (OpenRA
+    /// respects target priorities). With `hold` it must be in range already.
+    fn retaliation_target(&self, i: usize, aggressor: u32, hold: bool) -> Option<usize> {
+        let t = self.resolve(aggressor)?;
+        let owner = self.actors[i].owner;
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        let tclass = self.target_class(t);
+        if !self.actors[t].in_world() || !self.are_enemies(owner, self.actors[t].owner) || !self.targetable(t, owner) {
+            return None;
+        }
+        let range =
+            info.weapons.iter().filter(|&&w| self.rules.weapons[w].can_target_class(tclass)).map(|&w| self.rules.weapons[w].range).max()?;
+        if hold && self.hit_distance(t, self.actors[i].x, self.actors[i].y) > range {
+            return None;
+        }
+        if self.actors[i].stance > Stance::ReturnFire {
+            if let Some(better) = self.scan_for_target(i) {
+                return Some(better);
+            }
+        }
+        Some(t)
+    }
+
+    /// Attack `t` on the actor's own initiative; `hold`: without moving.
+    fn engage(&mut self, i: usize, t: usize, hold: bool) {
+        let tref = self.make_ref(t);
+        let a = &mut self.actors[i];
+        a.target = tref;
+        a.forced = false;
+        a.hold = hold;
+        a.chase_cell = NONE;
+        if a.kind != Kind::Building {
+            a.activity = Activity::Attack;
+        }
+    }
+
     /// Current valid target of `i`, if any.
     pub(crate) fn live_target(&self, i: usize) -> Option<usize> {
         let owner = self.actors[i].owner;
-        // Forced attacks may target anyone but yourself (e.g. a neutral wall).
+        // Forced attacks (force-fire) may target anyone, own actors included,
+        // but never the attacker itself.
         let forced = self.actors[i].forced;
-        self.resolve(self.actors[i].target).filter(|&t| {
-            self.actors[t].owner != owner && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner)
-        })
+        self.resolve(self.actors[i].target)
+            .filter(|&t| t != i && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner))
     }
 
     // ---- Units ---------------------------------------------------------------
@@ -158,6 +247,9 @@ impl World {
     pub(crate) fn tick_attack(&mut self, i: usize) {
         let Some(t) = self.live_target(i) else {
             self.actors[i].target = NONE;
+            if self.resume_guard(i) {
+                return;
+            }
             if self.actors[i].attack_move {
                 // Resume the attack-move toward the original destination.
                 let (dx, dy) = self.actors[i].dest;
@@ -189,14 +281,18 @@ impl World {
             self.aim_and_fire(i, t);
             return;
         }
+        // Defend and ReturnFire fights never move the unit: out of reach ends them.
+        if self.actors[i].hold {
+            let a = &mut self.actors[i];
+            a.target = NONE;
+            a.hold = false;
+            a.activity = Activity::Idle;
+            return;
+        }
+        let (tx, ty) = (self.actors[t].x, self.actors[t].y);
         if d < min_range {
             // Artillery: back away until the target is outside minimum range.
-            let (tx, ty) = (self.actors[t].x, self.actors[t].y);
-            let (ax, ay) = (x - tx, y - ty);
-            let len = dist(0, 0, ax, ay).max(1);
-            let (bx, by) = (x + ax * 2 * CELL / len, y + ay * 2 * CELL / len);
-            let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
-            self.step_toward(i, bx, by, &unit);
+            self.back_away_from(i, tx, ty);
             return;
         }
         // While attack-moving, a closer threat takes priority.
@@ -204,20 +300,9 @@ impl World {
             return;
         }
         // Chase: path toward the target's cell (or the nearest reachable one).
-        let (tcx, tcy) = self.cell_toward(self.actors[t].x, self.actors[t].y, x, y);
-        let tcell = self.map.idx(tcx, tcy) as u32;
-        if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
-            let goal = self.path_goal(i, tcx, tcy);
-            let a = &mut self.actors[i];
-            a.chase_cell = tcell;
-            a.goal = goal;
-        }
-        let goal = self.actors[i].goal;
-        if goal == NONE {
+        if !self.approach(i, tx, ty) {
             self.actors[i].activity = Activity::Idle;
-            return;
         }
-        self.move_toward(i, goal);
     }
 
     // ---- Structures -----------------------------------------------------------
@@ -234,7 +319,7 @@ impl World {
             Some(t) => t,
             None => {
                 self.actors[i].target = NONE;
-                if !self.try_auto_target(i) {
+                if !self.try_idle_target(i) {
                     return;
                 }
                 match self.live_target(i) {
@@ -266,12 +351,17 @@ impl World {
     // ---- Firing ------------------------------------------------------------------
 
     pub(crate) fn aim_and_fire(&mut self, i: usize, t: usize) {
+        self.aim_and_fire_at(i, FireTarget::Actor(t));
+    }
+
+    /// Turn toward the target and fire every weapon that is ready and in range.
+    pub(crate) fn aim_and_fire_at(&mut self, i: usize, ft: FireTarget) {
         let ty = self.actors[i].ty as usize;
         let info = &self.rules.actors[ty];
         let turret = info.turret_turn_speed;
         let unit = info.unit.clone();
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let (tx, ty_) = (self.actors[t].x, self.actors[t].y);
+        let (tx, ty_) = self.fire_target_pos(ft);
         let desired = facing_of(tx - x, ty_ - y).unwrap_or(self.actors[i].facing);
         let aligned = {
             let a = &mut self.actors[i];
@@ -293,10 +383,10 @@ impl World {
         if !aligned {
             return;
         }
-        let tclass = self.target_class(t);
+        let tclass = self.fire_target_class(ft);
         let reload_override = self.rules.actors[ty].reload_override;
         let weapons = self.rules.actors[ty].weapons.clone();
-        let d = self.hit_distance(t, x, y);
+        let d = self.fire_target_distance(ft, x, y);
         for (slot, &w) in weapons.iter().enumerate().take(MAX_WEAPONS) {
             let wi = &self.rules.weapons[w];
             if self.actors[i].reload[slot] > 0 || !wi.can_target_class(tclass) || d > wi.range || d < wi.min_range {
@@ -304,7 +394,7 @@ impl World {
             }
             // Submarines surface to fire (Cloak UncloakOn: Attack).
             self.naval_on_fire(i);
-            self.fire(i, t, w);
+            self.fire_on(i, ft, w);
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
             self.on_fire(i);
             if !self.actors[i].alive {
@@ -323,6 +413,12 @@ impl World {
     }
 
     pub(crate) fn fire(&mut self, i: usize, t: usize, w: usize) {
+        self.fire_on(i, FireTarget::Actor(t), w);
+    }
+
+    /// Fire weapon `w` of actor `i` once at a target.
+    pub(crate) fn fire_on(&mut self, i: usize, ft: FireTarget, w: usize) {
+        let source = self.make_ref(i);
         let (sx, sy, facing, owner) = {
             let a = &self.actors[i];
             let info = &self.rules.actors[a.ty as usize];
@@ -336,7 +432,10 @@ impl World {
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
-        let (mut tx, mut ty) = self.aim_point(t, sx, sy);
+        let (mut tx, mut ty) = match ft {
+            FireTarget::Actor(t) => self.aim_point(t, sx, sy),
+            FireTarget::Ground(x, y) => (x, y),
+        };
         let wi = &self.rules.weapons[w];
         if wi.inaccuracy > 0 {
             // OpenRA scales inaccuracy with the distance relative to max range.
@@ -348,19 +447,23 @@ impl World {
             }
         }
         match wi.projectile {
-            ProjKind::Instant => self.impact(w, tx, ty, owner),
+            ProjKind::Instant => self.impact_from(w, tx, ty, owner, source),
             ProjKind::Tesla => {
                 self.effects.push(Effect { x: sx, y: sy, tx, ty, kind: EffectKind::TeslaBolt, ttl: 6, max: 6 });
-                self.impact(w, tx, ty, owner);
+                self.impact_from(w, tx, ty, owner, source);
             }
             ProjKind::Bullet | ProjKind::Missile => {
-                let tref = self.make_ref(t);
-                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
+                // Shots at the ground fly to the point; missiles home on actors only.
+                let target = match ft {
+                    FireTarget::Actor(t) => self.make_ref(t),
+                    FireTarget::Ground(..) => NONE,
+                };
+                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target, facing, source });
             }
             // GravityBomb: falls from the shooter's altitude where it was released (plane.rs).
             ProjKind::Bomb => {
                 let alt = self.actors[i].altitude;
-                self.drop_bomb(w, sx, sy, owner, alt);
+                self.drop_bomb(w, sx, sy, owner, alt, source);
             }
         }
     }
@@ -392,7 +495,7 @@ impl World {
             due
         };
         for p in due {
-            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.owner);
+            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.source);
         }
         let mut k = 0;
         while k < self.projectiles.len() {
@@ -410,9 +513,9 @@ impl World {
             let d = dist(p.x, p.y, tx, ty);
             let speed = wi.speed.max(1);
             if d <= speed {
-                let (w, owner) = (p.weapon as usize, p.owner);
+                let (w, owner, source) = (p.weapon as usize, p.owner, p.source);
                 self.projectiles.swap_remove(k);
-                self.impact(w, tx, ty, owner);
+                self.impact_from(w, tx, ty, owner, source);
                 continue;
             }
             let p = &mut self.projectiles[k];
@@ -429,6 +532,12 @@ impl World {
 
     /// A weapon lands at a point: each warhead applies now or after its delay.
     pub(crate) fn impact(&mut self, w: usize, x: i32, y: i32, owner: u8) {
+        self.impact_from(w, x, y, owner, NONE);
+    }
+
+    /// `impact` of a shot by actor `source` (a reference, or NONE): actors it
+    /// hits while idle may shoot back at the source (stances).
+    pub(crate) fn impact_from(&mut self, w: usize, x: i32, y: i32, owner: u8, source: u32) {
         let max_damage = self.rules.weapons[w].max_damage();
         let (kind, ttl) = if max_damage >= 20000 {
             (EffectKind::NukeExplosion, 40)
@@ -443,15 +552,24 @@ impl World {
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
             if delay > 0 {
-                self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner });
+                self.pending.push(PendingImpact {
+                    tick: self.tick + delay as u32,
+                    weapon: w as u16,
+                    warhead: h as u8,
+                    x,
+                    y,
+                    owner,
+                    source,
+                });
             } else {
-                self.apply_warhead(w, h, x, y, owner);
+                self.apply_warhead(w, h, x, y, source);
             }
         }
     }
 
-    /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, _owner: u8) {
+    /// Apply one damage warhead of a shot by `source` (or NONE). Friendly fire
+    /// applies, as in OpenRA.
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, source: u32) {
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -509,11 +627,17 @@ impl World {
             })
             .collect();
         for (u, dmg) in damages {
-            self.damage(u, dmg);
+            self.damage_from(u, dmg, source);
         }
     }
 
     pub(crate) fn damage(&mut self, u: usize, dmg: i32) {
+        self.damage_from(u, dmg, NONE);
+    }
+
+    /// Damage by a shot of actor `source` (or NONE). An idle survivor
+    /// remembers an enemy source to shoot back at (`try_idle_target`).
+    pub(crate) fn damage_from(&mut self, u: usize, dmg: i32, source: u32) {
         if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick {
             return;
         }
@@ -524,6 +648,16 @@ impl World {
         a.last_damaged = tick;
         if a.hp <= 0 {
             self.kill(u);
+            return;
+        }
+        // OpenRA AutoTarget.Damaged: only idle actors react, never to own or allied fire.
+        let idle = a.activity == Activity::Idle && (a.kind != Kind::Building || a.target == NONE);
+        if idle {
+            if let Some(s) = self.resolve(source) {
+                if self.are_enemies(self.actors[u].owner, self.actors[s].owner) {
+                    self.actors[u].aggressor = source;
+                }
+            }
         }
     }
 
@@ -545,6 +679,7 @@ impl World {
                     x: a.x,
                     y: a.y,
                     owner: a.owner,
+                    source: NONE,
                 });
             }
         }

@@ -11,6 +11,7 @@ mod ai_arsenal;
 mod air;
 mod cargo;
 mod combat;
+mod commands;
 pub mod flowfield;
 mod helicopter;
 pub mod map;
@@ -35,6 +36,8 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_commands;
+#[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
 mod tests_naval;
@@ -45,7 +48,7 @@ mod tests_security;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
-use rules::{FootCell, Kind, QueueType};
+use rules::{FootCell, Kind, QueueType, Stance};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World, NONE, TICKS_PER_SECOND};
@@ -78,6 +81,8 @@ pub struct Game {
     fog: Vec<u8>,
     terrain: Vec<u8>,
     selection: Vec<u32>,
+    /// Actor under the mouse (its health bar is drawn), or NONE.
+    hover: u32,
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
     outbox: Vec<Order>,
@@ -173,6 +178,7 @@ impl Game {
             fog: Vec::new(),
             terrain: Vec::new(),
             selection: Vec::new(),
+            hover: NONE,
             lockstep: false,
             outbox: Vec::new(),
         }
@@ -324,7 +330,15 @@ impl Game {
         let view = View { x0, y0, x1, y1 };
         // Units that got into a transport drop out of the selection.
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
-        self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
+        self.world.build_render_hover(
+            player,
+            alpha.clamp(0.0, 1.0),
+            &view,
+            &self.selection,
+            self.hover,
+            &mut self.sprites,
+            &mut self.rects,
+        );
         self.sprites.len() / render::SPRITE_FLOATS
     }
 
@@ -344,6 +358,12 @@ impl Game {
 
     pub fn set_selection(&mut self, ids: Vec<u32>) {
         self.selection = ids;
+    }
+
+    /// Actor under the mouse (from `pick`), or 0xFFFFFFFF: its health bar is
+    /// drawn like the ones of the selection's targets.
+    pub fn set_hover(&mut self, id: u32) {
+        self.hover = id;
     }
 
     /// Selected ids that are still alive.
@@ -455,6 +475,93 @@ impl Game {
 
     pub fn order_stop(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::Stop { player, ids });
+    }
+
+    /// Force-fire on the ground at (x, y) (world pixels) until told otherwise.
+    /// Force-fire on an actor (own ones too) is `order_attack`.
+    pub fn order_attack_ground(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
+        self.submit(Order::AttackGround { player, ids, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// Follow and protect an own or allied unit.
+    pub fn order_guard(&mut self, player: u8, ids: Vec<u32>, target: u32) {
+        self.submit(Order::Guard { player, ids, target });
+    }
+
+    /// Each unit moves to a random free neighbouring cell.
+    pub fn order_scatter(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::Scatter { player, ids });
+    }
+
+    /// Queue a move (or attack-move) after the current orders (Shift+click).
+    pub fn order_waypoint(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32, attack_move: bool) {
+        self.submit(Order::Waypoint { player, ids, x: to_wu(x), y: to_wu(y), attack_move });
+    }
+
+    /// Fire stance: "hold_fire", "return_fire", "defend" or "attack_anything".
+    /// Returns false (and sends nothing) for another name.
+    pub fn set_stance(&mut self, player: u8, ids: Vec<u32>, stance: &str) -> bool {
+        let Some(stance) = Stance::ALL.into_iter().find(|s| s.name() == stance) else { return false };
+        self.submit(Order::SetStance { player, ids, stance });
+        true
+    }
+
+    /// What the command bar can do for these actors of `player` (JSON):
+    /// `units` (own units), `armed` (of them, with a weapon), `attackGround`
+    /// (units that can fire on the ground), `guard` and `scatter` (units that
+    /// can), `queued` (waypoints queued in total) and `stances`: per stance
+    /// name, how many of the actors (units and defences with AutoTarget) use it.
+    pub fn command_state(&self, player: u8, ids: Vec<u32>) -> String {
+        let w = &self.world;
+        let mut actors: Vec<usize> = ids
+            .iter()
+            .filter_map(|&r| w.resolve(r))
+            .filter(|&i| w.actors[i].owner == player && w.actors[i].in_world() && !w.is_support_aircraft(i))
+            .collect();
+        actors.sort_unstable();
+        actors.dedup();
+        let units: Vec<usize> = actors.iter().copied().filter(|&i| w.actors[i].is_unit()).collect();
+        let count = |f: &dyn Fn(usize) -> bool| units.iter().filter(|&&i| f(i)).count();
+        let mut stances = serde_json::Map::new();
+        for s in Stance::ALL {
+            let n = actors.iter().filter(|&&i| w.has_stance(i) && w.actors[i].stance == s).count();
+            stances.insert(s.name().into(), n.into());
+        }
+        json!({
+            "units": units.len(),
+            "armed": count(&|i| w.has_weapons(i)),
+            "attackGround": count(&|i| !w.is_plane(i) && w.rules.actors[w.actors[i].ty as usize].can_attack_class(&w.rules, rules::TARGET_GROUND | rules::TARGET_WATER)),
+            "guard": count(&|i| !w.is_plane(i)),
+            "scatter": count(&|i| !w.is_plane(i)),
+            "queued": units.iter().map(|&i| w.actors[i].waypoints.len()).sum::<usize>(),
+            "stances": stances,
+        })
+        .to_string()
+    }
+
+    /// Whether a guard order from `player`'s `ids` onto actor `target` would
+    /// do something (an own or allied unit that one of them can guard).
+    pub fn can_guard(&self, player: u8, ids: Vec<u32>, target: u32) -> bool {
+        let w = &self.world;
+        let Some(t) = w.resolve(target) else { return false };
+        ids.iter()
+            .filter_map(|&r| w.resolve(r))
+            .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_guard(player, i, t))
+    }
+
+    /// Whether players `a` and `b` are on the same side (the same player too).
+    pub fn are_allies(&self, a: u8, b: u8) -> bool {
+        let n = self.world.players.len();
+        (a as usize) < n && (b as usize) < n && self.world.are_allies(a, b)
+    }
+
+    /// Whether one of `player`'s `ids` can fire on the ground at (x, y) (world pixels).
+    pub fn can_attack_ground(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> bool {
+        let w = &self.world;
+        let (x, y) = (to_wu(x), to_wu(y));
+        ids.iter()
+            .filter_map(|&r| w.resolve(r))
+            .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_attack_ground(i, x, y))
     }
 
     /// Helicopters: land on or next to the cell at (x, y) (world pixels).

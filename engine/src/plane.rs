@@ -777,7 +777,8 @@ impl World {
                     }
                     self.place_camera(i);
                     let alt = self.actors[i].altitude;
-                    self.drop_bomb(w, x, y, owner, alt);
+                    let source = self.make_ref(i);
+                    self.drop_bomb(w, x, y, owner, alt, source);
                     let reload = self.rules.weapons[w].reload.max(1);
                     let a = &mut self.actors[i];
                     a.air.spent += 1;
@@ -822,13 +823,14 @@ impl World {
     // ---- Bombs -----------------------------------------------------------------------
 
     /// Drop a GravityBomb of weapon `w` at (x, y) from `altitude`; it explodes on landing.
-    pub(crate) fn drop_bomb(&mut self, w: usize, x: i32, y: i32, owner: u8, altitude: i32) {
+    /// `source`: the dropping aircraft (a reference, or NONE).
+    pub(crate) fn drop_bomb(&mut self, w: usize, x: i32, y: i32, owner: u8, altitude: i32, source: u32) {
         let speed = self.rules.weapons[w].speed.max(1);
         if altitude <= 0 {
-            self.impact(w, x, y, owner);
+            self.impact_from(w, x, y, owner, source);
             return;
         }
-        self.powers.bombs.push(crate::powers::FallingBomb { x, y, altitude, speed, weapon: w as u16, owner });
+        self.powers.bombs.push(crate::powers::FallingBomb { x, y, altitude, speed, weapon: w as u16, owner, source });
     }
 
     pub(crate) fn tick_falling_bombs(&mut self) {
@@ -841,7 +843,7 @@ impl World {
                 continue;
             }
             let b = self.powers.bombs.remove(k);
-            self.impact(b.weapon as usize, b.x, b.y, b.owner);
+            self.impact_from(b.weapon as usize, b.x, b.y, b.owner, b.source);
         }
     }
 
