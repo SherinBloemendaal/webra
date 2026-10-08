@@ -287,6 +287,25 @@ test('convert: maps without gems stay format 1', async () => {
   assert.equal(decodeLayers(map).ore[18 * 44 + 18], 1, 'a lone ore cell keeps density 1');
 });
 
+test('convert: SNOW and DESERT maps keep their biome, INTERIOR is drawn temperate', async () => {
+  const spawns = [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }];
+  const convert = (tileset) =>
+    parse(buildZip([
+      { name: 'map.yaml', data: mapYaml({ actors: spawns, tileset }) },
+      { name: 'map.bin', data: buildMapBin(48, 48, () => [T.CLEAR, 255]) },
+    ]));
+  for (const [tileset, biome] of [['SNOW', 'snow'], ['DESERT', 'desert']]) {
+    const { map, report } = await convert(tileset);
+    assert.equal(map.biome, biome, tileset);
+    assert.ok(report.converted.some((c) => c.includes(`${biome} biome`)));
+    assert.ok(protocolParseMap(JSON.stringify(map)).ok, tileset);
+  }
+  const { map, report } = await convert('INTERIOR');
+  assert.equal(map.biome, undefined, 'temperate: the field is left out');
+  assert.ok(report.warnings.some((w) => w.includes('drawn temperate')));
+  assert.equal((await convert('TEMPERAT')).map.biome, undefined);
+});
+
 test('convert: rules that map onto WebRA become a modded map, the rest is reported', async () => {
   const rules = [
     'E1:',

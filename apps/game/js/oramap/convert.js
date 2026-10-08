@@ -17,7 +17,7 @@
 
 import { DECORATIONS, PICK_ANY, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
-import { encodeBase64, formatFor, TERRAIN } from '../../editor/js/mapformat.js';
+import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, TERRAIN } from '../../editor/js/mapformat.js';
 
 export class OramapError extends Error {
   constructor(message, report = null) {
@@ -72,8 +72,8 @@ const LETTER_NAMES = {
 };
 
 /**
- * OpenRA RA tileset to WebRA biome. WebRA does not store a biome yet; once
- * the optional map `biome` field exists, the converter fills it from here.
+ * OpenRA RA tileset to WebRA biome (the map's optional `biome` field).
+ * INTERIOR has no WebRA biome and is drawn temperate.
  */
 export const TILESET_BIOMES = Object.freeze({
   TEMPERAT: 'temperate',
@@ -550,8 +550,10 @@ export function convertOramap(input, opts) {
   if (overlapping.size) report.skipped.push(`Structures that overlap a start position, another structure or the map edge: ${countList(overlapping)}.`);
   if (engineOnly.size) report.skipped.push(`OpenRA script and editor markers: ${countList(engineOnly)}.`);
   if (badActors) report.warnings.push(`${badActors} actor entries without a type or location were ignored.`);
-  if (TILESET_BIOMES[tileset] && tileset !== 'TEMPERAT') {
-    report.warnings.push(`WebRA draws every map in its own style; the ${TILESET_BIOMES[tileset]} look of the ${tileset} tileset is not kept.`);
+  const biome = MAP_BIOMES.includes(TILESET_BIOMES[tileset]) ? TILESET_BIOMES[tileset] : 'temperate';
+  if (biome !== 'temperate') report.converted.push(`The ${tileset} tileset became the ${biome} biome.`);
+  else if (TILESET_BIOMES[tileset] && tileset !== 'TEMPERAT') {
+    report.warnings.push(`WebRA has no ${TILESET_BIOMES[tileset]} biome; the ${tileset} map is drawn temperate.`);
   }
 
   // Format 2 (with a gems layer) only when a cell holds gems, like every WebRA writer.
@@ -569,6 +571,8 @@ export function convertOramap(input, opts) {
     spawns,
     actors,
     rules,
+    // Optional field: left out for temperate maps (their identity stays as before biomes).
+    ...(biome !== 'temperate' ? { biome } : {}),
   };
   report.modded = rules !== null;
   return { map, report };
