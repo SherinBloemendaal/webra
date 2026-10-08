@@ -243,7 +243,7 @@ impl Map {
                 m.ore_field(&mut rng, x, y, r, ore_max, style_gem_core(width, x, r));
             }
         }
-        m.top_up_ore(&mut Rng::new(seed ^ 0x0de0_0000_0000_0007), &zone, (n * ORE_SHARE_TWO / 1000) as usize, ore_max, None);
+        m.top_up_ore(&mut Rng::new(seed ^ 0x0de0_0000_0000_0007), &zone, n * ORE_SHARE_TWO / 1000, ore_max, None, (bx, by));
 
         m.mirror_x();
         if style.naval() {
@@ -371,7 +371,7 @@ impl Map {
             }
         }
         let band = rows.then_some(height / 2);
-        m.top_up_ore(&mut Rng::new(pocket_seed ^ 0x0de0), &zone, (n * ORE_SHARE_POCKETS / 1000) as usize, ore_max, band);
+        m.top_up_ore(&mut Rng::new(pocket_seed ^ 0x0de0), &zone, n * ORE_SHARE_POCKETS / 1000, ore_max, band, centres[0]);
         // The pockets are symmetric already; this makes the contested fields
         // of the right half the mirror images of the left half's.
         m.mirror_x();
@@ -542,9 +542,27 @@ impl Map {
     /// open land of the left half, away from the bases, until the map
     /// (mirrored) holds `target` ore and gem cells. With `band` (two rows of
     /// bases) fields go into the top band and repeat in the bottom band.
-    fn top_up_ore(&mut self, rng: &mut Rng, zone: &[bool], target: usize, ore_max: u8, band: Option<i32>) {
+    #[allow(clippy::too_many_arguments)]
+    fn top_up_ore(&mut self, rng: &mut Rng, zone: &[bool], target: usize, ore_max: u8, band: Option<i32>, home: (i32, i32)) {
         let (w, h) = (self.width, self.height);
-        let count = |m: &Map| (0..m.cells()).filter(|&i| m.has_resource(i) && (i as i32 % w) < w / 2).count() * 2;
+        // Only ore harvesters can drive to counts: land joined to the bases
+        // (islands are left out; fords are dug later and only join land).
+        let mut mainland = vec![false; self.cells()];
+        let mut stack = vec![self.idx(home.0.clamp(0, w - 1), home.1.clamp(0, h - 1))];
+        mainland[stack[0]] = true;
+        while let Some(i) = stack.pop() {
+            let (x, y) = ((i as i32) % w, (i as i32) / w);
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                if self.contains(x + dx, y + dy) {
+                    let j = self.idx(x + dx, y + dy);
+                    if !mainland[j] && !self.terrain[j].ship_passable() {
+                        mainland[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        let count = |m: &Map| (0..m.cells()).filter(|&i| mainland[i] && m.has_resource(i) && (i as i32 % w) < w / 2).count() * 2;
         let r = 3;
         for _ in 0..80 {
             if count(self) >= target {
@@ -552,6 +570,9 @@ impl Map {
             }
             let x = rng.range(r + 1, w / 2 - r - 1);
             let y = rng.range(r + 1, band.unwrap_or(h) - r - 1);
+            if !mainland[self.idx(x, y)] {
+                continue;
+            }
             // Open land only: no base nearby, no water under most of the field.
             let open = |m: &Map, cy: i32| {
                 let mut land = 0;

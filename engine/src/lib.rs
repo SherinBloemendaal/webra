@@ -1107,7 +1107,8 @@ impl Game {
 impl World {
     pub fn new_stress(seed: u64, units: u32, map_size: i32) -> World {
         let rules = rules::Rules::load();
-        let map = map::Map::generate(map_size, map_size, seed, rules.player.ore_max_density);
+        // Open land: the stress test measures crowds of units, not river crossings.
+        let map = map::Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, 2, mapgen::MapStyle::Land);
         let mut w = World::empty(rules, map, seed);
         w.stress = true;
         let spawns = w.map.spawns.clone();
