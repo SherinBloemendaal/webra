@@ -7,7 +7,10 @@
 // - every player submits ticks strictly in order, starting at `delay`;
 // - a player may not run ahead of the last emitted frame by more than `delay`;
 // - orders are stamped with the sender's player index (never trusted);
-// - dropping a player discards their undelivered orders and may complete frames.
+// - dropping a player discards their undelivered orders and may complete frames;
+// - a suspended player (connection lost) is out of the game until it rejoins:
+//   nobody waits for it meanwhile. It rejoins at a future tick (`rejoin`) with
+//   the stall budget it left with (`suspend` returns it), never a fresh one.
 
 import { HASH_INTERVAL, TICKS_PER_SECOND } from '@webra/protocol';
 
@@ -59,6 +62,8 @@ export class Lockstep {
     this.active = new Set(players);
     /** Next tick each player must submit. */
     this.expected = new Map(players.map((p) => [p, delay]));
+    /** First tick each player's orders are part of (later for rejoined players). */
+    this.joinTick = new Map(players.map((p) => [p, 0]));
     /**
      * Drop window per player. `frame` is the value of `next` when it began,
      * `heldMs` how long the player held the game up in it (did not deliver
@@ -82,6 +87,8 @@ export class Lockstep {
     this.lastHashTick = new Map(players.map((p) => [p, -1]));
     /** First tick with mismatching hashes, or null. */
     this.desyncTick = null;
+    /** Last state hash a strict majority of the players reported: { tick, hash } or null. */
+    this.agreed = null;
   }
 
   /** The empty frames 0..delay-1 every client needs before its first tick. */
@@ -127,10 +134,11 @@ export class Lockstep {
   flush(now = Date.now()) {
     const frames = [];
     while (this.active.size > 0) {
-      const byPlayer = this.pending.get(this.next);
-      const complete = byPlayer && [...this.active].every((p) => byPlayer.has(p));
-      if (!complete) break;
-      const orders = [...this.active]
+      const byPlayer = this.pending.get(this.next) ?? new Map();
+      // Rejoined players count from their join tick on.
+      const due = [...this.active].filter((p) => this.joinTick.get(p) <= this.next);
+      if (!due.every((p) => byPlayer.has(p))) break;
+      const orders = due
         .sort((a, b) => a - b)
         .filter((p) => byPlayer.get(p).length > 0)
         .map((p) => [p, byPlayer.get(p)]);
@@ -145,15 +153,59 @@ export class Lockstep {
 
   /** Remove a player (left, dropped or kicked). Returns frames that became complete. */
   drop(player, now = Date.now()) {
-    if (!this.active.delete(player)) return [];
+    return this.suspend(player, now).frames;
+  }
+
+  /**
+   * Take a player out of the game (its connection was lost, or it stalled).
+   * Returns the frames that became complete and `record`, the player's stall
+   * budget to hand back to `rejoin` (null when it was not active).
+   */
+  suspend(player, now = Date.now()) {
+    if (!this.active.has(player)) return { frames: [], record: null };
+    // Count the hold time up to now before it leaves.
+    this.track(now);
+    const w = this.windows.get(player);
+    const record = { frame: w.frame, heldMs: w.heldMs, debtMs: w.debtMs, drainedAt: w.drainedAt };
+    this.active.delete(player);
     this.expected.delete(player);
+    this.joinTick.delete(player);
     this.windows.delete(player);
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
     const frames = this.flush(now);
     this.track(now);
-    return frames;
+    return { frames, record };
+  }
+
+  /**
+   * Put a suspended player back into the game. Its orders count from the
+   * returned tick on (`next + delay`: every other player may already have
+   * sent orders up to there, and the client cannot send earlier ones). Its
+   * stall budget is the `record` it left with: the debt keeps draining over
+   * wall time like for everyone, and the current drop window's hold time is
+   * kept when that window is still running.
+   */
+  rejoin(player, record, now = Date.now()) {
+    if (this.active.has(player)) throw new LockstepError('already in the game', 'bad_state');
+    this.track(now);
+    const at = this.next + this.delay;
+    const frame = this.windows.size > 0 ? [...this.windows.values()][0].frame : this.next;
+    this.active.add(player);
+    this.expected.set(player, at);
+    this.joinTick.set(player, at);
+    this.lastHashTick.set(player, -1);
+    this.windows.set(player, {
+      frame,
+      heldMs: record && record.frame === frame ? record.heldMs : 0,
+      at: null,
+      ready: now + HOLD_GRACE_MS,
+      debtMs: record ? record.debtMs : 0,
+      drainedAt: record ? Math.min(record.drainedAt, now) : now,
+    });
+    this.track(now);
+    return at;
   }
 
   /** Bring the drop windows (see `windows`) up to `now`. */
@@ -215,6 +267,7 @@ export class Lockstep {
     if (!this.active.has(player)) throw new LockstepError('you are not an active player', 'bad_state');
     if (tick % HASH_INTERVAL !== 0) throw new LockstepError('bad hash tick');
     if (tick >= this.next) throw new LockstepError('hash for a tick that has not been sent');
+    if (tick < this.joinTick.get(player)) throw new LockstepError('hash for a tick before you rejoined');
     if (tick <= this.lastHashTick.get(player)) throw new LockstepError('hash ticks must increase');
     this.lastHashTick.set(player, tick);
     if (this.desyncTick !== null) return null;
@@ -226,7 +279,7 @@ export class Lockstep {
     byTick.set(player, hash);
     // Players that stop reporting must not grow memory without bound.
     for (const t of this.hashes.keys()) if (t < this.next - 100 * HASH_INTERVAL) this.hashes.delete(t);
-    if (![...this.active].every((p) => byTick.has(p))) return null;
+    if (![...this.active].every((p) => this.joinTick.get(p) > tick || byTick.has(p))) return null;
     this.hashes.delete(tick);
     const groups = new Map();
     for (const [p, h] of byTick) {
@@ -234,11 +287,13 @@ export class Lockstep {
       if (!groups.has(h)) groups.set(h, []);
       groups.get(h).push(p);
     }
-    if (groups.size <= 1) return null;
     const voters = [...groups.values()].reduce((n, g) => n + g.length, 0);
-    const majority = [...groups.values()].find((g) => g.length * 2 > voters);
+    const majority = [...groups.entries()].find(([, g]) => g.length * 2 > voters);
+    // Rejoining clients check their fast-forwarded state against this.
+    if (majority) this.agreed = { tick, hash: majority[0] };
+    if (groups.size <= 1) return null;
     if (majority) {
-      const outliers = [...byTick.keys()].filter((p) => this.active.has(p) && !majority.includes(p) && !this.diverged.has(p));
+      const outliers = [...byTick.keys()].filter((p) => this.active.has(p) && !majority[1].includes(p) && !this.diverged.has(p));
       for (const p of outliers) this.diverged.add(p);
       return outliers.length ? { tick, players: outliers } : null;
     }
