@@ -243,7 +243,7 @@ impl Map {
                 m.ore_field(&mut rng, x, y, r, ore_max, style_gem_core(width, x, r));
             }
         }
-        m.top_up_ore(&mut Rng::new(seed ^ 0x0de0_0000_0000_0007), &zone, n * ORE_SHARE_TWO / 1000, ore_max, None, (bx, by));
+        m.top_up_ore(&mut Rng::new(seed ^ 0x0de0_0000_0000_0007), &zone, n * ore_share(style, true) / 1000, ore_max, None, (bx, by));
 
         m.mirror_x();
         if style.naval() {
@@ -259,6 +259,7 @@ impl Map {
         }
         let (a, b) = (m.spawns[0], m.spawns[1]);
         crate::mapgen::connect_ground(&mut m, a, b, &bay);
+        crate::mapgen::connect_land_regions(&mut m, a, &bay);
         m
     }
 
@@ -371,7 +372,7 @@ impl Map {
             }
         }
         let band = rows.then_some(height / 2);
-        m.top_up_ore(&mut Rng::new(pocket_seed ^ 0x0de0), &zone, n * ORE_SHARE_POCKETS / 1000, ore_max, band, centres[0]);
+        m.top_up_ore(&mut Rng::new(pocket_seed ^ 0x0de0), &zone, n * ore_share(style, false) / 1000, ore_max, band, centres[0]);
         // The pockets are symmetric already; this makes the contested fields
         // of the right half the mirror images of the left half's.
         m.mirror_x();
@@ -397,6 +398,7 @@ impl Map {
         for &s in &spawns[1..] {
             crate::mapgen::connect_ground(&mut m, spawns[0], s, &keep);
         }
+        crate::mapgen::connect_land_regions(&mut m, spawns[0], &keep);
         m
     }
 
@@ -563,36 +565,49 @@ impl Map {
             }
         }
         let count = |m: &Map| (0..m.cells()).filter(|&i| mainland[i] && m.has_resource(i) && (i as i32 % w) < w / 2).count() * 2;
+        // Every spot of the left half (top band with `band`) where a field
+        // fits: on the bases' land, clear of the bases and of other ore, mostly
+        // dry. Then fields at those spots, in an order the seed shuffles,
+        // until the map holds `target` cells.
         let r = 3;
-        for _ in 0..80 {
+        let fits = |m: &Map, x: i32, cy: i32| -> bool {
+            let mut land = 0;
+            let mut cells = 0;
+            for yy in cy - r - 1..=cy + r + 1 {
+                for xx in x - r - 1..=x + r + 1 {
+                    if !m.contains(xx, yy) || zone[m.idx(xx, yy)] {
+                        return false;
+                    }
+                    let i = m.idx(xx, yy);
+                    if m.has_resource(i) {
+                        return false;
+                    }
+                    cells += 1;
+                    if mainland[i] && !m.terrain[i].ship_passable() {
+                        land += 1;
+                    }
+                }
+            }
+            mainland[m.idx(x, cy)] && land * 10 >= cells * 7
+        };
+        let mut spots: Vec<(u64, i32, i32)> = Vec::new();
+        for y in (r + 1..band.unwrap_or(h) - r - 1).step_by(2) {
+            for x in (r + 1..w / 2 - r - 1).step_by(2) {
+                if fits(self, x, y) && band.is_none_or(|b| fits(self, x, y + b)) {
+                    spots.push((rng.next_u64(), x, y));
+                }
+            }
+        }
+        spots.sort_unstable();
+        for (field_seed, x, y) in spots {
             if count(self) >= target {
                 return;
             }
-            let x = rng.range(r + 1, w / 2 - r - 1);
-            let y = rng.range(r + 1, band.unwrap_or(h) - r - 1);
-            if !mainland[self.idx(x, y)] {
-                continue;
-            }
-            // Open land only: no base nearby, no water under most of the field.
-            let open = |m: &Map, cy: i32| {
-                let mut land = 0;
-                for yy in cy - r - 2..=cy + r + 2 {
-                    for xx in x - r - 2..=x + r + 2 {
-                        if !m.contains(xx, yy) || zone[m.idx(xx, yy)] {
-                            return false;
-                        }
-                        if !m.terrain[m.idx(xx, yy)].ship_passable() {
-                            land += 1;
-                        }
-                    }
-                }
-                land >= (2 * r + 5) * (2 * r + 5) * 9 / 10
-            };
-            if !open(self, y) || band.is_some_and(|b| !open(self, y + b)) {
+            // Fields placed meanwhile may have taken the spot.
+            if !fits(self, x, y) || band.is_some_and(|b| !fits(self, x, y + b)) {
                 continue;
             }
             let gems = style_gem_core(w, x, r);
-            let field_seed = rng.next_u64();
             self.ore_field(&mut Rng::new(field_seed), x, y, r, ore_max, gems);
             if let Some(b) = band {
                 self.ore_field(&mut Rng::new(field_seed), x, y + b, r, ore_max, gems);
@@ -608,7 +623,6 @@ impl Map {
                 let (i, j) = (self.idx(x, y), self.idx(x, y + band));
                 self.terrain[j] = self.terrain[i];
                 self.ore[j] = self.ore[i];
-                self.gems[j] = self.gems[i];
                 self.gems[j] = self.gems[i];
             }
         }
@@ -792,10 +806,19 @@ impl Map {
 }
 
 /// Ore and gem cells, per mille of the map, that a generated map holds at
-/// least (what the generator made before map styles: about 4.5 % on
-/// two-player maps, 6 to 7 % with more players).
-const ORE_SHARE_TWO: usize = 45;
-const ORE_SHARE_POCKETS: usize = 60;
+/// least on the land its bases reach: what the generator made before map
+/// styles (about 4.5 % on two-player maps, 6 to 7 % with more players), a
+/// third more on the water styles, whose games run longer (ore trucks wade
+/// through fords, armies go round lakes and seas) and would otherwise
+/// harvest the reachable land bare before anyone wins.
+fn ore_share(style: MapStyle, two: bool) -> usize {
+    match (style.naval(), two) {
+        (false, true) => 45,
+        (false, false) => 60,
+        (true, true) => 60,
+        (true, false) => 80,
+    }
+}
 
 /// Radius of the gem middle of the contested fields of two-player maps.
 const CONTESTED_GEM_CORE: i32 = 2;

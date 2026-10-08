@@ -160,3 +160,52 @@ fn pockets_keep_one_harbour_each() {
         }
     }
 }
+
+/// No channel or strait cuts the bases off from a large part of the land:
+/// every land region of `MAINLAND_REGION` cells or more is joined to the
+/// bases by ground, and the land they reach holds enough ore for long games
+/// (at least 5 % of the map is ore or gems their trucks can reach).
+#[test]
+fn the_bases_reach_all_large_land_and_enough_ore() {
+    for style in MapStyle::CONCRETE {
+        for (players, size) in [(2, 80), (2, 96), (4, 96), (6, 128)] {
+            for seed in 0..6 {
+                let m = Map::generate_styled(size, size, seed, 12, players, style);
+                let what = format!("{style:?}, {players} players, size {size}, seed {seed}");
+                // Land components (4-connected passable cells).
+                let mut label = vec![u32::MAX; m.cells()];
+                let mut sizes = Vec::new();
+                for s in 0..m.cells() {
+                    if label[s] != u32::MAX || !m.terrain[s].passable() {
+                        continue;
+                    }
+                    let id = sizes.len() as u32;
+                    label[s] = id;
+                    let mut stack = vec![s];
+                    let mut n = 0;
+                    while let Some(i) = stack.pop() {
+                        n += 1;
+                        let (x, y) = ((i as i32) % size, (i as i32) / size);
+                        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                            if m.contains(x + dx, y + dy) {
+                                let j = m.idx(x + dx, y + dy);
+                                if label[j] == u32::MAX && m.terrain[j].passable() {
+                                    label[j] = id;
+                                    stack.push(j);
+                                }
+                            }
+                        }
+                    }
+                    sizes.push(n);
+                }
+                let (sx, sy) = m.spawns[0];
+                let main = label[m.idx(sx + 1, sy + 1)];
+                for (id, &n) in sizes.iter().enumerate() {
+                    assert!(id as u32 == main || n < super::MAINLAND_REGION, "{what}: a land region of {n} cells is cut off");
+                }
+                let ore = (0..m.cells()).filter(|&i| label[i] == main && m.has_resource(i)).count() as i32;
+                assert!(ore * 20 >= size * size, "{what}: only {ore} reachable ore and gem cells");
+            }
+        }
+    }
+}

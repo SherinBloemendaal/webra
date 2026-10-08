@@ -774,7 +774,89 @@ pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[
         }
     };
     let Some((_, path)) = cheapest_path(w, h, &[from], &|j| j == to, &cost) else { return false };
-    for p in path {
+    carve_road(m, &path, keep);
+    m.connected(a, b)
+}
+
+/// Land regions of at least this many cells are joined to the bases by
+/// ground (smaller ones are islands, reached by ship or air).
+pub(crate) const MAINLAND_REGION: usize = 60;
+
+/// Join every large land region to the bases' ground network: a channel or a
+/// strait may cut a region off (half the map, say), whose ore no ore truck
+/// could then reach. Each region of at least `MAINLAND_REGION` cells gets
+/// the cheapest road to the bases (fords over water, mirrored). Small
+/// islands stay islands.
+pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool]) {
+    for _ in 0..16 {
+        let (w, h) = (m.width, m.height);
+        let label = land_components(m);
+        let home_cell = m.idx(home.0 + 1, home.1 + 1);
+        let main = label[home_cell];
+        let mut sizes: std::collections::BTreeMap<u32, (usize, usize)> = std::collections::BTreeMap::new();
+        for (i, &l) in label.iter().enumerate() {
+            if l != u32::MAX && l != main {
+                let e = sizes.entry(l).or_insert((0, i));
+                e.0 += 1;
+            }
+        }
+        // The largest cut-off region first (its mirror image follows from the mirrored road).
+        let Some((&region, &(size, _))) =
+            sizes.iter().filter(|(_, &(n, _))| n >= MAINLAND_REGION).max_by_key(|(&l, &(n, _))| (n, std::cmp::Reverse(l)))
+        else {
+            return;
+        };
+        let cost = |j: usize| -> Option<u32> {
+            let t = m.terrain[j];
+            if t.passable() {
+                Some(if t == Terrain::Ford { 2 } else { 1 })
+            } else if keep[j] {
+                None
+            } else if t == Terrain::Water {
+                Some(7)
+            } else {
+                Some(5)
+            }
+        };
+        let sources: Vec<usize> = (0..m.cells()).filter(|&i| label[i] == region).collect();
+        let Some((_, path)) = cheapest_path(w, h, &sources, &|j| label[j] == main, &cost) else { return };
+        carve_road(m, &path, keep);
+        let _ = size;
+    }
+}
+
+/// Labels of 4-connected passable land (u32::MAX elsewhere).
+fn land_components(m: &Map) -> Vec<u32> {
+    let mut label = vec![u32::MAX; m.cells()];
+    let mut next = 0;
+    for s in 0..m.cells() {
+        if label[s] != u32::MAX || !m.terrain[s].passable() {
+            continue;
+        }
+        label[s] = next;
+        let mut stack = vec![s];
+        while let Some(i) = stack.pop() {
+            let (x, y) = ((i as i32) % m.width, (i as i32) / m.width);
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                if m.contains(x + dx, y + dy) {
+                    let j = m.idx(x + dx, y + dy);
+                    if label[j] == u32::MAX && m.terrain[j].passable() {
+                        label[j] = next;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        next += 1;
+    }
+    label
+}
+
+/// A road three cells wide along `path`, and its mirror image: rock and trees
+/// cleared, water turned into fords; `keep` cells never change.
+fn carve_road(m: &mut Map, path: &[usize], keep: &[bool]) {
+    let w = m.width;
+    for &p in path {
         let (x, y) = ((p as i32) % w, (p as i32) / w);
         for oy in -1..=1 {
             for ox in -1..=1 {
@@ -798,7 +880,6 @@ pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[
             }
         }
     }
-    m.connected(a, b)
 }
 
 /// Cells within `margin` of a marked cell (Chebyshev distance).
