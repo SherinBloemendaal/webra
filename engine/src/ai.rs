@@ -542,7 +542,10 @@ fn command_army(w: &mut World, player: u8) {
             a.alive && a.owner == player && a.kind != Kind::Building && is_army_unit(w, a.ty as usize)
         })
         .collect();
-    let idle: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle).collect();
+    // Overheated vehicles (desert heat waves, weather.rs) sit out the next
+    // wave until they cooled down; they still defend the base.
+    let idle: Vec<usize> =
+        army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle && !w.actors[i].env.overheated).collect();
     let rally = rally_point(w, player);
     // Units at home: idle, or on their way to the rally point (new units).
     let home_units: Vec<usize> = army

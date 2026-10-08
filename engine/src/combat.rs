@@ -305,6 +305,8 @@ impl World {
             // Submarines surface to fire (Cloak UncloakOn: Attack).
             self.naval_on_fire(i);
             self.fire(i, t, w);
+            // Firing heats vehicles up in a heat wave (weather.rs).
+            self.actors[i].env.fired = true;
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
             self.on_fire(i);
             if !self.actors[i].alive {
@@ -317,7 +319,9 @@ impl World {
                 a.reload[slot] = wi.burst_delay(a.burst_shot[slot] - 1).max(1);
             } else {
                 a.burst_shot[slot] = 0;
-                a.reload[slot] = reload_override.unwrap_or(wi.reload).max(1);
+                let reload = reload_override.unwrap_or(wi.reload).max(1);
+                // Overheated vehicles fire slower (weather.rs).
+                a.reload[slot] = if a.env.overheated { reload * crate::weather::OVERHEAT_RELOAD_PCT / 100 } else { reload };
             }
         }
     }

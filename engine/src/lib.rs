@@ -15,6 +15,7 @@ pub mod flowfield;
 mod helicopter;
 pub mod map;
 pub mod mapdata;
+pub mod mapgen;
 pub mod math;
 mod naval;
 mod plane;
@@ -26,6 +27,7 @@ pub mod rules;
 mod trig_table;
 mod units;
 mod vision;
+pub mod weather;
 pub mod world;
 
 #[cfg(test)]
@@ -42,6 +44,8 @@ mod tests_naval;
 mod tests_planes;
 #[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_weather;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -77,6 +81,8 @@ pub struct Game {
     rects: Vec<f32>,
     fog: Vec<u8>,
     terrain: Vec<u8>,
+    /// Heat shimmer instances (build_heat_fx).
+    fx: Vec<f32>,
     selection: Vec<u32>,
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
@@ -135,29 +141,60 @@ impl Game {
         serde_json::to_string(&v).expect("validation serializes")
     }
 
-    /// A generated map exported as a map file (for the editor and for multiplayer).
+    /// A generated temperate map in the seed's style, exported as a map file.
     pub fn generated_map(seed: u32, size: i32, players: u32) -> String {
+        Game::generated_map_styled(seed, size, players, "random", "temperate").expect("built-in names")
+    }
+
+    /// A generated map exported as a map file (for the editor and for
+    /// multiplayer). `style`: random, land, rivers, lakes, islands; `biome`:
+    /// random, temperate, snow, desert (random ones are picked from the seed,
+    /// as in a game).
+    pub fn generated_map_styled(seed: u32, size: i32, players: u32, style: &str, biome: &str) -> Result<String, JsError> {
         let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
-        let m = map::Map::generate_for(size, size, seed as u64, 12, players as usize);
+        let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
+        let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style);
+        let resolved = style.resolve(seed as u64);
         let name = format!("Random {players}p #{seed}");
-        mapdata::MapData::from_map(&m, &name, "WebRA", "Generated map").canonical_json()
+        let description = format!("Generated map: {}, {}", resolved.name(), biome.name());
+        let mut data = mapdata::MapData::from_map(&m, &name, "WebRA", &description);
+        data.biome = biome;
+        Ok(data.canonical_json())
     }
 
     /// Lobby preview of a map file: RGBA, one pixel per cell, spawns marked.
     pub fn map_file_preview(map_json: &str) -> Result<Vec<u8>, JsError> {
         let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
         let m = data.to_map().map_err(|e| JsError::new(&e))?;
-        Ok(preview_rgba(&m))
+        Ok(preview_rgba(&m, data.biome))
     }
 
-    /// Lobby preview of a generated map: RGBA, one pixel per cell, spawns marked.
+    /// Lobby preview of a generated two-player map (temperate, seed's style).
     pub fn map_preview(seed: u32, size: i32) -> Vec<u8> {
         Game::map_preview_players(seed, size, 2)
     }
 
+    /// Lobby preview of a generated temperate map in the seed's style.
     pub fn map_preview_players(seed: u32, size: i32, players: u32) -> Vec<u8> {
+        Game::map_preview_styled(seed, size, players, "random", "temperate").expect("built-in names")
+    }
+
+    /// Lobby preview of a generated map with a style and biome (names as in
+    /// `generated_map_styled`): RGBA, one pixel per cell, spawns marked.
+    pub fn map_preview_styled(seed: u32, size: i32, players: u32, style: &str, biome: &str) -> Result<Vec<u8>, JsError> {
         let size = size.clamp(48, 512);
-        preview_rgba(&map::Map::generate_for(size, size, seed as u64, 12, players as usize))
+        let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
+        Ok(preview_rgba(&map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style), biome))
+    }
+
+    /// The style a seed gives a generated map (`style` may be "random").
+    pub fn resolved_style(seed: u32, style: &str) -> Result<String, JsError> {
+        Ok(parse_style(style)?.resolve(seed as u64).name().to_string())
+    }
+
+    /// The biome a seed gives a generated map (`biome` may be "random").
+    pub fn resolved_biome(seed: u32, biome: &str) -> Result<String, JsError> {
+        Ok(parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)).name().to_string())
     }
 
     /// Benchmark: `units` armed units split over two armies that attack-move into each other.
@@ -172,6 +209,7 @@ impl Game {
             rects: Vec::new(),
             fog: Vec::new(),
             terrain: Vec::new(),
+            fx: Vec::new(),
             selection: Vec::new(),
             lockstep: false,
             outbox: Vec::new(),
@@ -242,6 +280,62 @@ impl Game {
 
     pub fn state_hash(&self) -> String {
         format!("{:016x}", self.world.state_hash())
+    }
+
+    // ---- Biome and weather (weather.rs) --------------------------------------
+
+    /// `{ biome, mode, weather, since, until, tick, sightPct, flash }`: the
+    /// sky for the HUD and the weather renderer. `flash` is the latest
+    /// lightning `[tick, x, y]` (world pixels) or null; `sightPct` is what
+    /// weather does to sight right now (100 when effects are off).
+    pub fn weather_json(&self) -> String {
+        let env = &self.world.env;
+        let px = |v: i32| v as f32 * PX_PER_CELL / CELL as f32;
+        json!({
+            "biome": env.biome.name(),
+            "mode": env.mode.name(),
+            "weather": env.weather.name(),
+            "since": env.since,
+            "until": env.until,
+            "tick": self.world.tick,
+            "sightPct": if env.effects() { env.weather.sight_pct() } else { 100 },
+            "flash": env.flash.map(|(t, x, y)| json!([t, px(x), px(y)])),
+        })
+        .to_string()
+    }
+
+    /// Heat shimmer instances for the view rectangle (world pixels): own and
+    /// visible vehicles that run hot, `[x, y, heat 0..1, overheated 0|1]`
+    /// each, at most `MAX_HEAT_FX`. Returns the count; read with `fx_ptr`.
+    pub fn build_heat_fx(&mut self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
+        const MAX_HEAT_FX: usize = 512;
+        self.fx.clear();
+        let w = &self.world;
+        let (ax, bx, ay, by) = (to_wu(x0.min(x1)), to_wu(x0.max(x1)), to_wu(y0.min(y1)), to_wu(y0.max(y1)));
+        for i in 0..w.actors.len() {
+            let a = &w.actors[i];
+            if !a.alive || !a.in_world() || a.env.heat < weather::HEAT_RECOVER / 2 || a.x < ax || a.x > bx || a.y < ay || a.y > by {
+                continue;
+            }
+            if a.owner != player && !w.is_visible_to(i, player) {
+                continue;
+            }
+            let k = PX_PER_CELL / CELL as f32;
+            self.fx.extend_from_slice(&[
+                a.x as f32 * k,
+                a.y as f32 * k,
+                a.env.heat as f32 / weather::HEAT_MAX as f32,
+                a.env.overheated as u8 as f32,
+            ]);
+            if self.fx.len() / 4 >= MAX_HEAT_FX {
+                break;
+            }
+        }
+        self.fx.len() / 4
+    }
+
+    pub fn fx_ptr(&self) -> *const f32 {
+        self.fx.as_ptr()
     }
 
     // ---- Static data -------------------------------------------------------
@@ -425,6 +519,9 @@ impl Game {
             // Passengers: the transport they are in (NONE when outside).
             "carrier": a.carrier,
             "submerged": a.submerged,
+            // Desert heat (weather.rs): percent of the overheat point, and whether it is overheated.
+            "heat": a.env.heat * 100 / weather::HEAT_MAX,
+            "overheated": a.env.overheated,
         })
         .to_string()
     }
@@ -719,6 +816,14 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
     let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
     let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
     let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
+    // Newer options: absent means the default, anything else must be a known name.
+    let name = |k: &str, d: &str| -> Result<String, JsError> {
+        match v.get(k) {
+            None => Ok(d.to_string()),
+            Some(serde_json::Value::String(s)) => Ok(s.chars().take(24).collect()),
+            Some(_) => Err(JsError::new(&format!("options.{k} must be a string"))),
+        }
+    };
     let mut players = Vec::new();
     for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| JsError::new("options.players missing"))? {
         let kind = p.get("type").and_then(|t| t.as_str()).unwrap_or("human");
@@ -758,24 +863,31 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
         build_radius: flag("buildRadius", true),
         redeployable_mcv: flag("redeployableMcv", true),
         ore_regrowth: flag("oreRegrowth", true),
+        // Optional for older callers (tools, tests); a value that is present must be known.
+        map_style: parse_style(&name("mapStyle", "random")?)?,
+        biome: parse_biome(&name("biome", "temperate")?)?,
+        weather: weather::WeatherMode::from_name(&name("weather", "full")?)
+            .ok_or_else(|| JsError::new("options.weather must be full, cosmetic or off"))?,
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }
 
-fn preview_rgba(m: &map::Map) -> Vec<u8> {
+fn parse_style(s: &str) -> Result<mapgen::MapStyle, JsError> {
+    mapgen::MapStyle::from_name(s).ok_or_else(|| JsError::new("map style must be random, land, rivers, lakes or islands"))
+}
+
+/// A biome name, or None for "random".
+fn parse_biome(s: &str) -> Result<Option<weather::Biome>, JsError> {
+    if s == "random" {
+        return Ok(None);
+    }
+    weather::Biome::from_name(s).map(Some).ok_or_else(|| JsError::new("biome must be random, temperate, snow or desert"))
+}
+
+fn preview_rgba(m: &map::Map, biome: weather::Biome) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
-        let rgb = if m.ore[i] > 0 {
-            [200, 160, 50]
-        } else {
-            match m.terrain[i] {
-                map::Terrain::Clear => [62, 88, 44],
-                map::Terrain::Rough => [96, 92, 58],
-                map::Terrain::Rock => [128, 118, 102],
-                map::Terrain::Water => [36, 70, 102],
-                map::Terrain::Tree => [28, 54, 24],
-            }
-        };
+        let rgb = if m.ore[i] > 0 { [200, 160, 50] } else { weather::preview_color(biome, m.terrain[i]) };
         out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
     }
     const COLORS: [[u8; 3]; 8] =

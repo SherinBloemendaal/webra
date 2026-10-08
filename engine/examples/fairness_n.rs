@@ -3,12 +3,29 @@
 //! how it placed, so map layouts can be compared before and after a change.
 //!
 //! Usage: cargo run -p webra-sim --release --example fairness_n -- [teams] [seeds] [map size] [faction]
+//! Environment: FAIR_STYLE (random, land, rivers, lakes, islands), FAIR_BIOME
+//! (random, temperate, snow, desert), FAIR_WEATHER (full, cosmetic, off);
+//! defaults random, temperate, full.
 //! `teams` is one digit per player: `0000` is a 4-player free for all, `1122`
 //! and `1212` are 2v2 games, `000` three players, `00000000` eight.
 //! Placement points: a player gets one point for every opponent eliminated
 //! before it (the winner gets N - 1); at the time limit the survivors share
 //! the remaining places by the value of what they still own.
+use webra_sim::mapgen::MapStyle;
+use webra_sim::weather::{Biome, WeatherMode};
 use webra_sim::world::{AiDifficulty, GameOptions, PlayerSetup, World};
+
+/// Map style, biome and weather from FAIR_STYLE, FAIR_BIOME and FAIR_WEATHER.
+fn env_options() -> GameOptions {
+    let var = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.into());
+    let biome = var("FAIR_BIOME", "temperate");
+    GameOptions {
+        map_style: MapStyle::from_name(&var("FAIR_STYLE", "random")).expect("FAIR_STYLE"),
+        biome: if biome == "random" { None } else { Some(Biome::from_name(&biome).expect("FAIR_BIOME")) },
+        weather: WeatherMode::from_name(&var("FAIR_WEATHER", "full")).expect("FAIR_WEATHER"),
+        ..GameOptions::default()
+    }
+}
 
 const LIMIT: u32 = 25 * 60 * 40;
 
@@ -24,7 +41,7 @@ fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
     let players: Vec<PlayerSetup> =
         teams.iter().map(|&team| PlayerSetup { faction: faction.into(), ai: Some(AiDifficulty::Normal), team }).collect();
     let n = players.len();
-    let mut w = World::with_options(seed, size, &players, GameOptions::default());
+    let mut w = World::with_options(seed, size, &players, env_options());
     let mut out_at: Vec<Option<u32>> = vec![None; n];
     let verbose = std::env::var("FAIR_VERBOSE").is_ok();
     let mut t = 0;
@@ -34,7 +51,13 @@ fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
         if verbose && t % 1500 == 0 {
             let alive: Vec<usize> = (0..n).map(|p| w.actors.iter().filter(|a| a.alive && a.owner == p as u8).count()).collect();
             let targets: Vec<Option<u8>> = w.ai.iter().map(|a| a.target_player).collect();
-            println!("{:>2} min: actors {alive:?}, targets {targets:?}, losses {:?}", t / 1500, w.losses);
+            let hot = w.actors.iter().filter(|a| a.alive && a.env.overheated).count();
+            println!(
+                "{:>2} min: actors {alive:?}, targets {targets:?}, losses {:?}, weather {}, overheated {hot}",
+                t / 1500,
+                w.losses,
+                w.env.weather.name()
+            );
         }
         if t % 25 == 0 {
             for (out, player) in out_at.iter_mut().zip(&w.players) {
@@ -120,7 +143,10 @@ fn main() {
         total_ticks += o.ticks as u64;
     }
     println!(
-        "map {size}x{size}, teams {teams_arg}, faction {faction}, {seeds} seeds, mean length {} min",
+        "map {size}x{size}, teams {teams_arg}, faction {faction}, style {}, biome {}, weather {}, {seeds} seeds, mean length {} min",
+        std::env::var("FAIR_STYLE").unwrap_or_else(|_| "random".into()),
+        std::env::var("FAIR_BIOME").unwrap_or_else(|_| "temperate".into()),
+        std::env::var("FAIR_WEATHER").unwrap_or_else(|_| "full".into()),
         total_ticks / seeds.max(1) / 1500
     );
     for p in 0..n {

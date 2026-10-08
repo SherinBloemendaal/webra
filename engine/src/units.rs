@@ -55,6 +55,10 @@ impl World {
                 Kind::Mine => continue,
                 _ => self.tick_unit_activity(i),
             }
+            // Snow momentum and desert heat (weather.rs).
+            if self.actors[i].alive && self.actors[i].kind == Kind::Vehicle {
+                self.tick_vehicle_weather(i);
+            }
             if self.actors[i].alive {
                 self.tick_abilities(i);
             }
@@ -238,20 +242,26 @@ impl World {
         self.step_toward(i, wx, wy, &unit);
     }
 
-    /// Turn and drive toward a world point, respecting turn rate and terrain speed.
+    /// Turn and drive toward a world point, respecting turn rate and terrain
+    /// speed, and on snow the vehicle's momentum (weather.rs).
     pub(crate) fn step_toward(&mut self, i: usize, wx: i32, wy: i32, unit: &crate::rules::UnitInfo) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
-        let speed_pct = self.rules.locomotors[unit.locomotor].speeds[self.map.speed_class(ci)];
-        let speed = unit.speed * speed_pct / 100;
+        let loco = &self.rules.locomotors[unit.locomotor];
+        let ship = loco.domain == crate::rules::Domain::Water;
+        let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
+        let speed = self.weather_speed(i, unit.speed * speed_pct / 100);
+        let grip = self.grip_of(i, ci);
+        let turn_speed = grip.map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1));
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
         let a = &mut self.actors[i];
         let has_turret = turret_speed.is_some();
         if unit.turn_in_place {
             a.facing = desired;
         } else {
-            a.facing = turn_toward(a.facing, desired, unit.turn_speed);
+            a.facing = turn_toward(a.facing, desired, turn_speed);
+            // On snow the vehicle keeps sliding while it turns (coast in tick_vehicle_weather).
             if angle_diff(a.facing, desired).abs() > MOVE_WHILE_TURNING {
                 if has_turret && a.target == NONE {
                     a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
@@ -262,6 +272,17 @@ impl World {
         if has_turret && (a.target == NONE || a.activity != Activity::Attack) {
             a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
         }
+        // Momentum: speed builds up and drops off gradually.
+        let speed = match grip {
+            Some((accel, brake, _)) => {
+                let (up, down) = ((unit.speed * accel / 100).max(1), (unit.speed * brake / 100).max(1));
+                let v = a.env.vel;
+                a.env.vel = if v < speed { (v + up).min(speed) } else { (v - down).max(speed) };
+                a.env.heading = a.facing;
+                a.env.vel
+            }
+            None => speed,
+        };
         let d = dist(x, y, wx, wy);
         let (nx, ny) = if d <= speed {
             (wx, wy)
@@ -272,6 +293,61 @@ impl World {
             (x + vx * speed / 1024, y + vy * speed / 1024)
         };
         self.try_move(i, nx, ny);
+    }
+
+    /// Speed after weather: infantry wade through snow, overheated vehicles crawl.
+    fn weather_speed(&self, i: usize, speed: i32) -> i32 {
+        let a = &self.actors[i];
+        if a.kind == Kind::Infantry && self.env.snow_effects() {
+            speed * crate::weather::SNOW_INFANTRY_SPEED_PCT / 100
+        } else if a.env.overheated {
+            speed * crate::weather::OVERHEAT_SPEED_PCT / 100
+        } else {
+            speed
+        }
+    }
+
+    /// Ice: rough ground (frozen ponds) in the snow biome.
+    pub(crate) fn is_ice(&self, ci: usize) -> bool {
+        self.map.biome_ice(ci, self.env.biome)
+    }
+
+    /// Grip of a ground vehicle on snow (weather::grip), None without momentum.
+    fn grip_of(&self, i: usize, ci: usize) -> Option<(i32, i32, i32)> {
+        let a = &self.actors[i];
+        (a.kind == Kind::Vehicle && self.env.snow_effects() && a.altitude == 0).then(|| crate::weather::grip(self.is_ice(ci)))
+    }
+
+    /// After a vehicle's activity: on snow it coasts on when it did not drive
+    /// this tick (stopped, or turning hard), braking as it goes; in the desert
+    /// it heats up or cools down. Precise work (harvesting, docking, repair,
+    /// boarding, abilities) stops dead instead of coasting.
+    fn tick_vehicle_weather(&mut self, i: usize) {
+        if self.actors[i].env.vel > 0 && !self.actors[i].moved {
+            let a = &self.actors[i];
+            let precise =
+                matches!(a.activity, Activity::Harvest | Activity::Repair | Activity::Board | Activity::Unload | Activity::Ability);
+            match self.grip_of(i, self.cell_index(a.x, a.y)) {
+                Some((_, brake, _)) if !precise => {
+                    let top = self.rules.actors[a.ty as usize].unit.as_ref().map_or(0, |u| u.speed);
+                    let vel = (a.env.vel - (top * brake / 100).max(1)).max(0);
+                    let (vx, vy) = facing_vec(a.env.heading);
+                    let (x, y) = (a.x, a.y);
+                    self.actors[i].env.vel = vel;
+                    if vel > 0 && !self.try_move(i, x + vx * vel / 1024, y + vy * vel / 1024) {
+                        self.actors[i].env.vel = 0;
+                    }
+                }
+                _ => self.actors[i].env.vel = 0,
+            }
+        }
+        if self.env.effects() && self.env.biome == crate::weather::Biome::Desert {
+            let wave = self.env.heat_wave();
+            let a = &mut self.actors[i];
+            let (moved, fired) = (a.moved, a.env.fired);
+            crate::weather::heat_step(&mut a.env, wave, moved, fired);
+        }
+        self.actors[i].env.fired = false;
     }
 
     /// Move to (nx, ny) unless that enters a blocked cell; slide along walls.

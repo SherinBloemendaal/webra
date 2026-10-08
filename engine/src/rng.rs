@@ -1,6 +1,6 @@
 //! Small deterministic PRNG (SplitMix64). Same seed, same sequence on every platform.
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Rng(u64);
 
 impl Rng {

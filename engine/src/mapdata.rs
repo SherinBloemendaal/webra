@@ -7,6 +7,7 @@
 
 use crate::map::{Map, Terrain};
 use crate::rules::Rules;
+use crate::weather::Biome;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -36,6 +37,12 @@ pub struct MapData {
     pub actors: Vec<MapActor>,
     #[serde(default)]
     pub rules: Option<serde_json::Value>,
+    /// Terrain palette and weather (weather.rs). Optional: absent means
+    /// temperate, and a temperate map leaves it out of the canonical form,
+    /// so maps from before biomes keep their hash. Not a rules override: a
+    /// map with a biome is not modded.
+    #[serde(default, skip_serializing_if = "Biome::is_temperate")]
+    pub biome: Biome,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -244,13 +251,14 @@ impl MapData {
             if o > 12 {
                 return Err(format!("invalid ore density {o}"));
             }
-            if o > 0 && !t[i].passable() {
+            if o > 0 && !t[i].holds_ore() {
                 return Err("ore can only lie on clear or rough ground".into());
             }
         }
         Ok(Map { width: self.width, height: self.height, terrain: t, ore, spawns: self.spawns.iter().map(|s| (s[0], s[1])).collect() })
     }
 
+    /// A temperate map file of a [`Map`] (set `biome` for another biome).
     pub fn from_map(m: &Map, name: &str, author: &str, description: &str) -> MapData {
         let terrain: Vec<u8> = m.terrain.iter().map(|&t| t as u8).collect();
         MapData {
@@ -265,6 +273,7 @@ impl MapData {
             spawns: m.spawns.iter().map(|&(x, y)| [x, y]).collect(),
             actors: Vec::new(),
             rules: None,
+            biome: Biome::Temperate,
         }
     }
 }
@@ -380,6 +389,44 @@ mod tests {
         assert!(errors(&d).iter().any(|e| e.contains("overlaps another structure")), "{:?}", errors(&d));
         d.actors[1].x = 20;
         assert!(d.validate().ok, "{:?}", errors(&d));
+    }
+
+    #[test]
+    fn biome_is_optional_and_left_out_when_temperate() {
+        let m = Map::generate_for(48, 48, 2, 12, 2);
+        let mut d = MapData::from_map(&m, "Biome", "x", "");
+        let temperate = d.canonical_json();
+        assert!(!temperate.contains("biome"), "temperate maps keep the old canonical form");
+        // An explicit temperate biome is the same map (same hash).
+        let explicit = temperate.trim_end_matches('}').to_string() + r#","biome":"temperate"}"#;
+        let temperate_hash = d.hash();
+        assert_eq!(MapData::parse(&explicit).unwrap().hash(), temperate_hash);
+        d.biome = Biome::Snow;
+        let snow = d.canonical_json();
+        assert!(snow.ends_with(r#""rules":null,"biome":"snow"}"#), "{}", &snow[snow.len() - 40..]);
+        assert_ne!(d.hash(), temperate_hash, "the biome is part of the identity");
+        let v = d.validate();
+        assert!(v.ok && !v.modded, "a biome is not a rules override: {:?}", v.errors);
+        assert_eq!(MapData::parse(&snow).unwrap().biome, Biome::Snow);
+        assert!(MapData::parse(&snow.replace("snow", "lava")).is_err(), "unknown biomes are refused");
+    }
+
+    #[test]
+    fn fords_are_valid_terrain_without_ore() {
+        let m = Map::generate_for(48, 48, 2, 12, 2);
+        let mut d = MapData::from_map(&m, "Ford", "x", "");
+        let mut terrain = b64().decode(&d.terrain).unwrap();
+        let mut ore = vec![0u8; terrain.len()];
+        terrain[0] = 5;
+        d.terrain = b64().encode(&terrain);
+        d.ore = b64().encode(&ore);
+        assert!(d.to_map().is_ok());
+        ore[0] = 3;
+        d.ore = b64().encode(&ore);
+        assert!(d.to_map().err().unwrap().contains("ore can only lie"));
+        terrain[0] = 6;
+        d.terrain = b64().encode(&terrain);
+        assert!(d.to_map().err().unwrap().contains("invalid terrain value 6"));
     }
 
     #[test]

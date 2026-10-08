@@ -38,7 +38,8 @@ impl World {
             if !a.alive || !a.in_world() {
                 continue;
             }
-            let sight = self.rules.actors[a.ty as usize].sight;
+            // Rain, snowfall and sandstorms shorten sight (weather.rs).
+            let sight = self.env.sight(self.rules.actors[a.ty as usize].sight);
             if sight <= 0 {
                 continue;
             }

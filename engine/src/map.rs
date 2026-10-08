@@ -1,5 +1,6 @@
 //! Terrain grid, ore layer and the seeded skirmish map generator.
 
+use crate::mapgen::{Layout, MapStyle};
 use crate::rng::Rng;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -10,6 +11,9 @@ pub enum Terrain {
     Rock = 2,
     Water = 3,
     Tree = 4,
+    /// Shallow water: ground units wade through at rough speed and ships
+    /// sail over it, so a river crossing never cuts the water network.
+    Ford = 5,
 }
 
 impl Terrain {
@@ -20,15 +24,24 @@ impl Terrain {
             2 => Terrain::Rock,
             3 => Terrain::Water,
             4 => Terrain::Tree,
+            5 => Terrain::Ford,
             _ => return None,
         })
     }
 
     pub fn passable(self) -> bool {
-        matches!(self, Terrain::Clear | Terrain::Rough)
+        matches!(self, Terrain::Clear | Terrain::Rough | Terrain::Ford)
     }
     pub fn buildable(self) -> bool {
         self == Terrain::Clear
+    }
+    /// Open to ships: water and fords.
+    pub fn ship_passable(self) -> bool {
+        matches!(self, Terrain::Water | Terrain::Ford)
+    }
+    /// Ore (and anything harvested) only lies on clear or rough ground.
+    pub fn holds_ore(self) -> bool {
+        matches!(self, Terrain::Clear | Terrain::Rough)
     }
 }
 
@@ -64,15 +77,31 @@ impl Map {
         (self.width * self.height) as usize
     }
 
+    /// Speed table index of a cell for ground units (fords count as rough).
     pub fn speed_class(&self, i: usize) -> usize {
         if self.terrain[i] == Terrain::Water {
             SPEED_WATER
         } else if self.ore[i] > 0 {
             SPEED_ORE
-        } else if self.terrain[i] == Terrain::Rough {
+        } else if matches!(self.terrain[i], Terrain::Rough | Terrain::Ford) {
             SPEED_ROUGH
         } else {
             SPEED_CLEAR
+        }
+    }
+
+    /// Whether a cell is ice: rough ground (frozen ponds) in the snow biome.
+    pub fn biome_ice(&self, i: usize, biome: crate::weather::Biome) -> bool {
+        biome == crate::weather::Biome::Snow && self.terrain[i] == Terrain::Rough
+    }
+
+    /// Speed table index of a cell for a locomotor: ships sail over fords at
+    /// water speed, everything else uses [`Map::speed_class`].
+    pub fn speed_class_for(&self, i: usize, ship: bool) -> usize {
+        if ship && self.terrain[i].ship_passable() {
+            SPEED_WATER
+        } else {
+            self.speed_class(i)
         }
     }
 
@@ -82,45 +111,94 @@ impl Map {
     /// map the top base's exits and docks face the enemy and its ore while
     /// the bottom base's face the map edge, which decided most mirror
     /// matches. A left to right mirror gives both sides the same layout.
+    /// The style is picked from the seed (see [`MapStyle::resolve`]).
     pub fn generate(width: i32, height: i32, seed: u64, ore_max: u8) -> Map {
+        Map::generate_two(width, height, seed, ore_max, MapStyle::Random)
+    }
+
+    /// Map for `players` starting positions (2..8) in a style picked from the seed.
+    pub fn generate_for(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
+        Map::generate_styled(width, height, seed, ore_max, players, MapStyle::Random)
+    }
+
+    /// Map for `players` starting positions (2..8) in `style`. Two players
+    /// get the mirrored map of [`Map::generate`]; more players get
+    /// [`Map::generate_pockets`].
+    pub fn generate_styled(width: i32, height: i32, seed: u64, ore_max: u8, players: usize, style: MapStyle) -> Map {
+        let players = players.clamp(2, 8);
+        if players == 2 {
+            return Map::generate_two(width, height, seed, ore_max, style);
+        }
+        Map::generate_pockets(width, height, seed, ore_max, players, style)
+    }
+
+    fn generate_two(width: i32, height: i32, seed: u64, ore_max: u8, style: MapStyle) -> Map {
+        let style = style.resolve(seed);
         let mut rng = Rng::new(seed);
         let n = (width * height) as usize;
         let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
 
-        m.scatter(&mut rng);
-
-        // Bases on the left and right edge; the seed picks the height.
-        let sy = match rng.range(0, 3) {
+        // Bases on the left and right edge; the seed picks the height (from
+        // its own stream, so the style never moves the bases).
+        let sy = match Rng::new(seed ^ 0xba5e_0000_0000_0002).range(0, 3) {
             0 => 8,
             1 => height / 2 - 2,
             _ => height - 12,
         };
         let sx = 8;
+        let (bx, by) = (sx + 1, sy + 2);
+        // The base clearing, and with water a harbour bay along the map edge behind it.
+        let mut zone = vec![false; n];
+        let mut bay = vec![false; n];
+        for y in 0..height {
+            for x in 0..width {
+                let mx = x.min(width - 1 - x);
+                let i = m.idx(x, y);
+                zone[i] = (mx - bx) * (mx - bx) + (y - by) * (y - by) <= 11 * 11;
+                bay[i] = style.naval() && mx <= 3 && (by - 7..=by + 7).contains(&y);
+            }
+        }
+        m.scatter(&mut rng, if style == MapStyle::Land { 1 } else { 0 });
+        let land_spots = crate::mapgen::draw_land(&mut m, &mut rng, style, &zone);
+        let layout = Layout { bases: vec![(bx, by), (width - 1 - bx, by)], zone: zone.clone(), flip_y: false };
+        let water = crate::mapgen::draw_water(width, height, &mut rng, style, &layout);
+        crate::mapgen::apply_water(&mut m, &water, style, &mut rng);
         m.spawns = vec![(sx, sy), (width - 3 - sx, sy)];
-        m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
+        m.fill_circle(bx, by, 11, Terrain::Clear);
+        for (i, _) in bay.iter().enumerate().filter(|(_, &b)| b) {
+            m.terrain[i] = Terrain::Water;
+            m.ore[i] = 0;
+        }
         // Ore: one field beside the base toward the middle, one above or below
         // it toward the centre row, and contested fields on the centre line
-        // (the mirror joins the halves).
+        // (the mirror joins the halves), plus the fields of the style.
         let (mx, my) = (width / 2, height / 2);
         let toward_centre = if sy + 2 > my { -1 } else { 1 };
         m.ore_field(&mut rng, sx + 13, sy + 2, 4, ore_max);
-        m.ore_field(&mut rng, sx + 3, sy + 2 + toward_centre * 13, 3, ore_max);
+        m.ore_field(&mut rng, sx + 4, sy + 2 + toward_centre * 13, 4, ore_max);
         m.ore_field(&mut rng, mx - 3, sy + 2 + toward_centre * 6, 4, ore_max);
         m.ore_field(&mut rng, mx - 9, my + toward_centre * (height / 4), 4, ore_max);
+        for &(x, y, r) in land_spots.iter().chain(&water.spots) {
+            if !zone[m.idx(x.clamp(0, width - 1), y.clamp(0, height - 1))] {
+                m.ore_field(&mut rng, x, y, r, ore_max);
+            }
+        }
 
         m.mirror_x();
-        m.ensure_connected(m.spawns[0], m.spawns[1]);
-        m
-    }
-
-    /// Map for `players` starting positions (2..8). Two players get the
-    /// mirrored map of [`Map::generate`]; more players get [`Map::generate_pockets`].
-    pub fn generate_for(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
-        let players = players.clamp(2, 8);
-        if players == 2 {
-            return Map::generate(width, height, seed, ore_max);
+        if style.naval() {
+            // Dig the bay through to the water network (mirrored).
+            let near = crate::mapgen::grow(width, height, &zone, 2);
+            let harbour: Vec<usize> = (0..n).filter(|&i| bay[i] && (i as i32 % width) < width / 2).collect();
+            let blocked: Vec<bool> = (0..n).map(|i| zone[i] && !bay[i]).collect();
+            if let Some(network) = crate::mapgen::network_from(&m, water.hub) {
+                if let Some((_, path)) = crate::mapgen::plan_channel(&m, &harbour, &network, &blocked, &near, 1) {
+                    crate::mapgen::dig_channel(&mut m, &path, &blocked);
+                }
+            }
         }
-        Map::generate_pockets(width, height, seed, ore_max, players)
+        let (a, b) = (m.spawns[0], m.spawns[1]);
+        crate::mapgen::connect_ground(&mut m, a, b, &bay);
+        m
     }
 
     /// Map for 3 to 8 players with equivalent starting positions.
@@ -129,9 +207,10 @@ impl Map {
     /// bases only have the same surroundings when one is the other shifted or
     /// mirrored left to right, never rotated or flipped upside down. Every
     /// base gets the same pocket: a clearing with two ore fields south-west
-    /// and south-east of the yard (where refinery docks face), rock walls to
-    /// the north and the south, and open sides, so enemies come in from the
-    /// east or the west. The random terrain is mirrored left to right.
+    /// and south-east of the yard (where refinery docks face), walls to the
+    /// north and the south (rock, or in the naval styles a harbour moat on
+    /// the side facing the map centre), and open sides, so enemies come in
+    /// from the east or the west. The random terrain is mirrored left to right.
     ///
     /// Three and four players sit in two rows, one in the middle of each half
     /// of the map, and the bottom half repeats the top half (three players:
@@ -143,25 +222,53 @@ impl Map {
     /// common split of the first half of the slots against the second half
     /// puts mirror images against each other. The AI makes up for the rest:
     /// its rally point and defences face the enemy, not a map side.
-    pub fn generate_pockets(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
+    pub fn generate_pockets(width: i32, height: i32, seed: u64, ore_max: u8, players: usize, style: MapStyle) -> Map {
+        let style = style.resolve(seed);
         let n = (width * height) as usize;
         let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
         let mut rng = Rng::new(seed ^ 0x5eed_0000_0000_0004);
-        m.scatter(&mut rng);
-        m.mirror_x();
         // Three or four players: two rows, the bottom half repeating the top
         // half. Five to eight: a ring, so every base has two nearest
         // neighbours (a base in the middle of a row would have more).
         let rows = players <= 4;
         let mut centres = if rows { row_layout(width, height, players) } else { ring_layout(width, height, players) };
-        if rows {
-            m.repeat_top_half();
-        }
         centres.sort_by_key(|&(x, y)| (x, y));
         let r = pocket_radius(&centres);
+        let half = r - 2;
+        // Pocket rectangles (clearing, ore, walls and moats); features stay out.
+        // (A base on the middle column is widened by a cell when the map is
+        // mirrored, so the areas are mirrored too.)
+        let mut zone = vec![false; n];
+        for &(cx, cy) in &centres {
+            for dy in -r - 3..=r + 5 {
+                for dx in -r..=r {
+                    for x in [cx + dx, width - 1 - cx - dx] {
+                        if m.contains(x, cy + dy) {
+                            let i = m.idx(x, cy + dy);
+                            zone[i] = true;
+                        }
+                    }
+                }
+            }
+        }
+        m.scatter(&mut rng, if style == MapStyle::Land { 1 } else { 0 });
+        let mut land_spots = crate::mapgen::draw_land(&mut m, &mut rng, style, &zone);
+        m.mirror_x();
+        if rows {
+            m.repeat_top_half();
+            let band = height / 2;
+            let copies: Vec<(i32, i32, i32)> = land_spots.iter().filter(|s| s.1 < band).map(|&(x, y, r)| (x, y + band, r)).collect();
+            land_spots.retain(|s| s.1 < band);
+            land_spots.extend(copies);
+        }
+        // Water mirrored top to bottom only where the bases are too (four players).
+        let flip_y = players == 4;
+        let layout = Layout { bases: centres.clone(), zone: zone.clone(), flip_y };
+        let water = crate::mapgen::draw_water(width, height, &mut rng, style, &layout);
+        crate::mapgen::apply_water(&mut m, &water, style, &mut rng);
         let pocket_seed = seed ^ 0x90c3_e700_0000_0001;
         for &(cx, cy) in &centres {
-            m.stamp_pocket(cx, cy, r, ore_max, pocket_seed);
+            m.stamp_pocket(cx, cy, r, ore_max, pocket_seed, style.naval());
         }
         // Contested ore halfway between neighbouring bases, where it fits.
         let d2 = |a: (i32, i32), b: (i32, i32)| (a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1);
@@ -175,7 +282,7 @@ impl Map {
                 }
                 let mid = ((a.0 + b.0) / 2, (a.1 + b.1) / 2);
                 // Room: the field stays clear of every pocket.
-                let room = centres.iter().map(|&c| (mid.0 - c.0).abs().max((mid.1 - c.1).abs()) - r - 5).min().unwrap_or(0);
+                let room = centres.iter().map(|&c| (mid.0 - c.0).abs().max((mid.1 - c.1).abs()) - r - 6).min().unwrap_or(0);
                 if room >= 2 {
                     contested.push((mid.0, mid.1, room.min(3)));
                 }
@@ -186,22 +293,119 @@ impl Map {
         for (k, &(x, y, fr)) in contested.iter().enumerate() {
             m.ore_field_mirrored(&mut Rng::new(pocket_seed ^ (k as u64 + 1)), x, y, fr, ore_max);
         }
+        // Ore of the style (left half; four players: top half too, flipped below).
+        let mut spots: Vec<(i32, i32, i32)> = land_spots;
+        for &(x, y, sr) in &water.spots {
+            spots.push((x, y, sr));
+            if flip_y {
+                spots.push((x, height - 1 - y, sr));
+            }
+        }
+        for (k, &(x, y, sr)) in spots.iter().enumerate() {
+            let clear = (y - sr - 1..=y + sr + 1).all(|yy| (x - sr - 1..=x + sr + 1).all(|xx| !m.contains(xx, yy) || !zone[m.idx(xx, yy)]));
+            if clear && 2 * x < width {
+                m.ore_field(&mut Rng::new(pocket_seed ^ 0x0e0e ^ (k as u64)), x, y, sr, ore_max);
+            }
+        }
         // The pockets are symmetric already; this makes the contested fields
         // of the right half the mirror images of the left half's.
         m.mirror_x();
         m.spawns = centres.iter().map(|&(cx, cy)| (cx - 1, cy - 2)).collect();
+        // Walls and moats never change from here on.
+        let mut keep = vec![false; n];
+        for &(cx, cy) in &centres {
+            for dy in -r - 3..=r + 5 {
+                for dx in -half..=half {
+                    for x in [cx + dx, width - 1 - cx - dx] {
+                        if m.contains(x, cy + dy) {
+                            let i = m.idx(x, cy + dy);
+                            keep[i] = !m.terrain[i].passable();
+                        }
+                    }
+                }
+            }
+        }
+        if style.naval() {
+            m.connect_moats(&centres, r, &zone, water.hub);
+        }
         let spawns = m.spawns.clone();
         for &s in &spawns[1..] {
-            m.ensure_connected_mirrored(spawns[0], s);
+            crate::mapgen::connect_ground(&mut m, spawns[0], s, &keep);
         }
         m
     }
 
+    /// Naval styles: dig each base's harbour moat that is nearer the water
+    /// network through to it (mirrored), and wall the other moat up again
+    /// with rock, so every base has exactly one harbour on the network.
+    fn connect_moats(&mut self, centres: &[(i32, i32)], r: i32, zone: &[bool], hub: (i32, i32)) {
+        let half = r - 2;
+        let (w, h) = (self.width, self.height);
+        let near = crate::mapgen::grow(w, h, zone, 2);
+        // Channels run to the hub itself, nearly straight (water costs half
+        // of digging), so every harbour is about as far from the centre as
+        // its base is: the hub sits where the bases are evenly far.
+        let mut target = vec![false; self.cells()];
+        for y in hub.1 - 3..=hub.1 + 3 {
+            for x in hub.0 - 4..=hub.0 + 3 {
+                if self.contains(x, y) && self.terrain[self.idx(x, y)].ship_passable() {
+                    let i = self.idx(x, y);
+                    target[i] = true;
+                }
+            }
+        }
+        if !target.iter().any(|&t| t) {
+            let Some(network) = crate::mapgen::network_from(self, hub) else { return };
+            target = network;
+        }
+        let moat = |m: &Map, cx: i32, cy: i32, north: bool| -> Vec<usize> {
+            let rows = if north { -r - 3..=-r - 1 } else { r + 3..=r + 5 };
+            rows.flat_map(|dy| (-half..=half).map(move |dx| (cx + dx, cy + dy)))
+                .filter(|&(x, y)| m.contains(x, y))
+                .map(|(x, y)| m.idx(x, y))
+                .collect()
+        };
+        // Plan every channel against the same network, then dig: no base
+        // profits from another's channel being dug first.
+        let mut plans = Vec::new();
+        for &(cx, cy) in centres.iter().filter(|c| 2 * c.0 < w) {
+            // (cost, north first on ties, path, north) of each moat's channel.
+            let best = [true, false]
+                .into_iter()
+                .filter_map(|north| {
+                    let cells = moat(self, cx, cy, north);
+                    // The own moat may be left; every other base cell is closed.
+                    let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !cells.contains(&i)).collect();
+                    crate::mapgen::plan_channel(self, &cells, &target, &blocked, &near, 3).map(|(cost, path)| (cost, !north, path, north))
+                })
+                .min_by_key(|o| (o.0, o.1));
+            if let Some((_, _, path, north)) = best {
+                plans.push((cx, cy, north, path));
+            }
+        }
+        for (cx, cy, north, path) in plans {
+            let open = moat(self, cx, cy, north);
+            let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !open.contains(&i)).collect();
+            crate::mapgen::dig_channel(self, &path, &blocked);
+            for i in moat(self, cx, cy, !north) {
+                let (x, y) = ((i as i32) % w, (i as i32) / w);
+                for (mx, my) in [(x, y), (w - 1 - x, y)] {
+                    if self.contains(mx, my) {
+                        let j = self.idx(mx, my);
+                        self.terrain[j] = Terrain::Rock;
+                        self.ore[j] = 0;
+                    }
+                }
+            }
+        }
+    }
+
     /// One base pocket around the yard centre (cx, cy) with radius `r`: a
-    /// clearing, two ore fields south-west and south-east of the yard, rock
-    /// walls north and south. Left-right symmetric around column `cx`, and
-    /// the same for every base of a map (same `seed`).
-    fn stamp_pocket(&mut self, cx: i32, cy: i32, r: i32, ore_max: u8, seed: u64) {
+    /// clearing, two ore fields south-west and south-east of the yard, walls
+    /// of three rows north and south (rock, or harbour water with `moats`).
+    /// Left-right symmetric around column `cx`, and the same for every base
+    /// of a map (same `seed`).
+    fn stamp_pocket(&mut self, cx: i32, cy: i32, r: i32, ore_max: u8, seed: u64, moats: bool) {
         let half = r - 2;
         for dy in -r..=r + 2 {
             for dx in -half..=half {
@@ -213,9 +417,11 @@ impl Map {
             }
         }
         self.fill_circle(cx, cy, r, Terrain::Clear);
+        // Three rows each: rock, or harbour water in the naval styles.
+        let wall = if moats { Terrain::Water } else { Terrain::Rock };
         for dx in -half..=half {
-            for dy in [-r - 1, -r - 2, r + 3, r + 4] {
-                self.set_terrain(cx + dx, cy + dy, Terrain::Rock);
+            for dy in [-r - 1, -r - 2, -r - 3, r + 3, r + 4, r + 5] {
+                self.set_terrain(cx + dx, cy + dy, wall);
             }
         }
         let (fx, fy) = (r * 7 / 10, r * 8 / 10);
@@ -229,7 +435,8 @@ impl Map {
     }
 
     /// Two ore fields at (axis - off, y) and (axis + off, y) that are mirror
-    /// images around column `axis` (one field when `off` is 0).
+    /// images around column `axis` (one field when `off` is 0). Rock and trees
+    /// under a field are cleared; water and fords are left alone.
     fn ore_field_pair(&mut self, rng: &mut Rng, axis: i32, off: i32, y: i32, r: i32, max: u8) {
         for oy in -r..=r {
             for ox in -r..=r {
@@ -241,16 +448,26 @@ impl Map {
                     continue;
                 }
                 for x in [axis - off + ox, axis + off - ox] {
-                    if self.contains(x, y + oy) {
-                        let i = self.idx(x, y + oy);
-                        if !self.terrain[i].passable() {
-                            self.terrain[i] = Terrain::Clear;
-                        }
-                        self.ore[i] = value;
-                    }
+                    self.put_ore(x, y + oy, value);
                 }
             }
         }
+    }
+
+    /// Ore on a cell: rock and trees are cleared first, water and fords keep
+    /// no ore.
+    fn put_ore(&mut self, x: i32, y: i32, value: u8) {
+        if !self.contains(x, y) {
+            return;
+        }
+        let i = self.idx(x, y);
+        if self.terrain[i].ship_passable() {
+            return;
+        }
+        if !self.terrain[i].holds_ore() {
+            self.terrain[i] = Terrain::Clear;
+        }
+        self.ore[i] = value;
     }
 
     /// Copy the top half of the map onto the bottom half (same picture, shifted down).
@@ -265,22 +482,9 @@ impl Map {
         }
     }
 
-    /// Like `ensure_connected`, with the road also carved mirrored left to right.
-    fn ensure_connected_mirrored(&mut self, a: (i32, i32), b: (i32, i32)) {
-        if self.reachable(a, b) {
-            return;
-        }
-        let w = self.width;
-        let mirror = |p: (i32, i32)| (w - 3 - p.0, p.1);
-        for (p, q) in [(a, b), (mirror(a), mirror(b))] {
-            self.carve((p.0 + 1, p.1 + 1), (q.0 + 1, q.1 + 1));
-            self.carve((q.0 + 1, q.1 + 1), (p.0 + 1, p.1 + 1));
-        }
-    }
-
-    /// Random terrain over the whole map: rough patches, lakes, rock ridges
-    /// and tree clusters.
-    fn scatter(&mut self, rng: &mut Rng) {
+    /// Random terrain over the whole map: rough patches, `lakes` times the
+    /// usual number of small lakes, rock ridges and tree clusters.
+    fn scatter(&mut self, rng: &mut Rng, lakes: i32) {
         let (width, height) = (self.width, self.height);
         let area = width * height;
         // Rough patches.
@@ -289,8 +493,8 @@ impl Map {
             let r = rng.range(2, 6);
             self.blob(rng, cx, cy, r, Terrain::Rough);
         }
-        // Lakes.
-        for _ in 0..(area / 3500).max(1) {
+        // Lakes (the naval styles draw their water separately).
+        for _ in 0..(area / 3500).max(1) * lakes {
             let (cx, cy) = (rng.range(0, width), rng.range(0, height));
             let r = rng.range(3, 7);
             self.blob(rng, cx, cy, r, Terrain::Water);
@@ -324,7 +528,7 @@ impl Map {
         if self.contains(x, y) {
             let i = self.idx(x, y);
             self.terrain[i] = t;
-            if !t.passable() {
+            if !t.holds_ore() {
                 self.ore[i] = 0;
             }
         }
@@ -364,13 +568,10 @@ impl Map {
                 if d > r * r + rng.range(0, r + 1) {
                     continue;
                 }
-                let i = self.idx(x, y);
-                if !self.terrain[i].passable() {
-                    self.terrain[i] = Terrain::Clear;
-                }
                 // Denser in the middle of the field.
                 let fall = (d * max as i32) / (r * r + 1);
-                self.ore[i] = (max as i32 - fall + rng.range(-2, 2)).clamp(2, max as i32) as u8;
+                let value = (max as i32 - fall + rng.range(-2, 2)).clamp(2, max as i32) as u8;
+                self.put_ore(x, y, value);
             }
         }
     }
@@ -383,37 +584,6 @@ impl Map {
                 self.terrain[j] = self.terrain[i];
                 self.ore[j] = self.ore[i];
             }
-        }
-    }
-
-    /// Carve a 3-cell wide corridor between the bases if ground units could not
-    /// otherwise reach each other. The corridor is carved both ways so it is
-    /// as symmetric as the bases are.
-    fn ensure_connected(&mut self, a: (i32, i32), b: (i32, i32)) {
-        if self.reachable(a, b) {
-            return;
-        }
-        self.carve((a.0 + 1, a.1 + 1), (b.0 + 1, b.1 + 1));
-        self.carve((b.0 + 1, b.1 + 1), (a.0 + 1, a.1 + 1));
-    }
-
-    /// Clear a 3-cell wide straight-ish road between two cells.
-    fn carve(&mut self, a: (i32, i32), b: (i32, i32)) {
-        let (mut x, mut y) = a;
-        let (tx, ty) = b;
-        while (x, y) != (tx, ty) {
-            for oy in -1..=1 {
-                for ox in -1..=1 {
-                    if self.contains(x + ox, y + oy) {
-                        let i = self.idx(x + ox, y + oy);
-                        if !self.terrain[i].passable() {
-                            self.terrain[i] = Terrain::Clear;
-                        }
-                    }
-                }
-            }
-            x += (tx - x).signum();
-            y += (ty - y).signum();
         }
     }
 
@@ -473,7 +643,7 @@ impl Map {
 
 /// Pocket radius for bases at these yard centres: as large as the distance
 /// to the nearest neighbour allows, 6 to 10 cells.
-fn pocket_radius(centres: &[(i32, i32)]) -> i32 {
+pub(crate) fn pocket_radius(centres: &[(i32, i32)]) -> i32 {
     let nearest = centres
         .iter()
         .enumerate()
@@ -566,9 +736,11 @@ mod tests {
                 if players > 4 && size < 96 {
                     continue;
                 }
-                for seed in 0..6 {
-                    let m = Map::generate_for(size, size, seed, 12, players);
-                    let what = format!("{players} players, size {size}, seed {seed}");
+                for seed in 0..8 {
+                    // Every style twice.
+                    let style = MapStyle::CONCRETE[seed as usize % 4];
+                    let m = Map::generate_styled(size, size, seed, 12, players, style);
+                    let what = format!("{players} players, {style:?}, size {size}, seed {seed}");
                     assert_eq!(m.spawns.len(), players, "{what}");
                     for y in 0..size {
                         for x in 0..size {
@@ -587,8 +759,9 @@ mod tests {
                         let centred = ((sx + 1) * 2 - (size - 1)).abs() <= 1;
                         assert!(centred || m.spawns.contains(&(size - 3 - sx, sy)), "{what}: spawn {sx},{sy} has a mirror image");
                         // The pocket around the yard (clearing, ore fields, walls) is the
-                        // same picture; the right half of a centred base is shifted by a cell.
-                        for dy in -r - 2..=r + 4 {
+                        // same picture for ground units (a harbour moat walls like rock); the
+                        // right half of a centred base is shifted by a cell.
+                        for dy in -r - 3..=r + 5 {
                             for dx in -r..=if centred { 0 } else { r } {
                                 // The clearing and the band of the walls.
                                 if dx * dx + dy * dy > r * r && dx.abs() > r - 2 {
@@ -599,11 +772,8 @@ mod tests {
                                     continue;
                                 }
                                 let (i, j) = (m.idx(a.0, a.1), m.idx(b.0, b.1));
-                                assert_eq!(
-                                    (m.terrain[i], m.ore[i] > 0),
-                                    (m.terrain[j], m.ore[j] > 0),
-                                    "{what}: base at {sx},{sy} differs at offset {dx},{dy}"
-                                );
+                                let ground = |k: usize| (m.terrain[k].passable(), m.terrain[k] == Terrain::Rough, m.ore[k] > 0);
+                                assert_eq!(ground(i), ground(j), "{what}: base at {sx},{sy} differs at offset {dx},{dy}");
                             }
                         }
                     }
@@ -621,7 +791,7 @@ mod tests {
     fn generated_map_is_mirrored_left_to_right_and_connected() {
         for size in [64, 80, 96, 128] {
             for seed in 0..20 {
-                let m = Map::generate(size, size, seed, 12);
+                let m = Map::generate_styled(size, size, seed, 12, 2, MapStyle::CONCRETE[seed as usize % 4]);
                 for y in 0..size {
                     for x in 0..size {
                         let (i, j) = (m.idx(x, y), m.idx(size - 1 - x, y));

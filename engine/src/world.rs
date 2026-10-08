@@ -125,6 +125,8 @@ pub struct Actor {
     pub heli: crate::helicopter::HeliState,
     /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
     pub air: crate::plane::AirState,
+    /// Snow momentum and desert heat (weather.rs).
+    pub env: crate::weather::UnitEnv,
 }
 
 impl Actor {
@@ -185,6 +187,7 @@ impl Actor {
             cloak_timer: 0,
             detected_by: 0,
             air: crate::plane::AirState::default(),
+            env: crate::weather::UnitEnv::default(),
         }
     }
 
@@ -313,6 +316,13 @@ pub struct GameOptions {
     pub build_radius: bool,
     pub redeployable_mcv: bool,
     pub ore_regrowth: bool,
+    /// Layout of a generated map (map files bring their own).
+    pub map_style: crate::mapgen::MapStyle,
+    /// Biome of a generated map; None picks one from the seed. Map files
+    /// bring their own biome and ignore this.
+    pub biome: Option<crate::weather::Biome>,
+    /// What weather does (weather.rs).
+    pub weather: crate::weather::WeatherMode,
 }
 
 impl Default for GameOptions {
@@ -326,6 +336,9 @@ impl Default for GameOptions {
             build_radius: true,
             redeployable_mcv: true,
             ore_regrowth: true,
+            map_style: crate::mapgen::MapStyle::Random,
+            biome: Some(crate::weather::Biome::Temperate),
+            weather: crate::weather::WeatherMode::Full,
         }
     }
 }
@@ -580,6 +593,8 @@ pub struct World {
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
+    /// Biome and weather (weather.rs).
+    pub env: crate::weather::Environment,
 }
 
 impl World {
@@ -591,8 +606,9 @@ impl World {
 
     pub fn with_options(seed: u64, map_size: i32, players: &[PlayerSetup], options: GameOptions) -> World {
         let rules = Rules::load();
-        let map = Map::generate_for(map_size, map_size, seed, rules.player.ore_max_density, players.len());
-        World::setup(rules, map, seed, players, options, &[])
+        let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
+        let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
+        World::setup(rules, map, seed, players, options, &[], biome)
     }
 
     /// World from a map file; rules overrides (modded maps) apply.
@@ -606,7 +622,7 @@ impl World {
         }
         let rules = Rules::load_with(data.rules())?;
         let map = data.to_map()?;
-        Ok(World::setup(rules, map, seed, players, options, &data.actors))
+        Ok(World::setup(rules, map, seed, players, options, &data.actors, data.biome))
     }
 
     fn setup(
@@ -616,9 +632,11 @@ impl World {
         players: &[PlayerSetup],
         options: GameOptions,
         actors: &[crate::mapdata::MapActor],
+        biome: crate::weather::Biome,
     ) -> World {
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
+        w.env = crate::weather::Environment::new(biome, options.weather, seed);
         let spawns = w.map.spawns.clone();
         for (slot, p) in players.iter().enumerate() {
             let fi = w.rules.faction_index(&p.faction).unwrap_or_else(|| panic!("unknown faction {}", p.faction));
@@ -732,6 +750,7 @@ impl World {
             abil: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
+            env: Default::default(),
             map,
         }
     }
@@ -952,7 +971,7 @@ impl World {
                     if self.building_at[ci] == i as u32 {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
-                        self.pass_water.set_blocked(ci, self.map.terrain[ci] != crate::map::Terrain::Water);
+                        self.pass_water.set_blocked(ci, !self.map.terrain[ci].ship_passable());
                     }
                 }
                 self.tokens_dirty = true;
@@ -1496,6 +1515,7 @@ impl World {
 
     pub fn step(&mut self) {
         self.tick += 1;
+        self.env.tick(self.tick, self.map.width, self.map.height);
         for a in self.actors.iter_mut() {
             a.px = a.x;
             a.py = a.y;
@@ -1550,9 +1570,12 @@ impl World {
             return;
         }
         let mut alive_count = vec![0u32; self.players.len()];
-        for a in &self.actors {
-            // Mines alone do not keep a player in the game.
-            if a.alive && a.kind != Kind::Mine {
+        for (i, a) in self.actors.iter().enumerate() {
+            // OpenRA MustBeDestroyed: mines, walls (^Wall has none) and
+            // submarines (^Submarine: -MustBeDestroyed) alone do not keep a
+            // player in the game; a fleet of submarines hiding in a harbour
+            // would otherwise hold up the end forever.
+            if a.alive && a.kind != Kind::Mine && !self.rules.actors[a.ty as usize].is_wall() && !self.is_submarine(i) {
                 alive_count[a.owner as usize] += 1;
             }
         }
@@ -1591,8 +1614,12 @@ impl World {
                 // Transports and submarines (cargo.rs, naval.rs).
                 mix(a.carrier as i64);
                 mix(a.submerged as i64);
+                // Snow momentum and desert heat (weather.rs).
+                mix(a.env.vel as i64);
+                mix(a.env.heat as i64);
             }
         }
+        mix(self.env.weather as i64);
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);

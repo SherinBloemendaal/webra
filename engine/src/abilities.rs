@@ -128,6 +128,7 @@ fn terrain_allowed(names: &[String], t: Terrain, ore: bool) -> bool {
         Terrain::Rock => "Rock",
         Terrain::Water => "Water",
         Terrain::Tree => "Tree",
+        Terrain::Ford => "Ford",
     };
     names.iter().any(|n| n == name || (ore && n == "Ore"))
 }

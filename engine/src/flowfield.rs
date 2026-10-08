@@ -41,9 +41,9 @@ impl Passability {
         Passability::with(map, |t| t.passable())
     }
 
-    /// Passability for ships: open water only.
+    /// Passability for ships: open water and fords.
     pub fn water(map: &Map) -> Self {
-        Passability::with(map, |t| t == crate::map::Terrain::Water)
+        Passability::with(map, |t| t.ship_passable())
     }
 
     fn with(map: &Map, open: impl Fn(crate::map::Terrain) -> bool) -> Self {
@@ -180,8 +180,9 @@ fn compute(map: &Map, pass: &Passability, loco: &Locomotor, goal: u32, dirs: &mu
     if g >= n || pass.blocked[g] {
         return;
     }
+    let ship = loco.domain == crate::rules::Domain::Water;
     let cell_cost = |i: usize| -> u32 {
-        let s = loco.speeds[map.speed_class(i)].max(1) as u32;
+        let s = loco.speeds[map.speed_class_for(i, ship)].max(1) as u32;
         100 * 100 / s
     };
     cost[g] = 0;

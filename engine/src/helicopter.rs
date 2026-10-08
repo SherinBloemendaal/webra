@@ -656,6 +656,7 @@ impl World {
             Terrain::Rock => "Rock",
             Terrain::Water => "Water",
             Terrain::Tree => "Tree",
+            Terrain::Ford => "Ford",
         }
     }
 

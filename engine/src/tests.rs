@@ -79,7 +79,10 @@ fn refinery_comes_with_a_harvester_that_earns_money() {
 
 #[test]
 fn units_cross_the_map_with_flow_fields() {
-    let mut w = World::new(5, 96, &[("allies", false), ("soviet", false)]);
+    // Open land: this is about sharing flow fields, not about queueing at fords.
+    let players = [crate::world::PlayerSetup::new("allies", None), crate::world::PlayerSetup::new("soviet", None)];
+    let options = crate::world::GameOptions { map_style: crate::mapgen::MapStyle::Land, ..Default::default() };
+    let mut w = World::with_options(5, 96, &players, options);
     let tnk = ty(&w, "1TNK");
     let (sx, sy) = w.players[0].start;
     let (ex, ey) = w.players[1].start;
@@ -98,7 +101,9 @@ fn units_cross_the_map_with_flow_fields() {
         let a = &w.actors[i];
         assert_eq!(a.activity, Activity::Idle);
         let d = crate::math::dist(a.x, a.y, gx, gy);
-        assert!(d < 4 * CELL, "unit arrived near the goal, distance {d}");
+        // Twelve tanks crowd around the goal; this map's bases sit in the
+        // bottom row, so the crowd spreads along the map edge.
+        assert!(d < 5 * CELL, "unit arrived near the goal, distance {d}");
     }
     assert!(fields <= 3, "the group shares one flow field, computed {fields}");
 }
@@ -160,7 +165,9 @@ fn ai_builds_a_base_and_army() {
 fn ai_vs_ai_game_runs_and_fights() {
     let mut w = World::new(13, 80, &[("allies", true), ("soviet", true)]);
     let mut max_units = 0;
-    for _ in 0..(25 * 60 * 15) {
+    // Seed 13 is a land map with ore fields beside the passes: both
+    // economies last, and the game takes about 19 minutes.
+    for _ in 0..(25 * 60 * 25) {
         w.step();
         max_units = max_units.max(w.actors.iter().filter(|a| a.alive && a.kind != Kind::Building).count());
         if w.winner.is_some() {
@@ -170,7 +177,7 @@ fn ai_vs_ai_game_runs_and_fights() {
     let killed: u32 = w.losses.iter().sum();
     assert!(max_units >= 10, "armies were built: {max_units}");
     assert!(killed >= 5, "fighting happened: {killed} dead");
-    assert!(w.winner.is_some(), "one AI destroyed the other within 15 minutes");
+    assert!(w.winner.is_some(), "one AI destroyed the other within 25 minutes");
 }
 
 #[test]
