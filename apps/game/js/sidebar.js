@@ -66,7 +66,7 @@ export class Sidebar {
    * @param {object} rules parsed rules_json()
    * @param {number} playerId local player id
    * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onSell?: () => void,
-   *   onDeploy?: () => void, onMenu?: () => void}} callbacks
+   *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean}} callbacks
    * @param {{ticksPerSecond?: number}} [options] game ticks per second, for the clocks
    */
   constructor(root, game, rules, playerId, callbacks = {}, options = {}) {
@@ -262,9 +262,14 @@ export class Sidebar {
     const name = el('span', 'sb-name', actor.name);
     const slot = el('span', 'sb-slot');
     slot.hidden = true;
-    btn.append(canvas, clock, eta, count, ready, slot, name);
+    // What is missing, on the cameo itself for touch screens (no hover tooltip there).
+    const req = el('span', 'sb-req');
+    req.setAttribute('aria-hidden', 'true');
+    req.hidden = true;
+    btn.append(canvas, clock, eta, count, ready, slot, req, name);
 
-    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey));
+    // shiftLatched: the touch action bar's Add toggle stands in for Shift.
+    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.onCardCancel(id);
@@ -291,6 +296,7 @@ export class Sidebar {
       timer: new BuildEta(),
       count,
       slot,
+      req,
       reqText: '',
       slotText: '',
       label: '',
@@ -523,7 +529,12 @@ export class Sidebar {
     c.exclusive = b.exclusive || null;
     // The label names the first way to unlock each requirement; the tooltip lists all.
     const short = c.requires.map((r) => r.split(' or ')[0]);
-    c.reqText = b.enabled ? '' : c.exclusive || (short.length ? `Needs ${short.join(', ')}` : '');
+    const reqText = b.enabled ? '' : c.exclusive || (short.length ? `Needs ${short.join(', ')}` : '');
+    if (c.reqText !== reqText) {
+      c.reqText = reqText;
+      setText(c.req, reqText);
+      c.req.hidden = !reqText;
+    }
     const locked = !!c.exclusive;
     c.btn.classList.toggle('exclusive', locked);
     const slot = index < 9 ? String(index + 1) : '';

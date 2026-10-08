@@ -22,6 +22,10 @@ export const SCHEMA = {
   keyScrollSpeed: { type: 'number', default: 1, min: 0.25, max: 3 },
   // Draw the paths of selected units (renderer side lives in another module).
   showUnitPaths: { type: 'boolean', default: false },
+  // Highest canvas pixels per CSS pixel (js/layout.js renderPixelRatio); lower is faster on phones.
+  pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3 },
+  // Render below screen resolution (cheap speed-up for weak mobile GPUs).
+  lowQuality: { type: 'boolean', default: false },
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: { type: 'object', default: {} },
 };

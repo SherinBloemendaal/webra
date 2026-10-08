@@ -22,6 +22,10 @@ pub struct PlayerRules {
     pub low_power_modifier: i32,
     pub speed_reduction: Vec<i32>,
     pub ore_max_density: u8,
+    /// Credits per gem bale (PlayerResources.ResourceValues.Gems).
+    pub gem_value: i32,
+    /// Bales a gem cell holds at most (ResourceLayer Gems MaxDensity).
+    pub gem_max_density: u8,
 }
 
 #[derive(Deserialize)]
@@ -1536,6 +1540,10 @@ mod tests {
         assert_eq!(r.weapons[tnk.weapons[0]].burst, 2);
         let proc_ = r.actors[r.actor_index("PROC").unwrap()].building.as_ref().unwrap();
         assert_eq!(proc_.storage, 2000);
+        // Resources (PlayerResources, ResourceLayer): the map format fixes the densities.
+        assert_eq!((r.player.ore_value, r.player.gem_value), (25, 50));
+        assert_eq!(r.player.ore_max_density, crate::map::ORE_MAX_DENSITY);
+        assert_eq!(r.player.gem_max_density, crate::map::GEM_MAX_DENSITY);
         let fact = &r.actors[r.actor_index("FACT").unwrap()];
         assert_eq!(r.tokens[fact.prerequisites[0].token as usize], TOKEN_DISABLED);
         assert_eq!(fact.transforms_into, r.actor_index("MCV"));

@@ -23,6 +23,7 @@ body {
 #app {
   display: flex;
   height: 100vh;
+  height: 100dvh;
 }
 
 #field {
@@ -64,8 +65,11 @@ body {
   inset: 0;
   display: grid;
   place-items: center;
+  /* Taller than the screen (phones): scroll from the top instead of cutting it off. */
+  place-items: safe center;
   overflow: auto;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
   background:
     var(--ui-scan),
     var(--ui-grid),
@@ -87,6 +91,7 @@ body {
 .game-menu-card {
   width: min(560px, 100%);
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
 }
@@ -213,6 +218,20 @@ body {
 
 .hud-button:active {
   box-shadow: var(--ui-bevel-in);
+}
+
+/* Debug, Build / Map (phones) and Menu in one row at the top right. */
+.hud-buttons {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-buttons .hud-button {
+  position: static;
 }
 
 #version {
@@ -352,24 +371,14 @@ body {
   padding-left: 18px;
 }
 
-/* The sidebar has its own Options button; the HUD Menu button stays for
-   narrow screens, where the sidebar sits under the battlefield. */
-@media (min-width: 721px) {
-  #menu-button {
-    display: none;
-  }
-
-  .debug-button.hud-button {
-    right: 8px;
-  }
+/* The sidebar has its own Options button: on desktop the HUD Menu button
+   goes, and the Debug button takes its corner. */
+#app[data-layout='desktop'] #menu-button {
+  display: none;
 }
 
-@media (max-width: 720px) {
-  #app {
-    flex-direction: column;
-  }
-  #sidebar {
-    width: 100% !important;
-    height: 40vh;
-  }
+#app[data-layout='desktop'] .debug-button {
+  right: 8px;
 }
+
+/* Phone layouts (portrait and landscape drawers) live in css/touch.css. */
