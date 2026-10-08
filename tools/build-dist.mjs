@@ -3,11 +3,13 @@
 //   dist/play/          apps/game (client, wasm package from wasm-pack)
 //   dist/play/protocol/ packages/protocol/src
 //   dist/version.json   { version, commit, build, builtAt }
+//   dist/release-notes.json  CHANGELOG.md as data (tools/release-notes.mjs)
 // No bundler: files are copied as they are.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { writeReleaseNotes } from './release-notes.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -90,8 +92,15 @@ const commit = gitCommit();
 const info = { version, commit, build: `${version}+${commit.slice(0, 8)}`, builtAt: new Date().toISOString() };
 writeFileSync(join(dist, 'version.json'), `${JSON.stringify(info, null, 2)}\n`);
 
+// Release notes for the game's "What's new" dialog and the website's /changelog.
+// The running version must have notes, otherwise players never see them.
+const notes = writeReleaseNotes(join(root, 'CHANGELOG.md'), join(dist, 'release-notes.json'));
+if (!notes.releases.some((r) => r.version === version)) {
+  fail(`CHANGELOG.md has no release ${version} (package.json); release-please writes both together.`);
+}
+
 const total = countFiles(dist);
 console.log(
   `build-dist: dist/ ready (webra ${info.version}, commit ${info.commit.slice(0, 12)}): ` +
-    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB`,
+    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}`,
 );

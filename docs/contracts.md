@@ -387,7 +387,16 @@ everything on `webra.sherin.dev`:
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
 Build: `npm run build` assembles `dist/` (website at the root, game under
-`play/`). Deploy: GitHub Actions `deploy.yml` runs `wrangler deploy` from
+`play/`) and writes `dist/version.json` and `dist/release-notes.json`. The
+release notes are CHANGELOG.md (written by release-please) as data, parsed by
+`tools/release-notes.mjs`: the newest 30 releases, newest first, each with
+`version`, `date`, `compareUrl` and `sections` of entries `{ scope, text,
+commit, url, refs? }`, plus `scopes` (commit scope to the name players read).
+The game loads it from `../release-notes.json` for its "What's new" dialog
+(once per new version, remembered in localStorage under
+`webra.releaseNotes.seen`) and its Release notes entries in the lobby and the
+game menu; the website's `/changelog` page shows the same file. The build
+fails when CHANGELOG.md has no release for the version in package.json. Deploy: GitHub Actions `deploy.yml` runs `wrangler deploy` from
 `apps/server` on every push to `main` after CI passes, using the repository
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Storage: Durable
 Objects (SQLite) for sessions, D1 database `webra` for maps and the session

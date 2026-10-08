@@ -85,6 +85,28 @@
   letter-spacing: 0.3px;
 }
 
+#menu .lobby-notes {
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--l-gold-dim);
+  color: var(--l-gold);
+  font: 700 11px/1.4 system-ui, 'Segoe UI', sans-serif;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#menu .lobby-notes:hover {
+  border-bottom-style: solid;
+  filter: brightness(1.2);
+}
+
+#menu .lobby-notes:focus-visible {
+  outline: 2px solid var(--l-gold);
+  outline-offset: 2px;
+}
+
 /* ---- Error banner --------------------------------------------------------- */
 
 #menu .lobby-error {

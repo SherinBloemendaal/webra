@@ -32,6 +32,7 @@ body {
 #app {
   display: flex;
   height: 100vh;
+  height: 100dvh;
 }
 
 #field {
@@ -67,8 +68,11 @@ body {
   inset: 0;
   display: grid;
   place-items: center;
+  /* Taller than the screen (phones): scroll from the top instead of cutting it off. */
+  place-items: safe center;
   overflow: auto;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
   background:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
@@ -90,6 +94,7 @@ body {
 .game-menu-card {
   width: min(560px, 100%);
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
 }
@@ -206,6 +211,20 @@ body {
   background: rgba(0, 0, 0, 0.75);
 }
 
+/* Debug, Build / Map (phones) and Menu in one row at the top right. */
+.hud-buttons {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-buttons .hud-button {
+  position: static;
+}
+
 #version {
   position: fixed;
   left: 8px;
@@ -316,12 +335,4 @@ body {
   padding-left: 18px;
 }
 
-@media (max-width: 720px) {
-  #app {
-    flex-direction: column;
-  }
-  #sidebar {
-    width: 100% !important;
-    height: 40vh;
-  }
-}
+/* Phone layouts (portrait and landscape drawers) live in css/touch.css. */
