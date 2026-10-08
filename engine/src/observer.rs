@@ -225,17 +225,10 @@ impl Game {
         let mut world = self.world.clone();
         world.render_all = false;
         world.sound.take();
-        Game {
-            world,
-            sprites: Vec::new(),
-            rects: Vec::new(),
-            fog: Vec::new(),
-            terrain: Vec::new(),
-            selection: self.selection.clone(),
-            paths: Vec::new(),
-            lockstep: self.lockstep,
-            outbox: Vec::new(),
-        }
+        let mut game = Game::wrap(world);
+        game.selection = self.selection.clone();
+        game.lockstep = self.lockstep;
+        game
     }
 
     /// Replace this game's world with a copy of `snap`'s (from `snapshot`).

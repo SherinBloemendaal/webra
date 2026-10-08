@@ -6,7 +6,8 @@
 //! Everything here is presentation only: it reads the world and fills the
 //! render buffers, the simulation never reads `RenderOptions`.
 
-use crate::render::{px, View};
+use crate::instances::{Anchor, Sink, SpriteRec};
+use crate::render::{push_anchored_rects, px};
 use crate::rules::Kind;
 use crate::world::{World, NONE};
 
@@ -152,23 +153,32 @@ pub fn health_bar_rect_count(w: f32) -> usize {
 }
 
 impl World {
-    /// Centre and size (world pixels) of actor `i`'s selection box, raised by
-    /// its altitude like the sprite.
+    /// Centre and size (world pixels) of actor `i`'s selection box at
+    /// `alpha`, raised by its altitude like the sprite (what the render
+    /// records of `selection_anchor` evaluate to; the tests check against it).
+    #[cfg(test)]
     pub(crate) fn selection_box(&self, i: usize, alpha: f32) -> (f32, f32, f32, f32) {
+        let (anchor, w, h) = self.selection_anchor(i);
+        let (x, y) = anchor.at(alpha);
+        (x, y, w, h)
+    }
+
+    /// Actor `i`'s selection box as its centre at the previous and current
+    /// tick (raised by its altitude) and its size (instances.rs).
+    pub(crate) fn selection_anchor(&self, i: usize) -> (Anchor, f32, f32) {
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
         if a.kind == Kind::Building {
             let b = info.building.as_ref().unwrap();
-            return (px(a.x), px(a.y), b.width as f32 * 24.0, b.height as f32 * 24.0);
+            return (Anchor::fixed(px(a.x), px(a.y)), b.width as f32 * 24.0, b.height as f32 * 24.0);
         }
         let Some(u) = info.unit.as_ref() else {
             // Mines: a small box on their cell.
-            return (px(a.x), px(a.y), MINE_BOX, MINE_BOX);
+            return (Anchor::fixed(px(a.x), px(a.y)), MINE_BOX, MINE_BOX);
         };
         let s = unit_box_size(u.radius);
-        let x = px(a.px) + (px(a.x) - px(a.px)) * alpha;
-        let y = px(a.py) + (px(a.y) - px(a.py)) * alpha - px(a.altitude);
-        (x, y, s, s)
+        let lift = px(a.altitude);
+        (Anchor { from: [px(a.px), px(a.py) - lift], to: [px(a.x), px(a.y) - lift] }, s, s)
     }
 
     /// Health fraction of actor `i` in 0..=1.
@@ -186,32 +196,27 @@ impl World {
             && (a.owner == player || (self.is_visible_to(i, player) && !self.is_cloaked_from(i, player)))
     }
 
-    /// Bracket and health bar of a selected actor; returns its box as (l, t, w, h).
-    pub(crate) fn push_selection_overlay(&self, i: usize, alpha: f32, rects: &mut Vec<f32>) -> (f32, f32, f32, f32) {
-        let (x, y, w, h) = self.selection_box(i, alpha);
-        let (l, t) = (x - w / 2.0, y - h / 2.0);
-        push_brackets(l, t, w, h, self.actors[i].owner, rects);
-        push_health_bar(l, t, w, self.health_frac(i), rects);
-        (l, t, w, h)
-    }
-
     /// Health bars of actors that are not selected, each drawn once: what the
     /// selected own actors attack (OpenRA shows target health), the actor
     /// under the mouse and, by the player's setting, damaged or all visible
     /// ones. Only actors `player` can see; walls and mines get one only as a
     /// target or when hovered.
-    pub(crate) fn render_status_bars(&self, player: u8, alpha: f32, view: &View, selected: &[u32], rects: &mut Vec<f32>) {
+    pub(crate) fn render_status_bars(&self, player: u8, sink: &mut Sink, selected: &[u32], rects: &mut Vec<f32>) {
         let opts = &self.render_opts;
-        // The selection draws its own bars (push_selection_overlay).
+        // The selection draws its own bars (render.rs).
         let mut shown: Vec<usize> = selected.iter().filter_map(|&r| self.resolve(r)).collect();
-        let mut bar = |i: usize, shown: &mut Vec<usize>| {
+        let mut rel: Vec<f32> = Vec::new();
+        let mut bar = |i: usize, shown: &mut Vec<usize>, sink: &mut Sink| {
             if shown.contains(&i) || !self.shows_overlay_to(i, player) {
                 return;
             }
             shown.push(i);
-            let (x, y, w, h) = self.selection_box(i, alpha);
-            if view.contains(x, y, w.max(h)) {
-                push_health_bar(x - w / 2.0, y - h / 2.0, w, self.health_frac(i), rects);
+            let (anchor, w, h) = self.selection_anchor(i);
+            // Culled around the box centre, by the box's longer side.
+            if sink.visible(anchor.from, anchor.to, w.max(h)) {
+                rel.clear();
+                push_health_bar(-w / 2.0, -h / 2.0, w, self.health_frac(i), &mut rel);
+                push_anchored_rects(sink, rects, &anchor, w.max(h), &rel);
             }
         };
         let targets: Vec<usize> = selected
@@ -221,7 +226,7 @@ impl World {
             .filter_map(|i| self.resolve(self.actors[i].target))
             .collect();
         for t in targets.into_iter().chain(self.resolve(opts.hover)) {
-            bar(t, &mut shown);
+            bar(t, &mut shown, sink);
         }
         if opts.health_bars == HealthBars::Selected {
             return;
@@ -232,14 +237,15 @@ impl World {
             if !a.alive || a.kind == Kind::Mine || info.is_wall() || (opts.health_bars == HealthBars::Damaged && a.hp >= info.hp) {
                 continue;
             }
-            bar(i, &mut shown);
+            bar(i, &mut shown, sink);
         }
     }
 
     /// The animated layer of a live building (sprite slot `2t + 1`, the shader
     /// picks the frame from the render clock), or its static frame while the
     /// owner is low on power and the building needs power.
-    pub(crate) fn push_building_overlay(&self, i: usize, x: f32, y: f32, alpha: f32, flash: f32, out: &mut Vec<f32>) {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn push_building_overlay(&self, i: usize, x: f32, y: f32, alpha: f32, flash: f32, sink: &mut Sink, out: &mut Vec<f32>) {
         let a = &self.actors[i];
         let Some(&still) = self.render_opts.building_overlays.get(a.ty as usize) else { return };
         if still == 0 {
@@ -248,14 +254,14 @@ impl World {
         let info = &self.rules.actors[a.ty as usize];
         let stopped = info.requires_power && self.players[a.owner as usize].low_power();
         let sprite = if stopped { still as f32 } else { (a.ty * 2 + 1) as f32 };
-        out.extend_from_slice(&[x, y, 0.0, sprite, a.owner as f32, 1.0, alpha, flash]);
+        sink.sprite(out, SpriteRec::at(x, y, 96.0).look(sprite, a.owner as f32, 1.0, alpha, flash));
     }
 
     /// The static frame of a remembered (fogged) building's animated layer.
-    pub(crate) fn push_ghost_overlay(&self, ty: u16, owner: u8, x: f32, y: f32, out: &mut Vec<f32>) {
+    pub(crate) fn push_ghost_overlay(&self, ty: u16, owner: u8, x: f32, y: f32, sink: &mut Sink, out: &mut Vec<f32>) {
         if let Some(&still) = self.render_opts.building_overlays.get(ty as usize) {
             if still != 0 {
-                out.extend_from_slice(&[x, y, 0.0, still as f32, owner as f32, 1.0, 1.0, 0.0]);
+                sink.sprite(out, SpriteRec::at(x, y, 96.0).look(still as f32, owner as f32, 1.0, 1.0, 0.0));
             }
         }
     }

@@ -1,11 +1,16 @@
-//! Builds flat instance arrays for the WebGPU renderer.
+//! Builds flat instance arrays for the WebGPU renderer: evaluated for one
+//! frame (`build_render`, the CPU path) or as tick-rate records the GPU
+//! instance pass evaluates every frame (`build_render_records`); both come
+//! from `emit_render` through an `instances::Sink`.
 //!
 //! Sprites: 8 floats each `[x, y, angle, sprite, team, scale, alpha, flash]`,
 //! positions in world pixels (24 px per cell, like the original game).
 //! Rects:   8 floats each `[x, y, w, h, r, g, b, a]` for selection brackets and health bars;
 //!          a negative `r` selects team colour `-r - 1` scaled by `g` (overlays.rs `team_color`).
 
+use crate::instances::{Anchor, Sink, SpriteRec, NO_CULL};
 use crate::math::{angle_diff, CELL};
+use crate::overlays::{push_brackets, push_health_bar};
 use crate::rules::Kind;
 use crate::world::{Activity, EffectKind, World};
 
@@ -84,25 +89,46 @@ impl View {
     }
 }
 
-fn lerp(a: i32, b: i32, t: f32) -> f32 {
-    px(a) + (px(b) - px(a)) * t
+/// Rects given as `[x, y, w, h, r, g, b, a]` relative to `anchor`, each
+/// culled with `margin` around the anchor.
+pub(crate) fn push_anchored_rects(sink: &mut Sink, rects: &mut Vec<f32>, anchor: &Anchor, margin: f32, rel: &[f32]) {
+    for q in rel.as_chunks::<RECT_FLOATS>().0 {
+        sink.rect(rects, anchor.rect(margin, q[0], q[1], q[2], q[3], [q[4], q[5], q[6], q[7]]));
+    }
 }
 
-fn lerp_angle(a: i32, b: i32, t: f32) -> f32 {
-    let d = angle_diff(a, b) as f32;
-    (a as f32 + d * t) * std::f32::consts::TAU / 1024.0
+/// A rect `[x, y, w, h, r, g, b, a]` at a fixed place, never culled.
+pub(crate) fn push_fixed_rect(sink: &mut Sink, rects: &mut Vec<f32>, q: &[f32; 8]) {
+    sink.rect(rects, Anchor::fixed(0.0, 0.0).rect(NO_CULL, q[0], q[1], q[2], q[3], [q[4], q[5], q[6], q[7]]));
 }
 
 impl World {
-    /// Fill `sprites` and `rects` for what `player` can see inside `view`.
+    /// Fill `sprites` and `rects` for what `player` can see inside `view`,
+    /// interpolated by `alpha` (the CPU path: tick-rate records evaluated at
+    /// once, instances.rs).
     pub fn build_render(&self, player: u8, alpha: f32, view: &View, selected: &[u32], sprites: &mut Vec<f32>, rects: &mut Vec<f32>) {
         sprites.clear();
         rects.clear();
+        let mut sink = Sink::eval(alpha, view);
+        self.emit_render(player, &mut sink, selected, sprites, rects);
+    }
+
+    /// The same frame as tick-rate records for the GPU instance pass
+    /// (instances.rs): everything `player` can see on the whole map, with
+    /// both ends of each interpolation and the cull of each group, in draw
+    /// order. Depends on the world, `player`, `selected` and the render
+    /// options only, so it is built once per tick (or when they change).
+    pub fn build_render_records(&self, player: u8, selected: &[u32], sprites: &mut Vec<f32>, extras: &mut Vec<f32>, rects: &mut Vec<f32>) {
+        sprites.clear();
+        rects.clear();
+        let mut sink = Sink::record(std::mem::take(extras));
+        self.emit_render(player, &mut sink, selected, sprites, rects);
+        *extras = sink.extras;
+    }
+
+    fn emit_render(&self, player: u8, sink: &mut Sink, selected: &[u32], sprites: &mut Vec<f32>, rects: &mut Vec<f32>) {
         let ids = SpriteIds::new(self.rules.actors.len());
         let p = &self.players[player as usize];
-        let push_sprite = |s: &mut Vec<f32>, x: f32, y: f32, angle: f32, sprite: f32, team: f32, scale: f32, a: f32, flash: f32| {
-            s.extend_from_slice(&[x, y, angle, sprite, team, scale, a, flash]);
-        };
 
         // Buildings: own and visible ones live, the rest as remembered ghosts.
         let mut building_turrets: Vec<f32> = Vec::new();
@@ -114,26 +140,22 @@ impl World {
                 continue;
             }
             let (x, y) = (px(a.x), px(a.y));
-            if !view.contains(x, y, 96.0) {
-                continue;
-            }
+            let Some(at) = sink.group([x, y], [x, y], 96.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
             let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            push_sprite(sprites, x, y, 0.0, (a.ty * 2) as f32, a.owner as f32, 1.0, alpha, flash);
+            sink.sprite(sprites, at.look((a.ty * 2) as f32, a.owner as f32, 1.0, alpha, flash));
             // Radar dishes, smoke and lights (overlays.rs), over every building body.
-            self.push_building_overlay(i, x, y, alpha, flash, &mut building_turrets);
+            self.push_building_overlay(i, x, y, alpha, flash, sink, &mut building_turrets);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
-                building_turrets.extend_from_slice(&[
-                    x,
-                    y,
-                    lerp_angle(a.pturret, a.turret, alpha),
-                    (a.ty * 2 + 1) as f32,
-                    a.owner as f32,
-                    1.0,
-                    1.0,
-                    flash,
-                ]);
+                // The turret angle is taken at the building's opacity (1, or
+                // 0.45 cloaked), not at the frame's alpha: the earlier code
+                // reused the name `alpha` for both. Kept as drawn so far, so
+                // building turrets turn at tick rate on both paths.
+                let angle = a.pturret as f32 + angle_diff(a.pturret, a.turret) as f32 * alpha;
+                let mut r = at.look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
+                r.angle = angle;
+                sink.sprite(&mut building_turrets, r);
             }
         }
         // The spectator view (observer.rs) draws every structure live, no ghosts.
@@ -149,9 +171,9 @@ impl World {
                 continue;
             }
             let (x, y) = (px(g.cx * CELL + b.width * CELL / 2), px(g.cy * CELL + b.height * CELL / 2));
-            if view.contains(x, y, 96.0) {
-                push_sprite(sprites, x, y, 0.0, (g.ty * 2) as f32, g.owner as f32, 1.0, 1.0, 0.0);
-                self.push_ghost_overlay(g.ty, g.owner, x, y, &mut building_turrets);
+            if sink.visible([x, y], [x, y], 96.0) {
+                sink.sprite(sprites, SpriteRec::at(x, y, 96.0).look((g.ty * 2) as f32, g.owner as f32, 1.0, 1.0, 0.0));
+                self.push_ghost_overlay(g.ty, g.owner, x, y, sink, &mut building_turrets);
             }
         }
 
@@ -166,105 +188,93 @@ impl World {
             if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine || !a.in_world() {
                 continue;
             }
+            let (from, to) = ([px(a.px), px(a.py)], [px(a.x), px(a.y)]);
             if a.kind == Kind::Aircraft {
                 if a.owner != player && !self.is_visible_to(i, player) {
                     continue;
                 }
-                let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
-                if !view.contains(x, y, 64.0) {
-                    continue;
-                }
+                let Some(at) = sink.group(from, to, 64.0) else { continue };
                 let lift = px(a.altitude);
-                let ang = lerp_angle(a.pfacing, a.facing, alpha);
+                let body = (a.ty * 2) as f32;
+                let turn = angle_diff(a.pfacing, a.facing);
                 // Shadow: the same sprite, transparent, at ground level.
-                push_sprite(sprites, x + lift * 0.4, y, ang, (a.ty * 2) as f32, a.owner as f32, 0.9, 0.25, -1.0);
-                push_sprite(&mut aircraft, x, y - lift, ang, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, (a.flash > 0) as i32 as f32);
+                sink.sprite(sprites, at.facing(a.pfacing, turn).look(body, a.owner as f32, 0.9, 0.25, -1.0).offset(lift * 0.4, 0.0));
+                let flash = (a.flash > 0) as i32 as f32;
+                sink.sprite(&mut aircraft, at.facing(a.pfacing, turn).look(body, a.owner as f32, 1.0, 1.0, flash).offset(0.0, -lift));
                 if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
-                    push_sprite(
-                        &mut aircraft,
-                        x,
-                        y - lift,
-                        lerp_angle(a.pturret, a.turret, alpha),
-                        (a.ty * 2 + 1) as f32,
-                        a.owner as f32,
-                        1.0,
-                        1.0,
-                        0.0,
-                    );
+                    let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(body + 1.0, a.owner as f32, 1.0, 1.0, 0.0);
+                    sink.sprite(&mut aircraft, r.offset(0.0, -lift));
                 }
                 // Helicopter rotors and rotor wash (helicopter.rs).
-                self.push_heli_rotors(i, x, y - lift, alpha, sprites, &mut aircraft);
+                self.push_heli_rotors(i, at, lift, sink, sprites, &mut aircraft);
                 continue;
             }
             // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
             if a.air.parachute || (a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player))) {
                 continue;
             }
-            let (x, y) = (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha));
-            if !view.contains(x, y, 32.0) {
-                continue;
-            }
+            let Some(at) = sink.group(from, to, 32.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
-            let body_angle = lerp_angle(a.pfacing, a.facing, alpha);
             if a.kind == Kind::Ship {
-                self.push_ship(sprites, &mut turrets, a, x, y, body_angle, alpha, flash, &ids);
+                self.push_ship(sink, sprites, &mut turrets, a, at, flash, &ids);
                 continue;
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
             // Prone infantry lie flat (TakeCover, veterancy.rs).
             let body = if self.draws_prone(i) { a.ty * 2 + 1 } else { a.ty * 2 };
-            push_sprite(sprites, x, y, body_angle, body as f32, a.owner as f32, 1.0, body_alpha, flash);
+            sink.sprite(
+                sprites,
+                at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(body as f32, a.owner as f32, 1.0, body_alpha, flash),
+            );
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
-                push_sprite(
-                    &mut turrets,
-                    x,
-                    y,
-                    lerp_angle(a.pturret, a.turret, alpha),
-                    (a.ty * 2 + 1) as f32,
-                    a.owner as f32,
-                    1.0,
-                    1.0,
-                    flash,
-                );
+                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
+                sink.sprite(&mut turrets, r);
             }
         }
         // Shot-down helicopters falling (helicopter.rs).
-        self.push_heli_crashes(player, alpha, view, sprites, &mut aircraft);
+        self.push_heli_crashes(player, sink, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
         // Mines, ability effects and decorations (abilities.rs).
-        self.render_abilities(player, view, selected, sprites, rects);
+        self.render_abilities(player, sink, selected, sprites, rects);
         // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
-        self.render_air_extras(player, alpha, view, &ids, sprites);
+        self.render_air_extras(player, sink, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
         // Rank chevrons on top of every unit (veterancy.rs).
-        self.render_veterancy(player, alpha, view, ids.veterancy_base, sprites);
+        self.render_veterancy(player, sink, ids.veterancy_base, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));
             let ci = self.cell_index(pr.x, pr.y);
-            if self.render_sees_cell(player, ci) && view.contains(x, y, 16.0) {
-                let ang = pr.facing as f32 * std::f32::consts::TAU / 1024.0;
+            if self.render_sees_cell(player, ci) && sink.visible([x, y], [x, y], 16.0) {
                 let wi = &self.rules.weapons[pr.weapon as usize];
-                let (sprite, ang) = match (self.naval_projectile_sprite(pr.weapon as usize), wi.projectile) {
+                let (sprite, turned) = match (self.naval_projectile_sprite(pr.weapon as usize), wi.projectile) {
                     // Torpedoes are drawn pointing east like missiles.
-                    (Some(n), crate::rules::Projectile::Missile) => (ids.naval_base + n as f32, ang - QUARTER_TURN),
-                    (Some(n), _) => (ids.naval_base + n as f32, ang),
-                    (None, crate::rules::Projectile::Missile) => (ids.missile, ang - QUARTER_TURN),
-                    _ if wi.arc => (ids.shell, ang),
-                    _ => (ids.bullet, ang),
+                    (Some(n), crate::rules::Projectile::Missile) => (ids.naval_base + n as f32, true),
+                    (Some(n), _) => (ids.naval_base + n as f32, false),
+                    (None, crate::rules::Projectile::Missile) => (ids.missile, true),
+                    _ if wi.arc => (ids.shell, false),
+                    _ => (ids.bullet, false),
                 };
-                push_sprite(sprites, x, y, ang, sprite, pr.owner as f32, 1.0, 1.0, 0.0);
+                let r = SpriteRec::at(x, y, 16.0).facing(pr.facing, 0).look(sprite, pr.owner as f32, 1.0, 1.0, 0.0);
+                if turned {
+                    sink.sprite(sprites, r.angle_affine(1.0, -QUARTER_TURN));
+                } else {
+                    sink.sprite(sprites, r);
+                }
             }
         }
         for e in &self.effects {
             let (x, y) = (px(e.x), px(e.y));
             let ci = self.cell_index(e.x, e.y);
-            if !self.render_sees_cell(player, ci) || !view.contains(x, y, 48.0) {
+            if !self.render_sees_cell(player, ci) || !sink.visible([x, y], [x, y], 48.0) {
                 continue;
             }
-            let t = 1.0 - (e.ttl as f32 - alpha).max(0.0) / e.max as f32;
-            let fade = (1.0 - t).max(0.0);
+            // Age and fade at the previous (alpha 0) and the current tick
+            // (alpha 1); both are affine in alpha in between.
+            let age = |alpha: f32| 1.0 - (e.ttl as f32 - alpha).max(0.0) / e.max as f32;
+            let (t0, t1) = (age(0.0), age(1.0));
+            let (fade0, fade1) = ((1.0 - t0).max(0.0), (1.0 - t1).max(0.0));
             if e.kind == EffectKind::TeslaBolt {
                 // A chain of short zigzag segments from the coil to the target.
                 let (tx, ty) = (px(e.tx), px(e.ty));
@@ -274,11 +284,12 @@ impl World {
                 let n = (len / 14.0).ceil() as usize;
                 for k in 0..n {
                     let f = (k as f32 + 0.5) / n as f32;
-                    push_sprite(sprites, x + dx * f, y + dy * f, ang, ids.tesla_bolt, 0.0, 1.0, fade, 0.0);
+                    let r = SpriteRec::at(x, y, 48.0).look(ids.tesla_bolt, 0.0, 1.0, fade0, 0.0);
+                    sink.sprite(sprites, r.offset(dx * f, dy * f).radians(ang).fade_to(1.0, fade1));
                 }
                 continue;
             }
-            let (sprite, scale, a) = match e.kind {
+            let look = |t: f32, fade: f32| match e.kind {
                 EffectKind::SmallExplosion => (ids.small_explosion, 0.6 + t * 0.6, fade),
                 EffectKind::LargeExplosion => (ids.large_explosion, 0.7 + t * 0.8, fade),
                 EffectKind::Piff => (ids.piff, 0.6 + t * 0.4, fade),
@@ -288,12 +299,14 @@ impl World {
                 EffectKind::Naval(n) => (ids.naval_base + n as f32, 0.7 + t * 0.6, fade),
                 EffectKind::TeslaBolt => unreachable!(),
             };
-            push_sprite(sprites, x, y, 0.0, sprite, 0.0, scale, a, 0.0);
+            let ((sprite, scale0, a0), (_, scale1, a1)) = (look(t0, fade0), look(t1, fade1));
+            sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(sprite, 0.0, scale0, a0, 0.0).fade_to(scale1, a1));
         }
 
         // Health bars of the selection's targets and of hovered, damaged or all actors (overlays.rs).
-        self.render_status_bars(player, alpha, view, selected, rects);
+        self.render_status_bars(player, sink, selected, rects);
         // Selection: brackets, health bars and rally flags.
+        let mut rel: Vec<f32> = Vec::new();
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
             let a = &self.actors[i];
@@ -301,17 +314,22 @@ impl World {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
+            // Everything below hangs off the actor's box, given relative to its centre.
+            let (anchor, w, h) = self.selection_anchor(i);
+            let (l, t) = (-w / 2.0, -h / 2.0);
+            rel.clear();
             // Owner coloured corner brackets and a segmented health bar (overlays.rs).
-            let (l, t, w, h) = self.push_selection_overlay(i, alpha, rects);
+            push_brackets(l, t, w, h, a.owner, &mut rel);
+            push_health_bar(l, t, w, self.health_frac(i), &mut rel);
             // Cargo pips: one per weight unit of Cargo.MaxWeight, filled per passenger.
             if self.is_transport(i) && self.render_allied(a.owner, player) {
                 let max = self.cargo_max(i).clamp(0, 12);
                 let full = self.cargo_weight(i);
                 for k in 0..max {
                     let (px_, py_) = (l + 1.0 + k as f32 * 4.0, t + h + 5.0);
-                    rects.extend_from_slice(&[px_ - 0.5, py_ - 0.5, 4.0, 4.0, 0.0, 0.0, 0.0, 0.8]);
+                    rel.extend_from_slice(&[px_ - 0.5, py_ - 0.5, 4.0, 4.0, 0.0, 0.0, 0.0, 0.8]);
                     let c = if k < full { [0.3, 0.95, 0.35, 1.0] } else { [0.35, 0.35, 0.35, 0.9] };
-                    rects.extend_from_slice(&[px_, py_, 3.0, 3.0, c[0], c[1], c[2], c[3]]);
+                    rel.extend_from_slice(&[px_, py_, 3.0, 3.0, c[0], c[1], c[2], c[3]]);
                 }
             }
             if let Some(hv) = info.unit.as_ref().and_then(|u| u.harvester.as_ref()) {
@@ -319,29 +337,30 @@ impl World {
                 let cap = hv.capacity.max(1) as f32;
                 let ore = (a.bales - a.gem_bales) as f32 / cap;
                 let gems = a.gem_bales as f32 / cap;
-                rects.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
-                rects.extend_from_slice(&[l, t + h + 2.0, w * ore, 2.0, 0.95, 0.75, 0.2, 1.0]);
-                rects.extend_from_slice(&[l + w * ore, t + h + 2.0, w * gems, 2.0, 0.9, 0.2, 0.3, 1.0]);
+                rel.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
+                rel.extend_from_slice(&[l, t + h + 2.0, w * ore, 2.0, 0.95, 0.75, 0.2, 1.0]);
+                rel.extend_from_slice(&[l + w * ore, t + h + 2.0, w * gems, 2.0, 0.9, 0.2, 0.3, 1.0]);
             }
-            self.push_heli_ammo_pips(i, l, t + h, w, rects);
+            self.push_heli_ammo_pips(i, l, t + h, w, &mut rel);
+            push_anchored_rects(sink, rects, &anchor, NO_CULL, &rel);
             if a.kind == Kind::Building && self.render_owns(a.owner, player) {
                 if let Some((rx, ry)) = a.rally {
-                    push_sprite(sprites, px(rx), px(ry), 0.0, ids.rally, a.owner as f32, 1.0, 1.0, 0.0);
+                    sink.sprite(sprites, SpriteRec::at(px(rx), px(ry), NO_CULL).look(ids.rally, a.owner as f32, 1.0, 1.0, 0.0));
                 }
             }
             if a.kind != Kind::Building && self.render_owns(a.owner, player) && a.activity == Activity::Move && a.goal != crate::world::NONE
             {
                 let gx = (a.goal as i32 % self.map.width) as f32 * 24.0 + 12.0;
                 let gy = (a.goal as i32 / self.map.width) as f32 * 24.0 + 12.0;
-                rects.extend_from_slice(&[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);
+                push_fixed_rect(sink, rects, &[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);
             }
         }
-        self.render_waypoints(player, selected, rects);
+        self.render_waypoints(player, selected, sink, rects);
     }
 
     /// Queued waypoints of the selected own units: a marker per waypoint and
     /// dots from the current destination through the queue (attack-moves in orange).
-    fn render_waypoints(&self, player: u8, selected: &[u32], rects: &mut Vec<f32>) {
+    fn render_waypoints(&self, player: u8, selected: &[u32], sink: &mut Sink, rects: &mut Vec<f32>) {
         // Units of one order share the queue: draw each (group, point) once.
         let mut drawn: Vec<(u32, i32, i32)> = Vec::new();
         for &r in selected {
@@ -356,8 +375,8 @@ impl World {
                 let (x, y) = (px(wp.x), px(wp.y));
                 if !drawn.contains(&(wp.group, wp.x, wp.y)) {
                     drawn.push((wp.group, wp.x, wp.y));
-                    rects.extend_from_slice(&[x - 2.5, y - 2.5, 5.0, 5.0, 0.0, 0.0, 0.0, 0.6]);
-                    rects.extend_from_slice(&[x - 1.5, y - 1.5, 3.0, 3.0, col[0], col[1], col[2], 0.95]);
+                    push_fixed_rect(sink, rects, &[x - 2.5, y - 2.5, 5.0, 5.0, 0.0, 0.0, 0.0, 0.6]);
+                    push_fixed_rect(sink, rects, &[x - 1.5, y - 1.5, 3.0, 3.0, col[0], col[1], col[2], 0.95]);
                     if let Some((fx, fy)) = from {
                         let (fx, fy) = (px(fx), px(fy));
                         let len = ((x - fx).powi(2) + (y - fy).powi(2)).sqrt();
@@ -365,7 +384,7 @@ impl World {
                         for k in 1..n {
                             let f = k as f32 / n as f32;
                             let (dx, dy) = (fx + (x - fx) * f, fy + (y - fy) * f);
-                            rects.extend_from_slice(&[dx - 0.75, dy - 0.75, 1.5, 1.5, col[0], col[1], col[2], 0.7]);
+                            push_fixed_rect(sink, rects, &[dx - 0.75, dy - 0.75, 1.5, 1.5, col[0], col[1], col[2], 0.7]);
                         }
                     }
                 }
@@ -380,36 +399,33 @@ impl World {
     #[allow(clippy::too_many_arguments)]
     fn push_ship(
         &self,
+        sink: &mut Sink,
         sprites: &mut Vec<f32>,
         turrets: &mut Vec<f32>,
         a: &crate::world::Actor,
-        x: f32,
-        y: f32,
-        angle: f32,
-        alpha: f32,
+        at: SpriteRec,
         flash: f32,
         ids: &SpriteIds,
     ) {
         let (team, body) = (a.owner as f32, (a.ty * 2) as f32);
+        let turn = angle_diff(a.pfacing, a.facing);
+        let hull = at.facing(a.pfacing, turn);
         if a.submerged {
-            sprites.extend_from_slice(&[x, y, angle, body, team, 1.0, 0.3, 0.0]);
+            sink.sprite(sprites, hull.look(body, team, 1.0, 0.3, 0.0));
             let ripple = ids.naval_base + crate::naval::NAVAL_RIPPLE as f32;
-            sprites.extend_from_slice(&[x, y, angle, ripple, team, 1.0, 0.7, 0.0]);
+            sink.sprite(sprites, hull.look(ripple, team, 1.0, 0.7, 0.0));
             return;
         }
-        sprites.extend_from_slice(&[x, y, angle, body, team, 1.0, 1.0, flash]);
+        sink.sprite(sprites, hull.look(body, team, 1.0, 1.0, flash));
         let info = &self.rules.actors[a.ty as usize];
         if info.turret_turn_speed.is_none() {
             return;
         }
-        let turret_angle = lerp_angle(a.pturret, a.turret, alpha);
-        // Forward is (sin, -cos) of the body angle, right is (cos, sin).
-        let (s, c) = angle.sin_cos();
+        let turret = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(body + 1.0, team, 1.0, 1.0, flash);
         let offsets: &[(i32, i32)] = if info.turret_offsets.is_empty() { &[(0, 0)] } else { &info.turret_offsets };
         for &(fwd, side) in offsets {
-            let (f, r) = (px(fwd), px(side));
-            let (tx, ty) = (x + s * f + c * r, y - c * f + s * r);
-            turrets.extend_from_slice(&[tx, ty, turret_angle, body + 1.0, team, 1.0, 1.0, flash]);
+            // Forward is (sin, -cos) of the hull angle, right is (cos, sin).
+            sink.sprite(turrets, turret.extended().arm(px(fwd), px(side), a.pfacing, turn));
         }
     }
 

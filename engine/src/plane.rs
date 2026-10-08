@@ -857,13 +857,12 @@ impl World {
     pub(crate) fn render_air_extras(
         &self,
         player: u8,
-        alpha: f32,
-        view: &crate::render::View,
+        sink: &mut crate::instances::Sink,
         ids: &crate::render::SpriteIds,
         sprites: &mut Vec<f32>,
     ) {
+        use crate::instances::SpriteRec;
         use crate::render::px;
-        let lerp = |a: i32, b: i32| px(a) + (px(b) - px(a)) * alpha;
         let parachute = ids.planes_base;
         let bomb = ids.planes_base + 1.0;
         let puff = ids.planes_base + 2.0;
@@ -872,18 +871,21 @@ impl World {
             if !a.alive {
                 continue;
             }
+            let ends = || ([px(a.px), px(a.py)], [px(a.x), px(a.y)]);
             if a.air.parachute {
                 if a.owner != player && !self.is_visible_to(i, player) {
                     continue;
                 }
-                let (x, y) = (lerp(a.px, a.x), lerp(a.py, a.y));
-                if !view.contains(x, y, 48.0) {
+                let (from, to) = ends();
+                if !sink.visible(from, to, 48.0) {
                     continue;
                 }
                 let lift = px(a.altitude);
-                sprites.extend_from_slice(&[x + lift * 0.4, y, 0.0, (a.ty * 2) as f32, a.owner as f32, 0.9, 0.25, -1.0]);
-                sprites.extend_from_slice(&[x, y - lift, 0.0, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, 0.0]);
-                sprites.extend_from_slice(&[x, y - lift - 7.0, 0.0, parachute, a.owner as f32, 1.0, 1.0, 0.0]);
+                let at = SpriteRec::moving(from, to, 48.0);
+                let body = (a.ty * 2) as f32;
+                sink.sprite(sprites, at.look(body, a.owner as f32, 0.9, 0.25, -1.0).offset(lift * 0.4, 0.0));
+                sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift));
+                sink.sprite(sprites, at.look(parachute, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift - 7.0));
                 continue;
             }
             if a.kind != Kind::Aircraft || a.altitude <= 0 || !self.is_plane(i) {
@@ -892,42 +894,37 @@ impl World {
             if a.owner != player && !self.is_visible_to(i, player) {
                 continue;
             }
-            let (x, y) = (lerp(a.px, a.x), lerp(a.py, a.y));
-            if !view.contains(x, y, 96.0) {
+            let (from, to) = ends();
+            if !sink.visible(from, to, 96.0) {
                 continue;
             }
             let lift = px(a.altitude);
             let (vx, vy) = facing_vec(a.facing);
             let (fx, fy) = (vx as f32 / 1024.0, vy as f32 / 1024.0);
+            let at = SpriteRec::moving(from, to, 96.0);
             if a.air.phase == Phase::Crashing {
                 for k in 1..=3 {
                     let back = 6.0 * k as f32;
                     let s = 0.7 + 0.25 * k as f32;
-                    sprites.extend_from_slice(&[x - fx * back, y - lift - fy * back, 0.0, smoke, 0.0, s, 0.8 - 0.2 * k as f32, 0.0]);
+                    sink.sprite(sprites, at.look(smoke, 0.0, s, 0.8 - 0.2 * k as f32, 0.0).offset(-fx * back, -lift - fy * back));
                 }
             } else if a.altitude * 2 >= self.flight(i).cruise {
                 // Contrail: a short fading trail of puffs behind the plane.
                 for k in 1..=4 {
                     let back = 8.0 + 6.0 * k as f32;
-                    sprites.extend_from_slice(&[
-                        x - fx * back,
-                        y - lift - fy * back,
-                        0.0,
-                        puff,
-                        0.0,
-                        0.6 + 0.12 * k as f32,
-                        0.5 - 0.1 * k as f32,
-                        0.0,
-                    ]);
+                    let r = at.look(puff, 0.0, 0.6 + 0.12 * k as f32, 0.5 - 0.1 * k as f32, 0.0);
+                    sink.sprite(sprites, r.offset(-fx * back, -lift - fy * back));
                 }
             }
         }
         for b in &self.powers.bombs {
             let (x, y) = (px(b.x), px(b.y));
             let ci = self.cell_index(b.x, b.y);
-            if (b.owner == player || self.render_sees_cell(player, ci)) && view.contains(x, y, 48.0) {
-                let lift = px(b.altitude) + px(b.speed) * (1.0 - alpha);
-                sprites.extend_from_slice(&[x, y - lift, 0.0, bomb, b.owner as f32, 1.0, 1.0, 0.0]);
+            if (b.owner == player || self.render_sees_cell(player, ci)) && sink.visible([x, y], [x, y], 48.0) {
+                // Falling: `speed` higher at the previous tick than at the current one.
+                let lift = |alpha: f32| px(b.altitude) + px(b.speed) * (1.0 - alpha);
+                let r = SpriteRec::at(x, y, 48.0).look(bomb, b.owner as f32, 1.0, 1.0, 0.0);
+                sink.sprite(sprites, r.offset_moving([0.0, -lift(0.0)], [0.0, -lift(1.0)]));
             }
         }
     }
