@@ -131,6 +131,24 @@ impl FlowCache {
         self.fields[f].dirs[cell]
     }
 
+    /// The cached field toward `goal` for locomotor `loco`, if it exists and
+    /// is current for passability `version`. Read only (debug views): never
+    /// computes, evicts or touches the use clock.
+    pub fn peek(&self, goal: u32, loco: u8, version: u32) -> Option<&[u8]> {
+        let &i = self.index.get(&(goal, loco))?;
+        let f = &self.fields[i];
+        (f.version == version).then_some(f.dirs.as_slice())
+    }
+
+    /// Number of cached fields.
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
     fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> usize {
         self.clock += 1;
         if let Some(&i) = self.index.get(&(goal, loco)) {

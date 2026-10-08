@@ -1,6 +1,6 @@
 // Validation of HTTP request bodies (pure, testable).
 
-import { MAX_PLAYERS, MIN_PLAYERS, ProtocolError, validPassword, validSessionName, VERSION_RE } from '@webra/protocol';
+import { isCheatOrder, MAX_PLAYERS, MIN_PLAYERS, ProtocolError, validPassword, validSessionName, VERSION_RE } from '@webra/protocol';
 import { HttpError } from './http.js';
 
 const CREATE_KEYS = ['name', 'password', 'public', 'maxPlayers', 'version'];
@@ -39,4 +39,14 @@ export function validateCreateSession(body) {
  */
 export function ordersFitRules(orders, actorCount) {
   return orders.every((o) => !('ty' in o) || (Number.isInteger(o.ty) && o.ty >= 0 && o.ty < actorCount));
+}
+
+/**
+ * Cheat orders (debug menu: dev_flag, dev_cash, dev_kill) are only relayed in
+ * games whose agreed options have `cheats: true`. The client only offers them
+ * then, so anything else is a protocol violation. The engine ignores them in
+ * such a game as well; refusing them here keeps them off every peer's wire.
+ */
+export function cheatsAllowed(orders, options) {
+  return options?.cheats === true || !orders.some(isCheatOrder);
 }

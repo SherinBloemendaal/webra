@@ -11,6 +11,8 @@ export {
   errorMessage,
   parseClientMessage,
   parseServerMessage,
+  CHEAT_ORDER_KINDS,
+  isCheatOrder,
   validLobbySlot,
   validMapRef,
   validName,

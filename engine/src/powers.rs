@@ -173,10 +173,15 @@ impl World {
                     list.push(PowerInstance { key: o.1.clone(), provider_ty: o.2, index: o.3, remaining: total, total, charging: false });
                 }
             }
+            // Debug menu "instant charge" (debug.rs).
+            let fast = self.players[p].dev.fast_charge;
             for inst in list.iter_mut() {
                 inst.charging = !defeated && mine.iter().any(|o| o.1 == inst.key && o.4);
                 if inst.charging && inst.remaining > 0 {
                     inst.remaining -= 1;
+                }
+                if fast && !defeated {
+                    inst.remaining = 0;
                 }
             }
             let rules = &self.rules;
@@ -207,6 +212,8 @@ impl World {
         if !self.fire_support_power(player, &info, x, y, dir) {
             return false;
         }
+        let code = crate::sound_events::power_code(&info.kind);
+        self.sound.push(crate::sound_events::SoundEventKind::PowerActivated, code, x, y, player, 0);
         let list = &mut self.powers.players[player as usize];
         if let Some(p) = list.iter_mut().find(|p| p.key == key) {
             p.remaining = p.total;

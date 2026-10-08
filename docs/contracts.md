@@ -105,7 +105,9 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
 human|ai|closed, name, faction, color, team, difficulty}], startingCash,
 startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, map`. `team` 0 means no team (free for all);
+redeployableMcv, oreRegrowth, cheats, map`. `cheats` is the "Debug menu"
+option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
+orders work (section 5). `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -186,6 +188,29 @@ an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 skipped, returns the count). `Game.state_hash()` (hex string) for desync
 checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
+
+### Production queues (`engine/src/production.rs`)
+
+Orders `start_production {ty, count}` and `cancel_production {ty}` serve every
+queue, structures included (no extra order types):
+
+- Structures queue like units (OpenRA): left click queues one, shift queues
+  five. Only the first item of a queue is built. A finished structure waits
+  for placement and the items behind it do not start until it is placed, so
+  each structure queue has at most one ready structure. `place` only accepts
+  the finished head of the queue.
+- `cancel_production` removes the last queued item of that type and refunds
+  what was paid for it (a finished structure refunds its full cost).
+- OpenRA `CancelUnbuildableItems`: every tick, before production advances,
+  each queued item that can no longer be produced is cancelled and refunded,
+  wherever it is in the queue. That is an item whose prerequisites were lost
+  (a half-built Heavy Tank after the Service Depot died), and every Building
+  and Defense item once the player has no Construction Yard. The rest of the
+  queue carries on; the items can be queued again once the prerequisites (or
+  a deployed MCV) are back. Unit queues keep going from their own factories.
+  `start_production` and `place` are refused for such items.
+- `player_json().buildable[].enabled` is false for structures without a
+  Construction Yard, and their `requires` lists `Construction Yard`.
 
 ## 5. Domains for units
 
@@ -269,6 +294,23 @@ not now, 3 needs a target), `has_minelayer`; `actor_json(id).ability` holds
 detonatesIn, payload }` (only the fields that apply). Smart action 7 is
 "deliver cash" (supply truck onto an own or allied structure). Mines are
 actors of kind `mine` (`MINV`, `MINP`).
+
+Debug menu (engine/src/debug.rs, apps/game/js/debug.js, opened with the `
+key or the Debug button). Cheats are orders, so online they go through
+lockstep: `{"o": "dev_flag", player, flag, on}` with `flag` one of
+`fast_build`, `build_anywhere`, `unlimited_power`, `fast_charge`,
+`disable_shroud`, `all_tech` (per player); `{"o": "dev_cash", player}` (adds
+20000, cash capped at 100000000); `{"o": "dev_kill", player, ids}` (destroys
+actors of any owner). The engine ignores them unless the game options have
+`cheats: true`, and the server drops a client that sends one in a game
+without it. Wasm: `cheats_enabled`, `dev_flag(player, flag, on)`,
+`dev_give_cash`, `dev_kill`; `player_json(p)` has `cheats` and `dev` (the
+flags). Read-only views: `debug_cells(player, x0, y0, x1, y1)` (`[x0, y0, w,
+h, flags...]`, bits in debug.rs `cell`), `debug_flow(player, id, ...)`
+(`[goalX, goalY, x0, y0, w, h, dir...]`, the flow field an own moving unit
+follows), `debug_actors(player, ...)` (JSON: ids, health, footprints, weapon
+ranges, targets) and `debug_stats()`; they only report explored cells and
+visible actors and never change the simulation.
 
 ## 6. Deployment
 
