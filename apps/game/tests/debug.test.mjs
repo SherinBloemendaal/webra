@@ -213,9 +213,10 @@ test('menu helpers: grids, preferences, timings', () => {
   assert.equal(DIRS.length, 8);
   assert.deepEqual(DIRS[0], [0, -1], 'north first');
 
-  assert.deepEqual(Object.keys(sanitizePrefs(null)), VIEWS.map((v) => v.key));
-  assert.ok(Object.values(sanitizePrefs({ cells: 'yes', evil: true })).every((v) => v === false));
+  assert.deepEqual(Object.keys(sanitizePrefs(null)), [...VIEWS.map((v) => v.key), 'cpuInstances']);
+  assert.ok(Object.values(sanitizePrefs({ cells: 'yes', evil: true, cpuInstances: 1 })).every((v) => v === false));
   assert.equal(sanitizePrefs({ stats: true }).stats, true);
+  assert.equal(sanitizePrefs({ cpuInstances: true }).cpuInstances, true);
 
   const h = new PerfHistory(4);
   for (const v of [10, 20, 30, 40, 50]) h.push(v, v / 10, v / 2);
@@ -236,4 +237,12 @@ test('menu helpers: grids, preferences, timings', () => {
   const direct = formatStats(null, h, { sim: { mode: 'direct', label: 'Main thread', reason: 'no module workers: main thread', workerMs: null } }).join('\n');
   assert.match(direct, /simulation: Main thread/);
   assert.doesNotMatch(direct, /worker sim/);
+  assert.doesNotMatch(direct, /instances:/);
+  // The instance path (js/crowd.js): which one draws, why, and its cost per frame.
+  const gpu = formatStats(null, h, { instances: { path: 'gpu', reason: 'compute and indirect draws available', buildMs: 0, bytes: 0 } }).join('\n');
+  assert.match(gpu, /instances: GPU pass \(records per tick, interpolated and culled per frame\), compute and indirect draws available/);
+  assert.match(gpu, /instance build 0\.00 ms\/frame  render data 0\.0 KB\/frame/);
+  const cpu = formatStats(null, h, { instances: { path: 'cpu', reason: 'chosen in the debug menu', buildMs: 0.5, bytes: 2048 } }).join('\n');
+  assert.match(cpu, /instances: CPU \(built in the simulation every frame\), chosen in the debug menu/);
+  assert.match(cpu, /instance build 0\.50 ms\/frame  render data 2\.0 KB\/frame/);
 });

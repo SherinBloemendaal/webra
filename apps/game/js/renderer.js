@@ -1,5 +1,9 @@
 // WebGPU renderer: terrain, instanced sprites, fog of war and UI rectangles.
-// Instance data is copied straight out of WebAssembly memory every frame.
+// Instance data comes from the simulation every frame (the CPU path), or as
+// tick-rate records that the GPU instance pass (js/crowd-gpu.js) turns into
+// instances and an indirect draw every frame (the GPU path).
+
+import { GpuInstances } from './crowd-gpu.js';
 
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
@@ -114,6 +118,23 @@ export class Renderer {
 
     // Lines (unit paths): same instance layout and bindings as rects.
     this.linePipeline = this.pipeline(lineSrc, this.rectLayout, [instance(LINE_FLOATS * 4)], blend, 'lines');
+
+    // GPU instance pass: optional, the CPU path draws without it.
+    this.instances = null;
+    this.instancesReason = null;
+    try {
+      this.instances = await GpuInstances.create(d, await loadShader('instances', common));
+    } catch (err) {
+      this.instancesReason = String(err?.message ?? err);
+      console.warn('GPU instance pass unavailable, using the CPU path:', this.instancesReason);
+    }
+  }
+
+  /** Stop using the GPU instance pass (it failed); the CPU path takes over. */
+  disableInstances(reason) {
+    this.instances = null;
+    this.instancesReason = reason;
+    console.warn('GPU instance pass disabled, using the CPU path:', reason);
   }
 
   pipeline(code, layout, buffers, blend, label) {
@@ -212,8 +233,11 @@ export class Renderer {
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
    * @param anim {time, enabled} render clock of sprite animations (js/anim.js); still frames by default
    * @param lines optional Float32Array of line instances (unit paths), drawn over the fog and under the rects
+   * @param gpu optional `{ records, alpha, view }`: draw the simulation's sprites and rects from tick-rate
+   *   records with the GPU instance pass (`sprites` is then ignored and `rects` holds the UI rects only,
+   *   drawn after the simulation's); `view` is the visible world rectangle [x0, y0, x1, y1]
    */
-  draw(camera, time, sprites, spriteCount, rects, rectCount, anim = STILL, lines = null, lineCount = 0) {
+  draw(camera, time, sprites, spriteCount, rects, rectCount, anim = STILL, lines = null, lineCount = 0, gpu = null) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
@@ -223,6 +247,16 @@ export class Renderer {
     g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
     d.queue.writeBuffer(this.globals, 0, g);
 
+    let inst = null;
+    if (gpu && this.instances) {
+      try {
+        this.instances.upload(gpu.records);
+        inst = this.instances;
+      } catch (err) {
+        this.disableInstances(String(err?.message ?? err));
+      }
+    }
+    if (gpu) spriteCount = 0;
     if (spriteCount > 0) {
       this.ensureBuffer('sprite', spriteCount, SPRITE_FLOATS);
       d.queue.writeBuffer(this.spriteBuffer, 0, sprites, 0, spriteCount * SPRITE_FLOATS);
@@ -237,6 +271,8 @@ export class Renderer {
     }
 
     const enc = d.createCommandEncoder();
+    // Interpolate, cull and compact the records for this frame.
+    inst?.encode(enc, gpu.alpha, gpu.view);
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
     });
@@ -251,6 +287,11 @@ export class Renderer {
       pass.setBindGroup(1, this.spriteGroup);
       pass.setVertexBuffer(0, this.spriteBuffer);
       pass.draw(6, spriteCount);
+    } else if (inst && inst.sprites.count > 0) {
+      pass.setPipeline(this.spritePipeline);
+      pass.setBindGroup(1, this.spriteGroup);
+      pass.setVertexBuffer(0, inst.sprites.instances);
+      pass.drawIndirect(inst.sprites.args, 0);
     }
 
     pass.setPipeline(this.fogPipeline);
@@ -264,6 +305,13 @@ export class Renderer {
       pass.draw(6, lineCount);
     }
 
+    if (inst && inst.rects.count > 0) {
+      // The simulation's rects, then the UI's (as on the CPU path, where they share one buffer).
+      pass.setPipeline(this.rectPipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.setVertexBuffer(0, inst.rects.instances);
+      pass.drawIndirect(inst.rects.args, 0);
+    }
     if (rectCount > 0) {
       pass.setPipeline(this.rectPipeline);
       pass.setBindGroup(1, this.rectGroup);

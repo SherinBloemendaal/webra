@@ -5,8 +5,14 @@
 //   const host = await createSimHost({ Game, memory, module });
 //   const info = await host.start(spec);       // js/sim/core.js start specs
 //   host.game                                   // DirectGame or RemoteGame (js/sim/proxy.js)
-//   const frame = host.step({ dt, paused, view, rect, audio });
+//   const frame = host.step({ dt, paused, view, rect, audio, instances });
 //   frame.sprites(), frame.rects(), frame.fog() // render data of the latest frame
+//   frame.records()                             // GPU instance path: the latest records
+//
+// With `instances: 'gpu'` a frame carries no sprites or rects: `records()`
+// returns the newest tick-rate records (`{ gen, sprites, extras, rects }`,
+// js/crowd.js) and `fog()` the newest fog, both kept until newer ones come
+// (they are sent only when they change).
 //
 // Worker modes are pipelined: `step` sends the frame's wall time to the
 // worker and returns the newest frame that came back, so the main thread
@@ -21,6 +27,8 @@ import { DirectGame, RemoteGame } from './proxy.js';
 export const WORKER_START_TIMEOUT_MS = 15000;
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const NO_F32 = new Float32Array(0);
+const NO_U8 = new Uint8Array(0);
 
 /** Tiny event emitter shared by both hosts. */
 class Events {
@@ -88,6 +96,9 @@ export class DirectHost extends Events {
     this.game = null;
     this.frame = null;
     this.frames = 0;
+    /** GPU instance path: the latest records (locations in wasm memory) and a copy of the fog. */
+    this.records = null;
+    this.fog = null;
   }
 
   async start(spec) {
@@ -101,6 +112,23 @@ export class DirectHost extends Events {
     const memory = this.memory;
     // Views are made when used: a call into wasm in between may grow (and so detach) its memory.
     const view = (Type, loc) => () => (loc ? new Type(memory().buffer, loc.ptr, loc.len) : new Type(0));
+    let fog = view(Uint8Array, f.fog);
+    let records = () => null;
+    if (f.instances === 'gpu') {
+      // The records stay in wasm memory until the next build; the fog is
+      // copied, since a fog query may overwrite the engine's fog buffer.
+      if (f.records) {
+        const r = f.records;
+        this.records = () => ({ gen: r.gen, sprites: view(Float32Array, r.sprites)(), extras: view(Float32Array, r.extras)(), rects: view(Float32Array, r.rects)() });
+      }
+      if (f.fog) this.fog = fog().slice();
+      const kept = this.fog ?? NO_U8;
+      fog = () => kept;
+      records = this.records ?? records;
+    } else {
+      this.records = null;
+      this.fog = null;
+    }
     this.frame = {
       ...f,
       id: ++this.frames,
@@ -108,7 +136,8 @@ export class DirectHost extends Events {
       sprites: view(Float32Array, f.sprites),
       rects: view(Float32Array, f.rects),
       lines: view(Float32Array, f.lineCount ? f.lines : null),
-      fog: view(Uint8Array, f.fog),
+      fog,
+      records,
       valid: () => true,
     };
     this.game.onFrame(this.frame);
@@ -196,6 +225,9 @@ export class WorkerHost extends Events {
     this.failed = null;
     this.roundTripMs = 0;
     this.torn = 0;
+    /** GPU instance path: the latest records and fog (sent only when they change). */
+    this.records = null;
+    this.fog = null;
     this.link = {
       post: (msg) => this.post(msg),
       ask: (method, args) => this.request({ t: 'ask', method, args }),
@@ -283,9 +315,32 @@ export class WorkerHost extends Events {
     this.roundTripMs = clock() - this.sentAt;
     // The previous frame is no longer drawn: its buffers go back to the worker.
     const old = this.frame;
-    if (old && !this.shared) for (const a of [old.raw.sprites, old.raw.rects, old.raw.fog, old.raw.lines]) if (a) this.recycle.push(a.buffer);
-    const frame = { ...f, id: ++this.frames, raw: f };
-    if (this.shared) {
+    if (old && old.instances === 'gpu') {
+      if (old.raw.lines) this.recycle.push(old.raw.lines.buffer);
+    } else if (old && !this.shared) {
+      for (const a of [old.raw.sprites, old.raw.rects, old.raw.fog, old.raw.lines]) if (a) this.recycle.push(a.buffer);
+    }
+    const frame = { ...f, id: ++this.frames, raw: f, records: () => null };
+    if (f.instances === 'gpu') {
+      // Newer records and fog replace the kept ones, whose buffers go back.
+      if (f.records) {
+        this.releaseRecords();
+        this.records = f.records;
+      }
+      if (f.fog) {
+        if (this.fog) this.recycle.push(this.fog.buffer);
+        this.fog = f.fog;
+      }
+      const records = this.records;
+      const fog = this.fog ?? NO_U8;
+      const lines = f.lines ?? NO_F32;
+      frame.sprites = () => NO_F32;
+      frame.rects = () => NO_F32;
+      frame.lines = () => lines;
+      frame.fog = () => fog;
+      frame.records = () => records;
+      frame.valid = () => true;
+    } else if (this.shared) {
       const { slot, seq, buffers } = f.shared;
       this.shared.adopt(slot, buffers);
       const len = f.lengths;
@@ -298,7 +353,14 @@ export class WorkerHost extends Events {
         if (!ok) this.torn++;
         return ok;
       };
-    } else {
+    }
+    if (f.instances !== 'gpu') {
+      // Back on the CPU path: the kept records and fog are not drawn any more.
+      this.releaseRecords();
+      if (this.fog) this.recycle.push(this.fog.buffer);
+      this.fog = null;
+    }
+    if (f.instances !== 'gpu' && !this.shared) {
       const sprites = f.sprites ?? new Float32Array(0);
       const rects = f.rects ?? new Float32Array(0);
       const fog = f.fog ?? new Uint8Array(0);
@@ -312,6 +374,13 @@ export class WorkerHost extends Events {
     this.frame = frame;
     this.game.onFrame(frame, this.stepView);
     this.emit('frame', frame);
+  }
+
+  /** Hand the kept records' buffers back to the worker's pool. */
+  releaseRecords() {
+    const r = this.records;
+    if (r) for (const a of [r.sprites, r.extras, r.rects]) if (a) this.recycle.push(a.buffer);
+    this.records = null;
   }
 
   fail(message) {
