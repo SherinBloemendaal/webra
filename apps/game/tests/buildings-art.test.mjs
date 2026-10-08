@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas } from '../js/sprites.js';
+import { buildAtlas, drawCameo, getCameo, clearCameoCache } from '../js/sprites.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 
 const rules = JSON.parse(readFileSync(fileURLToPath(new URL('../../../engine/rules.json', import.meta.url)), 'utf8'));
@@ -182,3 +182,59 @@ for (const a of buildings) {
   });
 }
 
+// ---- Cameos ---------------------------------------------------------------------------
+
+const cameoActors = actors.filter((a) => a.kind !== 'mine');
+
+/** One recorded cameo: [drawn, log]. */
+function recordCameo(id, kind, size = 64, opts = {}) {
+  const log = [];
+  const ctx = fakeContext(log, null);
+  const drawn = drawCameo(ctx, id, size, { kind, ...opts });
+  assert.equal(ctx.depth, 0, `${id} cameo leaves save/restore unbalanced`);
+  return [drawn, log.join('|')];
+}
+
+test('every building and unit in the rules has a cameo, unknown types do not', () => {
+  assert.ok(cameoActors.length >= 70, `expected the full roster, got ${cameoActors.length}`);
+  for (const a of cameoActors) {
+    const [drawn, log] = recordCameo(a.id, a.kind);
+    assert.ok(drawn, `no cameo for ${a.id}`);
+    assert.ok(log.length > 200, `${a.id} cameo drew almost nothing`);
+  }
+  assert.equal(recordCameo('NOSUCH', undefined)[0], false);
+});
+
+test('cameos are deterministic and follow the requested size and team colour', () => {
+  for (const a of cameoActors) {
+    assert.equal(recordCameo(a.id, a.kind)[1], recordCameo(a.id, a.kind)[1], `${a.id} cameo is not deterministic`);
+  }
+  assert.notEqual(recordCameo('POWR', 'building', 64)[1], recordCameo('POWR', 'building', 96)[1]);
+  assert.notEqual(recordCameo('2TNK', 'vehicle', 64, { team: [1, 0, 0] })[1], recordCameo('2TNK', 'vehicle', 64, { team: [0, 1, 0] })[1]);
+  assert.notEqual(recordCameo('2TNK', 'vehicle', 64)[1], recordCameo('2TNK', 'vehicle', 64, { height: 48 })[1]);
+});
+
+test('cameo aliases reuse the base art and the cache hands out one canvas per key', () => {
+  assert.equal(recordCameo('FPWR', 'building')[1], recordCameo('POWR', 'building')[1]);
+  globalThis.document = {
+    createElement: () => {
+      const canvas = { width: 0, height: 0 };
+      const ctx = fakeContext([], null);
+      canvas.getContext = () => ctx;
+      return canvas;
+    },
+  };
+  try {
+    clearCameoCache();
+    const a = getCameo('POWR', 48);
+    assert.ok(a);
+    assert.equal(a.width, 48);
+    assert.equal(a.height, 48);
+    assert.equal(getCameo('powr', 48), a, 'case-insensitive and cached');
+    assert.notEqual(getCameo('POWR', 48, { team: [1, 0, 0] }), a);
+    assert.equal(getCameo('NOSUCH', 48), null);
+    assert.equal(getCameo('POWR', 48, { height: 36 }).height, 36);
+  } finally {
+    delete globalThis.document;
+  }
+});
