@@ -9,6 +9,7 @@ import {
   RADAR,
   TERRAIN_RGB,
   ORE_RGB,
+  GEM_RGB,
   REFRESH_MS,
   TRANSITION_MS,
   cameraFrame,
@@ -51,13 +52,14 @@ test('the camera frame is the view as fractions of the map, clipped', () => {
   assert.deepEqual(edge, { l: 0, t: 0, w: 0.5, h: 1 });
 });
 
-test('compose: terrain, ore, shroud, fog and blips in team colours', () => {
+test('compose: terrain, ore, gems, shroud, fog and blips in team colours', () => {
   const w = 4;
   const h = 2;
   const terrain = new Uint8Array(w * h * 4);
   terrain[0 * 4] = 3; // water
   terrain[1 * 4 + 1] = 200; // ore
   terrain[2 * 4] = 9; // a terrain type the client does not know yet
+  terrain[(4 + 0) * 4 + 2] = 85; // gems
   const fog = new Uint8Array([255, 255, 128, 0, 255, 255, 255, 255]);
   const blips = new Int32Array([1, 1, 2, 1, 1, 3, 1, 5, 5, 255]);
   const out = composeRadar(new Uint8ClampedArray(w * h * 4), terrain, fog, blips, COLORS, w, h);
@@ -69,7 +71,7 @@ test('compose: terrain, ore, shroud, fog and blips in team colours', () => {
   assert.deepEqual(px(out, w, 1, 1), red, 'a 2x1 structure of player 1');
   assert.deepEqual(px(out, w, 2, 1), red);
   assert.deepEqual(px(out, w, 3, 1), [170, 170, 170, 255], 'neutral grey, clipped to the map');
-  assert.deepEqual(px(out, w, 0, 1), [...TERRAIN_RGB[0], 255]);
+  assert.deepEqual(px(out, w, 0, 1), [...GEM_RGB, 255]);
 });
 
 test('compose handles thousands of blips quickly', () => {

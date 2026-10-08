@@ -1,7 +1,7 @@
 // Radar minimap at the top of the sidebar (OpenRA's RA radar widget).
 //
 // The radar only works while the player owns a powered, unjammed Radar Dome
-// (engine/src/minimap.rs, `radar_state`). Online it shows the terrain and ore,
+// (engine/src/minimap.rs, `radar_state`). Online it shows the terrain, ore and gems,
 // shroud and fog, every blip the engine reports (`minimap_blips`: own and
 // allied actors, visible enemies, remembered enemy structures, nothing near an
 // enemy radar jammer) in team colours, and the camera rectangle. Left click or
@@ -38,6 +38,7 @@ export const TERRAIN_RGB = [
 ];
 const UNKNOWN_TERRAIN_RGB = [62, 88, 44];
 export const ORE_RGB = [200, 160, 50];
+export const GEM_RGB = [150, 90, 200];
 const NEUTRAL_RGB = [170, 170, 170];
 /** Brightness of explored cells under fog (0..1). */
 const FOG_SHADE = 0.5;
@@ -89,7 +90,7 @@ export function cameraFrame(view, mapW, mapH, cellPx = CELL_PX) {
 
 /**
  * Paint the radar picture into `out` (RGBA, one pixel per cell).
- * `terrain`: RGBA per cell from Game.terrain_ptr (R terrain type, G ore density);
+ * `terrain`: RGBA per cell from Game.terrain_ptr (R terrain type, G ore, B gem density);
  * `fog`: one byte per cell from Game.fog_ptr (0 shroud, 128 fog, 255 visible);
  * `blips`: Game.minimap_blips; `colors`: team colours as 0..1 RGB triples.
  */
@@ -103,7 +104,7 @@ export function composeRadar(out, terrain, fog, blips, colors, mapW, mapH) {
       out[o + 1] = 0;
       out[o + 2] = 0;
     } else {
-      const rgb = terrain[o + 1] > 0 ? ORE_RGB : (TERRAIN_RGB[terrain[o]] ?? UNKNOWN_TERRAIN_RGB);
+      const rgb = terrain[o + 2] > 0 ? GEM_RGB : terrain[o + 1] > 0 ? ORE_RGB : (TERRAIN_RGB[terrain[o]] ?? UNKNOWN_TERRAIN_RGB);
       const k = f >= 255 ? 1 : FOG_SHADE;
       out[o] = rgb[0] * k;
       out[o + 1] = rgb[1] * k;
