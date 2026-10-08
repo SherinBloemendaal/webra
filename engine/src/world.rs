@@ -4,7 +4,8 @@ use crate::flowfield::{nearest_in_component, FlowCache, Passability};
 use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
-use crate::rules::{FootCell, Kind, QueueType, Rules, QUEUE_COUNT};
+use crate::rules::{FootCell, Kind, QueueType, Rules, Stance, QUEUE_COUNT};
+use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
 /// Simulation ticks per second at normal speed (OpenRA: 40 ms per tick).
@@ -16,6 +17,8 @@ const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
 pub const MAX_WEAPONS: usize = 4;
 const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
+/// Queued waypoints a unit keeps at most (Shift+click moves); later ones are dropped.
+pub const MAX_WAYPOINTS: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Activity {
@@ -30,6 +33,21 @@ pub enum Activity {
     Unload,
     /// Unit ability task (abilities.rs: minefields, cash delivery, MAD tank).
     Ability,
+    /// Follow the unit in `guard` and fight what comes near (OpenRA Guard).
+    Guard,
+    /// Fire at the ground at `fire_at` until told otherwise (OpenRA force-fire).
+    AttackGround,
+}
+
+/// A queued move (Shift+click), started once the unit is idle. Units of one
+/// order share the group, so they arrive together like a normal group move.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Waypoint {
+    pub x: i32,
+    pub y: i32,
+    pub attack_move: bool,
+    pub group: u32,
+    pub group_size: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,10 +99,26 @@ pub struct Actor {
     /// explain (see `World::jammed`). Reset with `stuck_ticks` on progress.
     pub stall_ticks: i32,
     pub moved: bool,
+    /// Fire stance (OpenRA AutoTarget stance); only matters with rules `stance`.
+    pub stance: Stance,
+    /// Enemy that hit this actor while it was idle, until it shoots back (or not).
+    pub aggressor: u32,
+    /// The current attack may not move the unit (auto-targets under Defend and
+    /// ReturnFire): it ends once the target is out of range.
+    pub hold: bool,
+    /// Unit protected by Activity::Guard, or NONE.
+    pub guard: u32,
+    /// Ground point of Activity::AttackGround (world units).
+    pub fire_at: (i32, i32),
+    /// Queued moves (Shift+click), oldest first.
+    pub waypoints: Vec<Waypoint>,
 
     // Harvesters
     pub harv: HarvState,
+    /// Bales on board, of any resource.
     pub bales: i32,
+    /// How many of `bales` are gems (OpenRA StoresResources keeps a count per type).
+    pub gem_bales: i32,
     pub harv_timer: i32,
     pub harv_cell: u32,
     pub refinery: u32,
@@ -130,6 +164,17 @@ pub struct Actor {
     pub heli: crate::helicopter::HeliState,
     /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
     pub air: crate::plane::AirState,
+
+    // Veterancy and prone infantry (veterancy.rs)
+    /// Experience, in OpenRA's units: percent of the actor's own value
+    /// (killing an enemy worth 100 gives 10000 with the default modifier).
+    pub xp: i64,
+    /// Veterancy level: 0 rookie, then one per GainsExperience threshold reached.
+    pub rank: u8,
+    /// Ticks left prone (TakeCover); 0 when standing.
+    pub prone_ticks: i32,
+    /// Elite self repair (ChangesHealth@ELITE) step timer.
+    pub rank_heal_timer: i32,
 }
 
 impl Actor {
@@ -165,8 +210,15 @@ impl Actor {
             stuck_ticks: 0,
             stall_ticks: 0,
             moved: false,
+            stance: Stance::AttackAnything,
+            aggressor: NONE,
+            hold: false,
+            guard: NONE,
+            fire_at: (0, 0),
+            waypoints: Vec::new(),
             harv: HarvState::Search,
             bales: 0,
+            gem_bales: 0,
             harv_timer: 0,
             harv_cell: NONE,
             refinery: NONE,
@@ -191,6 +243,10 @@ impl Actor {
             cloak_timer: 0,
             detected_by: 0,
             air: crate::plane::AirState::default(),
+            xp: 0,
+            rank: 0,
+            prone_ticks: 0,
+            rank_heal_timer: 0,
         }
     }
 
@@ -229,6 +285,7 @@ pub struct Ghost {
     pub cy: i32,
 }
 
+#[derive(Clone)]
 pub struct Player {
     pub faction: usize,
     pub side: usize,
@@ -249,6 +306,8 @@ pub struct Player {
     pub team: u8,
     /// Owner of neutral map actors: never plays, never wins or loses.
     pub neutral: bool,
+    /// Debug menu cheat flags (debug.rs); only orders of a game with cheats set them.
+    pub dev: crate::debug::DevFlags,
 }
 
 impl Player {
@@ -256,10 +315,11 @@ impl Player {
         self.cash + self.resources
     }
     pub fn low_power(&self) -> bool {
-        self.power_use > self.power_gen
+        self.power_use > self.power_gen && !self.dev.unlimited_power
     }
 }
 
+#[derive(Clone)]
 pub struct Projectile {
     pub x: i32,
     pub y: i32,
@@ -269,6 +329,8 @@ pub struct Projectile {
     pub owner: u8,
     pub target: u32,
     pub facing: i32,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -286,6 +348,7 @@ pub enum EffectKind {
     Naval(u8),
 }
 
+#[derive(Clone)]
 pub struct Effect {
     pub x: i32,
     pub y: i32,
@@ -298,6 +361,7 @@ pub struct Effect {
 }
 
 /// A warhead that lands later (delayed warheads, chained death explosions).
+#[derive(Clone)]
 pub struct PendingImpact {
     pub tick: u32,
     pub weapon: u16,
@@ -305,6 +369,8 @@ pub struct PendingImpact {
     pub x: i32,
     pub y: i32,
     pub owner: u8,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 /// Lobby options (see apps/game/js/lobby.js). Defaults follow OpenRA's.
@@ -319,6 +385,8 @@ pub struct GameOptions {
     pub build_radius: bool,
     pub redeployable_mcv: bool,
     pub ore_regrowth: bool,
+    /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
+    pub cheats: bool,
 }
 
 impl Default for GameOptions {
@@ -332,6 +400,7 @@ impl Default for GameOptions {
             build_radius: true,
             redeployable_mcv: true,
             ore_regrowth: true,
+            cheats: false,
         }
     }
 }
@@ -464,10 +533,69 @@ pub enum Order {
         x: i32,
         y: i32,
     },
+    /// Fire at a spot on the ground until told otherwise (OpenRA force-fire, Ctrl+click).
+    AttackGround {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
+    /// Follow an own or allied unit and fight what comes near (OpenRA Guard).
+    Guard {
+        player: u8,
+        ids: Vec<u32>,
+        target: u32,
+    },
+    /// Each unit moves to a random free neighbouring cell (OpenRA Scatter).
+    Scatter {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Move there after the current orders (OpenRA queued move, Shift+click).
+    Waypoint {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+        attack_move: bool,
+    },
+    /// Fire stance of units and defences (OpenRA UnitStance).
+    SetStance {
+        player: u8,
+        ids: Vec<u32>,
+        stance: Stance,
+    },
+    /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
+    /// unless the game has the cheats option.
+    DevFlag {
+        player: u8,
+        flag: crate::debug::DevFlag,
+        on: bool,
+    },
+    /// Debug menu: give the player cash (debug.rs). Ignored without cheats.
+    DevCash {
+        player: u8,
+    },
+    /// Debug menu: destroy actors of any owner (debug.rs). Ignored without cheats.
+    DevKill {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Debug menu: raise the player's own listed units one veterancy level
+    /// (OpenRA's "level up" debug order, veterancy.rs). Ignored without cheats.
+    DevExperience {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
+    /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
+    pub fn is_cheat(&self) -> bool {
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. } | Order::DevExperience { .. })
+    }
+
     pub fn player(&self) -> u8 {
         match self {
             Order::Move { player, .. }
@@ -484,7 +612,16 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player,
+            | Order::Teleport { player, .. }
+            | Order::AttackGround { player, .. }
+            | Order::Guard { player, .. }
+            | Order::Scatter { player, .. }
+            | Order::Waypoint { player, .. }
+            | Order::SetStance { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player,
         }
     }
 
@@ -505,7 +642,16 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player = p,
+            | Order::Teleport { player, .. }
+            | Order::AttackGround { player, .. }
+            | Order::Guard { player, .. }
+            | Order::Scatter { player, .. }
+            | Order::Waypoint { player, .. }
+            | Order::SetStance { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player = p,
         }
     }
 
@@ -520,7 +666,14 @@ impl Order {
             | Order::Deploy { ids, .. }
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. }
-            | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::Teleport { ids, .. }
+            | Order::AttackGround { ids, .. }
+            | Order::Guard { ids, .. }
+            | Order::Scatter { ids, .. }
+            | Order::Waypoint { ids, .. }
+            | Order::SetStance { ids, .. }
+            | Order::DevKill { ids, .. }
+            | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -528,6 +681,38 @@ impl Order {
             Order::StartProduction { count, .. } => (1..=50).contains(count),
             Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
+        }
+    }
+
+    /// Units this order gives a new command, which replaces their queued
+    /// waypoints and ends guarding. Waypoints add to the queue and stances do
+    /// not change what a unit is doing, so they keep both.
+    fn commanded_ids(&self) -> Option<&[u32]> {
+        match self {
+            Order::Move { ids, .. }
+            | Order::Smart { ids, .. }
+            | Order::Attack { ids, .. }
+            | Order::Stop { ids, .. }
+            | Order::Deploy { ids, .. }
+            | Order::Land { ids, .. }
+            | Order::ReturnToBase { ids, .. }
+            | Order::LayMines { ids, .. }
+            | Order::Teleport { ids, .. }
+            | Order::AttackGround { ids, .. }
+            | Order::Guard { ids, .. }
+            | Order::Scatter { ids, .. } => Some(ids),
+            Order::Waypoint { .. }
+            | Order::SetStance { .. }
+            | Order::StartProduction { .. }
+            | Order::CancelProduction { .. }
+            | Order::Place { .. }
+            | Order::Rally { .. }
+            | Order::Sell { .. }
+            | Order::SupportPower { .. }
+            | Order::DevFlag { .. }
+            | Order::DevCash { .. }
+            | Order::DevKill { .. }
+            | Order::DevExperience { .. } => None,
         }
     }
 }
@@ -547,6 +732,7 @@ pub enum SmartAction {
     DeliverCash = 7,
 }
 
+#[derive(Clone)]
 pub struct World {
     pub rules: Rules,
     pub map: Map,
@@ -590,6 +776,16 @@ pub struct World {
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
+    /// Write-only audio event log for the client (sound_events.rs).
+    pub sound: crate::sound_events::SoundEvents,
+    /// Client render settings (overlays.rs); never read by the simulation.
+    pub render_opts: crate::overlays::RenderOptions,
+    /// Observer statistics (observer.rs). Not part of `state_hash`.
+    pub observer: crate::observer::ObserverStats,
+    /// Render only (observer.rs): while true, visibility helpers report
+    /// everything as visible. Set by `Game::build_render` for the spectator
+    /// view for the duration of that call; always false while `step` runs.
+    pub render_all: bool,
 }
 
 impl World {
@@ -743,6 +939,10 @@ impl World {
             abil: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
+            sound: Default::default(),
+            render_opts: Default::default(),
+            observer: Default::default(),
+            render_all: false,
             map,
         }
     }
@@ -769,6 +969,7 @@ impl World {
             start,
             team: 0,
             neutral: false,
+            dev: Default::default(),
         });
     }
 
@@ -847,6 +1048,7 @@ impl World {
         }
         // Cloaked actors (submarines) hide after their InitialDelay.
         a.cloak_timer = info.abilities.cloak.as_ref().map_or(0, |c| c.initial_delay);
+        a.stance = self.initial_stance(ty, owner);
         self.actors[i] = a;
         self.init_abilities(i);
         i
@@ -880,6 +1082,7 @@ impl World {
         a.px = a.x;
         a.py = a.y;
         a.hp = info.hp;
+        a.stance = self.initial_stance(ty, owner);
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
         self.actors[i] = a;
@@ -912,13 +1115,18 @@ impl World {
         }
         // Airborne planes fall first and die where they hit the ground (plane.rs).
         if self.begin_crash(i) {
+            // Remember who shot it down; the kill counts at impact (observer.rs).
+            self.note_shot_down(i);
             return;
         }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
         self.actors[i].alive = false;
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
+        self.record_death(i);
         self.dying.push(i as u32);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1064,6 +1272,10 @@ impl World {
 
     pub fn is_visible_to(&self, i: usize, player: u8) -> bool {
         let a = &self.actors[i];
+        // Spectator view (observer.rs): everything on the map is visible.
+        if self.render_all {
+            return a.in_world();
+        }
         if a.owner == player {
             return true;
         }
@@ -1168,6 +1380,11 @@ impl World {
     fn apply_orders(&mut self) {
         let orders = std::mem::take(&mut self.orders);
         for o in orders {
+            if let Some(ids) = o.commanded_ids() {
+                for i in self.owned_units(o.player(), ids) {
+                    self.clear_commands(i);
+                }
+            }
             match o {
                 Order::Move { player, ids, x, y, attack_move } => {
                     let units = self.owned_units(player, &ids);
@@ -1250,6 +1467,30 @@ impl World {
                 Order::SupportPower { player, key, x, y, x2, y2 } => {
                     self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
+                Order::AttackGround { player, ids, x, y } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_attack_ground(&units, x, y);
+                }
+                Order::Guard { player, ids, target } => {
+                    let units = self.owned_units(player, &ids);
+                    if let Some(t) = self.resolve(target) {
+                        self.order_guard(player, &units, t);
+                    }
+                }
+                Order::Scatter { player, ids } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_scatter(&units);
+                }
+                Order::Waypoint { player, ids, x, y, attack_move } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_waypoint(&units, x, y, attack_move);
+                }
+                Order::SetStance { player, ids, stance } => self.set_stance(player, &ids, stance),
+                // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
+                Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
+                Order::DevCash { player } => self.dev_give_cash(player),
+                Order::DevKill { player, ids } => self.dev_kill(player, &ids),
+                Order::DevExperience { player, ids } => self.dev_give_experience(player, &ids),
             }
         }
     }
@@ -1270,8 +1511,23 @@ impl World {
         if units.is_empty() {
             return;
         }
-        let group = self.next_group;
+        let group = self.next_group();
+        self.start_move_group(units, x, y, attack_move, group, units.len() as i32);
+    }
+
+    /// A fresh move group id.
+    pub(crate) fn next_group(&mut self) -> u32 {
+        let g = self.next_group;
         self.next_group += 1;
+        g
+    }
+
+    /// `order_move` as part of move group `group` of `group_size` units (queued
+    /// waypoints keep the group of the order that queued them).
+    pub(crate) fn start_move_group(&mut self, units: &[usize], x: i32, y: i32, attack_move: bool, group: u32, group_size: i32) {
+        if units.is_empty() {
+            return;
+        }
         // The group's centre decides ties (border targets, blocked goals), so a
         // mirrored order on a symmetric map picks the mirrored cell.
         let n = units.len() as i64;
@@ -1304,11 +1560,12 @@ impl World {
             a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
             a.goal = goal;
             a.group = group;
-            a.group_size = units.len() as i32;
+            a.group_size = group_size;
             a.attack_move = attack_move;
             a.dest = (x, y);
             a.target = NONE;
             a.forced = false;
+            a.hold = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
             a.air.new_order();
@@ -1326,6 +1583,7 @@ impl World {
             a.activity = Activity::Attack;
             a.target = tref;
             a.forced = forced;
+            a.hold = false;
             a.attack_move = false;
             a.chase_cell = NONE;
             a.group_size = 1;
@@ -1419,7 +1677,7 @@ impl World {
                 }
             }
         }
-        if any_harv && self.map.ore[ci] > 0 && self.players[player as usize].explored[ci] != 0 {
+        if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
         SmartAction::Move
@@ -1506,6 +1764,8 @@ impl World {
     // ---- Tick --------------------------------------------------------------
 
     pub fn step(&mut self) {
+        // The spectator view flag is render only (observer.rs).
+        debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
         for a in self.actors.iter_mut() {
             a.px = a.x;
@@ -1594,22 +1854,40 @@ impl World {
             h = h.wrapping_mul(0x0100_0000_01b3);
         };
         mix(self.tick as i64);
-        for a in &self.actors {
+        for (i, a) in self.actors.iter().enumerate() {
             if a.alive {
-                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
+                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales, a.gem_bales] {
                     mix(v as i64);
                 }
                 // Transports and submarines (cargo.rs, naval.rs).
                 mix(a.carrier as i64);
                 mix(a.submerged as i64);
+                // Command bar state (commands.rs): stance, guard and queued moves.
+                mix(a.stance as i64);
+                mix(a.guard as i64);
+                mix(a.waypoints.len() as i64);
+                // Veterancy and prone infantry (veterancy.rs).
+                mix(a.xp);
+                mix(a.rank as i64);
+                mix(a.prone_ticks as i64);
+                // Pathing (units.rs): waiting in a queue versus blocked for good.
+                mix(a.stall_ticks as i64);
+                mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
             }
         }
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Cheat flags are simulation state; they can only be set with the cheats option.
+            if self.options.cheats {
+                mix(p.dev.bits() as i64);
+            }
         }
         for &o in &self.map.ore {
             mix(o as i64);
+        }
+        for &g in &self.map.gems {
+            mix(g as i64);
         }
         h
     }

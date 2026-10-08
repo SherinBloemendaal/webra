@@ -318,3 +318,61 @@ test('one lying player cannot raise a desync for everyone', () => {
   assert.deepEqual(ls.hash(1, 25, 'good'), { tick: 25, players: [2] }, 'only the outlier is told');
   assert.equal(ls.desyncTick, null, 'the game is not declared out of sync');
 });
+
+test('a suspended player is not waited for and rejoins at a future tick', () => {
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  ls.initialFrames();
+  ls.submit(0, 3, [], 100);
+  const { frames, record } = ls.suspend(1, 200);
+  assert.deepEqual(frames.map((f) => f.tick), [3], 'its missing orders no longer hold frame 3');
+  assert.ok(record && record.debtMs === 0);
+  assert.equal(ls.isActive(1), false);
+  assert.throws(() => ls.submit(1, 4, []), /not an active player/);
+  for (let t = 4; t <= 7; t++) ls.submit(0, t, [], 300);
+  assert.equal(ls.next, 8);
+  const at = ls.rejoin(1, record, 400);
+  assert.equal(at, 11, 'next + delay');
+  assert.throws(() => ls.rejoin(1, record, 400), /already/);
+  // Frames 8..10 do not wait for the rejoined player, frame 11 does.
+  assert.deepEqual([8, 9, 10].flatMap((t) => ls.submit(0, t, [], 500)).map((f) => f.tick), [8, 9, 10]);
+  assert.deepEqual(ls.submit(0, 11, [stop([1])], 500), []);
+  assert.throws(() => ls.submit(1, 10, [], 500), /11 expected/);
+  assert.deepEqual(ls.submit(1, 11, [stop([2], 0)], 500), [{ tick: 11, orders: [[0, [stop([1])]], [1, [stop([2], 1)]]] }]);
+  // Hashes: the rejoined player votes from its join tick on only.
+  assert.throws(() => ls.hash(1, 0, 'aa'), /before you rejoined/);
+});
+
+test('a rejoin never refills the stall budget', () => {
+  // Player 1 holds the game up for 9 s (just under the limit), drops out,
+  // rejoins and holds it up again briefly: its debt drops it.
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 3; t <= 6; t++) ls.submit(0, t, [], 0);
+  assert.deepEqual(ls.silent(10_000, 10_000), [], 'one 9 s freeze is never dropped');
+  const { record } = ls.suspend(1, 10_000);
+  assert.ok(record.debtMs >= 8_900 && record.debtMs <= 9_000, `debt ${record.debtMs}`);
+  // Two seconds away drain 100 ms.
+  const at = ls.rejoin(1, record, 12_000);
+  for (let t = 7; t < at; t++) ls.submit(0, t, [], 12_000);
+  for (let t = at; t <= at + 3; t++) ls.submit(0, t, [], 12_000);
+  // Player 1 now holds frame `at` beyond its grace for 1.5 s more.
+  assert.deepEqual(ls.silent(13_000, 10_000), []);
+  assert.deepEqual(ls.silent(14_600, 10_000), [1]);
+  // A fresh seat with the same 1.5 s hold would not have been dropped.
+  const fresh = new Lockstep({ players: [0, 1], delay: 3, now: 0 });
+  fresh.initialFrames();
+  for (let t = 3; t <= 6; t++) fresh.submit(0, t, [], 0);
+  assert.deepEqual(fresh.silent(2_600, 10_000), []);
+});
+
+test('agreed hashes: the majority hash is kept for rejoin checks', () => {
+  const ls = new Lockstep({ players: [0, 1, 2], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 3; t <= 26; t++) for (const p of [0, 1, 2]) ls.submit(p, t, [], 0);
+  assert.equal(ls.agreed, null);
+  ls.hash(0, 25, 'aa');
+  ls.hash(1, 25, 'aa');
+  assert.equal(ls.agreed, null, 'not before every player reported');
+  assert.deepEqual(ls.hash(2, 25, 'bb'), { tick: 25, players: [2] });
+  assert.deepEqual(ls.agreed, { tick: 25, hash: 'aa' });
+});

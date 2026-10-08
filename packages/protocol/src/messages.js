@@ -11,30 +11,36 @@ import {
   C2S,
   CHAT_MAX,
   COLOR_COUNT,
+  DEV_FLAGS,
   DIFFICULTIES,
   ERROR_CODE_RE,
   ERROR_MESSAGE_MAX,
   HASH_INTERVAL,
   HOST_KEY_RE,
   HOST_SLOT_TYPES,
+  LEFT_REASONS,
   MAP_ID_RE,
   MAX_MESSAGE_BYTES,
   MAX_ORDERS_PER_TICK,
   MAX_PLAYERS,
   MAX_SERVER_MESSAGE_BYTES,
+  MAX_SPECTATORS,
   MIN_PLAYERS,
   NAME_MAX,
   NAME_MIN,
   ORDER_MAX_COUNT,
   ORDER_MAX_IDS,
   PASSWORD_MAX,
+  ROLES,
   S2C,
+  SEAT_KEY_RE,
   SEED_MAX,
   SESSION_ID_RE,
   SESSION_NAME_MAX,
   SHA256_RE,
   SLOT_MAX,
   SLOT_TYPES,
+  STANCES,
   STATE_HASH_RE,
   TEAM_MAX,
   TICK_MAX,
@@ -126,7 +132,29 @@ const ORDER_SCHEMA = {
   // engine/src/abilities.rs: minefield cell rectangle (at most MINEFIELD_MAX_CELLS) and chrono tank jump.
   lay_mines: { ids: idList, x0: i32, y0: i32, x1: i32, y1: i32 },
   teleport: { ids: idList, x: i32, y: i32 },
+  // engine/src/commands.rs: the command bar (force-fire on the ground, guard,
+  // scatter, queued waypoints, fire stances).
+  attack_ground: { ids: idList, x: i32, y: i32 },
+  guard: { ids: idList, target: u32 },
+  scatter: { ids: idList },
+  waypoint: { ids: idList, x: i32, y: i32, attack_move: bool },
+  set_stance: { ids: idList, stance: (v, w) => oneOf(v, STANCES, w) },
+  // engine/src/debug.rs: debug menu cheats, only valid in games with the
+  // `cheats` option (the server refuses them otherwise, see CHEAT_ORDER_KINDS).
+  dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },
+  dev_cash: {},
+  dev_kill: { ids: idList },
+  // engine/src/veterancy.rs: one more veterancy level for the player's own listed units.
+  dev_experience: { ids: idList },
 };
+
+/** Cheat orders: allowed only when the game's options have `cheats: true`. */
+export const CHEAT_ORDER_KINDS = ['dev_flag', 'dev_cash', 'dev_kill', 'dev_experience'];
+
+/** Whether an order is a cheat (debug menu) order. */
+export function isCheatOrder(o) {
+  return isPlainObject(o) && CHEAT_ORDER_KINDS.includes(o.o);
+}
 
 /** Largest minefield one lay_mines order may cover (engine abilities::MAX_MINEFIELD_CELLS). */
 export const MINEFIELD_MAX_CELLS = 32 * 32;
@@ -159,6 +187,22 @@ export function validOrders(v, what = 'orders') {
   return v.map((o, i) => validOrder(o, `${what}[${i}]`));
 }
 
+/**
+ * The orders of one frame: `[[player, [order, ...]], ...]`, each player at
+ * most once. Used by `frame` and `log` messages and by replay files.
+ */
+export function validFrameOrders(v, what = 'frame.orders') {
+  if (!Array.isArray(v) || v.length > MAX_PLAYERS) fail(`${what} must be a list of at most ${MAX_PLAYERS} entries`);
+  const seen = new Set();
+  return v.map((entry, i) => {
+    if (!Array.isArray(entry) || entry.length !== 2) fail(`${what}[${i}] must be [player, orders]`);
+    const player = int(entry[0], 0, MAX_PLAYERS - 1, `${what}[${i}] player`);
+    if (seen.has(player)) fail(`${what} lists a player twice`);
+    seen.add(player);
+    return [player, validOrders(entry[1], `${what}[${i}]`)];
+  });
+}
+
 /** Map reference in a lobby: null for a generated map, else an uploaded map. */
 export function validMapRef(v, what = 'map', withPlayers = false) {
   if (v === null) return null;
@@ -177,7 +221,7 @@ export function validMapRef(v, what = 'map', withPlayers = false) {
 
 const CLIENT = {
   [C2S.HELLO](m) {
-    object(m, ['t', 'protocol', 'version', 'name', 'password', 'hostKey'], 'hello');
+    object(m, ['t', 'protocol', 'version', 'name', 'password', 'hostKey', 'spectate', 'rejoin'], 'hello');
     const out = {
       t: C2S.HELLO,
       protocol: int(m.protocol, 0, 0xffff, 'protocol'),
@@ -186,6 +230,14 @@ const CLIENT = {
     };
     if (has(m, 'password')) out.password = validPassword(m.password);
     if (has(m, 'hostKey')) out.hostKey = matches(m.hostKey, HOST_KEY_RE, 'hostKey');
+    // Join as a spectator (lobby, or a running game).
+    if (has(m, 'spectate') && bool(m.spectate, 'spectate')) out.spectate = true;
+    // Back into a running game with the key from `welcome.key`.
+    if (has(m, 'rejoin')) {
+      object(m.rejoin, ['client', 'key'], 'rejoin');
+      out.rejoin = { client: validClientId(m.rejoin.client, 'rejoin.client'), key: matches(m.rejoin.key, SEAT_KEY_RE, 'rejoin.key') };
+      if (out.hostKey !== undefined || out.spectate) fail('rejoin cannot be combined with hostKey or spectate');
+    }
     return out;
   },
   [C2S.SLOT](m) {
@@ -233,6 +285,22 @@ const CLIENT = {
   [C2S.LEAVE](m) {
     object(m, ['t'], 'leave');
     return { t: C2S.LEAVE };
+  },
+  [C2S.SPECTATORS](m) {
+    object(m, ['t', 'max'], 'spectators');
+    return { t: C2S.SPECTATORS, max: int(m.max, 0, MAX_SPECTATORS, 'max') };
+  },
+  [C2S.SPECTATE](m) {
+    object(m, ['t', 'on'], 'spectate');
+    return { t: C2S.SPECTATE, on: bool(m.on, 'on') };
+  },
+  [C2S.RESUME](m) {
+    object(m, ['t'], 'resume');
+    return { t: C2S.RESUME };
+  },
+  [C2S.SYNCED](m) {
+    object(m, ['t'], 'synced');
+    return { t: C2S.SYNCED };
   },
 };
 
@@ -282,25 +350,43 @@ const START_PLAYER_KEYS = ['player', 'slot', 'client', 'name', 'type'];
 
 const SERVER = {
   [S2C.WELCOME](m) {
-    object(m, ['t', 'you', 'hostId', 'session'], 'welcome');
-    return {
+    object(m, ['t', 'you', 'hostId', 'session', 'role', 'key'], 'welcome');
+    const out = {
       t: S2C.WELCOME,
       you: validClientId(m.you, 'you'),
       hostId: m.hostId === null ? null : validClientId(m.hostId, 'hostId'),
       session: validSessionInfo(m.session),
+      role: oneOf(m.role, ROLES, 'role'),
     };
+    // Only on a first join: the rejoin key (a rejoin keeps the old one).
+    if (has(m, 'key')) out.key = matches(m.key, SEAT_KEY_RE, 'key');
+    return out;
   },
   [S2C.LOBBY](m) {
-    object(m, ['t', 'slots', 'options', 'map', 'hostId'], 'lobby');
+    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators'], 'lobby');
     if (!Array.isArray(m.slots) || m.slots.length < MIN_PLAYERS || m.slots.length > MAX_PLAYERS) {
       fail('lobby.slots must list 2 to 8 slots');
     }
+    const maxSpectators = int(m.maxSpectators, 0, MAX_SPECTATORS, 'maxSpectators');
+    if (!Array.isArray(m.spectators) || m.spectators.length > maxSpectators) fail('lobby.spectators must list at most maxSpectators');
+    const clients = new Set();
+    const spectators = m.spectators.map((v, i) => {
+      object(v, ['client', 'name'], `spectators[${i}]`);
+      const sp = { client: validClientId(v.client, `spectators[${i}].client`), name: validName(v.name, `spectators[${i}].name`) };
+      if (clients.has(sp.client)) fail('lobby.spectators lists a client twice');
+      clients.add(sp.client);
+      return sp;
+    });
+    const slots = m.slots.map((s, i) => validLobbySlot(s, `slots[${i}]`));
+    if (slots.some((s) => s.type === 'human' && clients.has(s.client))) fail('a spectator cannot hold a slot');
     return {
       t: S2C.LOBBY,
-      slots: m.slots.map((s, i) => validLobbySlot(s, `slots[${i}]`)),
+      slots,
       options: validateLobbyOptions(m.options),
       map: validMapRef(m.map, 'map', true),
       hostId: m.hostId === null ? null : validClientId(m.hostId, 'hostId'),
+      spectators,
+      maxSpectators,
     };
   },
   [S2C.CHAT](m) {
@@ -346,16 +432,7 @@ const SERVER = {
   },
   [S2C.FRAME](m) {
     object(m, ['t', 'tick', 'orders'], 'frame');
-    if (!Array.isArray(m.orders) || m.orders.length > MAX_PLAYERS) fail('frame.orders must be a list');
-    const seen = new Set();
-    const orders = m.orders.map((entry, i) => {
-      if (!Array.isArray(entry) || entry.length !== 2) fail(`frame.orders[${i}] must be [player, orders]`);
-      const player = int(entry[0], 0, MAX_PLAYERS - 1, `frame.orders[${i}] player`);
-      if (seen.has(player)) fail('frame lists a player twice');
-      seen.add(player);
-      return [player, validOrders(entry[1], `frame.orders[${i}]`)];
-    });
-    return { t: S2C.FRAME, tick: validTick(m.tick), orders };
+    return { t: S2C.FRAME, tick: validTick(m.tick), orders: validFrameOrders(m.orders) };
   },
   [S2C.DESYNC](m) {
     object(m, ['t', 'tick'], 'desync');
@@ -368,7 +445,41 @@ const SERVER = {
       player: m.player === null ? null : int(m.player, 0, MAX_PLAYERS - 1, 'player'),
       client: validClientId(m.client, 'client'),
       name: validName(m.name),
-      reason: oneOf(m.reason, ['left', 'dropped', 'kicked', 'disconnected'], 'reason'),
+      reason: oneOf(m.reason, LEFT_REASONS, 'reason'),
+    };
+  },
+  [S2C.LOG](m) {
+    object(m, ['t', 'frames'], 'log');
+    if (!Array.isArray(m.frames) || m.frames.length < 1) fail('log.frames must list at least one frame');
+    let last = -1;
+    const frames = m.frames.map((f, i) => {
+      if (!Array.isArray(f) || f.length !== 2) fail(`log.frames[${i}] must be [tick, orders]`);
+      const tick = validTick(f[0], `log.frames[${i}] tick`);
+      if (tick <= last) fail('log ticks must increase');
+      last = tick;
+      return [tick, validFrameOrders(f[1], `log.frames[${i}]`)];
+    });
+    return { t: S2C.LOG, frames };
+  },
+  [S2C.SYNC](m) {
+    object(m, ['t', 'tick', 'check'], 'sync');
+    const tick = validTick(m.tick);
+    let check = null;
+    if (m.check !== null) {
+      object(m.check, ['tick', 'hash'], 'sync.check');
+      check = { tick: validTick(m.check.tick, 'sync.check.tick'), hash: matches(m.check.hash, STATE_HASH_RE, 'sync.check.hash') };
+      if (check.tick % HASH_INTERVAL !== 0 || check.tick >= tick) fail('sync.check must be a hash tick before sync.tick');
+    }
+    return { t: S2C.SYNC, tick, check };
+  },
+  [S2C.BACK](m) {
+    object(m, ['t', 'player', 'client', 'name', 'tick'], 'back');
+    return {
+      t: S2C.BACK,
+      player: int(m.player, 0, MAX_PLAYERS - 1, 'player'),
+      client: validClientId(m.client, 'client'),
+      name: validName(m.name),
+      tick: validTick(m.tick),
     };
   },
   [S2C.ERROR](m) {
@@ -452,5 +563,9 @@ export const client = {
   orders: (tick, orders) => ({ t: C2S.ORDERS, tick, orders }),
   hash: (tick, hash) => ({ t: C2S.HASH, tick, hash }),
   leave: () => ({ t: C2S.LEAVE }),
+  spectators: (max) => ({ t: C2S.SPECTATORS, max }),
+  spectate: (on) => ({ t: C2S.SPECTATE, on }),
+  resume: () => ({ t: C2S.RESUME }),
+  synced: () => ({ t: C2S.SYNCED }),
 };
 

@@ -86,3 +86,8 @@ export async function hashHostKey(hostKey) {
 export async function verifyHostKey(hostKey, storedHex) {
   return timingSafeEqual(await sha256(hostKey), fromHex(storedHex));
 }
+
+/** Rejoin keys (`welcome.key`) are host-key strength tokens, stored the same way. */
+export const randomSeatKey = randomToken;
+export const hashSeatKey = hashHostKey;
+export const verifySeatKey = verifyHostKey;

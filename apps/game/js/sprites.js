@@ -14,11 +14,8 @@ import {
   circle,
   poly,
   line,
-  bib,
-  block,
   ring,
   polyline,
-  ngon,
   hazard,
   trefoil,
   tracks,
@@ -35,6 +32,10 @@ import { NAVAL_DRAW, NAVAL_SPECIALS } from './art/naval.js';
 import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
+import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
+import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
+import { BUILDING_ANIM } from './art/animated.js';
+import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -365,416 +366,7 @@ const UNIT_DRAW = {
 // Ships, planes and helicopters are drawn in their own modules (art/*.js).
 Object.assign(UNIT_DRAW, NAVAL_DRAW, PLANE_DRAW, HELI_DRAW, ABILITY_DRAW);
 
-// ---- Buildings ----------------------------------------------------------------
-
-const BUILDING_DRAW = {
-  FACT: (ctx, P) => {
-    bib(ctx, P, 0, 72, 72, 24);
-    rect(ctx, P.c(C.shadow), 4, 4, 70, 70);
-    rect(ctx, P.c(C.concreteDark), 0, 0, 72, 72);
-    rect(ctx, P.c(C.concrete), 2, 2, 68, 66);
-    // main hall
-    block(ctx, P, 6, 8, 40, 50, P.team(0.6), P.team(0.35), 7);
-    for (let x = 10; x < 44; x += 6) rect(ctx, P.team(0.75), x, 10, 2, 38);
-    rect(ctx, P.c(C.steelDark), 18, 51, 16, 7);
-    // crane
-    circle(ctx, P.c(C.yellowDark), 58, 54, 7);
-    circle(ctx, P.c(C.yellow), 58, 54, 5);
-    line(ctx, P.c(C.yellowDark), 5, 58, 54, 60, 12);
-    line(ctx, P.c(C.yellow), 3, 58, 54, 60, 12);
-    rect(ctx, P.c(C.steelDark), 58, 10, 4, 8);
-    // landing lights
-    circle(ctx, P.team(1.0), 66, 6, 2);
-    circle(ctx, P.team(1.0), 6, 64, 2);
-  },
-  POWR: (ctx, P) => {
-    bib(ctx, P, 0, 48, 48, 24);
-    block(ctx, P, 2, 4, 44, 44, P.c(C.concrete), P.c(C.concreteDark), 6);
-    rect(ctx, P.team(0.6), 4, 26, 40, 12);
-    rect(ctx, P.team(0.85), 4, 26, 40, 3);
-    for (const x of [14, 34]) {
-      circle(ctx, P.c(C.steelDark), x, 15, 9);
-      circle(ctx, P.c(C.steelLight), x, 15, 7.5);
-      circle(ctx, P.c(C.steelDark), x, 15, 4);
-    }
-  },
-  PROC: (ctx, P) => {
-    // row 0: silo in the middle; row 1: plant; rows 2-3: dock pad
-    bib(ctx, P, 0, 48, 72, 48);
-    for (let x = 30; x < 42; x += 4) rect(ctx, P.c(C.yellow), x, 52, 2, 18);
-    rect(ctx, P.c(C.shadow), 4, 28, 70, 24);
-    block(ctx, P, 0, 24, 72, 26, P.c(C.concrete), P.c(C.concreteDark), 6);
-    rect(ctx, P.team(0.6), 4, 28, 26, 14);
-    rect(ctx, P.team(0.6), 42, 28, 26, 14);
-    rect(ctx, P.c(C.steelDark), 0, 50, 24, 22);
-    rect(ctx, P.c(C.steel), 2, 52, 20, 18);
-    circle(ctx, P.c(C.shadow), 38, 16, 13);
-    circle(ctx, P.c(C.concreteDark), 36, 14, 13);
-    circle(ctx, P.team(0.7), 36, 14, 11);
-    circle(ctx, P.team(0.95), 32, 10, 4);
-  },
-  TENT: (ctx, P) => {
-    bib(ctx, P, 0, 48, 48, 24);
-    rect(ctx, P.c(C.shadow), 6, 6, 42, 42);
-    poly(ctx, P.c(C.canvasDark), [4, 44, 24, 6, 44, 44]);
-    poly(ctx, P.c(C.canvas), [4, 44, 24, 6, 24, 44]);
-    rect(ctx, P.c(C.canvasDark), 22, 6, 2, 38);
-    rect(ctx, P.c(C.track), 20, 34, 8, 10);
-    rect(ctx, P.c(C.steelDark), 40, 4, 1.5, 20);
-    rect(ctx, P.team(0.9), 41.5, 4, 6, 5);
-  },
-  BARR: (ctx, P) => {
-    bib(ctx, P, 0, 48, 48, 24);
-    block(ctx, P, 3, 4, 42, 42, P.c(C.concreteDark), P.c(C.seam), 7);
-    rect(ctx, P.team(0.55), 7, 8, 34, 22);
-    poly(ctx, P.team(1.0), [24, 11, 26.5, 17, 33, 17, 28, 21, 30, 27, 24, 23, 18, 27, 20, 21, 15, 17, 21.5, 17]);
-    rect(ctx, P.c(C.track), 19, 36, 10, 7);
-    for (let x = 4; x < 44; x += 6) circle(ctx, P.c(C.canvas), x + 2, 46, 2.4);
-  },
-  WEAP: (ctx, P) => {
-    bib(ctx, P, 0, 48, 72, 24);
-    rect(ctx, P.c(C.shadow), 4, 4, 70, 48);
-    rect(ctx, P.c(C.concreteDark), 0, 0, 72, 50);
-    // arched hangar roof
-    for (let i = 0; i < 6; i++) rect(ctx, P.team(i % 2 ? 0.55 : 0.7), 4, 4 + i * 6, 64, 6);
-    rect(ctx, P.c(C.concreteDark), 0, 40, 72, 10);
-    rect(ctx, P.c(C.track), 24, 38, 24, 12);
-    for (let y = 40; y < 50; y += 3) rect(ctx, P.c(C.steelDark), 24, y, 24, 1);
-    circle(ctx, P.c(C.yellow), 20, 45, 1.6);
-    circle(ctx, P.c(C.yellow), 52, 45, 1.6);
-  },
-  FIX: (ctx, P) => {
-    // plus-shaped repair pad
-    const pad = (x, y) => bib(ctx, P, x, y, 24, 24);
-    pad(24, 0);
-    pad(0, 24);
-    pad(24, 24);
-    pad(48, 24);
-    pad(24, 48);
-    circle(ctx, P.c(C.concreteDark), 36, 36, 10);
-    circle(ctx, P.team(0.7), 36, 36, 8);
-    line(ctx, P.c(C.steelDark), 3, 31, 41, 41, 31);
-    circle(ctx, P.c(C.steelDark), 41, 31, 3);
-    circle(ctx, P.team(0.7), 42, 30, 1.4);
-    for (const [x, y] of [[28, 4], [44, 4], [4, 28], [4, 44], [68, 28], [68, 44], [28, 68], [44, 68]]) circle(ctx, P.c(C.yellow), x, y, 1.6);
-  },
-  DOME: (ctx, P) => {
-    // rows 0-1: radar building, row 2: bib
-    bib(ctx, P, 0, 48, 48, 24);
-    block(ctx, P, 3, 5, 42, 42, P.c(C.concrete), P.c(C.concreteDark), 6);
-    rect(ctx, P.team(0.55), 5, 33, 38, 3);
-    rect(ctx, P.c(C.track), 19, 40, 10, 6); // door
-    circle(ctx, P.c(C.shadow), 26, 22, 15);
-    circle(ctx, P.c(C.concreteDark), 24, 20, 15);
-    circle(ctx, P.team(0.62), 24, 20, 13.5);
-    ring(ctx, P.team(0.45), 24, 20, 8, 1);
-    rect(ctx, P.team(0.45), 23.5, 7, 1, 26);
-    circle(ctx, P.team(0.92), 19, 15, 4.5);
-    dish(ctx, P, 39, 9, 4);
-  },
-  APWR: (ctx, P) => {
-    bib(ctx, P, 0, 48, 72, 24);
-    block(ctx, P, 2, 3, 68, 45, P.c(C.concrete), P.c(C.concreteDark), 7);
-    rect(ctx, P.team(0.6), 4, 28, 64, 10);
-    rect(ctx, P.team(0.85), 4, 28, 64, 2.5);
-    for (let x = 8; x < 66; x += 8) rect(ctx, P.c(C.steelDark), x, 32, 4, 4); // vents
-    for (const x of [14, 36, 58]) {
-      circle(ctx, P.c(C.steelDark), x, 15, 9.5);
-      circle(ctx, P.c(C.steelLight), x, 15, 8);
-      circle(ctx, P.c(C.steelDark), x, 15, 5);
-      for (let i = 0; i < 4; i++) {
-        const a = (i * Math.PI) / 4;
-        line(ctx, P.c(C.steel), 1, x - Math.cos(a) * 4.5, 15 - Math.sin(a) * 4.5, x + Math.cos(a) * 4.5, 15 + Math.sin(a) * 4.5);
-      }
-      circle(ctx, P.c(C.steelLight), x, 15, 1.5);
-    }
-  },
-  HPAD: (ctx, P) => {
-    bib(ctx, P, 0, 48, 48, 24);
-    rect(ctx, P.c(C.shadow), 2, 2, 47, 47);
-    rect(ctx, P.c(C.concreteDark), 0, 0, 48, 48);
-    rect(ctx, P.c(C.concrete), 2, 2, 44, 44);
-    circle(ctx, P.c(C.yellowDark), 24, 24, 18);
-    circle(ctx, P.c(C.concrete), 24, 24, 16);
-    rect(ctx, P.team(0.85), 16, 14, 4, 20); // H
-    rect(ctx, P.team(0.85), 28, 14, 4, 20);
-    rect(ctx, P.team(0.85), 16, 22, 16, 4);
-    for (const [x, y] of [[4, 4], [44, 4], [4, 44], [44, 44]]) circle(ctx, P.team(1.0), x, y, 1.6);
-  },
-  AFLD: (ctx, P) => {
-    rect(ctx, P.c(C.shadow), 2, 2, 72, 48);
-    rect(ctx, P.c(C.concreteDark), 0, 0, 72, 48);
-    rect(ctx, P.c('#4a4943'), 2, 18, 68, 28); // runway
-    for (let x = 6; x < 68; x += 10) rect(ctx, P.c('#e8e6dc'), x, 31, 6, 1.5);
-    for (let x = 4; x < 70; x += 8) {
-      circle(ctx, P.c(C.yellow), x, 20, 0.9);
-      circle(ctx, P.c(C.yellow), x, 44, 0.9);
-    }
-    rect(ctx, P.c(C.concrete), 2, 2, 68, 14); // apron
-    block(ctx, P, 4, 2, 30, 14, P.team(0.6), P.team(0.35), 4); // hangar
-    for (let x = 6; x < 34; x += 4) rect(ctx, P.team(0.75), x, 3, 2, 8);
-    block(ctx, P, 52, 2, 14, 14, P.c(C.concreteLight), P.c(C.concreteDark), 4); // tower
-    rect(ctx, P.c(C.glass), 54, 4, 10, 4);
-    circle(ctx, P.team(1.0), 59, 10, 1.5);
-  },
-  ATEK: (ctx, P) => {
-    bib(ctx, P, 0, 48, 48, 24);
-    block(ctx, P, 2, 4, 44, 43, P.c(C.concreteLight), P.c(C.concreteDark), 6);
-    rect(ctx, P.team(0.6), 4, 30, 40, 8);
-    rect(ctx, P.team(0.85), 4, 30, 40, 2);
-    rect(ctx, P.c(C.glass), 8, 33, 32, 3);
-    // observatory dome
-    circle(ctx, P.c(C.shadow), 17, 18, 10);
-    circle(ctx, P.c(C.steelLight), 15, 16, 10);
-    circle(ctx, P.c('#c4c7cb'), 12, 13, 4.5);
-    rect(ctx, P.c(C.steelDark), 14.2, 6, 1.6, 10); // slit
-    dish(ctx, P, 35, 15, 8);
-  },
-  STEK: (ctx, P) => {
-    bib(ctx, P, 0, 48, 72, 24);
-    block(ctx, P, 2, 3, 68, 45, P.c(C.concreteDark), P.c(C.seam), 7);
-    rect(ctx, P.team(0.5), 6, 7, 60, 30);
-    block(ctx, P, 22, 10, 28, 24, P.team(0.75), P.team(0.42), 5); // central lab
-    rect(ctx, P.c(C.glass), 26, 13, 20, 3);
-    for (const x of [13, 59]) {
-      circle(ctx, P.c(C.steelDark), x, 16, 6);
-      circle(ctx, P.c(C.steel), x, 16, 5);
-      circle(ctx, P.c(C.steelLight), x - 1.5, 14.5, 2);
-    }
-    for (const x of [12, 60]) {
-      line(ctx, P.c(C.steelDark), 1.5, x, 34, x, 24);
-      circle(ctx, P.team(1.0), x, 24, 1.6);
-    }
-    for (let x = 26; x < 48; x += 5) rect(ctx, P.c(C.steelDark), x, 22, 3, 6); // vents
-  },
-  KENN: (ctx, P) => {
-    rect(ctx, P.c(C.shadow), 6, 7, 16, 15);
-    rect(ctx, P.c('#5e4424'), 3, 15, 18, 6); // front wall
-    rect(ctx, P.c(C.track), 9, 16, 6, 5); // door
-    poly(ctx, P.team(0.65), [3, 15, 3, 7, 12, 4, 12, 15]);
-    poly(ctx, P.team(0.45), [12, 4, 21, 7, 21, 15, 12, 15]);
-    rect(ctx, P.team(0.9), 11.5, 4, 1, 11);
-    circle(ctx, P.c('#c8c0a8'), 19, 20, 1.5); // bowl
-  },
-  SYRD: (ctx, P) => {
-    // a U-shaped dock around open water: back quay plus two piers
-    rect(ctx, P.c(C.shadow), 3, 3, 72, 24);
-    rect(ctx, P.c(C.shadow), 3, 24, 14, 48);
-    rect(ctx, P.c(C.shadow), 61, 24, 14, 48);
-    for (const [x, y, w, h] of [[0, 0, 72, 26], [0, 24, 14, 48], [58, 24, 14, 48]]) {
-      rect(ctx, P.c(C.concreteDark), x, y, w, h);
-      rect(ctx, P.c(C.concrete), x + 1, y + 1, w - 2, h - 2);
-    }
-    rect(ctx, P.c(C.concreteDark), 14, 24, 44, 2); // quay edge
-    block(ctx, P, 16, 2, 40, 18, P.team(0.6), P.team(0.35), 5);
-    for (let x = 19; x < 54; x += 6) rect(ctx, P.team(0.78), x, 3, 3, 10);
-    for (const x of [2, 60]) for (let y = 30; y < 70; y += 10) circle(ctx, P.c(C.steelDark), x + 10, y, 1.2); // bollards
-    // gantry crane on the right pier
-    rect(ctx, P.c(C.yellowDark), 58, 40, 14, 4);
-    rect(ctx, P.c(C.yellow), 58, 40.5, 14, 3);
-    line(ctx, P.c(C.yellow), 2, 60, 42, 40, 42);
-    rect(ctx, P.c(C.steelDark), 39, 41, 3, 4);
-    for (const [x, y] of [[7, 70], [65, 70]]) circle(ctx, P.team(1.0), x, y, 1.8);
-  },
-  SPEN: (ctx, P) => {
-    // concrete pen with a roofed bay opening south onto the water
-    rect(ctx, P.c(C.shadow), 5, 5, 66, 66);
-    rect(ctx, P.c(C.concreteDark), 2, 2, 68, 68);
-    rect(ctx, P.c(C.concrete), 3, 3, 66, 66);
-    rect(ctx, P.c('#1e3440'), 24, 40, 24, 30); // dark water inside the pen
-    for (let y = 44; y < 70; y += 6) rect(ctx, P.c('#2b4756'), 26, y, 20, 1);
-    rect(ctx, P.c(C.concreteDark), 22, 40, 2, 30);
-    rect(ctx, P.c(C.concreteDark), 48, 40, 2, 30);
-    // arched roof
-    for (let i = 0; i < 6; i++) rect(ctx, P.team(i % 2 ? 0.5 : 0.66), 8, 6 + i * 5.5, 56, 5.5);
-    rect(ctx, P.team(0.32), 8, 38, 56, 4);
-    rect(ctx, P.c(C.track), 24, 38, 24, 4); // pen mouth
-    for (const x of [14, 58]) circle(ctx, P.team(1.0), x, 62, 1.8);
-  },
-  SILO: (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 14, 14, 10.5);
-    circle(ctx, P.c(C.concreteDark), 12, 12, 10.5);
-    circle(ctx, P.team(0.6), 12, 12, 9.5);
-    circle(ctx, P.c(C.concreteDark), 12, 12, 7);
-    circle(ctx, P.c(C.yellowDark), 12, 12, 6);
-    for (const [x, y] of [[10, 10], [14, 10], [12, 13], [9, 14], [15, 14]]) circle(ctx, P.c(C.ore), x, y, 1.6);
-    circle(ctx, P.c('#f2d36a'), 10, 9.5, 0.8);
-  },
-  SBAG: (ctx, P) => {
-    for (let row = 0; row < 4; row++) {
-      const off = row % 2 ? 3 : 0;
-      for (let x = 1 - off; x < 23; x += 6) {
-        const bx = Math.max(1, x);
-        const bw = Math.min(x + 6, 23) - bx;
-        if (bw < 2) continue;
-        rrect(ctx, P.c(C.canvasDark), bx, 1 + row * 5.5, bw, 5.5, 2);
-        rrect(ctx, P.c(C.canvas), bx + 0.4, 1.4 + row * 5.5, bw - 1.2, 3.8, 1.6);
-      }
-    }
-  },
-  FENC: (ctx, P) => {
-    const wire = P.c('#9a9a94');
-    for (const y of [9, 15]) polyline(ctx, wire, 0.7, [0, y, 4, y - 1.5, 8, y + 1, 12, y - 1.5, 16, y + 1, 20, y - 1.5, 24, y]);
-    for (const x of [9, 15]) polyline(ctx, wire, 0.7, [x, 0, x - 1.5, 4, x + 1, 8, x - 1.5, 12, x + 1, 16, x - 1.5, 20, x, 24]);
-    for (const [x, y] of [[3, 12], [21, 12], [12, 3], [12, 21], [12, 12]]) {
-      circle(ctx, P.c(C.shadow), x + 1, y + 1, 1.8);
-      circle(ctx, P.c('#6a5232'), x, y, 1.6);
-    }
-  },
-  BRIK: (ctx, P) => {
-    block(ctx, P, 0, 0, 24, 24, P.c(C.concreteLight), P.c(C.concreteDark), 5);
-    rect(ctx, P.c(C.concrete), 2, 2, 20, 15);
-    rect(ctx, P.c(C.seam), 0, 9, 24, 0.8);
-    rect(ctx, P.c(C.seam), 12, 0, 0.8, 9);
-    rect(ctx, P.c(C.seam), 6, 9, 0.8, 10);
-    rect(ctx, P.c(C.seam), 18, 9, 0.8, 10);
-  },
-  PBOX: (ctx, P) => {
-    ngon(ctx, P.c(C.shadow), 14, 14, 11, 8);
-    ngon(ctx, P.c(C.concreteDark), 12, 12, 11, 8);
-    ngon(ctx, P.c(C.concrete), 12, 11.5, 9.5, 8);
-    rect(ctx, P.c(C.track), 7, 3.5, 10, 2); // firing slit
-    circle(ctx, P.team(0.6), 12, 12.5, 4.5);
-    circle(ctx, P.team(0.9), 11, 11.5, 1.6);
-  },
-  HBOX: (ctx, P) => {
-    ngon(ctx, P.c(C.shadow), 14, 14, 11, 8);
-    ngon(ctx, P.c('#3e5426'), 12, 12, 11, 8);
-    ngon(ctx, P.c('#4f6b2f'), 12, 11.5, 9.5, 8);
-    for (const [x, y, r] of [[8, 9, 3], [15, 8, 2.5], [10, 15, 2.6], [16, 14, 3]]) circle(ctx, P.c('#668a3a'), x, y, r);
-    for (const [x, y] of [[6, 13], [13, 12], [17, 10]]) poly(ctx, P.c('#7da04a'), [x, y, x + 1, y - 3, x + 2, y]);
-    rect(ctx, P.c(C.track), 7, 3.5, 10, 1.8); // firing slit
-    circle(ctx, P.team(0.7), 18, 18, 1.2); // small owner marker
-  },
-  FTUR: (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 14, 14, 10.5);
-    circle(ctx, P.c(C.concreteDark), 12, 12, 10.5);
-    circle(ctx, P.c(C.concrete), 12, 11.5, 9);
-    circle(ctx, P.team(0.6), 12, 12, 6.5);
-    rect(ctx, P.c(C.steelDark), 10.5, 1, 3, 7); // nozzle
-    circle(ctx, P.c('#e8641c'), 12, 2.5, 1.4);
-    circle(ctx, P.c(C.steelDark), 12, 12, 3.5);
-    circle(ctx, P.c(C.yellowDark), 12, 12, 2.4); // fuel tank cap
-    circle(ctx, P.team(1.0), 10, 10, 1.2);
-  },
-  GUN: (ctx, P) => {
-    ngon(ctx, P.c(C.shadow), 14, 14, 11.5, 8);
-    ngon(ctx, P.c(C.concreteDark), 12, 12, 11.5, 8);
-    ngon(ctx, P.c(C.concrete), 12, 11.5, 10, 8);
-    circle(ctx, P.c(C.steelDark), 12, 12, 7.5);
-  },
-  TSLA: (ctx, P) => {
-    rect(ctx, P.c(C.shadow), 6, 16, 16, 8);
-    rrect(ctx, P.c(C.concreteDark), 3, 14, 18, 9, 2);
-    rect(ctx, P.team(0.6), 4, 15, 16, 4);
-    rect(ctx, P.team(0.85), 4, 15, 16, 1.2);
-    // tall coil column rising toward the viewer's top
-    rect(ctx, P.c(C.steelDark), 9, 6, 6, 13);
-    rect(ctx, P.c(C.steel), 9.5, 6, 3, 13);
-    for (let y = 8; y < 18; y += 2.5) rect(ctx, P.c('#b0703a'), 8, y, 8, 1.2); // copper windings
-    teslaHead(ctx, P, 12, 5, 4);
-  },
-  AGUN: (ctx, P) => {
-    ngon(ctx, P.c(C.shadow), 14, 14, 11, 6, 0);
-    ngon(ctx, P.c(C.concreteDark), 12, 12, 11, 6, 0);
-    ngon(ctx, P.c(C.concrete), 12, 11.5, 9.5, 6, 0);
-    for (const [x, y] of [[4, 12], [20, 12]]) rect(ctx, P.c(C.yellow), x - 1, y - 1, 2, 2);
-    circle(ctx, P.c(C.steelDark), 12, 12, 6.5);
-  },
-  SAM: (ctx, P) => {
-    block(ctx, P, 1, 2, 46, 21, P.c(C.concreteDark), P.c(C.seam), 4);
-    rect(ctx, P.c(C.concrete), 3, 3, 42, 14);
-    for (const x of [3, 39]) hazard(ctx, P, x, 4, 6, 12, 2);
-    rect(ctx, P.team(0.6), 11, 3, 26, 2);
-    circle(ctx, P.c(C.steelDark), 24, 12, 8.5);
-    circle(ctx, P.c(C.track), 24, 12, 7);
-  },
-  GAP: (ctx, P) => {
-    rect(ctx, P.c(C.shadow), 6, 16, 16, 8);
-    rrect(ctx, P.c(C.concreteDark), 3, 14, 18, 9, 2);
-    rect(ctx, P.team(0.55), 4, 15, 16, 4);
-    rect(ctx, P.team(0.8), 4, 15, 16, 1.2);
-    rect(ctx, P.c(C.steelDark), 9.5, 6, 5, 12); // mast
-    rect(ctx, P.c(C.steel), 10, 6, 2, 12);
-    // emitter array: horizontal vanes around a dark orb
-    rect(ctx, P.c(C.steelDark), 2.5, 4.5, 19, 4);
-    rect(ctx, P.c(C.steelLight), 3, 5, 18, 1.5);
-    circle(ctx, P.c(C.steelDark), 12, 6.5, 4.6);
-    circle(ctx, P.c('#2c2a3e'), 12, 6.5, 3.8);
-    circle(ctx, P.c('#6a64a0'), 11, 5.5, 1.3);
-    circle(ctx, P.team(1.0), 4, 6.5, 1);
-    circle(ctx, P.team(1.0), 20, 6.5, 1);
-  },
-  PDOX: (ctx, P) => {
-    block(ctx, P, 1, 2, 46, 44, P.c(C.concrete), P.c(C.concreteDark), 6);
-    for (const [x, y] of [[3, 4], [37, 4], [3, 30], [37, 30]]) rect(ctx, P.team(0.65), x, y, 8, 8);
-    // chronosphere: gyroscope rings around a glowing sphere
-    circle(ctx, P.c(C.shadow), 26, 22, 15);
-    circle(ctx, P.c(C.steelDark), 24, 20, 15);
-    circle(ctx, P.c('#1e3440'), 24, 20, 13);
-    ctx.save();
-    ctx.translate(24, 20);
-    for (const a of [0, Math.PI / 3, -Math.PI / 3]) {
-      ctx.save();
-      ctx.rotate(a);
-      ctx.scale(1, 0.38);
-      ring(ctx, P.c(C.steelLight), 0, 0, 12.5, 2.4);
-      ctx.restore();
-    }
-    ctx.restore();
-    circle(ctx, P.c('rgba(90,220,240,0.45)'), 24, 20, 8);
-    circle(ctx, P.c('#5fd8ea'), 24, 20, 5.5);
-    circle(ctx, P.c('#e4fbff'), 22.3, 18.3, 2);
-  },
-  IRON: (ctx, P) => {
-    // row 0: open pad, row 1: the curtain projector
-    bib(ctx, P, 0, 0, 48, 24);
-    rect(ctx, P.c(C.yellow), 6, 4, 36, 1.5);
-    block(ctx, P, 1, 18, 46, 28, P.c(C.concreteDark), P.c(C.seam), 6);
-    for (let i = 0; i < 9; i++) rect(ctx, P.team(i % 2 ? 0.45 : 0.72), 4 + i * 4.4, 20, 4.4, 14); // curtain folds
-    rect(ctx, P.team(0.95), 4, 20, 39.6, 1.5);
-    rect(ctx, P.c(C.steelDark), 4, 34, 40, 2);
-    rect(ctx, P.c(C.steelDark), 18, 12, 12, 9); // projector head over the pad
-    rect(ctx, P.c(C.steel), 19, 12, 10, 3);
-    circle(ctx, P.c('#c23a26'), 24, 17, 2.2);
-  },
-  MSLO: (ctx, P) => {
-    block(ctx, P, 0, 0, 48, 24, P.c(C.concreteDark), P.c(C.seam), 4);
-    hazard(ctx, P, 8, 2, 32, 17, 2.5);
-    rect(ctx, P.c(C.steel), 10, 4, 13.5, 13); // hatch doors
-    rect(ctx, P.c(C.steel), 24.5, 4, 13.5, 13);
-    rect(ctx, P.c(C.steelLight), 10, 4, 13.5, 1.5);
-    rect(ctx, P.c(C.steelLight), 24.5, 4, 13.5, 1.5);
-    trefoil(ctx, P, 24, 10.5, 4);
-    for (const x of [2, 42]) rect(ctx, P.team(0.65), x, 3, 4, 14);
-  },
-};
-
-/** Building turrets, centred on the building centre and facing north. */
-const BUILDING_TURRET = {
-  GUN: [24, 24, (ctx, P) => {
-    barrel(ctx, P, 11, 0, 9, 2);
-    drum(ctx, P, 12, 12, 5.5);
-  }],
-  AGUN: [24, 24, (ctx, P) => {
-    barrel(ctx, P, 8.5, 0, 10, 1.5);
-    barrel(ctx, P, 14, 0, 10, 1.5);
-    rrect(ctx, P.c(C.steelDark), 6, 8, 12, 10, 2);
-    rrect(ctx, P.team(0.8), 7, 9, 10, 8, 1.5);
-    rect(ctx, P.team(1.0), 8, 10, 3, 1.5);
-    rect(ctx, P.c(C.glass), 10.5, 13.5, 3, 1.5);
-  }],
-  SAM: [24, 24, (ctx, P) => {
-    rrect(ctx, P.c(C.steelDark), 6, 9, 12, 10, 2);
-    rrect(ctx, P.team(0.78), 7, 10, 10, 8, 1.5);
-    for (const x of [7.5, 13.5]) {
-      rect(ctx, P.c(C.steel), x - 0.5, 3, 4, 13); // rail
-      rrect(ctx, P.c('#e8e6dc'), x, 2, 3, 13, 1.2);
-      rect(ctx, P.c('#b8b6ac'), x + 2, 4, 1, 10);
-      poly(ctx, P.c('#c23a26'), [x, 3.5, x + 1.5, 0.5, x + 3, 3.5]);
-    }
-  }],
-};
+// Buildings are drawn in art/buildings.js.
 
 /** Fakes and variants that reuse another actor's art. Keys are upper-case. */
 const SPRITE_ALIAS = {
@@ -900,7 +492,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -920,8 +512,28 @@ function grey(s) {
 const COLOR_PASS = { team: grey, c: (col) => col };
 const MASK_PASS = { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000') };
 
-/** Sprite definitions in atlas order: [w, h, draw] or null (empty). */
-function spriteList(actors) {
+/** One frame of a building's animated layer (art/animated.js) as a sprite: its box cut out of frame f. */
+function layerSprite(anim, f) {
+  const [bx, by, bw, bh] = anim.box;
+  return [bw, bh, (ctx, P) => {
+    ctx.translate(-bx, -by);
+    anim.draw(ctx, P, f);
+  }];
+}
+
+/** The animated layer of a building sprite key, or null (buildings with a turret have none). */
+function buildingAnim(key) {
+  return BUILDING_TURRET[key] ? null : (BUILDING_ANIM[key] ?? null);
+}
+
+/**
+ * Sprite definitions in atlas order: [w, h, draw] or null (empty). Every actor
+ * has two slots: body and turret. Infantry have no turret; their second slot is
+ * the prone pose (engine/src/veterancy.rs), the standing body when there is no
+ * prone art. Buildings without a turret keep their animated layer there (the
+ * head frame the GPU animates, see buildAtlas).
+ */
+export function spriteList(actors) {
   const list = [];
   for (const a of actors) {
     const key = spriteKey(a.id);
@@ -929,23 +541,78 @@ function spriteList(actors) {
       const draw = BUILDING_DRAW[key];
       if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
       list.push([a.width * 24, a.height * 24, draw]);
-      list.push(BUILDING_TURRET[key] ?? null);
+      const anim = buildingAnim(key);
+      list.push(BUILDING_TURRET[key] ?? (anim ? layerSprite(anim, 0) : null));
     } else {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(d.turret ?? null);
+      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? d.body) : (d.turret ?? null));
     }
   }
-  return list.concat(SPECIALS, slots(NAVAL_SPECIALS), slots(PLANE_SPECIALS), slots(HELI_SPECIALS), slots(ABILITY_SPECIALS));
+  return list.concat(
+    SPECIALS,
+    slots(NAVAL_SPECIALS),
+    slots(PLANE_SPECIALS),
+    slots(HELI_SPECIALS),
+    slots(ABILITY_SPECIALS),
+    slots(VETERANCY_SPECIALS),
+  );
+}
+
+/** Floats per frame table entry (shaders/sprite.wgsl `Frame`). */
+export const FRAME_FLOATS = 12;
+
+/**
+ * Animated building layers: per actor index with one, its head slot (2i + 1),
+ * the first of its frames after the sprite list (`start`, shared by aliases),
+ * the frame count, rate and the layer's offset from the building centre.
+ */
+export function animationPlan(actors, listLength) {
+  const plan = [];
+  const starts = new Map();
+  let next = listLength;
+  actors.forEach((a, i) => {
+    if (a.kind !== 'building') return;
+    const key = spriteKey(a.id);
+    const anim = buildingAnim(key);
+    if (!anim) return;
+    if (!starts.has(key)) {
+      starts.set(key, next);
+      next += anim.frames;
+    }
+    const [bx, by, bw, bh] = anim.box;
+    const offset = [bx + bw / 2 - (a.width * 24) / 2, by + bh / 2 - (a.height * 24) / 2];
+    plan.push({ actor: i, key, anim, head: 2 * i + 1, start: starts.get(key), frames: anim.frames, fps: anim.fps, offset });
+  });
+  return plan;
 }
 
 /**
- * Build the colour atlas, mask atlas and frame table.
- * Frame table: 8 floats per sprite [u0, v0, u1, v1, w, h, 0, 0].
+ * Build the colour atlas, mask atlas, frame table and building overlay table.
+ * Frame table: FRAME_FLOATS per sprite
+ *   [u0, v0, u1, v1, w, h, offset x, offset y, anim start, anim frames, anim fps, 0]
+ * with sizes and offsets in world pixels. An entry with more than one anim
+ * frame is the head of an animation: the shader draws frame
+ * `start + k` instead (shaders/sprite.wgsl, js/anim.js animFrame).
+ * `overlays[t]` is the still frame of actor type t's animated layer, or 0; the
+ * engine draws it for fogged buildings and those without power
+ * (engine/src/overlays.rs, Game.set_building_overlays).
  */
 export function buildAtlas(actors) {
   const list = spriteList(actors);
+  const plan = animationPlan(actors, list.length);
+  const meta = new Map(); // atlas index -> { offset, anim: [start, frames, fps] }
+  const overlays = new Uint32Array(actors.length);
+  for (const p of plan) {
+    meta.set(p.head, { offset: p.offset, anim: [p.start, p.frames, p.fps] });
+    overlays[p.actor] = p.start;
+    if (meta.has(p.start)) continue; // an alias already added the frames
+    for (let f = 0; f < p.frames; f++) {
+      meta.set(p.start + f, { offset: p.offset, anim: [0, 0, 0] });
+      list.push(layerSprite(p.anim, f));
+    }
+  }
   const width = 1024;
   let x = 0;
   let y = 0;
@@ -973,7 +640,7 @@ export function buildAtlas(actors) {
   }
   const cctx = color.getContext('2d');
   const mctx = mask.getContext('2d');
-  const frames = new Float32Array(list.length * 8);
+  const frames = new Float32Array(list.length * FRAME_FLOATS);
   list.forEach((s, i) => {
     const p = places[i];
     const [w, h, draw] = s ?? [1, 1, null];
@@ -990,9 +657,12 @@ export function buildAtlas(actors) {
         ctx.restore();
       }
     }
+    const m = meta.get(i);
+    const [ox, oy] = m?.offset ?? [0, 0];
+    const [start, count, fps] = m?.anim ?? [0, 0, 0];
     frames.set(
-      [(p.x + PAD) / width, (p.y + PAD) / height, (p.x + PAD + w * RES) / width, (p.y + PAD + h * RES) / height, w, h, 0, 0],
-      i * 8,
+      [(p.x + PAD) / width, (p.y + PAD) / height, (p.x + PAD + w * RES) / width, (p.y + PAD + h * RES) / height, w, h, ox, oy, start, count, fps, 0],
+      i * FRAME_FLOATS,
     );
   });
   // The mask only matters where the colour atlas has alpha; clear the rest.
@@ -1002,7 +672,7 @@ export function buildAtlas(actors) {
     if (cdata.data[i] === 0) mdata.data[i - 3] = mdata.data[i - 2] = mdata.data[i - 1] = 0;
   }
   mctx.putImageData(mdata, 0, 0);
-  return { color, mask, frames };
+  return { color, mask, frames, overlays };
 }
 
 /**
@@ -1031,10 +701,9 @@ function fallbackUnit(actor) {
   return null;
 }
 
-/** Sidebar icon: body + turret composited in a team colour. */
-export function drawIcon(canvas, actor, teamRgb) {
-  const ctx = canvas.getContext('2d');
-  const P = {
+/** Colour pass for icons and cameos: team levels scale the player's colour. */
+function iconPalette(teamRgb) {
+  return {
     team: (s) => {
       const k = 0.35 + s * 1.05;
       const [r, g, b] = teamRgb.map((c) => Math.round(Math.min(1, c * k) * 255));
@@ -1042,6 +711,12 @@ export function drawIcon(canvas, actor, teamRgb) {
     },
     c: (col) => col,
   };
+}
+
+/** Sidebar icon: body + turret composited in a team colour. */
+export function drawIcon(canvas, actor, teamRgb) {
+  const ctx = canvas.getContext('2d');
+  const P = iconPalette(teamRgb);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Each part is [draw, dx, dy]: turrets are drawn centred on the body.
   const parts = [];
@@ -1054,6 +729,8 @@ export function drawIcon(canvas, actor, teamRgb) {
     parts.push([BUILDING_DRAW[key], 0, 0]);
     const t = BUILDING_TURRET[key];
     if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    const anim = buildingAnim(key);
+    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
   } else {
     const d = UNIT_DRAW[key] ?? fallbackUnit(actor);
     [w, h] = d.body;
@@ -1074,4 +751,106 @@ export function drawIcon(canvas, actor, teamRgb) {
     ctx.restore();
   }
   ctx.restore();
+}
+
+// ---- Cameos ---------------------------------------------------------------------------
+
+const CAMEO_TEAM = [0.2, 0.5, 0.95];
+/** Units are turned this far (radians) so they show their side, as RA cameos do. */
+const CAMEO_TURN = 0.62;
+
+/** Draw order and extent of the model behind a type name, or null when it has no art. */
+function cameoModel(typeName, kind) {
+  const key = spriteKey(typeName);
+  if (BUILDING_DRAW[key]) {
+    const [cw, ch] = BUILDING_SIZE[key];
+    const w = cw * 24;
+    const h = ch * 24;
+    const parts = [[BUILDING_DRAW[key], 0, 0]];
+    const t = BUILDING_TURRET[key];
+    if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    const anim = buildingAnim(key);
+    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
+    return { building: true, w, h, parts };
+  }
+  const d = UNIT_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);
+  if (!d) return null;
+  const [w, h] = d.body;
+  const parts = [[d.body[2], 0, 0]];
+  if (d.turret) parts.push([d.turret[2], (w - d.turret[0]) / 2, (h - d.turret[1]) / 2]);
+  return { building: false, w, h, parts };
+}
+
+/**
+ * Draw the sidebar cameo of a building or unit into the rectangle (0, 0) to
+ * (size, opts.height ?? size) of ctx: a framed dark backdrop with the model in
+ * 3/4 view. Buildings are the atlas drawings; units are turned towards the
+ * viewer and lit by a spotlight. opts.team is the player's colour as [r, g, b]
+ * in 0..1 (default blue); opts.kind names the actor kind for ships and aircraft
+ * without dedicated art. Returns false (drawing nothing) for a type without art.
+ */
+export function drawCameo(ctx, typeName, size, opts = {}) {
+  const model = cameoModel(typeName, opts.kind);
+  if (!model) return false;
+  const width = size;
+  const height = opts.height ?? size;
+  const P = iconPalette(opts.team ?? CAMEO_TEAM);
+  const inner = cameoInner(width, height);
+  ctx.save();
+  paintCameoBackdrop(ctx, width, height);
+  ctx.beginPath();
+  ctx.rect(inner.x, inner.y, inner.w, inner.h);
+  ctx.clip();
+  const { w, h } = model;
+  let scale;
+  if (model.building) {
+    scale = Math.min(inner.w / w, inner.h / h) * 0.94;
+    ctx.translate(inner.x + (inner.w - w * scale) / 2, inner.y + (inner.h - h * scale) / 2);
+  } else {
+    const ex = Math.abs(w * Math.cos(CAMEO_TURN)) + Math.abs(h * Math.sin(CAMEO_TURN));
+    const ey = Math.abs(w * Math.sin(CAMEO_TURN)) + Math.abs(h * Math.cos(CAMEO_TURN));
+    scale = Math.min(inner.w / ex, inner.h / ey) * 0.88;
+    paintCameoShadow(ctx, inner.x + inner.w * 0.54, inner.y + inner.h * 0.72, ex * scale * 0.5, ex * scale * 0.2);
+    ctx.translate(inner.x + inner.w / 2, inner.y + inner.h * 0.46);
+    ctx.rotate(CAMEO_TURN);
+    ctx.translate((-w * scale) / 2, (-h * scale) / 2);
+  }
+  ctx.scale(scale, scale);
+  for (const [draw, dx, dy] of model.parts) {
+    ctx.save();
+    ctx.translate(dx, dy);
+    draw(ctx, P);
+    ctx.restore();
+  }
+  ctx.restore();
+  ctx.save();
+  paintCameoFrame(ctx, width, height);
+  ctx.restore();
+  return true;
+}
+
+const cameoCache = new Map();
+
+/**
+ * A cached canvas holding the cameo, so the sidebar draws each picture once.
+ * The key is the sprite key, size, height and team colour.
+ */
+export function getCameo(typeName, size, opts = {}) {
+  const team = opts.team ?? CAMEO_TEAM;
+  const height = opts.height ?? size;
+  const id = `${spriteKey(typeName)}|${size}x${height}|${team.map((c) => c.toFixed(3)).join(',')}`;
+  let canvas = cameoCache.get(id);
+  if (canvas === undefined) {
+    canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = height;
+    canvas = drawCameo(canvas.getContext('2d'), typeName, size, { ...opts, height }) ? canvas : null;
+    cameoCache.set(id, canvas);
+  }
+  return canvas;
+}
+
+/** Forget all cached cameos (after a team colour change, say). */
+export function clearCameoCache() {
+  cameoCache.clear();
 }

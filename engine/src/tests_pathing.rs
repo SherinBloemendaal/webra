@@ -12,7 +12,14 @@ fn ty(w: &World, id: &str) -> u16 {
 /// An open `w` x `h` map with two passive players and no structures.
 fn arena(w: i32, h: i32) -> World {
     let n = (w * h) as usize;
-    let map = Map { width: w, height: h, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: vec![(1, 1), (w - 3, h - 3)] };
+    let map = Map {
+        width: w,
+        height: h,
+        terrain: vec![Terrain::Clear; n],
+        ore: vec![0; n],
+        gems: vec![0; n],
+        spawns: vec![(1, 1), (w - 3, h - 3)],
+    };
     let mut world = World::empty(Rules::load(), map, 9);
     world.stress = true;
     world.add_player(world.rules.faction_index("allies").unwrap(), false, (1, 1));

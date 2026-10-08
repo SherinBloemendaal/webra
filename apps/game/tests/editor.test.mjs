@@ -11,6 +11,7 @@ import {
   fill,
   fillRect,
   lineCells,
+  paintGems,
   paintOre,
   paintTerrain,
   placeActor,
@@ -28,6 +29,7 @@ const CATALOG = {
 const newDoc = (w = 40, h = 32) => new MapDoc(createMap({ width: w, height: h, name: 'T', author: 'A' }));
 const t = (doc, x, y) => doc.terrain[doc.idx(x, y)];
 const o = (doc, x, y) => doc.ore[doc.idx(x, y)];
+const g = (doc, x, y) => doc.gems[doc.idx(x, y)];
 
 // ---- Symmetry -------------------------------------------------------------------------
 
@@ -174,6 +176,42 @@ test('impassable terrain clears ore and ore skips impassable cells', () => {
   assert.ok(validateMap(doc.toMap()).ok);
 });
 
+test('the gem brush paints gems, replaces ore, and is undoable; the map becomes format 2', () => {
+  const doc = newDoc();
+  doc.begin('ore');
+  paintOre(doc, [[5, 5], [6, 5]], 9, 'none');
+  doc.commit();
+  assert.equal(doc.toMap().format, 1);
+  doc.begin('Gem brush');
+  paintGems(doc, [[5, 5], [7, 5]], 7, 'horizontal'); // clamped to 3, mirrored
+  paintTerrain(doc, [[8, 20]], TERRAIN.WATER, 'none');
+  paintGems(doc, [[8, 20]], 2, 'none'); // water: skipped
+  doc.commit();
+  assert.deepEqual([g(doc, 5, 5), o(doc, 5, 5)], [3, 0], 'gems replaced the ore');
+  assert.deepEqual([g(doc, 7, 5), g(doc, 34, 5), g(doc, 8, 20)], [3, 3, 0]);
+  const map = doc.toMap();
+  assert.equal(map.format, 2);
+  assert.ok(validateMap(map).ok, validateMap(map).errors.join('; '));
+  assert.equal(g(new MapDoc(map), 7, 5), 3, 'round trip');
+  // Ore painted over gems replaces them; impassable terrain drops both.
+  doc.begin('ore again');
+  paintOre(doc, [[7, 5]], 4, 'none');
+  paintTerrain(doc, [[5, 5]], TERRAIN.ROCK, 'none');
+  doc.commit();
+  assert.deepEqual([o(doc, 7, 5), g(doc, 7, 5), g(doc, 5, 5)], [4, 0, 0]);
+  doc.undo();
+  assert.deepEqual([o(doc, 7, 5), g(doc, 7, 5), g(doc, 5, 5)], [0, 3, 3]);
+  doc.undo();
+  assert.deepEqual([g(doc, 5, 5), o(doc, 5, 5)], [0, 9], 'undo restores the ore under the gems');
+  assert.equal(doc.toMap().format, 1, 'no gems left: format 1 again');
+  // Right drag (density 0) removes gems only.
+  doc.redo();
+  doc.begin('remove');
+  paintGems(doc, [[5, 5], [6, 5]], 0, 'none');
+  doc.commit();
+  assert.deepEqual([g(doc, 5, 5), o(doc, 6, 5)], [0, 9]);
+});
+
 test('symmetric painting paints the mirrored cells', () => {
   const doc = newDoc(40, 32);
   doc.begin('x');
@@ -234,11 +272,12 @@ test('symmetric actor placement mirrors owner and facing', () => {
   assert.deepEqual(added[1], { type: '1TNK', owner: 1, x: 75, y: 75, facing: 640 });
 });
 
-test('eraser clears terrain, ore and actors in one step', () => {
+test('eraser clears terrain, ore, gems and actors in one step', () => {
   const doc = newDoc();
   doc.begin('setup');
   paintTerrain(doc, [[10, 10]], TERRAIN.ROCK, 'none');
   paintOre(doc, [[11, 10]], 5, 'none');
+  paintGems(doc, [[11, 11]], 2, 'none');
   placeActor(doc, CATALOG, { type: '1TNK', owner: -1, x: 12, y: 10, facing: 0 }, 'none');
   doc.commit();
   doc.begin('erase');
@@ -246,6 +285,7 @@ test('eraser clears terrain, ore and actors in one step', () => {
   doc.commit();
   assert.equal(t(doc, 10, 10), TERRAIN.CLEAR);
   assert.equal(o(doc, 11, 10), 0);
+  assert.equal(g(doc, 11, 11), 0);
   assert.equal(doc.actors.length, 0);
   doc.undo();
   assert.equal(doc.actors.length, 1);

@@ -1,4 +1,5 @@
 // Solid rectangles in world space: selection brackets, health bars, previews.
+// A negative red channel selects a team colour (see vs).
 struct VsOut {
     @builtin(position) pos: vec4f,
     @location(0) color: vec4f,
@@ -11,6 +12,11 @@ fn vs(@builtin(vertex_index) vi: u32, @location(0) r: vec4f, @location(1) color:
     var o: VsOut;
     o.pos = world_to_clip(r.xy + corners[vi] * r.zw);
     o.color = color;
+    // Red below zero: team colour -r - 1 scaled by g (selection brackets, engine/src/overlays.rs).
+    if (color.r < 0.0) {
+        let team = min(u32(-color.r - 0.5), 7u);
+        o.color = vec4f(min(g.team_colors[team].rgb * color.g, vec3f(1.0)), color.a);
+    }
     return o;
 }
 

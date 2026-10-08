@@ -96,6 +96,34 @@ test('MCV start: deploy, build a power plant and place it', () => {
   assert.equal(barr.exclusive, 'Soviet only');
 });
 
+test('structures queue; without a Construction Yard they are cancelled and unavailable', () => {
+  const game = newGame({ startingUnits: 'base' });
+  ticks(game, 1);
+  game.start_production(0, 'POWR', 3);
+  ticks(game, 1);
+  let state = JSON.parse(game.player_json(0));
+  assert.deepEqual(
+    state.queues[0].map((it) => it.id),
+    ['POWR', 'POWR', 'POWR'],
+  );
+  ticks(game, 400);
+  state = JSON.parse(game.player_json(0));
+  assert.equal(state.queues[0][0].done, true);
+  assert.equal(state.queues[0][1].progress, 0, 'the next one waits for placement');
+  const before = state.cash;
+  // Sell the only Construction Yard: the finished power plant is refunded.
+  const [x, y] = game.start_position(0);
+  game.sell(0, game.pick(0, x, y));
+  ticks(game, 2);
+  state = JSON.parse(game.player_json(0));
+  assert.equal(state.hasProducer[0], false);
+  assert.deepEqual(state.queues[0], []);
+  assert.equal(state.cash, before + 1000 + 300, 'sale plus the refunded power plant');
+  const powr = state.buildable.find((b) => b.id === 'POWR');
+  assert.equal(powr.enabled, false);
+  assert.ok(powr.requires.includes('Construction Yard'));
+});
+
 test('selling a structure refunds money', () => {
   const game = newGame({ startingUnits: 'base' });
   ticks(game, 1);
@@ -167,7 +195,8 @@ test('same seed gives the same game', () => {
 test('generated map files validate, hash stably and start a game', () => {
   const json = Game.generated_map(42, 64, 4);
   const map = JSON.parse(json);
-  assert.equal(map.format, 1);
+  assert.equal(map.format, 2, 'generated maps have gems (format 2)');
+  assert.equal(typeof map.gems, 'string');
   assert.equal(map.spawns.length, 4);
   const v = JSON.parse(Game.validate_map(json));
   assert.equal(v.ok, true, v.errors.join('; '));

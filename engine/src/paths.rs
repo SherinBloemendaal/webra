@@ -70,12 +70,12 @@ impl World {
             }
             let pass = self.pass_for(domain);
             // Only fields the unit already follows; none means nothing to show yet.
-            let Some(field) = self.flow.peek(pass, goal, unit.locomotor as u8) else { continue };
+            let Some(dirs) = self.flow.peek(goal, unit.locomotor as u8, pass.version) else { continue };
             let (mut cx, mut cy) = self.cell_of(a.x, a.y);
             let mut last = DIR_NONE;
             // A field never loops, so a route visits each cell at most once.
             for _ in 0..self.map.cells() {
-                let d = field.dirs[(cy * w + cx) as usize];
+                let d = dirs[(cy * w + cx) as usize];
                 if d == DIR_GOAL {
                     route.to(goal_pt, lines);
                     break;
