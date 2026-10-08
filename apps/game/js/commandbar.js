@@ -24,6 +24,7 @@
 
 import { CURSORS } from './cursors.js';
 import { formatCombo } from './hotkeys.js';
+import { actorInfo, askOf } from './sim/methods.js';
 
 const NONE = 0xffffffff;
 const OUTLINE = '#101010';
@@ -410,17 +411,39 @@ export class CommandBar {
     return true;
   }
 
+  /** What the cursor shows: the game handle's synchronous answers (one frame old with a worker). */
   context(w, mods) {
     const units = this.units();
-    const hit = this.game.pick(this.player, w.x, w.y);
-    const info = hit === NONE ? null : JSON.parse(this.game.actor_json(hit));
     const ids = Uint32Array.from(units);
+    const hit = this.game.pick(this.player, w.x, w.y);
+    const canAttackGround = units.length > 0 && this.game.can_attack_ground(this.player, ids, w.x, w.y);
+    const canGuard = hit !== NONE && units.length > 0 && this.game.can_guard(this.player, ids, hit);
+    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard);
+  }
+
+  /** What a click does: fresh answers from the game. */
+  async contextNow(w, mods) {
+    // The armed mode as it was at the click (mouseDown disarms it right away).
+    const armed = { mode: this.mode, queue: this.queue };
+    const units = this.units();
+    const ids = Uint32Array.from(units);
+    const ask = askOf(this.game);
+    const [hit, canAttackGround] = await Promise.all([
+      ask.pick(this.player, w.x, w.y),
+      units.length > 0 ? ask.can_attack_ground(this.player, ids, w.x, w.y) : false,
+    ]);
+    const canGuard = hit !== NONE && units.length > 0 && (await ask.can_guard(this.player, ids, hit));
+    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed);
+  }
+
+  contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed = { mode: this.mode, queue: this.queue }) {
+    const info = hit === NONE ? null : actorInfo(this.game, hit);
     return {
       units,
       ids,
       c: {
-        mode: this.mode,
-        queue: this.queue,
+        mode: armed.mode,
+        queue: armed.queue,
         shift: !!mods.shift,
         ctrl: !!mods.ctrl,
         alt: !!mods.alt,
@@ -429,18 +452,21 @@ export class CommandBar {
         player: this.player,
         allied: (owner) => owner === this.player || this.game.are_allies(this.player, owner),
         selected: (id) => this.input.selection.includes(id),
-        canAttackGround: units.length > 0 && this.game.can_attack_ground(this.player, ids, w.x, w.y),
-        canGuard: hit !== NONE && units.length > 0 && this.game.can_guard(this.player, ids, hit),
+        canAttackGround,
+        canGuard,
       },
     };
   }
 
   /**
    * A left click on the map (no drag) with modifiers { shift, ctrl, alt }.
-   * Returns true when it was a command (handled here).
+   * Resolves with true when it was a command (handled here).
    */
-  click(w, mods) {
-    const { units, ids, c } = this.context(w, mods);
+  async click(w, mods) {
+    // Nothing to command: no need to ask the game.
+    if (!this.mode && !this.queue && !mods.shift && !mods.ctrl && !mods.alt) return false;
+    if (!this.units().length) return false;
+    const { units, ids, c } = await this.contextNow(w, mods);
     if (!units.length) return false;
     const order = commandClick(c);
     if (!order) return false;
@@ -454,7 +480,7 @@ export class CommandBar {
         this.input.flashOrder(w, 2);
         break;
       case 'move':
-        if (mods.shift || this.queue) this.game.order_waypoint(this.player, ids, w.x, w.y, false);
+        if (mods.shift || c.queue) this.game.order_waypoint(this.player, ids, w.x, w.y, false);
         else this.game.order_move(this.player, ids, w.x, w.y, false);
         this.input.flashOrder(w, 1);
         break;

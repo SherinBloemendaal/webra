@@ -662,3 +662,99 @@ before any use:
   when a stored hash does not match, then play continues and the recording
   goes on from the save. Saves go to the browser (IndexedDB database
   `webra`, store `saves`, at most 50) or to a file.
+
+## 8. Simulation worker (`apps/game/js/sim`)
+
+The game's simulation runs in a dedicated module Web Worker; the main thread
+keeps rendering, input and UI. Determinism does not change: the worker runs
+the same engine and the same drivers (`LocalDriver`, `LockstepDriver`,
+`ReplayController`, `Recorder`) the main thread ran before, fed the same
+orders at the same ticks. `apps/game/tests/sim.test.mjs` plays games through
+the boundary (in Node's `worker_threads`) and compares state hashes with the
+engine driven directly.
+
+### Modes (`js/sim/modes.js`)
+
+| Mode | When | Render data |
+|------|------|-------------|
+| `shared` | Module workers, `SharedArrayBuffer`, and the page is cross-origin isolated (`/play` sends COOP `same-origin` and COEP `require-corp`) | Two slots of SharedArrayBuffers per section (sprites, rects, fog, path lines, heat shimmer), one sequence counter per slot (`js/sim/framebuffer.js`) |
+| `transfer` | Module workers without isolation | ArrayBuffers transferred with each frame; the main thread returns them with its next step (a pool) |
+| `direct` | No module workers, or the worker failed to start (error or 15 s timeout) | Views of wasm memory on the main thread, as before |
+
+`?sim=direct|transfer|shared` asks for a mode; one the browser cannot run
+falls back to the next one down. The debug menu's performance stats show the
+mode, why it was picked, the worker's time per frame, the step round trip
+and (shared mode) frames found overwritten while read.
+
+### Messages
+
+Main thread to worker:
+
+| `t` | Fields | Answer |
+|-----|--------|--------|
+| `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
+| `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
+| `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
+| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
+| `step` | `req { dt, paused, view, rect, audio, paths, table, queries }`, `recycle` | `frame` |
+
+Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
+for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
+`warn`, and `failed` (the worker cannot go on; the page says so).
+
+Start specs: `skirmish { options, map, player, recorder }`, `save { replay }`,
+`replay { replay }`, `stress { seed, units, size }`, `online { options, map,
+player, spectator, delay, rejoining, recorder }`, each with `tickMs`.
+
+A frame carries: ticks run and the interpolation `alpha`, the tick, the
+worker's simulation time, `busy` (loading a save, catching up, seeking),
+driver status (save loading and its error, online catch-up and stall time,
+replay position, recorder full), answers to the step's queries, sound events
+(none while busy), the actor table when it changed, terrain bytes when they
+changed, the sky (`weather`: `Game.weather_json()` text, for the weather
+renderer, lightning, thunder and the HUD badge), and the render data: sprites
+and rects (8 floats each), fog bytes of `view`, path lines when `paths` is
+set, and heat shimmer instances (`heatCount`, 4 floats each,
+`Game.build_heat_fx` for `view` and `rect`).
+
+Messages are handled in order. A `call` or `ask` sent before a `step` is
+applied (or answered) before that step's ticks, so an order reaches the same
+tick it would have reached on the main thread, and an `ask` sees every order
+sent before it. One step is in flight at a time; wall time that passes
+meanwhile goes with the next step, so the simulation keeps its pace and the
+main thread never waits. Online sends carry the connection epoch they were
+made under; after a reconnect (`reattach`) the main thread drops sends made
+for the old connection.
+
+### Shared frames
+
+Per slot: a sequence counter, odd while the worker writes. The worker writes
+the slot it did not publish last, makes the counter even again, then stores
+the slot as the latest. The reader takes the slot and counter from the frame
+message, reads (uploads to the GPU), then checks the counter: changed means
+the slot was written over meanwhile and the frame is counted as torn (the next
+frame replaces it). With one step in flight the worker only writes the other
+slot, so this does not happen in normal play; the check is the guarantee. A
+section that outgrows its buffer gets a new SharedArrayBuffer for that slot,
+sent with the frame.
+
+### Game methods across the boundary
+
+The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
+`DirectGame` on the main thread) with the `Game`'s method names.
+`js/sim/methods.js` lists them.
+
+| Methods | Used by | Across the boundary |
+|---------|---------|---------------------|
+| `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_paths`, `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
+| `order_*`, `sell`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
+| `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
+| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre) | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+
+`deploy_summary` and `deploy_targets` are composite queries run where the
+game is (one message for a whole selection instead of one per actor).

@@ -241,8 +241,6 @@ function widget(state) {
     minimap_blips: () => new Int32Array(0),
     cursor_action: () => 1,
     order_smart: (p, ids, x, y) => calls.push(['order', p, Array.from(ids), x, y]),
-    fog_ptr: () => 0,
-    fog_len: () => 0,
   };
   const input = {
     suspended: false,
@@ -252,13 +250,13 @@ function widget(state) {
     viewRect: () => ({ x0: 0, y0: 0, x1: 24 * 16, y1: 24 * 16 }),
   };
   const parent = fakeElement('aside');
-  const mm = new Minimap(parent, { game, memory: { buffer: new ArrayBuffer(8) }, player: 0, input, colors: COLORS });
+  const mm = new Minimap(parent, { game, fog: () => new Uint8Array(0), player: 0, input, colors: COLORS });
   return { mm, calls, parent, input };
 }
 
 const pointer = (button, x, y) => ({ button, clientX: x, clientY: y, pointerId: 1, preventDefault() {} });
 
-test('widget: offline radar ignores clicks; online it moves the camera and orders units', () => {
+test('widget: offline radar ignores clicks; online it moves the camera and orders units', async () => {
   const state = { radar: RADAR.NONE, units: [7, 8] };
   const { mm, calls, parent } = widget(state);
   assert.equal(parent.children[0], mm.root, 'at the top of the sidebar');
@@ -286,6 +284,9 @@ test('widget: offline radar ignores clicks; online it moves the camera and order
   // Right click: a smart order for the selected own units.
   calls.length = 0;
   mm.canvas.listeners.pointerdown(pointer(2, 128, 0));
+  // The order goes out at once; the flash shows the answer to what it does.
+  assert.deepEqual(calls, [['order', 0, [7, 8], 64 * 24, 0]]);
+  await new Promise((r) => setImmediate(r));
   assert.deepEqual(calls, [
     ['order', 0, [7, 8], 64 * 24, 0],
     ['flash', 1],

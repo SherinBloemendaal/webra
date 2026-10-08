@@ -237,10 +237,11 @@ export class LockstepDriver {
    *   recorder?: { record(tick: number, orders: any[]): void, noteHash(ticks: number, hash: string): void } | null,
    *   onCaughtUp?: () => void,  caught up with `sync` (a rejoining player sends `resume` here)
    *   onCheck?: (ok: boolean, tick: number) => void,  result of the `sync.check` comparison
+   *   hidden?: () => boolean,  the page is hidden (no animation frames: frames run as they arrive)
    *   now?: () => number,
    * }} opts
    */
-  constructor(conn, game, { delay, tickMs, spectator = false, rejoining = false, recorder = null, onCaughtUp = null, onCheck = null, now = null }) {
+  constructor(conn, game, { delay, tickMs, spectator = false, rejoining = false, recorder = null, onCaughtUp = null, onCheck = null, hidden = null, now = null }) {
     this.conn = conn;
     this.game = game;
     this.delay = delay;
@@ -265,6 +266,8 @@ export class LockstepDriver {
     this.onCaughtUp = onCaughtUp;
     this.onCheck = onCheck;
     this.now = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+    // In a worker there is no document: the main thread tells it (js/sim/core.js).
+    this.hidden = hidden ?? (() => typeof document !== 'undefined' && document.hidden);
     game.set_lockstep(true);
   }
 
@@ -302,7 +305,7 @@ export class LockstepDriver {
     if (frame.tick < this.next || this.frames.has(frame.tick)) return;
     this.frames.set(frame.tick, frame.orders);
     // Hidden tabs get no animation frames: keep up from the network events.
-    if (typeof document !== 'undefined' && document.hidden && !this.catchingUp) this.pump(MAX_TICKS_HIDDEN);
+    if (this.hidden() && !this.catchingUp) this.pump(MAX_TICKS_HIDDEN);
   }
 
   /** A `log` message: frames with orders from the server's order log. */

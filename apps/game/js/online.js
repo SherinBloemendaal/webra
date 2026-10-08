@@ -40,8 +40,7 @@ import {
   WEATHER_MODES,
   validName,
 } from './protocol.js';
-import { api, ApiError, Connection, LockstepDriver } from './net.js';
-import { Recorder } from './replay.js';
+import { api, ApiError, Connection } from './net.js';
 
 const STORAGE_KEY = 'webra.online.v1';
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
@@ -275,7 +274,9 @@ export class OnlineUI {
    * @param {HTMLElement} root the #online-root element
    * @param {{
    *   Game: any, version: string, colors: number[][], colorNames: string[],
-   *   onStartGame: (start: { game: any, player: number, driver: LockstepDriver, options: object, onQuit: () => void }) => void,
+   *   createGame: (o: { spec: object, conn: Connection, onCaughtUp: () => void, onCheck: (ok: boolean, tick: number) => void })
+   *     => Promise<{ host: any, game: any, driver: any, recorder: any }>,  the simulation with its LockstepDriver (js/main.js, js/sim)
+   *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
    *   onBack: () => void,
    * }} ctx
    */
@@ -1089,7 +1090,7 @@ export class OnlineUI {
     const st = this.state;
     if (!st || !this.conn) return;
     // A reconnect within this page keeps its game: the start message is the same.
-    if (this.driver) return;
+    if (this.driver || this.startingGame) return;
     const me = m.players.find((p) => p.client === st.you);
     const spectator = !me;
     if (spectator && st.role !== 'spectator') {
@@ -1100,53 +1101,63 @@ export class OnlineUI {
     const catchUp = st.rejoin || !st.lobbySeen;
     this.pendingNet ??= [];
     const conn = this.conn;
-    let game;
     let mapText = null;
+    let session;
+    this.startingGame = true;
     try {
       if (m.map) {
         mapText = this.installed.get(m.map.hash) ?? (await this.installMapForGame(m.map));
         if (!mapText) throw new Error('The map is not installed.');
       }
       if (this.conn !== conn) return;
-      const options = JSON.stringify(m.options);
-      game = mapText ? this.ctx.Game.from_map(mapText, options) : this.ctx.Game.from_options(options);
+      // The game, its LockstepDriver and its recorder run where the
+      // simulation runs (a worker when possible); `driver` relays to it.
+      session = await this.ctx.createGame({
+        spec: {
+          kind: 'online',
+          options: m.options,
+          map: mapText,
+          player: me ? me.player : null,
+          spectator,
+          delay: m.delay,
+          tickMs: SPEED_MS[m.options.gameSpeed] ?? SPEED_MS.normal,
+          rejoining: catchUp,
+          recorder: {
+            mode: 'online',
+            options: m.options,
+            map: mapText,
+            mapHash: m.map ? m.map.hash : null,
+            player: me ? me.player : null,
+            engine: this.ctx.version,
+            title: st.session.name,
+          },
+        },
+        conn,
+        onCaughtUp: () => {
+          // Players take their seat back; spectators confirm (the server counts them as catching up until then).
+          if (!spectator) this.send({ t: 'resume' });
+          else {
+            this.send({ t: 'synced' });
+            this.gameLine('Caught up: watching live.');
+          }
+        },
+        onCheck: (ok, tick) => {
+          if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
+        },
+      });
     } catch (err) {
       this.leaveSession();
       this.showBrowser(`Could not start the game: ${err.message ?? err}`);
       return;
+    } finally {
+      this.startingGame = false;
     }
-    let recorder = null;
-    try {
-      recorder = new Recorder({
-        mode: 'online',
-        options: m.options,
-        map: mapText,
-        mapHash: m.map ? m.map.hash : null,
-        player: me ? me.player : null,
-        engine: this.ctx.version,
-        title: st.session.name,
-      });
-    } catch (err) {
-      console.warn('This game is not recorded:', err.message ?? err);
+    if (this.conn !== conn || this.driver) {
+      // The connection went away (or the game started) while the simulation loaded.
+      session.host.dispose();
+      return;
     }
-    const driver = new LockstepDriver(conn, game, {
-      delay: m.delay,
-      tickMs: SPEED_MS[m.options.gameSpeed] ?? SPEED_MS.normal,
-      spectator,
-      rejoining: catchUp,
-      recorder,
-      onCaughtUp: () => {
-        // Players take their seat back; spectators confirm (the server counts them as catching up until then).
-        if (!spectator) this.send({ t: 'resume' });
-        else {
-          this.send({ t: 'synced' });
-          this.gameLine('Caught up: watching live.');
-        }
-      },
-      onCheck: (ok, tick) => {
-        if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
-      },
-    });
+    const { host, game, driver, recorder } = session;
     this.driver = driver;
     // Messages that arrived while the game was being set up.
     const pending = this.pendingNet;
@@ -1156,6 +1167,7 @@ export class OnlineUI {
     this.root.hidden = true;
     this.buildGameOverlay(m.players, m.options.cheats === true, spectator);
     this.ctx.onStartGame({
+      host,
       game,
       player: me ? me.player : 0,
       driver,

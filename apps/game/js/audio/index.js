@@ -18,6 +18,7 @@ import { IdbStore, MemoryStore } from './store.js';
 /** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
 export const FOG_VISIBLE = 255;
 import { EVA } from './catalog.js';
+import { actorInfo } from '../sim/methods.js';
 
 /** Game methods that give a unit order: the units reply. Their second argument is the unit ids. */
 export const ORDER_METHODS = new Set([
@@ -145,9 +146,11 @@ export class AudioSystem {
       player,
       side: sideIndex === 1 ? 'soviet' : 'allies',
       pxPerWorld: rules.pxPerCell / worldUnitsPerCell,
+      // Owner, kind and type: a game handle answers from its actor table
+      // (js/sim/proxy.js), at once also when the simulation runs in a worker.
       lookup: (id) => {
         try {
-          return JSON.parse(game.actor_json(id));
+          return actorInfo(game, id);
         } catch {
           return null;
         }
