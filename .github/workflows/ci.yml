@@ -41,7 +41,8 @@ jobs:
           python-version: '3.12'
       - run: python3 tools/gen_rules.py
       - run: python3 tools/gen_oramap_tables.py
-      - run: git diff --exit-code engine/rules.json apps/game/js/oramap/tables.js
+      - run: python3 tools/gen_content_tables.py
+      - run: git diff --exit-code engine/rules.json apps/game/js/oramap/tables.js apps/game/js/content/tables.js
 
   shaders:
     name: WGSL shaders
