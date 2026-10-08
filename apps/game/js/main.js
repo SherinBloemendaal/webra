@@ -8,6 +8,8 @@ import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
+import { AudioSystem } from './audio/index.js';
+import { mountAudioPanel } from './audio/panel.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -25,6 +27,8 @@ const $ = (id) => document.getElementById(id);
 
 let wasm;
 let renderer;
+// Sound (js/audio): synthesized by default, original files when the player installed them.
+let audio = null;
 
 async function boot() {
   let gpuError = null;
@@ -34,6 +38,7 @@ async function boot() {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
   $('version').textContent = wasm ? `v${version()}` : '';
+  setupAudio();
   const lobby = new Lobby($('menu'), {
     colors: TEAM_COLORS,
     colorNames: COLOR_NAMES,
@@ -58,6 +63,17 @@ async function boot() {
   if (gpuError) lobby.showError(gpuError);
   setupOnline(lobby, gpuError);
   offerLinkedMap(lobby);
+}
+
+function setupAudio() {
+  try {
+    audio = new AudioSystem();
+    mountAudioPanel($('audio-button'), $('audio-panel'), audio);
+  } catch (err) {
+    // The game stays playable without sound.
+    console.warn('Sound is unavailable:', err);
+    audio = null;
+  }
 }
 
 /**
@@ -193,14 +209,21 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
+  audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
+  // Orders and production clicks made through `ui` get unit replies and announcements.
+  const ui = audio ? audio.watch(game) : game;
   renderer.setAtlas(buildAtlas(rules.actors));
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
   let powerBar = null;
-  const input = new Input($('view'), game, rules, player, {
-    onPowerTargeting: (key) => powerBar?.setTargeting(key),
+  const input = new Input($('view'), ui, rules, player, {
+    onPowerTargeting: (key) => {
+      powerBar?.setTargeting(key);
+      if (key) audio?.selectTarget();
+    },
     onSelectionChanged: (ids) => {
+      audio?.selection(ids);
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
     },
@@ -210,7 +233,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
   });
-  sidebar = new Sidebar($('sidebar'), game, rules, player, {
+  sidebar = new Sidebar($('sidebar'), ui, rules, player, {
     onPlace: (id) => {
       input.startPlacing(id);
       sidebar.setPlacing(id);
@@ -302,6 +325,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     }
     const fogPtr = game.fog_ptr(player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
+    // Sounds of what happened this frame, heard from the camera (fog hides enemy sounds).
+    audio?.frame(input.viewRect(), () => new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
 
     // UI rects call into wasm (placement preview), which may grow its memory and
     // detach existing views, so collect them before taking views of wasm memory.
@@ -327,6 +352,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       const state = JSON.parse(game.player_json(player));
       sidebar.update(state);
       powerBar.update(state.powers ?? []);
+      audio?.playerState(state);
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);
@@ -334,6 +360,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
         over = true;
         $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
         $('gameover').hidden = false;
+        audio?.gameOver(!!state.won);
       }
     }
     requestAnimationFrame(frame);

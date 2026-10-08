@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="css/lobby.css" />
     <link rel="stylesheet" href="css/online.css" />
     <link rel="stylesheet" href="css/powers.css" />
+    <link rel="stylesheet" href="css/audio.css" />
   </head>
   <body>
     <!-- Pre-game lobby, built by js/lobby.js -->
@@ -44,6 +45,10 @@
     </section>
 
     <div id="version" title="WebRA version"></div>
+
+    <!-- Sound settings and original content install (js/audio/panel.js) -->
+    <button id="audio-button" type="button" title="Sound settings and original Red Alert content" aria-haspopup="dialog" aria-expanded="false" hidden>Sound</button>
+    <section id="audio-panel" hidden></section>
 
     <script type="module" src="js/main.js"></script>
   </body>
