@@ -50,6 +50,13 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
 
+### Sound
+- [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
+- [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
+- [x] Positional sound: volume and stereo pan follow the camera, sounds outside the view or under fog are culled, and a per-frame voice budget keeps battles of thousands of units listenable
+- [x] **Install original Red Alert content** like OpenRA: pick `main.mix`, `redalert.mix` or other `.mix`/`.aud` files from your own copy (Red Alert is freeware since 2008); WebRA reads the MIX archives (including the encrypted index) and decodes the AUD sounds in the browser, and stores them on your device only. Originals then replace the synthesized sounds (switchable), and the soundtrack plays in games
+- [x] Settings for master, effects, voices and music volume, speech and originals (the **Sound** button)
+
 ### Engineering
 - [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
 - [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format and editor
@@ -60,7 +67,6 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 - [ ] Minimap / radar (Radar Dome) and radar jamming
 - [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
-- [ ] Sound effects and music (user-supplied original content; the repository ships no EA assets)
 - [ ] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
 - [ ] Loading OpenRA `.oramap` maps
@@ -117,7 +123,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog extracted from OpenRA mods/ra
-├── tools/                  gen_rules.py, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, README assets
 ```
 
@@ -202,7 +208,7 @@ Every order type has its own cursor (move, attack, attack-move, harvest, dock, r
 - **[OpenRA](https://github.com/OpenRA/OpenRA)**: the open-source reimplementation of the classic Westwood RTS games. WebRA's gameplay values (costs, build times, health, armour, weapons, prerequisites, timing) come from OpenRA's `mods/ra` rules, which are licensed under GPLv3. Many thanks to the OpenRA contributors.
 - **Westwood Studios and Electronic Arts**: for the original *Command & Conquer: Red Alert*.
 
-*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are generated procedurally by the game at runtime.
+*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are generated procedurally by the game at runtime and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
 
 ## License
 
