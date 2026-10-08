@@ -146,7 +146,8 @@ test('same seed gives the same game', () => {
 test('generated map files validate, hash stably and start a game', () => {
   const json = Game.generated_map(42, 64, 4);
   const map = JSON.parse(json);
-  assert.equal(map.format, 1);
+  assert.equal(map.format, 2, 'generated maps have gems (format 2)');
+  assert.equal(typeof map.gems, 'string');
   assert.equal(map.spawns.length, 4);
   const v = JSON.parse(Game.validate_map(json));
   assert.equal(v.ok, true, v.errors.join('; '));

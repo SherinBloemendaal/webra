@@ -16,6 +16,7 @@ import {
   fill,
   fillRect,
   lineCells,
+  paintGems,
   paintOre,
   paintTerrain,
   placeActor,
@@ -31,7 +32,8 @@ export const TOOLS = [
   { id: 'fill', key: 'F', label: 'Fill bucket', hint: 'Fill a connected area of one terrain type.' },
   { id: 'rect', key: 'R', label: 'Rectangle', hint: 'Drag a rectangle of terrain. Right drag clears.' },
   { id: 'ore', key: 'O', label: 'Ore brush', hint: 'Paint ore on clear or rough ground. Right drag removes ore.' },
-  { id: 'eraser', key: 'E', label: 'Eraser', hint: 'Back to clear ground: removes ore and actors.' },
+  { id: 'gems', key: 'C', label: 'Gem brush', hint: 'Paint gems (crystals, worth twice as much as ore) on clear or rough ground. Right drag removes gems.' },
+  { id: 'eraser', key: 'E', label: 'Eraser', hint: 'Back to clear ground: removes ore, gems and actors.' },
   { id: 'spawn', key: 'S', label: 'Spawns', hint: 'Click to add a spawn, drag to move, right click to remove.' },
   { id: 'actor', key: 'A', label: 'Place actor', hint: 'Place the palette actor. Right click deletes. , and . rotate.' },
   { id: 'select', key: 'V', label: 'Select', hint: 'Click or box-select actors, drag to move, Delete removes.' },
@@ -72,6 +74,7 @@ export class Controller {
     switch (s.tool) {
       case 'brush':
       case 'ore':
+      case 'gems':
       case 'eraser': {
         doc.begin(TOOLS.find((t) => t.id === s.tool).label);
         this.gesture = { kind: 'stroke', right, last: [x, y] };
@@ -196,6 +199,7 @@ export class Controller {
     for (const [cx, cy] of cells) area.push(...brushCells(cx, cy, s.size));
     if (s.tool === 'brush') paintTerrain(doc, area, right ? TERRAIN.CLEAR : s.material, s.symmetry);
     else if (s.tool === 'ore') paintOre(doc, area, right ? 0 : s.ore, s.symmetry);
+    else if (s.tool === 'gems') paintGems(doc, area, right ? 0 : s.gems, s.symmetry);
     else erase(doc, area, s.symmetry, this.catalog);
   }
 
@@ -425,8 +429,8 @@ export class Controller {
     }
     if (!h) return;
     const { x, y } = h;
-    if (s.tool === 'brush' || s.tool === 'ore' || s.tool === 'eraser') {
-      const c = s.tool === 'eraser' ? [1, 0.35, 0.3, 0.35] : s.tool === 'ore' ? [0.95, 0.75, 0.2, 0.35] : [1, 1, 1, 0.22];
+    if (s.tool === 'brush' || s.tool === 'ore' || s.tool === 'gems' || s.tool === 'eraser') {
+      const c = { eraser: [1, 0.35, 0.3, 0.35], ore: [0.95, 0.75, 0.2, 0.35], gems: [0.85, 0.3, 0.7, 0.35] }[s.tool] ?? [1, 1, 1, 0.22];
       const cells = brushCells(x, y, s.size);
       symmetricPositions(s.symmetry, x, y, doc.width, doc.height).forEach((p, n) => {
         const dx = p.x - x;
