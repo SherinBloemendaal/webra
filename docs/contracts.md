@@ -408,6 +408,26 @@ while visible and not cloaked, enemy structures also as remembered ghosts,
 and nothing hostile within range of an enemy jammer. Terrain and fog come
 from `terrain_ptr` and `fog_ptr`.
 
+Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
+`{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until
+told otherwise; weapons need the `Ground` target type, or `Water` on water;
+not planes), `{"o": "guard", player, ids, target}` (follow an own or allied
+unit within 2 cells and fight what comes near; not planes), `{"o": "scatter",
+player, ids}` (each unit to a random free neighbouring cell, from the shared
+game random), `{"o": "waypoint", player, ids, x, y, attack_move}` (queued
+move, at most 16 per unit; any other unit order clears the queue) and
+`{"o": "set_stance", player, ids, stance}` with stance `hold_fire`,
+`return_fire`, `defend` or `attack_anything` (OpenRA AutoTarget stances; rules
+`stance: [initial, initialAI]`, null for actors without AutoTarget). Force-fire
+on an actor is `attack`, which may target own and allied actors. Wasm:
+`order_attack_ground`, `order_guard`, `order_scatter`, `order_waypoint`,
+`set_stance` (false for an unknown name), `command_state(player, ids)` (JSON
+`{ units, armed, attackGround, guard, scatter, queued, stances: { name: count } }`),
+`can_guard`, `can_attack_ground`, `are_allies` and `set_hover(id)` (that
+actor and the targets of the selection get health bars). Target class 256 is
+`ground` (terrain for force-fire; no actor has it). Return fire uses the shooter that every shot
+carries for veterancy (`Shot.source`), so shells in flight count too.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves

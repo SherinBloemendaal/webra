@@ -6,7 +6,6 @@
 //! Everything here is presentation only: it reads the world and fills the
 //! render buffers, the simulation never reads `RenderOptions`.
 
-use crate::math::CELL;
 use crate::render::{px, View};
 use crate::rules::Kind;
 use crate::world::{World, NONE};
@@ -66,6 +65,9 @@ pub const MIN_SEGMENTS: usize = 3;
 pub fn team_color(team: u8, shade: f32, alpha: f32) -> [f32; 4] {
     [-(team as f32 + 1.0), shade, 0.0, alpha]
 }
+
+/// Side of the box of an actor without a footprint or radius (mines).
+pub const MINE_BOX: f32 = 14.0;
 
 /// Side of a unit's selection box in world pixels for its radius in world units.
 pub fn unit_box_size(radius: i32) -> f32 {
@@ -159,8 +161,11 @@ impl World {
             let b = info.building.as_ref().unwrap();
             return (px(a.x), px(a.y), b.width as f32 * 24.0, b.height as f32 * 24.0);
         }
-        let r = info.unit.as_ref().map_or(CELL / 4, |u| u.radius);
-        let s = unit_box_size(r);
+        let Some(u) = info.unit.as_ref() else {
+            // Mines: a small box on their cell.
+            return (px(a.x), px(a.y), MINE_BOX, MINE_BOX);
+        };
+        let s = unit_box_size(u.radius);
         let x = px(a.px) + (px(a.x) - px(a.px)) * alpha;
         let y = px(a.py) + (px(a.y) - px(a.py)) * alpha - px(a.altitude);
         (x, y, s, s)
@@ -190,36 +195,44 @@ impl World {
         (l, t, w, h)
     }
 
-    /// Health bars of actors that are not selected: the one under the mouse
-    /// and, by the player's setting, damaged or all visible ones. Walls and
-    /// mines never get one unless hovered.
+    /// Health bars of actors that are not selected, each drawn once: what the
+    /// selected own actors attack (OpenRA shows target health), the actor
+    /// under the mouse and, by the player's setting, damaged or all visible
+    /// ones. Only actors `player` can see; walls and mines get one only as a
+    /// target or when hovered.
     pub(crate) fn render_status_bars(&self, player: u8, alpha: f32, view: &View, selected: &[u32], rects: &mut Vec<f32>) {
         let opts = &self.render_opts;
-        let is_selected = |i: usize| selected.iter().any(|&r| self.resolve(r) == Some(i));
-        let mut bar = |i: usize| {
+        // The selection draws its own bars (push_selection_overlay).
+        let mut shown: Vec<usize> = selected.iter().filter_map(|&r| self.resolve(r)).collect();
+        let mut bar = |i: usize, shown: &mut Vec<usize>| {
+            if shown.contains(&i) || !self.shows_overlay_to(i, player) {
+                return;
+            }
+            shown.push(i);
             let (x, y, w, h) = self.selection_box(i, alpha);
             if view.contains(x, y, w.max(h)) {
                 push_health_bar(x - w / 2.0, y - h / 2.0, w, self.health_frac(i), rects);
             }
         };
-        let hovered = self.resolve(opts.hover).filter(|&i| self.shows_overlay_to(i, player) && !is_selected(i));
-        if let Some(i) = hovered {
-            bar(i);
+        let targets: Vec<usize> = selected
+            .iter()
+            .filter_map(|&r| self.resolve(r))
+            .filter(|&i| self.actors[i].owner == player && self.actors[i].in_world())
+            .filter_map(|i| self.resolve(self.actors[i].target))
+            .collect();
+        for t in targets.into_iter().chain(self.resolve(opts.hover)) {
+            bar(t, &mut shown);
         }
         if opts.health_bars == HealthBars::Selected {
             return;
         }
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
-            if Some(i) == hovered || !a.alive || a.kind == Kind::Mine || self.rules.actors[a.ty as usize].is_wall() {
+            let info = &self.rules.actors[a.ty as usize];
+            if !a.alive || a.kind == Kind::Mine || info.is_wall() || (opts.health_bars == HealthBars::Damaged && a.hp >= info.hp) {
                 continue;
             }
-            if opts.health_bars == HealthBars::Damaged && a.hp >= self.rules.actors[a.ty as usize].hp {
-                continue;
-            }
-            if self.shows_overlay_to(i, player) && !is_selected(i) {
-                bar(i);
-            }
+            bar(i, &mut shown);
         }
     }
 

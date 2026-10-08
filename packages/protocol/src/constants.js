@@ -33,6 +33,8 @@ export const ORDER_MAX_COUNT = 50;
 /** Highest actor type id an order may name. The engine has far fewer; the
  * server additionally checks against the real count (apps/server/src/validate.js). */
 export const ACTOR_TYPE_MAX = 1023;
+/** Fire stances (engine rules.rs `Stance`, OpenRA UnitStance), least aggressive first. */
+export const STANCES = ['hold_fire', 'return_fire', 'defend', 'attack_anything'];
 
 // ---- Lockstep -------------------------------------------------------------------
 

@@ -290,7 +290,7 @@ impl World {
             push_sprite(sprites, x, y, 0.0, sprite, 0.0, scale, a, 0.0);
         }
 
-        // Health bars of hovered, damaged or all actors by the player's setting (overlays.rs).
+        // Health bars of the selection's targets and of hovered, damaged or all actors (overlays.rs).
         self.render_status_bars(player, alpha, view, selected, rects);
         // Selection: brackets, health bars and rally flags.
         for &r in selected {
@@ -332,6 +332,42 @@ impl World {
                 let gx = (a.goal as i32 % self.map.width) as f32 * 24.0 + 12.0;
                 let gy = (a.goal as i32 / self.map.width) as f32 * 24.0 + 12.0;
                 rects.extend_from_slice(&[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);
+            }
+        }
+        self.render_waypoints(player, selected, rects);
+    }
+
+    /// Queued waypoints of the selected own units: a marker per waypoint and
+    /// dots from the current destination through the queue (attack-moves in orange).
+    fn render_waypoints(&self, player: u8, selected: &[u32], rects: &mut Vec<f32>) {
+        // Units of one order share the queue: draw each (group, point) once.
+        let mut drawn: Vec<(u32, i32, i32)> = Vec::new();
+        for &r in selected {
+            let Some(i) = self.resolve(r) else { continue };
+            let a = &self.actors[i];
+            if a.owner != player || !a.in_world() || a.waypoints.is_empty() {
+                continue;
+            }
+            let mut from = (a.activity == Activity::Move).then_some(a.dest);
+            for wp in &a.waypoints {
+                let col = if wp.attack_move { [1.0, 0.6, 0.2] } else { [0.3, 1.0, 0.4] };
+                let (x, y) = (px(wp.x), px(wp.y));
+                if !drawn.contains(&(wp.group, wp.x, wp.y)) {
+                    drawn.push((wp.group, wp.x, wp.y));
+                    rects.extend_from_slice(&[x - 2.5, y - 2.5, 5.0, 5.0, 0.0, 0.0, 0.0, 0.6]);
+                    rects.extend_from_slice(&[x - 1.5, y - 1.5, 3.0, 3.0, col[0], col[1], col[2], 0.95]);
+                    if let Some((fx, fy)) = from {
+                        let (fx, fy) = (px(fx), px(fy));
+                        let len = ((x - fx).powi(2) + (y - fy).powi(2)).sqrt();
+                        let n = ((len / 8.0) as usize).clamp(1, 96);
+                        for k in 1..n {
+                            let f = k as f32 / n as f32;
+                            let (dx, dy) = (fx + (x - fx) * f, fy + (y - fy) * f);
+                            rects.extend_from_slice(&[dx - 0.75, dy - 0.75, 1.5, 1.5, col[0], col[1], col[2], 0.7]);
+                        }
+                    }
+                }
+                from = Some((wp.x, wp.y));
             }
         }
     }

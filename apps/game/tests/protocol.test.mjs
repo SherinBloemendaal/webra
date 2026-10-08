@@ -76,8 +76,21 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   game.deploy(0, Uint32Array.from(units.slice(0, 1)));
   game.start_production(0, 'POWR', 2);
   game.cancel_production(0, 'POWR');
+  // Command bar orders (engine/src/commands.rs).
+  const all = Uint32Array.from(units);
+  game.order_attack_ground(0, all, 300.5, 410);
+  game.order_guard(0, all.slice(1), units[0]);
+  game.order_scatter(0, all);
+  game.order_waypoint(0, all, 600, 620, false);
+  game.order_waypoint(0, all, 640, 660, true);
+  for (const stance of ['hold_fire', 'return_fire', 'defend', 'attack_anything']) assert.equal(game.set_stance(0, all, stance), true);
+  assert.equal(game.set_stance(0, all, 'berserk'), false, 'unknown stances are not sent');
   const orders = JSON.parse(game.take_orders());
-  assert.ok(orders.length >= 5);
+  assert.ok(orders.length >= 14);
+  assert.deepEqual(
+    orders.slice(-9).map((o) => o.o),
+    ['attack_ground', 'guard', 'scatter', 'waypoint', 'waypoint', 'set_stance', 'set_stance', 'set_stance', 'set_stance'],
+  );
   const valid = validOrders(orders);
   assert.deepEqual(valid, orders);
   const r = parseClientMessage(JSON.stringify({ t: 'orders', tick: 3, orders }));

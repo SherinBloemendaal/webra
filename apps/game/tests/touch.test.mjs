@@ -371,10 +371,6 @@ function fakeGame(actors) {
     map_width: () => 100,
     map_height: () => 100,
     pick: (_p, x, y) => entries().find(([, a]) => Math.hypot(a.x - x, a.y - y) < 12)?.[0] ?? NONE,
-    hover: NONE,
-    set_hover(id) {
-      this.hover = id;
-    },
     actor_json: (id) => JSON.stringify(actors[id] ?? null),
     set_selection: (ids) => (selection = Array.from(ids)),
     selection: () => Uint32Array.from(selection),

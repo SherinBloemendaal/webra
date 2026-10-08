@@ -483,7 +483,9 @@ fn ships_render_turrets_at_their_offsets_and_subs_as_ripples() {
 #[test]
 fn missile_submarine_fires_anti_air_missiles() {
     let mut w = coast();
-    unit(&mut w, "MSUB", 0, 34, 20);
+    let msub = unit(&mut w, "MSUB", 0, 34, 20);
+    // Human submarines start on HoldFire (AutoTarget InitialStance): let it pick targets.
+    w.actors[msub].stance = crate::rules::Stance::AttackAnything;
     let yak = unit(&mut w, "YAK", 1, 37, 20);
     assert_eq!(w.actors[yak].kind, Kind::Aircraft);
     let aa = weapon(&w, "SubMissileAA");
