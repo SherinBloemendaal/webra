@@ -234,6 +234,7 @@ impl Game {
             selection: self.selection.clone(),
             lockstep: self.lockstep,
             outbox: Vec::new(),
+            hover: self.hover,
         }
     }
 
