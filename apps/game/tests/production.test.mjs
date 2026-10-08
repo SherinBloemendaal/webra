@@ -103,6 +103,8 @@ test('a stalled build keeps its last estimate; a new item starts over', () => {
   // Out of money: progress stops, the clock stays.
   assert.equal(eta.observe(0.2, 30), 80);
   assert.equal(eta.observe(0.2, 90), 80);
+  // Money again: the rate is measured from the stall on, not across it.
+  assert.equal(eta.observe(0.25, 95), 75);
   // The next item of the queue: progress went back to the start.
   assert.equal(eta.observe(0.01, 100), null);
   assert.equal(eta.observe(0.11, 110), 89);

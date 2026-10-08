@@ -69,8 +69,9 @@ export const ETA_WINDOW_TICKS = 50;
 /**
  * Remaining build time of the item at the head of a queue, estimated from how
  * fast its progress actually moves (player_json() has progress, not ticks), so
- * low power slowing production and stalls for lack of funds show up in the
- * clock too. Measured in game ticks, so pausing the game does not skew it.
+ * low power slowing production shows up in the clock. While production stalls
+ * (no money) the clock stands still, and the rate is measured afresh once it
+ * moves again. Measured in game ticks, so pausing the game does not skew it.
  */
 export class BuildEta {
   constructor(windowTicks = ETA_WINDOW_TICKS) {
@@ -93,8 +94,15 @@ export class BuildEta {
     // A new item started (progress went back) or time went back: start over.
     if (prev && (progress < prev.progress - 1e-6 || tick < prev.tick)) this.reset();
     const head = this.samples[this.samples.length - 1];
-    if (head && head.tick === tick) head.progress = progress;
-    else this.samples.push({ tick, progress });
+    if (head && head.tick === tick) {
+      head.progress = progress;
+    } else if (head && progress <= head.progress) {
+      // Stalled: keep the clock, and measure from here once it moves again.
+      this.samples = [{ tick, progress }];
+      return this.last;
+    } else {
+      this.samples.push({ tick, progress });
+    }
     while (this.samples.length > 2 && tick - this.samples[1].tick >= this.windowTicks) this.samples.shift();
     if (progress >= 1) {
       this.last = 0;
