@@ -47,16 +47,20 @@ body.touch #touch-place {
   gap: 8px;
   max-width: calc(100% - 16px);
   padding: 6px;
-  background: rgba(21, 24, 26, 0.92);
-  border: 1px solid #3a4346;
-  border-radius: 4px;
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
   transform: translateX(-50%);
 }
 
 .touch-place-hint {
   padding: 0 4px;
-  color: #8b9288;
-  font: 12px system-ui, 'Segoe UI', sans-serif;
+  color: var(--ui-muted);
+  font: 12px var(--ui-font);
   white-space: nowrap;
 }
 
@@ -64,20 +68,27 @@ body.touch #touch-place {
   min-width: 44px;
   min-height: 44px;
   padding: 0 12px;
-  background: rgba(21, 24, 26, 0.86);
-  color: #d8dccf;
-  border: 1px solid #3a4346;
-  border-radius: 4px;
-  font: 700 12px/1.1 system-ui, 'Segoe UI', sans-serif;
+  background: linear-gradient(180deg, rgba(58, 66, 77, 0.92), rgba(34, 40, 48, 0.92));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 12px/1.1 var(--ui-font);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   touch-action: manipulation;
 }
 
+.touch-button:active {
+  box-shadow: var(--ui-bevel-in);
+}
+
 .touch-button[aria-pressed='true'] {
-  border-color: #f2c94c;
-  color: #f2c94c;
-  box-shadow: inset 0 0 0 1px #f2c94c;
+  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
+  color: #fff;
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 6px var(--ui-accent-glow);
 }
 
 .touch-button:disabled {
@@ -85,8 +96,7 @@ body.touch #touch-place {
 }
 
 .touch-button.touch-primary {
-  background: #3d5a2a;
-  border-color: #6f9a4a;
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
   color: #fff;
 }
 
@@ -117,7 +127,8 @@ body.touch #sidebar button {
   touch-action: manipulation;
 }
 
-/* Hover tooltips stick on touch screens; the cards show what is missing already. */
+/* Hover tooltips stick on touch screens; the cameos show what is missing
+   instead (.sb-req in sidebar.css). */
 body.touch #sidebar .sb-tip {
   display: none;
 }
@@ -155,7 +166,9 @@ body.touch #app:not([hidden]) ~ #version,
   font-size: 11px;
 }
 
-/* Portrait: the sidebar is a drawer along the bottom. */
+/* Portrait: the sidebar is a drawer along the bottom. The radar and the
+   selection on the left; buttons, money and production on the right, with
+   the production tabs as a row over the cameos. */
 #app[data-layout='portrait'] {
   flex-direction: column;
 }
@@ -166,78 +179,89 @@ body.touch #app:not([hidden]) ~ #version,
   max-width: none;
   height: 42%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 32%) minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   grid-template-areas:
-    'top power tools'
-    'tabs tabs tabs'
-    'grid grid grid'
-    'sel sel sel';
-  gap: 6px;
+    'radar tools'
+    'radar status'
+    'radar silo'
+    'sel main';
+  gap: 5px 8px;
   padding: 6px 8px;
   border-left: 0;
-  border-top: 2px solid var(--sb-edge);
-}
-
-#app[data-layout='portrait'] #sidebar .sb-top {
-  grid-area: top;
-  padding: 2px 8px;
-}
-
-#app[data-layout='portrait'] #sidebar .sb-power {
-  grid-area: power;
-  align-self: center;
+  border-top: 1px solid var(--ui-edge);
+  box-shadow:
+    inset 0 1px 0 var(--ui-bevel-hi),
+    0 -3px 10px rgba(0, 0, 0, 0.5);
 }
 
 #app[data-layout='portrait'] #sidebar .sb-tools {
   grid-area: tools;
-  align-self: center;
-  padding: 0;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-radar {
+  grid-area: radar;
+  width: 100%;
+  align-self: start;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-status {
+  grid-area: status;
+  font-size: 16px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-silo {
+  grid-area: silo;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-main {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: var(--sb-power-width) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'power tabs'
+    'power grid';
+}
+
+#app[data-layout='portrait'] #sidebar .sb-power {
+  grid-area: power;
 }
 
 #app[data-layout='portrait'] #sidebar .sb-tabs {
   grid-area: tabs;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  flex-direction: row;
+  width: auto;
 }
 
-#app[data-layout='portrait'] #sidebar .sb-tab-label {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+#app[data-layout='portrait'] #sidebar .sb-tab {
+  flex: 1 1 0;
+  width: auto;
 }
 
 #app[data-layout='portrait'] #sidebar .sb-grid {
   grid-area: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  grid-auto-rows: 76px;
-}
-
-#app[data-layout='portrait'] #sidebar .sb-icon {
-  height: 58px;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
 }
 
 #app[data-layout='portrait'] #sidebar .sb-sel {
   grid-area: sel;
+  align-self: end;
   min-height: 0;
-  padding: 3px 8px;
+  padding: 3px 6px;
+  overflow: hidden;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-sel-detail {
+  display: none;
 }
 
 #app[data-layout='portrait'] #sidebar .sb-hp {
   margin: 2px 0;
 }
 
-#app[data-layout='portrait'] #sidebar .sb-credits,
-#app[data-layout='landscape'] #sidebar .sb-credits {
-  font-size: 17px;
-}
-
-#app[data-layout='portrait'] #sidebar .sb-ore,
-#app[data-layout='landscape'] #sidebar .sb-ore {
-  display: none;
-}
-
-/* Landscape: a narrow drawer on the right, the selection panel left out (the map shows it). */
+/* Landscape: a narrow drawer on the right, the selection panel left out (the
+   map shows it), a smaller radar and two cameo columns. */
 #app[data-layout='landscape'] #sidebar {
   width: 196px;
   min-width: 196px;
@@ -246,24 +270,30 @@ body.touch #app:not([hidden]) ~ #version,
   padding: 4px 6px;
 }
 
-#app[data-layout='landscape'] #sidebar .sb-top {
-  padding: 2px 6px;
+#app[data-layout='landscape'] #sidebar .sb-radar {
+  width: min(100%, 28vh);
+}
+
+#app[data-layout='landscape'] #sidebar .sb-status {
+  font-size: 15px;
 }
 
 #app[data-layout='landscape'] #sidebar .sb-sel {
   display: none;
 }
 
-#app[data-layout='landscape'] #sidebar .sb-tools {
-  padding: 0;
+#app[data-layout='landscape'] #sidebar .sb-tabs {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-tab {
+  flex: none;
 }
 
 #app[data-layout='landscape'] #sidebar .sb-grid {
-  grid-auto-rows: 70px;
-}
-
-#app[data-layout='landscape'] #sidebar .sb-icon {
-  height: 52px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 /* Phones: fewer action bar labels per row. */

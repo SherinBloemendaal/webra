@@ -1,4 +1,5 @@
-/* Release notes and "What's new" dialog (js/releasenotes-dialog.js). */
+/* Release notes and "What's new" dialog (js/releasenotes-dialog.js), on the
+   shared .menu-card plate; colours from theme.css. */
 
 #release-notes {
   position: fixed;
@@ -7,7 +8,7 @@
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--ui-scan), rgba(0, 0, 0, 0.62);
 }
 
 .rn-card {
@@ -35,17 +36,18 @@
 }
 
 .menu-card .rn-title {
-  font-size: 36px;
+  font-size: 30px;
 }
 
 .rn-badge {
   display: inline-block;
   padding: 2px 7px;
-  background: #11140f;
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  color: var(--accent);
-  font: 700 12px ui-monospace, Menlo, Consolas, monospace;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  color: var(--ui-accent-hi);
+  font: 700 12px var(--ui-font-mono);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
@@ -92,17 +94,17 @@
 .rn-tag {
   padding: 1px 6px;
   border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  color: var(--muted);
-  font: 700 10px system-ui, sans-serif;
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  font: 700 10px var(--ui-font);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 
 .rn-tag-new {
-  border-color: #a63a2c;
-  background: #7a2a20;
-  color: var(--text);
+  border-color: var(--ui-edge);
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
 }
 
 .rn-date {
@@ -136,7 +138,7 @@
 .rn-entries {
   margin: 0;
   padding-left: 18px;
-  color: #cfcdbf;
+  color: #ccd3da;
 }
 
 .rn-entry {
@@ -155,7 +157,7 @@
 }
 
 .rn-entry .rn-link {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--ui-font-mono);
 }
 
 .rn-link:hover {

@@ -712,48 +712,28 @@
   }
 }
 
-/* ---- Narrow screens: the sidebar sits under the battlefield (style.css);
-   radar and money on the left, production on the right. ------------------ */
+/* What is still missing, written on the cameo: only on touch screens, which
+   have no hover tooltip (body.touch, js/touch.js). The phone drawer layouts
+   are in touch.css. */
+#sidebar .sb-req {
+  display: none;
+}
 
-@media (max-width: 720px) {
-  #sidebar.sb {
-    display: grid;
-    grid-template-columns: minmax(0, 36%) minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    grid-template-areas:
-      'tools main'
-      'radar main'
-      'status main'
-      'silo main'
-      'sel main';
-    column-gap: 6px;
-  }
+body.touch #sidebar .sb-card .sb-req:not([hidden]) {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  display: block;
+  padding: 1px 2px;
+  transform: translateY(-60%);
+  background: rgba(0, 0, 0, 0.78);
+  color: var(--ui-warn);
+  font: 600 8.5px / 1.15 var(--ui-font);
+  text-align: center;
+  pointer-events: none;
+}
 
-  #sidebar .sb-tools {
-    grid-area: tools;
-  }
-
-  #sidebar .sb-radar {
-    grid-area: radar;
-    width: min(100%, 18vh);
-  }
-
-  #sidebar .sb-status {
-    grid-area: status;
-    font-size: 15px;
-  }
-
-  #sidebar .sb-silo {
-    grid-area: silo;
-  }
-
-  #sidebar .sb-main {
-    grid-area: main;
-  }
-
-  #sidebar .sb-sel {
-    grid-area: sel;
-    min-height: 0;
-    overflow: hidden;
-  }
+body.touch #sidebar .sb-card.exclusive .sb-req {
+  color: #ff9a88;
 }

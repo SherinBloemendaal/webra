@@ -1,21 +1,16 @@
 // Build button pictures ("cameos") for the sidebar. One place decides where
 // the picture comes from:
 //
-// - the cameo art of js/art, `drawCameo(ctx, typeName, size)`, once it exists;
-// - until then, the existing sprite art (sprites.js drawIcon) scaled into the
-//   button, on the cameo's metal backdrop.
-//
-// Switching to the new art is one line: replace the `cameoArt` line below
-// with `import { drawCameo as cameoArt } from './art/<module>.js';`.
+// - the cameo art, `getCameo(typeName, size, opts)` from sprites.js (a cached
+//   canvas with the framed 3/4 view picture), for every type that has art;
+// - for a type without cameo art (getCameo returns null), the sprite icon
+//   (drawIcon) scaled into the button on a dark steel backdrop.
 
-import { drawIcon } from './sprites.js';
-
-const cameoArt = null;
+import { drawIcon, getCameo } from './sprites.js';
 
 /**
- * Paint the backdrop every cameo shares: a dark steel gradient with a faint
- * horizon, so sprite art (which has no background of its own) sits on a
- * picture like the 1996 build icons instead of on a flat colour.
+ * Paint the backdrop of the sprite fallback: a dark steel gradient with a
+ * faint horizon, so the sprite sits on a picture like the other cameos.
  * @param {CanvasRenderingContext2D} ctx
  */
 export function paintBackdrop(ctx, w, h) {
@@ -30,42 +25,34 @@ export function paintBackdrop(ctx, w, h) {
 }
 
 /**
- * A painter for one canvas size. `art` and `fallback` are injectable so the
+ * A cameo painter. `art`, `fallback` and `backdrop` are injectable so the
  * choice is unit tested without a canvas (tests/cameo.test.mjs).
  *
  * @param {object} [o]
- * @param {((ctx: CanvasRenderingContext2D, typeName: string, size: number) => void) | null} [o.art] js/art drawCameo
+ * @param {(typeName: string, size: number, opts: {team?: number[], kind?: string, height?: number}) => CanvasImageSource | null} [o.art]
+ *   cached cameo picture, or null when the type has no cameo art
  * @param {(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]) => void} [o.fallback] sprite icon painter
  * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [o.backdrop]
- * @returns {{ source: 'art' | 'sprite', paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): void }}
+ * @returns {{ paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): 'art' | 'sprite' }}
  */
-export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
-  if (typeof art === 'function') {
-    return {
-      source: 'art',
-      paint(canvas, actor) {
-        const ctx = canvas.getContext('2d');
-        const size = Math.min(canvas.width, canvas.height);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        // Centre the square picture when the canvas is not square.
-        ctx.translate(Math.round((canvas.width - size) / 2), Math.round((canvas.height - size) / 2));
-        art(ctx, actor.id, size);
-        ctx.restore();
-      },
-    };
-  }
+export function createCameoPainter({ art = getCameo, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
   return {
-    source: 'sprite',
     paint(canvas, actor, teamRgb) {
+      const picture = art(actor.id, canvas.width, { team: teamRgb, kind: actor.kind, height: canvas.height });
+      const ctx = canvas.getContext('2d');
+      if (picture) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(picture, 0, 0, canvas.width, canvas.height);
+        return 'art';
+      }
       // drawIcon clears the canvas, so it draws first and the backdrop goes
       // underneath with destination-over.
       fallback(canvas, actor, teamRgb);
-      const ctx = canvas.getContext('2d');
       ctx.save();
       ctx.globalCompositeOperation = 'destination-over';
       backdrop(ctx, canvas.width, canvas.height);
       ctx.restore();
+      return 'sprite';
     },
   };
 }

@@ -115,7 +115,7 @@
   border: 0;
   border-bottom: 1px dashed var(--l-gold-dim);
   color: var(--l-gold);
-  font: 700 11px/1.4 system-ui, 'Segoe UI', sans-serif;
+  font: 700 11px/1.4 var(--ui-font);
   letter-spacing: 1.2px;
   text-transform: uppercase;
   cursor: pointer;
