@@ -7,14 +7,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildAtlas } from '../js/sprites.js';
-import { BUILDING_DRAW, BUILDING_TURRET } from '../js/art/buildings.js';
+import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 
 const rules = JSON.parse(readFileSync(fileURLToPath(new URL('../../../engine/rules.json', import.meta.url)), 'utf8'));
 // The wasm rules export flattens the building block into width/height.
 const actors = rules.actors.map((a) => ({ ...a, width: a.building?.width, height: a.building?.height }));
 const buildings = actors.filter((a) => a.kind === 'building');
 
-const SHADOW = 'rgba(0,0,0,0.28)';
+const isShadow = (style) => typeof style === 'string' && style.startsWith('rgba(0,0,0,');
 const WALLS = new Set(['SBAG', 'FENC', 'BRIK']); // neutral, no team colour
 const ALIAS = { FPWR: 'POWR', TENF: 'TENT', SYRF: 'SYRD', SPEF: 'SPEN', WEAF: 'WEAP', DOMF: 'DOME', FIXF: 'FIX', FAPW: 'APWR', ATEF: 'ATEK', PDOF: 'PDOX', MSLF: 'MSLO', FACF: 'FACT', 'AFLD.UKRAINE': 'AFLD' };
 const keyOf = (id) => ALIAS[id.toUpperCase()] ?? id.toUpperCase();
@@ -33,9 +33,23 @@ function fakeContext(log, bounds) {
   const addBox = (x0, y0, x1, y1) => {
     if (transforms === 0 && clips === 0 && bounds) bounds.push({ x0, y0, x1, y1, style: ctx.fillStyle });
   };
+  const gradient = (kind, args) => {
+    for (const v of args) assert.ok(Number.isFinite(v), `${kind} gradient got a non-finite number: ${args.join(',')}`);
+    const stops = [];
+    return {
+      addColorStop(p, c) {
+        assert.ok(p >= 0 && p <= 1, `gradient stop outside 0..1: ${p}`);
+        assert.equal(typeof c, 'string', 'gradient stop colour must be a string');
+        stops.push(`${p.toFixed(3)}=${c}`);
+      },
+      toString: () => `${kind}(${args.map((v) => v.toFixed(3)).join(',')};${stops.join(';')})`,
+    };
+  };
   const ctx = {
     fillStyle: '#000',
     strokeStyle: '#000',
+    createLinearGradient(...a) { return gradient('linear', a); },
+    createRadialGradient(...a) { return gradient('radial', a); },
     lineWidth: 1,
     lineCap: 'butt',
     lineJoin: 'miter',
@@ -101,6 +115,14 @@ test('every building type in the rules has art, including fakes and variants', (
   }
 });
 
+test('the footprint table matches the rules for every building art key', () => {
+  for (const a of buildings) {
+    const key = keyOf(a.id);
+    assert.deepEqual(BUILDING_SIZE[key], [a.width, a.height], `${a.id} footprint in BUILDING_SIZE`);
+  }
+  for (const key of Object.keys(BUILDING_DRAW)) assert.ok(BUILDING_SIZE[key], `${key} has art but no footprint`);
+});
+
 test('building turrets are declared for the defences that rotate', () => {
   for (const key of ['GUN', 'AGUN', 'SAM']) {
     const [w, h, draw] = BUILDING_TURRET[key];
@@ -146,7 +168,7 @@ for (const a of buildings) {
         BUILDING_DRAW[key](ctx, passes(counter)[pass]);
         assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
         for (const b of bounds) {
-          const margin = b.style === SHADOW || b.style === 'rgba(0,0,0,1)' ? 8 : 1.5;
+          const margin = isShadow(b.style) ? 8 : 1.5;
           assert.ok(
             b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,
             `${a.id} draws outside its ${w}x${h} box: ${JSON.stringify(b)}`,
@@ -159,3 +181,4 @@ for (const a of buildings) {
     }
   });
 }
+
