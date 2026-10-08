@@ -315,6 +315,22 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` |
 | `GET` | `/api/maps/:id` | the map JSON |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited) |
+| `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
+
+`/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
+one-click install of the original content. The request must carry
+`X-WebRA-Content: 1`, come from the game page (`Origin` absent or ours,
+`Sec-Fetch-Site` absent or `same-origin`) and stay within 3 downloads per
+hour per IP (D1 quota table, IP as a salted hash; 429 with `Retry-After`).
+The Worker tries the mirrors in order (`openra.baxxster.no`,
+`republic.community`, `openra.0x47.net`, `openra.ppmsite.com`) with
+`cache: 'no-store'` (Cloudflare's cache bypassed), takes the first answer
+whose `Content-Length` is exactly 13,502,031 bytes and passes its body
+through as a stream, cut off if it runs longer (15 s for a mirror to
+answer, 240 s for the transfer). Response: `200`, `Content-Type:
+application/zip`, `Content-Length`, `Cache-Control: no-store`,
+`Cross-Origin-Resource-Policy: same-origin`; 502 when no mirror fits.
+Nothing is stored anywhere on the server.
 
 ### WebSocket messages (JSON, `{ "t": type, ... }`)
 
@@ -827,6 +843,53 @@ across blocks; `sim.test.mjs` checks records crossing each boundary mode.
 `cargo run -p shader-check` validates the shader. The GPU itself is not
 tested or measured headless.
 
+### Sprite poses and pre-rendered art (`js/content`, `shaders/sprite.wgsl`)
+
+WebRA's own sprites are single frames the shader rotates by the instance
+angle. Original graphics and texture packs are pre-rendered per facing and
+animated, the OpenRA way, so the renderer needs to know what each actor is
+doing. `Game.set_sprite_poses(true)` (a render setting, off by default; the
+main thread turns it on when the atlas holds such art) makes body sprites
+carry a pose in the sprite id:
+
+    id = slot + 4096 * (pose + 16 * age)
+
+`slot` is the sprite slot as before (actor `t`: body `2t`, second part
+`2t + 1`; specials after them), always below 4096. Poses
+(`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
+1 move (the actor moved this tick), 2 attack (attacking and standing), 3
+damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
+(structure placed during the game, `age` = ticks since then, up to 127), 5
+harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
+remembered structure under fog), 8 damaged and still. Walls report idle or
+damaged with `age` = their connection mask (OpenRA WithWallSpriteBody: 1
+north, 2 east, 4 south, 8 west, same type only). Building turrets report
+damaged too. Poses are read from the world and never written: the state
+hash is the same with poses on or off (`engine/src/tests_poses.rs`,
+`apps/game/tests/content.test.mjs`). Both instance paths carry the id
+unchanged.
+
+Frame table (`js/sprites.js` `FRAME_FLOATS` = 16, `Frame` in the shader):
+`uv`, `size` (w, h, offset x, offset y in world pixels), `anim` and `seq`.
+A slot whose `seq.y` (pose count) is non-zero is a pose table: entry
+`seq.x + pose` (clamped to the count) is a descriptor with `anim` = (first
+frame, frames per facing, frames per second, mode) and `seq` = (facings,
+flags: 1 classic facings, 2 free rotation; interpolated facings). Modes: 0
+loop on the render clock, 1 once from `age` (then the idle descriptor), 2
+first frame, 3 frame `age`. The facing comes from the instance angle:
+`a = (1024 - round(angle * 1024 / 2pi)) mod 1024` (OpenRA turns
+counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
+sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
++ k` and the sprite is not rotated (interpolated facings turn it by
+OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
+as before. `Globals.art.x` tells the terrain shader that the atlas holds
+tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
+levels) and gem overlay tiles at 240 (bit 4, 4 x 4).
+
+Content priority per part, cameo, terrain and sound: texture pack > original
+content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
+cosmetic and never reach the simulation.
+
 ### Game methods across the boundary
 
 The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
@@ -838,6 +901,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_paths`, `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

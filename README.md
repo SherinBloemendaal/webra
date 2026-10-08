@@ -75,14 +75,49 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
 - [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
 - [x] Positional sound: volume and stereo pan follow the camera, sounds outside the view or under fog are culled, and a per-frame voice budget keeps battles of thousands of units listenable
-- [x] **Install original Red Alert content** like OpenRA: pick `main.mix`, `redalert.mix` or other `.mix`/`.aud` files from your own copy (Red Alert is freeware since 2008); WebRA reads the MIX archives (including the encrypted index) and decodes the AUD sounds in the browser, and stores them on your device only. Originals then replace the synthesized sounds (switchable), and the soundtrack plays in games
+- [x] Original Red Alert sounds, voices and music from your own copy, and texture pack sounds (see [Original content](#original-content))
 - [x] Settings for master, effects, voices and music volume, speech and originals (the **Sound** button)
+
+### Original content and texture packs
+- [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated); team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
+- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: a one-click download, your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
+- [x] **Texture packs** (`.webrapack`): sprites, cameos, terrain tiles and sounds made by players, with a preview of what a pack replaces before it is installed, and a pack manager (enable, order, remove). Cosmetic only, so safe in multiplayer. Format: [docs/texture-packs.md](docs/texture-packs.md); build one with `node tools/make-pack.mjs`
 
 ### Engineering
 - [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
 - [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format, editor, touch gestures and layouts
 - [x] Security review of multiplayer with every finding fixed: see [docs/security.md](docs/security.md)
 - [x] CI on every push, semantic versioning from Conventional Commits, automatic deploys to Cloudflare
+
+## Original content
+
+WebRA ships **no** Red Alert graphics, sounds or music: those belong to
+Electronic Arts, who released Red Alert as freeware in 2008. Like OpenRA,
+WebRA can use them when you install them; the game plays the same without
+them (WebRA's own art and synthesized sounds).
+
+- **Open the Original content dialog** (lobby button, or Original content in
+  the game menu). On the first start the game offers it once; "Don't ask
+  again" is remembered in this browser.
+- **One click:** "Download original Red Alert content (13.5 MB)" fetches
+  OpenRA's `ra-quickinstall.zip`, EA's freeware files as OpenRA's content
+  installer uses them, from OpenRA's community mirrors **through
+  webra.sherin.dev**: the WebRA server passes the file through as a stream
+  and keeps no copy (no cache, no storage; at most 3 downloads per hour per
+  network). So the WebRA server does relay EA's files when you click this.
+- **Or yourself:** download `ra-quickinstall.zip` from one of the mirrors
+  listed in the dialog, or use your own copy (`main.mix` and `redalert.mix`
+  from the freeware release or the CD, the archives inside them, or loose
+  files), and choose the files or drop them on the game.
+- Everything is read in your browser and stored **only on your device**
+  (IndexedDB). Remove it any time with "Remove installed content".
+- `desert.mix` from Tiberian Dawn adds desert terrain, as in OpenRA. The
+  interior theater is not used (WebRA has no interior maps).
+- Effects, projectiles, mines and helicopter rotors keep WebRA art.
+  Generated maps store terrain types, not Red Alert templates, so the
+  original terrain is matched per cell (plain tiles inside an area, shore
+  and cliff tiles facing the right way at borders): close to the original,
+  not hand-made.
 
 ## Roadmap
 

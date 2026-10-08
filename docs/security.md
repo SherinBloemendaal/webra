@@ -171,6 +171,40 @@ cross-origin isolated page, so the headers changed:
   whitelisted methods (`apps/game/js/sim/methods.js`): anything else is
   refused. A failed or blocked worker leaves the game on the main thread.
 
+## Original content and texture packs (2026-10-09)
+
+- **Files from the player.** Original Red Alert files (MIX, SHP, PAL, TMP,
+  AUD, OpenRA's `ra-quickinstall.zip`) and texture packs are parsed in the
+  browser as hostile input: every offset and size is checked, decoders never
+  read or write outside their buffers (fuzz tested), sizes and frame counts
+  are capped, and ZIPs go through the hardened `.oramap` reader (compression
+  ratio, entry and total limits, streamed inflate, CRC). The quick install
+  ZIP gets raised size limits for its known shape only; the ratio checks
+  stay.
+- **Packs are data.** A pack holds PNG images and OGG, WAV or MP3 sounds
+  only (by signature; other file types refuse the pack), images are checked
+  from the PNG header before the browser decodes them with
+  `createImageBitmap`, nothing is ever run or inserted as HTML, and the
+  manifest has no keys that reach the simulation (unknown keys are refused).
+  Different packs on different clients cannot desync a game.
+- **Stored locally.** Installed content and packs stay in IndexedDB on the
+  player's device; nothing is uploaded.
+- **The server relays EA's freeware files.** `GET
+  /api/content/ra-quickinstall` (`apps/server/src/content.js`) streams
+  OpenRA's `ra-quickinstall.zip` from OpenRA's community mirrors for the
+  game's one-click install, only when the player clicks. These are
+  Electronic Arts' Red Alert files (freeware since 2008), so
+  webra.sherin.dev passes EA's files through; the project owner chose this
+  with the risk explained (OpenRA itself only lets the client download from
+  the mirrors). Limits: the game page only (`X-WebRA-Content` header, Origin
+  and `Sec-Fetch-Site` checks), 3 downloads per hour per IP through the D1
+  quota table (IP stored only as a salted hash, never logged), exactly
+  13,502,031 bytes or nothing (checked from `Content-Length` before
+  streaming, cut off if the body runs longer), 15 s for a mirror to answer
+  and 240 s for the transfer. Nothing is stored or cached: no Cache API, KV,
+  R2 or D1 for the content, `cache: 'no-store'` upstream and `Cache-Control:
+  no-store` downstream. Tests mock the mirrors; CI never downloads them.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
