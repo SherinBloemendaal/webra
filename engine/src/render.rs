@@ -148,13 +148,8 @@ impl World {
             // Radar dishes, smoke and lights (overlays.rs), over every building body.
             self.push_building_overlay(i, x, y, alpha, flash, sink, &mut building_turrets);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
-                // The turret angle is taken at the building's opacity (1, or
-                // 0.45 cloaked), not at the frame's alpha: the earlier code
-                // reused the name `alpha` for both. Kept as drawn so far, so
-                // building turrets turn at tick rate on both paths.
-                let angle = a.pturret as f32 + angle_diff(a.pturret, a.turret) as f32 * alpha;
-                let mut r = at.look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
-                r.angle = angle;
+                // Interpolated by the frame's alpha like unit turrets (the angle used to be taken at the building's opacity).
+                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut building_turrets, r);
             }
         }
