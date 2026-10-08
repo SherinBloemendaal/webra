@@ -1,8 +1,9 @@
-// Sound settings and the "Install original Red Alert content" flow. Opened by
-// the Sound button (index.html); `mountAudioSettings` can also be placed in
-// another settings screen.
+// Sound settings. Opened by the Sound button (index.html); `mountAudioSettings`
+// can also be placed in another settings screen. Installing the original Red
+// Alert content (sounds and graphics in one flow) lives in the Original
+// content dialog (js/content/panel.js), which `opts.onContent` opens.
 
-import { installFromFiles, installedSummary } from './install.js';
+import { installedSummary } from './install.js';
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -10,8 +11,6 @@ const VOLUMES = [
   ['voices', 'Voices and announcer'],
   ['music', 'Music (installed original content only)'],
 ];
-
-const ACCEPT = '.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03';
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -28,7 +27,7 @@ function el(tag, attrs = {}, ...children) {
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 function summaryText(s) {
-  if (!s.total) return 'Nothing installed. WebRA plays its own synthesized sounds.';
+  if (!s.total) return 'No original sounds installed. WebRA plays its own synthesized sounds.';
   const b = s.byCategory;
   return `Installed on this device: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'unit voice', 'unit voices')}, ${plural(
     b.announcer,
@@ -41,8 +40,9 @@ function summaryText(s) {
  * Build the sound settings into `root`.
  * @param {HTMLElement} root
  * @param {import('./index.js').AudioSystem} audio
+ * @param {{ onContent?(): void }} [opts] opens the Original content dialog
  */
-export function mountAudioSettings(root, audio) {
+export function mountAudioSettings(root, audio, opts = {}) {
   root.classList.add('audio-settings');
   const p = audio.prefs.get();
 
@@ -75,6 +75,8 @@ export function mountAudioSettings(root, audio) {
   const original = el('input', { type: 'checkbox', id: 'audio-original' });
   original.checked = p.original;
   original.addEventListener('change', () => audio.prefs.set({ original: original.checked }));
+  // Also switched in the Original content dialog.
+  audio.prefs.subscribe((v) => (original.checked = v.original));
 
   const testFx = el('button', { type: 'button', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
@@ -83,65 +85,19 @@ export function mountAudioSettings(root, audio) {
 
   // ---- Original content -------------------------------------------------------
   const status = el('p', { class: 'audio-status', role: 'status', 'aria-live': 'polite' });
-  const progress = el('p', { class: 'audio-progress', 'aria-live': 'polite' });
-  const files = el('input', { type: 'file', multiple: true, accept: ACCEPT, hidden: true });
-  const folder = el('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true });
-  const pickFiles = el('button', { type: 'button', class: 'primary', text: 'Choose files...' });
-  const pickFolder = el('button', { type: 'button', text: 'Choose folder...' });
-  const remove = el('button', { type: 'button', class: 'danger', text: 'Remove installed content' });
-  pickFiles.addEventListener('click', () => files.click());
-  pickFolder.addEventListener('click', () => folder.click());
-
-  const busy = (on) => {
-    for (const b of [pickFiles, pickFolder, remove]) b.disabled = on;
-  };
+  const openContent = el('button', { type: 'button', class: 'primary', text: 'Original content...' });
+  openContent.hidden = !opts.onContent;
+  openContent.addEventListener('click', () => opts.onContent?.());
 
   const refresh = async () => {
     try {
       const store = await audio.store();
-      const s = await installedSummary(store);
-      status.textContent = summaryText(s);
-      remove.hidden = s.total === 0;
+      status.textContent = summaryText(await installedSummary(store));
       if (audio.storeError) status.textContent += ` (Browser storage is unavailable: ${audio.storeError}. Installed content lasts until you leave this page.)`;
     } catch (err) {
       status.textContent = `Could not read installed content: ${err.message ?? err}`;
     }
   };
-
-  const install = async (list) => {
-    if (!list.length) return;
-    busy(true);
-    progress.textContent = 'Reading your files in this browser...';
-    try {
-      const store = await audio.store();
-      const r = await installFromFiles(list, store, { onProgress: (t) => (progress.textContent = t) });
-      const parts = [r.added ? `Installed ${plural(r.added, 'sound', 'sounds')}.` : 'No Red Alert sounds found in these files.'];
-      if (r.archives.length) parts.push(`Read ${r.archives.join(', ')}.`);
-      if (r.errors.length) parts.push(`Skipped: ${r.errors.slice(0, 3).join('; ')}${r.errors.length > 3 ? '; ...' : ''}`);
-      progress.textContent = parts.join(' ');
-      await audio.reloadInstalled();
-    } catch (err) {
-      progress.textContent = `Install failed: ${err.message ?? err}`;
-    } finally {
-      busy(false);
-      files.value = '';
-      folder.value = '';
-      refresh();
-    }
-  };
-  files.addEventListener('change', () => install([...files.files]));
-  folder.addEventListener('change', () => install([...folder.files]));
-  remove.addEventListener('click', async () => {
-    busy(true);
-    try {
-      await (await audio.store()).clear();
-      progress.textContent = 'Removed. WebRA plays its own synthesized sounds again.';
-      await audio.reloadInstalled();
-    } finally {
-      busy(false);
-      refresh();
-    }
-  });
 
   // ---- Music --------------------------------------------------------------------
   const nowPlaying = el('p', { class: 'audio-note' });
@@ -171,19 +127,11 @@ export function mountAudioSettings(root, audio) {
       el('h2', { id: 'audio-content-title', text: 'Original Red Alert content' }),
       el('p', {
         class: 'audio-note',
-        text:
-          'WebRA ships only its own sounds. If you have Red Alert (Electronic Arts released it as freeware in 2008), you can use its original sounds, voices and music: choose main.mix and redalert.mix from your copy, or sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix or loose .aud files.',
-      }),
-      el('p', {
-        class: 'audio-local',
-        text: 'Your files are read in this browser and the sounds are stored on this device only. Nothing is uploaded, and WebRA never hosts or distributes them.',
+        text: 'WebRA ships only its own sounds. If you have Red Alert (Electronic Arts released it as freeware in 2008), install its original sounds, voices and music, and its graphics, from your own copy in the Original content dialog. Texture packs can bring sounds too.',
       }),
       el('div', { class: 'audio-row audio-check' }, original, el('label', { for: 'audio-original', text: 'Use installed original sounds' })),
       status,
-      el('div', { class: 'audio-buttons' }, pickFiles, pickFolder, remove),
-      files,
-      folder,
-      progress,
+      el('div', { class: 'audio-buttons' }, openContent),
     ),
   );
   syncMusic();
@@ -193,7 +141,7 @@ export function mountAudioSettings(root, audio) {
 /**
  * The Sound button and its dialog (index.html: #audio-button, #audio-panel).
  */
-export function mountAudioPanel(button, panel, audio) {
+export function mountAudioPanel(button, panel, audio, opts = {}) {
   const body = el('div', { class: 'audio-body' });
   const close = el('button', { type: 'button', class: 'audio-close', 'aria-label': 'Close sound settings', text: 'Close' });
   const card = el(
@@ -203,13 +151,20 @@ export function mountAudioPanel(button, panel, audio) {
     body,
   );
   panel.replaceChildren(card);
-  mountAudioSettings(body, audio);
-  const open = (on) => {
+  mountAudioSettings(body, audio, {
+    onContent: opts.onContent
+      ? () => {
+          open(false);
+          opts.onContent();
+        }
+      : undefined,
+  });
+  function open(on) {
     panel.hidden = !on;
     button.setAttribute('aria-expanded', String(on));
     if (on) close.focus();
     else button.focus();
-  };
+  }
   button.hidden = false;
   button.addEventListener('click', () => open(panel.hidden));
   close.addEventListener('click', () => open(false));

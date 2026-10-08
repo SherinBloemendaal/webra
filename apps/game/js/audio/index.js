@@ -13,7 +13,7 @@ import { Speech } from './speech.js';
 import { Announcer } from './announcer.js';
 import { Director } from './director.js';
 import { Jukebox } from './music.js';
-import { IdbStore, MemoryStore } from './store.js';
+import { openContentStore, storeError } from './store.js';
 
 /** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
 export const FOG_VISIBLE = 255;
@@ -50,16 +50,29 @@ export class AudioSystem {
     this.storePromise = null;
     this.storeError = null;
     this.announcer = new Announcer({ play: (key) => this.playAnnouncement(key), now });
-    this.jukebox = new Jukebox(this.mixer, () => this.store(), () => this.changed());
+    this.jukebox = new Jukebox(
+      this.mixer,
+      () => this.store(),
+      () => this.changed(),
+      () => this.bank.pack,
+      () => this.prefs.get().original,
+    );
     this.director = null;
     this.game = null;
     this.inGame = false;
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
+    let original = this.prefs.get().original;
     this.prefs.subscribe((p) => {
       this.mixer.apply(p);
       if (!p.speech || !p.enabled) this.speech.cancel();
+      if (p.original !== original) {
+        // Installed original tracks join or leave the playlist.
+        original = p.original;
+        this.jukebox.stop();
+        this.jukebox.refresh().then(() => this.syncMusic(), () => {});
+      }
       this.syncMusic();
     });
     this.installUnlock(doc);
@@ -83,12 +96,12 @@ export class AudioSystem {
     doc.addEventListener('keydown', unlock, true);
   }
 
-  /** The content store; IndexedDB, or memory when the browser blocks it. */
+  /** The content store (js/content/store.js); IndexedDB, or memory when the browser blocks it. */
   store() {
     if (!this.storePromise) {
-      this.storePromise = IdbStore.open().catch((err) => {
-        this.storeError = err.message ?? String(err);
-        return new MemoryStore();
+      this.storePromise = openContentStore().then((store) => {
+        this.storeError = storeError();
+        return store;
       });
     }
     return this.storePromise;
@@ -102,6 +115,33 @@ export class AudioSystem {
     } catch (err) {
       this.storeError = err.message ?? String(err);
     }
+    this.syncMusic();
+    this.changed();
+  }
+
+  /**
+   * Texture pack sounds (js/content: key -> bytes of an OGG, WAV or MP3
+   * file). They are decoded by the browser here, checked against the pack
+   * length limit, and played before original and synthesized sounds.
+   * @param {Map<string, ArrayBuffer>} sounds
+   * @param {number} [maxSeconds]
+   */
+  async setPackSounds(sounds, maxSeconds = 600) {
+    const decoded = new Map();
+    const Offline = globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
+    if (Offline && sounds.size) {
+      const ctx = new Offline(1, 1, 44100);
+      for (const [key, bytes] of sounds) {
+        try {
+          const buffer = await ctx.decodeAudioData(bytes.slice(0));
+          if (buffer.duration <= maxSeconds) decoded.set(key, buffer);
+        } catch {
+          // Not decodable in this browser: the key keeps its other sounds.
+        }
+      }
+    }
+    this.bank.pack = decoded;
+    await this.jukebox.refresh().catch(() => {});
     this.syncMusic();
     this.changed();
   }
@@ -315,7 +355,8 @@ export class AudioSystem {
 
   syncMusic() {
     const p = this.prefs.get();
-    const want = this.inGame && p.enabled && p.original && p.music > 0 && this.jukebox.available && this.mixer.ready;
+    // The playlist holds pack music, plus the installed originals when they are on (music.js).
+    const want = this.inGame && p.enabled && p.music > 0 && this.jukebox.available && this.mixer.ready;
     if (want && !this.jukebox.handle) this.jukebox.start();
     else if (!want && this.jukebox.handle) this.jukebox.stop();
   }

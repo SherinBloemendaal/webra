@@ -107,6 +107,7 @@ export class GameMenu {
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
    *   onChange(open: boolean, paused: boolean): void,
    *   onSound?(): void,
+   *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
    *   onLeave(): void,
    *   onExit(): void,
@@ -167,7 +168,7 @@ export class GameMenu {
 
   onKey(e) {
     if (!this.isOpen) return;
-    // A dialog opened from the menu (Sound, Release notes) handles its own keys: Esc closes it, not the menu.
+    // A dialog opened from the menu (Sound, Original content, Release notes) handles its own keys: Esc closes it, not the menu.
     const t = e.target;
     if (t instanceof Element && !this.root.contains(t) && t.closest('[role="dialog"]')) return;
     if (this.capture) {
@@ -249,6 +250,7 @@ export class GameMenu {
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
+      ...(this.opts.onContent ? [button('Original content', null, () => this.opts.onContent())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),

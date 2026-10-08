@@ -29,6 +29,9 @@ export const SCHEMA = {
   // Health bars besides the selection and the hovered actor (OpenRA status bars):
   // 'off' (selected and hovered only), 'damaged' (also damaged actors), 'all'.
   healthBars: { type: 'choice', default: 'off', options: ['off', 'damaged', 'all'] },
+  // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the
+  // original Red Alert graphics the player installed from their own copy).
+  graphics: { type: 'choice', default: 'webra', options: ['webra', 'original'] },
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: { type: 'object', default: {} },
 };

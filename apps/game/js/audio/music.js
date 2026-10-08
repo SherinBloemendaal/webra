@@ -17,9 +17,13 @@ export function shuffle(n, random = Math.random, avoid = -1) {
 }
 
 export class Jukebox {
-  constructor(mixer, getStore, onChange = () => {}) {
+  constructor(mixer, getStore, onChange = () => {}, packTracks = () => new Map(), useOriginals = () => true) {
+    /** Whether installed original tracks play ("Use original sounds"). */
+    this.useOriginals = useOriginals;
     this.mixer = mixer;
     this.getStore = getStore;
+    /** Texture pack music: () => Map(original track file or its name without .aud -> AudioBuffer). */
+    this.packTracks = packTracks;
     this.onChange = onChange;
     this.tracks = []; // { file, title } installed
     this.order = [];
@@ -34,7 +38,9 @@ export class Jukebox {
   async refresh() {
     const store = await this.getStore();
     const names = new Set(await store.names());
-    this.tracks = MUSIC.filter((m) => names.has(m.file));
+    const pack = this.packTracks();
+    const originals = this.useOriginals();
+    this.tracks = MUSIC.filter((m) => (originals && names.has(m.file)) || pack.has(m.file) || pack.has(m.file.replace(/\.aud$/, '')));
     this.order = shuffle(this.tracks.length);
     this.pos = 0;
     return this.tracks.length;
@@ -71,15 +77,19 @@ export class Jukebox {
       this.pos = 0;
     }
     const track = this.tracks[this.order[this.pos++]];
-    const store = await this.getStore();
-    const rec = await store.get(track.file);
-    if (token !== this.token || !rec) return;
-    let buffer;
-    try {
-      const { sampleRate, samples } = decodeAud(new Uint8Array(rec.bytes));
-      buffer = this.mixer.buffer(samples, sampleRate);
-    } catch {
-      buffer = null;
+    // A texture pack's version of the track first, then the installed original.
+    const pack = this.packTracks();
+    let buffer = pack.get(track.file) ?? pack.get(track.file.replace(/\.aud$/, '')) ?? null;
+    if (!buffer) {
+      const store = await this.getStore();
+      const rec = await store.get(track.file);
+      if (token !== this.token || !rec) return;
+      try {
+        const { sampleRate, samples } = decodeAud(new Uint8Array(rec.bytes));
+        buffer = this.mixer.buffer(samples, sampleRate);
+      } catch {
+        buffer = null;
+      }
     }
     if (!buffer || token !== this.token) return;
     this.wanted = true;

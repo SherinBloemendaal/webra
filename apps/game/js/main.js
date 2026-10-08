@@ -38,6 +38,12 @@ import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
+import { ContentSystem } from './content/index.js';
+import { mountContentPanel, mountContentPrompt } from './content/panel.js';
+import { shouldPrompt } from './content/download.js';
+import { setCameoArt } from './cameo.js';
+import { RECIPES } from './audio/synth.js';
+import { allOriginalNames } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
@@ -67,6 +73,10 @@ let audio = null;
 let audioPanel = null;
 /** Release notes dialog (js/releasenotes-dialog.js): lobby, game menu and "What's new". */
 let releaseNotes = null;
+// Installed content (js/content): original graphics from the player's own copy and texture packs.
+let content = null;
+/** The Original content dialog (js/content/panel.js), also opened from the game menu and the Sound dialog. */
+let contentPanel = null;
 
 async function boot() {
   let gpuError = null;
@@ -77,6 +87,7 @@ async function boot() {
   }
   $('version').textContent = wasm ? `v${version()}` : '';
   setupAudio();
+  setupContent();
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
     colors: TEAM_COLORS,
@@ -160,12 +171,85 @@ async function setupRecords(lobby, gpuError) {
 function setupAudio() {
   try {
     audio = new AudioSystem();
-    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio);
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open() });
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
     audio = null;
   }
+}
+
+/**
+ * Original graphics and texture packs (js/content), loaded into memory ahead
+ * of the first game so the game can build its art at once. The game plays
+ * the same without them.
+ */
+function setupContent() {
+  try {
+    const actors = wasm ? JSON.parse(base_rules_json()).actors ?? [] : [];
+    const known = {
+      actors: new Set(actors.map((a) => String(a.id).toUpperCase())),
+      sounds: new Set([...Object.keys(RECIPES), ...allOriginalNames()]),
+    };
+    content = new ContentSystem({ settings, known });
+    contentPanel = mountContentPanel($('content-button'), $('content-panel'), content, audio, {
+      actorNames: new Map(actors.map((a) => [String(a.id).toUpperCase(), a.name ?? a.id])),
+    });
+    const sync = () => {
+      setCameoArt(content.cameos());
+      audio?.setPackSounds(content.packSounds()).catch((err) => console.warn('Texture pack sounds are unavailable:', err));
+    };
+    content.onChange(sync);
+    content
+      .load()
+      .then(async () => {
+        // First start: offer the original content once (until declined), like OpenRA's content installer.
+        const installed = (await content.summary()).total > 0;
+        if ($('app').hidden && shouldPrompt({ installed })) {
+          mountContentPrompt(document.body, { onDownload: () => contentPanel.download(), onOpen: () => contentPanel.open() });
+        }
+      })
+      .catch((err) => console.warn('Installed content is unavailable:', err));
+    setupContentDrop();
+  } catch (err) {
+    console.warn('Original content and texture packs are unavailable:', err);
+    content = null;
+  }
+}
+
+/**
+ * Drag and drop of Red Alert files (ra-quickinstall.zip, .mix files) and
+ * texture packs onto the lobby or the game: they go to the Original content
+ * dialog. Other drops are left alone.
+ */
+function setupContentDrop() {
+  const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  let depth = 0;
+  const show = (on) => document.body.classList.toggle('content-drop', on);
+  window.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e)) return;
+    depth++;
+    show(true);
+  });
+  window.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (!depth) show(false);
+  });
+  window.addEventListener('dragover', (e) => {
+    if (hasFiles(e)) e.preventDefault();
+  });
+  window.addEventListener('drop', async (e) => {
+    if (!hasFiles(e)) return;
+    depth = 0;
+    show(false);
+    e.preventDefault();
+    const files = [...(e.dataTransfer.files ?? [])];
+    try {
+      if (!(await contentPanel?.drop(files))) showToast('Drop ra-quickinstall.zip, Red Alert .mix files or a texture pack here.');
+    } catch (err) {
+      showToast(`Could not read the dropped files: ${err.message ?? err}`);
+    }
+  });
 }
 
 /**
@@ -476,10 +560,31 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Driver state from the newest frame (loading a save, catching up, seeking).
   let status = { busy: false };
   const busy = () => !!status.busy;
-  const atlas = buildAtlas(rules.actors);
-  renderer.setAtlas(atlas);
-  // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
-  game.set_building_overlays(atlas.overlays);
+  // The map's biome picks the terrain art and the original theater.
+  let sky = JSON.parse(game.weather_json());
+  let lastSky = null;
+  const biome = sky.biome;
+  // Sprites: WebRA's own art, or the original graphics and texture packs the
+  // player installed (js/content, presentation only). Rebuilt when they change.
+  const applyArt = () => {
+    const art = content?.art(rules.actors, biome) ?? null;
+    let atlas = null;
+    if (art?.slots.size) {
+      try {
+        atlas = buildAtlas(rules.actors, { slots: art.slots, filter: art.filter, maxSize: renderer.maxTextureSize });
+      } catch (err) {
+        console.warn('Installed graphics do not fit; using WebRA art:', err);
+      }
+      if (art.report.problems.length) console.info('Installed graphics:', art.report);
+    }
+    atlas ??= buildAtlas(rules.actors);
+    renderer.setAtlas(atlas);
+    // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
+    game.set_building_overlays(atlas.overlays);
+    // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
+    game.set_sprite_poses(atlas.filter === 'nearest');
+  };
+  applyArt();
   const animClock = new AnimClock();
   animClock.watchReducedMotion();
   // Health bars besides the selection and the hovered actor (game menu, Settings).
@@ -491,12 +596,31 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
   const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
   renderer.setMapSize(game.map_width(), game.map_height());
-  // Terrain art of the map's biome (js/art/terrain.js); the cell layer is
-  // built from the first terrain upload below (terrain types never change).
-  let sky = JSON.parse(game.weather_json());
-  let lastSky = null;
-  renderer.setTerrainAtlas(buildTerrainAtlas(sky.biome));
+  // Terrain art of the map's biome (js/art/terrain.js), or tile terrain from
+  // installed content (js/content/terrain.js); the cell layer is built from
+  // the first terrain upload below (terrain types never change).
+  renderer.setTerrainAtlas(buildTerrainAtlas(biome));
   let cellsReady = false;
+  let terrainTypes = null;
+  const applyTerrain = () => {
+    if (!terrainTypes) return;
+    const w = game.map_width();
+    const h = game.map_height();
+    const tiles = content?.terrain(biome, terrainTypes, w, h) ?? null;
+    if (tiles) {
+      renderer.setTerrainAtlas(tiles.atlas);
+      renderer.uploadCells(tiles.cells);
+    } else {
+      renderer.setTerrainAtlas(buildTerrainAtlas(biome));
+      // Decals follow the map itself, so every player of a map sees the same ones.
+      renderer.uploadCells(cellTiles(terrainTypes, w, h, terrainSeed(terrainTypes)));
+    }
+  };
+  // Installed content changed (the Original content dialog, also in a game): new art at once.
+  content?.onChange(() => {
+    applyArt();
+    applyTerrain();
+  });
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (gain) => audio?.thunder(gain) });
@@ -669,6 +793,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
     onSound: audioPanel ? () => audioPanel.open() : undefined,
+    onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),
     onLeave: leave,
     onExit: exit,
@@ -800,8 +925,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (f.terrain) {
         renderer.uploadTerrain(f.terrain);
         if (!cellsReady) {
-          // Decals follow the map itself, so every player of a map sees the same ones.
-          renderer.uploadCells(cellTiles(f.terrain, game.map_width(), game.map_height(), terrainSeed(f.terrain)));
+          terrainTypes = f.terrain.slice();
+          applyTerrain();
           cellsReady = true;
         }
         minimap?.terrainChanged(f.terrain);

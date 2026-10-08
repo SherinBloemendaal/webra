@@ -1,0 +1,244 @@
+// "Install original Red Alert content", like OpenRA: the player picks files
+// from their own copy of Red Alert (the 2008 freeware release or a disc:
+// main.mix and redalert.mix, or the archives inside them, or loose files).
+// We read them in the browser, keep only what WebRA uses (the sounds of
+// js/audio/catalog.js and the graphics of content/tables.js), check that
+// each file decodes, and store them in this browser (content/store.js).
+// Nothing is uploaded and nothing is shipped with WebRA.
+
+import { MixArchive, MixError, blobSource } from '../audio/mix.js';
+import { looksLikeAud, decodeAud } from '../audio/aud.js';
+import { allOriginalNames, ARCHIVES as SOUND_ARCHIVES, EVA, MUSIC_FILES } from '../audio/catalog.js';
+import { GRAPHICS_FILES, TERRAIN } from './tables.js';
+import { decodeSprite } from './shp.js';
+import { decodePalette } from './palette.js';
+import { kindOf } from './store.js';
+import { openZip, looksLikeZip, ZipError } from '../oramap/zip.js';
+
+const MAX_DEPTH = 3;
+const VOICE_EXT = /\.[vr]0\d$/;
+const ANNOUNCER = new Set(Object.values(EVA).flatMap((e) => e.originals));
+
+/**
+ * Archives searched inside other archives: the sound archives, plus the
+ * graphics ones (units and structures in conquer.mix, cameos in hires.mix,
+ * one archive per theater; desert.mix comes from Tiberian Dawn, as in
+ * OpenRA). lores.mix is left out: its low resolution cameos share names
+ * with the hires ones.
+ */
+export const ARCHIVES = [...SOUND_ARCHIVES, 'conquer.mix', 'hires.mix', 'hires1.mix', 'temperat.mix', 'snow.mix', 'interior.mix', 'desert.mix'].filter(
+  (v, i, all) => all.indexOf(v) === i,
+);
+
+/** Which settings group a stored file belongs to (for the install report). */
+export function categoryOf(name) {
+  if (kindOf(name) === 'graphics') return 'graphics';
+  if (MUSIC_FILES.has(name)) return 'music';
+  if (ANNOUNCER.has(name)) return 'announcer';
+  if (VOICE_EXT.test(name)) return 'voices';
+  return 'effects';
+}
+
+/** The file name part of a path ("RA/MAIN.MIX" -> "main.mix"). */
+export const baseName = (path) => path.split(/[\\/]/).pop().toLowerCase();
+
+/** Checks that a wanted file decodes; returns an error message or null. */
+export function checkFile(name, bytes) {
+  try {
+    if (kindOf(name) === 'graphics') {
+      if (name.endsWith('.pal')) decodePalette(bytes);
+      else decodeSprite(bytes);
+      return null;
+    }
+    if (!looksLikeAud(bytes)) return 'not an AUD sound';
+    decodeAud(bytes); // reject files we could not play later
+    return null;
+  } catch (err) {
+    return err.message;
+  }
+}
+
+/**
+ * Find wanted files in what the player picked: MIX archives (nested ones
+ * too, encrypted indexes included) and loose files.
+ * @param {Iterable<File | Blob & { name: string }>} files
+ * @param {{ wanted: Set<string>, onProgress?(text: string): void, publicKey?: { n: bigint, e: bigint }, check?: typeof checkFile }} o
+ * @returns {Promise<{ found: Map<string, { bytes: Uint8Array, from: string }>, archives: string[], skipped: string[], errors: string[] }>}
+ */
+export async function scanFiles(files, { wanted, onProgress = () => {}, publicKey, check = checkFile }) {
+  const found = new Map();
+  const report = { found, archives: [], skipped: [], errors: [] };
+
+  const take = (name, bytes, from) => {
+    if (found.has(name) || !wanted.has(name)) return;
+    const problem = check(name, bytes);
+    if (problem) {
+      report.errors.push(`${name} (in ${from}): ${problem}`);
+      return;
+    }
+    found.set(name, { bytes: bytes.slice(), from });
+  };
+
+  async function scanMix(source, label, depth) {
+    let archive;
+    try {
+      archive = await MixArchive.open(source, { publicKey });
+    } catch (err) {
+      if (err instanceof MixError) {
+        report.errors.push(`${label}: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    report.archives.push(label);
+    for (const name of wanted) {
+      if (found.has(name) || !archive.has(name)) continue;
+      take(name, await archive.read(name), label);
+    }
+    if (depth >= MAX_DEPTH) return;
+    for (const nested of ARCHIVES) {
+      const src = archive.entrySource(nested);
+      if (src) {
+        onProgress(`Reading ${label} / ${nested}`);
+        await scanMix(src, `${label}/${nested}`, depth + 1);
+      }
+    }
+  }
+
+  for (const file of files) {
+    const name = baseName(file.webkitRelativePath || file.name || '');
+    if (name.endsWith('.mix')) {
+      onProgress(`Reading ${name}`);
+      await scanMix(blobSource(file), name, 0);
+    } else if (wanted.has(name)) {
+      take(name, new Uint8Array(await file.arrayBuffer()), name);
+    } else {
+      report.skipped.push(name);
+    }
+  }
+  return report;
+}
+
+/**
+ * OpenRA's quick install package (ra-quickinstall.zip, 13,502,031 bytes:
+ * the freeware .mix files as OpenRA's content installer downloads them from
+ * its mirrors). It is bigger inside than the .oramap limits allow, so this
+ * known shape gets its own limits; the compression ratio checks stay.
+ */
+export const QUICKINSTALL_LIMITS = Object.freeze({
+  maxArchiveBytes: 32 * 1024 * 1024,
+  maxEntries: 256,
+  maxNameBytes: 255,
+  maxEntryBytes: 32 * 1024 * 1024,
+  maxTotalBytes: 128 * 1024 * 1024,
+  maxRatio: 1000,
+  ratioFloorBytes: 64 * 1024,
+});
+
+/**
+ * Open a ZIP of content files (OpenRA's ra-quickinstall.zip, or any ZIP with
+ * MIX archives or loose content files) with the hardened ZIP reader: returns
+ * File objects for the content inside (other files are left alone), or
+ * throws ZipError when the ZIP has another shape (a texture pack with its
+ * manifest.json, a map, nothing of Red Alert).
+ */
+export async function contentFromZip(bytes, label = 'archive.zip') {
+  const zip = openZip(bytes, QUICKINSTALL_LIMITS);
+  const names = zip.names();
+  const wanted = names.filter((n) => /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i.test(n));
+  if (!wanted.length || names.some((n) => baseName(n) === 'manifest.json' || baseName(n) === 'map.yaml')) {
+    throw new ZipError(`${label} is not a Red Alert content package (it should hold .mix files)`);
+  }
+  const out = [];
+  for (const n of wanted) {
+    const data = await zip.read(n);
+    out.push(new File([data], baseName(n)));
+  }
+  return out;
+}
+
+/**
+ * Replace picked ZIP files by the content inside them (see contentFromZip);
+ * other files pass through. Problems are added to `errors`.
+ */
+export async function expandZips(files, errors = [], onProgress = () => {}) {
+  const out = [];
+  for (const file of files) {
+    const name = baseName(file.webkitRelativePath || file.name || '');
+    if (!name.endsWith('.zip')) {
+      out.push(file);
+      continue;
+    }
+    if (file.size > QUICKINSTALL_LIMITS.maxArchiveBytes) {
+      errors.push(`${name}: larger than ${QUICKINSTALL_LIMITS.maxArchiveBytes} bytes`);
+      continue;
+    }
+    onProgress(`Unpacking ${name}`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!looksLikeZip(bytes)) {
+      errors.push(`${name}: not a ZIP archive`);
+      continue;
+    }
+    try {
+      out.push(...(await contentFromZip(bytes, name)));
+    } catch (err) {
+      if (!(err instanceof ZipError)) throw err;
+      errors.push(`${name}: ${err.message}`);
+    }
+  }
+  return out;
+}
+
+/** Theaters (OpenRA tileset ids) whose palette and plain ground tiles are among `names`. */
+export function theatersIn(names) {
+  const have = new Set(names);
+  return Object.entries(TERRAIN)
+    .filter(([, info]) => have.has(info.palette) && info.images.some((img) => have.has(img)))
+    .map(([id]) => id);
+}
+
+/**
+ * Import sounds and graphics from files the player picked, in one pass.
+ * @returns {Promise<{ added: number, bytes: number, byCategory: Record<string, number>, theaters: string[],
+ *   archives: string[], skipped: string[], errors: string[] }>}
+ */
+export async function installContent(files, store, { onProgress = () => {}, publicKey, sounds = allOriginalNames(), graphics = GRAPHICS_FILES } = {}) {
+  const wanted = new Set([...sounds, ...graphics]);
+  // ZIPs (OpenRA's ra-quickinstall.zip) are unpacked first; their MIX files install like picked ones.
+  const zipErrors = [];
+  const expanded = await expandZips(files, zipErrors, onProgress);
+  const scan = await scanFiles(expanded, { wanted, onProgress, publicKey });
+  scan.errors.unshift(...zipErrors);
+  const records = [...scan.found].map(([name, f]) => ({ name, bytes: f.bytes.buffer, size: f.bytes.length, from: f.from, kind: kindOf(name) }));
+  if (records.length) {
+    onProgress(`Saving ${records.length} files in this browser`);
+    await store.putAll(records);
+  }
+  const byCategory = { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0 };
+  let bytes = 0;
+  for (const r of records) {
+    byCategory[categoryOf(r.name)]++;
+    bytes += r.size;
+  }
+  return {
+    added: records.length,
+    bytes,
+    byCategory,
+    theaters: theatersIn(await store.names()),
+    archives: scan.archives,
+    skipped: scan.skipped,
+    errors: scan.errors,
+  };
+}
+
+/** What is installed: counts and bytes per category, and the theaters graphics cover. */
+export async function contentSummary(store) {
+  const meta = await store.meta();
+  const byCategory = { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0 };
+  const bytes = { sounds: 0, graphics: 0 };
+  for (const m of meta) {
+    byCategory[categoryOf(m.name)]++;
+    bytes[m.kind === 'graphics' ? 'graphics' : 'sounds'] += m.size ?? 0;
+  }
+  return { total: meta.length, byCategory, bytes, theaters: theatersIn(meta.map((m) => m.name)) };
+}
