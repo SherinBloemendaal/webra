@@ -10,6 +10,12 @@ import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
+import { CURSORS } from './cursors.js';
+import { hotkeys } from './hotkeys.js';
+import { settings } from './settings.js';
+import { GameMenu } from './gamemenu.js';
+import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
+import { DebugMenu } from './debug.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -29,6 +35,8 @@ let wasm;
 let renderer;
 // Sound (js/audio): synthesized by default, original files when the player installed them.
 let audio = null;
+/** The Sound dialog (js/audio/panel.js), also opened from the game menu. */
+let audioPanel = null;
 
 async function boot() {
   let gpuError = null;
@@ -68,7 +76,7 @@ async function boot() {
 function setupAudio() {
   try {
     audio = new AudioSystem();
-    mountAudioPanel($('audio-button'), $('audio-panel'), audio);
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio);
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
@@ -204,6 +212,9 @@ function startStress(seed, units, lobby) {
 // lockstep driver then decides when the simulation ticks and there is no pause.
 function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   $('menu').hidden = true;
+  // The game's own arrow everywhere in the game screen (sidebar included);
+  // the battlefield canvas sets its cursor per frame (js/input.js).
+  $('app').style.cursor = CURSORS.select;
   // The lobby's "Play online" entry must not float over the game (any mode).
   const onlineEntry = $('online-button');
   if (onlineEntry) onlineEntry.hidden = true;
@@ -232,6 +243,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
+    onMenu: () => menu.open(),
   });
   sidebar = new Sidebar($('sidebar'), ui, rules, player, {
     onPlace: (id) => {
@@ -251,40 +263,108 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
   });
+  // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
+  let paused = false;
+  const debug = new DebugMenu($('field'), {
+    game,
+    input,
+    player,
+    rules,
+    colors: TEAM_COLORS,
+    online: !!online,
+    tickMs,
+    memory: wasm.memory,
+    isPaused: () => paused,
+    setPaused: online ? undefined : (on) => {
+      paused = on;
+    },
+    step: () => {
+      if (!paused || online) return false;
+      game.tick();
+      return true;
+    },
+  });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules };
+  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
-  // ---- Pause --------------------------------------------------------------------
-  let paused = false;
-  const setPaused = (on) => {
-    paused = on;
-    $('pause').hidden = !on;
-    $('pause-button').textContent = on ? 'Resume' : 'Pause';
-  };
+  // ---- Game menu and pause -------------------------------------------------------
+  // Esc (js/input.js), F10, the HUD button, and in single player P / Pause open
+  // the menu (js/gamemenu.js). Single player pauses while it is open; online
+  // games cannot pause (the lockstep server drops a player who holds the game
+  // up), so there the menu opens over the running game. The debug menu can
+  // also pause a local game without the menu (`paused` is declared above).
+  let leaving = false;
   const leave = () => {
+    leaving = true;
     online?.onQuit();
     location.reload();
   };
-  // Online games cannot pause: the other players keep going.
-  $('pause-button').hidden = !!online;
-  $('pause-button').addEventListener('click', () => setPaused(!paused));
-  $('resume').addEventListener('click', () => setPaused(false));
-  $('quit').addEventListener('click', leave);
+  const exit = () => {
+    leaving = true;
+    online?.onQuit();
+    location.href = new URL('../', location.href).href;
+  };
+  const fullscreen = {
+    available: () => fullscreenAvailable(),
+    active: () => isFullscreen(),
+    toggle: () => toggleFullscreen(),
+  };
+  const menu = new GameMenu($('game-menu'), {
+    online: !!online,
+    hotkeys,
+    settings,
+    fullscreen,
+    onChange: (open, isPaused) => {
+      input.setSuspended(open);
+      paused = isPaused;
+      $('menu-button').textContent = open ? 'Resume' : 'Menu';
+    },
+    onSound: audioPanel ? () => audioPanel.open() : undefined,
+    onLeave: leave,
+    onExit: exit,
+  });
+  $('menu-button').hidden = false;
+  $('menu-button').addEventListener('click', () => menu.toggle());
   $('again').addEventListener('click', leave);
-  window.addEventListener('keydown', (e) => {
-    if (online || e.target instanceof HTMLInputElement) return;
-    if (e.key === 'p' || e.key === 'P' || e.key === 'Pause' || e.key === 'F10') {
-      e.preventDefault();
-      setPaused(!paused);
-    }
+  hotkeys.registerAction('debugMenu', '`', () => debug.toggle(), { label: 'Debug menu', group: 'Game' });
+  hotkeys.registerAction('menu', 'F10', () => menu.toggle(), { label: 'Game menu (Esc also opens it)', group: 'Game' });
+  if (!online) hotkeys.registerAction('pause', ['Pause', 'P'], () => menu.toggle(), { label: 'Pause (opens the menu)', group: 'Game' });
+  hotkeys.registerAction(
+    'fullscreen',
+    'Alt+Enter',
+    async () => {
+      const r = await fullscreen.toggle();
+      if (!r.ok) showToast(r.message);
+    },
+    { label: 'Fullscreen', group: 'Game' },
+  );
+  // Production tabs, OpenRA's Red Alert keys (E R T Y U I), and Tab / Shift+Tab to cycle.
+  ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'].forEach((name, q) => {
+    hotkeys.registerAction(`productionTab${name}`, 'ERTYUI'[q], () => sidebar.selectTab(q), { label: `${name} tab`, group: 'Production' });
   });
-  // A single-player game pauses when its tab is hidden.
+  // Not while a button has focus, so Tab still moves between the sidebar's buttons there.
+  hotkeys.registerAction('nextTab', 'Tab', () => sidebar.cycleTab(1), { label: 'Next production tab', group: 'Production', inControls: false });
+  hotkeys.registerAction('previousTab', 'Shift+Tab', () => sidebar.cycleTab(-1), { label: 'Previous production tab', group: 'Production', inControls: false });
+  // Fullscreen changes the canvas size; the renderer and input follow it each
+  // frame, the toast says when the browser refused.
+  onFullscreenChange(() => {
+    if (menu.isOpen) menu.render();
+  });
+  // A single-player game opens the menu (and so pauses) when its tab is hidden.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !stress && !online) setPaused(true);
+    if (document.hidden && !stress && !online) menu.open();
   });
+  // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
+  if (!stress) {
+    window.addEventListener('beforeunload', (e) => {
+      if (leaving || over) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+  }
 
   let acc = 0;
   let last = performance.now();
@@ -299,10 +379,12 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     const dt = Math.min(now - last, 250);
     last = now;
     let alpha = paused ? 1 : acc / tickMs;
+    let simFrameMs = 0;
     if (online) {
       const t0 = performance.now();
       const r = online.driver.advance(dt);
-      if (r.ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / r.ticks) * 0.1;
+      simFrameMs = performance.now() - t0;
+      if (r.ticks > 0) simMs = simMs * 0.9 + (simFrameMs / r.ticks) * 0.1;
       alpha = r.alpha;
     } else if (!paused) {
       acc += dt;
@@ -313,7 +395,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
         acc -= tickMs;
         ticks++;
       }
-      if (ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / ticks) * 0.1;
+      simFrameMs = performance.now() - t0;
+      if (ticks > 0) simMs = simMs * 0.9 + (simFrameMs / ticks) * 0.1;
       if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
       alpha = acc / tickMs;
     }
@@ -330,6 +413,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
 
     // UI rects call into wasm (placement preview), which may grow its memory and
     // detach existing views, so collect them before taking views of wasm memory.
+    const renderStart = performance.now();
     const uiRects = input.uiRects();
     const v = input.viewRect();
     const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
@@ -339,6 +423,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
     rects.set(uiRects, simRectCount * 8);
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
+    // After drawing: the debug views call into wasm, which may detach the views above.
+    debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -356,6 +442,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);
+      debug.update(state);
       if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
         $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
@@ -383,3 +470,14 @@ function updateHud(game, state, fps, simMs, stress, paused) {
 }
 
 boot();
+
+/** Short message over the battlefield (for example when fullscreen is refused). */
+function showToast(text) {
+  const box = $('toast');
+  box.textContent = text;
+  box.hidden = false;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
+    box.hidden = true;
+  }, 4000);
+}

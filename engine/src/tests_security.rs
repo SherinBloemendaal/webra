@@ -69,7 +69,7 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
     };
     let player = r.range(0, 2) as u8;
     let keys = ["", "spyplane", "paratroopers", "parabombs", "NukePower", "chronoshift", "IRONCURTAIN", "GpsPower", "x\u{0}y"];
-    match r.range(0, 15) {
+    match r.range(0, 18) {
         0 => Order::Move { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r), attack_move: r.chance(50) },
         1 => Order::Smart { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r) },
         2 => Order::Attack { player, ids: ids(r), target: id(r) },
@@ -91,7 +91,11 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
             y2: r.chance(50).then(|| nasty_int(r)),
         },
         13 => Order::LayMines { player, ids: ids(r), x0: nasty_int(r), y0: nasty_int(r), x1: nasty_int(r), y1: nasty_int(r) },
-        _ => Order::Teleport { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r) },
+        14 => Order::Teleport { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r) },
+        // Debug menu cheats (debug.rs): ignored here, the busy world has no cheats option.
+        15 => Order::DevFlag { player, flag: crate::debug::DevFlag::ALL[r.range(0, 6) as usize], on: r.chance(50) },
+        16 => Order::DevCash { player },
+        _ => Order::DevKill { player, ids: ids(r) },
     }
 }
 
@@ -115,6 +119,24 @@ fn hostile_orders_never_crash_the_engine() {
 }
 
 #[test]
+fn hostile_orders_never_crash_a_game_with_cheats() {
+    // With the debug menu option every cheat applies: kills of any actor,
+    // free cash, instant build and charge, building anywhere.
+    let mut w = busy_world();
+    w.options.cheats = true;
+    let mut r = Rng::new(0xc4ea7);
+    for _ in 0..1000 {
+        for _ in 0..r.range(0, 6) {
+            let o = random_order(&w, &mut r);
+            if o.is_reasonable() {
+                w.queue_order(o);
+            }
+        }
+        w.step();
+    }
+}
+
+#[test]
 fn hostile_orders_through_json_never_crash_the_engine() {
     // Raw JSON as a malicious client would send it, through serde like apply_frame.
     let mut w = busy_world();
@@ -127,6 +149,9 @@ fn hostile_orders_through_json_never_crash_the_engine() {
         r#"{"o":"support_power","player":0,"key":"NukePower","x":2147483647,"y":2147483647,"x2":-2147483648,"y2":0}"#,
         r#"{"o":"teleport","player":0,"ids":[1,2,3],"x":-1,"y":-1}"#,
         r#"{"o":"rally","player":1,"building":0,"x":2147483647,"y":2147483647}"#,
+        r#"{"o":"dev_cash","player":0}"#,
+        r#"{"o":"dev_flag","player":1,"flag":"disable_shroud","on":true}"#,
+        r#"{"o":"dev_kill","player":0,"ids":[0,1,2,3,4,5,6,7,8,9,4294967295]}"#,
     ];
     for json in bad {
         if let Ok(o) = serde_json::from_str::<Order>(json) {

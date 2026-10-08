@@ -221,4 +221,5 @@ export function mountAudioPanel(button, panel, audio) {
     if (e.key === 'Escape') open(false);
     e.stopPropagation();
   });
+  return { open: () => open(true) };
 }

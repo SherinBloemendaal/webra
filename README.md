@@ -70,7 +70,8 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [ ] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
 - [ ] Loading OpenRA `.oramap` maps
-- [ ] Mobile/touch controls, hotkey customisation and an options menu
+- [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
+- [ ] Mobile/touch controls
 
 ## Architecture
 
@@ -155,30 +156,55 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 
 ## Controls
 
+Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
+
 | Input | Action |
 |-------|--------|
 | Left click | Select. With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
 | Drag box | Select units. If the box contains combat units, only those are selected (ore trucks stay out of army drags) |
+| Shift + click / drag | Add to (or remove from) the selection |
 | Double click | Select all units of that type on screen |
-| Right click | Clear the selection (or cancel placement / attack-move) |
+| Ctrl + double click | Select all units of that type on the map |
+| Right click | Clear the selection (or cancel placement / attack-move / targeting) |
 | Factory selected + left click on the ground | Set its rally point |
 | A + left click | Attack-move |
 | S | Stop |
-| Ctrl + 1..9 | Assign control group |
-| 1..9 | Select control group |
+| F (or D) | Deploy an MCV, pack up a Construction Yard, unload a transport, use a unit ability |
+| Z | Sell mode |
+| Q | Select all units on screen (press twice: on the whole map) |
+| W | Select units of the selected types on screen (press twice: on the whole map) |
+| Ctrl + 1..9, 0 (Cmd on macOS) | Store the selected units as a control group (a unit is in one group at a time) |
+| 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
+| Shift + 1..9, 0 | Add a control group to the selection |
+| E R T Y U I | Buildings, Defense, Infantry, Vehicles, Aircraft, Naval tab |
+| Tab / Shift + Tab | Next / previous sidebar tab |
 | Numpad 1..9 | Build that sidebar card (Shift: 5, Ctrl: cancel one) |
 | Numpad + / - / 0 | Next / previous sidebar tab |
 | Numpad . | Cancel building placement |
-| Arrow keys / screen edges | Pan the camera |
+| Arrow keys / screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
+| Alt + arrow keys | Jump to that map edge |
 | Middle mouse drag | Pan the camera |
-| Mouse wheel | Zoom |
+| Mouse wheel, ] and [, . | Zoom in, zoom out, reset zoom |
 | H or Space | Center on your base |
-| Esc | Cancel placement / clear selection |
+| Home | Center on the selection |
+| F1..F4, Shift + F1..F4 | Jump to / save a camera bookmark |
+| Esc | Cancel placement, targeting, sell mode or attack-move; otherwise open the game menu |
+| F10 | Game menu |
+| P or Pause | Pause (single player; opens the menu) |
+| Alt + Enter | Fullscreen |
 | Sidebar left click | Build (Shift + click queues 5) |
 | Sidebar right click | Cancel (refunds what was paid) |
 | Click a finished building in the sidebar | Start placing it |
 
-Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select).
+Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
+
+Notes on browsers:
+
+- **Pause.** Single player and skirmish pause while the menu is open. Online games cannot pause: the lockstep server drops a player who holds the game up for more than 10 s (see [docs/contracts.md](docs/contracts.md)), so the menu opens over the running game and says so.
+- **Ctrl/Cmd + number.** Some browsers switch tabs with these. WebRA holds them back while the game has focus wherever the browser lets a page do that. In fullscreen, Chromium browsers lock Esc, Tab, F1..F4 and the digit row to the game (Keyboard Lock API; hold Esc to leave fullscreen). On macOS, Ctrl + number works as well as Cmd + number.
+- **Fullscreen.** F11 belongs to the browser, so the game uses Alt + Enter (or the button in the menu). Without the Fullscreen API the menu says so.
+- **Camera bookmarks.** OpenRA saves them with Ctrl + Q/W/E/R, but browsers keep Ctrl + Q and Ctrl + W (quit, close tab), so WebRA uses Shift + F1..F4 to save and F1..F4 to jump.
+- **Leaving.** Closing or reloading the tab during a game asks first.
 
 ## Data
 

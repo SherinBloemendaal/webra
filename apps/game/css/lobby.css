@@ -893,6 +893,21 @@
   box-shadow: inset 0 0 0 3px var(--l-field);
 }
 
+/* Shown while the "Debug menu" (cheats) option is on. */
+#menu .lobby-cheats-warning {
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  border: 1px solid #b0412e;
+  border-radius: 2px;
+  background: rgba(176, 65, 46, 0.18);
+  color: #ffb4a2;
+  font-size: 12px;
+}
+
+#menu .lobby-cheats-warning[hidden] {
+  display: none;
+}
+
 /* ---- Bottom bar ---------------------------------------------------------------- */
 
 #menu .lobby-bar {

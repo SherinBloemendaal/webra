@@ -152,3 +152,23 @@ test('the name table stays bounded', () => {
   }
   assert.ok(Object.keys(room.names).length <= 65);
 });
+
+test('the debug menu option: host only, carried into the start options, off for old rooms', () => {
+  const { room, host, guest } = lobby(2);
+  assert.equal(room.options.cheats, false, 'off by default');
+  throwsRoom(() => room.setOptions(guest, { ...room.options, cheats: true }), 'not_host');
+  room.setOptions(host, { ...room.options, cheats: true });
+  assert.equal(room.lobbyView().options.cheats, true, 'every player sees it in the lobby');
+  room.setReady(guest, true, null);
+  const start = room.start(host, first);
+  assert.equal(start.options.cheats, true, 'the agreed game options carry it');
+  assert.ok(parseServerMessage(encodeServer({ t: 'start', ...start })).ok);
+
+  // A room stored before the option existed reads back with cheats off.
+  const { cheats: _c, ...old } = DEFAULT_OPTIONS;
+  const stored = { ...lobby(2).room.toJSON(), options: { ...old, seed: 3 } };
+  const back = Room.fromJSON(stored);
+  assert.equal(back.options.cheats, false);
+  assert.equal(back.options.seed, 3);
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
+});

@@ -62,7 +62,7 @@ body {
 
 #menu,
 #gameover,
-#pause {
+#game-menu {
   position: fixed;
   inset: 0;
   display: grid;
@@ -76,9 +76,117 @@ body {
 }
 
 #gameover,
-#pause {
+#game-menu {
   background: rgba(0, 0, 0, 0.6);
   z-index: 40;
+}
+
+/* ---- In-game menu (js/gamemenu.js) ---------------------------------------- */
+
+#game-menu {
+  z-index: 45;
+}
+
+.game-menu-card {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.game-menu-card h1 {
+  font-size: 36px;
+}
+
+.menu-card .game-menu-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.menu-card input.game-menu-range {
+  width: 180px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.menu-card input.game-menu-check {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.game-menu-value {
+  min-width: 44px;
+  text-align: right;
+  font: 12px ui-monospace, Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+
+.game-menu-scroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  margin-top: 6px;
+  padding-right: 4px;
+}
+
+.game-menu-keys {
+  display: grid;
+  gap: 4px;
+}
+
+.game-menu-key-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(84px, auto) auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.game-menu-key-row.game-menu-fixed {
+  grid-template-columns: 1fr auto;
+  color: var(--muted);
+}
+
+.game-menu-keycap {
+  padding: 2px 6px;
+  background: #11140f;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font: 12px ui-monospace, Menlo, Consolas, monospace;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.menu-card button.game-menu-mini {
+  width: auto;
+  margin: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.game-menu-message {
+  color: var(--accent);
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  max-width: min(520px, 90%);
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: #e6e4d6;
+  font: 13px system-ui, sans-serif;
+  pointer-events: none;
+  z-index: 30;
 }
 
 .hud-button {

@@ -25,7 +25,7 @@ import { Lockstep, LockstepError } from './lockstep.js';
 import { lookupMap } from './maps.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
-import { ordersFitRules } from './validate.js';
+import { cheatsAllowed, ordersFitRules } from './validate.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 
 /** Unused sessions (nobody ever joined) are deleted after this long. */
@@ -322,6 +322,12 @@ export class Session extends DurableObject {
       case C2S.ORDERS: {
         if (!ordersFitRules(msg.orders, ENGINE_RULES.actors.length)) {
           this.reject(ws, 'bad_message', 'Order names an unknown actor type.', true);
+          await this.disconnect(ws, 'dropped');
+          return;
+        }
+        // The options are frozen since the start: every peer agreed on them.
+        if (!cheatsAllowed(msg.orders, this.room.options)) {
+          this.reject(ws, ERRORS.FORBIDDEN, 'Cheats are not enabled in this game.', true);
           await this.disconnect(ws, 'dropped');
           return;
         }

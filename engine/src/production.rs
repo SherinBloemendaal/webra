@@ -93,6 +93,13 @@ impl World {
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
+        // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
+        // except the marker of actors that are never buildable.
+        if p.dev.all_tech {
+            let never =
+                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+            return Availability { visible: !never, enabled: !never };
+        }
         let mut visible = true;
         let mut enabled = true;
         for pr in &info.prerequisites {
@@ -113,6 +120,9 @@ impl World {
     pub fn requirements(&self, player: u8, ty: u16) -> Vec<Requirement> {
         let p = &self.players[player as usize];
         let mut out: Vec<Requirement> = Vec::new();
+        if self.availability(player, ty).enabled {
+            return out;
+        }
         for pr in &self.rules.actors[ty as usize].prerequisites {
             if p.tokens[pr.token as usize] != pr.negate {
                 continue;
@@ -252,6 +262,8 @@ impl World {
             let reductions = self.rules.player.speed_reduction.clone();
             let low_power_mod = self.rules.player.low_power_modifier;
             let low_power = self.players[player as usize].low_power();
+            // Debug menu "instant build" (debug.rs): done on this tick, still paid in full.
+            let fast_build = self.players[player as usize].dev.fast_build;
             let item = &mut self.players[player as usize].queues[qi].items[0];
             if item.done {
                 if q.is_structure() {
@@ -264,8 +276,11 @@ impl World {
                     item.total = (build_ticks * red / 100).max(1);
                     item.remaining = item.total;
                 }
+                if fast_build {
+                    item.remaining = item.remaining.min(1);
+                }
                 // Low power slows production by LowPowerModifier percent.
-                let modifier = if low_power { low_power_mod } else { 100 };
+                let modifier = if low_power && !fast_build { low_power_mod } else { 100 };
                 item.slow += 100;
                 if item.slow < modifier {
                     continue;
@@ -408,6 +423,10 @@ impl World {
     /// buildable area, and (with the "Build radius" option) within range of a
     /// base provider (construction yard).
     fn in_build_area(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
+        // Debug menu "build anywhere" (debug.rs): no adjacency or build radius.
+        if self.players[player as usize].dev.build_anywhere {
+            return true;
+        }
         let b = self.rules.actors[ty as usize].building.as_ref().unwrap();
         let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
         let mut adjacent = false;
