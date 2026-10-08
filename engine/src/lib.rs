@@ -19,6 +19,7 @@ pub mod mapdata;
 pub mod math;
 pub mod minimap;
 mod naval;
+pub mod overlays;
 mod plane;
 mod powers;
 mod production;
@@ -46,6 +47,8 @@ mod tests_helis;
 mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
+#[cfg(test)]
+mod tests_overlays;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
@@ -401,6 +404,24 @@ impl Game {
 
     pub fn set_selection(&mut self, ids: Vec<u32>) {
         self.selection = ids;
+    }
+
+    // ---- Render overlays (overlays.rs); never part of the simulation --------
+
+    /// Actor under the mouse (gets a health bar), or 0xFFFFFFFF for none.
+    pub fn set_hover(&mut self, id: u32) {
+        self.world.render_opts.hover = id;
+    }
+
+    /// Extra health bars: 0 selected and hovered only, 1 also damaged actors, 2 all actors.
+    pub fn set_health_bars(&mut self, mode: u8) {
+        self.world.render_opts.health_bars = overlays::HealthBars::from_index(mode);
+    }
+
+    /// Per actor type, the static frame of its animated building layer or 0
+    /// (apps/game/js/sprites.js `buildAtlas` returns this table as `overlays`).
+    pub fn set_building_overlays(&mut self, frames: Vec<u32>) {
+        self.world.render_opts.building_overlays = frames;
     }
 
     /// Selected ids that are still alive.

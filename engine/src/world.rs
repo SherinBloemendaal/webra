@@ -648,6 +648,8 @@ pub struct World {
     pub powers: crate::powers::PowersState,
     /// Write-only audio event log for the client (sound_events.rs).
     pub sound: crate::sound_events::SoundEvents,
+    /// Client render settings (overlays.rs); never read by the simulation.
+    pub render_opts: crate::overlays::RenderOptions,
 }
 
 impl World {
@@ -801,6 +803,7 @@ impl World {
             crashes: Vec::new(),
             powers: Default::default(),
             sound: Default::default(),
+            render_opts: Default::default(),
             map,
         }
     }

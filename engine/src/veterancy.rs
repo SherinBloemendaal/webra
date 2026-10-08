@@ -37,7 +37,6 @@
 //! after each (OpenRA multiplies them in decimal and truncates once, so a
 //! result can be a hit point apart).
 
-use crate::math::CELL;
 use crate::rules::{ExperienceInfo, Kind};
 use crate::world::{World, NONE};
 
@@ -242,7 +241,7 @@ impl World {
     /// ranked unit `player` can see, like OpenRA's WithDecoration@RANK-*
     /// (shown for allies, enemies and neutrals alike).
     pub(crate) fn render_veterancy(&self, player: u8, alpha: f32, view: &crate::render::View, base: f32, sprites: &mut Vec<f32>) {
-        use crate::render::px;
+        use crate::overlays::chevron_position;
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.rank == 0 || !a.is_unit() || !a.in_world() || a.air.parachute {
                 continue;
@@ -250,17 +249,15 @@ impl World {
             if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
-            let x = px(a.px) + (px(a.x) - px(a.px)) * alpha;
-            let y = px(a.py) + (px(a.y) - px(a.py)) * alpha - px(a.altitude);
+            let (x, y, w, h) = self.selection_box(i, alpha);
             if !view.contains(x, y, 32.0) {
                 continue;
             }
-            // The corner of the selection box (render.rs), a little inside it.
-            let r = self.rules.actors[a.ty as usize].unit.as_ref().map_or(CELL / 4, |u| u.radius);
-            let half = (px(r * 2) + 6.0).max(14.0) / 2.0;
             let sprite =
                 if a.rank >= self.max_rank(i) { base + DECORATION_ELITE } else { base + DECORATION_CHEVRONS + (a.rank.min(3) - 1) as f32 };
-            sprites.extend_from_slice(&[x + half - 3.0, y + half - 3.0, 0.0, sprite, a.owner as f32, 1.0, 1.0, 0.0]);
+            // Just right of the health bar over the selection bracket (overlays.rs).
+            let (cx, cy) = chevron_position(x, y, w, h);
+            sprites.extend_from_slice(&[cx, cy, 0.0, sprite, a.owner as f32, 1.0, 1.0, 0.0]);
         }
     }
 
