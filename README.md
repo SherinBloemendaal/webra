@@ -30,6 +30,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Online multiplayer**: anyone can host a session, public (listed in the server browser) or private, optionally password protected; deterministic lockstep over WebSockets on Cloudflare Durable Objects, with desync detection
 - [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
+- [x] **OpenRA maps**: import `.oramap` files in the lobby and the map editor; the browser unpacks the package (with zip bomb limits), converts terrain from the Red Alert tilesets, ore and gems, trees, spawns and known actors, maps rules values onto WebRA's modded rules, and shows an import report of what was converted, skipped or not supported (Lua is never run)
 - [x] Lobby options like OpenRA: starting cash and units (MCV only, light or heavy support, construction yard), tech level, game speed, fog of war, explored map, build radius, redeployable MCVs, ore regrowth
 - [x] Stress test mode (tens of thousands of units)
 
@@ -69,7 +70,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
 - [ ] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
-- [ ] Loading OpenRA `.oramap` maps
+- [x] Loading OpenRA `.oramap` maps
 - [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
 - [ ] Mobile/touch controls
 
@@ -124,7 +125,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog extracted from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, README assets
 ```
 
@@ -152,6 +153,7 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 | Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
+| Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 
 ## Controls
@@ -211,6 +213,8 @@ Notes on browsers:
 [data/CATALOG.md](data/CATALOG.md) is the full Red Alert catalog extracted from OpenRA's `mods/ra` rules: 94 buildable actors and 77 weapons, with inheritance resolved and the tech tree solved per faction. The machine-readable versions are [data/actors.json](data/actors.json) and [data/weapons.json](data/weapons.json); the original YAML and the scripts that produced them (`parse.py`, `gen_md.py`) live in [data/source](data/source).
 
 `tools/gen_rules.py` picks the actors needed for the current milestone and writes `engine/rules.json`, which is embedded in the WebAssembly module.
+
+`tools/gen_oramap_tables.py` turns OpenRA's Red Alert tilesets (`data/source/tilesets`) and decoration and civilian actors (`data/source/rules`) into the lookup tables of the `.oramap` importer (`apps/game/js/oramap/tables.js`).
 
 ## Determinism and performance
 
