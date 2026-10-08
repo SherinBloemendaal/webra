@@ -45,6 +45,8 @@ import {
   inspectMapFile,
   spawnMarkers,
 } from './lobby-state.js';
+import { renderReport } from './oramap/report.js';
+import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 
 // Game option rows: the key in options, its label, tooltip and choices.
 const SELECT_OPTIONS = [
@@ -328,6 +330,7 @@ export class Lobby {
    *     spawns: (seed: number, size: number, players: number) => number[][],
    *     validate: (json: string) => {ok: boolean, errors: string[], modded: boolean, hash: string},
    *     filePreview: (json: string) => Uint8Array,
+   *     importOramap?: (bytes: Uint8Array, fileName: string) => Promise<{json: string, report: object}>,
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
@@ -352,6 +355,8 @@ export class Lobby {
     this.mapFile = this.loadStoredMap();
     /** A modded map waiting for the player to accept its rules. */
     this.pendingMap = null;
+    /** Report of the last .oramap import (shown until another map is picked). */
+    this.importReport = null;
     if (this.state.mapSource === 'file' && !this.mapFile) this.state.mapSource = 'random';
     this.pickers = [];
     this.slotRows = [];
@@ -406,6 +411,11 @@ export class Lobby {
 
   async loadMapFile(file) {
     this.mapErrors = [];
+    this.importReport = null;
+    if (isOramapFile(file.name)) {
+      await this.importOramapFile(file);
+      return;
+    }
     if (file.size > MAP_FILE_MAX_BYTES) {
       this.mapErrors = ['The map file is larger than 1 MiB.'];
       this.renderMapSource();
@@ -420,6 +430,38 @@ export class Lobby {
       return;
     }
     this.offerMapText(text);
+  }
+
+  /**
+   * Convert an OpenRA .oramap package (js/oramap) and offer the result like
+   * any map file: validation, then the modded warning when it carries rules.
+   * The import report stays on screen so the player sees what was converted,
+   * skipped and ignored (Lua and unsupported rules are never applied).
+   */
+  async importOramapFile(file) {
+    this.state.mapSource = 'file';
+    if (!this.maps.importOramap) {
+      this.mapErrors = ['OpenRA maps cannot be imported here.'];
+      this.renderMapSource();
+      return;
+    }
+    if (file.size > ORAMAP_MAX_BYTES) {
+      this.mapErrors = [`The .oramap file is larger than ${ORAMAP_MAX_BYTES / 1024 / 1024} MiB.`];
+      this.renderMapSource();
+      return;
+    }
+    let result;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      result = await this.maps.importOramap(bytes, file.name);
+    } catch (err) {
+      this.importReport = err?.report ?? null;
+      this.mapErrors = [`Could not import ${file.name}: ${err?.message ?? err}`];
+      this.renderMapSource();
+      return;
+    }
+    this.importReport = result.report;
+    this.offerMapText(result.json);
   }
 
   /**
@@ -465,6 +507,7 @@ export class Lobby {
   }
 
   setMapSource(source) {
+    if (source !== 'file') this.importReport = null;
     if (source === 'file' && !this.mapFile) {
       this.fileInput.click();
       return;
@@ -597,7 +640,7 @@ export class Lobby {
     // Map file: load button, details, modded warning and errors.
     this.fileInput = el('input');
     this.fileInput.type = 'file';
-    this.fileInput.accept = '.json,application/json';
+    this.fileInput.accept = '.json,application/json,.oramap';
     this.fileInput.hidden = true;
     this.fileInput.addEventListener('change', () => {
       const file = this.fileInput.files && this.fileInput.files[0];
@@ -606,7 +649,7 @@ export class Lobby {
     });
     this.loadBtn = el('button', 'lobby-btn', 'Load map file');
     this.loadBtn.type = 'button';
-    this.loadBtn.title = 'Pick a .webra-map.json file';
+    this.loadBtn.title = 'Pick a .webra-map.json file or an OpenRA .oramap map';
     this.loadBtn.addEventListener('click', () => this.fileInput.click());
     this.mapInfo = el('div', 'lobby-mapinfo');
     this.mapInfo.setAttribute('aria-live', 'polite');
@@ -638,19 +681,28 @@ export class Lobby {
     this.mapErrorList.setAttribute('role', 'alert');
     this.mapErrors = [];
 
+    // Report of an OpenRA .oramap import: what was converted, skipped and ignored.
+    this.importBox = el('div', 'lobby-import');
+    this.importBox.setAttribute('aria-live', 'polite');
+    this.importBox.hidden = true;
+
     const fileRow = el('div', 'lobby-file-row');
     fileRow.append(this.loadBtn, this.fileInput);
 
     const fields = el('div', 'lobby-fields');
     this.sizeField = this.field('Map size', this.mapSizeSelect, 'Width and height of the generated map, in cells. More players need more room.');
-    this.fileField = this.field('Map file', fileRow, 'A map file (.webra-map.json). Players take its start positions in slot order.');
+    this.fileField = this.field(
+      'Map file',
+      fileRow,
+      'A map file (.webra-map.json), or an OpenRA Red Alert map (.oramap) that is converted on import. Players take its start positions in slot order.',
+    );
     fields.append(
       this.sizeField,
       this.fileField,
       this.field('Seed', seedRow, 'The same seed and map size always generate the same map. Share it to replay a battlefield.'),
     );
 
-    content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, fields);
+    content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, this.importBox, fields);
     return section;
   }
 
@@ -994,6 +1046,21 @@ export class Lobby {
     this.mapErrorList.textContent = '';
     this.mapErrorList.hidden = this.mapErrors.length === 0;
     for (const e of this.mapErrors) this.mapErrorList.append(el('li', null, e));
+
+    this.importBox.textContent = '';
+    this.importBox.hidden = !this.importReport;
+    if (this.importReport) {
+      const head = el('div', 'lobby-import-head');
+      head.append(el('strong', null, 'OpenRA map import'));
+      const close = el('button', 'lobby-btn', 'Hide report');
+      close.type = 'button';
+      close.addEventListener('click', () => {
+        this.importReport = null;
+        this.renderMapSource();
+      });
+      head.append(close);
+      this.importBox.append(head, renderReport(this.importReport));
+    }
     this.renderCaption();
   }
 

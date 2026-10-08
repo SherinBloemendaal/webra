@@ -1,7 +1,7 @@
 // Boot: load the simulation (WebAssembly), the WebGPU renderer and the lobby,
 // then run the fixed-step game loop with interpolated rendering.
 
-import init, { Game, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
@@ -16,6 +16,7 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { importOramap } from './oramap/index.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -57,6 +58,13 @@ async function boot() {
       spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
+      // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
+      importOramap: (bytes, fileName) =>
+        importOramap(bytes, {
+          baseRules: JSON.parse(base_rules_json()),
+          validate: (json) => JSON.parse(Game.validate_map(json)),
+          fileName,
+        }),
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
