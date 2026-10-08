@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.5.0](https://github.com/SherinBloemendaal/webra/compare/v0.4.0...v0.5.0) (2026-10-08)
+
+
+### Features
+
+* **engine:** draw OpenRA style selection brackets and segmented health bars ([86f5fde](https://github.com/SherinBloemendaal/webra/commit/86f5fde5132a9e91cb2f1d7083d97b183742fce3))
+* **engine:** expose planned unit routes for a path overlay ([d9886aa](https://github.com/SherinBloemendaal/webra/commit/d9886aaf0b2e41a036a5476b5fa456c767ed5c4f))
+* **game:** acknowledge command bar orders with unit voices ([e70600b](https://github.com/SherinBloemendaal/webra/commit/e70600b2dbba8bd76a9fbdd781eba2ff9b584651))
+* **game:** add a show unit paths setting ([2bc7fe2](https://github.com/SherinBloemendaal/webra/commit/2bc7fe25f892d2af46d93f70a55c915d0bf4d1c2))
+* **game:** animate building layers on a render clock ([ece4cdd](https://github.com/SherinBloemendaal/webra/commit/ece4cdd3babaf7f07053528936e2b3403b8876ac))
+* **game:** record games, add replays, save and load, spectating ([12b82b0](https://github.com/SherinBloemendaal/webra/commit/12b82b029f929094a5d821f5be62f8e8a5e582b1))
+* **protocol:** add rejoin, spectator and replay file schemas ([e3584d4](https://github.com/SherinBloemendaal/webra/commit/e3584d4277453c924632b29d8d0f8e156902b366))
+* **protocol:** add the synced confirmation for spectator catch-ups ([9bb86b3](https://github.com/SherinBloemendaal/webra/commit/9bb86b34672a1ffbfb089c5c185f2a85b6358aa0))
+* **server:** let players rejoin and spectators watch running games ([cf3a85f](https://github.com/SherinBloemendaal/webra/commit/cf3a85fd278f353cc1c2ef9e07b9936ab8431f7f))
+
+
+### Bug Fixes
+
+* **engine:** build the debug menu tests only in test builds ([74e4b0b](https://github.com/SherinBloemendaal/webra/commit/74e4b0b1f0da5673e7a156798f518b63b7f41d56))
+* **engine:** keep big groups moving through chokepoints and detours ([a0968cd](https://github.com/SherinBloemendaal/webra/commit/a0968cdd03dbbe7ae1e0adf471351f6da66d2b20))
+* **engine:** keep the hovered actor in world snapshots ([c123e1e](https://github.com/SherinBloemendaal/webra/commit/c123e1ecfe1a60b55326dd25a5bf22a5799a95ab))
+* **engine:** let an ai army that stopped growing attack below wave size ([e27965c](https://github.com/SherinBloemendaal/webra/commit/e27965cdbcf7086cc1a44116fc4136be30f56639))
+* **game:** confirm a spectator's catch-up to the server ([8104809](https://github.com/SherinBloemendaal/webra/commit/810480936bcf7a3c678eda9cfce36e6345b09482))
+* **game:** drop the duplicate game clock from the HUD ([4f81229](https://github.com/SherinBloemendaal/webra/commit/4f8122936ce45f4f667c99a5a3fb73906d296594))
+* **game:** hear enemy sounds in cells the player can see ([5e2f0d1](https://github.com/SherinBloemendaal/webra/commit/5e2f0d1892ebc26fcb4a3b4f73b351ce378a4a09))
+* **game:** hold the build clock while production stalls ([1abd9df](https://github.com/SherinBloemendaal/webra/commit/1abd9df266ae7692ecce5f03125018953157c290))
+* **server:** bound rejoin deadlines, catch-up output and chat ([a2bd80d](https://github.com/SherinBloemendaal/webra/commit/a2bd80d260629ba19d0d5da76f6180deba95622f))
+
 ## [0.4.0](https://github.com/SherinBloemendaal/webra/compare/v0.3.0...v0.4.0) (2026-10-08)
 
 
