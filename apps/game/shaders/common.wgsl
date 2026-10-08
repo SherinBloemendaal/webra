@@ -14,6 +14,9 @@ struct Globals {
     // Wind (world pixels per second, x and y), particle count, motion (0
     // when the player prefers reduced motion, else 1).
     env2: vec4f,
+    // Art (js/content): x terrain flags (1 tile terrain: original graphics or
+    // a texture pack, 2 ore tiles, 4 gem tiles), yzw unused.
+    art: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;

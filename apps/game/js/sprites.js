@@ -561,19 +561,20 @@ export function spriteList(actors) {
 }
 
 /** Floats per frame table entry (shaders/sprite.wgsl `Frame`). */
-export const FRAME_FLOATS = 12;
+export const FRAME_FLOATS = 16;
 
 /**
  * Animated building layers: per actor index with one, its head slot (2i + 1),
  * the first of its frames after the sprite list (`start`, shared by aliases),
  * the frame count, rate and the layer's offset from the building centre.
+ * `skip(i)` leaves out actors whose second slot holds other art.
  */
-export function animationPlan(actors, listLength) {
+export function animationPlan(actors, listLength, skip = () => false) {
   const plan = [];
   const starts = new Map();
   let next = listLength;
   actors.forEach((a, i) => {
-    if (a.kind !== 'building') return;
+    if (a.kind !== 'building' || skip(i)) return;
     const key = spriteKey(a.id);
     const anim = buildingAnim(key);
     if (!anim) return;
@@ -588,20 +589,65 @@ export function animationPlan(actors, listLength) {
   return plan;
 }
 
+/** Smallest power of two at least `n`. */
+const pow2 = (n) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
+
+/**
+ * Shelf-pack boxes ({ pw, ph } in atlas pixels) into rows of `width`;
+ * adds x and y to each and returns the height.
+ */
+function shelfPack(boxes, width, startY = 0) {
+  let x = 0;
+  let y = startY;
+  let rowH = 0;
+  for (const b of boxes) {
+    if (x + b.pw > width) {
+      x = 0;
+      y += rowH;
+      rowH = 0;
+    }
+    b.x = x;
+    b.y = y;
+    x += b.pw;
+    rowH = Math.max(rowH, b.ph);
+  }
+  return y + rowH;
+}
+
 /**
  * Build the colour atlas, mask atlas, frame table and building overlay table.
- * Frame table: FRAME_FLOATS per sprite
- *   [u0, v0, u1, v1, w, h, offset x, offset y, anim start, anim frames, anim fps, 0]
+ * Frame table: FRAME_FLOATS per entry
+ *   [u0, v0, u1, v1, w, h, offset x, offset y, anim start, anim frames, anim fps, 0, 0, 0, 0, 0]
  * with sizes and offsets in world pixels. An entry with more than one anim
  * frame is the head of an animation: the shader draws frame
  * `start + k` instead (shaders/sprite.wgsl, js/anim.js animFrame).
  * `overlays[t]` is the still frame of actor type t's animated layer, or 0; the
  * engine draws it for fogged buildings and those without power
  * (engine/src/overlays.rs, Game.set_building_overlays).
+ *
+ * `opts.slots` (js/content/atlas.js) replaces sprite slots with other art:
+ * a slot mapped to null is empty, a slot mapped to a sequence slot
+ * `{ images, poses }` becomes the head of a pose table (the last vec4 of the
+ * entry: first descriptor, pose count), followed by one descriptor per pose
+ * ([0 x 8, first frame, frames per facing, fps, mode, facings, flags,
+ * interpolated facings, 0]) and the frames of each pose, facing by facing.
+ * `images` are `{ width, height, color (RGBA), mask (one byte per pixel, 255
+ * team colour) | null, offset: [x, y], scale }` with offset and scale in world
+ * pixels; each is placed in the atlas once. A building whose second slot is
+ * replaced has no animated WebRA layer (`overlays` 0). `opts.filter` is the
+ * sampler the renderer uses ('nearest' for pixel art); `opts.maxSize` the
+ * largest atlas side.
  */
-export function buildAtlas(actors) {
+export function buildAtlas(actors, opts = {}) {
+  const slots = opts.slots ?? new Map();
+  const maxSize = opts.maxSize ?? 8192;
   const list = spriteList(actors);
-  const plan = animationPlan(actors, list.length);
+  const slotCount = list.length;
+  for (const k of slots.keys()) {
+    if (k < 0 || k >= slotCount) throw new Error(`no sprite slot ${k}`);
+    list[k] = null;
+  }
+  const plan = animationPlan(actors, list.length, (i) => slots.has(2 * i + 1));
   const meta = new Map(); // atlas index -> { offset, anim: [start, frames, fps] }
   const overlays = new Uint32Array(actors.length);
   for (const p of plan) {
@@ -613,25 +659,66 @@ export function buildAtlas(actors) {
       list.push(layerSprite(p.anim, f));
     }
   }
-  const width = 1024;
-  let x = 0;
-  let y = 0;
-  let rowH = 0;
-  const places = list.map((s) => {
-    const [w, h] = s ?? [1, 1];
-    const pw = Math.ceil(w * RES) + PAD * 2;
-    const ph = Math.ceil(h * RES) + PAD * 2;
-    if (x + pw > width) {
-      x = 0;
-      y += rowH;
-      rowH = 0;
+  // Sequence slots: images placed once, entries after the WebRA frames.
+  const images = [];
+  const extra = []; // [slot head, descriptor base, pose count, entries]
+  const shared = new Map(); // art -> descriptor base (aliases share one copy)
+  let next = list.length;
+  for (const [slot, art] of slots) {
+    if (!art) continue;
+    if (shared.has(art)) {
+      extra.push([slot, shared.get(art), art.poses.length, []]);
+      continue;
     }
-    const p = { x, y, pw, ph };
-    x += pw;
-    rowH = Math.max(rowH, ph);
-    return p;
+    const base = images.length;
+    for (const img of art.images) images.push(img);
+    const descs = [];
+    const seen = new Map();
+    for (const pose of art.poses) {
+      if (!seen.has(pose)) {
+        seen.set(pose, descs.length);
+        descs.push(pose);
+      }
+    }
+    const descBase = next;
+    shared.set(art, descBase);
+    next += art.poses.length;
+    const blocks = descs.map((d) => {
+      const first = next;
+      next += d.frames.length;
+      return first;
+    });
+    const entries = art.poses.map((pose) => {
+      const k = seen.get(pose);
+      const d = descs[k];
+      const flags = (d.classic ? 1 : 0) | (d.rotate ? 2 : 0);
+      return { desc: [blocks[k], d.length, d.fps, d.mode, d.facings, flags, d.interpolatedFacings ?? 0] };
+    });
+    for (let k = 0; k < descs.length; k++) for (const img of descs[k].frames) entries.push({ image: base + img });
+    extra.push([slot, descBase, art.poses.length, entries]);
+  }
+  // WebRA art at RES atlas pixels per world pixel, sequence images at their own resolution.
+  const boxes = list.map((s) => {
+    const [w, h] = s ?? [1, 1];
+    return { pw: Math.ceil(w * RES) + PAD * 2, ph: Math.ceil(h * RES) + PAD * 2 };
   });
-  const height = y + rowH;
+  const imageBoxes = images.map((img) => ({ pw: img.width + PAD * 2, ph: img.height + PAD * 2, img }));
+  let width = 1024;
+  let height;
+  if (imageBoxes.length) {
+    const area = [...boxes, ...imageBoxes].reduce((n, b) => n + b.pw * b.ph, 0);
+    width = Math.min(maxSize, Math.max(1024, pow2(Math.sqrt(area * 1.2))));
+    const order = [...imageBoxes].sort((a, b) => b.ph - a.ph);
+    for (;;) {
+      const top = shelfPack(boxes, width);
+      height = shelfPack(order, width, top);
+      if (height <= maxSize || width >= maxSize) break;
+      width *= 2;
+    }
+    if (height > maxSize) throw new Error(`the sprites need a ${width} x ${height} atlas; this device allows ${maxSize}`);
+  } else {
+    height = shelfPack(boxes, width);
+  }
   const color = document.createElement('canvas');
   const mask = document.createElement('canvas');
   for (const c of [color, mask]) {
@@ -640,9 +727,9 @@ export function buildAtlas(actors) {
   }
   const cctx = color.getContext('2d');
   const mctx = mask.getContext('2d');
-  const frames = new Float32Array(list.length * FRAME_FLOATS);
+  const frames = new Float32Array(next * FRAME_FLOATS);
   list.forEach((s, i) => {
-    const p = places[i];
+    const p = boxes[i];
     const [w, h, draw] = s ?? [1, 1, null];
     if (draw) {
       for (const [ctx, P] of [[cctx, COLOR_PASS], [mctx, MASK_PASS]]) {
@@ -671,8 +758,55 @@ export function buildAtlas(actors) {
   for (let i = 3; i < cdata.data.length; i += 4) {
     if (cdata.data[i] === 0) mdata.data[i - 3] = mdata.data[i - 2] = mdata.data[i - 1] = 0;
   }
+  // Sequence images straight into the pixels.
+  for (const b of imageBoxes) {
+    const { img } = b;
+    for (let y = 0; y < img.height; y++) {
+      for (let x = 0; x < img.width; x++) {
+        const s = (y * img.width + x) * 4;
+        if (img.color[s + 3] === 0) continue;
+        const o = ((b.y + PAD + y) * width + b.x + PAD + x) * 4;
+        cdata.data[o] = img.color[s];
+        cdata.data[o + 1] = img.color[s + 1];
+        cdata.data[o + 2] = img.color[s + 2];
+        cdata.data[o + 3] = img.color[s + 3];
+        const m = img.mask ? img.mask[y * img.width + x] : 0;
+        mdata.data[o] = mdata.data[o + 1] = mdata.data[o + 2] = m;
+        mdata.data[o + 3] = 255;
+      }
+    }
+  }
+  cctx.putImageData(cdata, 0, 0);
   mctx.putImageData(mdata, 0, 0);
-  return { color, mask, frames, overlays };
+  for (const [slot, descBase, count, entries] of extra) {
+    frames.set([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, descBase, count, 0, 0], slot * FRAME_FLOATS);
+    entries.forEach((e, k) => {
+      const at = (descBase + k) * FRAME_FLOATS;
+      if (e.desc) {
+        const [first, length, fps, mode, facings, flags, interp] = e.desc;
+        frames.set([0, 0, 0, 0, 0, 0, 0, 0, first, length, fps, mode, facings, flags, interp, 0], at);
+        return;
+      }
+      const b = imageBoxes[e.image];
+      const { img } = b;
+      const scale = img.scale ?? 1;
+      frames.set(
+        [
+          (b.x + PAD) / width,
+          (b.y + PAD) / height,
+          (b.x + PAD + img.width) / width,
+          (b.y + PAD + img.height) / height,
+          img.width * scale,
+          img.height * scale,
+          img.offset[0],
+          img.offset[1],
+          0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        at,
+      );
+    });
+  }
+  return { color, mask, frames, overlays, filter: opts.filter ?? 'linear', width, height };
 }
 
 /**

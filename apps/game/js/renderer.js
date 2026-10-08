@@ -11,10 +11,11 @@ const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
 const HEAT_FLOATS = 4;
 const LINE_FLOATS = 8;
-// shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2).
-const GLOBALS_BYTES = 208;
+// shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2), art.
+const GLOBALS_BYTES = 224;
 const ANIM_OFFSET = 40;
 const ENV_OFFSET = 44;
+const ART_OFFSET = 52;
 const STILL = { time: 0, enabled: false };
 
 export const TEAM_COLORS = [
@@ -56,6 +57,10 @@ export class Renderer {
     this.lineCapacity = 0;
     this.mapW = 0;
     this.mapH = 0;
+    // Terrain art flags (shaders/common.wgsl Globals.art.x, js/content/terrain.js).
+    this.terrainFlags = 0;
+    /** Largest texture side this device takes (atlases must fit). */
+    this.maxTextureSize = device.limits?.maxTextureDimension2D ?? 8192;
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
     this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
     device.lost.then((info) => console.error('WebGPU device lost:', info.message));
@@ -100,6 +105,8 @@ export class Renderer {
     });
     this.fogPipeline = this.pipeline(fogSrc, this.fogLayout, [], blend, 'fog');
     this.linearSampler = d.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    // Pixel art (original graphics, texture packs) stays crisp when zoomed.
+    this.nearestSampler = d.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
 
     // Sprites
     this.spriteLayout = d.createBindGroupLayout({
@@ -170,9 +177,16 @@ export class Renderer {
     });
   }
 
-  /** Upload the sprite atlas (colour + team mask canvases) and frame table. */
+  /**
+   * Upload the sprite atlas (colour + team mask canvases) and frame table
+   * (js/sprites.js buildAtlas, js/content/atlas.js). `atlas.filter` is
+   * 'nearest' for pixel art, 'linear' (default) for WebRA's own art.
+   */
   setAtlas(atlas) {
     const d = this.device;
+    this.atlasTex?.destroy();
+    this.maskTex?.destroy();
+    this.frames?.destroy();
     const make = (canvas) => {
       const tex = d.createTexture({
         size: [canvas.width, canvas.height],
@@ -186,7 +200,8 @@ export class Renderer {
     this.maskTex = make(atlas.mask);
     this.frames = d.createBuffer({ size: atlas.frames.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     d.queue.writeBuffer(this.frames, 0, atlas.frames);
-    const sampler = d.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    const filter = atlas.filter === 'nearest' ? 'nearest' : 'linear';
+    const sampler = d.createSampler({ magFilter: filter, minFilter: filter });
     this.spriteGroup = d.createBindGroup({
       layout: this.spriteLayout,
       entries: [
@@ -216,9 +231,15 @@ export class Renderer {
     });
   }
 
-  /** The biome's terrain tile atlas (js/art/terrain.js buildTerrainAtlas). */
+  /**
+   * The terrain tile atlas: the biome's WebRA tiles (js/art/terrain.js
+   * buildTerrainAtlas) or tile terrain (js/content/terrain.js, with `flags`
+   * for the shader and `filter: 'nearest'`).
+   */
   setTerrainAtlas(atlas) {
     const d = this.device;
+    this.terrainFlags = atlas.flags ?? 0;
+    this.terrainSampler = atlas.filter === 'nearest' ? this.nearestSampler : this.linearSampler;
     this.terrainAtlasTex?.destroy();
     this.terrainAtlasTex = d.createTexture({ size: [atlas.width, atlas.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     d.queue.writeTexture({ texture: this.terrainAtlasTex }, atlas.data, { bytesPerRow: atlas.width * 4 }, [atlas.width, atlas.height]);
@@ -233,7 +254,7 @@ export class Renderer {
         { binding: 0, resource: this.terrainTex.createView() },
         { binding: 1, resource: this.cellTex.createView() },
         { binding: 2, resource: this.terrainAtlasTex.createView() },
-        { binding: 3, resource: this.linearSampler },
+        { binding: 3, resource: this.terrainSampler ?? this.linearSampler },
       ],
     });
   }
@@ -294,6 +315,7 @@ export class Renderer {
     g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
     g.set(fx?.env ?? [0, 0, 0, 0], ENV_OFFSET);
     g.set(fx?.env2 ?? [0, 0, 0, 1], ENV_OFFSET + 4);
+    g.set([this.terrainFlags, 0, 0, 0], ART_OFFSET);
     d.queue.writeBuffer(this.globals, 0, g);
     const particles = Math.floor(fx?.env2?.[2] ?? 0);
     const heatCount = fx?.heatCount ?? 0;

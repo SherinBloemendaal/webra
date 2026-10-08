@@ -4,9 +4,24 @@
 // - the cameo art, `getCameo(typeName, size, opts)` from sprites.js (a cached
 //   canvas with the framed 3/4 view picture), for every type that has art;
 // - for a type without cameo art (getCameo returns null), the sprite icon
-//   (drawIcon) scaled into the button on a dark steel backdrop.
+//   (drawIcon) scaled into the button on a dark steel backdrop;
+// - before both, the player's content (js/content: a texture pack's cameo or
+//   the original cameo from their own Red Alert files), set with setCameoArt.
 
 import { drawIcon, getCameo } from './sprites.js';
+
+/** Cameo pictures from installed content, or null: `(typeName, width, height) => canvas | null`. */
+let contentArt = null;
+
+/** Use cameos from installed content (js/content/cameos.js cameoSource), or null for WebRA's own. */
+export function setCameoArt(fn) {
+  contentArt = fn;
+}
+
+/** The cameo picture for a type: installed content first, then WebRA's cameo art. */
+export function cameoArt(typeName, size, opts = {}) {
+  return contentArt?.(typeName, size, opts.height ?? size) ?? getCameo(typeName, size, opts);
+}
 
 /**
  * Paint the backdrop of the sprite fallback: a dark steel gradient with a
@@ -35,7 +50,7 @@ export function paintBackdrop(ctx, w, h) {
  * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [o.backdrop]
  * @returns {{ paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): 'art' | 'sprite' }}
  */
-export function createCameoPainter({ art = getCameo, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
+export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
   return {
     paint(canvas, actor, teamRgb) {
       const picture = art(actor.id, canvas.width, { team: teamRgb, kind: actor.kind, height: canvas.height });

@@ -23,7 +23,7 @@ import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
 const MAX_TICKS_PER_FRAME = 8;
 
 /** Calls the main thread may make besides orders and UI state. */
-const SETTINGS = new Set(['set_audio_events', 'set_health_bars', 'set_building_overlays']);
+const SETTINGS = new Set(['set_audio_events', 'set_health_bars', 'set_building_overlays', 'set_sprite_poses']);
 
 export class SimCore {
   /**

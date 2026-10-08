@@ -4,14 +4,29 @@
 // (R = terrain type, G = ore density, B = gem density) adds ore, gems and
 // the type for soft ground edges and water animation. Light comes from the
 // top left, like the building art.
+//
+// With tile terrain (g.art.x bit 1: original graphics or a texture pack,
+// js/content/terrain.js) the atlas holds the player's tiles as they are: no
+// soft edges, noise, decals or rock shadows are added, and ore and gems are
+// drawn from their overlay tiles (bits 2 and 4) when the atlas has them.
 @group(1) @binding(0) var terrain_tex: texture_2d<f32>;
 @group(1) @binding(1) var cell_tex: texture_2d<f32>;
 @group(1) @binding(2) var atlas: texture_2d<f32>;
 @group(1) @binding(3) var atlas_samp: sampler;
 
 const ATLAS_COLS: u32 = 16u;
-const TILE_PX: f32 = 32.0;
 const DECAL_BASE: u32 = 60u;
+// Tile terrain: ore and gem overlays, a tile per variant and density level
+// (js/content/terrain.js ORE_TILE_BASE and friends).
+const ORE_TILE_BASE: u32 = 192u;
+const ORE_LEVELS: u32 = 12u;
+const ORE_VARIANTS: u32 = 4u;
+const GEM_TILE_BASE: u32 = 240u;
+const GEM_LEVELS: u32 = 4u;
+const GEM_VARIANTS: u32 = 4u;
+const ART_TILES: u32 = 1u;
+const ART_ORE: u32 = 2u;
+const ART_GEMS: u32 = 4u;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
@@ -36,11 +51,51 @@ fn cell_tile(c: vec2i) -> u32 {
     return u32(textureLoad(cell_tex, c, 0).r * 255.0 + 0.5);
 }
 
-/// One atlas tile at cell-local position `local` (0..1), filtered inside the tile only.
+/// One atlas tile at cell-local position `local` (0..1), filtered inside the
+/// tile only. Tiles are square, ATLAS_COLS to a row (32 pixels for WebRA's
+/// own tiles, the original 24 for tile terrain).
 fn tile_px(tile: u32, local: vec2f) -> vec4f {
-    let origin = vec2f(f32(tile % ATLAS_COLS), f32(tile / ATLAS_COLS)) * TILE_PX;
-    let p = origin + clamp(local * TILE_PX, vec2f(0.5), vec2f(TILE_PX - 0.5));
-    return textureSampleLevel(atlas, atlas_samp, p / vec2f(textureDimensions(atlas)), 0.0);
+    let dims = vec2f(textureDimensions(atlas));
+    let size = dims.x / f32(ATLAS_COLS);
+    let origin = vec2f(f32(tile % ATLAS_COLS), f32(tile / ATLAS_COLS)) * size;
+    let p = origin + clamp(local * size, vec2f(0.5), vec2f(size - 0.5));
+    return textureSampleLevel(atlas, atlas_samp, p / dims, 0.0);
+}
+
+/// An overlay tile for a resource density (0..1) at cell `c`, or none.
+fn resource_tile(base: u32, levels: u32, variants: u32, density: f32, c: vec2i, local: vec2f) -> vec4f {
+    let level = min(levels - 1u, u32(max(ceil(density * f32(levels)), 1.0)) - 1u);
+    let variant = min(variants - 1u, u32(hash2(vec2f(c) + vec2f(3.7, 1.3)) * f32(variants)));
+    return tile_px(base + variant * levels + level, local);
+}
+
+/// Tile terrain (original graphics, texture packs): the tiles as they are,
+/// water shimmer, and ore and gems from their overlay tiles.
+fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
+    var col = tile_px(tile, local).rgb;
+    let flags = u32(g.art.x + 0.5);
+    if (t == 3u || t == 5u) {
+        let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
+        col = col * (0.97 + 0.04 * wave);
+    }
+    let res = textureLoad(terrain_tex, c, 0);
+    if (res.g > 0.0) {
+        if ((flags & ART_ORE) != 0u) {
+            let o = resource_tile(ORE_TILE_BASE, ORE_LEVELS, ORE_VARIANTS, res.g, c, local);
+            col = mix(col, o.rgb, o.a);
+        } else {
+            col = mix(col, vec3f(0.62, 0.45, 0.12), res.g * 0.6);
+        }
+    }
+    if (res.b > 0.0) {
+        if ((flags & ART_GEMS) != 0u) {
+            let o = resource_tile(GEM_TILE_BASE, GEM_LEVELS, GEM_VARIANTS, res.b, c, local);
+            col = mix(col, o.rgb, o.a);
+        } else {
+            col = gem_color(col, c, local, res.b);
+        }
+    }
+    return vec4f(col, 1.0);
 }
 
 /// Water depth (0 at the shore, 1 four cells out), interpolated between cell
@@ -141,6 +196,9 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     let local = fract(cf);
     let cell = textureLoad(cell_tex, c, 0);
     let tile = u32(cell.r * 255.0 + 0.5);
+    if ((u32(g.art.x + 0.5) & ART_TILES) != 0u) {
+        return tiled(c, t, local, w, tile);
+    }
     let decal = u32(cell.g * 255.0 + 0.5);
     let shadow = u32(cell.a * 255.0 + 0.5);
     var col = tile_px(tile, local).rgb;

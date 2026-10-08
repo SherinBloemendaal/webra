@@ -26,7 +26,7 @@ import {
   UI_STATE,
 } from './methods.js';
 
-const SETTINGS = ['set_audio_events', 'set_health_bars', 'set_building_overlays'];
+const SETTINGS = ['set_audio_events', 'set_health_bars', 'set_building_overlays', 'set_sprite_poses'];
 /** A query stays live (asked again with every step) this long after the UI last called it. */
 export const LIVE_MS = 300;
 /** A query not called for this long is forgotten. */
