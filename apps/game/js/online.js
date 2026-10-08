@@ -26,6 +26,9 @@ import {
   STARTING_UNITS,
   TEAM_MAX,
   TECH_LEVELS,
+  MAP_STYLES,
+  BIOMES,
+  WEATHER_MODES,
   validName,
 } from './protocol.js';
 import { api, ApiError, Connection, LockstepDriver } from './net.js';
@@ -45,12 +48,16 @@ const LABELS = {
   gameSpeed: { slowest: 'Slowest', slower: 'Slower', normal: 'Normal', fast: 'Fast', faster: 'Faster', fastest: 'Fastest' },
   difficulty: { easy: 'Easy', normal: 'Normal', hard: 'Hard' },
   mapSize: { 64: 'Small', 96: 'Medium', 128: 'Large', 160: 'Huge' },
+  mapStyle: { random: 'Random', land: 'Land', rivers: 'Rivers', lakes: 'Lakes', islands: 'Islands' },
+  biome: { random: 'Random', temperate: 'Temperate', snow: 'Snow', desert: 'Desert' },
+  weather: { full: 'On', cosmetic: 'Cosmetic only', off: 'Off' },
 };
 const SELECT_OPTIONS = [
   ['startingCash', 'Starting cash', STARTING_CASH.map((v) => [v, `$${v.toLocaleString('en-US')}`])],
   ['startingUnits', 'Starting units', STARTING_UNITS.map((v) => [v, LABELS.startingUnits[v]])],
   ['techLevel', 'Tech level', TECH_LEVELS.map((v) => [v, LABELS.techLevel[v]])],
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
+  ['weather', 'Weather', WEATHER_MODES.map((v) => [v, LABELS.weather[v]])],
 ];
 const TOGGLES = [
   ['fog', 'Fog of war'],
@@ -680,8 +687,12 @@ export class OnlineUI {
       const json = this.installed.get(st.map.hash);
       if (json) this.drawPreview(canvas, () => this.ctx.Game.map_file_preview(json), JSON.parse(json).width);
     } else {
-      caption.textContent = `Generated, ${LABELS.mapSize[st.options.mapSize]} ${st.options.mapSize} x ${st.options.mapSize}, seed ${st.options.seed}`;
-      this.drawPreview(canvas, () => this.ctx.Game.map_preview_players(st.options.seed, st.options.mapSize, players), st.options.mapSize);
+      const o = st.options;
+      // What a random style or biome comes out as for this seed (every peer computes the same).
+      const G = this.ctx.Game;
+      const look = G.resolved_style ? `, ${LABELS.mapStyle[G.resolved_style(o.seed, o.mapStyle)]}, ${LABELS.biome[G.resolved_biome(o.seed, o.biome)]}` : '';
+      caption.textContent = `Generated, ${LABELS.mapSize[o.mapSize]} ${o.mapSize} x ${o.mapSize}${look}, seed ${o.seed}`;
+      this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
     }
     canvas.setAttribute('aria-label', `Map preview: ${caption.textContent}`);
     const status = el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text);
@@ -713,7 +724,11 @@ export class OnlineUI {
         else seed.value = String(st.options.seed);
       });
       seedRow.append(seed, button('New seed', null, () => this.send({ t: 'options', options: { ...st.options, seed: randomSeed() } })));
-      controls.append(field('Map size', size), field('Seed', seedRow));
+      const style = select(MAP_STYLES.map((v) => [v, LABELS.mapStyle[v]]), st.options.mapStyle, (v) =>
+        this.send({ t: 'options', options: { ...st.options, mapStyle: v } }),
+      );
+      const biome = select(BIOMES.map((v) => [v, LABELS.biome[v]]), st.options.biome, (v) => this.send({ t: 'options', options: { ...st.options, biome: v } }));
+      controls.append(field('Map size', size), field('Map style', style), field('Biome', biome), field('Seed', seedRow));
     }
     const file = el('input');
     file.type = 'file';

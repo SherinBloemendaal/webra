@@ -183,7 +183,7 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, name: 'Commander' });
   assert.deepEqual(o.players[2], { slot: 2, type: 'closed' });
   assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, difficulty: 'hard' });
-  for (const key of ['seed', 'mapSize', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats']) {
+  for (const key of ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats']) {
     assert.ok(key in o, key);
   }
   s.mapSource = 'file';
@@ -294,4 +294,25 @@ test('the lobby theme follows the side of the chosen faction', () => {
   assert.equal(factionSide('randomsoviet'), 'soviet');
   assert.equal(factionSide('random'), null);
   assert.equal(factionSide('atlantis'), null);
+});
+
+test('map style, biome and weather: defaults, stored settings and what the engine starts', () => {
+  const s = fresh();
+  assert.deepEqual([s.mapStyle, s.biome, s.weather], ['random', 'random', 'full']);
+  s.mapStyle = 'islands';
+  s.biome = 'snow';
+  s.weather = 'cosmetic';
+  const back = sanitizeState(JSON.parse(JSON.stringify(storedSettings(s))), COLORS, () => 0);
+  assert.deepEqual([back.mapStyle, back.biome, back.weather], ['islands', 'snow', 'cosmetic']);
+  // Unknown stored values fall back to the defaults.
+  const bad = sanitizeState({ ...storedSettings(s), mapStyle: 'maze', biome: 'moon', weather: 'hail' }, COLORS, () => 0);
+  assert.deepEqual([bad.mapStyle, bad.biome, bad.weather], ['random', 'random', 'full']);
+  s.mapSize = 64;
+  s.players[1].faction = 'russia';
+  const game = Game.from_options(JSON.stringify(buildOptions(s)));
+  const sky = JSON.parse(game.weather_json());
+  assert.deepEqual([sky.biome, sky.mode], ['snow', 'cosmetic']);
+  // A map file brings its own biome.
+  const info = inspectMapFile(Game.generated_map_styled(3, 48, 2, 'lakes', 'desert'), (t) => JSON.parse(Game.validate_map(t)));
+  assert.equal(info.biome, 'desert');
 });

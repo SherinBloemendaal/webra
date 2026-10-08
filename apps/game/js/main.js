@@ -22,6 +22,8 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
+import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -62,7 +64,9 @@ async function boot() {
     mapPreview: (seed, size) => Game.map_preview(seed, size),
     // Skirmish lobby: previews per player count and map files.
     maps: {
-      preview: (seed, size, players) => Game.map_preview_players(seed, size, players),
+      preview: (seed, size, players, style = 'random', biome = 'temperate') => Game.map_preview_styled(seed, size, players, style, biome),
+      // "Rivers, Snow": the style and biome a seed gives a generated map.
+      describe: (seed, style, biome) => `${capitalize(Game.resolved_style(seed, style))}, ${capitalize(Game.resolved_biome(seed, biome))}`,
       spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
@@ -250,6 +254,16 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
   const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
   renderer.setMapSize(game.map_width(), game.map_height());
+  // Terrain art of the map's biome (js/art/terrain.js); the cell layer is
+  // built from the first terrain upload below (terrain types never change).
+  const sky = JSON.parse(game.weather_json());
+  renderer.setTerrainAtlas(buildTerrainAtlas(sky.biome));
+  let cellsReady = false;
+  // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
+  const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (gain) => audio?.thunder(gain) });
+  weather.update(sky, performance.now() / 1000);
+  let weatherText = '';
 
   let sidebar = null;
   let powerBar = null;
@@ -462,6 +476,11 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       const ptr = game.terrain_ptr();
       const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
       renderer.uploadTerrain(terrain);
+      if (!cellsReady) {
+        // Decals follow the map itself, so every player of a map sees the same ones.
+        renderer.uploadCells(cellTiles(terrain, game.map_width(), game.map_height(), terrainSeed(terrain)));
+        cellsReady = true;
+      }
       minimap?.terrainChanged(terrain);
     }
     const fogPtr = game.fog_ptr(player);
@@ -474,13 +493,18 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     const renderStart = performance.now();
     const uiRects = input.uiRects();
     const v = input.viewRect();
+    // Heat shimmer instances, copied out before build_render (which may grow wasm memory).
+    const heatCount = game.build_heat_fx(player, v.x0, v.y0, v.x1, v.y1);
+    const heat = heatCount > 0 ? new Float32Array(wasm.memory.buffer, game.fx_ptr(), heatCount * 4).slice() : null;
     const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
     const simRectCount = game.rect_count();
     const rects = new Float32Array(simRectCount * 8 + uiRects.length);
     rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
     rects.set(uiRects, simRectCount * 8);
-    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
+    const canvas = $('view');
+    const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat, heatCount };
+    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8, fx);
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
     minimap?.frame(now);
@@ -501,6 +525,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused, layout.compact);
+      const skyNow = JSON.parse(game.weather_json());
+      weather.update(skyNow, now / 1000, { x: (v.x0 + v.x1) / 2, y: (v.y0 + v.y1) / 2 });
+      weatherText = updateWeatherBadge(skyNow, weatherText);
       touch.update();
       debug.update(state);
       if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
@@ -519,6 +546,35 @@ function selectionInfo(game, ids) {
   if (ids.length === 0) return null;
   if (ids.length === 1) return JSON.parse(game.actor_json(ids[0]));
   return { count: ids.length, name: `${ids.length} units selected` };
+}
+
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Seed for terrain decals: a hash of the map's terrain types (same map, same decals). */
+function terrainSeed(terrain) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < terrain.length; i += 4) h = Math.imul(h ^ terrain[i], 0x01000193);
+  return h >>> 0;
+}
+
+/** The biome and weather badge: name of the sky, and what it does to the battle. */
+function updateWeatherBadge(sky, previous) {
+  const { label, detail } = weatherInfo(sky);
+  const key = `${label}|${detail}`;
+  if (key === previous) return previous;
+  const badge = $('weather');
+  badge.hidden = !label;
+  badge.textContent = label;
+  if (label && sky.mode === 'full' && detail !== NO_EFFECT) {
+    const line = document.createElement('span');
+    line.className = 'effects';
+    line.textContent = detail;
+    badge.append(line);
+  }
+  badge.title = detail;
+  return key;
 }
 
 function updateHud(game, state, fps, simMs, stress, paused, compact) {

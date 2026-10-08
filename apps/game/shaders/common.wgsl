@@ -6,6 +6,13 @@ struct Globals {
     time: f32,         // seconds
     map_size: vec2f,   // map size in cells
     team_colors: array<vec4f, 8>,
+    // Biome and weather (js/weather-fx.js): biome (0 temperate, 1 snow,
+    // 2 desert), weather (0 clear, 1 rain, 2 thunderstorm, 3 snowfall,
+    // 4 sandstorm, 5 heat wave), intensity 0..1, lightning flash 0..1.
+    env: vec4f,
+    // Wind (world pixels per second, x and y), particle count, motion (0
+    // when the player prefers reduced motion, else 1).
+    env2: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -31,4 +38,16 @@ fn fullscreen_pos(i: u32) -> vec4f {
     // One triangle that covers the screen.
     let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
     return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);
+}
+
+/// Smooth value noise, 0..1, one lattice step per unit.
+fn vnoise(p: vec2f) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = hash2(i);
+    let b = hash2(i + vec2f(1.0, 0.0));
+    let c = hash2(i + vec2f(0.0, 1.0));
+    let d = hash2(i + vec2f(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }

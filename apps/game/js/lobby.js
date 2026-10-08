@@ -20,6 +20,9 @@ import {
   STARTING_UNITS,
   TECH_LEVELS,
   GAME_SPEEDS,
+  MAP_STYLES,
+  BIOMES,
+  WEATHER_MODES,
   SLOT_TYPES,
   TEAMS,
   FACTION_GROUPS,
@@ -75,6 +78,13 @@ const SELECT_OPTIONS = [
     title: 'The rate at which game time passes.',
     choices: GAME_SPEEDS,
   },
+  {
+    key: 'weather',
+    label: 'Weather',
+    title:
+      'Rain, storms, snowfall, sandstorms and heat waves. On: modest effects on sight, snow makes vehicles slide, heat waves overheat vehicles. Cosmetic only: just the look. Off: clear skies.',
+    choices: WEATHER_MODES,
+  },
 ];
 
 const TOGGLE_OPTIONS = [
@@ -98,6 +108,10 @@ function el(tag, className, text) {
   if (className) e.className = className;
   if (text !== undefined) e.textContent = text;
   return e;
+}
+
+function capitalize(s) {
+  return String(s).charAt(0).toUpperCase() + String(s).slice(1);
 }
 
 function rgbCss(c) {
@@ -613,6 +627,20 @@ export class Lobby {
       this.schedulePreview();
     });
 
+    // Layout and biome of the generated map (map files bring their own biome).
+    this.styleSelect = buildSelect(MAP_STYLES, 'lobby-select');
+    this.styleSelect.addEventListener('change', () => {
+      this.state.mapStyle = this.styleSelect.value;
+      this.renderCaption();
+      this.schedulePreview();
+    });
+    this.biomeSelect = buildSelect(BIOMES, 'lobby-select');
+    this.biomeSelect.addEventListener('change', () => {
+      this.state.biome = this.biomeSelect.value;
+      this.renderCaption();
+      this.schedulePreview();
+    });
+
     this.seedInput = el('input', 'lobby-input lobby-seed');
     this.seedInput.type = 'text';
     this.seedInput.inputMode = 'numeric';
@@ -708,8 +736,16 @@ export class Lobby {
       fileRow,
       'A map file (.webra-map.json), or an OpenRA Red Alert map (.oramap) that is converted on import. Players take its start positions in slot order.',
     );
+    this.styleField = this.field(
+      'Map style',
+      this.styleSelect,
+      'Land: plains or cliffs and passes. Rivers: river valleys with fords. Lakes: lakes joined by streams. Islands: a sea with islands and straits. Every base gets the same harbour on the water maps.',
+    );
+    this.biomeField = this.field('Biome', this.biomeSelect, 'Temperate, snow (slippery vehicles, ice) or desert (heat waves). Map files bring their own biome.');
     fields.append(
       this.sizeField,
+      this.styleField,
+      this.biomeField,
       this.fileField,
       this.field('Seed', seedRow, 'The same seed and map size always generate the same map. Share it to replay a battlefield.'),
     );
@@ -1029,6 +1065,10 @@ export class Lobby {
       b.setAttribute('aria-pressed', value === this.state.mapSource ? 'true' : 'false');
     }
     this.sizeField.hidden = file;
+    this.styleField.hidden = file;
+    this.biomeField.hidden = file;
+    this.styleSelect.value = this.state.mapStyle;
+    this.biomeSelect.value = this.state.biome;
     this.fileField.hidden = !file && !this.pendingMap;
 
     this.mapInfo.textContent = '';
@@ -1044,7 +1084,7 @@ export class Lobby {
       }
       this.mapInfo.append(
         title,
-        el('span', 'lobby-muted', `by ${i.author}, ${i.width} x ${i.height}, ${i.spawns} start positions`),
+        el('span', 'lobby-muted', `by ${i.author}, ${i.width} x ${i.height}, ${i.spawns} start positions, ${capitalize(i.biome)}`),
       );
     }
 
@@ -1117,7 +1157,9 @@ export class Lobby {
       text = `${i.name}, ${i.width} x ${i.height}, seed ${this.state.seed}`;
     } else {
       const m = MAP_SIZES.find((x) => x.value === this.state.mapSize);
-      text = `${m.label} ${m.value} x ${m.value}, ${activeCount(this.state)} players, seed ${this.state.seed}`;
+      // Random style and biome: name what the seed picks.
+      const look = this.maps?.describe ? `, ${this.maps.describe(this.state.seed, this.state.mapStyle, this.state.biome)}` : '';
+      text = `${m.label} ${m.value} x ${m.value}${look}, ${activeCount(this.state)} players, seed ${this.state.seed}`;
     }
     this.caption.textContent = text;
     this.canvas.setAttribute('aria-label', `Map preview: ${text}`);
@@ -1153,7 +1195,7 @@ export class Lobby {
       } else {
         width = height = this.state.mapSize;
         if (this.maps) {
-          data = this.maps.preview(this.state.seed, width, n);
+          data = this.maps.preview(this.state.seed, width, n, this.state.mapStyle, this.state.biome);
           spawns = this.generatedSpawns(this.state.seed, width, n);
         } else {
           data = this.legacyPreview(this.state.seed, width);

@@ -34,6 +34,30 @@ export const MAP_SIZES = [
   { value: 160, label: 'Huge' },
 ];
 
+/** Generated map layouts (engine/src/mapgen); Random picks one from the seed. */
+export const MAP_STYLES = [
+  { value: 'random', label: 'Random' },
+  { value: 'land', label: 'Land' },
+  { value: 'rivers', label: 'Rivers' },
+  { value: 'lakes', label: 'Lakes' },
+  { value: 'islands', label: 'Islands' },
+];
+
+/** Biomes of a generated map (engine/src/weather.rs); Random picks one from the seed. */
+export const BIOMES = [
+  { value: 'random', label: 'Random' },
+  { value: 'temperate', label: 'Temperate' },
+  { value: 'snow', label: 'Snow' },
+  { value: 'desert', label: 'Desert' },
+];
+
+/** What weather does: everything, visuals only, or nothing. */
+export const WEATHER_MODES = [
+  { value: 'full', label: 'On' },
+  { value: 'cosmetic', label: 'Cosmetic only' },
+  { value: 'off', label: 'Off' },
+];
+
 export const STARTING_CASH = [2500, 5000, 7500, 10000, 20000];
 
 export const STARTING_UNITS = [
@@ -121,6 +145,9 @@ export function factionSide(faction) {
 
 export const DEFAULTS = {
   mapSize: 96,
+  mapStyle: 'random',
+  biome: 'random',
+  weather: 'full',
   startingCash: 5000,
   startingUnits: 'mcv',
   techLevel: 'unrestricted',
@@ -246,6 +273,9 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
   const state = {
     seed,
     mapSize: oneOf(s.mapSize, MAP_SIZES.map((m) => m.value), DEFAULTS.mapSize),
+    mapStyle: oneOf(s.mapStyle, MAP_STYLES.map((m) => m.value), DEFAULTS.mapStyle),
+    biome: oneOf(s.biome, BIOMES.map((m) => m.value), DEFAULTS.biome),
+    weather: oneOf(s.weather, WEATHER_MODES.map((m) => m.value), DEFAULTS.weather),
     mapSource: oneOf(s.mapSource, ['random', 'file'], 'random'),
     startingCash: oneOf(s.startingCash, STARTING_CASH, DEFAULTS.startingCash),
     startingUnits: oneOf(s.startingUnits, STARTING_UNITS.map((o) => o.value), DEFAULTS.startingUnits),
@@ -402,6 +432,9 @@ export function buildOptions(state, mapJson = null) {
   return {
     seed: s.seed,
     mapSize: s.mapSize,
+    mapStyle: s.mapStyle,
+    biome: s.biome,
+    weather: s.weather,
     players: s.players.map((p, slot) => {
       if (p.type === 'closed') return { slot, type: 'closed' };
       const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team };
@@ -461,6 +494,8 @@ export function inspectMapFile(text, validate) {
     height: data.height,
     spawns: data.spawns.length,
     spawnCells: data.spawns.map(([x, y]) => [x, y]),
+    // Optional in the format: absent means temperate (engine/src/mapdata.rs).
+    biome: typeof data.biome === 'string' ? data.biome : 'temperate',
   };
 }
 

@@ -237,6 +237,11 @@ export class AudioSystem {
 
   // ---- Sink (director.js) --------------------------------------------------------
 
+  /** Thunder after a lightning flash (js/weather-fx.js), quieter far away. */
+  thunder(gain = 1) {
+    this.effect({ synth: 'thunder', originals: [] }, { gain: Math.max(0, Math.min(1, gain)) * 0.9 });
+  }
+
   effect(sound, { gain = 1, pan = 0 } = {}) {
     if (!this.prefs.get().enabled) return;
     const r = this.bank.resolve(sound);

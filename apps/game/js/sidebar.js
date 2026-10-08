@@ -4,6 +4,7 @@
 // selection panel. The DOM is built once; update() only patches text, classes
 // and CSS variables so it is cheap to call ~10x per second.
 
+import { heatText } from './weather-fx.js';
 import { TEAM_COLORS } from './renderer.js';
 import { cameoPainter } from './cameo.js';
 import { icon } from './ui-icons.js';
@@ -691,6 +692,9 @@ export class Sidebar {
     // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
     const vet = veterancyText(info, info.owner === this.playerId);
     if (vet) detail += `   ${vet}`;
+    // Desert heat (engine actor_json().heat / overheated, engine/src/weather.rs).
+    const heat = heatText(info);
+    if (heat && info.owner === this.playerId) detail += `   ${heat}`;
     // Ability state (engine actor_json().ability).
     const ab = info.ability;
     if (ab && info.owner === this.playerId) {

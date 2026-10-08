@@ -1,7 +1,17 @@
-// Terrain: one texel per cell (R = terrain type, G = ore density, B = gem
-// density), drawn with flat colours and per-pixel grain so it reads like the
-// 1996 tiles.
+// Terrain from pre-rendered tiles (js/art/terrain.js): one atlas per biome
+// and a per-cell layer that picks the tile, a decal, the water depth and the
+// shadow cast by rock to the north and west. The engine's terrain texture
+// (R = terrain type, G = ore density, B = gem density) adds ore, gems and
+// the type for soft ground edges and water animation. Light comes from the
+// top left, like the building art.
 @group(1) @binding(0) var terrain_tex: texture_2d<f32>;
+@group(1) @binding(1) var cell_tex: texture_2d<f32>;
+@group(1) @binding(2) var atlas: texture_2d<f32>;
+@group(1) @binding(3) var atlas_samp: sampler;
+
+const ATLAS_COLS: u32 = 16u;
+const TILE_PX: f32 = 32.0;
+const DECAL_BASE: u32 = 60u;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
@@ -10,53 +20,67 @@ fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
     return o;
 }
 
-fn terrain_type(c: vec2i) -> u32 {
+fn in_map(c: vec2i) -> bool {
     let size = vec2i(g.map_size);
-    if (c.x < 0 || c.y < 0 || c.x >= size.x || c.y >= size.y) {
+    return c.x >= 0 && c.y >= 0 && c.x < size.x && c.y < size.y;
+}
+
+fn terrain_type(c: vec2i) -> u32 {
+    if (!in_map(c)) {
         return 99u;
     }
     return u32(textureLoad(terrain_tex, c, 0).r * 255.0 + 0.5);
 }
 
-fn base_color(t: u32, w: vec2f, local: vec2f) -> vec3f {
-    let grain = hash2(floor(w));
-    let grain2 = hash2(floor(w * 0.5) + 17.0);
-    switch t {
-        case 0u: { // clear grass
-            return mix(vec3f(0.20, 0.30, 0.14), vec3f(0.28, 0.38, 0.18), grain) * (0.92 + grain2 * 0.12);
-        }
-        case 1u: { // rough
-            return mix(vec3f(0.33, 0.32, 0.19), vec3f(0.40, 0.37, 0.23), grain) * (0.9 + grain2 * 0.15);
-        }
-        case 2u: { // rock
-            let ridge = smoothstep(0.2, 0.8, local.x * 0.5 + (1.0 - local.y) * 0.5);
-            return mix(vec3f(0.36, 0.32, 0.27), vec3f(0.62, 0.56, 0.47), ridge * 0.7 + grain * 0.3);
-        }
-        case 3u: { // water
-            let wave = sin(w.x * 0.35 + w.y * 0.2 + g.time * 1.4) * 0.5 + 0.5;
-            return mix(vec3f(0.12, 0.24, 0.36), vec3f(0.16, 0.31, 0.44), wave * 0.6 + grain * 0.15);
-        }
-        case 4u: { // trees: one rounded crown per cell over grass
-            let d = length(local - vec2f(0.5, 0.45));
-            let grass = mix(vec3f(0.20, 0.30, 0.14), vec3f(0.26, 0.36, 0.17), grain);
-            if (d < 0.42) {
-                let shade = 1.0 - smoothstep(0.0, 0.42, length(local - vec2f(0.38, 0.3)));
-                return mix(vec3f(0.08, 0.18, 0.07), vec3f(0.18, 0.34, 0.13), shade) * (0.9 + grain * 0.15);
-            }
-            if (length(local - vec2f(0.56, 0.58)) < 0.44) {
-                return grass * 0.55; // shadow
-            }
-            return grass;
-        }
-        default: {
-            return vec3f(0.0);
-        }
-    }
+fn cell_tile(c: vec2i) -> u32 {
+    return u32(textureLoad(cell_tex, c, 0).r * 255.0 + 0.5);
 }
 
-// Gems: a cluster of faceted crystals per cell (red, blue and violet, like
-// the 1996 gem tiles), more crystals on denser cells, each twinkling now and
-// then (OpenRA WithResourceAnimation@GEMS).
+/// One atlas tile at cell-local position `local` (0..1), filtered inside the tile only.
+fn tile_px(tile: u32, local: vec2f) -> vec4f {
+    let origin = vec2f(f32(tile % ATLAS_COLS), f32(tile / ATLAS_COLS)) * TILE_PX;
+    let p = origin + clamp(local * TILE_PX, vec2f(0.5), vec2f(TILE_PX - 0.5));
+    return textureSampleLevel(atlas, atlas_samp, p / vec2f(textureDimensions(atlas)), 0.0);
+}
+
+/// Water depth (0 at the shore, 1 four cells out), interpolated between cell
+/// centres so the deep water has no cell edges. Off the map counts as deep.
+fn water_depth(cf: vec2f) -> f32 {
+    let p = cf - vec2f(0.5);
+    let i = vec2i(floor(p));
+    let f = fract(p);
+    var d: array<f32, 4>;
+    let offs = array<vec2i, 4>(vec2i(0, 0), vec2i(1, 0), vec2i(0, 1), vec2i(1, 1));
+    for (var k = 0u; k < 4u; k++) {
+        let c = i + offs[k];
+        if (in_map(c)) {
+            d[k] = textureLoad(cell_tex, c, 0).b;
+        } else {
+            d[k] = 1.0;
+        }
+    }
+    return mix(mix(d[0], d[1], f.x), mix(d[2], d[3], f.x), f.y);
+}
+
+/// Clear and rough ground fade into each other over a ragged border instead of meeting at cell edges.
+fn soft_ground(col: vec3f, t: u32, c: vec2i, local: vec2f, w: vec2f) -> vec3f {
+    var out = col;
+    let wob = (vnoise(w * 0.25) - 0.5) * 0.25;
+    let dirs = array<vec2i, 4>(vec2i(0, -1), vec2i(1, 0), vec2i(0, 1), vec2i(-1, 0));
+    let dist = array<f32, 4>(local.y, 1.0 - local.x, 1.0 - local.y, local.x);
+    for (var k = 0u; k < 4u; k++) {
+        let n = c + dirs[k];
+        let nt = terrain_type(n);
+        if ((nt == 0u || nt == 1u) && nt != t) {
+            let f = (1.0 - smoothstep(0.0, 0.45, dist[k] + wob)) * 0.5;
+            if (f > 0.0) {
+                out = mix(out, tile_px(cell_tile(n), local).rgb, f);
+            }
+        }
+    }
+    return out;
+}
+
 fn gem_color(ground: vec3f, c: vec2i, local: vec2f, gems: f32) -> vec3f {
     let cf = vec2f(c);
     let count = u32(gems * 3.0 + 0.5) + 1u; // 2 to 4 crystals
@@ -115,20 +139,49 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         return vec4f(0.0, 0.0, 0.0, 1.0);
     }
     let local = fract(cf);
-    var t_draw = t;
-    // Organic edges: water and rock fray into neighbouring grass.
-    if (t == 2u || t == 3u) {
-        let n = hash2(floor(w * 0.5)) * 0.14 + 0.10;
-        if ((local.x < n && terrain_type(c + vec2i(-1, 0)) != t) ||
-            (local.x > 1.0 - n && terrain_type(c + vec2i(1, 0)) != t) ||
-            (local.y < n && terrain_type(c + vec2i(0, -1)) != t) ||
-            (local.y > 1.0 - n && terrain_type(c + vec2i(0, 1)) != t)) {
-            t_draw = 0u;
+    let cell = textureLoad(cell_tex, c, 0);
+    let tile = u32(cell.r * 255.0 + 0.5);
+    let decal = u32(cell.g * 255.0 + 0.5);
+    let shadow = u32(cell.a * 255.0 + 0.5);
+    var col = tile_px(tile, local).rgb;
+    let wet = t == 3u || t == 5u;
+    if (t == 0u || t == 1u) {
+        col = soft_ground(col, t, c, local, w);
+    }
+    if (!wet) {
+        // Broad variation across the map so repeated tiles do not show.
+        col = col * (0.92 + 0.16 * vnoise(w / 150.0)) * (0.97 + 0.06 * vnoise(w / 37.0 + 11.0));
+    }
+    if (decal > 0u) {
+        let d = tile_px(DECAL_BASE + decal - 1u, local);
+        col = mix(col, d.rgb, d.a);
+    }
+    if (wet) {
+        // Deeper water further from the shore; waves and glints drift with time.
+        if (t == 3u) {
+            col = col * (1.0 - water_depth(cf) * 0.35);
+        }
+        let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
+        col = col * (0.94 + 0.08 * wave);
+        if (wave > 0.82 && hash2(floor(w * 0.5)) > 0.6) {
+            col = mix(col, vec3f(0.85, 0.92, 0.95), 0.35);
         }
     }
-    var col = base_color(t_draw, w, local);
+    // Rock casts its shadow down and to the right.
+    var s = 1.0;
+    if ((shadow & 1u) != 0u) {
+        s = s * (1.0 - 0.45 * max(0.0, 1.0 - local.y / 0.45));
+    }
+    if ((shadow & 2u) != 0u) {
+        s = s * (1.0 - 0.40 * max(0.0, 1.0 - local.x / 0.35));
+    }
+    if ((shadow & 4u) != 0u && (shadow & 3u) == 0u) {
+        s = s * (1.0 - 0.35 * max(0.0, 1.0 - length(local) / 0.4));
+    }
+    col = col * s;
     // Ore: golden speckles, denser with more ore.
-    let ore = textureLoad(terrain_tex, c, 0).g;
+    let res = textureLoad(terrain_tex, c, 0);
+    let ore = res.g;
     if (ore > 0.0) {
         let speck = hash2(floor(w * 0.5) + vec2f(7.0, 3.0));
         if (speck < 0.15 + ore * 0.55) {
@@ -138,9 +191,14 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
             col = mix(col, vec3f(0.36, 0.30, 0.14), ore * 0.5);
         }
     }
-    let gems = textureLoad(terrain_tex, c, 0).b;
-    if (gems > 0.0) {
-        col = gem_color(col, c, local, gems);
+    if (res.b > 0.0) {
+        col = gem_color(col, c, local, res.b);
+    }
+    // Rain and thunderstorms wet the ground: darker, a little more saturated.
+    let weather = u32(g.env.y + 0.5);
+    if ((weather == 1u || weather == 2u) && !wet) {
+        let grey = dot(col, vec3f(0.3, 0.59, 0.11));
+        col = mix(col, mix(vec3f(grey), col, 1.15), 1.0) * (1.0 - 0.18 * g.env.z);
     }
     return vec4f(col, 1.0);
 }

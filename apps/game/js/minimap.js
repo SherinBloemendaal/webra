@@ -28,14 +28,35 @@ export const RADAR = { NONE: 0, ONLINE: 1, JAMMED: 2, LOW_POWER: 3 };
 const BLIP_INTS = 5;
 const NEUTRAL_OWNER = 255;
 
-// Terrain colours by engine Terrain index (map.rs: Clear, Rough, Rock, Water, Tree).
-export const TERRAIN_RGB = [
-  [62, 88, 44],
-  [96, 92, 58],
-  [128, 118, 102],
-  [36, 70, 102],
-  [28, 54, 24],
-];
+// Terrain colours by engine Terrain index (map.rs: Clear, Rough, Rock, Water,
+// Tree, Ford), per biome (the same as the engine's lobby preview, weather.rs).
+export const BIOME_TERRAIN_RGB = {
+  temperate: [
+    [62, 88, 44],
+    [96, 92, 58],
+    [128, 118, 102],
+    [36, 70, 102],
+    [28, 54, 24],
+    [74, 112, 118],
+  ],
+  snow: [
+    [206, 214, 222],
+    [158, 196, 222],
+    [112, 114, 124],
+    [34, 62, 96],
+    [40, 66, 58],
+    [110, 150, 182],
+  ],
+  desert: [
+    [200, 168, 110],
+    [218, 188, 124],
+    [150, 94, 60],
+    [38, 116, 138],
+    [92, 122, 58],
+    [112, 168, 158],
+  ],
+};
+export const TERRAIN_RGB = BIOME_TERRAIN_RGB.temperate;
 const UNKNOWN_TERRAIN_RGB = [62, 88, 44];
 export const ORE_RGB = [200, 160, 50];
 export const GEM_RGB = [150, 90, 200];
@@ -92,9 +113,11 @@ export function cameraFrame(view, mapW, mapH, cellPx = CELL_PX) {
  * Paint the radar picture into `out` (RGBA, one pixel per cell).
  * `terrain`: RGBA per cell from Game.terrain_ptr (R terrain type, G ore, B gem density);
  * `fog`: one byte per cell from Game.fog_ptr (0 shroud, 128 fog, 255 visible);
- * `blips`: Game.minimap_blips; `colors`: team colours as 0..1 RGB triples.
+ * `blips`: Game.minimap_blips; `colors`: team colours as 0..1 RGB triples;
+ * `biome`: the map's biome (terrain colours).
  */
-export function composeRadar(out, terrain, fog, blips, colors, mapW, mapH) {
+export function composeRadar(out, terrain, fog, blips, colors, mapW, mapH, biome = 'temperate') {
+  const palette = BIOME_TERRAIN_RGB[biome] ?? TERRAIN_RGB;
   const cells = mapW * mapH;
   for (let i = 0; i < cells; i++) {
     const o = i * 4;
@@ -104,7 +127,7 @@ export function composeRadar(out, terrain, fog, blips, colors, mapW, mapH) {
       out[o + 1] = 0;
       out[o + 2] = 0;
     } else {
-      const rgb = terrain[o + 2] > 0 ? GEM_RGB : terrain[o + 1] > 0 ? ORE_RGB : (TERRAIN_RGB[terrain[o]] ?? UNKNOWN_TERRAIN_RGB);
+      const rgb = terrain[o + 2] > 0 ? GEM_RGB : terrain[o + 1] > 0 ? ORE_RGB : (palette[terrain[o]] ?? UNKNOWN_TERRAIN_RGB);
       const k = f >= 255 ? 1 : FOG_SHADE;
       out[o] = rgb[0] * k;
       out[o + 1] = rgb[1] * k;
@@ -177,6 +200,7 @@ export class Minimap {
     this.colors = colors;
     this.mapW = game.map_width();
     this.mapH = game.map_height();
+    this.biome = JSON.parse(game.weather_json?.() ?? '{}').biome ?? 'temperate';
     this.terrain = new Uint8Array(this.mapW * this.mapH * 4);
     this.state = RADAR.NONE;
     this.online = false;
@@ -330,7 +354,7 @@ export class Minimap {
     // A view of wasm memory right after the call that fills it.
     const fogPtr = this.game.fog_ptr(this.player);
     const fog = new Uint8Array(this.memory.buffer, fogPtr, this.game.fog_len());
-    composeRadar(this.image.data, this.terrain, fog, blips, this.colors, this.mapW, this.mapH);
+    composeRadar(this.image.data, this.terrain, fog, blips, this.colors, this.mapW, this.mapH, this.biome);
     this.ctx.putImageData(this.image, 0, 0);
   }
 

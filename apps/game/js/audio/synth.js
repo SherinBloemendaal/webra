@@ -188,6 +188,8 @@ export const RECIPES = {
   torpedo: (sr, r) => normalize(bubbles(sr, r, 0.6, 380), 0.55),
   depth_charge: (sr, r) => normalize(sweep(sr, 260, 90, 0.25, 0.08), 0.5),
   bomb: (sr, r) => normalize(whistle(sr, r, 1.0), 0.45),
+  // Thunder after a lightning flash (weather, js/weather-fx.js): a crack, then a long low rumble.
+  thunder: (sr, r) => normalize(boom(sr, r, { seconds: 2.6, cutoff: 240, tau: 0.85, sub: 52, subEnd: 28, subTau: 0.9, subGain: 1, crackle: 0.03 }), 0.8),
   thump: (sr, r) => normalize(boom(sr, r, { seconds: 0.5, cutoff: 200, tau: 0.08, sub: 60, subEnd: 40, subTau: 0.15, subGain: 1.2 }), 0.7),
 
   // Impacts and deaths

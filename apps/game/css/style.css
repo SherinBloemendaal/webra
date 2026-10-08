@@ -56,6 +56,29 @@ body {
   display: none;
 }
 
+/* Biome and weather badge (js/weather-fx.js): what the sky does to the battle. */
+#weather {
+  position: absolute;
+  left: 8px;
+  top: 34px;
+  max-width: min(360px, 60vw);
+  padding: 2px 8px;
+  background: rgba(6, 8, 11, 0.72);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: var(--ui-fs-s) / 1.5 var(--ui-font-mono);
+  color: var(--ui-muted);
+  pointer-events: auto;
+  cursor: help;
+}
+
+#weather .effects {
+  display: block;
+  color: var(--ui-text, #d8dde3);
+  white-space: normal;
+}
+
 /* ---- Menu and game over -------------------------------------------------- */
 
 #menu,

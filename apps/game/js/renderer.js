@@ -1,9 +1,12 @@
-// WebGPU renderer: terrain, instanced sprites, fog of war and UI rectangles.
-// Instance data is copied straight out of WebAssembly memory every frame.
+// WebGPU renderer: terrain, instanced sprites, heat shimmer, fog of war,
+// weather and UI rectangles. Instance data is copied straight out of
+// WebAssembly memory every frame; terrain comes from a pre-rendered tile atlas
+// (js/art/terrain.js) and weather particles are generated on the GPU.
 
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
-const GLOBALS_BYTES = 160;
+const HEAT_FLOATS = 4;
+const GLOBALS_BYTES = 192;
 
 export const TEAM_COLORS = [
   [0.30, 0.55, 0.95], // player 1: blue
@@ -52,8 +55,8 @@ export class Renderer {
     const d = this.device;
     const commonRes = await fetch('shaders/common.wgsl');
     const common = await commonRes.text();
-    const [terrainSrc, spriteSrc, fogSrc, rectSrc] = await Promise.all(
-      ['terrain', 'sprite', 'fog', 'rect'].map((n) => loadShader(n, common)),
+    const [terrainSrc, spriteSrc, fogSrc, rectSrc, weatherSrc, skySrc, heatSrc] = await Promise.all(
+      ['terrain', 'sprite', 'fog', 'rect', 'weather', 'sky', 'heat'].map((n) => loadShader(n, common)),
     );
 
     this.globals = d.createBuffer({ size: GLOBALS_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -69,7 +72,12 @@ export class Renderer {
 
     // Terrain
     this.terrainLayout = d.createBindGroupLayout({
-      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }],
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      ],
     });
     this.terrainPipeline = this.pipeline(terrainSrc, this.terrainLayout, [], null, 'terrain');
 
@@ -106,6 +114,14 @@ export class Renderer {
     this.rectLayout = d.createBindGroupLayout({ entries: [] });
     this.rectPipeline = this.pipeline(rectSrc, this.rectLayout, [instance(RECT_FLOATS * 4)], blend, 'rects');
     this.rectGroup = d.createBindGroup({ layout: this.rectLayout, entries: [] });
+
+    // Weather: GPU particles and the sky overlay (no bindings beyond the globals).
+    this.weatherPipeline = this.pipeline(weatherSrc, this.rectLayout, [], blend, 'weather');
+    this.skyPipeline = this.pipeline(skySrc, this.rectLayout, [], blend, 'sky');
+    // Heat shimmer: one instance per hot vehicle (Game.build_heat_fx).
+    const heatInstance = { arrayStride: HEAT_FLOATS * 4, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] };
+    this.heatPipeline = this.pipeline(heatSrc, this.rectLayout, [heatInstance], blend, 'heat');
+    this.heatCapacity = 0;
   }
 
   pipeline(code, layout, buffers, blend, label) {
@@ -158,8 +174,10 @@ export class Renderer {
     this.mapW = w;
     this.mapH = h;
     this.terrainTex = d.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.cellTex = d.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     this.fogTex = d.createTexture({ size: [w, h], format: 'r8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-    this.terrainGroup = d.createBindGroup({ layout: this.terrainLayout, entries: [{ binding: 0, resource: this.terrainTex.createView() }] });
+    this.terrainGroup = null;
+    this.bindTerrain();
     this.fogGroup = d.createBindGroup({
       layout: this.fogLayout,
       entries: [
@@ -167,6 +185,33 @@ export class Renderer {
         { binding: 1, resource: this.linearSampler },
       ],
     });
+  }
+
+  /** The biome's terrain tile atlas (js/art/terrain.js buildTerrainAtlas). */
+  setTerrainAtlas(atlas) {
+    const d = this.device;
+    this.terrainAtlasTex?.destroy();
+    this.terrainAtlasTex = d.createTexture({ size: [atlas.width, atlas.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    d.queue.writeTexture({ texture: this.terrainAtlasTex }, atlas.data, { bytesPerRow: atlas.width * 4 }, [atlas.width, atlas.height]);
+    this.bindTerrain();
+  }
+
+  bindTerrain() {
+    if (!this.terrainTex || !this.terrainAtlasTex) return;
+    this.terrainGroup = this.device.createBindGroup({
+      layout: this.terrainLayout,
+      entries: [
+        { binding: 0, resource: this.terrainTex.createView() },
+        { binding: 1, resource: this.cellTex.createView() },
+        { binding: 2, resource: this.terrainAtlasTex.createView() },
+        { binding: 3, resource: this.linearSampler },
+      ],
+    });
+  }
+
+  /** Per-cell tile layer (js/art/terrain.js cellTiles), RGBA per cell. */
+  uploadCells(bytes) {
+    this.device.queue.writeTexture({ texture: this.cellTex }, bytes, { bytesPerRow: this.mapW * 4 }, [this.mapW, this.mapH]);
   }
 
   uploadTerrain(bytes) {
@@ -202,15 +247,29 @@ export class Renderer {
    * @param camera {x, y, zoom} zoom in CSS pixels per world pixel
    * @param sprites Float32Array of sprite instances
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
+   * @param fx weather: `{ env, env2 }` (js/weather-fx.js uniforms) and heat
+   *   shimmer instances `heat` (Float32Array, 4 floats each) / `heatCount`
    */
-  draw(camera, time, sprites, spriteCount, rects, rectCount) {
+  draw(camera, time, sprites, spriteCount, rects, rectCount, fx = null) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
     const g = new Float32Array(GLOBALS_BYTES / 4);
     g.set([this.canvas.width, this.canvas.height, camera.x, camera.y, zoom, time, this.mapW, this.mapH], 0);
     TEAM_COLORS.forEach((c, i) => g.set([c[0], c[1], c[2], 1], 8 + i * 4));
+    g.set(fx?.env ?? [0, 0, 0, 0], 40);
+    g.set(fx?.env2 ?? [0, 0, 0, 1], 44);
     d.queue.writeBuffer(this.globals, 0, g);
+    const particles = Math.floor(fx?.env2?.[2] ?? 0);
+    const heatCount = fx?.heatCount ?? 0;
+    if (heatCount > 0) {
+      if (heatCount > this.heatCapacity) {
+        this.heatBuffer?.destroy();
+        this.heatCapacity = Math.max(64, 2 ** Math.ceil(Math.log2(heatCount)));
+        this.heatBuffer = d.createBuffer({ size: this.heatCapacity * HEAT_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+      }
+      d.queue.writeBuffer(this.heatBuffer, 0, fx.heat, 0, heatCount * HEAT_FLOATS);
+    }
 
     if (spriteCount > 0) {
       this.ensureBuffer('sprite', spriteCount, SPRITE_FLOATS);
@@ -227,9 +286,11 @@ export class Renderer {
     });
     pass.setBindGroup(0, this.globalsGroup);
 
-    pass.setPipeline(this.terrainPipeline);
-    pass.setBindGroup(1, this.terrainGroup);
-    pass.draw(3);
+    if (this.terrainGroup) {
+      pass.setPipeline(this.terrainPipeline);
+      pass.setBindGroup(1, this.terrainGroup);
+      pass.draw(3);
+    }
 
     if (spriteCount > 0) {
       pass.setPipeline(this.spritePipeline);
@@ -238,9 +299,27 @@ export class Renderer {
       pass.draw(6, spriteCount);
     }
 
+    if (heatCount > 0) {
+      pass.setPipeline(this.heatPipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.setVertexBuffer(0, this.heatBuffer);
+      pass.draw(6, heatCount);
+    }
+
     pass.setPipeline(this.fogPipeline);
     pass.setBindGroup(1, this.fogGroup);
     pass.draw(3);
+
+    if (particles > 0) {
+      pass.setPipeline(this.weatherPipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.draw(6, particles);
+    }
+    if (fx && (fx.env[2] > 0 || fx.env[3] > 0)) {
+      pass.setPipeline(this.skyPipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.draw(3);
+    }
 
     if (rectCount > 0) {
       pass.setPipeline(this.rectPipeline);

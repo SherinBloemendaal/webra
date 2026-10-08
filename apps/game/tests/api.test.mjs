@@ -270,3 +270,57 @@ test('support powers: airfield timers in player_json and activate_power', async 
   assert.deepEqual(order, { o: 'support_power', player: 0, key: 'ParatroopersPower@paratroopers', x: 10240, y: 10240, x2: 20480, y2: 10240 });
   assert.deepEqual(validOrder(order), order);
 });
+
+// ---- Map styles, biomes and weather (engine/src/mapgen, engine/src/weather.rs) ----------
+
+test('generated maps come in styles and biomes, as map files and previews', async () => {
+  const { parseMap, canonicalMapJson } = await import('../../../packages/protocol/src/index.js');
+  const { canonicalJson } = await import('../editor/js/mapformat.js');
+  for (const style of ['land', 'rivers', 'lakes', 'islands']) {
+    const json = Game.generated_map_styled(9, 64, 2, style, 'snow');
+    const v = JSON.parse(Game.validate_map(json));
+    assert.ok(v.ok && !v.modded, `${style}: ${v.errors}`);
+    const map = JSON.parse(json);
+    assert.equal(map.biome, 'snow');
+    assert.ok(map.description.includes(style));
+    // Engine, protocol and editor agree on the canonical form with a biome.
+    const p = parseMap(json);
+    assert.ok(p.ok, p.errors.join('; '));
+    assert.equal(canonicalMapJson(p.map), Game.map_canonical(json));
+    assert.equal(canonicalJson(map), Game.map_canonical(json));
+    assert.equal(Game.map_file_preview(json).length, 64 * 64 * 4);
+  }
+  // Random picks from the seed, the same everywhere; the preview follows style and biome.
+  assert.equal(Game.resolved_style(9, 'random'), Game.resolved_style(9, 'random'));
+  assert.ok(['land', 'rivers', 'lakes', 'islands'].includes(Game.resolved_style(9, 'random')));
+  assert.equal(Game.resolved_biome(9, 'desert'), 'desert');
+  const desert = Game.map_preview_styled(9, 64, 2, 'islands', 'desert');
+  const snow = Game.map_preview_styled(9, 64, 2, 'islands', 'snow');
+  assert.equal(desert.length, 64 * 64 * 4);
+  assert.notDeepEqual(desert, snow);
+  assert.throws(() => Game.map_preview_styled(9, 64, 2, 'volcano', 'snow'), /map style/);
+  assert.throws(() => Game.generated_map_styled(9, 64, 2, 'land', 'moon'), /biome/);
+  // A temperate generated map has no biome key and keeps the old identity rules.
+  assert.ok(!Game.generated_map(9, 64, 2).includes('"biome"'));
+});
+
+test('weather options are checked and the sky is reported', () => {
+  assert.throws(() => newGame({ weather: 'stormy' }), /weather/);
+  assert.throws(() => newGame({ biome: 'lava' }), /biome/);
+  assert.throws(() => newGame({ mapStyle: 'maze' }), /map style/);
+  assert.throws(() => newGame({ biome: 7 }), /biome must be a string/);
+  const g = newGame({ biome: 'desert', weather: 'cosmetic', mapStyle: 'islands' });
+  const sky = JSON.parse(g.weather_json());
+  assert.deepEqual([sky.biome, sky.mode, sky.weather, sky.sightPct, sky.flash], ['desert', 'cosmetic', 'clear', 100, null]);
+  assert.ok(sky.until > 0);
+  // Random biome: picked from the seed, the same for every peer.
+  const a = JSON.parse(newGame({ biome: 'random' }).weather_json()).biome;
+  assert.equal(JSON.parse(newGame({ biome: 'random' }).weather_json()).biome, a);
+  // Older callers without the keys still start a temperate game with full weather.
+  const old = JSON.parse(newGame().weather_json());
+  assert.deepEqual([old.biome, old.mode], ['temperate', 'full']);
+  // Nothing is hot at the start; the heat buffer is empty but valid.
+  assert.equal(g.build_heat_fx(0, 0, 0, 64 * 24, 64 * 24), 0);
+  const info = JSON.parse(g.actor_json(g.pick(0, ...g.start_position(0))));
+  if (info) assert.equal(info.heat, 0);
+});
