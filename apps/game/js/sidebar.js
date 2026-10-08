@@ -583,6 +583,9 @@ export class Sidebar {
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
     if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
+    const vet = veterancyText(info, info.owner === this.playerId);
+    if (vet) detail += `   ${vet}`;
     // Ability state (engine actor_json().ability).
     const ab = info.ability;
     if (ab && info.owner === this.playerId) {
@@ -601,4 +604,23 @@ export class Sidebar {
     this.placingId = id;
     if (id && this.actors.has(id)) this.card(id).btn.classList.add('placing');
   }
+}
+
+const RANK_NAMES = ['Rookie', 'Veteran', 'Veteran II', 'Veteran III'];
+
+/**
+ * Selection panel text for veterancy (engine actor_json(): rank, maxRank, xp,
+ * nextXp, prone): "Elite", "Veteran II  XP 450/800", "Rookie  XP 0/200", plus
+ * "Prone". Experience is in value points (an enemy worth $100 gives 100) and
+ * only shown for `own` units. Empty for actors that gain no experience.
+ */
+export function veterancyText(info, own) {
+  const parts = [];
+  if (info?.maxRank > 0) {
+    const elite = info.rank >= info.maxRank;
+    parts.push(elite ? 'Elite' : (RANK_NAMES[info.rank] ?? `Veteran ${info.rank}`));
+    if (own && !elite) parts.push(`XP ${info.xp}/${info.nextXp}`);
+  }
+  if (info?.prone) parts.push('Prone');
+  return parts.join('  ');
 }
