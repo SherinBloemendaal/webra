@@ -17,6 +17,7 @@ mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod math;
+pub mod minimap;
 mod naval;
 mod plane;
 mod powers;
@@ -41,6 +42,8 @@ mod tests_ai;
 mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
+#[cfg(test)]
+mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
@@ -353,6 +356,24 @@ impl Game {
 
     pub fn fog_len(&self) -> usize {
         self.fog.len()
+    }
+
+    // ---- Radar minimap (minimap.rs, apps/game/js/minimap.js) ----------------
+
+    /// 0: no radar structure, 1: online, 2: jammed, 3: low power.
+    pub fn radar_state(&self, player: u8) -> u8 {
+        self.world.radar_state(player) as u8
+    }
+
+    /// Radar blips `player` may see, `[cell x, cell y, width, height, owner]`
+    /// each (owner 255: neutral); empty while the radar is offline. Read only.
+    pub fn minimap_blips(&self, player: u8) -> Vec<i32> {
+        if player as usize >= self.world.players.len() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        self.world.minimap_blips(player, &mut out);
+        out
     }
 
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.

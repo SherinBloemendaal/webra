@@ -2,7 +2,7 @@
 // Reuses the game's engine package (actor catalog, generated maps, validation),
 // WebGPU renderer and sprite atlas.
 
-import init, { Game } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from '../js/renderer.js';
 import { buildAtlas, drawIcon } from '../js/sprites.js';
 import { TEST_MAP_KEY } from '../js/maploader.js';
@@ -28,6 +28,8 @@ import {
 } from './js/mapformat.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
+import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
+import { renderReport } from '../js/oramap/report.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
 const AUTHOR_KEY = 'webra.editor.author';
@@ -66,7 +68,7 @@ const SHORTCUTS = [
   ['Wheel', 'Zoom at the cursor'],
   ['Home', 'Fit the whole map'],
   ['Ctrl+Z, Ctrl+Shift+Z (Ctrl+Y)', 'Undo, redo'],
-  ['Ctrl+S, Ctrl+O, Ctrl+Alt+N', 'Save, open, new map'],
+  ['Ctrl+S, Ctrl+O, Ctrl+Alt+N', 'Save, open (also OpenRA .oramap), new map'],
   ['Ctrl+Enter', 'Test play'],
   ['?', 'This help'],
 ];
@@ -707,6 +709,10 @@ function loadMap(map, label) {
 
 function openFile(file) {
   if (!file) return;
+  if (isOramapFile(file.name)) {
+    importOramapFile(file);
+    return;
+  }
   if (file.size > LIMITS.maxBytes * 2) {
     toast('That file is far too large for a map.', true);
     return;
@@ -721,6 +727,59 @@ function openFile(file) {
     }
     if (loadMap(map, `Open ${file.name}`)) toast(`Opened ${file.name}.`);
   });
+}
+
+/**
+ * Import an OpenRA .oramap package: convert it (js/oramap), show the import
+ * report, and open the result for editing once the author confirms. Rules
+ * the conversion kept make a modded map; the report repeats the modded
+ * warning, and the author may open the map without them.
+ */
+async function importOramapFile(file) {
+  if (file.size > ORAMAP_MAX_BYTES) {
+    toast(`That .oramap file is larger than ${ORAMAP_MAX_BYTES / 1024 / 1024} MiB.`, true);
+    return;
+  }
+  let result;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    result = await importOramap(bytes, {
+      baseRules: JSON.parse(base_rules_json()),
+      validate: (json) => JSON.parse(Game.validate_map(json)),
+      fileName: file.name,
+    });
+  } catch (err) {
+    showImportReport(err?.report ?? null, null, `Could not import ${file.name}: ${err?.message ?? err}`);
+    return;
+  }
+  showImportReport(result.report, result.map, null);
+}
+
+function showImportReport(report, map, failure) {
+  $('#import-report')?.remove();
+  const open = (withRules) => {
+    const m = withRules ? map : { ...map, rules: null };
+    if (loadMap(m, `Import ${report.title}`)) toast(`Imported "${report.title}".`);
+  };
+  const buttons = [];
+  if (map) {
+    buttons.push(el('button', { type: 'submit', class: 'primary', value: 'open', onclick: () => open(true) }, map.rules ? 'Open with its rules (MODDED)' : 'Open in the editor'));
+    if (map.rules) buttons.push(el('button', { type: 'submit', value: 'plain', onclick: () => open(false) }, 'Open without rules'));
+  }
+  buttons.push(el('button', { type: 'submit', value: 'cancel' }, map ? 'Cancel' : 'Close'));
+  const dialog = el('dialog', { id: 'import-report', class: 'menu-card dialog wide' }, [
+    el('form', { method: 'dialog' }, [
+      el('h1', {}, 'OpenRA map import'),
+      failure ? el('p', { class: 'error' }, failure) : null,
+      map?.rules ? el('p', { class: 'error' }, MODDED_WARNING) : null,
+      report ? renderReport(report) : null,
+      map && report?.validation && !report.validation.ok ? el('p', { class: 'hint' }, 'Fix the listed problems in the editor before test play or publishing.') : null,
+      el('div', { class: 'row' }, buttons),
+    ]),
+  ]);
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 function saveFile() {

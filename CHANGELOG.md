@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.4.0](https://github.com/SherinBloemendaal/webra/compare/v0.3.0...v0.4.0) (2026-10-08)
+
+
+### Features
+
+* **engine:** add debug menu cheats and read-only debug views ([7e5b043](https://github.com/SherinBloemendaal/webra/commit/7e5b043b0428f6647c78bd570b9059ce4af8cdac))
+* **engine:** add Game.units_center for camera hotkeys ([be9e59e](https://github.com/SherinBloemendaal/webra/commit/be9e59e6fbd90c7d5a4c6653ecd6da7a627c6bd5))
+* **engine:** add gems as a second resource type ([b1da671](https://github.com/SherinBloemendaal/webra/commit/b1da671b20e0202480705ad83d9179a688e6e608))
+* **engine:** log audio events for the client ([a9b8a57](https://github.com/SherinBloemendaal/webra/commit/a9b8a570dfaac36037c1f96bc4d94596bf012862))
+* **engine:** queue structures and cancel items that can no longer be built ([78a0158](https://github.com/SherinBloemendaal/webra/commit/78a01589a0b315b05d5913432387a61cd8bb0f45))
+* **game:** add a debug menu with cheats, overlays and stats ([6140d9a](https://github.com/SherinBloemendaal/webra/commit/6140d9a79e2b9bae5318a3c1dc52d521afe76710))
+* **game:** add RA style cameos for every building and unit ([0fd7388](https://github.com/SherinBloemendaal/webra/commit/0fd7388ba7fc8fb8947dbd7fc0ffd865f3854bb8))
+* **game:** add release notes data with once per version logic ([8feb9e0](https://github.com/SherinBloemendaal/webra/commit/8feb9e09fbf31939d6704b201bb2e38bad7cd4ea))
+* **game:** add settings, hotkey registry, control groups and game menu modules ([27fbe84](https://github.com/SherinBloemendaal/webra/commit/27fbe84f77bb5a6ff5cd2db7f34dc97e5fc9444e))
+* **game:** add sound with optional original Red Alert content ([df27fc8](https://github.com/SherinBloemendaal/webra/commit/df27fc8163c03560ad5f968735ffca0d2fdd4a81))
+* **game:** queue structures from the sidebar with counts ([567b993](https://github.com/SherinBloemendaal/webra/commit/567b993b3297c0d7e9027fe598144aff76ef8ca2))
+* **game:** redraw all building art with detailed 3/4 shading and add art tests ([ac7297a](https://github.com/SherinBloemendaal/webra/commit/ac7297af60998b3de3835641b0f23158f62c5e29))
+* **game:** redraw all structures as pseudo-3D volumes ([1218c55](https://github.com/SherinBloemendaal/webra/commit/1218c55f4735774f1f000156801ba152f7764fcd))
+* **game:** render gems and add a gem brush to the map editor ([c65d612](https://github.com/SherinBloemendaal/webra/commit/c65d6126cf148582030b58993099469fc1b0abab))
+* **game:** show release notes in the lobby, the game menu and once after updates ([4857bac](https://github.com/SherinBloemendaal/webra/commit/4857bac3f4aade9861429ff620e4c9d6eb3876cf))
+* **game:** touch controls and phone layouts ([17793bd](https://github.com/SherinBloemendaal/webra/commit/17793bd13f23a9c760695bc39dc5e9edfd695399))
+* **game:** wire the game menu, hotkeys, control groups and new cursors ([7bc16c4](https://github.com/SherinBloemendaal/webra/commit/7bc16c48fb4b6472447d3515cbcde9cec5cbe55a))
+* **protocol:** accept format 2 maps with a gems layer ([8165541](https://github.com/SherinBloemendaal/webra/commit/8165541d9735bce563da40b92df323c07e032f94))
+* **protocol:** add the cheats lobby option and cheat order schemas ([7adea42](https://github.com/SherinBloemendaal/webra/commit/7adea42beb5391c57b6e5e8f9b46e52e3c1fa62e))
+* **repo:** write dist/release-notes.json from CHANGELOG.md ([880fcb3](https://github.com/SherinBloemendaal/webra/commit/880fcb38638ccdac9dfdd2017254c8617ba22af4))
+* **server:** relay cheat orders only in games with cheats enabled ([7767eaa](https://github.com/SherinBloemendaal/webra/commit/7767eaa769610ae5c80ccb15b83ddc67ce6288be))
+* **website:** add the /changelog page ([704b7f3](https://github.com/SherinBloemendaal/webra/commit/704b7f327fe327aced046777148f1c36548d5eab))
+* **website:** fit phone screens with safe areas and touch-sized menu ([b447bd0](https://github.com/SherinBloemendaal/webra/commit/b447bd0192ac38a3449e31658b8a2f9fdb11074e))
+
+
+### Bug Fixes
+
+* **repo:** keep workspace installs working across release bumps ([5be2128](https://github.com/SherinBloemendaal/webra/commit/5be2128a9fb86547a424ab1a4ea4b3599ff14e2b))
+* **repo:** say release in the singular when the build has one ([c267896](https://github.com/SherinBloemendaal/webra/commit/c2678968794a81bd01aa7a88a811489ccad3df9f))
+
 ## [0.3.0](https://github.com/SherinBloemendaal/webra/compare/v0.2.0...v0.3.0) (2026-10-08)
 
 
