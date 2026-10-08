@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -77,9 +77,19 @@ export const DEV_FLAGS = ['fast_build', 'build_anywhere', 'unlimited_power', 'fa
 /** Milliseconds per simulation tick for each game speed (OpenRA timing). */
 export const SPEED_MS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
 
+/** Generated map layouts (engine/src/mapgen): `random` picks one from the seed. */
+export const MAP_STYLES = ['random', 'land', 'rivers', 'lakes', 'islands'];
+/** Biomes of a generated map (engine/src/weather.rs): `random` picks one from the seed. */
+export const BIOMES = ['random', 'temperate', 'snow', 'desert'];
+/** What weather does: visuals and modest gameplay effects, visuals only, or nothing. */
+export const WEATHER_MODES = ['full', 'cosmetic', 'off'];
+
 export const DEFAULT_OPTIONS = Object.freeze({
   seed: 1,
   mapSize: 96,
+  mapStyle: 'random',
+  biome: 'random',
+  weather: 'full',
   startingCash: 5000,
   startingUnits: 'mcv',
   techLevel: 'unrestricted',

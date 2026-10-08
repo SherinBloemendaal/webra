@@ -22,13 +22,15 @@ export const MAP_MAX_SIZE = 256;
 export const MAP_MIN_SPAWNS = 2;
 export const MAP_MAX_SPAWNS = 8;
 export const MAP_MAX_ACTORS = 2000;
-export const TERRAIN_MAX = 4; // 0 clear, 1 rough, 2 rock, 3 water, 4 tree
+export const TERRAIN_MAX = 5; // 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford
+/** Map biomes (engine/src/weather.rs); absent means temperate. */
+export const MAP_BIOMES = ['temperate', 'snow', 'desert'];
 export const ORE_MAX = 12;
 export const GEM_MAX = 3;
 export const MODDED_WARNING =
   'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
 
-const MAP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules'];
+const MAP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
 const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
 const RULE_KEY_RE = /^[A-Za-z0-9_.-]{1,40}$/;
@@ -292,6 +294,13 @@ export function validateMap(input, opts = {}) {
     return r;
   });
 
+  // Optional biome (not a rules override: a biome never makes a map modded).
+  m.biome = step(() => {
+    const b = input.biome ?? 'temperate';
+    if (!MAP_BIOMES.includes(b)) fail(`biome must be one of ${MAP_BIOMES.join(', ')}`);
+    return b;
+  });
+
   if (errors.length) return { ok: false, errors };
   const canonical = canonicalMapJson(m);
   if (utf8Length(canonical) > MAP_MAX_BYTES) return { ok: false, errors: ['map is larger than 1 MiB'] };
@@ -322,9 +331,14 @@ function sortKeysDeep(v) {
   return v;
 }
 
-/** Canonical JSON text of an already validated map (see validateMap). `gems` only when present. */
+/**
+ * Canonical JSON text of an already validated map (see validateMap). `gems`
+ * only when present; `biome` last and only when not temperate, so maps from
+ * before biomes keep their identity.
+ */
 export function canonicalMapJson(m) {
   const gems = m.gems === undefined || m.gems === null ? {} : { gems: m.gems };
+  const biome = m.biome === undefined || m.biome === 'temperate' ? {} : { biome: m.biome };
   return JSON.stringify({
     format: m.format,
     name: m.name,
@@ -338,6 +352,7 @@ export function canonicalMapJson(m) {
     spawns: m.spawns.map(([x, y]) => [x, y]),
     actors: (m.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
     rules: m.rules === undefined || m.rules === null ? null : sortKeysDeep(m.rules),
+    ...biome,
   });
 }
 

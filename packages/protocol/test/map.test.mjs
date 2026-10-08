@@ -81,7 +81,7 @@ test('invalid maps report problems', () => {
     [{ height: 257 }, /height/],
     [{ terrain: 'AAAA' }, /terrain/],
     [{ ore: Buffer.alloc(32 * 32, 13).toString('base64') }, /ore density/],
-    [{ terrain: Buffer.alloc(32 * 32, 5).toString('base64') }, /terrain value/],
+    [{ terrain: Buffer.alloc(32 * 32, 6).toString('base64') }, /terrain value/],
     [{ terrain: Buffer.alloc(32 * 32, 3).toString('base64') }, /ore can only/],
     [{ spawns: [[1, 1]] }, /2 to 8/],
     [{ spawns: Array.from({ length: 9 }, (_, i) => [i, 0]) }, /2 to 8/],
@@ -205,4 +205,32 @@ test('rules overrides are checked against the engine rules like the engine does'
   assert.equal(r.modded, true);
   assert.equal(isModded({ rules: {} }), false);
   assert.equal(isModded({ rules: null }), false);
+});
+
+test('fords are terrain 5 and hold no ore', () => {
+  const ford = makeMap();
+  const terrain = Buffer.from(ford.terrain, 'base64');
+  terrain[7] = 5;
+  assert.ok(validateMap({ ...ford, terrain: terrain.toString('base64') }).ok);
+  terrain[7] = 6;
+  assert.match(validateMap({ ...ford, terrain: terrain.toString('base64') }).errors.join(), /invalid terrain value 6/);
+  terrain[7] = 0;
+  terrain[32 * 10 + 10] = 5; // the ore cell
+  assert.match(validateMap({ ...ford, terrain: terrain.toString('base64') }).errors.join(), /ore can only lie/);
+});
+
+test('biome is optional: absent or temperate keeps the old canonical form, others go last', async () => {
+  const plain = validateMap(makeMap());
+  const temperate = validateMap(makeMap(32, 32, { biome: 'temperate' }));
+  assert.ok(plain.ok && temperate.ok);
+  assert.equal(plain.map.biome, 'temperate');
+  assert.equal(temperate.canonical, plain.canonical, 'explicit temperate is the same map');
+  assert.ok(!plain.canonical.includes('biome'));
+  const snow = validateMap(makeMap(32, 32, { biome: 'snow' }));
+  assert.ok(snow.ok, snow.errors.join('; '));
+  assert.ok(snow.canonical.endsWith(',"rules":null,"biome":"snow"}'));
+  assert.equal(snow.modded, false, 'a biome is not a rules override');
+  assert.notEqual(await mapHash(snow.map), await mapHash(plain.map));
+  assert.match(validateMap(makeMap(32, 32, { biome: 'lava' })).errors.join(), /biome must be one of/);
+  assert.match(validateMap(makeMap(32, 32, { biome: 3 })).errors.join(), /biome/);
 });

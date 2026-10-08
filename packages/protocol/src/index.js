@@ -28,6 +28,7 @@ export {
   decodeBase64,
   isModded,
   GEM_MAX,
+  MAP_BIOMES,
   MAP_FORMAT,
   MAP_FORMAT_ORE_ONLY,
   MAP_MAX_ACTORS,

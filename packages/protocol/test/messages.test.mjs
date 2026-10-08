@@ -97,6 +97,24 @@ test('slot, options, map and ready', () => {
   bad({ t: 'options', options: { ...DEFAULT_OPTIONS, cheats: 1 } }, /cheats/);
   const { cheats: _cheats, ...noCheats } = DEFAULT_OPTIONS;
   bad({ t: 'options', options: noCheats }, /cheats/);
+  // Map style, biome and weather (engine mapgen.rs and weather.rs): required, from fixed sets.
+  assert.deepEqual([DEFAULT_OPTIONS.mapStyle, DEFAULT_OPTIONS.biome, DEFAULT_OPTIONS.weather], ['random', 'random', 'full']);
+  for (const mapStyle of ['random', 'land', 'rivers', 'lakes', 'islands']) {
+    assert.equal(ok({ t: 'options', options: { ...DEFAULT_OPTIONS, mapStyle } }).options.mapStyle, mapStyle);
+  }
+  for (const biome of ['random', 'temperate', 'snow', 'desert']) {
+    assert.equal(ok({ t: 'options', options: { ...DEFAULT_OPTIONS, biome } }).options.biome, biome);
+  }
+  for (const weather of ['full', 'cosmetic', 'off']) {
+    assert.equal(ok({ t: 'options', options: { ...DEFAULT_OPTIONS, weather } }).options.weather, weather);
+  }
+  bad({ t: 'options', options: { ...DEFAULT_OPTIONS, mapStyle: 'volcano' } }, /mapStyle/);
+  bad({ t: 'options', options: { ...DEFAULT_OPTIONS, biome: 'swamp' } }, /biome/);
+  bad({ t: 'options', options: { ...DEFAULT_OPTIONS, weather: true } }, /weather/);
+  for (const key of ['mapStyle', 'biome', 'weather']) {
+    const { [key]: _gone, ...without } = DEFAULT_OPTIONS;
+    bad({ t: 'options', options: without }, new RegExp(key));
+  }
 
   const hash = 'a'.repeat(64);
   assert.equal(ok({ t: 'map', map: null }).map, null);

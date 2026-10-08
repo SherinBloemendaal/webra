@@ -8,8 +8,10 @@ import {
   COLOR_COUNT,
   DIFFICULTIES,
   FACTIONS,
+  BIOMES,
   GAME_SPEEDS,
   MAP_SIZES,
+  MAP_STYLES,
   MAX_PLAYERS,
   MIN_PLAYERS,
   NAME_MAX,
@@ -20,12 +22,16 @@ import {
   STARTING_UNITS,
   TEAM_MAX,
   TECH_LEVELS,
+  WEATHER_MODES,
 } from './constants.js';
 import { bool, fail, int, isPlainObject, object, oneOf, text } from './check.js';
 
 export const LOBBY_OPTION_KEYS = [
   'seed',
   'mapSize',
+  'mapStyle',
+  'biome',
+  'weather',
   'startingCash',
   'startingUnits',
   'techLevel',
@@ -39,6 +45,9 @@ export function validateLobbyOptions(v, what = 'options') {
   const out = {
     seed: int(v.seed, 0, SEED_MAX, `${what}.seed`),
     mapSize: oneOf(v.mapSize, MAP_SIZES, `${what}.mapSize`),
+    mapStyle: oneOf(v.mapStyle, MAP_STYLES, `${what}.mapStyle`),
+    biome: oneOf(v.biome, BIOMES, `${what}.biome`),
+    weather: oneOf(v.weather, WEATHER_MODES, `${what}.weather`),
     startingCash: oneOf(v.startingCash, STARTING_CASH, `${what}.startingCash`),
     startingUnits: oneOf(v.startingUnits, STARTING_UNITS, `${what}.startingUnits`),
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),
