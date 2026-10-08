@@ -16,6 +16,7 @@ import { actorInfo, COMPOSITES, NONE, queryKey, tableInfo } from '../js/sim/meth
 import { LocalDriver, Recorder, ReplayController } from '../js/replay.js';
 import { LockstepDriver } from '../js/net.js';
 import { parseReplay, replayOptions, REPLAY_HASH_INTERVAL } from '../js/protocol.js';
+import { RECT_REC_FLOATS, SPRITE_EXTRA_FLOATS, SPRITE_REC_FLOATS } from '../js/crowd.js';
 import { NodeWorker, nodeEnv, scriptedOrders, SKIRMISH, until, WASM_PATH, wasmModule } from './sim-fixtures.mjs';
 
 const wasm = initSync({ module: readFileSync(WASM_PATH) });
@@ -350,9 +351,86 @@ for (const mode of ['direct', 'transfer', 'shared']) {
       const expected = Array.from(new Float32Array(wasm.memory.buffer, direct.fx_ptr(), n * 4));
       assert.deepEqual(Array.from(frame.heat()), expected, 'the same heat shimmer instances');
       assert.ok(frame.valid());
+      // The GPU instance path carries the same sky and shimmer.
+      const before = host.frame.id;
+      host.step({ dt: 0, view: 0, rect, audio: false, instances: 'gpu' });
+      await until(() => host.frame.id > before);
+      const g = host.frame;
+      assert.equal(g.instances, 'gpu');
+      assert.equal(g.weather, frame.weather);
+      assert.deepEqual(Array.from(g.heat()), expected, 'heat shimmer on the GPU path');
     } finally {
       host.dispose();
     }
+  });
+}
+
+/** Records of a directly driven game (copies), for comparison with what crossed the boundary. */
+function directRecords(game, view) {
+  const f32 = (ptr, len) => Array.from(new Float32Array(wasm.memory.buffer, ptr, len));
+  const n = game.build_render_records(view);
+  return {
+    sprites: f32(game.record_ptr(), n * SPRITE_REC_FLOATS),
+    extras: f32(game.record_extra_ptr(), game.record_extra_count() * SPRITE_EXTRA_FLOATS),
+    rects: f32(game.rect_record_ptr(), game.rect_record_count() * RECT_REC_FLOATS),
+  };
+}
+
+const sameRecords = (frame, expected, label) => {
+  const r = frame.records();
+  assert.ok(r, `${label}: records`);
+  assert.deepEqual({ sprites: Array.from(r.sprites), extras: Array.from(r.extras), rects: Array.from(r.rects) }, expected, label);
+  return r.gen;
+};
+
+for (const mode of ['direct', 'transfer', 'shared']) {
+  test(`the GPU instance path through the ${mode} boundary sends records once per tick and when the selection changes`, async () => {
+    const host = await newHost(mode);
+    await host.start({ kind: 'stress', seed: 3, units: 600, size: 64, tickMs: TICK_MS });
+    const direct = Game.new_stress(3, 600, 64);
+    const gpu = { instances: 'gpu' };
+    // A tick: records and fog arrive, no per-frame instances.
+    let f = await stepOnce(host, gpu);
+    direct.tick();
+    assert.equal(f.ticks, 1);
+    assert.equal(f.instances, 'gpu');
+    assert.equal(f.spriteCount, 0);
+    assert.equal(f.sprites().length, 0);
+    let gen = sameRecords(f, directRecords(direct, 0), 'first tick');
+    assert.ok(f.renderBytes > 0);
+    assert.equal(f.fog().length, 64 * 64);
+    const fog = f.fog();
+    // Frames between ticks: nothing is built or sent, the kept records and fog stay.
+    for (let k = 0; k < 3; k++) {
+      f = await stepOnce(host, { ...gpu, dt: 9 });
+      assert.equal(f.ticks, 0);
+      assert.equal(f.renderBytes, 0, 'no render data between ticks');
+      assert.equal(f.records().gen, gen);
+      assert.equal(f.fog(), fog, 'the same fog');
+      assert.ok(f.alpha > 0 && f.alpha < 1);
+    }
+    // A selection change rebuilds them without a tick.
+    const pick = Array.from(direct.select_box(0, -1e9, -1e9, 1e9, 1e9)).slice(0, 5);
+    host.game.set_selection(Uint32Array.from(pick));
+    direct.set_selection(Uint32Array.from(pick));
+    f = await stepOnce(host, { ...gpu, dt: 0 });
+    assert.equal(f.ticks, 0);
+    const selected = sameRecords(f, directRecords(direct, 0), 'after the selection');
+    assert.ok(selected > gen);
+    gen = selected;
+    // The next tick (the rest of the 40 ms): new records again.
+    f = await stepOnce(host, { ...gpu, dt: 13 });
+    direct.tick();
+    assert.equal(f.ticks, 1);
+    assert.ok(sameRecords(f, directRecords(direct, 0), 'second tick') > gen);
+    // Back to the CPU path: per-frame instances; then the GPU path rebuilds at once.
+    f = await stepOnce(host, { dt: 0 });
+    assert.equal(f.instances, 'cpu');
+    assert.ok(f.spriteCount > 0);
+    assert.equal(f.records(), null);
+    f = await stepOnce(host, { ...gpu, dt: 0 });
+    sameRecords(f, directRecords(direct, 0), 'GPU path again');
+    host.dispose();
   });
 }
 

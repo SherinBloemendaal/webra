@@ -30,6 +30,7 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
 import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
@@ -595,6 +596,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     tickMs,
     memoryBytes: () => status.memoryBytes ?? 0,
     sim: () => host.stats(),
+    instances: () => instanceInfo,
     isPaused: () => paused,
     setPaused: online || replay ? undefined : (on) => {
       paused = on;
@@ -736,6 +738,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     });
   }
 
+  // Instance path (js/crowd.js): the CPU path unless ?instances=gpu asks for the GPU pass (and it is available).
+  const instancesParam = new URLSearchParams(location.search).get('instances');
+  let instanceInfo = null;
+  let uploadedFog = null;
+  const NO_RECTS = new Float32Array(0);
+
   let last = performance.now();
   let simMs = 0;
   let fpsFrames = 0;
@@ -754,8 +762,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.
     const v = input.viewRect();
+    const choice = chooseInstancePath({
+      gpuReady: !!renderer.instances,
+      gpuReason: renderer.instancesReason,
+      requested: instancesParam,
+      forceCpu: debug.prefs.cpuInstances,
+    });
     const t0 = performance.now();
-    const f = host.step({ dt, paused, view: view.player, rect: [v.x0, v.y0, v.x1, v.y1], audio: true, paths: settings.get('showUnitPaths') });
+    const f = host.step({
+      dt,
+      paused,
+      view: view.player,
+      rect: [v.x0, v.y0, v.x1, v.y1],
+      audio: true,
+      paths: settings.get('showUnitPaths'),
+      instances: choice.path,
+    });
     // Main thread time the simulation took this frame (in a worker: posting the step).
     const simFrameMs = performance.now() - t0;
     if (!f) {
@@ -790,7 +812,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         sky = JSON.parse(f.weather);
       }
       if (sky) weather.update({ ...sky, tick: f.tick }, now / 1000, { x: (v.x0 + v.x1) / 2, y: (v.y0 + v.y1) / 2 });
-      renderer.uploadFog(f.fog());
+      // The GPU path keeps one fog until it changes; the CPU path sends it every frame.
+      const fog = f.fog();
+      if (fog !== uploadedFog) renderer.uploadFog(fog);
+      uploadedFog = f.instances === 'gpu' ? fog : null;
+      instanceInfo = { path: f.instances, reason: f.instances === choice.path ? choice.reason : 'switching', buildMs: f.buildMs, bytes: f.renderBytes };
     }
     progress?.show(busy() ? progressText() : null);
     // Sounds of what happened, heard from the camera (fog hides enemy sounds).
@@ -802,17 +828,20 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const renderStart = performance.now();
     const uiRects = input.uiRects();
     commandBar.frame();
-    const simRects = f.rects();
+    // GPU path: the simulation's rects come from the instance pass, these are the UI's.
+    const records = f.instances === 'gpu' ? f.records() : null;
+    const simRects = f.instances === 'gpu' ? NO_RECTS : f.rects();
     const rects = new Float32Array(simRects.length + uiRects.length);
     rects.set(simRects);
     rects.set(uiRects, simRects.length);
     // Building animations run on wall time but stop with the game (and for reduced motion).
     animClock.advance(dt, paused);
     const lines = f.lineCount ? f.lines() : null;
+    const gpu = records ? { records, alpha: f.alpha, view: [v.x0, v.y0, v.x1, v.y1] } : null;
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
-    renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, fx);
+    renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
     // Shared memory: count a frame the worker wrote over while it was read (js/sim/framebuffer.js).
     f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.

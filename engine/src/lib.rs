@@ -17,6 +17,7 @@ mod commands;
 pub mod debug;
 pub mod flowfield;
 mod helicopter;
+pub mod instances;
 pub mod map;
 pub mod mapdata;
 pub mod mapgen;
@@ -52,6 +53,8 @@ mod tests_commands;
 mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
+#[cfg(test)]
+mod tests_instances;
 #[cfg(test)]
 mod tests_minimap;
 #[cfg(test)]
@@ -114,6 +117,10 @@ pub struct Game {
     selection: Vec<u32>,
     /// Route lines of the selected units (paths.rs).
     paths: Vec<f32>,
+    /// Tick-rate records for the GPU instance pass (instances.rs).
+    sprite_records: Vec<f32>,
+    sprite_extras: Vec<f32>,
+    rect_records: Vec<f32>,
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
     outbox: Vec<Order>,
@@ -242,6 +249,9 @@ impl Game {
             fx: Vec::new(),
             selection: Vec::new(),
             paths: Vec::new(),
+            sprite_records: Vec::new(),
+            sprite_extras: Vec::new(),
+            rect_records: Vec::new(),
             lockstep: false,
             outbox: Vec::new(),
         }
@@ -508,6 +518,43 @@ impl Game {
         self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
         self.world.render_all = false;
         self.sprites.len() / render::SPRITE_FLOATS
+    }
+
+    /// The frame `build_render` draws, as tick-rate records for the GPU
+    /// instance pass (instances.rs, apps/game/shaders/instances.wgsl): the
+    /// whole map, both ends of every interpolation, each group's cull. They
+    /// change only with a tick, the selection, the hovered actor, the render
+    /// settings or `player`, so the caller rebuilds them only then. Returns
+    /// the sprite record count; `record_ptr`, `record_extra_ptr` and
+    /// `rect_record_ptr` (with their counts) locate the data.
+    pub fn build_render_records(&mut self, player: u8) -> usize {
+        self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
+        let observer = player == observer::OBSERVER;
+        self.world.render_all = observer;
+        let player = if observer { 0 } else { player };
+        self.world.build_render_records(player, &self.selection, &mut self.sprite_records, &mut self.sprite_extras, &mut self.rect_records);
+        self.world.render_all = false;
+        self.sprite_records.len() / instances::SPRITE_REC_FLOATS
+    }
+
+    pub fn record_ptr(&self) -> *const f32 {
+        self.sprite_records.as_ptr()
+    }
+
+    pub fn record_extra_count(&self) -> usize {
+        self.sprite_extras.len() / instances::SPRITE_EXTRA_FLOATS
+    }
+
+    pub fn record_extra_ptr(&self) -> *const f32 {
+        self.sprite_extras.as_ptr()
+    }
+
+    pub fn rect_record_count(&self) -> usize {
+        self.rect_records.len() / instances::RECT_REC_FLOATS
+    }
+
+    pub fn rect_record_ptr(&self) -> *const f32 {
+        self.rect_records.as_ptr()
     }
 
     pub fn sprite_ptr(&self) -> *const f32 {

@@ -950,12 +950,13 @@ impl World {
     pub(crate) fn render_abilities(
         &self,
         player: u8,
-        view: &crate::render::View,
+        sink: &mut crate::instances::Sink,
         selected: &[u32],
         sprites: &mut Vec<f32>,
         rects: &mut Vec<f32>,
     ) {
-        use crate::render::px;
+        use crate::instances::{SpriteRec, NO_CULL};
+        use crate::render::{push_fixed_rect, px};
         let ids = crate::render::SpriteIds::new(self.rules.actors.len());
         let vis = &self.players[player as usize].visible;
         // Mines: owners and allies always see them; others only when detected.
@@ -965,17 +966,18 @@ impl World {
                     continue;
                 }
                 let (x, y) = (px(a.x), px(a.y));
-                if !view.contains(x, y, 16.0) {
+                if !sink.visible([x, y], [x, y], 16.0) {
                     continue;
                 }
                 let own = self.render_allied(a.owner, player);
                 if !own && (vis[self.cell_index(a.x, a.y)] == 0 || self.is_cloaked_from(i, player)) {
                     continue;
                 }
-                sprites.extend_from_slice(&[x, y, 0.0, (a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, (a.flash > 0) as i32 as f32]);
+                let at = SpriteRec::at(x, y, 16.0);
+                sink.sprite(sprites, at.look((a.ty * 2) as f32, a.owner as f32, 1.0, 1.0, (a.flash > 0) as i32 as f32));
                 if !own {
                     // Detected enemy mine: warning marker.
-                    sprites.extend_from_slice(&[x, y - 6.0, 0.0, ids.abilities_base, 0.0, 1.0, 0.9, 0.0]);
+                    sink.sprite(sprites, at.look(ids.abilities_base, 0.0, 1.0, 0.9, 0.0).offset(0.0, -6.0));
                 }
             }
         }
@@ -984,7 +986,7 @@ impl World {
                 continue;
             }
             let (x, y) = (px(a.x), px(a.y));
-            if !view.contains(x, y, 64.0) {
+            if !sink.visible([x, y], [x, y], 64.0) {
                 continue;
             }
             let seen = a.owner == player || (self.is_visible_to(i, player) && !self.is_cloaked_from(i, player));
@@ -994,11 +996,12 @@ impl World {
             // Iron Curtain: red glow while invulnerable.
             if a.invulnerable_until > self.tick {
                 let scale = if a.kind == Kind::Building { 2.0 } else { 1.0 };
-                sprites.extend_from_slice(&[x, y, 0.0, ids.abilities_base + 3.0, 0.0, scale, 0.75, 0.0]);
+                sink.sprite(sprites, SpriteRec::at(x, y, 64.0).look(ids.abilities_base + 3.0, 0.0, scale, 0.75, 0.0));
             }
             // Own cloaked units shimmer.
             if a.ab.cloaked && self.render_allied(a.owner, player) {
-                sprites.extend_from_slice(&[x, y, (self.tick % 64) as f32 * 0.1, ids.abilities_base + 7.0, 0.0, 1.0, 0.5, 0.0]);
+                let r = SpriteRec::at(x, y, 64.0).look(ids.abilities_base + 7.0, 0.0, 1.0, 0.5, 0.0);
+                sink.sprite(sprites, r.radians((self.tick % 64) as f32 * 0.1));
             }
         }
         // Atom bombs: up from the silo, then down on the target; a beacon marks
@@ -1006,9 +1009,9 @@ impl World {
         for n in &self.abil.nukes {
             if self.render_allied(n.owner, player) {
                 let (bx, by) = (px(n.x), px(n.y));
-                if view.contains(bx, by, 32.0) {
+                if sink.visible([bx, by], [bx, by], 32.0) {
                     let pulse = 0.6 + 0.4 * ((self.tick % 20) as f32 / 20.0);
-                    sprites.extend_from_slice(&[bx, by, 0.0, ids.abilities_base + 5.0, n.owner as f32, 1.0, pulse, 0.0]);
+                    sink.sprite(sprites, SpriteRec::at(bx, by, 32.0).look(ids.abilities_base + 5.0, n.owner as f32, 1.0, pulse, 0.0));
                 }
             }
             if self.tick < n.launch {
@@ -1022,8 +1025,8 @@ impl World {
                 (n.x, n.y, std::f32::consts::FRAC_PI_2, px(CELL * 12) * (n.impact - self.tick) as f32 / half.max(1) as f32)
             };
             let (x, y) = (px(mx), px(my) - lift);
-            if self.render_sees_cell(player, self.cell_index(mx, my)) && view.contains(x, y, 32.0) {
-                sprites.extend_from_slice(&[x, y, ang, ids.missile, n.owner as f32, 2.0, 1.0, 0.0]);
+            if self.render_sees_cell(player, self.cell_index(mx, my)) && sink.visible([x, y], [x, y], 32.0) {
+                sink.sprite(sprites, SpriteRec::at(x, y, 32.0).look(ids.missile, n.owner as f32, 2.0, 1.0, 0.0).radians(ang));
             }
         }
         // GPS: enemy units under fog show as dots (GpsDot).
@@ -1036,14 +1039,14 @@ impl World {
                     continue;
                 }
                 let (x, y) = (px(a.x), px(a.y));
-                if view.contains(x, y, 8.0) {
-                    sprites.extend_from_slice(&[x, y, 0.0, ids.abilities_base + 6.0, a.owner as f32, 1.0, 1.0, 0.0]);
+                if sink.visible([x, y], [x, y], 8.0) {
+                    sink.sprite(sprites, SpriteRec::at(x, y, 8.0).look(ids.abilities_base + 6.0, a.owner as f32, 1.0, 1.0, 0.0));
                 }
             }
         }
         for f in &self.abil.fx {
             let (x, y) = (px(f.x), px(f.y));
-            if !self.render_sees_cell(player, self.cell_index(f.x, f.y)) || !view.contains(x, y, 96.0) {
+            if !self.render_sees_cell(player, self.cell_index(f.x, f.y)) || !sink.visible([x, y], [x, y], 96.0) {
                 continue;
             }
             let t = 1.0 - f.ttl as f32 / f.max as f32;
@@ -1051,7 +1054,7 @@ impl World {
                 FxKind::Thump => (ids.abilities_base + 1.0, 0.6 + t * 2.4),
                 FxKind::Chrono => (ids.abilities_base + 2.0, 0.8 + t * 0.6),
             };
-            sprites.extend_from_slice(&[x, y, 0.0, sprite, 0.0, scale, 1.0 - t, 0.0]);
+            sink.sprite(sprites, SpriteRec::at(x, y, 96.0).look(sprite, 0.0, scale, 1.0 - t, 0.0));
         }
         // Selected own units: ammo pips, chrono charge, gap generator range.
         for &r in selected {
@@ -1071,13 +1074,13 @@ impl World {
                 for k in 0..m.ammo {
                     let full = k < a.ab.ammo;
                     let c = if full { [0.95, 0.8, 0.2, 1.0] } else { [0.15, 0.15, 0.15, 0.8] };
-                    rects.extend_from_slice(&[x - half + k as f32 * 3.0, y + half + 1.0, 2.0, 2.0, c[0], c[1], c[2], c[3]]);
+                    push_fixed_rect(sink, rects, &[x - half + k as f32 * 3.0, y + half + 1.0, 2.0, 2.0, c[0], c[1], c[2], c[3]]);
                 }
             }
             if let Some(pc) = &info.abilities.portable_chrono {
                 let frac = 1.0 - a.ab.chrono_charge as f32 / pc.charge_delay.max(1) as f32;
-                rects.extend_from_slice(&[x - half, y + half + 1.0, half * 2.0, 2.0, 0.0, 0.0, 0.0, 0.7]);
-                rects.extend_from_slice(&[x - half, y + half + 1.0, half * 2.0 * frac, 2.0, 0.45, 0.85, 1.0, 1.0]);
+                push_fixed_rect(sink, rects, &[x - half, y + half + 1.0, half * 2.0, 2.0, 0.0, 0.0, 0.0, 0.7]);
+                push_fixed_rect(sink, rects, &[x - half, y + half + 1.0, half * 2.0 * frac, 2.0, 0.45, 0.85, 1.0, 1.0]);
             }
             if let Some(cs) = &info.abilities.creates_shroud {
                 // RenderShroudCircle: dots along the range.
@@ -1085,16 +1088,8 @@ impl World {
                 let n = 48;
                 for k in 0..n {
                     let ang = k as f32 / n as f32 * std::f32::consts::TAU;
-                    sprites.extend_from_slice(&[
-                        x + ang.cos() * r,
-                        y + ang.sin() * r,
-                        ang,
-                        ids.abilities_base + 4.0,
-                        a.owner as f32,
-                        1.0,
-                        0.8,
-                        0.0,
-                    ]);
+                    let at = SpriteRec::at(x + ang.cos() * r, y + ang.sin() * r, NO_CULL);
+                    sink.sprite(sprites, at.look(ids.abilities_base + 4.0, a.owner as f32, 1.0, 0.8, 0.0).radians(ang));
                 }
             }
         }

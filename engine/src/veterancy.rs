@@ -240,7 +240,7 @@ impl World {
     /// Rank decorations (chevrons, elite star) at the bottom right of every
     /// ranked unit `player` can see, like OpenRA's WithDecoration@RANK-*
     /// (shown for allies, enemies and neutrals alike).
-    pub(crate) fn render_veterancy(&self, player: u8, alpha: f32, view: &crate::render::View, base: f32, sprites: &mut Vec<f32>) {
+    pub(crate) fn render_veterancy(&self, player: u8, sink: &mut crate::instances::Sink, base: f32, sprites: &mut Vec<f32>) {
         use crate::overlays::chevron_position;
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.rank == 0 || !a.is_unit() || !a.in_world() || a.air.parachute {
@@ -249,15 +249,16 @@ impl World {
             if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
-            let (x, y, w, h) = self.selection_box(i, alpha);
-            if !view.contains(x, y, 32.0) {
+            let (anchor, w, h) = self.selection_anchor(i);
+            if !sink.visible(anchor.from, anchor.to, 32.0) {
                 continue;
             }
             let sprite =
                 if a.rank >= self.max_rank(i) { base + DECORATION_ELITE } else { base + DECORATION_CHEVRONS + (a.rank.min(3) - 1) as f32 };
             // Just right of the health bar over the selection bracket (overlays.rs).
-            let (cx, cy) = chevron_position(x, y, w, h);
-            sprites.extend_from_slice(&[cx, cy, 0.0, sprite, a.owner as f32, 1.0, 1.0, 0.0]);
+            let (dx, dy) = chevron_position(0.0, 0.0, w, h);
+            let r = crate::instances::SpriteRec::moving(anchor.from, anchor.to, 32.0).look(sprite, a.owner as f32, 1.0, 1.0, 0.0);
+            sink.sprite(sprites, r.offset(dx, dy));
         }
     }
 

@@ -10,11 +10,14 @@
 //   call(method, args)   an order or a selection / hover change
 //   query(method, args)  a read-only Game query
 //   step(request)        advance by the frame's wall time, build the render data
+//                        (per frame: instances; `instances: 'gpu'`: tick-rate
+//                        records for the GPU instance pass, only when they change)
 //   command(name, args)  network, replay, recorder and debug controls
 // Events (network sends, caught up, hash check) go out through `emit`.
 
 import { LockstepDriver } from '../net.js';
 import { LocalDriver, newGame, Recorder, ReplayController } from '../replay.js';
+import { RECT_REC_FLOATS, SPRITE_EXTRA_FLOATS, SPRITE_REC_FLOATS } from '../crowd.js';
 import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
 
 const MAX_TICKS_PER_FRAME = 8;
@@ -46,6 +49,11 @@ export class SimCore {
     this.epoch = 0;
     this.tableTick = -1;
     this.tableDirty = true;
+    /** Bumped by everything besides a tick that changes what is drawn (orders, selection, hover, settings, seeks). */
+    this.renderEpoch = 0;
+    /** What the last records were built for (GPU instance path), and their generation. */
+    this.recordsKey = null;
+    this.recordsGen = 0;
   }
 
   // ---- Start ------------------------------------------------------------------------
@@ -153,6 +161,7 @@ export class SimCore {
   call(method, args) {
     if (!isOrder(method) && !isUiState(method) && !SETTINGS.has(method)) throw new Error(`not a callable Game method: ${method}`);
     this.game[method](...args);
+    this.renderEpoch++;
   }
 
   /** A read-only query (js/sim/methods.js QUERIES), plus `fog_bytes(player)` (a copy). */
@@ -212,6 +221,7 @@ export class SimCore {
       case 'seek':
         this.replay?.seek(args[0]);
         this.tableDirty = true;
+        this.renderEpoch++;
         return null;
       case 'setSpeed':
         this.replay?.setSpeed(args[0]);
@@ -237,6 +247,7 @@ export class SimCore {
         if (this.local) this.local.tick();
         else this.game.tick();
         this.tableDirty = true;
+        this.renderEpoch++;
         return true;
       case 'stateHash':
         return this.game.state_hash();
@@ -259,10 +270,15 @@ export class SimCore {
    * @param {{
    *   dt: number, paused?: boolean, view: number, rect: number[],
    *   audio?: boolean, table?: boolean, paths?: boolean, queries?: Array<[string, string, any[]]>,
+   *   instances?: 'cpu' | 'gpu',
    * }} req `view`: the player whose eyes the screen uses (or the observer
    *   view), `rect`: the visible world rectangle [x0, y0, x1, y1] in pixels,
    *   `audio`: take the sound events, `table`: send the actor table when it
-   *   changed, `paths`: build the selected units' route lines ("Show unit paths")
+   *   changed, `paths`: build the selected units' route lines ("Show unit paths"),
+   *   `instances`: 'cpu' (default) builds this frame's interpolated and culled
+   *   sprites and rects; 'gpu' builds tick-rate records of the whole map for
+   *   the GPU instance pass (js/crowd-gpu.js) and sends them, with the fog,
+   *   only when they changed (a tick, an order, the selection, the view)
    * @returns {object} the frame: timings, status, query answers, and
    *   `{ ptr, len }` locations in wasm memory of the render data (valid until
    *   the next call into the game; js/sim/worker.js copies them out)
@@ -329,18 +345,53 @@ export class SimCore {
 
     let terrain = null;
     if (g.terrain_dirty()) terrain = { ptr: g.terrain_ptr(), len: g.terrain_len() };
-    const fog = { ptr: g.fog_ptr(req.view), len: g.fog_len() };
-    const [x0, y0, x1, y1] = req.rect;
-    const spriteCount = g.build_render(req.view, alpha, x0, y0, x1, y1);
-    const sprites = { ptr: g.sprite_ptr(), len: spriteCount * 8 };
-    const rectCount = g.rect_count();
-    const rects = { ptr: g.rect_ptr(), len: rectCount * 8 };
+    const gpu = req.instances === 'gpu';
+    const buildStart = this.now();
+    let fog = null;
+    let spriteCount = 0;
+    let rectCount = 0;
+    let sprites = { ptr: 0, len: 0 };
+    let rects = { ptr: 0, len: 0 };
+    let records = null;
+    if (gpu) {
+      // Records change with a tick, an order or UI state, or the view; the
+      // GPU interpolates and culls them every frame in between.
+      const key = `${tick}:${req.view}:${this.renderEpoch}`;
+      if (key !== this.recordsKey) {
+        this.recordsKey = key;
+        const count = g.build_render_records(req.view);
+        records = {
+          gen: ++this.recordsGen,
+          sprites: { ptr: g.record_ptr(), len: count * SPRITE_REC_FLOATS },
+          extras: { ptr: g.record_extra_ptr(), len: g.record_extra_count() * SPRITE_EXTRA_FLOATS },
+          rects: { ptr: g.rect_record_ptr(), len: g.rect_record_count() * RECT_REC_FLOATS },
+        };
+        fog = { ptr: g.fog_ptr(req.view), len: g.fog_len() };
+      }
+    } else {
+      // A CPU frame: the GPU path builds its records afresh when it comes back.
+      this.recordsKey = null;
+      fog = { ptr: g.fog_ptr(req.view), len: g.fog_len() };
+      const [x0, y0, x1, y1] = req.rect;
+      spriteCount = g.build_render(req.view, alpha, x0, y0, x1, y1);
+      sprites = { ptr: g.sprite_ptr(), len: spriteCount * 8 };
+      rectCount = g.rect_count();
+      rects = { ptr: g.rect_ptr(), len: rectCount * 8 };
+    }
     const lineCount = req.paths ? g.build_paths(req.view, alpha) : 0;
     const lines = { ptr: lineCount ? g.path_ptr() : 0, len: lineCount * 8 };
-    // Heat shimmer over hot vehicles in view (4 floats each) and the sky (weather_json, a short string).
-    const heatCount = g.build_heat_fx(req.view, x0, y0, x1, y1);
+    // Heat shimmer over hot vehicles in view (4 floats each) and the sky
+    // (weather_json, a short string): on both instance paths.
+    const [hx0, hy0, hx1, hy1] = req.rect;
+    const heatCount = g.build_heat_fx(req.view, hx0, hy0, hx1, hy1);
     const heat = { ptr: heatCount ? g.fx_ptr() : 0, len: heatCount * 4 };
     const weather = g.weather_json();
+    const buildMs = this.now() - buildStart;
+    // Render data handed to the main thread (and the GPU) this frame.
+    const renderBytes =
+      (sprites.len + rects.len + lines.len + heat.len) * 4 +
+      (fog ? fog.len : 0) +
+      (records ? (records.sprites.len + records.extras.len + records.rects.len) * 4 : 0);
     return {
       ticks,
       alpha,
@@ -352,6 +403,9 @@ export class SimCore {
       answers,
       audio,
       table,
+      instances: gpu ? 'gpu' : 'cpu',
+      buildMs,
+      renderBytes,
       spriteCount,
       rectCount,
       lineCount,
@@ -363,6 +417,7 @@ export class SimCore {
       rects,
       lines,
       heat,
+      records,
     };
   }
 

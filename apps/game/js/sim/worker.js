@@ -6,7 +6,9 @@
 // Render data leaves through shared memory (mode `shared`: a double buffer
 // with sequence counters, js/sim/framebuffer.js) or as transferred
 // ArrayBuffers (mode `transfer`), which the main thread hands back with its
-// next step so steady play allocates nothing.
+// next step so steady play allocates nothing. The GPU instance path
+// (`instances: 'gpu'`) sends its tick-rate records and the fog as
+// transferred buffers in every mode, and only when they changed.
 
 import init, { Game, initSync, version } from '../../pkg/webra_sim.js';
 import { SimCore } from './core.js';
@@ -40,7 +42,7 @@ function copyOut(Type, loc, transfer) {
 /** The frame as it leaves the worker: locations in wasm memory replaced by data. */
 function pack(frame) {
   const transfer = [];
-  const out = { ...frame, sprites: null, rects: null, lines: null, heat: null, fog: null, terrain: null, shared: null };
+  const out = { ...frame, sprites: null, rects: null, lines: null, heat: null, fog: null, terrain: null, shared: null, records: null };
   // Terrain changes rarely (ore, craters, buildings): always a transferred copy.
   if (frame.terrain) {
     out.terrain = new Uint8Array(wasm.memory.buffer, frame.terrain.ptr, frame.terrain.len).slice();
@@ -48,6 +50,22 @@ function pack(frame) {
   }
   if (frame.table) transfer.push(frame.table.buffer);
   if (frame.audio) transfer.push(frame.audio.buffer);
+  if (frame.instances === 'gpu') {
+    // Records and fog only when they changed: once per tick at most.
+    const r = frame.records;
+    if (r) {
+      out.records = {
+        gen: r.gen,
+        sprites: copyOut(Float32Array, r.sprites, transfer),
+        extras: copyOut(Float32Array, r.extras, transfer),
+        rects: copyOut(Float32Array, r.rects, transfer),
+      };
+    }
+    if (frame.fog) out.fog = copyOut(Uint8Array, frame.fog, transfer);
+    if (frame.lines.len) out.lines = copyOut(Float32Array, frame.lines, transfer);
+    if (frame.heat.len) out.heat = copyOut(Float32Array, frame.heat, transfer);
+    return { out, transfer };
+  }
   if (mode === 'shared') {
     const mem = wasm.memory.buffer;
     out.shared = shared.write((view) => {

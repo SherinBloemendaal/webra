@@ -15,7 +15,7 @@
 
 use crate::combat::FireTarget;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, isqrt, turn_toward, wrap_angle, CELL};
-use crate::render::{px, View};
+use crate::render::px;
 use crate::rules::{AircraftInfo, Kind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, SmartAction, World, MAX_WEAPONS, NONE};
 
@@ -988,7 +988,15 @@ impl World {
     /// Rotors of a helicopter drawn at (x, y): crisp blades on the ground, a
     /// blurred disc with faint blades in the air. Rotor wash on the ground
     /// while taking off or landing.
-    pub(crate) fn push_heli_rotors(&self, i: usize, x: f32, y: f32, alpha: f32, ground: &mut Vec<f32>, out: &mut Vec<f32>) {
+    pub(crate) fn push_heli_rotors(
+        &self,
+        i: usize,
+        at: crate::instances::SpriteRec,
+        lift: f32,
+        sink: &mut crate::instances::Sink,
+        ground: &mut Vec<f32>,
+        out: &mut Vec<f32>,
+    ) {
         if !self.is_heli(i) {
             return;
         }
@@ -996,48 +1004,50 @@ impl World {
         let ids = crate::render::SpriteIds::new(self.rules.actors.len());
         let air = self.heli_air(i);
         let team = a.owner as f32;
-        let tau = std::f32::consts::TAU;
-        let rotor = (a.pturret as f32 + angle_diff(a.pturret, a.turret) as f32 * alpha) * tau / 1024.0;
-        let facing = a.pfacing as f32 + angle_diff(a.pfacing, a.facing) as f32 * alpha;
-        let (fx, fy) = ((facing * tau / 1024.0).sin(), -(facing * tau / 1024.0).cos());
+        // The rotor spins with the turret angle; arms point along the body facing.
+        let rotor = at.facing(a.pturret, angle_diff(a.pturret, a.turret));
+        let turn = angle_diff(a.pfacing, a.facing);
         let radius = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
         let disc_scale = radius as f32 / ROTOR_DISC_RADIUS as f32;
         let flying = a.altitude > 0;
         for &off in &air.rotors {
-            let (rx, ry) = (x + fx * px(off), y + fy * px(off));
+            let arm = |r: crate::instances::SpriteRec| r.offset(0.0, -lift).arm(px(off), 0.0, a.pfacing, turn);
             if flying {
-                out.extend_from_slice(&[rx, ry, rotor, ids.helis_base + SPECIAL_ROTOR_DISC, team, disc_scale, 0.55, 0.0]);
-                out.extend_from_slice(&[rx, ry, rotor, (a.ty * 2 + 1) as f32, team, 1.0, 0.3, 0.0]);
+                sink.sprite(out, arm(rotor.look(ids.helis_base + SPECIAL_ROTOR_DISC, team, disc_scale, 0.55, 0.0)));
+                sink.sprite(out, arm(rotor.look((a.ty * 2 + 1) as f32, team, 1.0, 0.3, 0.0)));
             } else {
-                out.extend_from_slice(&[rx, ry, rotor, (a.ty * 2 + 1) as f32, team, 1.0, 1.0, 0.0]);
+                sink.sprite(out, arm(rotor.look((a.ty * 2 + 1) as f32, team, 1.0, 1.0, 0.0)));
             }
         }
         let cruise = air.cruise_altitude.max(1);
         if flying && a.altitude < cruise {
             let k = 1.0 - a.altitude as f32 / cruise as f32;
-            let gy = y + px(a.altitude);
-            ground.extend_from_slice(&[x, gy, rotor * 0.25, ids.helis_base + SPECIAL_ROTOR_WASH, 0.0, 0.8 + k * 0.6, 0.25 + k * 0.45, 0.0]);
+            // On the ground under the helicopter, turning at a quarter of the rotor's speed.
+            let wash = rotor.look(ids.helis_base + SPECIAL_ROTOR_WASH, 0.0, 0.8 + k * 0.6, 0.25 + k * 0.45, 0.0);
+            sink.sprite(ground, wash.offset(0.0, -lift + px(a.altitude)).angle_affine(0.25, 0.0));
         }
     }
 
     /// Falling husks visible to `player`: shadow on the ground, husk and smoke above.
-    pub(crate) fn push_heli_crashes(&self, player: u8, alpha: f32, view: &View, ground: &mut Vec<f32>, out: &mut Vec<f32>) {
+    pub(crate) fn push_heli_crashes(&self, player: u8, sink: &mut crate::instances::Sink, ground: &mut Vec<f32>, out: &mut Vec<f32>) {
+        use crate::instances::SpriteRec;
         let ids = crate::render::SpriteIds::new(self.rules.actors.len());
-        let tau = std::f32::consts::TAU;
         for c in &self.crashes {
             if !self.render_sees_cell(player, self.cell_index(c.x, c.y)) {
                 continue;
             }
             let (x, y) = (px(c.x), px(c.y));
-            if !view.contains(x, y, 64.0) {
+            if !sink.visible([x, y], [x, y], 64.0) {
                 continue;
             }
-            let lift = px(c.palt) + (px(c.altitude) - px(c.palt)) * alpha;
-            let ang = (c.pfacing as f32 + angle_diff(c.pfacing, c.facing) as f32 * alpha) * tau / 1024.0;
+            // The husk sinks from its previous to its current altitude during the tick.
+            let (l0, l1) = (px(c.palt), px(c.altitude));
+            let at = SpriteRec::at(x, y, 64.0).facing(c.pfacing, angle_diff(c.pfacing, c.facing));
             let sprite = (c.ty * 2) as f32;
-            ground.extend_from_slice(&[x + lift * 0.4, y, ang, sprite, c.owner as f32, 0.9, 0.25, -1.0]);
-            out.extend_from_slice(&[x, y - lift, ang, sprite, c.owner as f32, 1.0, 1.0, 0.0]);
-            out.extend_from_slice(&[x, y - lift - 4.0, ang, ids.helis_base + SPECIAL_SMOKE, 0.0, 1.0, 0.8, 0.0]);
+            sink.sprite(ground, at.look(sprite, c.owner as f32, 0.9, 0.25, -1.0).offset_moving([l0 * 0.4, 0.0], [l1 * 0.4, 0.0]));
+            sink.sprite(out, at.look(sprite, c.owner as f32, 1.0, 1.0, 0.0).offset_moving([0.0, -l0], [0.0, -l1]));
+            let smoke = at.look(ids.helis_base + SPECIAL_SMOKE, 0.0, 1.0, 0.8, 0.0);
+            sink.sprite(out, smoke.offset_moving([0.0, -l0 - 4.0], [0.0, -l1 - 4.0]));
         }
     }
 

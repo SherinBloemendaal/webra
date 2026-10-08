@@ -20,6 +20,8 @@
 // The pure helpers at the top have no DOM and are unit tested
 // (apps/game/tests/debug.test.mjs).
 
+import { instanceLines } from './crowd.js';
+
 /** Cheat flags (engine/src/debug.rs DevFlag), in menu order. */
 export const CHEATS = [
   { flag: 'fast_build', label: 'Instant build', title: 'Production finishes at once (it still costs money).' },
@@ -80,10 +82,12 @@ export function decodeGrid(data, skip = 0) {
   return { x0, y0, w, h, at: (x, y) => data[skip + 4 + (y - y0) * w + (x - x0)] };
 }
 
-/** Stored view choices: only known keys, only booleans. */
+/** Stored choices: known view keys and `cpuInstances` (force the CPU instance path), only booleans. */
 export function sanitizePrefs(stored) {
   const out = {};
-  for (const v of VIEWS) out[v.key] = !!(stored && typeof stored === 'object' && stored[v.key] === true);
+  const ok = stored && typeof stored === 'object';
+  for (const v of VIEWS) out[v.key] = !!(ok && stored[v.key] === true);
+  out.cpuInstances = !!(ok && stored.cpuInstances === true);
   return out;
 }
 
@@ -129,7 +133,7 @@ export class PerfHistory {
 }
 
 /** Lines of the performance panel. */
-export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memoryBytes = 0, sim = null } = {}) {
+export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memoryBytes = 0, sim = null, instances = null } = {}) {
   const f = perf.summary('frame');
   const r = perf.summary('render');
   const s = perf.summary('sim');
@@ -146,6 +150,7 @@ export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memo
   }
   if (memoryBytes > 0) lines.push(`wasm memory ${(memoryBytes / (1024 * 1024)).toFixed(1)} MB`);
   if (sim) lines.push(...simLines(sim));
+  lines.push(...instanceLines(instances));
   return lines;
 }
 
@@ -200,7 +205,9 @@ export class DebugMenu {
    *   game: any, input: any, player: number, rules: any, colors: number[][],
    *   online: boolean, tickMs: number, memoryBytes?: () => number, sim?: () => object,
    *   step?: () => boolean, isPaused?: () => boolean, setPaused?: (on: boolean) => void,
-   * }} ctx `step` runs one simulation tick while paused (local games only)
+   *   instances?: () => object,
+   * }} ctx `step` runs one simulation tick while paused (local games only);
+   *   `instances` describes the instance path for the stats (js/crowd.js instanceLines)
    */
   constructor(field, ctx) {
     this.ctx = ctx;
@@ -309,6 +316,23 @@ export class DebugMenu {
     views.append(vgrid);
     panel.append(views);
 
+    // Rendering: the GPU instance pass or the CPU path (js/crowd.js).
+    const rendering = el('div', 'debug-section');
+    rendering.append(el('h3', 'debug-heading', 'Rendering'));
+    const row = el('label', 'debug-check');
+    row.title = 'Build every frame\'s sprites in the simulation instead of interpolating tick-rate records on the GPU.';
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = this.prefs.cpuInstances;
+    box.addEventListener('change', () => {
+      this.prefs.cpuInstances = box.checked;
+      writePrefs(this.prefs);
+      this.refreshPanel();
+    });
+    row.append(box, el('span', null, 'CPU instance path'));
+    rendering.append(row);
+    panel.append(rendering);
+
     // Simulation stepping (local games only: online games never pause).
     if (!this.ctx.online && this.ctx.step) {
       const sim = el('div', 'debug-section');
@@ -379,6 +403,7 @@ export class DebugMenu {
         tickMs: this.ctx.tickMs,
         memoryBytes: this.ctx.memoryBytes?.() ?? 0,
         sim: this.ctx.sim?.() ?? null,
+        instances: this.ctx.instances?.() ?? null,
       }).join('\n');
     }
   }
