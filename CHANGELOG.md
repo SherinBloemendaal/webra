@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.0](https://github.com/SherinBloemendaal/webra/compare/v0.5.0...v0.6.0) (2026-10-08)
+
+
+### Features
+
+* **engine:** add an actor table for UI lookups from a simulation worker ([e7df3b6](https://github.com/SherinBloemendaal/webra/commit/e7df3b61790ff92731d6ce804ae7add25cbd877c))
+* **engine:** build tick-rate instance records for a GPU instance pass ([28ea9ac](https://github.com/SherinBloemendaal/webra/commit/28ea9ac33a8704f3c23e6026c46b7c097ff01ee8))
+* **game:** interpolate and cull instances in a WebGPU compute pass ([2ab123d](https://github.com/SherinBloemendaal/webra/commit/2ab123d9c4f3c2d96af2cdfc91393c10ae1b1a77))
+* **game:** run the simulation in a web worker ([2804d89](https://github.com/SherinBloemendaal/webra/commit/2804d89259bc62c51c6e74955ec21c11c3614c8b))
+* **website:** cross-origin isolate the game for shared memory ([a2383ac](https://github.com/SherinBloemendaal/webra/commit/a2383acfac4571e82d442648e7154b7028cb2da7))
+
+
+### Bug Fixes
+
+* **engine:** break ore truck ties without scan order so mirrored trucks pick mirrored ore ([5a654c0](https://github.com/SherinBloemendaal/webra/commit/5a654c042fc111cfe0c80a863e1a08f67435c20d))
+* **engine:** halve desert heat build-up and bump the protocol version ([b3ef7c5](https://github.com/SherinBloemendaal/webra/commit/b3ef7c52d8d408e9005ad1dfd1a8cfeb675d3eab))
+* **engine:** join cut-off land to the bases and guarantee reachable ore ([88dcdf0](https://github.com/SherinBloemendaal/webra/commit/88dcdf0a10597a663c85371ee643e19886c5d3cc))
+* **engine:** let AI games end when economies run dry ([d218222](https://github.com/SherinBloemendaal/webra/commit/d218222347b5db416134ffaf12d9b5efb9ce594c))
+* **engine:** turn building turrets smoothly between ticks ([46d9f82](https://github.com/SherinBloemendaal/webra/commit/46d9f82c02c4da75500612156ac745156d6a1360))
+* **game:** explain replays and saves of other versions instead of failing validation ([b584bd3](https://github.com/SherinBloemendaal/webra/commit/b584bd30142290fb89974bfaf122e6ac36a01bfc))
+* **game:** keep the GPU instance pass opt-in until seen in browsers ([a6ce641](https://github.com/SherinBloemendaal/webra/commit/a6ce641e2cb692e1dc898a4f4a2ce18688c63fcf))
+
 ## [0.5.0](https://github.com/SherinBloemendaal/webra/compare/v0.4.0...v0.5.0) (2026-10-08)
 
 
