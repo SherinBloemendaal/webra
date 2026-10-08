@@ -4,13 +4,11 @@
 
 import { drawIcon } from './sprites.js';
 import { TEAM_COLORS } from './renderer.js';
+import { cancelEndsPlacement, clickAction, isStructureQueue, placementLost, SHIFT_COUNT, summarizeQueues } from './production.js';
 
 // Must match QueueType in engine/src/rules.rs.
 const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'];
 const QUEUE_BUILDINGS = 0;
-/** Buildings and Defense items are placed on the map when finished (one at a time). */
-const isStructureQueue = (q) => q === 0 || q === 1;
-const SHIFT_COUNT = 5;
 
 // Icon canvas size in CSS pixels; the backing store is scaled by devicePixelRatio.
 const ICON_W = 96;
@@ -261,26 +259,20 @@ export class Sidebar {
 
   onCardClick(id, shift) {
     const c = this.cards.get(id);
-    if (!c || c.enabled === false) return;
-    const actor = c.actor;
-    if (isStructureQueue(actor.queue)) {
-      if (c.ready) {
-        this.callbacks.onPlace?.(id);
-        return;
-      }
-      // The building queue holds one item at a time; shift does not batch.
-      this.game.start_production(this.playerId, id, 1);
-      return;
-    }
-    this.game.start_production(this.playerId, id, shift ? SHIFT_COUNT : 1);
+    if (!c) return;
+    const action = clickAction({ queue: c.actor.queue, enabled: c.enabled, ready: c.ready }, shift);
+    if (!action) return;
+    if (action.place) this.callbacks.onPlace?.(id);
+    else this.game.start_production(this.playerId, id, action.count);
   }
 
   onCardCancel(id) {
     const c = this.cards.get(id);
     if (!c) return;
-    const wasReady = c.ready && isStructureQueue(c.actor.queue);
+    // Disabled cards can be cancelled too, so nothing ever stays stuck.
+    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued });
     this.game.cancel_production(this.playerId, id);
-    if (wasReady) this.callbacks.onCancelPlace?.();
+    if (endsPlacement) this.callbacks.onCancelPlace?.();
   }
 
   selectTab(q) {
@@ -309,7 +301,7 @@ export class Sidebar {
     this.tipDesc.hidden = !a.description;
     this.updateTipWarning(c);
     const hint = isStructureQueue(a.queue)
-      ? 'Left click: build / place. Right click: cancel.'
+      ? `Left click: build / place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
       : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
     setText(this.tipHint, hint);
     this.tipEl.hidden = false;
@@ -341,30 +333,20 @@ export class Sidebar {
     this.updatePower(state);
 
     // Summarise queues: per id, the number queued and the head item.
-    const perId = new Map();
-    const tabActivity = [0, 0, 0];
-    const tabReady = [false, false, false];
-    state.queues.forEach((items, q) => {
-      tabActivity[q] = items.length;
-      for (const it of items) {
-        let s = perId.get(it.id);
-        if (!s) {
-          s = { count: 0, progress: it.progress, done: it.done };
-          perId.set(it.id, s);
-        }
-        s.count += 1;
-        if (it.done) tabReady[q] = true;
-      }
-    });
+    const { perId, activity: tabActivity, ready: tabReady } = summarizeQueues(state.queues);
+    // The structure being placed was cancelled (lost its Construction Yard or
+    // prerequisites): leave placement mode instead of placing nothing.
+    if (placementLost(perId, this.placingId)) this.callbacks.onCancelPlace?.();
 
     // Tabs: activity badge and "no producer" look.
     this.tabs.forEach((t, q) => {
       const has = !!(state.hasProducer && state.hasProducer[q]);
       t.btn.classList.toggle('no-producer', !has);
-      const n = tabActivity[q];
+      const n = tabActivity[q] ?? 0;
+      const ready = !!tabReady[q];
       t.badge.hidden = n === 0;
-      if (n) setText(t.badge, tabReady[q] ? '!' : String(n));
-      t.badge.classList.toggle('ready', tabReady[q]);
+      if (n) setText(t.badge, ready ? '!' : String(n));
+      t.badge.classList.toggle('ready', ready);
     });
 
     // Every item of the active tab: what this faction can get first (palette
