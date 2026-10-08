@@ -197,7 +197,7 @@ is resolved by the engine from the seed, so every peer gets the same map and
 sky. A map file brings its own biome and ignores both. `weather` is `full`
 (visuals and gameplay effects), `cosmetic` (visuals only: the simulation runs
 as under clear skies, including the biome effects) or `off` (clear skies).
-The protocol requires all three (protocol version 3); the engine treats
+The protocol requires all three (protocol version 4); the engine treats
 missing keys as `random`, `temperate` and `full` (older callers, tools) and
 refuses unknown values. `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
@@ -269,7 +269,7 @@ is cosmetic (no damage). Effects with `weather: full`:
 | Snow biome, infantry | speed 90 % |
 | Snow biome, vehicles | momentum: +10 % of top speed per tick, -12 % when braking or coasting; turn rate 70 %; they slide on along their heading while turning and for a short coast after stopping (harvesting, docking, repair, boarding and abilities stop dead) |
 | Ice (rough ground in the snow biome) | +6 % / -7 % per tick, turn rate 50 % |
-| Heat wave, vehicles | heat +2 per tick driving, +40 per shot; overheated at 1000: speed 75 %, reload 133 %, until heat drops to 400 |
+| Heat wave, vehicles | heat +1 per tick driving (40 s of driving), +25 per shot; overheated at 1000: speed 75 %, reload 133 %, until heat drops to 400 |
 | Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
 
 The AI rests overheated vehicles until they cool down (they still defend).

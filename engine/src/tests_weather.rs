@@ -172,16 +172,17 @@ fn heat_waves_overheat_vehicles_that_keep_driving_and_idle_cools_them() {
         }
         w.step();
         ticks += 1;
-        assert!(ticks < 900, "never overheated, heat {}", w.actors[t].env.heat);
+        assert!(ticks < 2500, "never overheated, heat {}", w.actors[t].env.heat);
     }
-    assert!(ticks >= 480, "overheated after {ticks} ticks");
+    assert!(ticks >= 980, "overheated after {ticks} ticks");
     // Once it has turned around, it crawls (and stays hot while it drives).
     let back = if w.actors[t].x > 24 * CELL { 2 } else { 46 };
     order_move(&mut w, t, back, 24);
     run(&mut w, 40);
     assert!(w.actors[t].env.overheated);
     let hot_speed = step_len(&mut w);
-    assert_eq!(hot_speed, cool_speed * 75 / 100, "overheated speed");
+    // 75 % of the speed (integer rounding of the speed modifiers may cost a unit).
+    assert!((hot_speed - cool_speed * 75 / 100).abs() <= 1, "overheated speed {hot_speed} vs {cool_speed}");
     stop(&mut w, t);
     run(&mut w, 2);
     let mut cool = 0;

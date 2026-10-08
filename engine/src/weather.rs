@@ -22,7 +22,7 @@
 //! | Snow biome, infantry | speed 90 % |
 //! | Snow biome, vehicles | momentum: gain 10 % of top speed per tick, lose 12 % per tick when braking or coasting (ice: 6 % and 7 %), turn at 70 % (ice 50 %) of their turn rate, keep sliding along their heading while they turn and for a short coast after stopping (about half a cell at full speed on snow, under a cell on ice) |
 //! | Ice | rough ground in the snow biome (frozen ponds) |
-//! | Heat wave (desert), vehicles | heat +2 per tick driving, +40 per shot; at 1000 a vehicle overheats: speed 75 %, reload 4/3 as long, until it cools to 400 |
+//! | Heat wave (desert), vehicles | heat +1 per tick driving (40 s of driving), +25 per shot; at 1000 a vehicle overheats: speed 75 %, reload 4/3 as long, until it cools to 400 |
 //! | Cooling | heat -5 per tick standing still without firing; -1 per tick otherwise outside a heat wave |
 //!
 //! Weather cycle: clear skies for the first 2 to 3 minutes, then the biome's
@@ -141,8 +141,8 @@ pub const SNOW_INFANTRY_SPEED_PCT: i32 = 90;
 // Desert heat (vehicles).
 pub const HEAT_MAX: i32 = 1000;
 pub const HEAT_RECOVER: i32 = 400;
-pub const HEAT_MOVE: i32 = 2;
-pub const HEAT_FIRE: i32 = 40;
+pub const HEAT_MOVE: i32 = 1;
+pub const HEAT_FIRE: i32 = 25;
 pub const HEAT_COOL_IDLE: i32 = 5;
 pub const HEAT_COOL_ACTIVE: i32 = 1;
 pub const OVERHEAT_SPEED_PCT: i32 = 75;
@@ -368,7 +368,7 @@ mod tests {
             heat_step(&mut u, true, true, false);
             ticks += 1;
         }
-        assert_eq!(ticks, (HEAT_MAX / HEAT_MOVE) as u32, "20 s of driving in a heat wave");
+        assert_eq!(ticks, (HEAT_MAX / HEAT_MOVE) as u32, "40 s of driving in a heat wave");
         let mut cool = 0;
         while u.overheated {
             heat_step(&mut u, true, false, false);
