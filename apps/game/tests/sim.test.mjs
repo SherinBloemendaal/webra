@@ -296,25 +296,33 @@ for (const mode of ['direct', 'transfer', 'shared']) {
   });
 }
 
-/** A desert AI game whose first heat wave makes tanks run hot at about tick 3825 (seed 11). */
+/** A desert game where player 0 drives its tanks back and forth (orders every 400 ticks): they run hot in the heat wave. */
 const DESERT = {
   ...SKIRMISH,
-  seed: 11,
+  seed: 6,
   players: [
-    { slot: 0, type: 'ai', difficulty: 'hard', faction: 'england', color: 0, team: 0 },
-    { slot: 1, type: 'ai', difficulty: 'hard', faction: 'russia', color: 1, team: 0 },
+    { slot: 0, type: 'human', name: 'Me', faction: 'england', color: 0, team: 0 },
+    { slot: 1, type: 'human', name: 'You', faction: 'russia', color: 1, team: 0 },
   ],
-  startingCash: 10000,
   startingUnits: 'heavy',
   biome: 'desert',
   weather: 'full',
 };
 
-/** The first tick (and the direct game there) at which a vehicle in `rect` runs hot. */
+/** Player 0's order at tick `t` (both sides of the comparison give the same ones). */
+function drive(t, game, ids) {
+  if (t % 400 !== 0) return;
+  const far = (t / 400) % 2 === 1;
+  game.order_move(0, Uint32Array.from(ids), far ? 52 * 24 : 12 * 24, far ? 52 * 24 : 12 * 24, false);
+}
+
+/** The first tick at which a vehicle in `rect` runs hot, driven directly. */
 function firstHotTick(options, rect) {
   const direct = Game.from_options(JSON.stringify(options));
+  const local = new LocalDriver(direct, { player: 0 });
   for (let t = 0; t < 9000; t++) {
-    direct.tick();
+    drive(t, direct, units(direct, 0));
+    local.tick();
     if (direct.build_heat_fx(0, ...rect) > 0) return direct.tick_count();
   }
   throw new Error('no vehicle ran hot');
@@ -333,16 +341,22 @@ for (const mode of ['direct', 'transfer', 'shared']) {
       assert.equal(JSON.parse(host.game.weather_json()).biome, 'desert');
       let frame = null;
       while (!frame || frame.tick < target) {
+        const tick = frame?.tick ?? 0;
+        drive(tick, host.game, Array.from(await host.game.ask.select_box(0, -1e9, -1e9, 1e9, 1e9)));
         const before = host.frame?.id ?? 0;
-        // Eight ticks a step, then single ticks to land on the target.
-        const left = target - (frame?.tick ?? 0);
+        // Eight ticks a step (orders land on multiples of 400), then single ticks to the target.
+        const left = target - tick;
         host.step({ dt: Math.min(8, left) * TICK_MS, view: 0, rect, audio: false });
         await until(() => (host.frame?.id ?? 0) > before);
         frame = host.frame;
       }
       assert.equal(frame.tick, target);
       const direct = Game.from_options(JSON.stringify(options));
-      while (direct.tick_count() < target) direct.tick();
+      const local = new LocalDriver(direct, { player: 0 });
+      for (let t = 0; t < target; t++) {
+        drive(t, direct, units(direct, 0));
+        local.tick();
+      }
       assert.equal(frame.weather, direct.weather_json(), 'the frame carries the sky of its tick');
       assert.equal(JSON.parse(frame.weather).weather, 'heatwave');
       const n = direct.build_heat_fx(0, ...rect);
