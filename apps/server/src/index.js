@@ -9,6 +9,7 @@ import { listSessions, pruneSessions } from './directory.js';
 import { getMap, listMaps, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
+import { quickInstall } from './content.js';
 
 export { Session } from './session.js';
 
@@ -76,6 +77,10 @@ async function route(request, env, ctx) {
       return uploadMap(request, env, ip);
     }
     throw methodNotAllowed('GET, POST');
+  }
+  if (path === '/api/content/ra-quickinstall') {
+    // EA's freeware Red Alert files from OpenRA's mirrors, streamed, never stored (content.js).
+    return quickInstall(request, env, ip);
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

@@ -92,6 +92,15 @@ async function main() {
   assert.equal((await api('/api/nope')).status, 404);
   assert.equal((await api('/api/sessions', { method: 'POST', body: '{"name":""}' })).status, 400);
   assert.equal((await api('/api/maps/zzzz')).status, 404);
+  // Original content relay (src/content.js): only its refusals here, which answer before any
+  // upstream request; the mirrors are never contacted from tests (unit tests mock them).
+  const content = (init) => fetch(`${BASE}/api/content/ra-quickinstall`, init);
+  const noHeader = await content({ headers: { Origin: ORIGIN } });
+  assert.equal(noHeader.status, 403);
+  assert.equal(noHeader.headers.get('cache-control'), 'no-store');
+  assert.equal((await content({ headers: { Origin: 'https://evil.example', 'X-WebRA-Content': '1' } })).status, 403);
+  assert.equal((await content({ headers: { 'X-WebRA-Content': '1', 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await content({ method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-Content': '1' } })).status, 405);
 
   const w = 48;
   const terrain = Buffer.alloc(w * w).toString('base64');
