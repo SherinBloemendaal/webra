@@ -40,6 +40,7 @@ import {
   SHA256_RE,
   SLOT_MAX,
   SLOT_TYPES,
+  STANCES,
   STATE_HASH_RE,
   TEAM_MAX,
   TICK_MAX,
@@ -131,6 +132,13 @@ const ORDER_SCHEMA = {
   // engine/src/abilities.rs: minefield cell rectangle (at most MINEFIELD_MAX_CELLS) and chrono tank jump.
   lay_mines: { ids: idList, x0: i32, y0: i32, x1: i32, y1: i32 },
   teleport: { ids: idList, x: i32, y: i32 },
+  // engine/src/commands.rs: the command bar (force-fire on the ground, guard,
+  // scatter, queued waypoints, fire stances).
+  attack_ground: { ids: idList, x: i32, y: i32 },
+  guard: { ids: idList, target: u32 },
+  scatter: { ids: idList },
+  waypoint: { ids: idList, x: i32, y: i32, attack_move: bool },
+  set_stance: { ids: idList, stance: (v, w) => oneOf(v, STANCES, w) },
   // engine/src/debug.rs: debug menu cheats, only valid in games with the
   // `cheats` option (the server refuses them otherwise, see CHEAT_ORDER_KINDS).
   dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },

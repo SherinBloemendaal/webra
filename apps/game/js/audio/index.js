@@ -14,6 +14,9 @@ import { Announcer } from './announcer.js';
 import { Director } from './director.js';
 import { Jukebox } from './music.js';
 import { IdbStore, MemoryStore } from './store.js';
+
+/** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
+export const FOG_VISIBLE = 255;
 import { EVA } from './catalog.js';
 
 /** Game methods that give a unit order: the units reply. Their second argument is the unit ids. */
@@ -24,6 +27,11 @@ export const ORDER_METHODS = new Set([
   'order_land',
   'order_return_to_base',
   'order_teleport',
+  // Command bar (js/commandbar.js).
+  'order_attack_ground',
+  'order_guard',
+  'order_scatter',
+  'order_waypoint',
   'order_lay_mines',
   'deploy',
 ]);
@@ -193,7 +201,7 @@ export class AudioSystem {
   /**
    * Per frame, after the simulation ticked: play this frame's events.
    * @param {{ x0, y0, x1, y1 }} view visible world rectangle in pixels
-   * @param {() => Uint8Array} [fog] the local player's fog bytes (0 shroud, 1 fog, 2 visible)
+   * @param {() => Uint8Array} [fog] the local player's fog bytes from Game.fog_ptr (0 shroud, 128 fog, 255 visible)
    */
   frame(view, fog) {
     if (!this.director || !this.game) return;
@@ -210,7 +218,7 @@ export class AudioSystem {
         const cx = Math.floor(x / cell);
         const cy = Math.floor(y / cell);
         if (cx < 0 || cy < 0 || cx >= w) return false;
-        return bytes[cy * w + cx] === 2;
+        return bytes[cy * w + cx] === FOG_VISIBLE;
       };
     }
     this.director.onEvents(events, view, visible);

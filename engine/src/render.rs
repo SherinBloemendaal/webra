@@ -95,6 +95,22 @@ fn lerp_angle(a: i32, b: i32, t: f32) -> f32 {
 impl World {
     /// Fill `sprites` and `rects` for what `player` can see inside `view`.
     pub fn build_render(&self, player: u8, alpha: f32, view: &View, selected: &[u32], sprites: &mut Vec<f32>, rects: &mut Vec<f32>) {
+        self.build_render_hover(player, alpha, view, selected, crate::world::NONE, sprites, rects);
+    }
+
+    /// `build_render` with the actor under the mouse (`hover`, or NONE): it
+    /// and the targets of the selected own actors get a health bar.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_render_hover(
+        &self,
+        player: u8,
+        alpha: f32,
+        view: &View,
+        selected: &[u32],
+        hover: u32,
+        sprites: &mut Vec<f32>,
+        rects: &mut Vec<f32>,
+    ) {
         sprites.clear();
         rects.clear();
         let ids = SpriteIds::new(self.rules.actors.len());
@@ -295,15 +311,7 @@ impl World {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
-            let (x, y, w, h) = if a.kind == Kind::Building {
-                let b = info.building.as_ref().unwrap();
-                (px(a.x), px(a.y), b.width as f32 * 24.0, b.height as f32 * 24.0)
-            } else {
-                let r = info.unit.as_ref().unwrap().radius;
-                let s = (px(r * 2) + 6.0).max(14.0);
-                (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha), s, s)
-            };
-            let (l, t) = (x - w / 2.0, y - h / 2.0);
+            let (l, t, w, h) = self.actor_box(i, alpha);
             let c = 4.0f32.min(w / 3.0);
             let white = [1.0, 1.0, 1.0, 0.9];
             for (rx, ry, rw, rh) in [
@@ -318,16 +326,7 @@ impl World {
             ] {
                 rects.extend_from_slice(&[rx, ry, rw, rh, white[0], white[1], white[2], white[3]]);
             }
-            let frac = (a.hp as f32 / info.hp as f32).clamp(0.0, 1.0);
-            let col = if frac > 0.5 {
-                [0.25, 0.85, 0.3]
-            } else if frac > 0.25 {
-                [0.95, 0.8, 0.2]
-            } else {
-                [0.9, 0.2, 0.15]
-            };
-            rects.extend_from_slice(&[l, t - 5.0, w, 3.0, 0.0, 0.0, 0.0, 0.7]);
-            rects.extend_from_slice(&[l, t - 5.0, w * frac, 3.0, col[0], col[1], col[2], 1.0]);
+            self.push_health_bar(i, l, t, w, rects);
             // Cargo pips: one per weight unit of Cargo.MaxWeight, filled per passenger.
             if self.is_transport(i) && self.render_allied(a.owner, player) {
                 let max = self.cargo_max(i).clamp(0, 12);
@@ -359,6 +358,99 @@ impl World {
                 let gx = (a.goal as i32 % self.map.width) as f32 * 24.0 + 12.0;
                 let gy = (a.goal as i32 / self.map.width) as f32 * 24.0 + 12.0;
                 rects.extend_from_slice(&[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);
+            }
+        }
+        self.render_waypoints(player, selected, rects);
+        self.render_target_health(player, alpha, selected, hover, rects);
+    }
+
+    /// Screen box (left, top, width, height in world pixels) of an actor:
+    /// its footprint for structures, its radius for units.
+    fn actor_box(&self, i: usize, alpha: f32) -> (f32, f32, f32, f32) {
+        let a = &self.actors[i];
+        let info = &self.rules.actors[a.ty as usize];
+        let (x, y, w, h) = match (&info.building, &info.unit) {
+            (Some(b), _) => (px(a.x), px(a.y), b.width as f32 * 24.0, b.height as f32 * 24.0),
+            (None, Some(u)) => {
+                let s = (px(u.radius * 2) + 6.0).max(14.0);
+                (lerp(a.px, a.x, alpha), lerp(a.py, a.y, alpha), s, s)
+            }
+            // Mines: a small box on their cell.
+            (None, None) => (px(a.x), px(a.y), 14.0, 14.0),
+        };
+        (x - w / 2.0, y - h / 2.0, w, h)
+    }
+
+    /// Health bar above a box: green, yellow below half, red below a quarter.
+    fn push_health_bar(&self, i: usize, l: f32, t: f32, w: f32, rects: &mut Vec<f32>) {
+        let a = &self.actors[i];
+        let max = self.rules.actors[a.ty as usize].hp;
+        let frac = (a.hp as f32 / max as f32).clamp(0.0, 1.0);
+        let col = if frac > 0.5 {
+            [0.25, 0.85, 0.3]
+        } else if frac > 0.25 {
+            [0.95, 0.8, 0.2]
+        } else {
+            [0.9, 0.2, 0.15]
+        };
+        rects.extend_from_slice(&[l, t - 5.0, w, 3.0, 0.0, 0.0, 0.0, 0.7]);
+        rects.extend_from_slice(&[l, t - 5.0, w * frac, 3.0, col[0], col[1], col[2], 1.0]);
+    }
+
+    /// Health bars of what the selected own actors attack (like OpenRA shows
+    /// target health) and of the actor under the mouse, if `player` sees them.
+    fn render_target_health(&self, player: u8, alpha: f32, selected: &[u32], hover: u32, rects: &mut Vec<f32>) {
+        let mut shown: Vec<usize> = selected.iter().filter_map(|&r| self.resolve(r)).collect();
+        let targets = selected
+            .iter()
+            .filter_map(|&r| self.resolve(r))
+            .filter(|&i| self.actors[i].owner == player && self.actors[i].in_world())
+            .filter_map(|i| self.resolve(self.actors[i].target));
+        for t in targets.chain(self.resolve(hover)) {
+            let a = &self.actors[t];
+            if shown.contains(&t)
+                || !a.in_world()
+                || (a.owner != player && (!self.is_visible_to(t, player) || self.is_cloaked_from(t, player)))
+            {
+                continue;
+            }
+            shown.push(t);
+            let (l, top, w, _) = self.actor_box(t, alpha);
+            self.push_health_bar(t, l, top, w, rects);
+        }
+    }
+
+    /// Queued waypoints of the selected own units: a marker per waypoint and
+    /// dots from the current destination through the queue (attack-moves in orange).
+    fn render_waypoints(&self, player: u8, selected: &[u32], rects: &mut Vec<f32>) {
+        // Units of one order share the queue: draw each (group, point) once.
+        let mut drawn: Vec<(u32, i32, i32)> = Vec::new();
+        for &r in selected {
+            let Some(i) = self.resolve(r) else { continue };
+            let a = &self.actors[i];
+            if a.owner != player || !a.in_world() || a.waypoints.is_empty() {
+                continue;
+            }
+            let mut from = (a.activity == Activity::Move).then_some(a.dest);
+            for wp in &a.waypoints {
+                let col = if wp.attack_move { [1.0, 0.6, 0.2] } else { [0.3, 1.0, 0.4] };
+                let (x, y) = (px(wp.x), px(wp.y));
+                if !drawn.contains(&(wp.group, wp.x, wp.y)) {
+                    drawn.push((wp.group, wp.x, wp.y));
+                    rects.extend_from_slice(&[x - 2.5, y - 2.5, 5.0, 5.0, 0.0, 0.0, 0.0, 0.6]);
+                    rects.extend_from_slice(&[x - 1.5, y - 1.5, 3.0, 3.0, col[0], col[1], col[2], 0.95]);
+                    if let Some((fx, fy)) = from {
+                        let (fx, fy) = (px(fx), px(fy));
+                        let len = ((x - fx).powi(2) + (y - fy).powi(2)).sqrt();
+                        let n = ((len / 8.0) as usize).clamp(1, 96);
+                        for k in 1..n {
+                            let f = k as f32 / n as f32;
+                            let (dx, dy) = (fx + (x - fx) * f, fy + (y - fy) * f);
+                            rects.extend_from_slice(&[dx - 0.75, dy - 0.75, 1.5, 1.5, col[0], col[1], col[2], 0.7]);
+                        }
+                    }
+                }
+                from = Some((wp.x, wp.y));
             }
         }
     }
@@ -402,7 +494,7 @@ impl World {
         }
     }
 
-    /// One byte per cell for the local player: 0 shroud, 1 fog, 2 visible.
+    /// One byte per cell for the local player: 0 shroud, 128 fog, 255 visible.
     pub fn fog_bytes(&self, player: u8, out: &mut Vec<u8>) {
         let p = &self.players[player as usize];
         out.clear();

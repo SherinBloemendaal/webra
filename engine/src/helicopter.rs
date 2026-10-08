@@ -5,14 +5,15 @@
 //! helicopters take off and land vertically, hover in place when idle, turn in
 //! place and slide straight toward where they fly while turning. Attacks use
 //! `AttackType: Hover`: stop in range and fire once within `FacingTolerance`
-//! of the target. Idle helicopters hold fire (`InitialStance: HoldFire`) and
-//! only pick targets on attack-move. `AmmoPool` rounds are spent one per shot;
+//! of the target. Idle helicopters follow their fire stance (combat.rs; they
+//! start on `InitialStance: HoldFire`) and pick targets on attack-move. `AmmoPool` rounds are spent one per shot;
 //! an empty helicopter flies back to a free helipad (`Rearmable`, one
 //! helicopter per pad through `Reservable`), lands and reloads `ReloadCount`
 //! rounds every `ReloadDelay` ticks, then takes off (`TakeOffOnResupply`).
 //! Damaged helicopters land on the service depot (`Repairable`). Shot down in
 //! the air, the husk falls (`FallsToEarth`) and explodes on the ground.
 
+use crate::combat::FireTarget;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, isqrt, turn_toward, wrap_angle, CELL};
 use crate::render::{px, View};
 use crate::rules::{AircraftInfo, Kind};
@@ -202,6 +203,12 @@ impl World {
                 Activity::Attack => self.tick_heli_attack(i),
                 Activity::Repair => self.tick_heli_repair(i),
                 Activity::Unload => self.tick_heli_unload(i),
+                Activity::Guard => self.tick_heli_guard(i),
+                Activity::AttackGround => {
+                    let (x, y) = self.actors[i].fire_at;
+                    let class = self.ground_class(x, y);
+                    self.heli_engage(i, FireTarget::Ground(x, y), class);
+                }
                 Activity::Harvest | Activity::Board | Activity::Ability => self.actors[i].activity = Activity::Idle,
             },
         }
@@ -292,8 +299,22 @@ impl World {
         if !self.heli_climb(i) {
             return;
         }
-        if !self.heli_air(i).hold_fire {
-            self.try_auto_target(i);
+        // Stances (combat.rs): helicopters start on HoldFire.
+        self.try_idle_target(i);
+    }
+
+    /// Guard (commands.rs): hover near the guarded unit and fight what comes near.
+    fn tick_heli_guard(&mut self, i: usize) {
+        let Some(g) = self.guarded(i) else {
+            self.end_guard(i);
+            return;
+        };
+        if !self.heli_climb(i) || self.try_auto_target(i) {
+            return;
+        }
+        let (gx, gy) = (self.actors[g].x, self.actors[g].y);
+        if dist(self.actors[i].x, self.actors[i].y, gx, gy) > crate::commands::GUARD_RANGE {
+            self.heli_fly(i, gx, gy);
         }
     }
 
@@ -353,6 +374,9 @@ impl World {
     fn tick_heli_attack(&mut self, i: usize) {
         let Some(t) = self.live_target(i) else {
             self.actors[i].target = NONE;
+            if self.resume_guard(i) {
+                return;
+            }
             if self.actors[i].attack_move {
                 let (dx, dy) = self.actors[i].dest;
                 let (gx, gy) = self.cell_of(dx, dy);
@@ -365,6 +389,13 @@ impl World {
             }
             return;
         };
+        let class = self.target_kind(t).target_class();
+        self.heli_engage(i, FireTarget::Actor(t), class);
+    }
+
+    /// Fly into range of a target (an actor, or the ground) and fire on it
+    /// while it lies within `FacingTolerance`; `tclass` is its target class.
+    fn heli_engage(&mut self, i: usize, ft: FireTarget, tclass: u32) {
         let (ammo, max_ammo) = self.heli_ammo(i);
         if max_ammo > 0 && ammo == 0 {
             // Out of ammo: fly back to a helipad to reload (OpenRA FlyAttack -> ReturnToBase).
@@ -381,13 +412,12 @@ impl World {
             return;
         }
         let ty = self.actors[i].ty as usize;
-        let tkind = self.target_kind(t);
         let info = &self.rules.actors[ty];
         let mut range = 0;
         let mut min_range = i32::MAX;
         for &w in &info.weapons {
             let wi = &self.rules.weapons[w];
-            if wi.can_target(tkind) {
+            if wi.can_target_class(tclass) {
                 range = range.max(wi.range);
                 min_range = min_range.min(wi.min_range);
             }
@@ -401,13 +431,24 @@ impl World {
         let tolerance = self.heli_air(i).facing_tolerance;
         let turn = info.unit.as_ref().unwrap().turn_speed;
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let (tx, ty_) = (self.actors[t].x, self.actors[t].y);
-        let d = self.hit_distance(t, x, y);
+        let (tx, ty_) = self.fire_target_pos(ft);
+        let d = self.fire_target_distance(ft, x, y);
         if d > range {
+            // Defend and ReturnFire fights never move it: out of reach ends them.
+            if self.actors[i].hold {
+                let a = &mut self.actors[i];
+                a.target = NONE;
+                a.hold = false;
+                a.activity = Activity::Idle;
+                return;
+            }
             if !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
                 return;
             }
-            let (ax, ay) = self.aim_point(t, x, y);
+            let (ax, ay) = match ft {
+                FireTarget::Actor(t) => self.aim_point(t, x, y),
+                FireTarget::Ground(gx, gy) => (gx, gy),
+            };
             self.heli_fly(i, ax, ay);
             return;
         }
@@ -433,10 +474,10 @@ impl World {
             }
             let w = self.rules.actors[ty].weapons[slot];
             let wi = &self.rules.weapons[w];
-            if self.actors[i].reload[slot] > 0 || !wi.can_target(tkind) || d > wi.range || d < wi.min_range {
+            if self.actors[i].reload[slot] > 0 || !wi.can_target_class(tclass) || d > wi.range || d < wi.min_range {
                 continue;
             }
-            self.fire(i, t, w);
+            self.fire_on(i, ft, w);
             let wi = &self.rules.weapons[w];
             let full_reload = self.modified_reload(i, reload_override.unwrap_or(wi.reload));
             let a = &mut self.actors[i];

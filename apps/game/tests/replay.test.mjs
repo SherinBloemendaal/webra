@@ -331,6 +331,8 @@ test('view-only games cannot give orders; income is per minute', () => {
   ro.order_move(0, Uint32Array.from(units(game, 0)), 100, 100, false);
   ro.start_production(0, 'E1', 1);
   ro.dev_give_cash(0);
+  ro.order_scatter?.(0, Uint32Array.from(units(game, 0)));
+  ro.set_stance?.(0, Uint32Array.from(units(game, 0)), 'hold_fire');
   assert.equal(game.take_orders(), '[]');
   assert.equal(ro.cursor_action(0, Uint32Array.from([1]), 0, 0), 0);
   assert.equal(ro.tick_count(), 0, 'reading still works');

@@ -63,6 +63,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -179,6 +180,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -269,6 +271,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -359,6 +362,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -461,6 +465,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -536,6 +541,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -654,6 +660,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -770,6 +777,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -894,6 +902,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1005,6 +1014,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1100,6 +1110,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1193,6 +1204,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1301,6 +1313,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1485,6 +1498,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1669,6 +1683,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1799,6 +1814,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1944,6 +1960,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2059,6 +2076,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2157,6 +2175,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2234,6 +2253,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2371,6 +2391,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2466,6 +2487,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2562,6 +2584,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2633,6 +2656,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2703,6 +2727,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2780,6 +2805,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "cargo": {
@@ -2882,6 +2911,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "cargo": {
@@ -3000,6 +3033,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3087,6 +3124,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "iron_curtainable": {
@@ -3185,6 +3226,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3287,6 +3332,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3368,6 +3417,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3441,6 +3494,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3517,6 +3571,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3593,6 +3648,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3668,6 +3724,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3744,6 +3801,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3820,6 +3878,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3896,6 +3955,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3972,6 +4032,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -4048,6 +4109,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -4123,6 +4185,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -4197,6 +4260,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -4276,6 +4340,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -4387,6 +4455,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -4500,6 +4572,7 @@
     "damage_cooldown": 500
    },
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4563,6 +4636,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4627,6 +4701,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4692,6 +4767,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "cargo": {
@@ -4802,6 +4881,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4917,6 +5000,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5018,6 +5105,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "iron_curtainable": {
@@ -5122,6 +5213,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5224,6 +5319,10 @@
      0,
      0
     ]
+   ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
    ],
    "abilities": {
     "iron_curtainable": {
@@ -5335,6 +5434,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5433,6 +5536,10 @@
    "death_weapon": 21,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5531,6 +5638,10 @@
    "death_weapon": 23,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5626,6 +5737,7 @@
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "minelayer": {
      "mine": "MINV",
@@ -5747,6 +5859,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5810,6 +5923,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5873,6 +5987,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5971,6 +6089,7 @@
    "death_weapon": 27,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": true
@@ -6031,6 +6150,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6138,6 +6261,10 @@
      0
     ]
    ],
+   "stance": [
+    "hold_fire",
+    "return_fire"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -6151,7 +6278,6 @@
      "eject_on_sell": true,
      "eject_on_death": false
     },
-    "hold_fire": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -6263,6 +6389,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6326,6 +6453,7 @@
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [
@@ -6439,6 +6567,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6544,6 +6676,10 @@
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6672,6 +6808,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6788,6 +6928,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -6888,8 +7032,11 @@
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "return_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -7007,6 +7154,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [
@@ -7103,7 +7251,6 @@
      "altitude_velocity": 58,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [
@@ -7143,8 +7290,11 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 8192
     }
@@ -7230,7 +7380,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [
@@ -7269,8 +7418,11 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 8192
     }
@@ -7356,7 +7508,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [
@@ -7396,8 +7547,11 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 10240
     }
@@ -7483,7 +7637,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 8,
      "rotors": [
@@ -7521,8 +7674,11 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 9216
     }
@@ -7602,7 +7758,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [],
@@ -7639,8 +7794,11 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 11264
     }
@@ -7720,7 +7878,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 8,
      "rotors": [],
@@ -7755,6 +7912,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -7865,6 +8026,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -7972,6 +8137,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {},
    "experience": null,
    "gives_experience": {
@@ -8002,7 +8168,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [],
@@ -8035,6 +8200,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [],
@@ -8076,7 +8242,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [],
@@ -8111,6 +8276,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {},
    "experience": null,
    "gives_experience": {
@@ -8141,7 +8307,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 10,
      "rotors": [],
@@ -8174,6 +8339,7 @@
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -8218,6 +8384,7 @@
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -8254,7 +8421,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 95,
+   "valid": 351,
    "invalid": 0,
    "warheads": [
     {
@@ -8422,7 +8589,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8596,7 +8763,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8640,7 +8807,7 @@
    "speed": 250,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8685,7 +8852,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8817,7 +8984,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8905,7 +9072,7 @@
    "speed": 213,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8949,7 +9116,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8993,7 +9160,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -9037,7 +9204,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9125,7 +9292,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9169,7 +9336,7 @@
    "speed": 853,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9213,7 +9380,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9257,7 +9424,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9301,7 +9468,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 9,
    "warheads": [
     {
@@ -9389,7 +9556,7 @@
    "speed": 170,
    "inaccuracy": 213,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9437,7 +9604,7 @@
    "speed": 170,
    "inaccuracy": 213,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9485,7 +9652,7 @@
    "speed": 170,
    "inaccuracy": 1162,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9529,7 +9696,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -9573,7 +9740,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9617,7 +9784,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9701,7 +9868,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 95,
+   "valid": 351,
    "invalid": 0,
    "warheads": [
     {
@@ -9839,7 +10006,7 @@
    "speed": 298,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -9883,7 +10050,7 @@
    "speed": 298,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10007,7 +10174,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -10051,7 +10218,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 64,
    "warheads": [
     {
@@ -10181,7 +10348,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -10225,7 +10392,7 @@
    "speed": 170,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 64,
    "warheads": [
     {
@@ -10313,7 +10480,7 @@
    "speed": 204,
    "inaccuracy": 1962,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10360,7 +10527,7 @@
    "speed": 215,
    "inaccuracy": 614,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10454,7 +10621,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -10501,7 +10668,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10589,7 +10756,7 @@
    "speed": 256,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10633,7 +10800,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10677,7 +10844,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -10724,7 +10891,7 @@
    "speed": 256,
    "inaccuracy": 316,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10768,7 +10935,7 @@
    "speed": 50,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -10812,7 +10979,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {

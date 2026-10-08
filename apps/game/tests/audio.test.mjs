@@ -17,7 +17,7 @@ import { installFromFiles, installedSummary, categoryOf } from '../js/audio/inst
 import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { shuffle } from '../js/audio/music.js';
-import { AudioSystem } from '../js/audio/index.js';
+import { AudioSystem, FOG_VISIBLE } from '../js/audio/index.js';
 import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
 const wasm = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
@@ -450,6 +450,22 @@ test('announcer lines reach the on-screen notifications, also with sound off', (
   off();
   audio.announce('unitLost');
   assert.equal(shown.length, 2, 'unsubscribed');
+});
+
+test('only cells the engine reports as visible count as seen for sounds', () => {
+  const audio = new AudioSystem({ storage: memoryStorage(), doc: null });
+  audio.game = { take_audio_events: () => [5, 0, 0, 0, 0, 0] };
+  audio.pxPerCell = 24;
+  audio.mapWidth = 3;
+  let visible;
+  audio.director = { onEvents: (_ev, _view, fn) => (visible = fn) };
+  // Game.fog_ptr bytes for a 3x1 map: shroud, fog, visible.
+  const fog = Uint8Array.from([0, 128, FOG_VISIBLE]);
+  audio.frame({ x0: 0, y0: 0, x1: 72, y1: 24 }, () => fog);
+  assert.equal(visible(12, 12), false, 'shroud');
+  assert.equal(visible(36, 12), false, 'fog');
+  assert.equal(visible(60, 12), true, 'visible');
+  assert.equal(visible(84, 12), false, 'outside the map');
 });
 
 // ---- Engine events through WebAssembly --------------------------------------------------------------

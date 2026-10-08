@@ -14,6 +14,7 @@ import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
+import { CommandBar } from './commandbar.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
@@ -405,6 +406,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
 
   let sidebar = null;
   let powerBar = null;
+  let commandBar = null;
   let touch = null;
   const placementEnded = () => {
     sidebar?.setPlacing(null);
@@ -420,7 +422,14 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
       audio?.selection(ids);
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
+      commandBar?.update();
     },
+    // Command bar (js/commandbar.js): armed modes and Ctrl / Alt / Shift clicks.
+    commandMouseDown: (w, e) => commandBar?.mouseDown(w, e) ?? false,
+    commandClick: (w, mods) => commandBar?.click(w, mods) ?? false,
+    commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
+    cancelCommand: () => commandBar?.cancel() ?? false,
+    queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
     onPlaced: placementEnded,
     onCancelPlace: placementEnded,
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
@@ -469,7 +478,13 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
   });
-  if (viewer) powerBar.root.hidden = true;
+  // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
+  commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys });
+  // Spectators and replays give no orders: no power bar, no command bar.
+  if (viewer) {
+    powerBar.root.hidden = true;
+    commandBar.root.hidden = true;
+  }
   // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
   let paused = false;
   const debug = new DebugMenu($('field'), {
@@ -510,7 +525,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, local, replay, recorder };
+  window.webra = { game, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, local, replay, recorder };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -672,6 +687,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     // detach existing views, so collect them before taking views of wasm memory.
     const renderStart = performance.now();
     const uiRects = input.uiRects();
+    commandBar.frame();
     const v = input.viewRect();
     const spriteCount = game.build_render(view.player, alpha, v.x0, v.y0, v.x1, v.y1);
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
@@ -697,6 +713,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
       if (!viewer) {
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
+        commandBar.update();
         audio?.playerState(state);
         sidebar.setSelection(selectionInfo(game, input.selection));
         sidebar.setDeployState(input.deployState());

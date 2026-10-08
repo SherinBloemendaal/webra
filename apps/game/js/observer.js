@@ -162,11 +162,13 @@ export function viewOnly(game) {
     'dev_give_cash',
     'dev_kill',
     'dev_experience',
+    'set_stance',
   ]);
   const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'sell_value']);
   return new Proxy(game, {
     get(target, prop) {
-      if (blocked.has(prop)) return () => undefined;
+      // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
+      if (blocked.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
       if (zero.has(prop)) return () => 0;
       const v = Reflect.get(target, prop, target);
       return typeof v === 'function' ? v.bind(target) : v;

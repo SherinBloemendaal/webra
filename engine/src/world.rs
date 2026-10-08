@@ -4,7 +4,7 @@ use crate::flowfield::{nearest_in_component, FlowCache, Passability};
 use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
-use crate::rules::{FootCell, Kind, QueueType, Rules, QUEUE_COUNT};
+use crate::rules::{FootCell, Kind, QueueType, Rules, Stance, QUEUE_COUNT};
 use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
@@ -17,6 +17,8 @@ const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
 pub const MAX_WEAPONS: usize = 4;
 const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
+/// Queued waypoints a unit keeps at most (Shift+click moves); later ones are dropped.
+pub const MAX_WAYPOINTS: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Activity {
@@ -31,6 +33,21 @@ pub enum Activity {
     Unload,
     /// Unit ability task (abilities.rs: minefields, cash delivery, MAD tank).
     Ability,
+    /// Follow the unit in `guard` and fight what comes near (OpenRA Guard).
+    Guard,
+    /// Fire at the ground at `fire_at` until told otherwise (OpenRA force-fire).
+    AttackGround,
+}
+
+/// A queued move (Shift+click), started once the unit is idle. Units of one
+/// order share the group, so they arrive together like a normal group move.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Waypoint {
+    pub x: i32,
+    pub y: i32,
+    pub attack_move: bool,
+    pub group: u32,
+    pub group_size: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,6 +94,19 @@ pub struct Actor {
     pub best_dist: i32,
     pub stuck_ticks: i32,
     pub moved: bool,
+    /// Fire stance (OpenRA AutoTarget stance); only matters with rules `stance`.
+    pub stance: Stance,
+    /// Enemy that hit this actor while it was idle, until it shoots back (or not).
+    pub aggressor: u32,
+    /// The current attack may not move the unit (auto-targets under Defend and
+    /// ReturnFire): it ends once the target is out of range.
+    pub hold: bool,
+    /// Unit protected by Activity::Guard, or NONE.
+    pub guard: u32,
+    /// Ground point of Activity::AttackGround (world units).
+    pub fire_at: (i32, i32),
+    /// Queued moves (Shift+click), oldest first.
+    pub waypoints: Vec<Waypoint>,
 
     // Harvesters
     pub harv: HarvState,
@@ -174,6 +204,12 @@ impl Actor {
             best_dist: i32::MAX,
             stuck_ticks: 0,
             moved: false,
+            stance: Stance::AttackAnything,
+            aggressor: NONE,
+            hold: false,
+            guard: NONE,
+            fire_at: (0, 0),
+            waypoints: Vec::new(),
             harv: HarvState::Search,
             bales: 0,
             gem_bales: 0,
@@ -491,6 +527,38 @@ pub enum Order {
         x: i32,
         y: i32,
     },
+    /// Fire at a spot on the ground until told otherwise (OpenRA force-fire, Ctrl+click).
+    AttackGround {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+    },
+    /// Follow an own or allied unit and fight what comes near (OpenRA Guard).
+    Guard {
+        player: u8,
+        ids: Vec<u32>,
+        target: u32,
+    },
+    /// Each unit moves to a random free neighbouring cell (OpenRA Scatter).
+    Scatter {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Move there after the current orders (OpenRA queued move, Shift+click).
+    Waypoint {
+        player: u8,
+        ids: Vec<u32>,
+        x: i32,
+        y: i32,
+        attack_move: bool,
+    },
+    /// Fire stance of units and defences (OpenRA UnitStance).
+    SetStance {
+        player: u8,
+        ids: Vec<u32>,
+        stance: Stance,
+    },
     /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
     /// unless the game has the cheats option.
     DevFlag {
@@ -539,6 +607,11 @@ impl Order {
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. }
+            | Order::AttackGround { player, .. }
+            | Order::Guard { player, .. }
+            | Order::Scatter { player, .. }
+            | Order::Waypoint { player, .. }
+            | Order::SetStance { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -564,6 +637,11 @@ impl Order {
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
             | Order::Teleport { player, .. }
+            | Order::AttackGround { player, .. }
+            | Order::Guard { player, .. }
+            | Order::Scatter { player, .. }
+            | Order::Waypoint { player, .. }
+            | Order::SetStance { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -583,6 +661,11 @@ impl Order {
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. }
             | Order::Teleport { ids, .. }
+            | Order::AttackGround { ids, .. }
+            | Order::Guard { ids, .. }
+            | Order::Scatter { ids, .. }
+            | Order::Waypoint { ids, .. }
+            | Order::SetStance { ids, .. }
             | Order::DevKill { ids, .. }
             | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
@@ -592,6 +675,38 @@ impl Order {
             Order::StartProduction { count, .. } => (1..=50).contains(count),
             Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
+        }
+    }
+
+    /// Units this order gives a new command, which replaces their queued
+    /// waypoints and ends guarding. Waypoints add to the queue and stances do
+    /// not change what a unit is doing, so they keep both.
+    fn commanded_ids(&self) -> Option<&[u32]> {
+        match self {
+            Order::Move { ids, .. }
+            | Order::Smart { ids, .. }
+            | Order::Attack { ids, .. }
+            | Order::Stop { ids, .. }
+            | Order::Deploy { ids, .. }
+            | Order::Land { ids, .. }
+            | Order::ReturnToBase { ids, .. }
+            | Order::LayMines { ids, .. }
+            | Order::Teleport { ids, .. }
+            | Order::AttackGround { ids, .. }
+            | Order::Guard { ids, .. }
+            | Order::Scatter { ids, .. } => Some(ids),
+            Order::Waypoint { .. }
+            | Order::SetStance { .. }
+            | Order::StartProduction { .. }
+            | Order::CancelProduction { .. }
+            | Order::Place { .. }
+            | Order::Rally { .. }
+            | Order::Sell { .. }
+            | Order::SupportPower { .. }
+            | Order::DevFlag { .. }
+            | Order::DevCash { .. }
+            | Order::DevKill { .. }
+            | Order::DevExperience { .. } => None,
         }
     }
 }
@@ -919,6 +1034,7 @@ impl World {
         }
         // Cloaked actors (submarines) hide after their InitialDelay.
         a.cloak_timer = info.abilities.cloak.as_ref().map_or(0, |c| c.initial_delay);
+        a.stance = self.initial_stance(ty, owner);
         self.actors[i] = a;
         self.init_abilities(i);
         i
@@ -952,6 +1068,7 @@ impl World {
         a.px = a.x;
         a.py = a.y;
         a.hp = info.hp;
+        a.stance = self.initial_stance(ty, owner);
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
         self.actors[i] = a;
@@ -1249,6 +1366,11 @@ impl World {
     fn apply_orders(&mut self) {
         let orders = std::mem::take(&mut self.orders);
         for o in orders {
+            if let Some(ids) = o.commanded_ids() {
+                for i in self.owned_units(o.player(), ids) {
+                    self.clear_commands(i);
+                }
+            }
             match o {
                 Order::Move { player, ids, x, y, attack_move } => {
                     let units = self.owned_units(player, &ids);
@@ -1331,6 +1453,25 @@ impl World {
                 Order::SupportPower { player, key, x, y, x2, y2 } => {
                     self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
+                Order::AttackGround { player, ids, x, y } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_attack_ground(&units, x, y);
+                }
+                Order::Guard { player, ids, target } => {
+                    let units = self.owned_units(player, &ids);
+                    if let Some(t) = self.resolve(target) {
+                        self.order_guard(player, &units, t);
+                    }
+                }
+                Order::Scatter { player, ids } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_scatter(&units);
+                }
+                Order::Waypoint { player, ids, x, y, attack_move } => {
+                    let units = self.owned_units(player, &ids);
+                    self.order_waypoint(&units, x, y, attack_move);
+                }
+                Order::SetStance { player, ids, stance } => self.set_stance(player, &ids, stance),
                 // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
                 Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
                 Order::DevCash { player } => self.dev_give_cash(player),
@@ -1356,8 +1497,23 @@ impl World {
         if units.is_empty() {
             return;
         }
-        let group = self.next_group;
+        let group = self.next_group();
+        self.start_move_group(units, x, y, attack_move, group, units.len() as i32);
+    }
+
+    /// A fresh move group id.
+    pub(crate) fn next_group(&mut self) -> u32 {
+        let g = self.next_group;
         self.next_group += 1;
+        g
+    }
+
+    /// `order_move` as part of move group `group` of `group_size` units (queued
+    /// waypoints keep the group of the order that queued them).
+    pub(crate) fn start_move_group(&mut self, units: &[usize], x: i32, y: i32, attack_move: bool, group: u32, group_size: i32) {
+        if units.is_empty() {
+            return;
+        }
         // The group's centre decides ties (border targets, blocked goals), so a
         // mirrored order on a symmetric map picks the mirrored cell.
         let n = units.len() as i64;
@@ -1390,11 +1546,12 @@ impl World {
             a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
             a.goal = goal;
             a.group = group;
-            a.group_size = units.len() as i32;
+            a.group_size = group_size;
             a.attack_move = attack_move;
             a.dest = (x, y);
             a.target = NONE;
             a.forced = false;
+            a.hold = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
             a.air.new_order();
@@ -1412,6 +1569,7 @@ impl World {
             a.activity = Activity::Attack;
             a.target = tref;
             a.forced = forced;
+            a.hold = false;
             a.attack_move = false;
             a.chase_cell = NONE;
             a.group_size = 1;
@@ -1690,6 +1848,10 @@ impl World {
                 // Transports and submarines (cargo.rs, naval.rs).
                 mix(a.carrier as i64);
                 mix(a.submerged as i64);
+                // Command bar state (commands.rs): stance, guard and queued moves.
+                mix(a.stance as i64);
+                mix(a.guard as i64);
+                mix(a.waypoints.len() as i64);
                 // Veterancy and prone infantry (veterancy.rs).
                 mix(a.xp);
                 mix(a.rank as i64);

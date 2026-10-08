@@ -55,6 +55,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
 - [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
+- [x] **Command bar** at the bottom left like OpenRA: attack move, force move (Alt + click), force attack and attack ground (Ctrl + click), guard (D or G), scatter (X), stop, deploy and queued waypoints (Shift + click), plus OpenRA's **fire stances** per unit (attack anything, defend, return fire, hold fire; C cycles); idle units return fire, and the health of what your units attack or what is under the mouse is shown
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Red Alert style interface in the spirit of OpenRA: gunmetal chrome with bevels and rivets in your side's colour (steel blue Allies, red Soviets), a sidebar with command buttons, radar slot, money and game clock, a vertical power meter, production tab icons and a three-column build grid with clock-wipe progress, time left, queue counts and Ready labels; announcer lines also appear as text at the bottom of the screen ("Unit ready. (3)"), with sound on or off
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
@@ -82,7 +83,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 - [x] Minimap / radar (Radar Dome) and radar jamming
 - [x] Veterancy, infantry prone
-- [ ] Fire stances (hold fire, return fire)
+- [x] Fire stances (attack anything, defend, return fire, hold fire) and the command bar
 - [x] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
 - [x] Loading OpenRA `.oramap` maps
