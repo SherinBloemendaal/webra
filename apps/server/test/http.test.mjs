@@ -12,8 +12,8 @@ import {
 } from '../src/crypto.js';
 import { checkOrigin, HttpError, readJson, readText } from '../src/http.js';
 import { prepareMap } from '../src/maps.js';
-import { ordersFitRules, validateCreateSession } from '../src/validate.js';
-import { HOST_KEY_RE } from '@webra/protocol';
+import { cheatsAllowed, ordersFitRules, validateCreateSession } from '../src/validate.js';
+import { DEFAULT_OPTIONS, HOST_KEY_RE } from '@webra/protocol';
 
 test('passwords: salted PBKDF2, constant-time verify', async () => {
   const rec = await hashPassword('hunter2', 1000);
@@ -151,4 +151,26 @@ test('orders must name actor types the engine knows', () => {
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }, { o: 'stop', player: 0, ids: [] }], 84), true);
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 84, cx: 1, cy: 1 }], 84), false);
   assert.equal(ordersFitRules([{ o: 'start_production', player: 0, ty: 65535, count: 1 }], 84), false);
+});
+
+test('cheat orders are relayed only in games with the cheats option', () => {
+  const normal = [{ o: 'stop', player: 0, ids: [1] }, { o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }];
+  const cheats = [
+    { o: 'dev_flag', player: 0, flag: 'fast_build', on: true },
+    { o: 'dev_cash', player: 0 },
+    { o: 'dev_kill', player: 0, ids: [5] },
+  ];
+  const off = { ...DEFAULT_OPTIONS };
+  const on = { ...DEFAULT_OPTIONS, cheats: true };
+  assert.equal(cheatsAllowed(normal, off), true);
+  assert.equal(cheatsAllowed([], off), true);
+  for (const c of cheats) {
+    assert.equal(cheatsAllowed([c], off), false, c.o);
+    assert.equal(cheatsAllowed([...normal, c], off), false, `${c.o} hidden among normal orders`);
+    assert.equal(cheatsAllowed([...normal, c], on), true, c.o);
+  }
+  // Anything but a literal true keeps cheats off (missing or old stored options).
+  for (const options of [undefined, null, {}, { cheats: 'true' }, { cheats: 1 }]) {
+    assert.equal(cheatsAllowed(cheats, options), false, JSON.stringify(options));
+  }
 });
