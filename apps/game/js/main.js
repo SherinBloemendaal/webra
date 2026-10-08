@@ -18,6 +18,8 @@ import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen
 import { DebugMenu } from './debug.js';
 import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
+import { TouchControls } from './touch.js';
+import { Layout, hudText, renderPixelRatio } from './layout.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -232,10 +234,20 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   // Orders and production clicks made through `ui` get unit replies and announcements.
   const ui = audio ? audio.watch(game) : game;
   renderer.setAtlas(buildAtlas(rules.actors));
+  // Mobile GPUs: the player caps the pixel ratio or picks low quality (game menu, Settings).
+  renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
+  // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
+  const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
   let powerBar = null;
+  let touch = null;
+  const placementEnded = () => {
+    sidebar?.setPlacing(null);
+    layout.setPlacing(false);
+    touch?.update();
+  };
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
@@ -246,8 +258,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
     },
-    onPlaced: () => sidebar?.setPlacing(null),
-    onCancelPlace: () => sidebar?.setPlacing(null),
+    onPlaced: placementEnded,
+    onCancelPlace: placementEnded,
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
@@ -257,16 +269,23 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onPlace: (id) => {
       input.startPlacing(id);
       sidebar.setPlacing(id);
+      layout.setPlacing(true);
+      touch?.update();
     },
     onCancelPlace: () => {
       input.placing = null;
-      sidebar.setPlacing(null);
+      placementEnded();
     },
+    shiftLatched: () => !!touch?.queue,
     onSell: () => input.toggleSellMode(),
     onDeploy: () => input.deploySelection(),
   });
   // Radar minimap at the top of the sidebar (js/minimap.js).
   const minimap = stress ? null : new Minimap($('sidebar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
+  // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
+  // bar and placement buttons, long press on sidebar cards.
+  touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
+  touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -294,8 +313,10 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       return true;
     },
   });
+  // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
+  $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug };
+  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug, touch, layout };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -329,6 +350,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     fullscreen,
     onChange: (open, isPaused) => {
       input.setSuspended(open);
+      if (open) touch.reset();
       paused = isPaused;
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
@@ -455,7 +477,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       audio?.playerState(state);
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
-      updateHud(game, state, fps, simMs, stress, paused);
+      updateHud(game, state, fps, simMs, stress, paused, layout.compact);
+      touch.update();
       debug.update(state);
       if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
@@ -475,12 +498,11 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
-function updateHud(game, state, fps, simMs, stress, paused) {
-  const secs = Math.floor(state.tick / Game.ticks_per_second());
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
-  if (stress) parts.push(`${game.actor_count()} units`, `${state.flowFields} flow fields`);
-  $('hud').textContent = parts.join('  |  ');
+function updateHud(game, state, fps, simMs, stress, paused, compact) {
+  const seconds = state.tick / Game.ticks_per_second();
+  const units = stress ? game.actor_count() : 0;
+  const text = hudText({ seconds, paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
+  if ($('hud').textContent !== text) $('hud').textContent = text;
 }
 
 boot();

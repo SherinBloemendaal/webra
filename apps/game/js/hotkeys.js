@@ -274,6 +274,17 @@ export class HotkeyRegistry {
   }
 
   /**
+   * Run an action by name, as its hotkey would (on-screen buttons such as the
+   * touch action bar use this). Returns false when no such action exists.
+   */
+  run(name) {
+    const a = this.actions.get(name);
+    if (!a) return false;
+    a.handler(null);
+    return true;
+  }
+
+  /**
    * Run the action bound to a keydown event. Returns true when it was handled
    * (the event's default is prevented then, so Ctrl+key browser shortcuts are
    * held back where the browser allows it).
