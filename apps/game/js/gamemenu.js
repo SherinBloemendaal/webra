@@ -1,5 +1,5 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
-// Fullscreen, Leave to lobby, Exit.
+// Fullscreen, Release notes, Leave to lobby, Exit.
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
 // games cannot pause (docs/contracts.md: the server drops a player who holds
@@ -104,6 +104,7 @@ export class GameMenu {
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
    *   onChange(open: boolean, paused: boolean): void,
    *   onSound?(): void,
+   *   onReleaseNotes?(): void,
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -163,7 +164,7 @@ export class GameMenu {
 
   onKey(e) {
     if (!this.isOpen) return;
-    // A dialog opened from the menu (Sound) handles its own keys: Esc closes it, not the menu.
+    // A dialog opened from the menu (Sound, Release notes) handles its own keys: Esc closes it, not the menu.
     const t = e.target;
     if (t instanceof Element && !this.root.contains(t) && t.closest('[role="dialog"]')) return;
     if (this.capture) {
@@ -243,6 +244,7 @@ export class GameMenu {
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
+      ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
       button(online ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Changelog | WebRA</title>
+    <meta name="description" content="Every WebRA release: new features and bug fixes in the browser RTS in the spirit of Red Alert, newest first, with links to the commits on GitHub." />
+    <meta name="theme-color" content="#0d0f0b" />
+    <link rel="canonical" href="https://webra.sherin.dev/changelog" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WebRA" />
+    <meta property="og:title" content="Changelog | WebRA" />
+    <meta property="og:description" content="Every WebRA release: new features and bug fixes in the browser RTS in the spirit of Red Alert, newest first, with links to the commits on GitHub." />
+    <meta property="og:url" content="https://webra.sherin.dev/changelog" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%231a1f17'/%3E%3Crect x='1.5' y='1.5' width='29' height='29' rx='4' fill='none' stroke='%23d9b23a' stroke-width='2'/%3E%3Cpath d='M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z' fill='%23e2321f'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/js-flag.js"></script>
+    <script type="module" src="/assets/site.js"></script>
+  </head>
+  <body data-page="changelog">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="WebRA home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="5" fill="#1a1f17" /><rect x="1.5" y="1.5" width="29" height="29" rx="4" fill="none" stroke="#d9b23a" stroke-width="2" /><path d="M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z" fill="#e2321f" /></svg>
+          <span>Web<b>RA</b></span>
+        </a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <nav class="site-nav" id="site-nav" aria-label="Main">
+          <ul>
+            <li><a href="/#features">Features</a></li>
+            <li><a href="/#factions">Factions</a></li>
+            <li><a href="/maps.html">Maps</a></li>
+            <li><a href="/multiplayer.html">Multiplayer</a></li>
+            <li><a href="/changelog" aria-current="page">Changelog</a></li>
+            <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play now</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="page-head" aria-labelledby="page-title">
+        <div class="wrap">
+          <span class="kicker">Updates</span>
+          <h1 id="page-title">Changelog</h1>
+          <p>
+            What changed in every WebRA release, newest first: new features and bug fixes, grouped by part of the
+            game. Each change links to its commit on GitHub. The game shows the same notes once after an update.
+          </p>
+        </div>
+      </section>
+      <div class="wrap page-body">
+        <p class="status-line" role="status" aria-live="polite" data-status></p>
+        <div class="releases" data-releases aria-busy="true">
+          <div class="panel skeleton" aria-hidden="true"></div>
+        </div>
+        <noscript><p class="notice">The changelog needs JavaScript. It is also on <a href="https://github.com/SherinBloemendaal/webra/blob/main/CHANGELOG.md">GitHub</a>.</p></noscript>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>WebRA, a free fan project. Licensed under the GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
+        <ul class="footer-links">
+          <li><a href="/play/">Play</a></li>
+          <li><a href="/maps.html">Maps</a></li>
+          <li><a href="/multiplayer.html">Multiplayer</a></li>
+          <li><a href="/changelog">Changelog</a></li>
+          <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+          <li><a href="/#credits">Credits</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>

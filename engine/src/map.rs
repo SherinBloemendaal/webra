@@ -1,4 +1,5 @@
-//! Terrain grid, ore layer and the seeded skirmish map generator.
+//! Terrain grid, resource layers (ore and gems) and the seeded skirmish map
+//! generator.
 
 use crate::rng::Rng;
 
@@ -32,6 +33,18 @@ impl Terrain {
     }
 }
 
+/// Most bales an ore cell holds (OpenRA ResourceLayer Ore MaxDensity; map format limit).
+pub const ORE_MAX_DENSITY: u8 = 12;
+/// Most bales a gem cell holds (OpenRA ResourceLayer Gems MaxDensity; map format limit).
+pub const GEM_MAX_DENSITY: u8 = 3;
+
+/// The two Red Alert resource types (OpenRA ResourceLayer.ResourceTypes).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Resource {
+    Ore,
+    Gems,
+}
+
 /// Index into a locomotor's speed table (see `TERRAIN_TYPES` in gen_rules.py).
 pub const SPEED_CLEAR: usize = 0;
 pub const SPEED_ROUGH: usize = 1;
@@ -42,8 +55,10 @@ pub struct Map {
     pub width: i32,
     pub height: i32,
     pub terrain: Vec<Terrain>,
-    /// Ore density per cell (0 = none).
+    /// Ore density per cell (0 = none, bales left on the cell).
     pub ore: Vec<u8>,
+    /// Gem density per cell (0 = none). A cell holds ore or gems, never both.
+    pub gems: Vec<u8>,
     /// Starting cell (top-left of the construction yard) per player slot.
     pub spawns: Vec<(i32, i32)>,
 }
@@ -64,10 +79,50 @@ impl Map {
         (self.width * self.height) as usize
     }
 
+    /// A map of one terrain type without resources or spawns.
+    pub fn filled(width: i32, height: i32, t: Terrain) -> Map {
+        let n = (width * height) as usize;
+        Map { width, height, terrain: vec![t; n], ore: vec![0; n], gems: vec![0; n], spawns: Vec::new() }
+    }
+
+    /// Whether cell `i` holds ore or gems.
+    #[inline]
+    pub fn has_resource(&self, i: usize) -> bool {
+        self.ore[i] > 0 || self.gems[i] > 0
+    }
+
+    /// The resource on cell `i` and how many bales are left there.
+    pub fn resource(&self, i: usize) -> Option<(Resource, u8)> {
+        if self.gems[i] > 0 {
+            Some((Resource::Gems, self.gems[i]))
+        } else if self.ore[i] > 0 {
+            Some((Resource::Ore, self.ore[i]))
+        } else {
+            None
+        }
+    }
+
+    /// Take one bale from cell `i`; the type taken, or None when it held nothing.
+    pub fn take_bale(&mut self, i: usize) -> Option<Resource> {
+        let (r, _) = self.resource(i)?;
+        match r {
+            Resource::Ore => self.ore[i] -= 1,
+            Resource::Gems => self.gems[i] -= 1,
+        }
+        Some(r)
+    }
+
+    fn clear_resource(&mut self, i: usize) {
+        self.ore[i] = 0;
+        self.gems[i] = 0;
+    }
+
+    /// Movement class of cell `i`. Gems slow units like ore (OpenRA's
+    /// locomotors give the Gems and Ore terrain types the same speeds).
     pub fn speed_class(&self, i: usize) -> usize {
         if self.terrain[i] == Terrain::Water {
             SPEED_WATER
-        } else if self.ore[i] > 0 {
+        } else if self.has_resource(i) {
             SPEED_ORE
         } else if self.terrain[i] == Terrain::Rough {
             SPEED_ROUGH
@@ -84,8 +139,7 @@ impl Map {
     /// matches. A left to right mirror gives both sides the same layout.
     pub fn generate(width: i32, height: i32, seed: u64, ore_max: u8) -> Map {
         let mut rng = Rng::new(seed);
-        let n = (width * height) as usize;
-        let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
+        let mut m = Map::filled(width, height, Terrain::Clear);
 
         m.scatter(&mut rng);
 
@@ -100,13 +154,14 @@ impl Map {
         m.fill_circle(sx + 1, sy + 2, 11, Terrain::Clear);
         // Ore: one field beside the base toward the middle, one above or below
         // it toward the centre row, and contested fields on the centre line
-        // (the mirror joins the halves).
+        // (the mirror joins the halves). The contested fields have gems in
+        // their dense middle, so the richer resource is the one to fight over.
         let (mx, my) = (width / 2, height / 2);
         let toward_centre = if sy + 2 > my { -1 } else { 1 };
-        m.ore_field(&mut rng, sx + 13, sy + 2, 4, ore_max);
-        m.ore_field(&mut rng, sx + 3, sy + 2 + toward_centre * 13, 3, ore_max);
-        m.ore_field(&mut rng, mx - 3, sy + 2 + toward_centre * 6, 4, ore_max);
-        m.ore_field(&mut rng, mx - 9, my + toward_centre * (height / 4), 4, ore_max);
+        m.ore_field(&mut rng, sx + 13, sy + 2, 4, ore_max, 0);
+        m.ore_field(&mut rng, sx + 3, sy + 2 + toward_centre * 13, 3, ore_max, 0);
+        m.ore_field(&mut rng, mx - 3, sy + 2 + toward_centre * 6, 4, ore_max, CONTESTED_GEM_CORE);
+        m.ore_field(&mut rng, mx - 9, my + toward_centre * (height / 4), 4, ore_max, CONTESTED_GEM_CORE);
 
         m.mirror_x();
         m.ensure_connected(m.spawns[0], m.spawns[1]);
@@ -139,13 +194,13 @@ impl Map {
     /// ring around the centre, so every base has exactly two nearest
     /// neighbours; in rows of three or four the middle bases would have more
     /// and lose most free for alls. Contested ore lies halfway between
-    /// neighbouring bases. Spawns are listed by column, top first, so the
+    /// neighbouring bases, with gems in its dense middle, so every pair of
+    /// neighbours shares the same gems. Spawns are listed by column, top first, so the
     /// common split of the first half of the slots against the second half
     /// puts mirror images against each other. The AI makes up for the rest:
     /// its rally point and defences face the enemy, not a map side.
     pub fn generate_pockets(width: i32, height: i32, seed: u64, ore_max: u8, players: usize) -> Map {
-        let n = (width * height) as usize;
-        let mut m = Map { width, height, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: Vec::new() };
+        let mut m = Map::filled(width, height, Terrain::Clear);
         let mut rng = Rng::new(seed ^ 0x5eed_0000_0000_0004);
         m.scatter(&mut rng);
         m.mirror_x();
@@ -163,7 +218,8 @@ impl Map {
         for &(cx, cy) in &centres {
             m.stamp_pocket(cx, cy, r, ore_max, pocket_seed);
         }
-        // Contested ore halfway between neighbouring bases, where it fits.
+        // Contested ore halfway between neighbouring bases, where it fits,
+        // with gems in the middle of each field.
         let d2 = |a: (i32, i32), b: (i32, i32)| (a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1);
         let mut contested: Vec<(i32, i32, i32)> = Vec::new();
         for (k, &a) in centres.iter().enumerate() {
@@ -184,7 +240,7 @@ impl Map {
         contested.sort_unstable();
         contested.dedup();
         for (k, &(x, y, fr)) in contested.iter().enumerate() {
-            m.ore_field_mirrored(&mut Rng::new(pocket_seed ^ (k as u64 + 1)), x, y, fr, ore_max);
+            m.ore_field_mirrored(&mut Rng::new(pocket_seed ^ (k as u64 + 1)), x, y, fr, ore_max, fr - 1);
         }
         // The pockets are symmetric already; this makes the contested fields
         // of the right half the mirror images of the left half's.
@@ -208,7 +264,7 @@ impl Map {
                 if self.contains(cx + dx, cy + dy) {
                     let i = self.idx(cx + dx, cy + dy);
                     self.terrain[i] = Terrain::Clear;
-                    self.ore[i] = 0;
+                    self.clear_resource(i);
                 }
             }
         }
@@ -220,17 +276,19 @@ impl Map {
         }
         let (fx, fy) = (r * 7 / 10, r * 8 / 10);
         let mut rng = Rng::new(seed);
-        self.ore_field_pair(&mut rng, cx, fx, cy + fy, 4, ore_max);
+        self.ore_field_pair(&mut rng, cx, fx, cy + fy, 4, ore_max, 0);
     }
 
     /// Ore field centred on (x, y), mirrored onto itself around column `x`.
-    fn ore_field_mirrored(&mut self, rng: &mut Rng, x: i32, y: i32, r: i32, max: u8) {
-        self.ore_field_pair(rng, x, 0, y, r, max);
+    fn ore_field_mirrored(&mut self, rng: &mut Rng, x: i32, y: i32, r: i32, max: u8, gem_core: i32) {
+        self.ore_field_pair(rng, x, 0, y, r, max, gem_core);
     }
 
     /// Two ore fields at (axis - off, y) and (axis + off, y) that are mirror
-    /// images around column `axis` (one field when `off` is 0).
-    fn ore_field_pair(&mut self, rng: &mut Rng, axis: i32, off: i32, y: i32, r: i32, max: u8) {
+    /// images around column `axis` (one field when `off` is 0). Cells within
+    /// `gem_core` of a field's centre get gems instead of ore.
+    #[allow(clippy::too_many_arguments)]
+    fn ore_field_pair(&mut self, rng: &mut Rng, axis: i32, off: i32, y: i32, r: i32, max: u8, gem_core: i32) {
         for oy in -r..=r {
             for ox in -r..=r {
                 let d = ox * ox + oy * oy;
@@ -246,7 +304,7 @@ impl Map {
                         if !self.terrain[i].passable() {
                             self.terrain[i] = Terrain::Clear;
                         }
-                        self.ore[i] = value;
+                        self.put_resource(i, value, max, d <= gem_core * gem_core);
                     }
                 }
             }
@@ -261,6 +319,7 @@ impl Map {
                 let (i, j) = (self.idx(x, y), self.idx(x, y + band));
                 self.terrain[j] = self.terrain[i];
                 self.ore[j] = self.ore[i];
+                self.gems[j] = self.gems[i];
             }
         }
     }
@@ -325,7 +384,7 @@ impl Map {
             let i = self.idx(x, y);
             self.terrain[i] = t;
             if !t.passable() {
-                self.ore[i] = 0;
+                self.clear_resource(i);
             }
         }
     }
@@ -336,7 +395,7 @@ impl Map {
                 if (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r && self.contains(x, y) {
                     let i = self.idx(x, y);
                     self.terrain[i] = t;
-                    self.ore[i] = 0;
+                    self.clear_resource(i);
                 }
             }
         }
@@ -354,7 +413,9 @@ impl Map {
         }
     }
 
-    fn ore_field(&mut self, rng: &mut Rng, cx: i32, cy: i32, r: i32, max: u8) {
+    /// Ore field of radius `r` around (cx, cy); cells within `gem_core` of
+    /// the centre get gems instead of ore.
+    fn ore_field(&mut self, rng: &mut Rng, cx: i32, cy: i32, r: i32, max: u8, gem_core: i32) {
         for y in cy - r..=cy + r {
             for x in cx - r..=cx + r {
                 if !self.contains(x, y) {
@@ -370,8 +431,22 @@ impl Map {
                 }
                 // Denser in the middle of the field.
                 let fall = (d * max as i32) / (r * r + 1);
-                self.ore[i] = (max as i32 - fall + rng.range(-2, 2)).clamp(2, max as i32) as u8;
+                let value = (max as i32 - fall + rng.range(-2, 2)).clamp(2, max as i32) as u8;
+                self.put_resource(i, value, max, d <= gem_core * gem_core);
             }
+        }
+    }
+
+    /// Put ore of density `value` (out of `max`) on cell `i`, or as gems the
+    /// same share of the gem maximum (at least one bale).
+    fn put_resource(&mut self, i: usize, value: u8, max: u8, gems: bool) {
+        if gems {
+            let g = (value as i32 * GEM_MAX_DENSITY as i32 + max as i32 - 1) / (max as i32).max(1);
+            self.ore[i] = 0;
+            self.gems[i] = g.clamp(1, GEM_MAX_DENSITY as i32) as u8;
+        } else {
+            self.ore[i] = value;
+            self.gems[i] = 0;
         }
     }
 
@@ -382,6 +457,7 @@ impl Map {
                 let (i, j) = (self.idx(x, y), self.idx(self.width - 1 - x, y));
                 self.terrain[j] = self.terrain[i];
                 self.ore[j] = self.ore[i];
+                self.gems[j] = self.gems[i];
             }
         }
     }
@@ -439,7 +515,9 @@ impl Map {
         false
     }
 
-    /// Ore growth: dense fields slowly regrow and spread to neighbouring clear cells.
+    /// Ore growth: dense fields slowly regrow and spread to neighbouring clear
+    /// cells. Gems neither regrow nor spread (Red Alert), and ore never
+    /// spreads onto them.
     pub fn grow_ore(&mut self, rng: &mut Rng, max: u8, blocked: &[bool]) -> bool {
         let mut changed = false;
         let n = self.cells();
@@ -461,7 +539,7 @@ impl Map {
             let (nx, ny) = (x + rng.range(-1, 2), y + rng.range(-1, 2));
             if self.contains(nx, ny) {
                 let j = self.idx(nx, ny);
-                if self.ore[j] == 0 && self.terrain[j].buildable() && !blocked[j] {
+                if !self.has_resource(j) && self.terrain[j].buildable() && !blocked[j] {
                     self.ore[j] = 1;
                     changed = true;
                 }
@@ -470,6 +548,9 @@ impl Map {
         changed
     }
 }
+
+/// Radius of the gem middle of the contested fields of two-player maps.
+const CONTESTED_GEM_CORE: i32 = 2;
 
 /// Pocket radius for bases at these yard centres: as large as the distance
 /// to the nearest neighbour allows, 6 to 10 cells.
@@ -573,7 +654,11 @@ mod tests {
                     for y in 0..size {
                         for x in 0..size {
                             let (i, j) = (m.idx(x, y), m.idx(size - 1 - x, y));
-                            assert_eq!((m.terrain[i], m.ore[i]), (m.terrain[j], m.ore[j]), "{what}: mirror at {x},{y}");
+                            assert_eq!(
+                                (m.terrain[i], m.ore[i], m.gems[i]),
+                                (m.terrain[j], m.ore[j], m.gems[j]),
+                                "{what}: mirror at {x},{y}"
+                            );
                         }
                     }
                     let (x0, y0) = m.spawns[0];
@@ -600,8 +685,8 @@ mod tests {
                                 }
                                 let (i, j) = (m.idx(a.0, a.1), m.idx(b.0, b.1));
                                 assert_eq!(
-                                    (m.terrain[i], m.ore[i] > 0),
-                                    (m.terrain[j], m.ore[j] > 0),
+                                    (m.terrain[i], m.ore[i] > 0, m.gems[i] > 0),
+                                    (m.terrain[j], m.ore[j] > 0, m.gems[j] > 0),
                                     "{what}: base at {sx},{sy} differs at offset {dx},{dy}"
                                 );
                             }
@@ -612,6 +697,7 @@ mod tests {
                     sorted.sort_unstable();
                     assert_eq!(sorted, m.spawns, "{what}");
                     assert!(m.ore.iter().filter(|&&o| o > 0).count() > 40 * players, "{what}: enough ore");
+                    assert_resources_well_formed(&m, &what);
                 }
             }
         }
@@ -627,6 +713,7 @@ mod tests {
                         let (i, j) = (m.idx(x, y), m.idx(size - 1 - x, y));
                         assert_eq!(m.terrain[i], m.terrain[j], "size {size} seed {seed} terrain at {x},{y}");
                         assert_eq!(m.ore[i], m.ore[j], "size {size} seed {seed} ore at {x},{y}");
+                        assert_eq!(m.gems[i], m.gems[j], "size {size} seed {seed} gems at {x},{y}");
                     }
                 }
                 // The yards are mirror images: 3 cells wide, same row.
@@ -634,7 +721,107 @@ mod tests {
                 assert_eq!((y0, x0 + x1 + 2), (y1, size - 1), "size {size} seed {seed}");
                 assert!(m.reachable(m.spawns[0], m.spawns[1]), "size {size} seed {seed}");
                 assert!(m.ore.iter().filter(|&&o| o > 0).count() > 50);
+                assert_resources_well_formed(&m, &format!("size {size} seed {seed}"));
             }
         }
+    }
+
+    /// Gems: on passable ground only, never on an ore cell, within the format's
+    /// density, outside every starting yard, and present on every generated map.
+    fn assert_resources_well_formed(m: &Map, what: &str) {
+        let mut gem_cells = 0;
+        for i in 0..m.cells() {
+            assert!(m.ore[i] <= ORE_MAX_DENSITY && m.gems[i] <= GEM_MAX_DENSITY, "{what}: density at {i}");
+            assert!(m.ore[i] == 0 || m.gems[i] == 0, "{what}: ore and gems share cell {i}");
+            if m.has_resource(i) {
+                assert!(m.terrain[i].passable(), "{what}: resource on {:?} at {i}", m.terrain[i]);
+            }
+            gem_cells += (m.gems[i] > 0) as usize;
+        }
+        assert!(gem_cells >= 4, "{what}: only {gem_cells} gem cells");
+        for &(sx, sy) in &m.spawns {
+            for (dx, dy) in (0..3).flat_map(|dx| (0..4).map(move |dy| (dx, dy))) {
+                assert!(!m.has_resource(m.idx(sx + dx, sy + dy)), "{what}: resource on the yard at {sx},{sy}");
+            }
+        }
+    }
+
+    /// Two players: the gems are contested. Each side has the same gems
+    /// (mirror) and they lie nearer the middle than the side's own ore.
+    #[test]
+    fn two_player_gems_are_contested_and_fair() {
+        for size in [48, 64, 96, 128] {
+            for seed in 0..10 {
+                let m = Map::generate(size, size, seed, ORE_MAX_DENSITY);
+                let (sx, sy) = m.spawns[0];
+                let mut near = [0i64; 2];
+                let (mut gem_d, mut gems, mut ore_d, mut ore) = (0i64, 0i64, 0i64, 0i64);
+                for y in 0..size {
+                    for x in 0..size {
+                        let i = m.idx(x, y);
+                        let side = (2 * x >= size) as usize;
+                        near[side] += m.gems[i] as i64;
+                        if side == 0 {
+                            let d = ((x - sx - 1).pow(2) + (y - sy - 2).pow(2)) as i64;
+                            if m.gems[i] > 0 {
+                                (gem_d, gems) = (gem_d + d, gems + 1);
+                            } else if m.ore[i] > 0 {
+                                (ore_d, ore) = (ore_d + d, ore + 1);
+                            }
+                        }
+                    }
+                }
+                assert_eq!(near[0], near[1], "size {size} seed {seed}");
+                assert!(gems > 0 && gem_d * ore > ore_d * gems, "size {size} seed {seed}: gems farther out than ore on average");
+            }
+        }
+    }
+
+    #[test]
+    fn gems_do_not_grow_or_spread_and_ore_does_not_spread_onto_them() {
+        let mut m = Map::filled(32, 32, Terrain::Clear);
+        let blocked = vec![false; m.cells()];
+        for i in 0..m.cells() {
+            if i % 2 == 0 {
+                m.ore[i] = ORE_MAX_DENSITY;
+            } else {
+                m.gems[i] = 1;
+            }
+        }
+        let gems = m.gems.clone();
+        let mut rng = Rng::new(7);
+        for _ in 0..50 {
+            m.grow_ore(&mut rng, ORE_MAX_DENSITY, &blocked);
+        }
+        assert_eq!(m.gems, gems, "gems stay as they were");
+        assert!((0..m.cells()).all(|i| m.ore[i] == 0 || m.gems[i] == 0));
+        // Ore grows back and spreads onto free ground.
+        let mut m = Map::filled(32, 32, Terrain::Clear);
+        let blocked = vec![false; m.cells()];
+        let c = m.idx(16, 16);
+        m.ore[c] = ORE_MAX_DENSITY;
+        let g = m.idx(8, 8);
+        m.gems[g] = 2;
+        for _ in 0..200 {
+            m.grow_ore(&mut rng, ORE_MAX_DENSITY, &blocked);
+        }
+        assert!(m.ore.iter().filter(|&&o| o > 0).count() > 1, "ore spreads");
+        assert_eq!((m.gems[g], m.gems.iter().filter(|&&x| x > 0).count()), (2, 1), "gems neither grow nor spread");
+    }
+
+    #[test]
+    fn harvesting_takes_one_bale_of_the_cell_type() {
+        let mut m = Map::filled(32, 32, Terrain::Clear);
+        m.ore[0] = 2;
+        m.gems[1] = 1;
+        assert_eq!(m.resource(0), Some((Resource::Ore, 2)));
+        assert_eq!(m.take_bale(1), Some(Resource::Gems));
+        assert_eq!((m.take_bale(1), m.has_resource(1)), (None, false));
+        assert_eq!(m.take_bale(0), Some(Resource::Ore));
+        assert_eq!(m.ore[0], 1);
+        // Gems slow units like ore.
+        assert_eq!(m.speed_class(0), SPEED_ORE);
+        m.gems[2] = 3;
+        assert_eq!(m.speed_class(2), SPEED_ORE);
     }
 }

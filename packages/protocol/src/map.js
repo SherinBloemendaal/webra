@@ -1,9 +1,10 @@
-// Map files (`.webra-map.json`, format 1; docs/contracts.md, section 2).
+// Map files (`.webra-map.json`, formats 1 and 2; docs/contracts.md, section 2).
+// Format 2 is format 1 plus a `gems` layer; format 1 maps have none.
 //
 // The canonical form matches the engine (engine/src/mapdata.rs): fields in the
 // order of the contract, defaults filled in (description "", actors [],
-// facing 0, rules null), keys inside `rules` sorted, no whitespace. Its
-// SHA-256 (lowercase hex) is the map's identity.
+// facing 0, rules null), `gems` only in format 2, keys inside `rules` sorted,
+// no whitespace. Its SHA-256 (lowercase hex) is the map's identity.
 //
 // validateMap checks structure, sizes, layer encoding and value ranges. The
 // engine's Game.validate_map additionally checks gameplay rules (spawn ground,
@@ -11,7 +12,10 @@
 
 import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, utf8Length } from './check.js';
 
-export const MAP_FORMAT = 1;
+/** The current format (with gems). */
+export const MAP_FORMAT = 2;
+/** The format without gems: still accepted, and what maps without gems are written as. */
+export const MAP_FORMAT_ORE_ONLY = 1;
 export const MAP_MAX_BYTES = 1024 * 1024;
 export const MAP_MIN_SIZE = 32;
 export const MAP_MAX_SIZE = 256;
@@ -20,10 +24,11 @@ export const MAP_MAX_SPAWNS = 8;
 export const MAP_MAX_ACTORS = 2000;
 export const TERRAIN_MAX = 4; // 0 clear, 1 rough, 2 rock, 3 water, 4 tree
 export const ORE_MAX = 12;
+export const GEM_MAX = 3;
 export const MODDED_WARNING =
   'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
 
-const MAP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'spawns', 'actors', 'rules'];
+const MAP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules'];
 const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
 const RULE_KEY_RE = /^[A-Za-z0-9_.-]{1,40}$/;
@@ -193,9 +198,13 @@ export function validateMap(input, opts = {}) {
   if (!okKeys) return { ok: false, errors };
 
   const m = {};
+  // `"gems": null` counts as no gems layer, as in the engine.
+  const hasGems = input.gems !== undefined && input.gems !== null;
   step(() => {
-    if (input.format !== MAP_FORMAT) fail(`unsupported map format ${excerpt(input.format)}`);
-    m.format = MAP_FORMAT;
+    if (input.format !== MAP_FORMAT && input.format !== MAP_FORMAT_ORE_ONLY) fail(`unsupported map format ${excerpt(input.format)}`);
+    if (input.format === MAP_FORMAT_ORE_ONLY && hasGems) fail('format 1 maps have no gems layer');
+    if (input.format === MAP_FORMAT && !hasGems) fail('format 2 maps need a gems layer');
+    m.format = input.format;
   });
   m.name = step(() => rawText(input.name, 1, 64, 'name'));
   m.author = step(() => rawText(input.author, 1, 64, 'author'));
@@ -215,16 +224,27 @@ export function validateMap(input, opts = {}) {
     if (sized && input.ore.length !== base64Length(cells)) fail(`ore must encode ${cells} bytes`);
     return input.ore;
   });
-  if (sized && m.terrain !== undefined && m.ore !== undefined) {
+  m.gems = step(() => {
+    if (!hasGems) return undefined;
+    if (typeof input.gems !== 'string') fail('gems must be base64 text');
+    if (sized && input.gems.length !== base64Length(cells)) fail(`the gems layer must have ${cells} bytes`);
+    return input.gems;
+  });
+  if (sized && m.terrain !== undefined && m.ore !== undefined && (m.gems !== undefined || !hasGems)) {
     step(() => {
       const terrain = decodeBase64(m.terrain, 'terrain');
       const ore = decodeBase64(m.ore, 'ore');
       if (terrain.length !== cells || ore.length !== cells) fail(`terrain and ore layers must have ${cells} bytes`);
+      const gems = hasGems ? decodeBase64(m.gems, 'gems') : new Uint8Array(cells);
+      if (gems.length !== cells) fail(`the gems layer must have ${cells} bytes`);
       for (let i = 0; i < cells; i++) {
         if (terrain[i] > TERRAIN_MAX) fail(`invalid terrain value ${terrain[i]}`);
         if (ore[i] > ORE_MAX) fail(`invalid ore density ${ore[i]}`);
-        // Ore lies on clear or rough ground only.
+        if (gems[i] > GEM_MAX) fail(`invalid gem density ${gems[i]}`);
+        // Resources lie on clear or rough ground only, one type per cell.
         if (ore[i] > 0 && terrain[i] > 1) fail('ore can only lie on clear or rough ground');
+        if (gems[i] > 0 && terrain[i] > 1) fail('gems can only lie on clear or rough ground');
+        if (ore[i] > 0 && gems[i] > 0) fail('a cell cannot hold both ore and gems');
       }
     });
   }
@@ -302,8 +322,9 @@ function sortKeysDeep(v) {
   return v;
 }
 
-/** Canonical JSON text of an already validated map (see validateMap). */
+/** Canonical JSON text of an already validated map (see validateMap). `gems` only when present. */
 export function canonicalMapJson(m) {
+  const gems = m.gems === undefined || m.gems === null ? {} : { gems: m.gems };
   return JSON.stringify({
     format: m.format,
     name: m.name,
@@ -313,6 +334,7 @@ export function canonicalMapJson(m) {
     height: m.height,
     terrain: m.terrain,
     ore: m.ore,
+    ...gems,
     spawns: m.spawns.map(([x, y]) => [x, y]),
     actors: (m.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
     rules: m.rules === undefined || m.rules === null ? null : sortKeysDeep(m.rules),
