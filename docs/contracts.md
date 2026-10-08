@@ -31,17 +31,30 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   "author": "Commander",            // 1..64 chars
   "description": "",                // 0..500 chars
   "width": 96, "height": 96,        // 32..256 each
-  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree
+  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford
   "ore": "<base64>",                // width*height bytes, 0..12 ore density
   "gems": "<base64>",               // format 2 only: width*height bytes, 0..3 gem density
   "spawns": [[8, 8], [85, 84]],     // 2..8 top-left cells of the starting construction yard / MCV
   "actors": [                       // optional pre-placed actors
     { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral
   ],
-  "rules": null                     // optional rules overrides, see below
+  "rules": null,                    // optional rules overrides, see below
+  "biome": "snow"                   // optional: temperate (default, left out), snow or desert
 }
 ```
 
+- Terrain: a ford (5) is shallow water. Ground units cross it at rough
+  speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
+  so a ground route over a river never cuts the water network. Structures
+  never stand on a ford (naval yards need open water), and fords hold no ore
+  or gems. Generated maps put fords where ground routes cross water.
+- Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
+  terrain look and which weather can happen (section 3). It is optional:
+  absent means temperate, and a temperate map leaves the key out of its
+  canonical form, so every map from before biomes keeps its hash. A biome is
+  not a rules override: a map with a biome is not modded. Unknown values are
+  refused (`biome must be one of temperate, snow, desert` in
+  `packages/protocol`, a parse error in the engine).
 - Formats: format 2 is format 1 plus the `gems` layer. A format 2 map must
   have `gems`; a format 1 map must not (`"gems": null` counts as absent).
   Every reader (engine, `packages/protocol`, editor, server) accepts both.
@@ -72,7 +85,8 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `the gems layer must have N bytes`, `gems is not valid base64`.
 - Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
   above (`description`, `actors` and `rules` always present, `gems` only in
-  format 2, right after `ore`; `actors` entries
+  format 2, right after `ore`, `biome` last and only when it is not
+  temperate; `actors` entries
   as `type, owner, x, y, facing`), keys inside `rules` sorted alphabetically at
   every level, integers only, no whitespace. `Game.map_canonical(json)` returns
   exactly that string; JavaScript implementations must match it byte for byte
@@ -95,9 +109,15 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
   `Game.map_canonical(mapJson)`, `Game.validate_map(mapJson)` returns
   `{ ok, errors: [], modded, hash }`; `Game.generated_map(seed, size, players)`
-  exports a generated map file (format 2: generated maps have gems); previews: `Game.map_file_preview(mapJson)` and
-  `Game.map_preview_players(seed, size, players)` (RGBA per cell, spawns in
-  player colours).
+  exports a generated temperate map file in the seed's style (format 2:
+  generated maps have gems) and `Game.generated_map_styled(seed, size,
+  players, style, biome)` any style and biome (names as in section 3,
+  `random` resolved from the seed); previews: `Game.map_file_preview(mapJson)`,
+  `Game.map_preview_players(seed, size, players)` and
+  `Game.map_preview_styled(seed, size, players, style, biome)` (RGBA per
+  cell in the biome's colours, spawns in player colours);
+  `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
+  name what `random` picks.
 
 ### Importing OpenRA maps (`.oramap`)
 
@@ -131,8 +151,8 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   Trees (`t01`...) become tree terrain and rocks, ice floes, boxes and
   civilian buildings become rock under their footprint. The map is cropped
   to `Bounds`; more than 256 cells is refused, less than 32 is padded with
-  rock on the right and bottom. Tilesets map to biomes in `TILESET_BIOMES`
-  (not stored yet).
+  rock on the right and bottom. Tilesets map to biomes in `TILESET_BIOMES`:
+  SNOW and DESERT maps get that `biome`, TEMPERAT and INTERIOR are temperate.
 - Resources: type 1 is ore, type 2 gems (`RESOURCE_TYPES`), densities
   recalculated like OpenRA (`max(MaxDensity * sameTypeNeighbours / 9, 1)`
   over the 3 x 3 block). A map with gems is written as format 2.
@@ -170,7 +190,16 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
 human|ai|closed, name, faction, color, team, difficulty}], startingCash,
 startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, cheats, map`. `cheats` is the "Debug menu"
+redeployableMcv, oreRegrowth, cheats, mapStyle, biome, weather, map`.
+`mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
+(`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
+is resolved by the engine from the seed, so every peer gets the same map and
+sky. A map file brings its own biome and ignores both. `weather` is `full`
+(visuals and gameplay effects), `cosmetic` (visuals only: the simulation runs
+as under clear skies, including the biome effects) or `off` (clear skies).
+The protocol requires all three (protocol version 3); the engine treats
+missing keys as `random`, `temperate` and `full` (older callers, tools) and
+refuses unknown values. `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
@@ -180,20 +209,79 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+Generated maps come in a style (`engine/src/mapgen/`): **land** (open
+plains, or highlands with long cliffs broken by passes), **rivers** (river
+valleys from a confluence pool to the map edges, fords every 11 to 15 cells,
+pools and tributaries), **lakes** (a central lake and satellite lakes, most
+of them joined to it by streams) and **islands** (a central sea with bays,
+islands, some with ore, and straits to the map edges). Water radiates from a
+hub on the mirror axis, placed where the farthest base is as near as
+possible, along spokes that run between the bases, so no river crosses a
+base. All water of a map is one network (apart from decorative ponds).
+
 Generated 2-player maps are mirrored left to right with both bases at the
 same height, so mirror matches are fair: Red Alert structures face south
 (exits, refinery docks), which favours one side on a point symmetric map.
-Generated maps for 3 to 8 players are mirrored left to right too, and every
-base gets the same surroundings, shifted and never rotated (a clearing with
-its ore fields south of the yard, rock walls north and south, open sides):
-3 and 4 players in two rows (the bottom half repeats the top half), 5 to 8
-on a ring. Their spawns are listed by column, top first, so slots 0 and 1
-(the left column of a 4-player map) against slots 2 and 3 is a mirror match.
-Gems lie only in contested fields, as the dense middle of an ore field: on
-2-player maps in the two contested fields of each half (mirrored), on 3 to 8
-player maps in every field halfway between two neighbouring bases. No base
-pocket holds gems, so every base has the same home ore and gems are always
-something neighbours fight over.
+On the water styles each base has a harbour bay along the map edge behind
+it, dug through to the network. Generated maps for 3 to 8 players are
+mirrored left to right too, and every base gets the same surroundings,
+shifted and never rotated (a clearing with its ore fields south of the yard,
+walls of three rows north and south, open sides): 3 and 4 players in two
+rows (the bottom half repeats the top half; with four players the water is
+also mirrored top to bottom), 5 to 8 on a ring. On the water styles the walls
+are harbour moats; the moat nearer the hub is dug through to it, nearly
+straight, and the other one becomes rock, so every base has exactly one
+harbour on the network and every harbour is about as far from the hub as its
+base is. Ground routes that would be cut by water get fords. Their spawns are
+listed by column, top first, so slots 0 and 1 (the left column of a 4-player
+map) against slots 2 and 3 is a mirror match. Gems lie only in contested
+fields, as the dense middle of an ore field: on 2-player maps in the two
+contested fields of each half (mirrored) and in the style's fields near the
+mirror axis (river crossings, islands, passes), on 3 to 8 player maps in
+every field halfway between two neighbouring bases and in the style's fields
+near the axis. No base pocket holds gems, so every base has the same home ore
+and gems are always something neighbours fight over.
+
+Fairness checks (`engine/src/mapgen/tests.rs`, `engine/examples/map_stats.rs`):
+every style and player count is mirrored, ground connected and has no
+resources on water; two-player bases get identical numbers; on the water
+styles every base has a naval yard site on the network, and for 3 to 8
+players the water distance from the hub to each harbour stays within 1.5
+times the nearest plus 8 cells.
+
+### Biomes and weather (`engine/src/weather.rs`)
+
+The biome decides the terrain art and the weather. The weather cycle runs on
+its own random stream seeded from the game seed (it never draws from the
+simulation's stream): clear skies for the first 2 to 3 minutes, then the
+biome's weather alternates with clear spells of 90 to 180 s. Temperate:
+rain (60 %, 60 to 120 s) or thunderstorm (40 %, 45 to 90 s); snow:
+snowfall (60 to 150 s); desert: heat wave (60 %, 60 to 120 s) or sandstorm
+(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm and
+is cosmetic (no damage). Effects with `weather: full`:
+
+| What | Effect |
+|------|--------|
+| Rain | sight of every actor 90 % |
+| Thunderstorm | sight 85 % |
+| Snowfall | sight 85 % |
+| Sandstorm | sight 75 % |
+| Snow biome, infantry | speed 90 % |
+| Snow biome, vehicles | momentum: +10 % of top speed per tick, -12 % when braking or coasting; turn rate 70 %; they slide on along their heading while turning and for a short coast after stopping (harvesting, docking, repair, boarding and abilities stop dead) |
+| Ice (rough ground in the snow biome) | +6 % / -7 % per tick, turn rate 50 % |
+| Heat wave, vehicles | heat +2 per tick driving, +40 per shot; overheated at 1000: speed 75 %, reload 133 %, until heat drops to 400 |
+| Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
+
+The AI rests overheated vehicles until they cool down (they still defend).
+Submarines alone do not keep a player in the game (OpenRA `^Submarine`
+has no `MustBeDestroyed`), nor do walls and mines.
+
+Engine API: `Game.weather_json()` returns `{ biome, mode, weather, since,
+until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y]`
+in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
+fills `[x, y, heat 0..1, overheated]` per hot vehicle in view (at most 512,
+read at `Game.fx_ptr()`); `Game.actor_json` has `heat` (percent) and
+`overheated`.
 
 ## 4. Online multiplayer
 
