@@ -39,6 +39,8 @@ mod tests_helis;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
+mod tests_pathing;
+#[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
 mod tests_security;

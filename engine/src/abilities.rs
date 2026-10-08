@@ -455,13 +455,18 @@ impl World {
         dist(a.x, a.y, cell_center(ci as i32 % self.map.width), cell_center(ci as i32 / self.map.width)) <= ON_CELL
     }
 
-    /// Progress bookkeeping toward a cell; true when the unit has made no
-    /// progress for too long.
+    /// Progress bookkeeping toward a cell, measured along the path; true
+    /// when the unit has made no progress for too long or cannot reach the
+    /// cell at all.
     fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
-        let (gx, gy) = (cell_center(ci as i32 % self.map.width), cell_center(ci as i32 / self.map.width));
+        let d = match self.path_remaining(i, ci) {
+            Some(d) => d,
+            // On a blocked cell: no progress until the unit has stepped off.
+            None if self.pass_for(self.domain_of(i)).blocked[self.cell_index(self.actors[i].x, self.actors[i].y)] => i32::MAX,
+            None => return true,
+        };
         let a = &mut self.actors[i];
-        let d = dist(a.x, a.y, gx, gy);
-        if d < a.best_dist - 64 {
+        if d < a.best_dist.saturating_sub(64) {
             a.best_dist = d;
             a.stuck_ticks = 0;
             false

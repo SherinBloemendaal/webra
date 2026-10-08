@@ -73,8 +73,13 @@ pub struct Actor {
     pub reload: [i32; MAX_WEAPONS],
     pub burst_shot: [i32; MAX_WEAPONS],
     pub scan_cooldown: i32,
+    /// Least remaining path length toward the current goal so far (units.rs).
     pub best_dist: i32,
+    /// Ticks in a row without progress toward the goal.
     pub stuck_ticks: i32,
+    /// Ticks without progress that a moving crowd around the unit does not
+    /// explain (see `World::jammed`). Reset with `stuck_ticks` on progress.
+    pub stall_ticks: i32,
     pub moved: bool,
 
     // Harvesters
@@ -158,6 +163,7 @@ impl Actor {
             scan_cooldown: 0,
             best_dist: i32::MAX,
             stuck_ticks: 0,
+            stall_ticks: 0,
             moved: false,
             harv: HarvState::Search,
             bales: 0,
@@ -564,6 +570,10 @@ pub struct World {
     pub(crate) hash_start: Vec<u32>,
     pub(crate) hash_items: Vec<u32>,
     pub terrain_dirty: bool,
+    /// Per actor: pressed against a friendly unit that moved in the last
+    /// crowd separation, so it waits in a queue rather than being blocked for
+    /// good (units.rs).
+    pub(crate) jammed: Vec<bool>,
     pub tokens_dirty: bool,
     next_group: u32,
     pub ai: Vec<crate::ai::AiState>,
@@ -720,6 +730,7 @@ impl World {
             hash_start: vec![0; cells + 1],
             hash_items: Vec::new(),
             terrain_dirty: true,
+            jammed: Vec::new(),
             tokens_dirty: true,
             next_group: 1,
             ai: Vec::new(),

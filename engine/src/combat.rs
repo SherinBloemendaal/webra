@@ -212,6 +212,9 @@ impl World {
             a.chase_cell = tcell;
             a.goal = goal;
         }
+        if !self.keep_goal_reachable(i) {
+            return;
+        }
         let goal = self.actors[i].goal;
         if goal == NONE {
             self.actors[i].activity = Activity::Idle;

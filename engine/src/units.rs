@@ -9,6 +9,9 @@ use crate::world::{cell_center, Activity, HarvState, World, NONE};
 const MOVE_WHILE_TURNING: i32 = 128;
 const MAX_PUSH: i32 = 96;
 const STUCK_LIMIT: i32 = 75;
+/// Ticks a unit of a group move must stall against stopped units before it
+/// stops too.
+const SETTLE_TICKS: i32 = 10;
 /// Ticks an ore truck stays idle before it resumes harvesting.
 const HARVESTER_IDLE_RESUME: i32 = 3 * 25;
 
@@ -133,6 +136,9 @@ impl World {
         if self.actors[i].attack_move && self.try_auto_target(i) {
             return;
         }
+        if !self.keep_goal_reachable(i) {
+            return;
+        }
         let goal = self.actors[i].goal;
         if goal == NONE {
             self.actors[i].activity = Activity::Idle;
@@ -147,51 +153,162 @@ impl World {
         self.move_toward(i, goal);
     }
 
-    /// Arrival test, including crowd arrival: a unit that bumps into a stopped
-    /// member of its own group near the goal stops too.
-    pub(crate) fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
-        let gx = cell_center(goal as i32 % self.map.width);
-        let gy = cell_center(goal as i32 / self.map.width);
+    /// Field toward `goal` for unit `i`'s locomotor, or None for aircraft,
+    /// which fly straight.
+    fn unit_field(&mut self, i: usize, goal: u32) -> Option<&crate::flowfield::FlowField> {
+        let loco = self.rules.actors[self.actors[i].ty as usize].unit.as_ref()?.locomotor;
+        let pass = match self.rules.locomotors[loco].domain {
+            crate::rules::Domain::Air => return None,
+            crate::rules::Domain::Water => &self.pass_water,
+            crate::rules::Domain::Ground => &self.pass,
+        };
+        Some(self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco as u8))
+    }
+
+    /// Flow direction toward `goal` at the cell of unit `i` (None for aircraft).
+    pub(crate) fn flow_dir(&mut self, i: usize, goal: u32) -> Option<u8> {
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        self.unit_field(i, goal).map(|f| f.dirs[ci])
+    }
+
+    /// Length of the rest of the path from unit `i` to `goal`, in world
+    /// units: the straight line to the next cell along the flow field plus
+    /// the field's path length from there. Unlike the straight distance to
+    /// the goal it shrinks on every detour around a wall and grows when the
+    /// unit is pushed back. None when the goal cannot be reached from the
+    /// unit's cell (or the unit stands on a blocked cell).
+    pub(crate) fn path_remaining(&mut self, i: usize, goal: u32) -> Option<i32> {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let d = dist(x, y, gx, gy);
-        if d <= radius {
+        let w = self.map.width;
+        let to_goal = || dist(x, y, cell_center(goal as i32 % w), cell_center(goal as i32 / w));
+        let (cx, cy) = self.cell_of(x, y);
+        let Some(f) = self.unit_field(i, goal) else { return Some(to_goal()) };
+        match f.dirs[(cy * w + cx) as usize] {
+            DIR_NONE => None,
+            DIR_GOAL => Some(to_goal()),
+            d => {
+                // A field never points off the map or into a blocked cell.
+                let (nx, ny) = (cx + DIRS[d as usize].0, cy + DIRS[d as usize].1);
+                let rest = f.dist[(ny * w + nx) as usize] as i32;
+                Some(rest * CELL + dist(x, y, cell_center(nx), cell_center(ny)))
+            }
+        }
+    }
+
+    /// A move whose goal can no longer be reached from where the unit stands
+    /// (a structure went up on it, or walls cut it off) is sent to the
+    /// nearest cell that can be reached instead, the same cell for every unit
+    /// of the group. Returns false when there is none: the unit stops.
+    pub(crate) fn keep_goal_reachable(&mut self, i: usize) -> bool {
+        let goal = self.actors[i].goal;
+        if goal == NONE {
             return true;
         }
-        if crowd && d <= radius * 2 + CELL {
-            let (cx, cy) = self.cell_of(x, y);
-            let me = &self.actors[i];
-            let rr = self.rules.actors[me.ty as usize].unit.as_ref().unwrap().radius;
-            for oy in -1..=1 {
-                for ox in -1..=1 {
-                    if !self.map.contains(cx + ox, cy + oy) {
-                        continue;
-                    }
-                    for &u in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
-                        let u = u as usize;
-                        let o = &self.actors[u];
-                        if u == i || o.group != me.group || o.activity != Activity::Idle {
-                            continue;
-                        }
-                        let orr = self.rules.actors[o.ty as usize].unit.as_ref().unwrap().radius;
-                        if dist(x, y, o.x, o.y) <= rr + orr + 64 {
-                            return true;
-                        }
-                    }
-                }
-            }
+        let Some(dir) = self.flow_dir(i, goal) else { return true };
+        let domain = self.domain_of(i);
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        let pass = self.pass_for(domain);
+        // Standing on a structure: step off it first (move_toward).
+        if dir != DIR_NONE || pass.blocked[ci] {
+            return true;
         }
-        // Give up when no progress is made for a while near the goal.
+        let g = (goal as i32 % self.map.width, goal as i32 / self.map.width);
+        // Ties go toward the old goal itself, so the whole group agrees.
+        let new = crate::flowfield::nearest_in_component(&self.map, pass, g, pass.component[ci], g).unwrap_or(NONE);
         let a = &mut self.actors[i];
-        if d < a.best_dist - 64 {
-            a.best_dist = d;
+        if new == NONE || new == goal {
+            a.activity = Activity::Idle;
+            a.goal = NONE;
+            return false;
+        }
+        a.goal = new;
+        a.best_dist = i32::MAX;
+        a.stuck_ticks = 0;
+        true
+    }
+
+    /// Arrival test. Distances count along the path, so a unit on the far
+    /// side of a wall has not arrived, and progress is measured along the
+    /// path, so a long detour is not mistaken for being stuck. A goal the
+    /// unit can no longer reach counts as reached (callers give up on it;
+    /// moves re-target first, see `keep_goal_reachable`).
+    ///
+    /// With `crowd` (group moves, `radius` is the group's radius) a unit
+    /// arrives on the goal itself, or when it has stalled against an own unit
+    /// that already stopped, within reach of the area the group fills. Being
+    /// near the goal is not enough: a unit that stopped there while the others
+    /// still queue behind it (in a gap, say) would block them for good.
+    /// Without `crowd`, a unit near the goal that has made no progress for a
+    /// while gives up.
+    pub(crate) fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
+        let rest = match self.path_remaining(i, goal) {
+            Some(r) => r,
+            None => {
+                let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+                if !self.pass_for(self.domain_of(i)).blocked[ci] {
+                    return true;
+                }
+                // On a blocked cell (a structure went up around the unit):
+                // no progress until it has stepped off.
+                i32::MAX
+            }
+        };
+        let own_radius = self.rules.actors[self.actors[i].ty as usize].unit.as_ref().unwrap().radius;
+        let on_goal = if crowd { own_radius.max(256) } else { radius };
+        // Within a cell of the goal `rest` is the straight distance to it.
+        if rest <= on_goal {
+            return true;
+        }
+        // Progress bookkeeping along the path.
+        let jammed = self.jammed.get(i).copied().unwrap_or(false);
+        let a = &mut self.actors[i];
+        if rest < a.best_dist.saturating_sub(64) {
+            a.best_dist = rest;
             a.stuck_ticks = 0;
+            a.stall_ticks = 0;
         } else {
             a.stuck_ticks += 1;
-            if a.stuck_ticks > STUCK_LIMIT && d <= radius * 3 + 2 * CELL {
+            if !jammed {
+                a.stall_ticks += 1;
+            }
+        }
+        let (stuck, stall) = (a.stuck_ticks, a.stall_ticks);
+        if crowd {
+            if stuck >= SETTLE_TICKS && rest <= radius * 2 + CELL && self.touches_stopped_friend(i) {
                 return true;
             }
-            if a.stuck_ticks > STUCK_LIMIT * 6 {
-                return true;
+        } else if stuck > STUCK_LIMIT && rest <= radius + 2 * CELL {
+            return true;
+        }
+        // Blocked for good (enemies in a gap, a wall of units that does not
+        // move). Waiting in a moving queue does not count: a big army
+        // funnelling through a gap takes its time.
+        stall > STUCK_LIMIT * 6
+    }
+
+    /// Whether unit `i` touches an idle unit of its owner (one that already
+    /// arrived or was parked there).
+    fn touches_stopped_friend(&self, i: usize) -> bool {
+        let me = &self.actors[i];
+        let (x, y) = (me.x, me.y);
+        let (cx, cy) = self.cell_of(x, y);
+        let rr = self.rules.actors[me.ty as usize].unit.as_ref().unwrap().radius;
+        for oy in -1..=1 {
+            for ox in -1..=1 {
+                if !self.map.contains(cx + ox, cy + oy) {
+                    continue;
+                }
+                for &u in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
+                    let u = u as usize;
+                    let o = &self.actors[u];
+                    if u == i || o.owner != me.owner || o.activity != Activity::Idle || (o.altitude == 0) != (me.altitude == 0) {
+                        continue;
+                    }
+                    let orr = self.rules.actors[o.ty as usize].unit.as_ref().unwrap().radius;
+                    if dist(x, y, o.x, o.y) <= rr + orr + 64 {
+                        return true;
+                    }
+                }
             }
         }
         false
@@ -201,45 +318,63 @@ impl World {
     pub(crate) fn move_toward(&mut self, i: usize, goal: u32) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let ci = self.cell_index(x, y);
-        let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
+        let unit = Drive::of(self.rules.actors[self.actors[i].ty as usize].unit.as_ref().unwrap());
         let loco = unit.locomotor as u8;
         let domain = self.rules.locomotors[unit.locomotor].domain;
         if domain == crate::rules::Domain::Air {
             // Aircraft fly straight to their goal.
             let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
-            self.step_toward(i, gx, gy, &unit);
+            self.drive_toward(i, gx, gy, unit);
             return;
         }
+        let (cx, cy) = self.cell_of(x, y);
         let pass = if domain == crate::rules::Domain::Water { &self.pass_water } else { &self.pass };
-        let dir = self.flow.dir(&self.map, pass, &self.rules.locomotors, goal, loco, ci);
+        let field = self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco);
+        let dir = field.dirs[ci];
         let (wx, wy) = if dir == DIR_GOAL {
             (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
         } else if dir == DIR_NONE {
-            // Standing on a blocked cell (e.g. a building was placed next to us)
-            // or the field is unreachable: step to the nearest open cell.
-            let comp_cell = (0..8).find_map(|d| {
-                let (dx, dy) = DIRS[d];
-                let (cx, cy) = self.cell_of(x, y);
+            if !pass.blocked[ci] {
+                // The goal cannot be reached from this cell: nothing to do
+                // (moves re-target, other activities give up in goal_reached).
+                return;
+            }
+            // Standing on a blocked cell (a structure went up around us):
+            // step to the open neighbour closest to the goal along the path,
+            // else to any open neighbour.
+            let mut best: Option<((u16, usize), (i32, i32))> = None;
+            for (d, &(dx, dy)) in DIRS.iter().enumerate() {
                 let (nx, ny) = (cx + dx, cy + dy);
-                (self.map.contains(nx, ny) && !self.pass_for(domain).blocked[self.map.idx(nx, ny)]).then_some((nx, ny))
-            });
-            match comp_cell {
-                Some((nx, ny)) => (cell_center(nx), cell_center(ny)),
+                if !self.map.contains(nx, ny) || pass.blocked[self.map.idx(nx, ny)] {
+                    continue;
+                }
+                let key = (field.dist[self.map.idx(nx, ny)], d);
+                if best.is_none_or(|(bk, _)| key < bk) {
+                    best = Some((key, (nx, ny)));
+                }
+            }
+            match best {
+                Some((_, (nx, ny))) => (cell_center(nx), cell_center(ny)),
                 None => {
                     self.actors[i].activity = Activity::Idle;
                     return;
                 }
             }
         } else {
-            let (cx, cy) = self.cell_of(x, y);
             let (dx, dy) = DIRS[dir as usize];
             (cell_center(cx + dx), cell_center(cy + dy))
         };
-        self.step_toward(i, wx, wy, &unit);
+        self.drive_toward(i, wx, wy, unit);
     }
 
     /// Turn and drive toward a world point, respecting turn rate and terrain speed.
     pub(crate) fn step_toward(&mut self, i: usize, wx: i32, wy: i32, unit: &crate::rules::UnitInfo) {
+        self.drive_toward(i, wx, wy, Drive::of(unit));
+    }
+
+    /// `step_toward` with the unit's movement stats copied out of the rules
+    /// (no clone of its whole UnitInfo every tick).
+    fn drive_toward(&mut self, i: usize, wx: i32, wy: i32, unit: Drive) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
@@ -290,7 +425,7 @@ impl World {
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
             let d = self.domain_of(i);
-            if to == from || d == crate::rules::Domain::Air || !self.pass_for(d).blocked[to] {
+            if to == from || d == crate::rules::Domain::Air || self.may_enter(d, (x, y), (tx, ty)) {
                 let a = &mut self.actors[i];
                 a.x = tx;
                 a.y = ty;
@@ -299,6 +434,25 @@ impl World {
             }
         }
         false
+    }
+
+    /// Whether a ground or water unit may move from point `a` into the
+    /// different cell of point `b`: the cell must be open, and a diagonal
+    /// step must not squeeze between two blocked cells. That is the rule the
+    /// flow fields and connectivity labels use (`flowfield::step`), so units
+    /// never slip into a pocket their fields cannot lead them out of. A unit
+    /// on a blocked cell (a structure went up around it) may leave any way.
+    fn may_enter(&self, d: crate::rules::Domain, a: (i32, i32), b: (i32, i32)) -> bool {
+        let blocked = &self.pass_for(d).blocked;
+        let (fx, fy) = self.cell_of(a.0, a.1);
+        let (tx, ty) = self.cell_of(b.0, b.1);
+        if blocked[self.map.idx(tx, ty)] {
+            return false;
+        }
+        if blocked[self.map.idx(fx, fy)] || fx == tx || fy == ty {
+            return true;
+        }
+        !blocked[self.map.idx(tx, fy)] && !blocked[self.map.idx(fx, ty)]
     }
 
     // ---- Harvesting --------------------------------------------------------
@@ -605,6 +759,7 @@ impl World {
         self.rebuild_hash();
         let n = self.actors.len();
         let mut push = vec![(0i32, 0i32); n];
+        let mut jammed = vec![false; n];
         let mut crushed: Vec<usize> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
@@ -655,6 +810,11 @@ impl World {
                                 }
                             }
                         }
+                        let friends = !self.are_enemies(a.owner, b.owner);
+                        if friends {
+                            jammed[i] |= b.moved;
+                            jammed[j] |= a.moved;
+                        }
                         let d = isqrt(d2) as i32;
                         let (nx, ny) = if d == 0 {
                             // Deterministic split for exactly overlapping units.
@@ -664,8 +824,12 @@ impl World {
                             (dx * 1024 / d, dy * 1024 / d)
                         };
                         let overlap = (min - d).min(MAX_PUSH * 2);
-                        // Moving units push idle friends aside; enemies are walls to each other.
-                        let (wa, wb) = match (a.moved, b.moved, !self.are_enemies(a.owner, b.owner)) {
+                        // Moving units push standing friends aside, so a crowd that
+                        // stopped makes room for those still arriving instead of
+                        // plugging their way; standing enemies are walls.
+                        let (wa, wb) = match (a.moved, b.moved, friends) {
+                            (true, false, true) => (0, 100),
+                            (false, true, true) => (100, 0),
                             (true, false, false) => (100, 0),
                             (false, true, false) => (0, 100),
                             _ => (50, 50),
@@ -680,6 +844,7 @@ impl World {
                 }
             }
         }
+        self.jammed = jammed;
         for k in crushed {
             if self.actors[k].alive {
                 self.kill(k);
@@ -709,6 +874,21 @@ impl World {
         }
         let loco = self.rules.actors[ta.ty as usize].unit.as_ref().unwrap().locomotor;
         self.rules.locomotors[loco].crushes_infantry
+    }
+}
+
+/// The movement stats `step_toward` needs from a UnitInfo.
+#[derive(Clone, Copy)]
+struct Drive {
+    locomotor: usize,
+    speed: i32,
+    turn_speed: i32,
+    turn_in_place: bool,
+}
+
+impl Drive {
+    fn of(u: &crate::rules::UnitInfo) -> Drive {
+        Drive { locomotor: u.locomotor, speed: u.speed, turn_speed: u.turn_speed, turn_in_place: u.turn_in_place }
     }
 }
 
