@@ -2,8 +2,10 @@
 //   cd apps/server && npx wrangler d1 migrations apply webra --local
 //   npx wrangler dev --port 8799
 //   node test/e2e/smoke.mjs http://127.0.0.1:8799
-// Exercises the HTTP API, a password-protected lobby with two humans and an
-// AI, start, the lockstep relay, hash checks, desync reporting and leaving.
+// Exercises the HTTP API, a password-protected lobby with two humans, an AI
+// and a spectator, start, the lockstep relay, hash checks, desync reporting,
+// a spectator refused for sending orders, a player reconnecting with its
+// rejoin key (order log, sync, resume), leaving, and the stall drop.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
@@ -143,7 +145,23 @@ async function main() {
   guest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Guest', password: 'pw' });
   const gw = await guest.type('welcome');
   assert.equal(gw.hostId, welcome.you);
+  assert.equal(gw.role, 'player');
+  assert.match(gw.key, /^[A-Za-z0-9_-]{43}$/, 'every member gets a rejoin key');
   await host.type('lobby', (m) => m.slots[1].type === 'human');
+
+  // A spectator place: the host allows one, a watcher takes it (password rules as for players).
+  host.send({ t: 'spectators', max: 1 });
+  await host.type('lobby', (m) => m.maxSpectators === 1);
+  const watcher = new Client('watcher');
+  await watcher.open(id);
+  watcher.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Watcher', password: 'nope', spectate: true });
+  assert.equal((await watcher.type('error')).code, 'bad_password');
+  const watcher2 = new Client('watcher2');
+  await watcher2.open(id);
+  watcher2.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Watcher', password: 'pw', spectate: true });
+  const ww = await watcher2.type('welcome');
+  assert.equal(ww.role, 'spectator');
+  await host.type('lobby', (m) => m.spectators.length === 1 && m.spectators[0].name === 'Watcher');
 
   // Non-host cannot change options or start; garbage is answered with errors.
   guest.send({ t: 'start' });
@@ -175,8 +193,9 @@ async function main() {
   guest.send({ t: 'ready', ready: true, mapHash: up.body.hash });
   await host.type('lobby', (m) => m.slots[1].ready === true);
   host.send({ t: 'start' });
-  const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
+  const [hs, gs, ws] = await Promise.all([host.type('start'), guest.type('start'), watcher2.type('start')]);
   assert.deepEqual(hs, gs);
+  assert.deepEqual(hs, ws);
   assert.equal(hs.options.players.length, 3);
   assert.ok(hs.options.players.every((p) => !p.faction.startsWith('random')));
   assert.equal(hs.delay, 3);
@@ -184,6 +203,7 @@ async function main() {
   const hSeat = seatOf(host, welcome.you);
   const gSeat = seatOf(guest, gw.you);
   assert.equal((await api('/api/sessions')).body.some((s) => s.id === id), false, 'started games are not listed');
+  assert.equal(hs.players.length, 3, 'the spectator does not play');
 
   // ---- Lockstep -------------------------------------------------------------------
   // Each client behaves like net.js: after frame T arrives it runs tick T and
@@ -213,12 +233,89 @@ async function main() {
   assert.equal((await host.type('desync')).tick, 50);
   assert.equal((await guest.type('desync')).tick, 50);
 
-  // Guest leaves: host is told and frames continue for the host alone.
-  guest.send({ t: 'leave' });
-  const left = await host.type('left');
-  assert.deepEqual([left.player, left.reason, left.name], [gSeat, 'left', 'Guest']);
-  host.send({ t: 'orders', tick: 60, orders: [] });
-  assert.equal((await host.type('frame', (f) => f.tick === 58)).orders.length, 0);
+  // ---- Spectator -------------------------------------------------------------------
+  // The spectator got every frame; orders from it are refused and remove it.
+  await watcher2.type('frame', (f) => f.tick === 59);
+  watcher2.send({ t: 'orders', tick: 60, orders: [] });
+  assert.equal((await watcher2.type('error')).code, 'forbidden');
+  const wl = await host.type('left', (m) => m.player === null);
+  assert.deepEqual([wl.name, wl.reason], ['Watcher', 'removed']);
+
+  // ---- Reconnect ---------------------------------------------------------------------
+  // The guest's connection drops: the host is told and plays on without waiting.
+  guest.ws.close();
+  const gone = await host.type('left', (m) => m.player === gSeat);
+  assert.deepEqual([gone.reason, gone.name], ['disconnected', 'Guest']);
+  for (let t = 60; t < 70; t++) {
+    host.send({ t: 'orders', tick: t, orders: t === 64 ? [{ o: 'stop', player: hSeat, ids: [9] }] : [] });
+    await host.type('frame', (f) => f.tick === t);
+  }
+  // A wrong key is refused.
+  const thief = new Client('thief');
+  await thief.open(id);
+  thief.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Guest', rejoin: { client: gw.you, key: 'A'.repeat(43) } });
+  assert.equal((await thief.type('error')).code, 'forbidden');
+  // The guest comes back with its key: start, the order log, sync, resume.
+  const back = new Client('guest-back');
+  await back.open(id);
+  back.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Guest', rejoin: { client: gw.you, key: gw.key } });
+  const bw = await back.type('welcome');
+  assert.deepEqual([bw.you, bw.role, 'key' in bw], [gw.you, 'player', false]);
+  assert.deepEqual(await back.type('start'), hs);
+  const logged = [];
+  let sync;
+  while (!sync) {
+    const m = await back.next((x) => x.t === 'log' || x.t === 'sync', 'log or sync');
+    if (m.t === 'log') logged.push(...m.frames);
+    else sync = m;
+  }
+  assert.deepEqual(logged.map((f) => f[0]), [5, 64], 'the log holds the frames with orders');
+  assert.equal(sync.tick, 70);
+  assert.deepEqual(sync.check, { tick: 25, hash: 'aaaa' }, 'the last hash the players agreed on');
+  back.send({ t: 'resume' });
+  const [hb, bb] = await Promise.all([host.type('back'), back.type('back')]);
+  assert.deepEqual([hb.player, hb.tick, bb.tick], [gSeat, 73, 73]);
+  for (let t = 70; t < 76; t++) host.send({ t: 'orders', tick: t, orders: [] });
+  for (let t = 73; t < 76; t++) back.send({ t: 'orders', tick: t, orders: [] });
+  for (let t = 70; t < 76; t++) {
+    const [a, b] = await Promise.all([host.type('frame', (f) => f.tick === t), back.type('frame', (f) => f.tick === t)]);
+    assert.deepEqual(a, b);
+  }
+
+  // Guest leaves for good: host is told and frames continue for the host alone.
+  back.send({ t: 'leave' });
+  const left = await host.type('left', (m) => m.reason === 'left');
+  assert.deepEqual([left.player, left.name], [gSeat, 'Guest']);
+  host.send({ t: 'orders', tick: 76, orders: [] });
+  assert.equal((await host.type('frame', (f) => f.tick === 76)).orders.length, 0);
+
+  // Large frames fill a chunk of the order log, which goes to Durable Object
+  // storage compressed; a spectator joining now reads it back from there.
+  const bigIds = Array.from({ length: 800 }, (_, i) => 1_000_000 + i);
+  for (let t = 77; t < 89; t++) {
+    host.send({ t: 'orders', tick: t, orders: [{ o: 'stop', player: hSeat, ids: bigIds }] });
+    await host.type('frame', (f) => f.tick === t);
+  }
+  await new Promise((r) => setTimeout(r, 500));
+  const lateWatcher = new Client('late-watcher');
+  await lateWatcher.open(id);
+  lateWatcher.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Late', password: 'pw', spectate: true });
+  assert.equal((await lateWatcher.type('welcome')).role, 'spectator');
+  await lateWatcher.type('start');
+  const lateLog = [];
+  let lateSync;
+  while (!lateSync) {
+    const m = await lateWatcher.next((x) => x.t === 'log' || x.t === 'sync', 'log or sync');
+    if (m.t === 'log') lateLog.push(...m.frames);
+    else lateSync = m;
+  }
+  assert.equal(lateSync.tick, 89);
+  assert.deepEqual(lateLog.map((f) => f[0]), [5, 64, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88]);
+  assert.deepEqual(lateLog.at(-1)[1], [[hSeat, [{ o: 'stop', player: hSeat, ids: bigIds }]]]);
+  // The spectator confirms its catch-up (it stops counting against the catch-up limit).
+  lateWatcher.send({ t: 'synced' });
+  lateWatcher.send({ t: 'synced' });
+  assert.equal((await lateWatcher.type('error')).code, 'bad_state', 'confirmed once');
 
   // Silence: the host stops sending and is dropped after about 10 s.
   const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', 15000);

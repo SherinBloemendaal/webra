@@ -15,10 +15,25 @@
 // - ready needs the lobby's map hash (null for a generated map);
 // - start: host only, every other human ready, 2+ players, 2+ sides, players
 //   fit the map's spawns. Random factions are resolved here.
+//
+// Spectators: up to `maxSpectators` (host setting) members without a slot.
+// They join like players (same password rules), in the lobby or a running
+// game, and can switch to an open slot (and back) in the lobby. They never
+// play: the start message lists only slot holders.
+//
+// Seats in a running game (`seatStates`, one per game player, null for AI):
+// active (connected and in lockstep), away (connection lost or dropped for
+// stalling: may rejoin until `until`), syncing (rejoined, catching up; must
+// resume until `until`) and gone (left, removed, or did not come back).
+// `record` keeps the seat's lockstep stall budget while it is away, so a
+// rejoin never gets a fresh one (lockstep.js `suspend` / `rejoin`).
 
 import {
   COLOR_COUNT,
+  DEFAULT_MAX_SPECTATORS,
   DEFAULT_OPTIONS,
+  MAX_REJOINS,
+  MAX_SPECTATORS,
   MIN_PLAYERS,
   ORDER_DELAY,
   RANDOM_FACTIONS,
@@ -51,6 +66,17 @@ export class Room {
     r.seats = null;
     /** Client id -> name, kept after a player leaves (for `left` messages). */
     r.names = {};
+    /** Members without a slot: [{ client, name }]. */
+    r.spectators = [];
+    r.maxSpectators = DEFAULT_MAX_SPECTATORS;
+    /** Client id -> SHA-256 (hex) of its rejoin key. */
+    r.keys = {};
+    /** Client id -> rejoins so far (running game). */
+    r.rejoins = {};
+    /** The `start` message fields, sent again to rejoining members. */
+    r.startMsg = null;
+    /** Game player index -> seat state (see the header), null for AI. */
+    r.seatStates = null;
     return r;
   }
 
@@ -59,6 +85,12 @@ export class Room {
     Object.assign(r, structuredClone(data));
     // Rooms stored before an option existed get its default (cheats stay off).
     r.options = { ...DEFAULT_OPTIONS, ...r.options };
+    r.spectators ??= [];
+    r.maxSpectators ??= DEFAULT_MAX_SPECTATORS;
+    r.keys ??= {};
+    r.rejoins ??= {};
+    r.startMsg ??= null;
+    r.seatStates ??= null;
     return r;
   }
 
@@ -72,6 +104,12 @@ export class Room {
       nextClient: this.nextClient,
       seats: this.seats,
       names: this.names,
+      spectators: this.spectators,
+      maxSpectators: this.maxSpectators,
+      keys: this.keys,
+      rejoins: this.rejoins,
+      startMsg: this.startMsg,
+      seatStates: this.seatStates,
     };
   }
 
@@ -81,6 +119,15 @@ export class Room {
 
   humans() {
     return this.slots.filter((s) => s.type === 'human');
+  }
+
+  isSpectator(client) {
+    return this.spectators.some((s) => s.client === client);
+  }
+
+  /** Connected lobby members: slot holders and spectators. */
+  memberCount() {
+    return this.humans().length + this.spectators.length;
   }
 
   isHost(client) {
@@ -101,31 +148,86 @@ export class Room {
     for (const s of this.slots) if (s.type === 'human') s.ready = false;
   }
 
-  /** Add a player. Returns { client, slot }. */
-  join(name, { host = false } = {}) {
-    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
-    const slot = this.slots.findIndex((s) => s.type === 'open');
-    if (slot < 0) fail('The session is full.', 'full');
+  /**
+   * Add a member. Players take the first open slot (lobby only); spectators
+   * (`spectate`) join the lobby or a running game while places are free.
+   * Returns { client, slot (-1 for spectators), role }.
+   */
+  join(name, { host = false, spectate = false } = {}) {
+    if (spectate) {
+      if (this.spectators.length >= this.maxSpectators) {
+        fail(this.maxSpectators === 0 ? 'This session has no spectator places.' : 'The spectator places are taken.', 'full');
+      }
+    } else if (this.phase !== 'lobby') {
+      fail('The game has already started.', 'bad_state');
+    }
+    const slot = spectate ? -1 : this.slots.findIndex((s) => s.type === 'open');
+    if (slot < 0 && !spectate) fail('The session is full.', 'full');
     const client = this.nextClient++;
     this.names[client] = name;
+    if (spectate) this.spectators.push({ client, name });
+    else this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
     this.pruneNames();
-    this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
-    if (host || this.hostId === null) this.hostId = client;
-    return { client, slot };
+    if (this.phase === 'lobby' && (host || this.hostId === null)) this.hostId = client;
+    return { client, slot, role: spectate ? 'spectator' : 'player' };
   }
 
   /**
-   * Remove a player from the lobby (no-op in game: seats stay). Returns the
-   * new host id when the host changed.
+   * Remove a member from the lobby, or a spectator from a running game
+   * (player seats stay in game, see seatStates). Returns the new host id when
+   * the host changed.
    */
   leave(client) {
     const slot = this.slotOf(client);
     if (slot >= 0 && this.phase === 'lobby') this.slots[slot] = { type: 'open' };
+    this.spectators = this.spectators.filter((s) => s.client !== client);
+    // Leaving a lobby is final: joining again goes through the password check.
+    if (this.phase === 'lobby') this.forgetKey(client);
     if (this.hostId !== client) return null;
-    // The longest-seated human (lowest slot) inherits the host role.
-    const next = this.phase === 'lobby' ? this.slots.find((s) => s.type === 'human') : null;
+    // The longest-seated human (lowest slot) inherits the host role, else the first spectator.
+    const next = this.phase === 'lobby' ? (this.slots.find((s) => s.type === 'human') ?? this.spectators[0]) : null;
     this.hostId = next ? next.client : null;
     return this.hostId;
+  }
+
+  /** Store the SHA-256 (hex) of a member's rejoin key. */
+  setKey(client, hashHex) {
+    this.keys[client] = hashHex;
+  }
+
+  /** The member can no longer rejoin (left on purpose, kicked or removed). */
+  forgetKey(client) {
+    delete this.keys[client];
+  }
+
+  /** Host: number of spectator places (never below the spectators present). */
+  setMaxSpectators(client, max) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!this.isHost(client)) fail('Only the host can change the spectator places.', 'not_host');
+    if (!Number.isInteger(max) || max < 0 || max > MAX_SPECTATORS) fail('Invalid number of spectator places.');
+    if (max < this.spectators.length) fail(`${this.spectators.length} spectators are already here.`);
+    this.maxSpectators = max;
+  }
+
+  /** Move between a slot (on: false) and the spectators (on: true), lobby only. */
+  spectate(client, on) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    const slot = this.slotOf(client);
+    const watching = this.isSpectator(client);
+    if (slot < 0 && !watching) fail('You are not in this session.', 'bad_state');
+    if (on) {
+      if (watching) return;
+      if (this.spectators.length >= this.maxSpectators) fail('The spectator places are taken.', 'full');
+      this.spectators.push({ client, name: this.slots[slot].name });
+      this.slots[slot] = { type: 'open' };
+      return;
+    }
+    if (!watching) return;
+    const open = this.slots.findIndex((s) => s.type === 'open');
+    if (open < 0) fail('No player slot is open.', 'full');
+    const name = this.names[client] ?? this.spectators.find((s) => s.client === client).name;
+    this.spectators = this.spectators.filter((s) => s.client !== client);
+    this.slots[open] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
   }
 
   /**
@@ -134,8 +236,9 @@ export class Room {
   setSlot(client, msg) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     const mine = this.slotOf(client);
-    if (mine < 0) fail('You have no slot.', 'bad_state');
     const host = this.isHost(client);
+    // A spectating host still manages the other slots (types and AI settings).
+    if (mine < 0 && !(host && this.isSpectator(client))) fail('You have no slot.', 'bad_state');
     const target = msg.slot;
     if (target >= this.slots.length) fail('No such slot.');
     const cur = this.slots[target];
@@ -171,7 +274,7 @@ export class Room {
       return { kicked: null };
     }
 
-    if (cur.type === 'open') {
+    if (cur.type === 'open' && mine >= 0) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
       // Move to the open slot, keeping name and settings.
       this.slots[target] = this.slots[mine];
@@ -272,13 +375,119 @@ export class Room {
     });
     this.phase = 'game';
     this.seats = seats;
-    return {
+    this.seatStates = seats.map((c) => (c === null ? null : { state: 'active', until: 0, record: null }));
+    this.startMsg = {
       seed: this.options.seed,
       options: { ...this.options, players },
       map: this.map,
       players: startPlayers,
       delay: ORDER_DELAY,
     };
+    return structuredClone(this.startMsg);
+  }
+
+  // ---- Seats in a running game ------------------------------------------------------
+
+  seatState(seat) {
+    return this.seatStates?.[seat]?.state ?? null;
+  }
+
+  /**
+   * The connection of an active seat was lost (or it stalled): it may come
+   * back until now + graceMs. The grace runs from the moment the seat left
+   * play and is not restarted by rejoins: a syncing seat that loses its
+   * connection again gets at most what is left of that grace (time spent
+   * catching up counts against it), never its longer resume deadline.
+   */
+  suspendSeat(seat, record, now, graceMs) {
+    const s = this.seatStates?.[seat];
+    if (!s || s.state === 'gone') return false;
+    if (s.state === 'active') {
+      s.until = now + graceMs;
+      s.graceUntil = s.until;
+    } else if (s.state === 'syncing') {
+      s.until = Math.min(s.until, s.graceUntil ?? now + graceMs);
+    }
+    s.state = 'away';
+    if (record) s.record = record;
+    return true;
+  }
+
+  /**
+   * A member presented a valid rejoin key. Players move to `syncing` (they
+   * must resume within resumeMs); a seat that is still active must be
+   * suspended by the caller first. Returns the seat, or -1 for spectators.
+   * Throws RoomError when the client may not rejoin.
+   */
+  /**
+   * Why `client` cannot rejoin whatever its current connection does, or
+   * null: checked before an open connection of the member is replaced, so a
+   * refused rejoin never disturbs a connected member.
+   */
+  rejoinProblem(client) {
+    if (this.phase !== 'game') return new RoomError('The game is not running.', 'bad_state');
+    if ((this.rejoins[client] ?? 0) >= MAX_REJOINS) return new RoomError('You rejoined too often.', 'forbidden');
+    const seat = this.seatOf(client);
+    if (seat >= 0) {
+      return this.seatStates[seat].state === 'gone' ? new RoomError('You can no longer rejoin this game.', 'forbidden') : null;
+    }
+    if (!Object.hasOwn(this.keys, client)) return new RoomError('You are not in this game.', 'forbidden');
+    if (!this.isSpectator(client) && this.spectators.length >= this.maxSpectators) return new RoomError('The spectator places are taken.', 'full');
+    return null;
+  }
+
+  beginRejoin(client, now, resumeMs) {
+    const problem = this.rejoinProblem(client);
+    if (problem) throw problem;
+    const seat = this.seatOf(client);
+    if (seat < 0) {
+      if (this.isSpectator(client)) fail('You are already watching.', 'bad_state');
+      if (this.spectators.length >= this.maxSpectators) fail('The spectator places are taken.', 'full');
+      this.rejoins[client] = (this.rejoins[client] ?? 0) + 1;
+      this.spectators.push({ client, name: this.names[client] ?? 'Spectator' });
+      return -1;
+    }
+    const s = this.seatStates[seat];
+    if (s.state === 'gone') fail('You can no longer rejoin this game.', 'forbidden');
+    if (s.state === 'active') fail('Your seat is still connected.', 'bad_state');
+    if (s.state === 'syncing') fail('You are already rejoining.', 'bad_state');
+    this.rejoins[client] = (this.rejoins[client] ?? 0) + 1;
+    s.state = 'syncing';
+    s.until = now + resumeMs;
+    return seat;
+  }
+
+  /** A syncing seat caught up. Returns its saved lockstep record. */
+  resumeSeat(seat) {
+    const s = this.seatStates?.[seat];
+    if (!s || s.state !== 'syncing') fail('You are not rejoining.', 'bad_state');
+    s.state = 'active';
+    s.until = 0;
+    s.graceUntil = null;
+    const record = s.record;
+    s.record = null;
+    return record;
+  }
+
+  /** The seat can never come back (left, removed, expired). */
+  endSeat(seat) {
+    const s = this.seatStates?.[seat];
+    if (!s || s.state === 'gone') return false;
+    s.state = 'gone';
+    s.until = 0;
+    s.graceUntil = null;
+    s.record = null;
+    return true;
+  }
+
+  /** Away or syncing seats whose deadline passed. */
+  expiredSeats(now) {
+    return (this.seatStates ?? []).flatMap((s, seat) => (s && (s.state === 'away' || s.state === 'syncing') && s.until <= now ? [seat] : []));
+  }
+
+  /** Seats that are not gone (the game goes on while there is one). */
+  liveSeats() {
+    return (this.seatStates ?? []).flatMap((s, seat) => (s && s.state !== 'gone' ? [seat] : []));
   }
 
   /** Game player index of a client, or -1. */
@@ -288,15 +497,31 @@ export class Room {
 
   /** Lobby message fields as published to clients. */
   lobbyView() {
-    return { slots: this.slots.map((s) => ({ ...s })), options: { ...this.options }, map: this.map, hostId: this.hostId };
+    return {
+      slots: this.slots.map((s) => ({ ...s })),
+      options: { ...this.options },
+      map: this.map,
+      hostId: this.hostId,
+      spectators: this.spectators.map((s) => ({ ...s })),
+      maxSpectators: this.maxSpectators,
+    };
   }
 
   /** Keep the name table bounded: forget departed players beyond 64 entries. */
   pruneNames() {
     const ids = Object.keys(this.names);
     if (ids.length <= 64) return;
-    const keep = new Set([...this.slots.filter((s) => s.type === 'human').map((s) => String(s.client)), ...(this.seats ?? []).map(String)]);
-    for (const id of ids.slice(0, ids.length - 64)) if (!keep.has(id)) delete this.names[id];
+    const keep = new Set([
+      ...this.slots.filter((s) => s.type === 'human').map((s) => String(s.client)),
+      ...(this.seats ?? []).map(String),
+      ...this.spectators.map((s) => String(s.client)),
+    ]);
+    for (const id of ids.slice(0, ids.length - 64)) {
+      if (keep.has(id)) continue;
+      delete this.names[id];
+      delete this.keys[id];
+      delete this.rejoins[id];
+    }
   }
 
   nameOf(client) {
@@ -304,7 +529,6 @@ export class Room {
   }
 
   hostName() {
-    const h = this.slots.find((s) => s.type === 'human' && s.client === this.hostId);
-    return h ? h.name : null;
+    return this.hostId === null ? null : this.nameOf(this.hostId);
   }
 }

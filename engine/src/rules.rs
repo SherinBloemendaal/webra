@@ -50,6 +50,7 @@ struct RawActor {
     death_weapon: Option<usize>,
     self_heal: Option<SelfHeal>,
     turret_offsets: Vec<Vec<i32>>,
+    stance: Option<(Stance, Stance)>,
     abilities: Abilities,
     experience: Option<ExperienceInfo>,
     gives_experience: Option<GivesExperienceInfo>,
@@ -161,9 +162,6 @@ pub struct Abilities {
     pub support_powers: Option<Vec<SupportPowerInfo>>,
     /// OpenRA `MineImmune`: drives over mines without setting them off (Minelayer).
     pub mine_immune: Option<serde_json::Value>,
-    /// AutoTarget.InitialStance HoldFire: no automatic targeting for human
-    /// players (the AI uses InitialStanceAI ReturnFire, approximated as normal).
-    pub hold_fire: Option<serde_json::Value>,
     /// OpenRA `AcceptsDeliveredCash`: a Supply Truck can deliver its payload here.
     pub accepts_cash: Option<serde_json::Value>,
     /// Vision range that also sees through gap generator shroud
@@ -412,8 +410,6 @@ pub struct AircraftInfo {
     /// Distance to hold from a busy resupply structure while waiting for it.
     pub wait_distance: i32,
     pub take_off_on_resupply: bool,
-    /// AutoTarget InitialStance HoldFire: idle aircraft do not pick targets themselves.
-    pub hold_fire: bool,
     /// AttackAircraft FacingTolerance: may fire while this far off the target's bearing.
     pub facing_tolerance: i32,
     /// Ammo pips shown under a selected aircraft.
@@ -496,6 +492,37 @@ pub const TARGET_MINE: u32 = 32;
 pub const TARGET_UNDERWATER: u32 = 64;
 /// Submarines, surfaced or submerged (depth charge warheads).
 pub const TARGET_SUBMARINE: u32 = 128;
+/// Bare land (OpenRA target type `Ground`): force-fire on the ground. No actor
+/// carries it; a water cell is a `TARGET_WATER` ground target.
+pub const TARGET_GROUND: u32 = 256;
+
+/// OpenRA `UnitStance` of an actor with `AutoTarget`, from least to most
+/// aggressive (the order matters: `stance >= Stance::Defend` and so on).
+/// - HoldFire: never picks targets itself and does not shoot back.
+/// - ReturnFire: shoots back at attackers it can hit from where it stands.
+/// - Defend: also attacks enemies that come into range, without moving.
+/// - AttackAnything: attacks and chases enemies that come into range.
+#[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Stance {
+    HoldFire = 0,
+    ReturnFire = 1,
+    Defend = 2,
+    AttackAnything = 3,
+}
+
+impl Stance {
+    pub const ALL: [Stance; 4] = [Stance::HoldFire, Stance::ReturnFire, Stance::Defend, Stance::AttackAnything];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Stance::HoldFire => "hold_fire",
+            Stance::ReturnFire => "return_fire",
+            Stance::Defend => "defend",
+            Stance::AttackAnything => "attack_anything",
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -592,6 +619,7 @@ pub struct Prereq {
     pub negate: bool,
 }
 
+#[derive(Clone)]
 pub struct BuildingInfo {
     pub width: i32,
     pub height: i32,
@@ -635,12 +663,14 @@ impl BuildingInfo {
     }
 }
 
+#[derive(Clone)]
 pub struct RefineryInfo {
     pub dock_offset: (i32, i32),
     pub free_actor: usize,
     pub free_actor_offset: (i32, i32),
 }
 
+#[derive(Clone)]
 pub struct ActorInfo {
     pub id: String,
     pub name: String,
@@ -663,6 +693,9 @@ pub struct ActorInfo {
     pub self_heal: Option<SelfHeal>,
     /// (forward, lateral) offset of each turret from the actor's centre (OpenRA Turreted.Offset).
     pub turret_offsets: Vec<(i32, i32)>,
+    /// AutoTarget initial stances (for humans, for the AI). None: the actor
+    /// never picks targets on its own and has no stance (Demolition Truck).
+    pub stance: Option<(Stance, Stance)>,
     pub abilities: Abilities,
     /// Veterancy (veterancy.rs): GainsExperience and GivesExperience.
     pub experience: Option<ExperienceInfo>,
@@ -714,6 +747,7 @@ pub enum WarheadKind {
     Percent,
 }
 
+#[derive(Clone)]
 pub struct Warhead {
     pub kind: WarheadKind,
     pub damage: i32,
@@ -765,6 +799,7 @@ impl Warhead {
     }
 }
 
+#[derive(Clone)]
 pub struct WeaponInfo {
     pub name: String,
     pub range: i32,
@@ -802,6 +837,7 @@ impl WeaponInfo {
     }
 }
 
+#[derive(Clone)]
 pub struct Locomotor {
     pub name: String,
     pub domain: Domain,
@@ -811,6 +847,7 @@ pub struct Locomotor {
     pub crushes_infantry: bool,
 }
 
+#[derive(Clone)]
 pub struct Rules {
     pub factions: Vec<String>,
     pub player: PlayerRules,
@@ -1408,6 +1445,7 @@ impl Rules {
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
                 turret_offsets,
+                stance: a.stance,
                 abilities: a.abilities,
                 experience: a.experience,
                 gives_experience: a.gives_experience,

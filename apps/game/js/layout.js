@@ -39,15 +39,20 @@ export function renderPixelRatio(deviceRatio, cap, lowQuality = false) {
 }
 
 /**
- * HUD line: game time (and pause), fps and simulation cost; stress tests add
- * unit and flow field counts. Compact layouts keep only time and fps.
+ * HUD line over the battlefield. The game clock lives in the sidebar
+ * (js/sidebar.js), and frame stats in the debug menu's performance panel
+ * (js/debug.js), so a normal game shows only the pause state. Stress tests
+ * add fps, simulation cost, unit and flow field counts; compact layouts keep
+ * fps and units.
  */
-export function hudText({ seconds, paused = false, fps, simMs, stress = false, units = 0, flowFields = 0 }, compact = false) {
-  const secs = Math.max(0, Math.floor(seconds));
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`];
-  if (!compact) parts.push(`sim ${simMs.toFixed(2)} ms/tick`);
-  if (stress) parts.push(`${units} units`, ...(compact ? [] : [`${flowFields} flow fields`]));
+export function hudText({ paused = false, fps = 0, simMs = 0, stress = false, units = 0, flowFields = 0 }, compact = false) {
+  const parts = paused ? ['Paused'] : [];
+  if (stress) {
+    parts.push(`${fps.toFixed(0)} fps`);
+    if (!compact) parts.push(`sim ${simMs.toFixed(2)} ms/tick`);
+    parts.push(`${units} units`);
+    if (!compact) parts.push(`${flowFields} flow fields`);
+  }
   return parts.join(compact ? '  ' : '  |  ');
 }
 

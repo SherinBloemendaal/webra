@@ -1,0 +1,140 @@
+// A small in-memory stand-in for the Durable Object runtime, so the real
+// Session class (src/session.js) runs under `node --test`: storage, alarms,
+// hibernatable WebSockets with attachments, and a D1 binding that accepts
+// every statement. `cloudflare:workers` and the engine module are replaced by
+// stubs through a module resolve hook.
+import { registerHooks } from 'node:module';
+
+const STUBS = {
+  'cloudflare:workers': 'export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }',
+  '#engine-wasm': 'export default null;',
+};
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (Object.hasOwn(STUBS, specifier)) {
+      return { url: `data:text/javascript,${encodeURIComponent(STUBS[specifier])}`, shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const { Session } = await import('../src/session.js');
+
+export class FakeStorage {
+  constructor() {
+    this.data = new Map();
+    this.alarm = null;
+  }
+
+  async get(key) {
+    if (Array.isArray(key)) return new Map(key.filter((k) => this.data.has(k)).map((k) => [k, structuredClone(this.data.get(k))]));
+    return this.data.has(key) ? structuredClone(this.data.get(key)) : undefined;
+  }
+
+  async put(key, value) {
+    if (typeof key === 'object') {
+      for (const [k, v] of Object.entries(key)) this.data.set(k, structuredClone(v));
+    } else {
+      this.data.set(key, structuredClone(value));
+    }
+  }
+
+  async delete(key) {
+    return this.data.delete(key);
+  }
+
+  async deleteAll() {
+    this.data.clear();
+  }
+
+  async getAlarm() {
+    return this.alarm;
+  }
+
+  async setAlarm(at) {
+    this.alarm = at;
+  }
+
+  async deleteAlarm() {
+    this.alarm = null;
+  }
+}
+
+export class FakeSocket {
+  constructor(name) {
+    this.name = name;
+    this.inbox = [];
+    this.closed = null;
+    this.att = null;
+  }
+
+  serializeAttachment(value) {
+    this.att = structuredClone(value);
+  }
+
+  deserializeAttachment() {
+    return structuredClone(this.att);
+  }
+
+  send(raw) {
+    if (this.closed) throw new Error('socket closed');
+    this.inbox.push(JSON.parse(raw));
+  }
+
+  close(code, reason) {
+    this.closed ??= { code, reason };
+  }
+
+  /** Remove and return every received message of type `t`. */
+  take(t) {
+    const out = this.inbox.filter((m) => m.t === t);
+    this.inbox = this.inbox.filter((m) => m.t !== t);
+    return out;
+  }
+
+  last(t) {
+    return this.inbox.filter((m) => m.t === t).at(-1);
+  }
+}
+
+const db = {
+  prepare: () => ({
+    bind: () => ({ run: async () => ({}), first: async () => null, all: async () => ({ results: [] }) }),
+  }),
+};
+
+/** A session Durable Object with its fake runtime. */
+export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0' } = {}) {
+  const sockets = [];
+  const ctx = {
+    storage: new FakeStorage(),
+    getWebSockets: () => sockets.filter((s) => !s.closed),
+    acceptWebSocket: (ws) => sockets.push(ws),
+    blockConcurrencyWhile: (fn) => fn(),
+  };
+  const session = new Session(ctx, { DB: db });
+  await new Promise((r) => setTimeout(r, 0));
+  const { hostKey } = await session.init({ id: 'a'.repeat(64), name: 'Test', password, isPublic: false, maxPlayers, version });
+  let ip = 1;
+  const api = {
+    session,
+    ctx,
+    hostKey,
+    version,
+    /** A new socket, as after the WebSocket upgrade. */
+    connect(name = 'socket', addr = `10.0.0.${ip++}`) {
+      const ws = new FakeSocket(name);
+      ctx.acceptWebSocket(ws);
+      ws.serializeAttachment({ client: null, ip: addr, since: Date.now(), busy: false });
+      return ws;
+    },
+    send: (ws, msg) => session.webSocketMessage(ws, typeof msg === 'string' ? msg : JSON.stringify(msg)),
+    /** The client side closed the socket. */
+    async drop(ws) {
+      ws.close(1006, 'gone');
+      await session.webSocketClose(ws, 1006, 'gone', false);
+    },
+  };
+  return api;
+}

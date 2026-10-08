@@ -167,8 +167,9 @@ def parse_locomotors():
 
 
 # Target classes, as bit flags shared with the simulation (rules.rs).
+# 'Ground' is terrain (force-fire on the ground, engine TARGET_GROUND); no actor carries it.
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
-               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 256, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
                # Submarine is its own class (surfaced and submerged subs): depth charge
                # warheads hit it, while Underwater only matches submerged subs.
                'Ship': 16, 'Submarine': 128,
@@ -363,6 +364,18 @@ def has(t, name):
     return bool(trait(t, name))
 
 
+# OpenRA UnitStance names as the engine spells them (rules.rs Stance).
+STANCES = {'HoldFire': 'hold_fire', 'ReturnFire': 'return_fire', 'Defend': 'defend', 'AttackAnything': 'attack_anything'}
+
+
+def stances(t):
+    """AutoTarget [InitialStance, InitialStanceAI] (both default to AttackAnything), or None without AutoTarget."""
+    if not has(t, 'AutoTarget'):
+        return None
+    at = first(t, 'AutoTarget')
+    return [STANCES[str(at.get('InitialStance', 'AttackAnything'))], STANCES[str(at.get('InitialStanceAI', 'AttackAnything'))]]
+
+
 def load_source_rules():
     """Resolved OpenRA actor rules from data/source (parse.py), keyed by actor name."""
     sys.path.insert(0, os.path.join(DATA, 'source'))
@@ -448,6 +461,8 @@ def main():
             'self_heal': None,
             # Forward/lateral offsets of each Turreted trait (render: ship turrets).
             'turret_offsets': [ints(v.get('Offset', '0,0,0'))[:2] for k, v in sorted(trait(t, 'Turreted').items()) if isinstance(v, dict)],
+            # AutoTarget: [InitialStance, InitialStanceAI]; null without AutoTarget (never picks targets itself).
+            'stance': stances(t),
             'abilities': {},
             # Veterancy (GainsExperience, GivesExperience) and prone infantry (TakeCover).
             'experience': experience_info(t),
@@ -497,9 +512,6 @@ def main():
                                'reload_delay': int(pool.get('ReloadDelay', 50)),
                                'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
-        # AutoTarget.InitialStance HoldFire (Phase Transport): never picks targets on its own.
-        if isinstance(t.get('AutoTarget'), dict) and t['AutoTarget'].get('InitialStance') == 'HoldFire':
-            ab['hold_fire'] = {}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
         if 'AcceptsDeliveredCash' in t:
@@ -714,8 +726,6 @@ def main():
                     'altitude_velocity': wdist(m.get('AltitudeVelocity', ALTITUDE_VELOCITY)),
                     'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),
                     'take_off_on_resupply': str(m.get('TakeOffOnResupply', 'false')).lower() == 'true',
-                    # AutoTarget InitialStance HoldFire: idle aircraft never pick targets on their own.
-                    'hold_fire': str(first(t, 'AutoTarget').get('InitialStance', '')) == 'HoldFire',
                     'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
                     # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
                     # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).

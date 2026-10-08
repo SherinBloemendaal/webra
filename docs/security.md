@@ -74,6 +74,79 @@ are local and only report explored cells and actors the player can see, so
 they reveal nothing beyond what the screen already shows (a modified client
 can still reveal the map, see "Map hack" below).
 
+## Reconnect, spectators, replays and saves (2026-10-08)
+
+Protocol 3 adds rejoining a running game, spectators and the order log, and
+the client records every game as a replay. The guarantees above all hold;
+the new paths are guarded like this:
+
+- **Rejoin keys.** Every member gets a 32-byte random key at join
+  (`welcome.key`). The server stores only its SHA-256 and compares in constant
+  time; an unknown client id still costs a hash, so timing does not tell ids
+  apart. Wrong keys count toward the per-IP lockout like wrong passwords. A
+  key only works for its own client id, only while the game runs, at most 10
+  times per member and game, and never after leaving, being kicked or being
+  removed for a protocol violation (the key is forgotten). A rejoin replaces
+  an open connection of the same member (it leaves lockstep first), so two
+  connections never share a seat; every check that does not depend on that
+  connection (game running, rejoin cap, seat not gone, spectator places,
+  catch-up limits) runs first, so a refused rejoin never disconnects a member
+  who is still playing. Keys live in the tab's sessionStorage (the
+  strict CSP keeps script injection out).
+- **Drop rules.** A lost connection takes the seat out of lockstep at once,
+  so nobody is ever held up by a player who is reconnecting; the game does
+  not pause for anyone. A rejoining seat gets its stall debt back as it left
+  it (the debt keeps draining over wall time like for every seat), and its
+  hold time in the current drop window too while that window is still the
+  one it left in (a window that renewed meanwhile starts at zero for every
+  seat alike), so disconnecting and coming back never resets the limits
+  (lockstep.js `suspend` / `rejoin`, tests in lockstep.test.mjs). Its orders
+  count from `next + delay` on, so it cannot inject orders into frames others
+  already sent.
+- **Deadlines.** A seat that left play has 2 minutes from that moment to come
+  back. Catching up after a rejoin may take longer (60 s plus 5 ms per tick
+  played, at most 15 minutes), but if the connection drops again while
+  catching up, the seat only keeps what is left of the original 2 minutes:
+  rejoins never extend the grace, and with the cap of 10 rejoins a missing
+  seat holds the session (its storage and the 1 s alarm) for at most the
+  grace plus the catch-up times it actually used. After that it is out for
+  good.
+- **Order log.** Kept in Durable Object storage (gzip chunks, deleted with
+  the session), capped at 16 MiB of JSON: a player flooding the largest
+  orders every tick could fill it in about 80 s, after which rejoins and late
+  spectators are refused but the game goes on (accepted, bounded). Catch-ups
+  stream the log one chunk at a time. A catch-up counts from its start until
+  the client confirms it processed everything (`resume` for players, `synced`
+  for spectators; a spectator that does not confirm in the catch-up time is
+  closed), and at most 2 count at once, so at most two logs of output can sit
+  in send buffers for slow readers. On top, at most 6 catch-ups start per
+  minute and their bytes are budgeted (the current log size each, bursts of
+  two full logs, one full log per minute). Frames emitted during a catch-up
+  are queued for that socket, so a rejoining client never misses one.
+- **Chat** has its own limit per connection (one line a second, bursts of
+  five); a connection that keeps flooding is closed, so a spectator cannot
+  flood every socket.
+- **Spectators.** Same password and host-key rules as players, a host-set
+  limit (0..8), and they never count for stalls or hash majorities. The
+  server removes a spectator that sends `orders` or `hash` (an honest client
+  never does). A spectator sees the whole map: no new information compared to
+  the map hack every lockstep client can already do (see below); hosts who
+  mind can set the spectator places to 0.
+- **Replay and save files** are user files: size checked before parsing
+  (32 MiB), then strictly validated by the protocol package (every order with
+  the network schemas, the options, frame players, the map in canonical form
+  and its SHA-256), and saves from the browser's storage are validated the
+  same way on every load. Files of another engine version are refused with a
+  message instead of being simulated. A modded map in a file shows the
+  modded-map warning first. Loading a save checks its state hashes and
+  refuses a save whose game does not match. File contents reach the page only
+  through `textContent`.
+- Tests: protocol (messages and replay schema), server (session Durable
+  Object in memory: keys, rejoin, expiry, caps, spectator removal, order log),
+  engine (replay determinism, snapshots, observer view), client (recording,
+  playback, seeking, saves, rejoin and spectator catch-up through the real
+  relay), and the end-to-end smoke test against `wrangler dev`.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
@@ -97,6 +170,8 @@ can still reveal the map, see "Map hack" below).
   wire, and players must accept the modded-map warning before installing.
 - Rate limits per connection and per IP (`CF-Connecting-IP`), message size
   limits, strict message schemas, no `innerHTML` sinks for user text.
+- Rejoin keys are high-entropy tokens stored as SHA-256 and compared in
+  constant time, like the host key; spectators can never send orders.
 
 ## Reporting
 

@@ -1,7 +1,8 @@
 // Instanced, rotated sprites from the generated atlas, tinted with team colours.
 struct Frame {
     uv: vec4f,    // u0, v0, u1, v1
-    size: vec4f,  // width, height in world pixels
+    size: vec4f,  // width, height, offset x, offset y of the centre, in world pixels
+    anim: vec4f,  // first frame, frame count, frames per second (count > 1: animation head)
 };
 
 @group(1) @binding(0) var atlas: texture_2d<f32>;
@@ -17,6 +18,16 @@ struct VsOut {
     @location(3) flash: f32,
 };
 
+// Frame of an animation at the render clock; 0 while animation is off
+// (paused clocks just stop). Mirrors animFrame in js/anim.js.
+fn anim_frame(time: f32, enabled: f32, fps: f32, count: u32, phase: f32) -> u32 {
+    if (enabled < 0.5 || count <= 1u) {
+        return 0u;
+    }
+    let step = floor(max(time, 0.0) * fps + phase * f32(count));
+    return u32(step) % count;
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vi: u32,
       @location(0) a: vec4f,   // x, y, angle, sprite
@@ -25,8 +36,14 @@ fn vs(@builtin(vertex_index) vi: u32,
     var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
                                   vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0));
     let corner = corners[vi];
-    let f = frames[u32(a.w)];
-    let local = (corner - 0.5) * f.size.xy * b.y;
+    var index = u32(a.w);
+    let head = frames[index];
+    if (head.anim.y > 1.5) {
+        // Each instance gets its own phase from its position, so neighbours do not blink in step.
+        index = u32(head.anim.x) + anim_frame(g.anim.x, g.anim.y, head.anim.z, u32(head.anim.y), hash2(a.xy * 0.01));
+    }
+    let f = frames[index];
+    let local = ((corner - 0.5) * f.size.xy + f.size.zw) * b.y;
     let c = cos(a.z);
     let s = sin(a.z);
     let rotated = vec2f(local.x * c - local.y * s, local.x * s + local.y * c);

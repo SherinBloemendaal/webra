@@ -20,15 +20,10 @@ pub(crate) const DEFEND_RADIUS: i32 = 14 * CELL;
 const NEAR_TIE: i32 = 8 * CELL;
 /// How long an attack target is kept before it is reconsidered (one minute).
 const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
-/// A gathered army that waited this long for its full wave attacks with what
-/// it has (three minutes, and never in the first ten minutes of a game): on
-/// maps where both economies run dry the next wave would never fill up and
-/// the game would stall.
-const WAVE_PATIENCE_TICKS: u32 = 180 * crate::world::TICKS_PER_SECOND;
-const WAVE_PATIENCE_FROM: u32 = 600 * crate::world::TICKS_PER_SECOND;
-/// Smallest army that attacks after waiting that long.
-const MIN_LATE_WAVE: usize = 4;
+/// A gathered army that has not grown for this long attacks below wave size.
+const ARMY_STALL_TICKS: u32 = 90 * crate::world::TICKS_PER_SECOND;
 
+#[derive(Clone)]
 pub struct AiState {
     offset: u32,
     think_interval: u32,
@@ -52,8 +47,10 @@ pub struct AiState {
     pub(crate) next_special_at: u32,
     /// Armed enemy aircraft were seen: build anti-air.
     pub seen_air: bool,
-    /// Tick of the last attack wave (WAVE_PATIENCE_TICKS).
-    pub(crate) last_wave: u32,
+    /// Army size last seen and the tick it last grew: a wave that stopped
+    /// growing (no money, no factory) attacks with what it has.
+    army_seen: usize,
+    army_grew_at: u32,
 }
 
 impl AiState {
@@ -78,7 +75,8 @@ impl AiState {
             minefields: Vec::new(),
             next_special_at: 0,
             seen_air: false,
-            last_wave: 0,
+            army_seen: 0,
+            army_grew_at: 0,
         }
     }
 }
@@ -577,15 +575,18 @@ fn command_army(w: &mut World, player: u8) {
     let target_player = update_target_player(w, player);
     let target = enemy_target(w, player, target_player, base);
     let (wave, max_wave) = (w.ai[player as usize].wave_size, w.ai[player as usize].max_wave);
-    let waited = w.tick >= WAVE_PATIENCE_FROM && w.tick.saturating_sub(w.ai[player as usize].last_wave) >= WAVE_PATIENCE_TICKS;
-    if gathered.len() >= wave || (waited && gathered.len() >= MIN_LATE_WAVE) {
+    // An army that stopped growing (no money, no factory left) will never fill
+    // the wave: after a while it goes with what it has.
+    let st = &mut w.ai[player as usize];
+    if army.len() > st.army_seen {
+        st.army_grew_at = w.tick;
+    }
+    st.army_seen = army.len();
+    let stalled = w.tick >= st.army_grew_at + ARMY_STALL_TICKS;
+    if gathered.len() >= wave || (!gathered.is_empty() && stalled) {
         if let Some((tx, ty)) = target {
             w.order_move(&gathered, tx, ty, true);
-            let state = &mut w.ai[player as usize];
-            if gathered.len() >= wave {
-                state.wave_size = (wave + 2).min(max_wave);
-            }
-            state.last_wave = w.tick;
+            w.ai[player as usize].wave_size = (wave + 2).min(max_wave);
         }
         return;
     }

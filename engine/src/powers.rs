@@ -104,7 +104,7 @@ pub struct FallingBomb {
     pub shot: crate::veterancy::Shot,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PowersState {
     /// Power instances per player, sorted by palette order, then key.
     pub players: Vec<Vec<PowerInstance>>,

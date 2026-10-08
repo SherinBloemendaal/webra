@@ -6,7 +6,12 @@
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
 const HEAT_FLOATS = 4;
-const GLOBALS_BYTES = 192;
+const LINE_FLOATS = 8;
+// shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2).
+const GLOBALS_BYTES = 208;
+const ANIM_OFFSET = 40;
+const ENV_OFFSET = 44;
+const STILL = { time: 0, enabled: false };
 
 export const TEAM_COLORS = [
   [0.30, 0.55, 0.95], // player 1: blue
@@ -44,6 +49,7 @@ export class Renderer {
     this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
     this.spriteCapacity = 0;
     this.rectCapacity = 0;
+    this.lineCapacity = 0;
     this.mapW = 0;
     this.mapH = 0;
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
@@ -55,8 +61,8 @@ export class Renderer {
     const d = this.device;
     const commonRes = await fetch('shaders/common.wgsl');
     const common = await commonRes.text();
-    const [terrainSrc, spriteSrc, fogSrc, rectSrc, weatherSrc, skySrc, heatSrc] = await Promise.all(
-      ['terrain', 'sprite', 'fog', 'rect', 'weather', 'sky', 'heat'].map((n) => loadShader(n, common)),
+    const [terrainSrc, spriteSrc, fogSrc, rectSrc, lineSrc, weatherSrc, skySrc, heatSrc] = await Promise.all(
+      ['terrain', 'sprite', 'fog', 'rect', 'line', 'weather', 'sky', 'heat'].map((n) => loadShader(n, common)),
     );
 
     this.globals = d.createBuffer({ size: GLOBALS_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -122,6 +128,8 @@ export class Renderer {
     const heatInstance = { arrayStride: HEAT_FLOATS * 4, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] };
     this.heatPipeline = this.pipeline(heatSrc, this.rectLayout, [heatInstance], blend, 'heat');
     this.heatCapacity = 0;
+    // Lines (unit paths): same instance layout and bindings as rects.
+    this.linePipeline = this.pipeline(lineSrc, this.rectLayout, [instance(LINE_FLOATS * 4)], blend, 'lines');
   }
 
   pipeline(code, layout, buffers, blend, label) {
@@ -247,18 +255,21 @@ export class Renderer {
    * @param camera {x, y, zoom} zoom in CSS pixels per world pixel
    * @param sprites Float32Array of sprite instances
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
+   * @param anim {time, enabled} render clock of sprite animations (js/anim.js); still frames by default
+   * @param lines optional Float32Array of line instances (unit paths), drawn over the fog and under the rects
    * @param fx weather: `{ env, env2 }` (js/weather-fx.js uniforms) and heat
    *   shimmer instances `heat` (Float32Array, 4 floats each) / `heatCount`
    */
-  draw(camera, time, sprites, spriteCount, rects, rectCount, fx = null) {
+  draw(camera, time, sprites, spriteCount, rects, rectCount, anim = STILL, lines = null, lineCount = 0, fx = null) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
     const g = new Float32Array(GLOBALS_BYTES / 4);
     g.set([this.canvas.width, this.canvas.height, camera.x, camera.y, zoom, time, this.mapW, this.mapH], 0);
     TEAM_COLORS.forEach((c, i) => g.set([c[0], c[1], c[2], 1], 8 + i * 4));
-    g.set(fx?.env ?? [0, 0, 0, 0], 40);
-    g.set(fx?.env2 ?? [0, 0, 0, 1], 44);
+    g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
+    g.set(fx?.env ?? [0, 0, 0, 0], ENV_OFFSET);
+    g.set(fx?.env2 ?? [0, 0, 0, 1], ENV_OFFSET + 4);
     d.queue.writeBuffer(this.globals, 0, g);
     const particles = Math.floor(fx?.env2?.[2] ?? 0);
     const heatCount = fx?.heatCount ?? 0;
@@ -278,6 +289,10 @@ export class Renderer {
     if (rectCount > 0) {
       this.ensureBuffer('rect', rectCount, RECT_FLOATS);
       d.queue.writeBuffer(this.rectBuffer, 0, rects, 0, rectCount * RECT_FLOATS);
+    }
+    if (lineCount > 0) {
+      this.ensureBuffer('line', lineCount, LINE_FLOATS);
+      d.queue.writeBuffer(this.lineBuffer, 0, lines, 0, lineCount * LINE_FLOATS);
     }
 
     const enc = d.createCommandEncoder();
@@ -309,6 +324,13 @@ export class Renderer {
     pass.setPipeline(this.fogPipeline);
     pass.setBindGroup(1, this.fogGroup);
     pass.draw(3);
+
+    if (lineCount > 0) {
+      pass.setPipeline(this.linePipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.setVertexBuffer(0, this.lineBuffer);
+      pass.draw(6, lineCount);
+    }
 
     if (particles > 0) {
       pass.setPipeline(this.weatherPipeline);

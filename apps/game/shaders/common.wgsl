@@ -6,6 +6,7 @@ struct Globals {
     time: f32,         // seconds
     map_size: vec2f,   // map size in cells
     team_colors: array<vec4f, 8>,
+    anim: vec4f,       // render clock for sprite animations: seconds, enabled (js/anim.js)
     // Biome and weather (js/weather-fx.js): biome (0 temperate, 1 snow,
     // 2 desert), weather (0 clear, 1 rain, 2 thunderstorm, 3 snowfall,
     // 4 sandstorm, 5 heat wave), intensity 0..1, lightning flash 0..1.

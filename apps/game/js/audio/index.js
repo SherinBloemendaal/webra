@@ -27,6 +27,11 @@ export const ORDER_METHODS = new Set([
   'order_land',
   'order_return_to_base',
   'order_teleport',
+  // Command bar (js/commandbar.js).
+  'order_attack_ground',
+  'order_guard',
+  'order_scatter',
+  'order_waypoint',
   'order_lay_mines',
   'deploy',
 ]);

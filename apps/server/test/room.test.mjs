@@ -191,3 +191,113 @@ test('map style, biome and weather: host only, carried into the start options, d
   assert.deepEqual([back.options.mapStyle, back.options.biome, back.options.weather], ['random', 'random', 'full']);
   assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
 });
+
+test('spectators: places set by the host, switching in the lobby, joining a running game', () => {
+  const { room, host, guest } = lobby(3);
+  assert.equal(room.maxSpectators, 2);
+  const w = room.join('Watcher', { spectate: true });
+  assert.deepEqual([w.slot, w.role], [-1, 'spectator']);
+  assert.equal(room.isSpectator(w.client), true);
+  throwsRoom(() => room.setMaxSpectators(guest, 4), 'not_host');
+  throwsRoom(() => room.setMaxSpectators(host, 0));
+  room.setMaxSpectators(host, 1);
+  throwsRoom(() => room.join('Second', { spectate: true }), 'full');
+  // A player moves to the spectators only while a place is free.
+  throwsRoom(() => room.spectate(guest, true), 'full');
+  room.spectate(w.client, false);
+  assert.equal(room.slots[2].client, w.client);
+  room.spectate(guest, true);
+  assert.equal(room.slots[1].type, 'open');
+  assert.equal(room.memberCount(), 3);
+  // A spectating host keeps the host role and can start.
+  room.setMaxSpectators(host, 2);
+  room.spectate(host, true);
+  assert.equal(room.isHost(host), true);
+  room.setSlot(host, { slot: 1, type: 'ai' });
+  room.setReady(w.client, true, null);
+  const start = room.start(host, () => 0);
+  assert.equal(start.players.length, 2, 'spectators do not play');
+  // In game: spectators join (while places are free); players cannot.
+  throwsRoom(() => room.join('Late'), 'bad_state');
+  throwsRoom(() => room.join('Late', { spectate: true }), 'full');
+  room.leave(guest);
+  assert.equal(room.join('Late', { spectate: true }).role, 'spectator');
+  const view = room.lobbyView();
+  assert.equal(parseServerMessage(encodeServer({ t: 'lobby', ...view })).ok, true);
+});
+
+test('seat lifecycle: away, rejoin, resume, expiry and the rejoin cap', () => {
+  const { room, host, guest } = lobby(2);
+  room.setKey(host, 'a'.repeat(64));
+  room.setKey(guest, 'b'.repeat(64));
+  room.setReady(guest, true, null);
+  room.start(host, first);
+  const g = room.seatOf(guest);
+  assert.deepEqual(room.liveSeats(), [0, 1]);
+  throwsRoom(() => room.beginRejoin(guest, 0, 1000), 'bad_state');
+  const record = { frame: 3, heldMs: 0, debtMs: 4000, drainedAt: 0 };
+  assert.equal(room.suspendSeat(g, record, 1000, 5000), true);
+  assert.equal(room.seatState(g), 'away');
+  assert.deepEqual(room.expiredSeats(5999), []);
+  assert.deepEqual(room.expiredSeats(6000), [g]);
+  assert.equal(room.beginRejoin(guest, 2000, 3000), g);
+  assert.equal(room.seatState(g), 'syncing');
+  throwsRoom(() => room.beginRejoin(guest, 2000, 3000), 'bad_state');
+  assert.deepEqual(room.expiredSeats(5000), [g], 'syncing has its own deadline');
+  // Losing the connection while syncing keeps that deadline.
+  room.suspendSeat(g, null, 4000, 60_000);
+  assert.equal(room.seatStates[g].until, 5000);
+  room.beginRejoin(guest, 4500, 3000);
+  assert.deepEqual(room.resumeSeat(g), record);
+  assert.equal(room.seatState(g), 'active');
+  throwsRoom(() => room.resumeSeat(g), 'bad_state');
+  // The cap.
+  for (let i = 0; i < 20 && (room.rejoins[guest] ?? 0) < 10; i++) {
+    room.suspendSeat(g, null, 0, 1000);
+    room.beginRejoin(guest, 0, 1000);
+    room.resumeSeat(g);
+  }
+  room.suspendSeat(g, null, 0, 1000);
+  throwsRoom(() => room.beginRejoin(guest, 0, 1000), 'forbidden');
+  room.endSeat(g);
+  assert.equal(room.seatState(g), 'gone');
+  assert.deepEqual(room.liveSeats(), [room.seatOf(host)]);
+  // Rejoin state survives storage.
+  const back = Room.fromJSON(JSON.parse(JSON.stringify(room.toJSON())));
+  assert.equal(back.seatState(g), 'gone');
+  assert.deepEqual(back.startMsg, room.startMsg);
+  // Old rooms without the new fields read back with defaults.
+  const { spectators: _a, maxSpectators: _b, keys: _c, rejoins: _d, startMsg: _e, seatStates: _f, ...old } = room.toJSON();
+  const legacy = Room.fromJSON(old);
+  assert.deepEqual([legacy.spectators, legacy.maxSpectators, legacy.keys, legacy.seatStates], [[], 2, {}, null]);
+});
+
+test('leaving a lobby or being kicked forgets the rejoin key', () => {
+  const { room, host, guest } = lobby();
+  room.setKey(guest, 'b'.repeat(64));
+  room.leave(guest);
+  assert.equal(Object.hasOwn(room.keys, guest), false);
+  void host;
+});
+
+test('a syncing seat that loses its connection keeps only its original grace', () => {
+  const { room, host, guest } = lobby(2);
+  room.setKey(guest, 'b'.repeat(64));
+  room.setReady(guest, true, null);
+  room.start(host, first);
+  const g = room.seatOf(guest);
+  room.suspendSeat(g, null, 1000, 120_000);
+  room.beginRejoin(guest, 100_000, 600_000);
+  assert.equal(room.seatStates[g].until, 700_000, 'catching up may take long');
+  room.suspendSeat(g, null, 101_000, 120_000);
+  assert.equal(room.seatStates[g].until, 121_000, 'but a drop ends at the original grace');
+  // Resuming ends that absence: the next one starts a fresh grace.
+  room.beginRejoin(guest, 110_000, 600_000);
+  room.resumeSeat(g);
+  room.suspendSeat(g, null, 200_000, 120_000);
+  assert.equal(room.seatStates[g].until, 320_000);
+  // State-independent refusals come before anything else.
+  assert.equal(room.rejoinProblem(guest), null);
+  room.rejoins[guest] = 10;
+  assert.match(room.rejoinProblem(guest).message, /too often/);
+});

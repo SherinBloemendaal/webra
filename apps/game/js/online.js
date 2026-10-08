@@ -1,7 +1,13 @@
 // Online multiplayer UI: server browser, host dialog, password prompt, online
-// lobby (slots, options, map, chat, ready, start), the modded-map warning
-// (docs/contracts.md, section 2) and the in-game overlay (status and chat).
-// Loaded on demand by main.js so local skirmish never depends on it.
+// lobby (slots, spectators, options, map, chat, ready, start), the modded-map
+// warning (docs/contracts.md, section 2) and the in-game overlay (status and
+// chat). Loaded on demand by main.js so local skirmish never depends on it.
+//
+// Reconnecting: the rejoin key from `welcome.key` is kept per tab in
+// sessionStorage (with the session id and client id). When the connection
+// drops during a game, this tab reconnects on its own with it and keeps its
+// game (the server sends the order log, the driver catches up and resumes);
+// after a page reload it rejoins and rebuilds the game from the log.
 
 import {
   CHAT_MAX,
@@ -11,6 +17,7 @@ import {
   MAP_SIZES,
   mapHash,
   MAX_PLAYERS,
+  MAX_SPECTATORS,
   MIN_PLAYERS,
   MODDED_WARNING,
   NAME_MAX,
@@ -18,6 +25,8 @@ import {
   PASSWORD_MAX,
   PROTOCOL_VERSION,
   ProtocolError,
+  RECONNECT_GRACE_MS,
+  SEAT_KEY_RE,
   SEED_MAX,
   SESSION_ID_RE,
   SESSION_NAME_MAX,
@@ -32,8 +41,13 @@ import {
   validName,
 } from './protocol.js';
 import { api, ApiError, Connection, LockstepDriver } from './net.js';
+import { Recorder } from './replay.js';
 
 const STORAGE_KEY = 'webra.online.v1';
+/** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
+const REJOIN_KEY = 'webra.rejoin.v1';
+/** Server error codes after which reconnecting cannot help. */
+const FINAL_CODES = new Set(['forbidden', 'kicked', 'bad_state', 'invalid', 'bad_message', 'not_found', 'session_lost', 'protocol_mismatch', 'version_mismatch', 'too_large']);
 const REFRESH_MS = 10_000;
 const CHAT_LINES = 200;
 
@@ -124,6 +138,65 @@ function loadName() {
     return data && typeof data.name === 'string' ? data.name : '';
   } catch {
     return '';
+  }
+}
+
+/** The stored rejoin record of this tab, or null (malformed records are dropped). */
+export function loadRejoin(storage = globalThis.sessionStorage) {
+  try {
+    const v = JSON.parse(storage.getItem(REJOIN_KEY) || 'null');
+    if (
+      v &&
+      typeof v.id === 'string' &&
+      SESSION_ID_RE.test(v.id) &&
+      Number.isInteger(v.client) &&
+      v.client > 0 &&
+      typeof v.key === 'string' &&
+      SEAT_KEY_RE.test(v.key) &&
+      typeof v.name === 'string'
+    ) {
+      return { id: v.id, client: v.client, key: v.key, name: v.name };
+    }
+    if (v !== null) storage.removeItem(REJOIN_KEY);
+  } catch {
+    // Storage blocked or malformed: no rejoin.
+  }
+  return null;
+}
+
+export function saveRejoin(record, storage = globalThis.sessionStorage) {
+  try {
+    storage.setItem(REJOIN_KEY, JSON.stringify(record));
+  } catch {
+    // Storage blocked: a reload cannot rejoin, reconnecting in this page still can.
+  }
+}
+
+export function clearRejoin(storage = globalThis.sessionStorage) {
+  try {
+    storage.removeItem(REJOIN_KEY);
+  } catch {
+    // Nothing stored.
+  }
+}
+
+/** Chat line for a `left` message (`inGame`: rejoin rules apply). */
+export function leftText(m, inGame) {
+  const graceMin = Math.round(RECONNECT_GRACE_MS / 60_000);
+  if (m.player === null && inGame) return m.reason === 'removed' ? `${m.name} (spectator) was removed.` : `${m.name} stopped watching.`;
+  if (!inGame) return `${m.name} ${m.reason === 'kicked' ? 'was removed' : m.reason === 'dropped' ? 'was dropped' : 'left'}.`;
+  switch (m.reason) {
+    case 'disconnected':
+      return `${m.name} lost connection. They can rejoin within ${graceMin} minutes.`;
+    case 'dropped':
+      return `${m.name} was dropped for holding up the game. They can rejoin within ${graceMin} minutes.`;
+    case 'expired':
+      return `${m.name} is out of the game.`;
+    case 'removed':
+    case 'kicked':
+      return `${m.name} was removed from the game.`;
+    default:
+      return `${m.name} left the game.`;
   }
 }
 
@@ -218,7 +291,23 @@ export class OnlineUI {
     this.refreshTimer = 0;
     this.inGame = false;
     this.root.classList.add('online');
-    this.showBrowser();
+    const rejoin = loadRejoin();
+    if (rejoin) this.rejoinAfterReload(rejoin);
+    else this.showBrowser();
+  }
+
+  /** A reload during an online game: rejoin it with the stored key. */
+  async rejoinAfterReload(record) {
+    this.root.textContent = '';
+    const page = el('div', 'online-page');
+    page.append(el('h1', 'online-title', 'Rejoining your game...'), el('p', 'online-muted', 'Reconnecting to the server.'));
+    this.root.append(page);
+    try {
+      await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true });
+    } catch (err) {
+      clearRejoin();
+      this.showBrowser(`Could not rejoin the game: ${messageOf(err)}`);
+    }
   }
 
   // ---- Server browser ------------------------------------------------------------
@@ -251,10 +340,10 @@ export class OnlineUI {
     joinId.spellcheck = false;
     const invite = inviteId();
     if (invite) joinId.value = invite;
-    const joinById = () => {
+    const joinById = (spectate = false) => {
       const id = (/([0-9a-f]{64})/.exec(joinId.value.trim()) || [])[1];
       if (!id || !SESSION_ID_RE.test(id)) return this.setError('That is not a valid session ID.');
-      this.join({ id, name: 'Private session', locked: null });
+      this.join({ id, name: 'Private session', locked: null }, { spectate });
     };
     joinId.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') joinById();
@@ -267,7 +356,11 @@ export class OnlineUI {
       button('Refresh', null, () => this.refresh()),
     );
     const joinRow = el('div', 'online-tools');
-    joinRow.append(field('Join by ID', joinId), button('Join', null, joinById));
+    joinRow.append(
+      field('Join by ID', joinId),
+      button('Join', null, () => joinById()),
+      button('Watch', null, () => joinById(true)),
+    );
 
     const table = el('div', 'online-sessions');
     table.setAttribute('role', 'table');
@@ -327,12 +420,15 @@ export class OnlineUI {
       if (s.map && s.map.modded) map.append(el('span', 'online-badge online-badge-modded', 'MODDED'));
       const same = s.version === this.ctx.version;
       const join = button('Join', 'online-btn-primary', () => this.join(s));
-      join.disabled = !same;
-      if (!same) join.title = `Needs game version ${s.version}`;
+      const watch = button('Watch', null, () => this.join(s, { spectate: true }));
+      for (const b of [join, watch]) {
+        b.disabled = !same;
+        if (!same) b.title = `Needs game version ${s.version}`;
+      }
       row.append(el('div', 'online-cell', String(s.host)), el('div', 'online-cell', `${s.players} / ${s.maxPlayers}`), map);
       row.prepend(name);
       const action = el('div', 'online-cell');
-      action.append(join);
+      action.append(join, watch);
       row.append(action);
       table.append(row);
     }
@@ -378,7 +474,7 @@ export class OnlineUI {
     }
   }
 
-  async join(session) {
+  async join(session, { spectate = false } = {}) {
     const name = this.playerName();
     if (!name) return;
     let password;
@@ -399,33 +495,82 @@ export class OnlineUI {
     try {
       const hello = { name };
       if (password) hello.password = password;
+      if (spectate) hello.spectate = true;
       await this.connect(session.id, hello);
     } catch (err) {
       this.setError(messageOf(err));
     }
   }
 
-  async connect(id, hello) {
-    saveName(hello.name);
+  /**
+   * Open a session connection. `rejoin`: coming back into a running game
+   * (after a reload, or `reconnect` when this page still has its game).
+   */
+  async connect(id, hello, { rejoin = false, reconnect = false } = {}) {
+    if (!rejoin) saveName(hello.name);
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
       .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null))
-      .on('left', (m) => this.chatLine(null, `${m.name} ${m.reason === 'kicked' ? 'was removed' : m.reason === 'dropped' ? 'was dropped' : 'left'}.`, true))
+      .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true))
+      .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
       .on('start', (m) => this.onStart(m))
-      .on('close', (reason) => this.onClose(reason));
+      // Until the game exists, its network messages wait (onStart replays them).
+      .on('frame', (m) => this.net('frame', m))
+      .on('log', (m) => this.net('log', m))
+      .on('sync', (m) => this.net('sync', m))
+      .on('desync', (d) => this.inGame && this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true))
+      .on('close', (reason) => this.onClose(reason, conn));
     const welcome = await conn.open({ version: this.ctx.version, ...hello });
     clearInterval(this.refreshTimer);
     this.conn = conn;
-    this.state = { you: welcome.you, hostId: welcome.hostId, session: welcome.session, slots: [], options: null, map: null };
+    if (welcome.key) saveRejoin({ id, client: welcome.you, key: welcome.key, name: hello.name });
+    if (reconnect && this.driver) {
+      // Same game, new connection: the driver catches up from the server's log.
+      this.driver.reattach(conn);
+      this.reconnecting = false;
+      this.gameLine('Reconnected. Catching up...', true);
+      return;
+    }
+    this.state = {
+      you: welcome.you,
+      hostId: welcome.hostId,
+      session: welcome.session,
+      role: welcome.role,
+      slots: [],
+      spectators: [],
+      maxSpectators: 0,
+      options: null,
+      map: null,
+      // A start without a lobby before it means joining a running game (catch up).
+      lobbySeen: false,
+      rejoin,
+    };
     if (inviteId()) history.replaceState(null, '', location.pathname);
-    this.buildLobby();
-    this.loadServerMaps();
+    if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
+    if (!rejoin) {
+      this.buildLobby();
+      this.loadServerMaps();
+    }
+  }
+
+  /** Route a game network message to the driver, or keep it until the game exists. */
+  net(type, m) {
+    const d = this.driver;
+    if (!d) {
+      if (this.pendingNet) this.pendingNet.push([type, m]);
+      return;
+    }
+    if (type === 'frame') d.onFrame(m);
+    else if (type === 'log') d.onLog(m);
+    else if (type === 'sync') d.onSync(m);
   }
 
   leaveSession() {
     clearInterval(this.refreshTimer);
+    clearRejoin();
+    this.reconnecting = false;
     if (this.conn) {
       const c = this.conn;
       this.conn = null;
@@ -444,15 +589,59 @@ export class OnlineUI {
     else this.setError(m.message);
   }
 
-  onClose(reason) {
-    if (!this.conn) return; // we left on purpose
+  onClose(reason, conn) {
+    if (!this.conn || conn !== this.conn) return; // we left on purpose, or an old connection
     this.conn = null;
     if (this.inGame) {
+      if (!FINAL_CODES.has(conn.closeCode) && loadRejoin()) {
+        this.reconnect(reason);
+        return;
+      }
+      clearRejoin();
       this.driver?.stop();
       this.gameLine(`Disconnected${reason ? `: ${reason}` : ''}. The game cannot continue.`, true);
       return;
     }
+    clearRejoin();
     this.showBrowser(`Disconnected${reason ? `: ${reason}` : '.'}`);
+  }
+
+  /** The connection dropped during a game: rejoin with the stored key, with backoff, within the grace period. */
+  async reconnect(reason) {
+    const record = loadRejoin();
+    this.reconnecting = true;
+    this.gameLine(`Connection lost${reason ? ` (${reason})` : ''}. Reconnecting...`, true);
+    const deadline = Date.now() + RECONNECT_GRACE_MS;
+    let wait = 1000;
+    let last = null;
+    while (this.reconnecting && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, wait));
+      if (!this.reconnecting) return;
+      wait = Math.min(wait * 2, 8000);
+      try {
+        await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true, reconnect: true });
+        return;
+      } catch (err) {
+        last = err;
+        if (err instanceof ApiError && FINAL_CODES.has(err.code)) break;
+      }
+    }
+    if (!this.reconnecting) return;
+    this.reconnecting = false;
+    clearRejoin();
+    this.driver?.stop();
+    this.gameLine(`Could not reconnect${last ? `: ${messageOf(last)}` : ''}. The game cannot continue for you.`, true);
+  }
+
+  /** A player is back in the game (maybe this client after a rejoin). */
+  onBack(m) {
+    if (!this.state) return;
+    if (m.client === this.state.you) {
+      this.driver?.onBack(m.tick);
+      this.gameLine('You are back in the game.', true);
+    } else {
+      this.chatLine(null, `${m.name} is back in the game.`, true);
+    }
   }
 
   // ---- Lobby ------------------------------------------------------------------------
@@ -511,8 +700,9 @@ export class OnlineUI {
     chat.append(el('h2', 'online-panel-title', 'Chat'), this.chatLog, chatInput);
 
     const body = el('div', 'online-lobby-body');
+    this.spectatorBox = el('section', 'online-panel online-spectator-box');
     const left = el('div', 'online-col');
-    left.append(this.slotBox, this.optionBox);
+    left.append(this.slotBox, this.spectatorBox, this.optionBox);
     const right = el('div', 'online-col');
     right.append(this.mapBox, chat);
     body.append(left, right);
@@ -530,7 +720,16 @@ export class OnlineUI {
   onLobby(m) {
     if (!this.state) return;
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
-    Object.assign(this.state, { slots: m.slots, options: m.options, map: m.map, hostId: m.hostId });
+    Object.assign(this.state, {
+      slots: m.slots,
+      options: m.options,
+      map: m.map,
+      hostId: m.hostId,
+      spectators: m.spectators,
+      maxSpectators: m.maxSpectators,
+      lobbySeen: true,
+    });
+    this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
     this.renderLobby();
   }
@@ -546,7 +745,8 @@ export class OnlineUI {
     this.renderMap();
     const me = this.state.slots[this.mySlot()];
     const mapReady = this.mapReady();
-    this.readyBtn.hidden = this.isHost;
+    this.renderSpectators();
+    this.readyBtn.hidden = this.isHost || !me;
     this.startBtn.hidden = !this.isHost;
     this.readyBtn.textContent = me && me.ready ? 'Not ready' : 'Ready';
     this.readyBtn.disabled = !mapReady && !(me && me.ready);
@@ -559,6 +759,38 @@ export class OnlineUI {
         : this.isHost
           ? 'Everyone is ready.'
           : 'Waiting for the host to start.';
+  }
+
+  /** Spectator places: who watches, the host's limit, and switching sides. */
+  renderSpectators() {
+    const box = this.spectatorBox;
+    if (!box) return;
+    const st = this.state;
+    box.textContent = '';
+    box.append(el('h2', 'online-panel-title', `Spectators (${st.spectators.length} / ${st.maxSpectators})`));
+    const list = el('div', 'online-spectators');
+    for (const sp of st.spectators) {
+      const row = el('span', 'online-spectator', sp.name);
+      if (sp.client === st.hostId) row.append(el('span', 'online-badge', 'HOST'));
+      if (sp.client === st.you) row.append(el('span', 'online-badge online-badge-you', 'YOU'));
+      list.append(row);
+    }
+    if (!st.spectators.length) list.append(el('span', 'online-muted', 'Nobody is watching.'));
+    box.append(list);
+    const controls = el('div', 'online-tools');
+    if (this.isHost) {
+      const places = select(
+        Array.from({ length: MAX_SPECTATORS + 1 }, (_, i) => [i, String(i)]).filter(([i]) => i >= st.spectators.length),
+        st.maxSpectators,
+        (v) => this.send({ t: 'spectators', max: Number(v) }),
+      );
+      controls.append(field('Spectator places', places));
+    }
+    const watching = st.role === 'spectator';
+    const toggle = button(watching ? 'Play' : 'Spectate', null, () => this.send({ t: 'spectate', on: !watching }));
+    toggle.disabled = watching ? !st.slots.some((x) => x.type === 'open') : st.spectators.length >= st.maxSpectators;
+    controls.append(toggle);
+    box.append(controls);
   }
 
   renderSlots() {
@@ -853,42 +1085,83 @@ export class OnlineUI {
 
   // ---- Game --------------------------------------------------------------------------
 
-  onStart(m) {
+  async onStart(m) {
     const st = this.state;
     if (!st || !this.conn) return;
+    // A reconnect within this page keeps its game: the start message is the same.
+    if (this.driver) return;
     const me = m.players.find((p) => p.client === st.you);
-    if (!me) {
+    const spectator = !me;
+    if (spectator && st.role !== 'spectator') {
       this.showBrowser('The game started without you.');
       return;
     }
+    // Joining a running game (rejoin, late spectator): the order log follows.
+    const catchUp = st.rejoin || !st.lobbySeen;
+    this.pendingNet ??= [];
+    const conn = this.conn;
     let game;
+    let mapText = null;
     try {
-      const options = JSON.stringify(m.options);
       if (m.map) {
-        const json = this.installed.get(m.map.hash);
-        if (!json) throw new Error('The map is not installed.');
-        game = this.ctx.Game.from_map(json, options);
-      } else {
-        game = this.ctx.Game.from_options(options);
+        mapText = this.installed.get(m.map.hash) ?? (await this.installMapForGame(m.map));
+        if (!mapText) throw new Error('The map is not installed.');
       }
+      if (this.conn !== conn) return;
+      const options = JSON.stringify(m.options);
+      game = mapText ? this.ctx.Game.from_map(mapText, options) : this.ctx.Game.from_options(options);
     } catch (err) {
+      this.leaveSession();
       this.showBrowser(`Could not start the game: ${err.message ?? err}`);
       return;
     }
-    const conn = this.conn;
-    const driver = new LockstepDriver(conn, game, { delay: m.delay, tickMs: SPEED_MS[m.options.gameSpeed] ?? SPEED_MS.normal });
+    let recorder = null;
+    try {
+      recorder = new Recorder({
+        mode: 'online',
+        options: m.options,
+        map: mapText,
+        mapHash: m.map ? m.map.hash : null,
+        player: me ? me.player : null,
+        engine: this.ctx.version,
+        title: st.session.name,
+      });
+    } catch (err) {
+      console.warn('This game is not recorded:', err.message ?? err);
+    }
+    const driver = new LockstepDriver(conn, game, {
+      delay: m.delay,
+      tickMs: SPEED_MS[m.options.gameSpeed] ?? SPEED_MS.normal,
+      spectator,
+      rejoining: catchUp,
+      recorder,
+      onCaughtUp: () => {
+        // Players take their seat back; spectators confirm (the server counts them as catching up until then).
+        if (!spectator) this.send({ t: 'resume' });
+        else {
+          this.send({ t: 'synced' });
+          this.gameLine('Caught up: watching live.');
+        }
+      },
+      onCheck: (ok, tick) => {
+        if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
+      },
+    });
     this.driver = driver;
-    // Frames follow the start message immediately; register before returning.
-    conn.on('frame', (f) => driver.onFrame(f));
-    conn.on('desync', (d) => this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true));
+    // Messages that arrived while the game was being set up.
+    const pending = this.pendingNet;
+    this.pendingNet = null;
+    for (const [type, msg] of pending) this.net(type, msg);
     this.inGame = true;
     this.root.hidden = true;
-    this.buildGameOverlay(m.players, m.options.cheats === true);
+    this.buildGameOverlay(m.players, m.options.cheats === true, spectator);
     this.ctx.onStartGame({
       game,
-      player: me.player,
+      player: me ? me.player : 0,
       driver,
       options: m.options,
+      recorder,
+      spectator,
       onQuit: () => {
         this.leaveSession();
         driver.stop();
@@ -896,7 +1169,17 @@ export class OnlineUI {
     });
   }
 
-  buildGameOverlay(players, cheats = false) {
+  /** The game's map when this client does not have it yet (rejoin after a reload, late spectator). */
+  async installMapForGame(ref) {
+    const textValue = await api.mapText(ref.id);
+    const map = await this.checkMap(textValue);
+    if (map.hash !== ref.hash) throw new Error('The downloaded map does not match the game (hash mismatch).');
+    if (map.modded && !(await confirmModdedMap(map.name))) throw new Error('You declined the modded map.');
+    this.installed.set(map.hash, map.canonical);
+    return map.canonical;
+  }
+
+  buildGameOverlay(players, cheats = false, spectator = false) {
     const field2 = document.getElementById('field') || document.body;
     const box = el('div', 'online-game');
     box.id = 'online-game';
@@ -931,7 +1214,7 @@ export class OnlineUI {
     box.append(this.gameLog, this.waitLine, chatInput);
     field2.append(box);
     const names = players.map((p) => p.name).join(', ');
-    this.gameLine(`Online game: ${names}. Press Enter to chat.`);
+    this.gameLine(spectator ? `Watching: ${names}. Press Enter to chat.` : `Online game: ${names}. Press Enter to chat.`);
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);

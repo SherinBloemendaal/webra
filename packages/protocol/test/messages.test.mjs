@@ -16,6 +16,7 @@ import {
   isCheatOrder,
   ORDER_KINDS,
   S2C,
+  STANCES,
   validateGameOptions,
   validateLobbyOptions,
 } from '../src/index.js';
@@ -156,8 +157,13 @@ test('orders and hash', () => {
     { o: 'support_power', player: 1, key: 'ParatroopersPower@paratroopers', x: 0, y: 0, x2: 4096, y2: 0 },
     { o: 'lay_mines', player: 1, ids: [4], x0: 3, y0: 4, x1: 6, y1: 4 },
     { o: 'teleport', player: 1, ids: [4], x: 1024, y: 2048 },
+    { o: 'attack_ground', player: 1, ids: [4, 5], x: -10, y: 2048 },
+    { o: 'guard', player: 1, ids: [4], target: 9 },
+    { o: 'scatter', player: 1, ids: [4, 5, 6] },
+    { o: 'waypoint', player: 1, ids: [4], x: 100, y: 200, attack_move: true },
+    ...STANCES.map((stance) => ({ o: 'set_stance', player: 1, ids: [4], stance })),
   ]) {
-    ok({ t: 'orders', tick: 1, orders: [o] });
+    assert.deepEqual(ok({ t: 'orders', tick: 1, orders: [o] }).orders[0], o);
   }
   bad({ t: 'orders', tick: -1, orders: [] });
   bad({ t: 'orders', tick: 3, orders: {} });
@@ -173,6 +179,17 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'GpsPower', x: 0, y: 0, x2: 0.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'lay_mines', player: 0, ids: [1], x0: 0, y0: 0, x1: 63, y1: 63 }] }, /minefield/);
+  // Command bar orders (engine/src/commands.rs).
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 'aggressive' }] }, /unsupported value/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 3 }] }, /unsupported value/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1] }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'waypoint', player: 0, ids: [1], x: 0, y: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'waypoint', player: 0, ids: [1], x: 0, y: 0, attack_move: 1 }] }, /true or false/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'guard', player: 0, ids: [1], target: -1 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'guard', player: 0, ids: [1], target: 2 ** 32 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'attack_ground', player: 0, ids: [1], x: 2 ** 31, y: 0 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: Array(2001).fill(1) }] }, /at most/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: [1], x: 0 }] }, /unknown field/);
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');
   assert.deepEqual(ok({ t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' }), { t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' });
@@ -197,7 +214,8 @@ const OPTIONS = {
 
 test('server messages round trip through encodeServer / parseServerMessage', () => {
   const msgs = [
-    { t: S2C.WELCOME, you: 1, hostId: 1, session: SESSION },
+    { t: S2C.WELCOME, you: 1, hostId: 1, session: SESSION, role: 'player', key: 'k'.repeat(43) },
+    { t: S2C.WELCOME, you: 3, hostId: 1, session: SESSION, role: 'spectator' },
     {
       t: S2C.LOBBY,
       hostId: 1,
@@ -209,6 +227,8 @@ test('server messages round trip through encodeServer / parseServerMessage', () 
       ],
       options: { ...DEFAULT_OPTIONS },
       map: { id: '0123456789abcdef', hash: 'b'.repeat(64), name: 'Twin', modded: false, players: 4 },
+      spectators: [{ client: 5, name: 'Watcher' }],
+      maxSpectators: 2,
     },
     { t: S2C.CHAT, from: 1, name: 'Host', text: 'gl hf' },
     { t: S2C.CHAT, from: null, name: 'Server', text: 'Host left' },
@@ -226,6 +246,11 @@ test('server messages round trip through encodeServer / parseServerMessage', () 
     { t: S2C.FRAME, tick: 7, orders: [[0, [{ o: 'stop', player: 0, ids: [4] }]], [1, []]] },
     { t: S2C.DESYNC, tick: 75 },
     { t: S2C.LEFT, player: 1, client: 2, name: 'Guest', reason: 'dropped' },
+    { t: S2C.LEFT, player: null, client: 5, name: 'Watcher', reason: 'expired' },
+    { t: S2C.LOG, frames: [[4, [[0, [{ o: 'stop', player: 0, ids: [4] }]]]], [90, [[1, []]]]] },
+    { t: S2C.SYNC, tick: 120, check: { tick: 100, hash: '00ff00ff00ff00ff' } },
+    { t: S2C.SYNC, tick: 3, check: null },
+    { t: S2C.BACK, player: 1, client: 2, name: 'Guest', tick: 140 },
     { t: S2C.ERROR, code: 'full', message: 'The session is full.' },
   ];
   for (const m of msgs) {
@@ -291,4 +316,59 @@ test('game options: concrete factions, unique colours, slots in order', () => {
   );
   assert.throws(() => validateGameOptions({ ...OPTIONS, players: [OPTIONS.players[1], OPTIONS.players[0]] }), /index/);
   assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, seed: 2 ** 31 }), /seed/);
+});
+
+test('protocol 3: rejoin, spectators and resume messages are strict', () => {
+  const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0', name: 'Tanya' };
+  assert.equal(PROTOCOL_VERSION, 3);
+  assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
+  assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
+  bad({ ...hello, spectate: 'yes' }, /spectate/);
+  const rejoin = { client: 7, key: 'K'.repeat(43) };
+  assert.deepEqual(ok({ ...hello, rejoin }), { ...hello, rejoin });
+  bad({ ...hello, rejoin: { ...rejoin, key: 'short' } }, /rejoin.key/);
+  bad({ ...hello, rejoin: { ...rejoin, client: 0 } }, /rejoin.client/);
+  bad({ ...hello, rejoin: { ...rejoin, seat: 1 } }, /unknown field/);
+  bad({ ...hello, rejoin, hostKey: HOST_KEY }, /cannot be combined/);
+  bad({ ...hello, rejoin, spectate: true }, /cannot be combined/);
+  assert.deepEqual(ok({ t: 'spectators', max: 0 }), { t: 'spectators', max: 0 });
+  ok({ t: 'spectators', max: 8 });
+  bad({ t: 'spectators', max: 9 });
+  bad({ t: 'spectators', max: 2, extra: 1 }, /unknown field/);
+  assert.deepEqual(ok({ t: 'spectate', on: true }), { t: 'spectate', on: true });
+  bad({ t: 'spectate' });
+  bad({ t: 'spectate', on: 1 });
+  assert.deepEqual(ok({ t: 'resume' }), { t: 'resume' });
+  bad({ t: 'resume', tick: 5 }, /unknown field/);
+  assert.deepEqual(ok({ t: 'synced' }), { t: 'synced' });
+  bad({ t: 'synced', tick: 5 }, /unknown field/);
+});
+
+test('server messages for rejoin and spectators reject inconsistent data', () => {
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  const lobby = {
+    t: 'lobby',
+    hostId: 1,
+    slots: [{ type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false }, { type: 'open' }],
+    options: DEFAULT_OPTIONS,
+    map: null,
+    spectators: [],
+    maxSpectators: 2,
+  };
+  assert.equal(p(lobby).ok, true);
+  assert.equal(p({ ...lobby, spectators: [{ client: 2, name: 'A' }, { client: 3, name: 'B' }, { client: 4, name: 'C' }] }).ok, false, 'over the limit');
+  assert.equal(p({ ...lobby, spectators: [{ client: 2, name: 'A' }, { client: 2, name: 'B' }] }).ok, false, 'twice');
+  assert.equal(p({ ...lobby, spectators: [{ client: 1, name: 'Host' }] }).ok, false, 'spectator holding a slot');
+  assert.equal(p({ ...lobby, maxSpectators: 9 }).ok, false);
+  const { spectators: _s, ...old } = lobby;
+  assert.equal(p(old).ok, false, 'protocol 2 lobby messages are refused');
+  assert.equal(p({ t: 'welcome', you: 1, hostId: 1, session: SESSION, role: 'admin' }).ok, false);
+  assert.equal(p({ t: 'welcome', you: 1, hostId: 1, session: SESSION, role: 'player', key: 'x' }).ok, false);
+  assert.equal(p({ t: 'log', frames: [] }).ok, false, 'empty log message');
+  assert.equal(p({ t: 'log', frames: [[5, []], [5, []]] }).ok, false, 'ticks must increase');
+  assert.equal(p({ t: 'log', frames: [[5, [[0, [{ o: 'nuke', player: 0 }]]]]] }).ok, false, 'orders are validated');
+  assert.equal(p({ t: 'sync', tick: 100, check: { tick: 100, hash: 'aa' } }).ok, false, 'check before the sync tick');
+  assert.equal(p({ t: 'sync', tick: 100, check: { tick: 30, hash: 'aa' } }).ok, false, 'check on a hash tick');
+  assert.equal(p({ t: 'back', player: 8, client: 2, name: 'G', tick: 3 }).ok, false);
+  assert.equal(p({ t: 'left', player: 1, client: 2, name: 'G', reason: 'banned' }).ok, false);
 });

@@ -1,5 +1,6 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
-// Fullscreen, Release notes, Leave to lobby, Exit.
+// Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
+// actions (save the game, download the replay; js/records.js).
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
 // games cannot pause (docs/contracts.md: the server drops a player who holds
@@ -99,6 +100,8 @@ export class GameMenu {
    * @param {HTMLElement} root  the overlay section
    * @param {{
    *   online: boolean,
+   *   replay?: boolean,  the replay viewer (keeps playing while the menu is open)
+   *   actions?: { id: string, label: string, run(): string | Promise<string> }[],  record actions; run() returns a message
    *   hotkeys: import('./hotkeys.js').HotkeyRegistry,
    *   settings: { get(k: string): any, set(k: string, v: any): any, reset(k: string): any, subscribe(k: string, fn: Function): Function },
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
@@ -233,21 +236,37 @@ export class GameMenu {
 
   renderMain(c) {
     const online = this.opts.online;
-    c.append(
-      el('h1', null, online ? 'Menu' : 'Paused'),
-      el('p', 'tagline', online ? 'Online game: it keeps running while this menu is open. Online games cannot be paused.' : 'The game is paused. Esc resumes.'),
-    );
+    const tagline = this.opts.replay
+      ? 'Replay: it keeps playing while this menu is open (P pauses it).'
+      : online
+        ? 'Online game: it keeps running while this menu is open. Online games cannot be paused.'
+        : 'The game is paused. Esc resumes.';
+    c.append(el('h1', null, online ? 'Menu' : 'Paused'), el('p', 'tagline', tagline));
     const fs = this.opts.fullscreen;
+    const actions = (this.opts.actions ?? []).map((a) => button(a.label, null, () => this.runAction(a)));
     c.append(
       button('Resume', 'primary', () => this.close()),
+      ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
-      button(online ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
+      button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
+  }
+
+  /** Run a record action and show its message. */
+  async runAction(action) {
+    let message;
+    try {
+      message = await action.run();
+    } catch (err) {
+      message = err?.message ?? String(err);
+    }
+    this.message = message || '';
+    if (this.isOpen) this.render();
   }
 
   async toggleFullscreen() {
@@ -257,9 +276,16 @@ export class GameMenu {
   }
 
   renderConfirm(c, kind) {
-    const online = this.opts.online;
+    const online = this.opts.online && !this.opts.replay;
     const what = kind === 'exit' ? 'Exit to the WebRA website?' : online ? 'Leave this online game?' : 'Leave to the lobby?';
-    const note = online ? 'The other players keep playing without you.' : 'This game ends and cannot be resumed.';
+    const saves = (this.opts.actions ?? []).some((a) => a.id === 'save');
+    const note = this.opts.replay
+      ? 'The replay closes.'
+      : online
+        ? 'The other players keep playing without you.'
+        : saves
+          ? 'This game ends. Save it first to continue it later.'
+          : 'This game ends and cannot be resumed.';
     c.append(
       el('h1', null, kind === 'exit' ? 'Exit' : 'Leave'),
       el('p', 'tagline', `${what} ${note}`),
@@ -298,10 +324,26 @@ export class GameMenu {
       row.append(el('span', null, text), input);
       return row;
     };
+    const choice = (key, text, labels) => {
+      const row = el('label', 'game-menu-row');
+      const select = el('select', 'game-menu-select');
+      for (const option of SCHEMA[key].options) {
+        const o = el('option', null, labels[option] ?? option);
+        o.value = option;
+        select.append(o);
+      }
+      select.value = s.get(key);
+      select.addEventListener('change', () => {
+        select.value = s.set(key, select.value);
+      });
+      row.append(el('span', null, text), select);
+      return row;
+    };
     c.append(
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );
@@ -314,7 +356,7 @@ export class GameMenu {
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'pixelRatioCap', 'lowQuality']) s.reset(key);
+        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'pixelRatioCap', 'lowQuality']) s.reset(key);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),

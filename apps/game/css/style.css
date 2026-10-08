@@ -144,6 +144,12 @@ body {
   accent-color: var(--ui-accent);
 }
 
+/* Choice settings span the slider and value columns (base look: .menu-card select). */
+.menu-card select.game-menu-select {
+  grid-column: 2 / span 2;
+  min-width: 180px;
+}
+
 .game-menu-value {
   min-width: 44px;
   text-align: right;

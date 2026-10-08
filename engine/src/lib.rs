@@ -11,6 +11,7 @@ mod ai_arsenal;
 mod air;
 mod cargo;
 mod combat;
+mod commands;
 pub mod debug;
 pub mod flowfield;
 mod helicopter;
@@ -20,6 +21,9 @@ pub mod mapgen;
 pub mod math;
 pub mod minimap;
 mod naval;
+pub mod observer;
+pub mod overlays;
+pub mod paths;
 mod plane;
 mod powers;
 mod production;
@@ -41,6 +45,8 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_commands;
+#[cfg(test)]
 mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
@@ -49,9 +55,15 @@ mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
+mod tests_overlays;
+#[cfg(test)]
+mod tests_pathing;
+#[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
 mod tests_production;
+#[cfg(test)]
+mod tests_replay;
 #[cfg(test)]
 mod tests_security;
 #[cfg(test)]
@@ -63,7 +75,7 @@ mod tests_weather;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
-use rules::{FootCell, Kind, QueueType};
+use rules::{FootCell, Kind, QueueType, Stance};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World, NONE, TICKS_PER_SECOND};
@@ -98,6 +110,8 @@ pub struct Game {
     /// Heat shimmer instances (build_heat_fx).
     fx: Vec<f32>,
     selection: Vec<u32>,
+    /// Route lines of the selected units (paths.rs).
+    paths: Vec<f32>,
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
     outbox: Vec<Order>,
@@ -225,6 +239,7 @@ impl Game {
             terrain: Vec::new(),
             fx: Vec::new(),
             selection: Vec::new(),
+            paths: Vec::new(),
             lockstep: false,
             outbox: Vec::new(),
         }
@@ -443,8 +458,14 @@ impl Game {
         self.terrain.len()
     }
 
+    /// Fog bytes for `player`, or the whole map visible for
+    /// `observer_player()` (spectators, replays).
     pub fn fog_ptr(&mut self, player: u8) -> *const u8 {
-        self.world.fog_bytes(player, &mut self.fog);
+        if player == observer::OBSERVER {
+            self.world.observer_fog_bytes(&mut self.fog);
+        } else {
+            self.world.fog_bytes(player, &mut self.fog);
+        }
         self.fog.as_ptr()
     }
 
@@ -471,11 +492,19 @@ impl Game {
     }
 
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
+    /// `player` may be `observer_player()`: the whole map, every actor live,
+    /// no owner-only decorations (observer.rs).
     pub fn build_render(&mut self, player: u8, alpha: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
         let view = View { x0, y0, x1, y1 };
         // Units that got into a transport drop out of the selection.
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
+        // The spectator view renders as slot 0 with every visibility check
+        // passing; the flag is cleared again before anything else can run.
+        let observer = player == observer::OBSERVER;
+        self.world.render_all = observer;
+        let player = if observer { 0 } else { player };
         self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
+        self.world.render_all = false;
         self.sprites.len() / render::SPRITE_FLOATS
     }
 
@@ -491,10 +520,43 @@ impl Game {
         self.rects.as_ptr()
     }
 
+    /// Route lines of the selected units `player` owns ("Show unit paths"):
+    /// a few straight segments per unit, from where it is drawn (`alpha` as in
+    /// `build_render`) along its path to its destination. Returns the
+    /// segment count; read them through `path_ptr` (8 floats each:
+    /// `[x0, y0, x1, y1, r, g, b, a]`, world pixels).
+    pub fn build_paths(&mut self, player: u8, alpha: f32) -> usize {
+        self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut self.paths);
+        self.paths.len() / paths::LINE_FLOATS
+    }
+
+    pub fn path_ptr(&self) -> *const f32 {
+        self.paths.as_ptr()
+    }
+
     // ---- Selection ---------------------------------------------------------
 
     pub fn set_selection(&mut self, ids: Vec<u32>) {
         self.selection = ids;
+    }
+
+    // ---- Render overlays (overlays.rs); never part of the simulation --------
+
+    /// Actor under the mouse (from `pick`), or 0xFFFFFFFF: it gets a health bar
+    /// like the selection and the selection's targets (overlays.rs).
+    pub fn set_hover(&mut self, id: u32) {
+        self.world.render_opts.hover = id;
+    }
+
+    /// Extra health bars: 0 selected and hovered only, 1 also damaged actors, 2 all actors.
+    pub fn set_health_bars(&mut self, mode: u8) {
+        self.world.render_opts.health_bars = overlays::HealthBars::from_index(mode);
+    }
+
+    /// Per actor type, the static frame of its animated building layer or 0
+    /// (apps/game/js/sprites.js `buildAtlas` returns this table as `overlays`).
+    pub fn set_building_overlays(&mut self, frames: Vec<u32>) {
+        self.world.render_opts.building_overlays = frames;
     }
 
     /// Selected ids that are still alive.
@@ -640,6 +702,93 @@ impl Game {
 
     pub fn order_stop(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::Stop { player, ids });
+    }
+
+    /// Force-fire on the ground at (x, y) (world pixels) until told otherwise.
+    /// Force-fire on an actor (own ones too) is `order_attack`.
+    pub fn order_attack_ground(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32) {
+        self.submit(Order::AttackGround { player, ids, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// Follow and protect an own or allied unit.
+    pub fn order_guard(&mut self, player: u8, ids: Vec<u32>, target: u32) {
+        self.submit(Order::Guard { player, ids, target });
+    }
+
+    /// Each unit moves to a random free neighbouring cell.
+    pub fn order_scatter(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::Scatter { player, ids });
+    }
+
+    /// Queue a move (or attack-move) after the current orders (Shift+click).
+    pub fn order_waypoint(&mut self, player: u8, ids: Vec<u32>, x: f32, y: f32, attack_move: bool) {
+        self.submit(Order::Waypoint { player, ids, x: to_wu(x), y: to_wu(y), attack_move });
+    }
+
+    /// Fire stance: "hold_fire", "return_fire", "defend" or "attack_anything".
+    /// Returns false (and sends nothing) for another name.
+    pub fn set_stance(&mut self, player: u8, ids: Vec<u32>, stance: &str) -> bool {
+        let Some(stance) = Stance::ALL.into_iter().find(|s| s.name() == stance) else { return false };
+        self.submit(Order::SetStance { player, ids, stance });
+        true
+    }
+
+    /// What the command bar can do for these actors of `player` (JSON):
+    /// `units` (own units), `armed` (of them, with a weapon), `attackGround`
+    /// (units that can fire on the ground), `guard` and `scatter` (units that
+    /// can), `queued` (waypoints queued in total) and `stances`: per stance
+    /// name, how many of the actors (units and defences with AutoTarget) use it.
+    pub fn command_state(&self, player: u8, ids: Vec<u32>) -> String {
+        let w = &self.world;
+        let mut actors: Vec<usize> = ids
+            .iter()
+            .filter_map(|&r| w.resolve(r))
+            .filter(|&i| w.actors[i].owner == player && w.actors[i].in_world() && !w.is_support_aircraft(i))
+            .collect();
+        actors.sort_unstable();
+        actors.dedup();
+        let units: Vec<usize> = actors.iter().copied().filter(|&i| w.actors[i].is_unit()).collect();
+        let count = |f: &dyn Fn(usize) -> bool| units.iter().filter(|&&i| f(i)).count();
+        let mut stances = serde_json::Map::new();
+        for s in Stance::ALL {
+            let n = actors.iter().filter(|&&i| w.has_stance(i) && w.actors[i].stance == s).count();
+            stances.insert(s.name().into(), n.into());
+        }
+        json!({
+            "units": units.len(),
+            "armed": count(&|i| w.has_weapons(i)),
+            "attackGround": count(&|i| !w.is_plane(i) && w.rules.actors[w.actors[i].ty as usize].can_attack_class(&w.rules, rules::TARGET_GROUND | rules::TARGET_WATER)),
+            "guard": count(&|i| !w.is_plane(i)),
+            "scatter": count(&|i| !w.is_plane(i)),
+            "queued": units.iter().map(|&i| w.actors[i].waypoints.len()).sum::<usize>(),
+            "stances": stances,
+        })
+        .to_string()
+    }
+
+    /// Whether a guard order from `player`'s `ids` onto actor `target` would
+    /// do something (an own or allied unit that one of them can guard).
+    pub fn can_guard(&self, player: u8, ids: Vec<u32>, target: u32) -> bool {
+        let w = &self.world;
+        let Some(t) = w.resolve(target) else { return false };
+        ids.iter()
+            .filter_map(|&r| w.resolve(r))
+            .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_guard(player, i, t))
+    }
+
+    /// Whether players `a` and `b` are on the same side (the same player too).
+    pub fn are_allies(&self, a: u8, b: u8) -> bool {
+        let n = self.world.players.len();
+        (a as usize) < n && (b as usize) < n && self.world.are_allies(a, b)
+    }
+
+    /// Whether one of `player`'s `ids` can fire on the ground at (x, y) (world pixels).
+    pub fn can_attack_ground(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> bool {
+        let w = &self.world;
+        let (x, y) = (to_wu(x), to_wu(y));
+        ids.iter()
+            .filter_map(|&r| w.resolve(r))
+            .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_attack_ground(i, x, y))
     }
 
     /// Helicopters: land on or next to the cell at (x, y) (world pixels).
