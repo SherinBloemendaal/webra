@@ -458,6 +458,54 @@
   overflow-wrap: anywhere;
 }
 
+#menu .lobby-import {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-line);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+#menu .lobby-import[hidden] {
+  display: none;
+}
+
+#menu .lobby-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#menu .oramap-report-title {
+  margin: 6px 0;
+  color: #fff;
+}
+
+#menu .oramap-report h3 {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#menu .oramap-report ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#menu .oramap-report-errors h3,
+#menu .oramap-report-rules h3 {
+  color: #f08a76;
+}
+
+#menu .oramap-report-warnings h3 {
+  color: #e8c25a;
+}
+
 #menu .lobby-file-row {
   display: flex;
   min-width: 0;

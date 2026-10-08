@@ -701,6 +701,35 @@ dialog.dialog .row button {
   width: auto;
 }
 
+dialog.dialog .oramap-report {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+dialog.dialog .oramap-report h3 {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+dialog.dialog .oramap-report ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+dialog.dialog .oramap-report-errors h3,
+dialog.dialog .oramap-report-rules h3 {
+  color: #f08a76;
+}
+
+dialog.dialog .oramap-report-warnings h3 {
+  color: #e8c25a;
+}
+
 .keys {
   border-collapse: collapse;
   width: 100%;

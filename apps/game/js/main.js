@@ -1,7 +1,7 @@
 // Boot: load the simulation (WebAssembly), the WebGPU renderer and the lobby,
 // then run the fixed-step game loop with interpolated rendering.
 
-import init, { Game, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
@@ -17,6 +17,8 @@ import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
 import { NotificationView } from './notifications.js';
+import { importOramap } from './oramap/index.js';
+import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
@@ -64,6 +66,13 @@ async function boot() {
       spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
+      // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
+      importOramap: (bytes, fileName) =>
+        importOramap(bytes, {
+          baseRules: JSON.parse(base_rules_json()),
+          validate: (json) => JSON.parse(Game.validate_map(json)),
+          fileName,
+        }),
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
@@ -290,6 +299,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     },
     { ticksPerSecond: Game.ticks_per_second() },
   );
+  // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
+  // test leaves the slot empty, which shows "Radar offline".
+  const minimap = stress ? null : new Minimap($('radar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
@@ -327,7 +339,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug, touch, layout, notices };
+  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug, touch, layout, notices };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -448,7 +460,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     input.update(dt / 1000);
     if (game.terrain_dirty()) {
       const ptr = game.terrain_ptr();
-      renderer.uploadTerrain(new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len()));
+      const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
+      renderer.uploadTerrain(terrain);
+      minimap?.terrainChanged(terrain);
     }
     const fogPtr = game.fog_ptr(player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
@@ -469,6 +483,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
+    minimap?.frame(now);
 
     fpsFrames++;
     if (now - fpsTime >= 500) {

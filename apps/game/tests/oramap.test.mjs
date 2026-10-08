@@ -1,0 +1,474 @@
+// OpenRA .oramap import (apps/game/js/oramap): ZIP, MiniYaml and map.bin
+// readers against hostile input, conversion to a WebRA map, and a round trip
+// the engine validates. Fixtures are synthetic (oramap-fixtures.mjs).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { deflateRawSync } from 'node:zlib';
+import { buildMapBin, buildZip, mapYaml, sampleOramap, T } from './oramap-fixtures.mjs';
+import { crc32, openZip, ZipError, ZIP_LIMITS } from '../js/oramap/zip.js';
+import { MiniYamlError, parseMiniYaml, parseWDist } from '../js/oramap/miniyaml.js';
+import { MapBinError, readMapBin } from '../js/oramap/mapbin.js';
+import { cleanText, convertOramap, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES } from '../js/oramap/convert.js';
+import { importOramap, isOramapFile } from '../js/oramap/index.js';
+import { DECORATIONS, ORA_TERRAIN_LETTERS, PICK_ANY, TILESETS } from '../js/oramap/tables.js';
+import { decodeLayers, TERRAIN } from '../editor/js/mapformat.js';
+import { parseMap as protocolParseMap } from '../js/protocol.js';
+
+const BASE_RULES = JSON.parse(readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8'));
+const enc = new TextEncoder();
+
+/** Deterministic pseudo random bytes (xorshift). */
+function rng(seed) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s;
+  };
+}
+
+// ---- ZIP ---------------------------------------------------------------------------------
+
+test('zip: reads stored and deflated entries and checks their CRC', async () => {
+  const text = 'hello '.repeat(1000);
+  const zip = openZip(buildZip([
+    { name: 'a.txt', data: text, method: 8 },
+    { name: 'b.bin', data: new Uint8Array([1, 2, 3]), method: 0 },
+    { name: 'dir/', data: new Uint8Array(0), method: 0 },
+  ], { comment: 'a comment' }));
+  assert.deepEqual(zip.names(), ['a.txt', 'b.bin']);
+  assert.equal(await zip.readText('a.txt'), text);
+  assert.deepEqual([...(await zip.read('b.bin'))], [1, 2, 3]);
+  await assert.rejects(zip.read('missing'), ZipError);
+  await assert.rejects(zip.read('dir/'), ZipError);
+  assert.equal(crc32(enc.encode('123456789')), 0xcbf43926);
+});
+
+test('zip: rejects bad checksums, lying sizes, encryption, unknown methods and bombs', async () => {
+  const data = enc.encode('x'.repeat(5000));
+  await assert.rejects(openZip(buildZip([{ name: 'a', data, crc: 1 }])).read('a'), /checksum/);
+  // Declared smaller than the real output: inflation stops at the declared size.
+  await assert.rejects(openZip(buildZip([{ name: 'a', data, size: 100 }])).read('a'), /more than its declared size/);
+  await assert.rejects(openZip(buildZip([{ name: 'a', data, size: 6000 }])).read('a'), /wrong size/);
+  await assert.rejects(openZip(buildZip([{ name: 'a', data, flags: 1 }])).read('a'), /encrypted/);
+  await assert.rejects(openZip(buildZip([{ name: 'a', data, method: 0, size: 10 }])).read('a'), ZipError);
+  // A 100 MiB bomb is refused from its header, before anything is inflated.
+  const bomb = buildZip([{ name: 'bomb', data: new Uint8Array(64), size: 100 * 1024 * 1024 }]);
+  await assert.rejects(openZip(bomb).read('bomb'), /larger than/);
+  // High ratio below the size limit.
+  const zeros = new Uint8Array(4 * 1024 * 1024);
+  const ratio = buildZip([{ name: 'z', data: zeros }]);
+  await assert.rejects(openZip(ratio).read('z'), /compression ratio/);
+  // ...unless the caller allows it; then the real data comes out.
+  assert.equal((await openZip(ratio, { maxRatio: 1e9 }).read('z')).length, zeros.length);
+  // Total unpacked limit across entries.
+  const two = buildZip([{ name: 'a', data }, { name: 'b', data }]);
+  const z = openZip(two, { maxTotalBytes: 6000 });
+  await z.read('a');
+  await assert.rejects(z.read('b'), /too much data/);
+  // Method 12 (bzip2) is not supported.
+  const m = buildZip([{ name: 'a', data, method: 0 }]);
+  new DataView(m.buffer).setUint16(m.length - 22 - (46 + 1) + 10, 12, true);
+  await assert.rejects(openZip(m).read('a'), /compression method/);
+});
+
+test('zip: limits entry count and archive size, refuses ZIP64 and garbage', () => {
+  const many = buildZip(Array.from({ length: 20 }, (_, i) => ({ name: `f${i}`, data: 'x', method: 0 })));
+  assert.throws(() => openZip(many, { maxEntries: 10 }), /more than 10 entries/);
+  assert.throws(() => openZip(new Uint8Array(100)), ZipError);
+  assert.throws(() => openZip(new Uint8Array(ZIP_LIMITS.maxArchiveBytes + 1)), /larger than/);
+  const z64 = buildZip([{ name: 'a', data: 'x', method: 0 }]);
+  new DataView(z64.buffer).setUint16(z64.length - 22 + 10, 0xffff, true);
+  new DataView(z64.buffer).setUint16(z64.length - 22 + 8, 0xffff, true);
+  assert.throws(() => openZip(z64), /ZIP64/);
+});
+
+test('zip fuzz: truncated, bit-flipped and random archives fail cleanly', async () => {
+  const good = sampleOramap();
+  const next = rng(7);
+  const tryRead = async (bytes) => {
+    try {
+      const z = openZip(bytes);
+      for (const n of z.names()) await z.read(n);
+    } catch (err) {
+      assert.ok(err instanceof ZipError, `unexpected ${err?.constructor?.name}: ${err?.message}`);
+    }
+  };
+  for (let cut = 0; cut < good.length; cut += Math.max(1, Math.floor(good.length / 150))) await tryRead(good.subarray(0, cut));
+  for (let i = 0; i < 300; i++) {
+    const b = good.slice();
+    for (let k = 0; k < 1 + (next() % 4); k++) b[next() % b.length] ^= 1 << (next() % 8);
+    await tryRead(b);
+  }
+  for (let i = 0; i < 200; i++) {
+    const b = new Uint8Array(next() % 400);
+    for (let k = 0; k < b.length; k++) b[k] = next() & 255;
+    if (b.length >= 22 && i % 2) b.set([0x50, 0x4b, 0x05, 0x06], b.length - 22);
+    await tryRead(b);
+  }
+});
+
+// ---- MiniYaml ----------------------------------------------------------------------------
+
+test('miniyaml: tabs or four spaces, comments, escapes, keys without values', () => {
+  const nodes = parseMiniYaml('A: 1\n\tB: two # comment\n\t\tC\n    D: x\\#y\n# only a comment\n\nE:\r\n');
+  assert.deepEqual(
+    nodes.map((n) => [n.key, n.value, n.nodes.map((c) => [c.key, c.value, c.nodes.map((d) => d.key)])]),
+    [
+      ['A', '1', [['B', 'two', ['C']], ['D', 'x#y', []]]],
+      ['E', '', []],
+    ],
+  );
+  assert.equal(nodes[0].nodes[0].line, 2);
+  assert.equal(parseWDist('5c512'), 5632);
+  assert.equal(parseWDist('-1c0'), -1024);
+  assert.equal(parseWDist('300'), 300);
+  assert.equal(parseWDist('5x'), null);
+});
+
+test('miniyaml: rejects bad indentation and enforces limits', () => {
+  assert.throws(() => parseMiniYaml('A:\n\t\tB: 1'), /indented too far/);
+  assert.throws(() => parseMiniYaml('A:\n\t  B: 1'), /mixed/);
+  assert.throws(() => parseMiniYaml('A:\n  B: 1'), /multiple of four/);
+  assert.throws(() => parseMiniYaml(': x'), /empty key/);
+  assert.throws(() => parseMiniYaml('a\n'.repeat(50), 'y', { maxLines: 10 }), /more than 10 lines/);
+  assert.throws(() => parseMiniYaml('a\n'.repeat(50), 'y', { maxNodes: 10 }), /more than 10 entries/);
+  assert.throws(() => parseMiniYaml('x'.repeat(100), 'y', { maxLineLength: 10 }), /line too long/);
+  assert.throws(() => parseMiniYaml('x', 'y', { maxBytes: 0 }), /larger than/);
+  let deep = '';
+  for (let i = 0; i < 40; i++) deep += `${'\t'.repeat(i)}k${i}:\n`;
+  assert.throws(() => parseMiniYaml(deep), /nested too deeply/);
+});
+
+test('miniyaml fuzz: random text either parses or throws MiniYamlError', () => {
+  const next = rng(11);
+  const alphabet = 'ab:\t #\\\n\r@-,1 ';
+  for (let i = 0; i < 2000; i++) {
+    let s = '';
+    const n = next() % 120;
+    for (let k = 0; k < n; k++) s += alphabet[next() % alphabet.length];
+    try {
+      parseMiniYaml(s);
+    } catch (err) {
+      assert.ok(err instanceof MiniYamlError, err?.message);
+    }
+  }
+});
+
+// ---- map.bin -----------------------------------------------------------------------------
+
+test('map.bin: formats 1 and 2, column-major cells, pick-any tile index', () => {
+  for (const format of [1, 2]) {
+    const bin = readMapBin(buildMapBin(3, 2, (x, y) => [x * 10 + y, x === 2 ? 255 : 7], (x, y) => [x === 1 ? 1 : 0, y + 4], format));
+    assert.equal(bin.format, format);
+    assert.equal(bin.width, 3);
+    assert.equal(bin.height, 2);
+    assert.deepEqual([...bin.tileType], [0, 10, 20, 1, 11, 21]);
+    // Index 255: (x % 4) + (y % 4) * 4.
+    assert.deepEqual([...bin.tileIndex], [7, 7, 2, 7, 7, 6]);
+    assert.deepEqual([...bin.resType], [0, 1, 0, 0, 1, 0]);
+    assert.deepEqual([...bin.resDensity], [4, 4, 4, 5, 5, 5]);
+  }
+  // Format 2 without a resource layer.
+  const b = buildMapBin(2, 2, () => [1, 0]);
+  new DataView(b.buffer).setUint32(13, 0, true);
+  assert.deepEqual([...readMapBin(b.subarray(0, 17 + 12)).resType], [0, 0, 0, 0]);
+});
+
+test('map.bin: rejects unknown formats, bad sizes and out of range layers', () => {
+  assert.throws(() => readMapBin(new Uint8Array([3, 1, 0, 1, 0])), /unknown format/);
+  assert.throws(() => readMapBin(new Uint8Array([2, 0, 0, 1, 0])), /invalid size/);
+  assert.throws(() => readMapBin(new Uint8Array([2, 0, 8, 1, 0])), /invalid size/);
+  assert.throws(() => readMapBin(new Uint8Array([2, 1])), /truncated/);
+  const b = buildMapBin(4, 4, () => [1, 0]);
+  new DataView(b.buffer).setUint32(13, 0xfffffff0, true);
+  assert.throws(() => readMapBin(b), /resource layer out of range/);
+  new DataView(b.buffer).setUint32(5, 0, true);
+  assert.throws(() => readMapBin(b), MapBinError);
+  new DataView(b.buffer).setUint32(5, 17, true);
+  new DataView(b.buffer).setUint32(9, 5, true);
+  assert.throws(() => readMapBin(b), /height layer/);
+});
+
+test('map.bin fuzz: truncated and random data never escape as other errors', () => {
+  const good = buildMapBin(40, 40, (x, y) => [x + y, 0], (x) => [x % 3, 1]);
+  const next = rng(3);
+  const check = (bytes) => {
+    try {
+      readMapBin(bytes);
+    } catch (err) {
+      assert.ok(err instanceof MapBinError, err?.message);
+    }
+  };
+  for (let cut = 0; cut <= good.length; cut += 97) check(good.subarray(0, cut));
+  for (let i = 0; i < 1000; i++) {
+    const b = new Uint8Array(next() % 64);
+    for (let k = 0; k < b.length; k++) b[k] = next() & 255;
+    if (b.length) b[0] = 1 + (next() % 2);
+    check(b);
+  }
+});
+
+// ---- Tables ------------------------------------------------------------------------------
+
+test('tables: every RA tileset is present and every terrain letter maps onto WebRA', () => {
+  assert.deepEqual(Object.keys(TILESETS).sort(), ['DESERT', 'INTERIOR', 'SNOW', 'TEMPERAT']);
+  for (const id of Object.keys(TILESETS)) assert.ok(TILESET_BIOMES[id], `biome for ${id}`);
+  const letters = new Set(Object.values(ORA_TERRAIN_LETTERS));
+  for (const l of letters) assert.ok(ORA_TO_WEBRA_TERRAIN[l] !== undefined, `letter ${l}`);
+  for (const [ts, templates] of Object.entries(TILESETS)) {
+    assert.ok(Object.keys(templates).length > 100, ts);
+    for (const packed of Object.values(templates)) assert.match(packed, /^([a-z.]\d*)+$/);
+    assert.ok(PICK_ANY[ts].includes(255), `${ts} clear template`);
+  }
+  assert.equal(TILESETS.TEMPERAT[T.WATER], 'w');
+  assert.equal(TILESETS.TEMPERAT[T.ROCK], 'k');
+  assert.equal(TILESETS.TEMPERAT[T.CLEAR], 'c16');
+  assert.deepEqual(DECORATIONS.T01, { kind: 'tree', cells: [[0, 1]] });
+  assert.equal(DECORATIONS.V01.kind, 'block');
+  assert.equal(RESOURCE_TYPES[2].webra, 'gems');
+});
+
+// ---- Conversion --------------------------------------------------------------------------
+
+const parse = (bytes) => importOramap(bytes, { baseRules: BASE_RULES, fileName: 'valley.oramap' });
+
+test('convert: terrain, crop, resources, decorations, spawns and actors', async () => {
+  const { map, report } = await parse(sampleOramap());
+  assert.equal(map.format, 2, 'gems make a format 2 map');
+  assert.equal(map.width, 44);
+  assert.equal(map.height, 44);
+  assert.equal(map.name, 'Test Valley');
+  assert.equal(map.author, 'Tester');
+  const { terrain, ore, gems } = decodeLayers(map);
+  const at = (layer, x, y) => layer[(y - 2) * 44 + (x - 2)];
+  assert.equal(at(terrain, 22, 22), TERRAIN.WATER);
+  assert.equal(at(terrain, 30, 5), TERRAIN.ROCK);
+  assert.equal(at(terrain, 5, 5), TERRAIN.CLEAR);
+  // t01 at 15,15 occupies 15,16; v01 at 15,40 is 2x2.
+  assert.equal(at(terrain, 15, 16), TERRAIN.TREE);
+  assert.equal(at(terrain, 15, 15), TERRAIN.CLEAR);
+  assert.equal(at(terrain, 16, 41), TERRAIN.ROCK);
+  // A 3x3 ore field: the centre has 9 neighbours (density 12), a corner 4 (12*4/9 = 5).
+  assert.equal(at(ore, 11, 31), 12);
+  assert.equal(at(ore, 10, 30), 5);
+  // A 2x2 gems field: every cell has 4 neighbours, 3*4/9 = 1.
+  assert.equal(at(gems, 36, 30), 1);
+  assert.equal(at(ore, 36, 30), 0);
+  // mpspawn at 8,8: yard top-left one up and left, minus the crop.
+  assert.deepEqual(map.spawns, [[5, 5], [35, 35]]);
+  const types = map.actors.map((a) => a.type).sort();
+  assert.deepEqual(types, ['E1', 'PBOX']);
+  const e1 = map.actors.find((a) => a.type === 'E1');
+  assert.deepEqual([e1.owner, e1.x, e1.y], [0, 8, 10]);
+  // OpenRA facing 256 (west, counter-clockwise) is WebRA 768 (west, clockwise).
+  assert.equal(e1.facing, 768);
+  assert.equal(map.rules, null);
+  assert.equal(report.modded, false);
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  assert.ok(report.skipped.some((s) => s.includes('c1')));
+  assert.ok(report.skipped.some((s) => s.includes('waypoint')));
+  assert.ok(report.converted.some((s) => s.includes('gems 4 cells')));
+  assert.ok(protocolParseMap(JSON.stringify(map)).ok);
+});
+
+test('convert: maps without gems stay format 1', async () => {
+  const bytes = buildZip([
+    { name: 'map.yaml', data: mapYaml({ actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }] }) },
+    { name: 'map.bin', data: buildMapBin(48, 48, () => [T.CLEAR, 255], (x, y) => (x === 20 && y === 20 ? [1, 0] : [0, 0])) },
+  ]);
+  const { map } = await parse(bytes);
+  assert.equal(map.format, 1);
+  assert.equal(map.gems, undefined);
+  assert.equal(decodeLayers(map).ore[18 * 44 + 18], 1, 'a lone ore cell keeps density 1');
+});
+
+test('convert: rules that map onto WebRA become a modded map, the rest is reported', async () => {
+  const rules = [
+    'E1:',
+    '\tValued:',
+    '\t\tCost: 50',
+    '\tHealth:',
+    '\t\tHP: 9000',
+    '\tMobile:',
+    '\t\tSpeed: 60',
+    '\tBuildable:',
+    '\t\tPrerequisites: ~disabled',
+    '\tRevealsShroud:',
+    '\t\tRange: 6c0',
+    '\tMadeUp:',
+    '\t\tField: 1',
+    '\t-Selectable:',
+    'Player:',
+    '\tPlayerResources:',
+    '\t\tDefaultCash: 1',
+    'World:',
+    '\tLuaScript:',
+    '\t\tScripts: x.lua',
+    '',
+  ].join('\n');
+  const weapons = 'Weapons:\n\tM1Carbine:\n\t\tRange: 6c0\n\t\tReloadDelay: 0\n\t\tWarhead@1Dam: SpreadDamage\n\t\t\tDamage: 2000\n\tNotAWeapon:\n\t\tRange: 1c0\n';
+  const bytes = sampleOramap({
+    rulesRef: 'rules.yaml, ra|rules/campaign-rules.yaml, missing.yaml',
+    extraYaml: `${weapons}Sequences: seq.yaml\n`,
+    extraFiles: [
+      { name: 'rules.yaml', data: rules },
+      { name: 'x.lua', data: 'Media.DisplayMessage("hi")' },
+      { name: 'seq.yaml', data: 'x:\n' },
+    ],
+  });
+  const { map, report } = await parse(bytes);
+  assert.deepEqual(map.rules.actors.E1, { cost: 50, hp: 9000, unit: { speed: 60 }, prerequisites: ['~disabled'], sight: 6144, build_ticks: 30 });
+  assert.equal(map.rules.weapons.M1Carbine.range, 6144);
+  assert.equal(map.rules.weapons.M1Carbine.warheads[0].damage, 2000);
+  assert.equal(map.rules.weapons.M1Carbine.reload, undefined, 'out of range values are not applied');
+  assert.equal(report.modded, true);
+  const unsupported = report.unsupported.join('\n');
+  assert.match(unsupported, /Lua scripts \(x\.lua\) are not run/);
+  assert.match(unsupported, /E1\.MadeUp\.Field/);
+  assert.match(unsupported, /E1\.-Selectable/);
+  assert.match(unsupported, /Player \(not a WebRA actor\)/);
+  assert.match(unsupported, /NotAWeapon/);
+  assert.match(unsupported, /M1Carbine\.ReloadDelay/);
+  assert.match(unsupported, /campaign-rules\.yaml comes from the OpenRA mod/);
+  assert.match(unsupported, /sprite sequences/);
+  assert.ok(report.warnings.some((w) => w.includes('missing.yaml')));
+  assert.ok(protocolParseMap(JSON.stringify(map), { rules: BASE_RULES }).ok);
+});
+
+test('convert: refuses maps for other mods, unknown tilesets, too few spawns and huge bounds', async () => {
+  const pkg = (yaml, w = 48, h = 48) => buildZip([
+    { name: 'map.yaml', data: yaml },
+    { name: 'map.bin', data: buildMapBin(w, h, () => [T.CLEAR, 255]) },
+  ]);
+  const spawns = [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }];
+  await assert.rejects(parse(pkg(mapYaml({ actors: spawns }).replace('RequiresMod: ra', 'RequiresMod: cnc'))), /OpenRA mod "cnc"/);
+  await assert.rejects(parse(pkg(mapYaml({ actors: spawns, tileset: 'JUNGLE' }))), /Unknown tileset/);
+  await assert.rejects(parse(pkg(mapYaml({ actors: spawns.slice(0, 1) }))), /needs at least 2/);
+  await assert.rejects(parse(pkg(mapYaml({ actors: spawns, size: [50, 50] }))), /says 50x50/);
+  await assert.rejects(parse(pkg(mapYaml({ actors: spawns, size: [300, 40], bounds: [0, 0, 300, 40] }), 300, 40)), /at most 256/);
+  await assert.rejects(parse(buildZip([{ name: 'readme.txt', data: 'x' }])), /map\.yaml is missing/);
+  await assert.rejects(parse(new Uint8Array([1, 2, 3])), OramapError);
+  try {
+    await parse(pkg(mapYaml({ actors: spawns, tileset: 'JUNGLE' })));
+  } catch (err) {
+    assert.equal(err.report.tileset, 'JUNGLE', 'the partial report travels with the error');
+  }
+});
+
+test('convert: small maps are padded, blocked spawns move, more than 8 spawns are capped', async () => {
+  // 24x24 playable area, a tree right on spawn 1's yard.
+  const spawns = [{ type: 'mpspawn', x: 5, y: 5 }, { type: 'mpspawn', x: 18, y: 16 }, { type: 't08', x: 5, y: 5 }];
+  const small = buildZip([
+    { name: 'map.yaml', data: mapYaml({ actors: spawns, size: [26, 26], bounds: [1, 1, 24, 24] }) },
+    { name: 'map.bin', data: buildMapBin(26, 26, () => [T.CLEAR, 255]) },
+  ]);
+  const { map, report } = await parse(small);
+  assert.equal(map.width, 32);
+  assert.equal(map.height, 32);
+  assert.ok(report.warnings.some((w) => w.includes('rock was added')));
+  assert.ok(report.warnings.some((w) => w.includes('Start position 1 was moved')));
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  const { terrain } = decodeLayers(map);
+  assert.equal(terrain[31 * 32 + 31], TERRAIN.ROCK);
+
+  const nine = Array.from({ length: 9 }, (_, i) => ({ type: 'mpspawn', x: 6 + (i % 3) * 14, y: 6 + Math.floor(i / 3) * 14 }));
+  const many = buildZip([
+    { name: 'map.yaml', data: mapYaml({ actors: nine, size: [48, 48], bounds: [0, 0, 48, 48] }) },
+    { name: 'map.bin', data: buildMapBin(48, 48, () => [T.CLEAR, 255]) },
+  ]);
+  const r = await parse(many);
+  assert.equal(r.map.spawns.length, 8);
+  assert.ok(r.report.warnings.some((w) => w.includes('the first 8 were kept')));
+});
+
+test('convert: a folder inside the package, unknown templates and hostile text', async () => {
+  const yaml = mapYaml({
+    title: '\u202eEvil\u0007 Title'.padEnd(120, '!'),
+    actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }],
+  });
+  const bytes = buildZip([
+    { name: 'mymap/map.yaml', data: yaml },
+    { name: 'mymap/map.bin', data: buildMapBin(48, 48, (x) => (x === 40 ? [9999, 0] : [T.CLEAR, 255])) },
+  ]);
+  const { map, report } = await parse(bytes);
+  assert.equal(Array.from(map.name).length, 64);
+  assert.ok(!/[\u202e\u0007]/.test(map.name));
+  assert.ok(report.warnings.some((w) => w.includes('tile templates the TEMPERAT tileset does not have')));
+  assert.equal(cleanText('  a\n\tb  ', 10), 'a b');
+});
+
+test('isOramapFile: by extension or ZIP signature', () => {
+  assert.ok(isOramapFile('x.ORAMAP'));
+  assert.ok(isOramapFile('x.bin', new Uint8Array([0x50, 0x4b, 3, 4])));
+  assert.ok(!isOramapFile('x.json', enc.encode('{"format":1}')));
+});
+
+test('convert fuzz: random map.yaml and map.bin content never crashes the converter', () => {
+  const next = rng(23);
+  const parsedYaml = parseMiniYaml(mapYaml({ actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }] }));
+  for (let i = 0; i < 300; i++) {
+    const w = 1 + (next() % 60);
+    const h = 1 + (next() % 60);
+    const bin = readMapBin(buildMapBin(w, h, () => [next() % 400, next() & 255], () => [next() % 4, next() & 255]));
+    const yaml = parsedYaml.map((n) => {
+      if (n.key === 'MapSize' && i % 3) return { ...n, value: `${w},${h}` };
+      if (n.key === 'Bounds' && i % 2) return { ...n, value: `${(next() % 80) - 10},${next() % 50},${next() % 300},${next() % 70}` };
+      return n;
+    });
+    try {
+      const { map } = convertOramap({ yaml, bin }, { baseRules: BASE_RULES });
+      assert.ok(protocolParseMap(JSON.stringify(map)).ok);
+    } catch (err) {
+      assert.ok(err instanceof OramapError, err?.stack);
+    }
+  }
+});
+
+// ---- Engine round trip -------------------------------------------------------------------
+
+const { initSync, Game } = await import('../pkg/webra_sim.js');
+initSync({ module: readFileSync(new URL('../pkg/webra_sim_bg.wasm', import.meta.url)) });
+const engineValidate = (json) => JSON.parse(Game.validate_map(json));
+
+test('round trip: the engine validates, hashes and starts a converted map', async () => {
+  const { map, json, report } = await importOramap(sampleOramap(), { baseRules: BASE_RULES, validate: engineValidate });
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  const v = engineValidate(json);
+  assert.ok(v.ok, v.errors.join('; '));
+  assert.equal(v.modded, false);
+  // The canonical form survives a save and reload with the same identity.
+  assert.equal(Game.map_hash(Game.map_canonical(json)), v.hash);
+  const options = JSON.stringify({
+    seed: 1,
+    players: [
+      { slot: 0, type: 'human', faction: 'england' },
+      { slot: 1, type: 'human', faction: 'russia' },
+    ],
+    startingUnits: 'mcv',
+    techLevel: 'unrestricted',
+    fog: true,
+    explored: false,
+  });
+  const game = Game.from_map(json, options);
+  for (let i = 0; i < 20; i++) game.tick();
+  assert.equal(game.player_count(), 2, 'the neutral owner of the pillbox is not a player');
+  assert.equal(map.format, 2);
+});
+
+test('round trip: rules the engine refuses are dropped one by one and reported', async () => {
+  // Sight beyond the engine's largest vision radius (40 cells) is refused by the engine only.
+  const rules = 'E1:\n\tValued:\n\t\tCost: 75\n\tRevealsShroud:\n\t\tRange: 50c0\n';
+  const bytes = sampleOramap({ rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, json, report } = await importOramap(bytes, { baseRules: BASE_RULES, validate: engineValidate });
+  assert.equal(map.rules.actors.E1.cost, 75);
+  assert.equal(map.rules.actors.E1.sight, undefined);
+  assert.ok(report.rules.rejected.some((r) => r.startsWith('E1 sight')), report.rules.rejected.join('; '));
+  assert.equal(report.modded, true);
+  const v = engineValidate(json);
+  assert.ok(v.ok && v.modded, v.errors.join('; '));
+});

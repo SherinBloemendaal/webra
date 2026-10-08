@@ -454,8 +454,16 @@ def main():
                                 'facing': int(tr.get('Facing', 384)), 'needs_option': 'RequiresCondition' in tr}
         if 'LineBuild' in t:
             ab['line_build'] = {'range': int(t['LineBuild'].get('Range', 5))}
+        # Radar (OpenRA ProvidesRadar): an enemy Mobile Radar Jammer's
+        # ProximityExternalCondition@JAMMER grants `jammed` to structures in range,
+        # which switches off radar that requires `!jammed`.
         if has(t, 'ProvidesRadar'):
-            ab['provides_radar'] = {}
+            pr = next(iter(trait(t, 'ProvidesRadar').values()))
+            pr = pr if isinstance(pr, dict) else {}
+            ab['provides_radar'] = {'jammable': 'jammed' in pr.get('RequiresCondition', '')}
+        jam = [v for v in trait(t, 'ProximityExternalCondition').values() if isinstance(v, dict) and v.get('Condition') == 'jammed']
+        if jam:
+            ab['jams_radar'] = {'range': wdist(jam[0].get('Range'))}
         if 'Crushable' in t and isinstance(t['Crushable'], dict) and a['queue'] != 'Infantry':
             ab['crushable'] = tokens(t['Crushable'].get('CrushClasses'))
         if kind == 'infantry':
