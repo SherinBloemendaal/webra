@@ -1,0 +1,324 @@
+/* Touch controls (js/touch.js) and the phone layouts (js/layout.js).
+   body.touch is set on touch screens (coarse pointer, or the first touch);
+   #app[data-layout] is 'desktop', 'portrait' or 'landscape'. */
+
+/* ---- Battlefield --------------------------------------------------------- */
+
+/* No browser panning, pinch zoom or double-tap zoom over the battlefield only:
+   js/touch.js turns those gestures into camera moves. */
+#field,
+#view {
+  touch-action: none;
+}
+
+#app {
+  /* Notches, rounded corners and the home indicator (viewport-fit=cover). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Touch action bar and placement buttons -------------------------------- */
+
+#touch-bar,
+#touch-place {
+  display: none;
+}
+
+body.touch #touch-bar {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+}
+
+body.touch #touch-place {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  padding: 6px;
+  background: rgba(21, 24, 26, 0.92);
+  border: 1px solid #3a4346;
+  border-radius: 4px;
+  transform: translateX(-50%);
+}
+
+.touch-place-hint {
+  padding: 0 4px;
+  color: #8b9288;
+  font: 12px system-ui, 'Segoe UI', sans-serif;
+  white-space: nowrap;
+}
+
+.touch-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: rgba(21, 24, 26, 0.86);
+  color: #d8dccf;
+  border: 1px solid #3a4346;
+  border-radius: 4px;
+  font: 700 12px/1.1 system-ui, 'Segoe UI', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+}
+
+.touch-button[aria-pressed='true'] {
+  border-color: #f2c94c;
+  color: #f2c94c;
+  box-shadow: inset 0 0 0 1px #f2c94c;
+}
+
+.touch-button:disabled {
+  opacity: 0.4;
+}
+
+.touch-button.touch-primary {
+  background: #3d5a2a;
+  border-color: #6f9a4a;
+  color: #fff;
+}
+
+/* ---- Larger targets on touch screens (44 px) -------------------------------- */
+
+body.touch .hud-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+  touch-action: manipulation;
+}
+
+body.touch .debug-panel {
+  top: 56px;
+}
+
+body.touch #powers .power {
+  min-height: 44px;
+}
+
+body.touch #sidebar .sb-tab,
+body.touch #sidebar .sb-tool {
+  min-height: 44px;
+}
+
+body.touch #sidebar button {
+  touch-action: manipulation;
+}
+
+/* Hover tooltips stick on touch screens; the cards show what is missing already. */
+body.touch #sidebar .sb-tip {
+  display: none;
+}
+
+body.touch .menu-card button,
+body.touch .menu-card select,
+body.touch .menu-card input:not([type='checkbox']):not([type='range']) {
+  min-height: 44px;
+}
+
+body.touch .menu-card input.game-menu-check {
+  width: 28px;
+  height: 28px;
+}
+
+/* The Sound button and the version tag would sit on the action bar: the game
+   menu has a Sound entry. */
+body.touch #app:not([hidden]) ~ #audio-button,
+body.touch #app:not([hidden]) ~ #version,
+#app[data-layout='portrait']:not([hidden]) ~ #audio-button,
+#app[data-layout='portrait']:not([hidden]) ~ #version,
+#app[data-layout='landscape']:not([hidden]) ~ #audio-button,
+#app[data-layout='landscape']:not([hidden]) ~ #version {
+  display: none;
+}
+
+/* ---- Phone layouts ------------------------------------------------------------ */
+
+#app.sidebar-collapsed #sidebar {
+  display: none;
+}
+
+#app[data-layout='portrait'] #hud,
+#app[data-layout='landscape'] #hud {
+  font-size: 11px;
+}
+
+/* Portrait: the sidebar is a drawer along the bottom. */
+#app[data-layout='portrait'] {
+  flex-direction: column;
+}
+
+#app[data-layout='portrait'] #sidebar {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 42%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'top power tools'
+    'tabs tabs tabs'
+    'grid grid grid'
+    'sel sel sel';
+  gap: 6px;
+  padding: 6px 8px;
+  border-left: 0;
+  border-top: 2px solid var(--sb-edge);
+}
+
+#app[data-layout='portrait'] #sidebar .sb-top {
+  grid-area: top;
+  padding: 2px 8px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-power {
+  grid-area: power;
+  align-self: center;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tools {
+  grid-area: tools;
+  align-self: center;
+  padding: 0;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tabs {
+  grid-area: tabs;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tab-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-grid {
+  grid-area: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  grid-auto-rows: 76px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-icon {
+  height: 58px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-sel {
+  grid-area: sel;
+  min-height: 0;
+  padding: 3px 8px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-hp {
+  margin: 2px 0;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-credits,
+#app[data-layout='landscape'] #sidebar .sb-credits {
+  font-size: 17px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-ore,
+#app[data-layout='landscape'] #sidebar .sb-ore {
+  display: none;
+}
+
+/* Landscape: a narrow drawer on the right, the selection panel left out (the map shows it). */
+#app[data-layout='landscape'] #sidebar {
+  width: 196px;
+  min-width: 196px;
+  max-width: 196px;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-top {
+  padding: 2px 6px;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-sel {
+  display: none;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-tools {
+  padding: 0;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-grid {
+  grid-auto-rows: 70px;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-icon {
+  height: 52px;
+}
+
+/* Phones: fewer action bar labels per row. */
+#app[data-layout='portrait'] .touch-button {
+  padding: 0 9px;
+}
+
+/* ---- Lobby and menus on phones ------------------------------------------------- */
+
+@media (pointer: coarse) {
+  #menu .lobby-select,
+  #menu .lobby-input,
+  #menu .lobby-btn,
+  #menu .lobby-color-btn {
+    min-height: 44px;
+  }
+
+  #menu .lobby-remove {
+    width: 44px;
+  }
+
+  #menu .lobby-toggle {
+    min-height: 44px;
+  }
+
+  #menu .lobby-color-list {
+    grid-template-columns: repeat(4, 44px);
+  }
+
+  #menu .lobby-color-opt {
+    min-height: 44px;
+  }
+
+  .online-btn,
+  .online-input,
+  .online-select,
+  #online-button,
+  #audio-button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* The Play online entry moves from the lobby's title bar to the bottom corner. */
+  #online-button {
+    top: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  #menu {
+    padding-bottom: 76px;
+  }
+
+  #audio-button {
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}

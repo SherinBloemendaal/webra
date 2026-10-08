@@ -49,7 +49,7 @@ export class Sidebar {
    * @param {object} game wasm Game instance
    * @param {object} rules parsed rules_json()
    * @param {number} playerId local player id
-   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void}} callbacks
+   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, shiftLatched?: () => boolean}} callbacks
    */
   constructor(root, game, rules, playerId, callbacks = {}) {
     this.root = root;
@@ -204,7 +204,8 @@ export class Sidebar {
     btn.append(canvas, clock, count, ready, slot, req, name, cost);
     btn.setAttribute('aria-label', `${actor.name}, ${actor.cost} credits`);
 
-    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey));
+    // shiftLatched: the touch action bar's Add toggle stands in for Shift.
+    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.onCardCancel(id);
