@@ -13,6 +13,7 @@ export {
   parseServerMessage,
   CHEAT_ORDER_KINDS,
   isCheatOrder,
+  validFrameOrders,
   validLobbySlot,
   validMapRef,
   validName,
@@ -46,3 +47,18 @@ export {
   validateMap,
   validateRules,
 } from './map.js';
+export {
+  encodeReplay,
+  parseReplay,
+  REPLAY_FORMAT,
+  REPLAY_HASH_INTERVAL,
+  REPLAY_KINDS,
+  REPLAY_MAX_BYTES,
+  REPLAY_MAX_TICKS,
+  REPLAY_MODES,
+  REPLAY_TITLE_MAX,
+  REPLAY_VERSION,
+  replayOptions,
+  SAVE_SLOTS_MAX,
+  validateReplay,
+} from './replay.js';

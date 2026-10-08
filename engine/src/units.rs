@@ -435,7 +435,7 @@ impl World {
                     a.gem_bales -= gem as i32;
                     let owner = a.owner;
                     let value = if gem { self.rules.player.gem_value } else { self.rules.player.ore_value };
-                    self.give_resources(owner, value);
+                    self.give_harvested(owner, value);
                 }
                 if self.actors[i].bales == 0 {
                     self.actors[r].dock_user = NONE;
@@ -625,7 +625,8 @@ impl World {
         self.rebuild_hash();
         let n = self.actors.len();
         let mut push = vec![(0i32, 0i32); n];
-        // (victim, crusher): crushing counts as a kill by the crusher (veterancy.rs).
+        // (victim, crusher): crushing counts as a kill by the crusher
+        // (veterancy.rs, and for its owner in the observer stats).
         let mut crushed: Vec<(usize, usize)> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
@@ -705,7 +706,8 @@ impl World {
             if self.actors[k].alive {
                 let source = self.make_ref(crusher);
                 self.award_kill(k, source);
-                self.kill(k);
+                let by = self.actors[crusher].owner;
+                self.with_damage_source(by, |w| w.kill(k));
             }
         }
         for (i, &(px, py)) in push.iter().enumerate() {

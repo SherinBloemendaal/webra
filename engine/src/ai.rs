@@ -23,6 +23,7 @@ const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
 /// A gathered army that has not grown for this long attacks below wave size.
 const ARMY_STALL_TICKS: u32 = 90 * crate::world::TICKS_PER_SECOND;
 
+#[derive(Clone)]
 pub struct AiState {
     offset: u32,
     think_interval: u32,

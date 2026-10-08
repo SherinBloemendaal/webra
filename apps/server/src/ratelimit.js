@@ -17,13 +17,13 @@ export class TokenBucket {
     this.refused = 0;
   }
 
-  /** Take one token; false when the caller is over the limit. */
-  take(now = Date.now()) {
+  /** Take one token (or `amount`); false when the caller is over the limit. */
+  take(now = Date.now(), amount = 1) {
     const elapsed = Math.max(0, now - this.last);
     this.last = now;
     this.tokens = Math.min(this.burst, this.tokens + (elapsed * this.rate) / 1000);
-    if (this.tokens >= 1) {
-      this.tokens -= 1;
+    if (this.tokens >= amount) {
+      this.tokens -= amount;
       return true;
     }
     this.refused++;

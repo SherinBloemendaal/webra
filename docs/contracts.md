@@ -218,8 +218,12 @@ Client to server:
 
 | t | Fields | When |
 |---|--------|------|
-| `hello` | `protocol, version, name, password?, hostKey?` | first message |
+| `hello` | `protocol, version, name, password?, hostKey?, spectate?, rejoin?: { client, key }` | first message |
 | `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?` | lobby |
+| `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
+| `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
+| `resume` | | rejoining player, after catching up |
+| `synced` | | spectator joining a running game, after catching up |
 | `options` | `options` (host only) | lobby |
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
@@ -229,10 +233,16 @@ Client to server:
 | `hash` | `tick, hash` | in game, every 25 ticks |
 | `leave` | | any time |
 
-Server to client: `welcome {you, hostId, session}`, `lobby {slots, options, map}`,
-`chat {from, text}`, `start {seed, options, map, players, delay}`, `frame
-{tick, orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player}`,
-`error {code, message}`.
+Server to client: `welcome {you, hostId, session, role, key?}`, `lobby {slots,
+options, map, hostId, spectators: [{client, name}], maxSpectators}`, `chat
+{from, text}`, `start {seed, options, map, players, delay}`, `frame {tick,
+orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
+reason}` (`player` null for spectators and lobby members; reasons `left`,
+`dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
+[[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
+{player, client, name, tick}`, `error {code, message}`. Protocol version 3
+(`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
+at `hello`.
 
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
@@ -245,6 +255,66 @@ client runs waiting frames at once as soon as more than `delay` are queued.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
 
+### Reconnecting
+
+Every member gets a rejoin key in `welcome.key` (32 random bytes, base64url;
+the server stores its SHA-256 only and compares in constant time). The client
+keeps `{ id, client, key, name }` per tab in sessionStorage (`webra.rejoin.v1`).
+
+- A player's connection closing in a running game (or the stall drop above)
+  takes its seat out of lockstep at once: nobody waits for it. Everyone gets
+  `left` with reason `disconnected` (or `dropped`). The seat may come back
+  within `RECONNECT_GRACE_MS` (2 minutes); after that it is `expired`.
+  **The game does not pause** for a missing player: its units keep their last
+  orders. `left`, `kicked` and `removed` (protocol violations) are final.
+- `hello` with `rejoin: { client, key }` (no password needed: the key proves
+  an earlier admission; wrong keys count toward the per-IP lockout). The
+  server answers `welcome` (no new key), `start` (the same fields as at the
+  start), `log` messages (the order log: every frame that had orders, in tick
+  order, at most 96 KiB per message) and `sync { tick, check }`: every frame
+  before `tick` was sent, the ones not in the log were empty; `check` is the
+  last state hash a strict majority of players reported (after running tick
+  `check.tick`), or null. Live `frame`s follow (one may repeat a logged frame).
+- The client fast-forwards (a time budget per animation frame), compares its
+  state hash at `check.tick`, then sends `resume`. The server answers `back`
+  to everyone with `tick` = its `next frame + delay`: the rejoined player's
+  orders count from that frame on (earlier frames go out without it), and it
+  sends hashes for ticks from there on. It must resume within 60 s plus 5 ms
+  per tick played so far (at most 15 minutes). If its connection drops while
+  catching up, it keeps only what is left of the 2 minute grace that started
+  when it left play (rejoins never extend it).
+- The seat keeps its stall budget: the debt it left with is restored (it
+  drains over wall time as usual), and so is its hold time in the current
+  drop window while that window has not renewed, so disconnecting never
+  resets the drop rules. At most `MAX_REJOINS` (10) rejoins per member and
+  game; rejoins that are refused anyway (cap, seat gone, game over) never
+  touch the member's open connection.
+- A tab whose connection drops reconnects by itself with backoff and keeps
+  its game (it only runs the frames it missed); after a page reload it
+  rebuilds the game from the start message and the log.
+- The order log lives in Durable Object storage: chunks of up to 512 frames
+  or 64 KiB of JSON, gzip compressed (`log:<n>`), deleted with the session.
+  It stops at `LOG_MAX_BYTES` (16 MiB of JSON); from then on rejoins and late
+  spectators are refused and the game goes on. A catch-up counts from its
+  start until the client confirms (`resume`, or `synced` from a spectator,
+  which must come within the catch-up time); at most 2 count at once, at most
+  6 start per minute, and their bytes are budgeted (each takes the log's
+  current size; bursts of two full logs, refilled by one full log per
+  minute). Refused ones get `rate_limited` and retry.
+- Chat: one line a second per connection, bursts of five; flooding closes
+  the connection.
+
+### Spectators
+
+Lobby places for observers: the host sets `maxSpectators` (0..8, default 2).
+`hello` with `spectate: true` joins as a spectator (same password and host
+key rules as players), in the lobby or in a running game (then like a rejoin:
+`start`, `log`, `sync`, live frames). In the lobby a member switches between
+an open slot and the spectators with `spectate`; a spectating host keeps the
+host role. Spectators are not in `start.players`, receive every frame and
+chat, never count for stalls or hash majorities, and the server removes a
+spectator that sends `orders` or `hash` (`left` reason `removed`).
+
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
 an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 (`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
@@ -253,6 +323,16 @@ an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 skipped, returns the count). `Game.state_hash()` (hex string) for desync
 checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
+
+Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
+`build_render` and `fog_ptr` renders the whole map with every actor live (no
+ghosts, no owner-only decorations); `Game.observer_stats()` returns `[{
+player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
+buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
+for the non-neutral players (kills credited to the owner of the weapon that
+dealt the killing damage; not part of the state hash). `Game.snapshot()` and
+`game.restore(snapshot)` copy the whole world in memory (replay seeking; not
+serialized).
 
 ### Production queues (`engine/src/production.rs`)
 
@@ -452,3 +532,45 @@ fails when CHANGELOG.md has no release for the version in package.json. Deploy: 
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Storage: Durable
 Objects (SQLite) for sessions, D1 database `webra` for maps and the session
 directory.
+
+## 7. Replays and saves
+
+Every game records itself (apps/game/js/replay.js): the engine runs in
+lockstep mode also in single player, so the local player's orders go through
+the outbox and are applied as frames, exactly like online. A replay or save
+file is JSON, validated by `parseReplay` in packages/protocol (src/replay.js)
+before any use:
+
+```jsonc
+{
+  "format": "webra-replay", "version": 1,
+  "kind": "replay",                 // or "save" (skirmish only)
+  "mode": "skirmish",               // or "online"
+  "engine": "0.3.0+abcdef12",       // Game version(): files only load in the same build
+  "createdAt": 1760000000000,
+  "title": "England vs 1 opponent", // 1..64 chars
+  "options": { ... },               // engine game options (section 3), closed slots left out
+  "map": null,                      // or the canonical map JSON text (section 2)
+  "mapHash": null,                  // sha256 of `map`, checked on load
+  "player": 0,                      // the recording player, null for a spectator
+  "ticks": 1200,                    // ticks recorded
+  "frames": [[12, [[0, [{ "o": "move", ... }]]]]],  // non-empty frames, tick < ticks, increasing
+  "hashes": [[250, "0123456789abcdef"]]            // state hash after N ticks, every 250 ticks
+}
+```
+
+- Limits: 32 MiB, eight hours of game time, orders and options as strict as
+  the network messages, frame players within the options, map canonical and
+  matching its hash. A modded map shows the modded-map warning first.
+- Another engine version: a clear message, nothing runs (the simulation can
+  differ between builds).
+- Playback feeds the frames into a fresh game at the same ticks and compares
+  the stored hashes ("this replay no longer matches the game from m:ss").
+  The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
+  (backwards from in-memory snapshots, `Game.snapshot`), and switches between
+  the whole map and each player's view with the observer stats.
+- A save is a replay of kind `save` whose `hashes` end with the hash of its
+  last tick. Loading re-simulates it (fast-forward with progress), refuses it
+  when a stored hash does not match, then play continues and the recording
+  goes on from the save. Saves go to the browser (IndexedDB database
+  `webra`, store `saves`, at most 50) or to a file.

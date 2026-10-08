@@ -619,6 +619,7 @@ pub struct Prereq {
     pub negate: bool,
 }
 
+#[derive(Clone)]
 pub struct BuildingInfo {
     pub width: i32,
     pub height: i32,
@@ -662,12 +663,14 @@ impl BuildingInfo {
     }
 }
 
+#[derive(Clone)]
 pub struct RefineryInfo {
     pub dock_offset: (i32, i32),
     pub free_actor: usize,
     pub free_actor_offset: (i32, i32),
 }
 
+#[derive(Clone)]
 pub struct ActorInfo {
     pub id: String,
     pub name: String,
@@ -744,6 +747,7 @@ pub enum WarheadKind {
     Percent,
 }
 
+#[derive(Clone)]
 pub struct Warhead {
     pub kind: WarheadKind,
     pub damage: i32,
@@ -795,6 +799,7 @@ impl Warhead {
     }
 }
 
+#[derive(Clone)]
 pub struct WeaponInfo {
     pub name: String,
     pub range: i32,
@@ -832,6 +837,7 @@ impl WeaponInfo {
     }
 }
 
+#[derive(Clone)]
 pub struct Locomotor {
     pub name: String,
     pub domain: Domain,
@@ -841,6 +847,7 @@ pub struct Locomotor {
     pub crushes_infantry: bool,
 }
 
+#[derive(Clone)]
 pub struct Rules {
     pub factions: Vec<String>,
     pub player: PlayerRules,

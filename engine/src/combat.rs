@@ -502,7 +502,7 @@ impl World {
             due
         };
         for p in due {
-            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.shot);
+            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.owner, p.shot);
         }
         let mut k = 0;
         while k < self.projectiles.len() {
@@ -563,13 +563,15 @@ impl World {
             if delay > 0 {
                 self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
             } else {
-                self.apply_warhead(w, h, x, y, shot);
+                self.apply_warhead(w, h, x, y, owner, shot);
             }
         }
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, shot: Shot) {
+    /// Kills are credited to `owner` for the observer stats (observer.rs) and
+    /// to `shot.source` for veterancy (veterancy.rs).
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, owner: u8, shot: Shot) {
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -629,9 +631,11 @@ impl World {
             })
             .collect();
         let types = wh.damage_types;
-        for (u, dmg) in damages {
-            self.damage_from(u, dmg, shot.source, types);
-        }
+        self.with_damage_source(owner, |w| {
+            for (u, dmg) in damages {
+                w.damage_from(u, dmg, shot.source, types);
+            }
+        });
     }
 
     /// Damage without a shooter to credit and without damage types (tests).

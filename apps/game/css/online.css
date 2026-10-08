@@ -477,3 +477,18 @@
     display: none;
   }
 }
+
+/* ---- Spectators (lobby) ------------------------------------------------------ */
+
+.online-spectators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.online-spectator {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}

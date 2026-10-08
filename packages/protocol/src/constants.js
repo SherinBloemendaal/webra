@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -45,6 +45,33 @@ export const HASH_INTERVAL = 25;
 /** The server drops an in-game player that sent no orders for this long. */
 export const DROP_AFTER_MS = 10_000;
 export const TICKS_PER_SECOND = 25;
+
+// ---- Reconnect and spectators ---------------------------------------------------
+
+/** Spectator places per session: the host picks 0..MAX_SPECTATORS. */
+export const MAX_SPECTATORS = 8;
+export const DEFAULT_MAX_SPECTATORS = 2;
+/**
+ * Rejoin key issued to every member at join (`welcome.key`): 32 random bytes,
+ * base64url. The server stores only its SHA-256.
+ */
+export const SEAT_KEY_RE = /^[A-Za-z0-9_-]{43}$/;
+/** A player whose connection dropped can rejoin the running game this long. */
+export const RECONNECT_GRACE_MS = 120_000;
+/** A rejoining player must catch up and send `resume` within this time. */
+export const RESUME_TIMEOUT_MS = 60_000;
+/** Rejoins per member and game. */
+export const MAX_REJOINS = 10;
+/**
+ * The server keeps the game's order log (non-empty frames, JSON) up to this
+ * size for rejoining players and spectators. A longer log disables both.
+ */
+export const LOG_MAX_BYTES = 16 * 1024 * 1024;
+/** Why a member left (`left.reason`). */
+export const LEFT_REASONS = ['left', 'dropped', 'kicked', 'disconnected', 'removed', 'expired'];
+/** Reasons after which a player can still rejoin a running game. */
+export const REJOINABLE_REASONS = ['dropped', 'disconnected'];
+export const ROLES = ['player', 'spectator'];
 
 // ---- Rate limit (per connection) ---------------------------------------------------
 
@@ -124,6 +151,14 @@ export const C2S = Object.freeze({
   ORDERS: 'orders',
   HASH: 'hash',
   LEAVE: 'leave',
+  /** Host: number of spectator places (lobby). */
+  SPECTATORS: 'spectators',
+  /** Move between a player slot and the spectators (lobby). */
+  SPECTATE: 'spectate',
+  /** A rejoining player caught up with the game and wants its seat back. */
+  RESUME: 'resume',
+  /** A spectator processed the whole catch-up (log and sync). */
+  SYNCED: 'synced',
 });
 
 /** Server to client. */
@@ -136,6 +171,12 @@ export const S2C = Object.freeze({
   DESYNC: 'desync',
   LEFT: 'left',
   ERROR: 'error',
+  /** Order log for a rejoining player or a spectator joining a running game. */
+  LOG: 'log',
+  /** End of the order log: every frame before `tick` was sent. */
+  SYNC: 'sync',
+  /** A player rejoined; its orders count again from `tick` on. */
+  BACK: 'back',
 });
 
 /** Error codes the server sends in `error` messages and HTTP error bodies. */

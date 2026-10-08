@@ -87,7 +87,7 @@ pub struct AbilityFx {
 }
 
 /// World-level ability state (part of `World`).
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct AbilityState {
     /// Mine actor reference per cell (NONE when empty); sized on first use.
     pub mine_at: Vec<u32>,
@@ -216,6 +216,9 @@ impl World {
     /// allied, and no detector of `player` or an ally covers it. Used by
     /// targeting (`targetable`), picking and rendering.
     pub fn is_cloaked_from(&self, i: usize, player: u8) -> bool {
+        if self.render_all {
+            return false; // spectator view (observer.rs)
+        }
         let a = &self.actors[i];
         if a.kind == Kind::Ship {
             return !self.naval_visible(i, player);
@@ -363,7 +366,8 @@ impl World {
 
     /// Whether cell `ci` is hidden from `player` by an enemy gap generator.
     pub fn gen_shrouded(&self, player: u8, ci: usize) -> bool {
-        self.abil.gen_shroud.get(player as usize).is_some_and(|m| m[ci] != 0)
+        // The spectator view (observer.rs) is never shrouded.
+        !self.render_all && self.abil.gen_shroud.get(player as usize).is_some_and(|m| m[ci] != 0)
     }
 
     // ---- Mines ------------------------------------------------------------------------
@@ -698,6 +702,7 @@ impl World {
             let payload = self.rules.actors[self.actors[i].ty as usize].abilities.delivers_cash.as_ref().unwrap().payload;
             let to = self.actors[t].owner;
             self.players[to as usize].cash += payload;
+            self.note_earned(to, payload);
             self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 12, max: 12 });
             self.remove(i);
             return;
@@ -793,10 +798,14 @@ impl World {
                     (u, (base * wh.versus[info.armor] as i64 / 100) as i32)
                 })
                 .collect();
+            // Kills credit the MAD tank's owner (observer.rs) and the tank (veterancy.rs).
+            let owner = self.actors[src].owner;
             let (source, types) = (self.make_ref(src), wh.damage_types);
-            for (u, d) in damages {
-                self.damage_from(u, d, source, types);
-            }
+            self.with_damage_source(owner, |w| {
+                for (u, d) in damages {
+                    w.damage_from(u, d, source, types);
+                }
+            });
         }
     }
 
@@ -953,7 +962,7 @@ impl World {
                 if !view.contains(x, y, 16.0) {
                     continue;
                 }
-                let own = self.are_allies(a.owner, player);
+                let own = self.render_allied(a.owner, player);
                 if !own && (vis[self.cell_index(a.x, a.y)] == 0 || self.is_cloaked_from(i, player)) {
                     continue;
                 }
@@ -982,14 +991,14 @@ impl World {
                 sprites.extend_from_slice(&[x, y, 0.0, ids.abilities_base + 3.0, 0.0, scale, 0.75, 0.0]);
             }
             // Own cloaked units shimmer.
-            if a.ab.cloaked && self.are_allies(a.owner, player) {
+            if a.ab.cloaked && self.render_allied(a.owner, player) {
                 sprites.extend_from_slice(&[x, y, (self.tick % 64) as f32 * 0.1, ids.abilities_base + 7.0, 0.0, 1.0, 0.5, 0.0]);
             }
         }
         // Atom bombs: up from the silo, then down on the target; a beacon marks
         // the target for the owner and allies (DisplayBeacon).
         for n in &self.abil.nukes {
-            if self.are_allies(n.owner, player) {
+            if self.render_allied(n.owner, player) {
                 let (bx, by) = (px(n.x), px(n.y));
                 if view.contains(bx, by, 32.0) {
                     let pulse = 0.6 + 0.4 * ((self.tick % 20) as f32 / 20.0);
@@ -1007,7 +1016,7 @@ impl World {
                 (n.x, n.y, std::f32::consts::FRAC_PI_2, px(CELL * 12) * (n.impact - self.tick) as f32 / half.max(1) as f32)
             };
             let (x, y) = (px(mx), px(my) - lift);
-            if vis[self.cell_index(mx, my)] != 0 && view.contains(x, y, 32.0) {
+            if self.render_sees_cell(player, self.cell_index(mx, my)) && view.contains(x, y, 32.0) {
                 sprites.extend_from_slice(&[x, y, ang, ids.missile, n.owner as f32, 2.0, 1.0, 0.0]);
             }
         }
@@ -1028,7 +1037,7 @@ impl World {
         }
         for f in &self.abil.fx {
             let (x, y) = (px(f.x), px(f.y));
-            if vis[self.cell_index(f.x, f.y)] == 0 || !view.contains(x, y, 96.0) {
+            if !self.render_sees_cell(player, self.cell_index(f.x, f.y)) || !view.contains(x, y, 96.0) {
                 continue;
             }
             let t = 1.0 - f.ttl as f32 / f.max as f32;
@@ -1042,7 +1051,7 @@ impl World {
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
             let a = &self.actors[i];
-            if a.owner != player {
+            if !self.render_owns(a.owner, player) {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
