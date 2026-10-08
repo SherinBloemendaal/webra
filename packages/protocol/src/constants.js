@@ -155,6 +155,8 @@ export const C2S = Object.freeze({
   SPECTATE: 'spectate',
   /** A rejoining player caught up with the game and wants its seat back. */
   RESUME: 'resume',
+  /** A spectator processed the whole catch-up (log and sync). */
+  SYNCED: 'synced',
 });
 
 /** Server to client. */

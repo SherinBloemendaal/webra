@@ -290,6 +290,10 @@ const CLIENT = {
     object(m, ['t'], 'resume');
     return { t: C2S.RESUME };
   },
+  [C2S.SYNCED](m) {
+    object(m, ['t'], 'synced');
+    return { t: C2S.SYNCED };
+  },
 };
 
 // ---- Server to client ---------------------------------------------------------------------
@@ -554,5 +558,6 @@ export const client = {
   spectators: (max) => ({ t: C2S.SPECTATORS, max }),
   spectate: (on) => ({ t: C2S.SPECTATE, on }),
   resume: () => ({ t: C2S.RESUME }),
+  synced: () => ({ t: C2S.SYNCED }),
 };
 

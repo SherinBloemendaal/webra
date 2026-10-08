@@ -305,6 +305,8 @@ test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   bad({ t: 'spectate', on: 1 });
   assert.deepEqual(ok({ t: 'resume' }), { t: 'resume' });
   bad({ t: 'resume', tick: 5 }, /unknown field/);
+  assert.deepEqual(ok({ t: 'synced' }), { t: 'synced' });
+  bad({ t: 'synced', tick: 5 }, /unknown field/);
 });
 
 test('server messages for rejoin and spectators reject inconsistent data', () => {
