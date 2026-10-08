@@ -69,7 +69,7 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
     };
     let player = r.range(0, 2) as u8;
     let keys = ["", "spyplane", "paratroopers", "parabombs", "NukePower", "chronoshift", "IRONCURTAIN", "GpsPower", "x\u{0}y"];
-    match r.range(0, 18) {
+    match r.range(0, 19) {
         0 => Order::Move { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r), attack_move: r.chance(50) },
         1 => Order::Smart { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r) },
         2 => Order::Attack { player, ids: ids(r), target: id(r) },
@@ -95,6 +95,7 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
         // Debug menu cheats (debug.rs): ignored here, the busy world has no cheats option.
         15 => Order::DevFlag { player, flag: crate::debug::DevFlag::ALL[r.range(0, 6) as usize], on: r.chance(50) },
         16 => Order::DevCash { player },
+        17 => Order::DevExperience { player, ids: ids(r) },
         _ => Order::DevKill { player, ids: ids(r) },
     }
 }
@@ -152,6 +153,8 @@ fn hostile_orders_through_json_never_crash_the_engine() {
         r#"{"o":"dev_cash","player":0}"#,
         r#"{"o":"dev_flag","player":1,"flag":"disable_shroud","on":true}"#,
         r#"{"o":"dev_kill","player":0,"ids":[0,1,2,3,4,5,6,7,8,9,4294967295]}"#,
+        r#"{"o":"dev_experience","player":1,"ids":[0,1,2,3,4,5,6,7,8,9,4294967295]}"#,
+        r#"{"o":"dev_experience","player":0,"ids":[],"levels":1000}"#,
     ];
     for json in bad {
         if let Ok(o) = serde_json::from_str::<Order>(json) {
@@ -278,6 +281,17 @@ fn nested_rules_references_and_sizes_are_validated() {
     let sighted = actor_with(|a| !a["abilities"]["gap_sight"].is_null());
     let plane = actor_with(|a| !a["unit"]["aircraft"]["crash_weapon"].is_null());
     let minelayer = actor_with(|a| !a["abilities"]["minelayer"].is_null());
+    let ranked = actor_with(|a| !a["experience"]["heal"].is_null() && !a["gives_experience"].is_null());
+    let soldier = actor_with(|a| !a["take_cover"].is_null());
+    // The fastest unit that ranks up: 140 % of its speed must stay within 2 cells per tick.
+    let fast = base_rules()["actors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| !a["experience"].is_null() && a["unit"]["speed"].as_i64().is_some_and(|s| s >= 205))
+        .map(|a| a["id"].as_str().unwrap().to_string())
+        .next()
+        .unwrap();
     let cases: Vec<(&str, String, Edit)> = vec![
         // Indices into the weapon table (combat.rs impact via abilities.rs fire_nuke and tick_nukes).
         ("missile_weapon", silo.clone(), Box::new(|a| edit_power(a, "NukePower", |p| p["missile_weapon"] = bad_weapon.clone()))),
@@ -309,6 +323,54 @@ fn nested_rules_references_and_sizes_are_validated() {
         ("ammo_pips", plane.clone(), Box::new(|a| a["unit"]["aircraft"]["ammo_pips"] = serde_json::json!(2_000_000_000))),
         // Entries inside replaced arrays cannot change kind.
         ("kind", silo.clone(), Box::new(|a| edit_power(a, "NukePower", |p| p["kind"] = serde_json::json!("GpsPower")))),
+        // Veterancy (veterancy.rs): one modifier per level, bounded percentages and levels.
+        ("experience.firepower", ranked.clone(), Box::new(|a| a["experience"]["firepower"] = serde_json::json!([105]))),
+        ("experience.speed", ranked.clone(), Box::new(|a| a["experience"]["speed"] = serde_json::json!([100, 100, 100, -5]))),
+        ("experience.damage", ranked.clone(), Box::new(|a| a["experience"]["damage"] = serde_json::json!([100, 100, 100, 1_000_000]))),
+        ("experience.thresholds", ranked.clone(), Box::new(|a| a["experience"]["thresholds"] = serde_json::json!([400, 200, 800, 1600]))),
+        (
+            "experience.thresholds",
+            ranked.clone(),
+            Box::new(|a| a["experience"]["thresholds"] = serde_json::json!([200, 400, 800, 2_000_000_000])),
+        ),
+        (
+            "experience levels",
+            ranked.clone(),
+            Box::new(|a| {
+                for k in ["thresholds", "firepower", "damage", "speed", "reload"] {
+                    a["experience"][k] = serde_json::json!(vec![100; 9]);
+                }
+            }),
+        ),
+        ("experience.heal.rank", ranked.clone(), Box::new(|a| a["experience"]["heal"]["rank"] = serde_json::json!(5))),
+        ("experience.heal.delay", ranked.clone(), Box::new(|a| a["experience"]["heal"]["delay"] = serde_json::json!(0))),
+        (
+            "experience.heal.percentage_step",
+            ranked.clone(),
+            Box::new(|a| a["experience"]["heal"]["percentage_step"] = serde_json::json!(101)),
+        ),
+        // Rank speed must keep the unit within its movement bound (2 cells per tick).
+        ("experience.speed", fast.clone(), Box::new(|a| a["experience"]["speed"] = serde_json::json!([105, 110, 120, 1000]))),
+        ("gives_experience.experience", ranked.clone(), Box::new(|a| a["gives_experience"]["experience"] = serde_json::json!(-2))),
+        (
+            "gives_experience.actor_modifier",
+            ranked.clone(),
+            Box::new(|a| a["gives_experience"]["actor_modifier"] = serde_json::json!(2_000_000_000)),
+        ),
+        // TakeCover (veterancy.rs): positive duration, bounded modifiers and type lists.
+        ("take_cover.duration", soldier.clone(), Box::new(|a| a["take_cover"]["duration"] = serde_json::json!(0))),
+        ("take_cover.duration", soldier.clone(), Box::new(|a| a["take_cover"]["duration"] = serde_json::json!(2_000_000_000))),
+        ("take_cover.speed_modifier", soldier.clone(), Box::new(|a| a["take_cover"]["speed_modifier"] = serde_json::json!(-1))),
+        (
+            "take_cover.damage_modifiers",
+            soldier.clone(),
+            Box::new(|a| a["take_cover"]["damage_modifiers"][0]["percent"] = serde_json::json!(5000)),
+        ),
+        (
+            "take_cover.damage_triggers",
+            soldier.clone(),
+            Box::new(|a| a["take_cover"]["damage_triggers"] = serde_json::json!(vec!["TriggerProne"; 17])),
+        ),
     ];
     for (what, id, edit) in cases {
         let r = load_edited("actors", &id, |a| edit(a));
@@ -326,6 +388,20 @@ fn nested_rules_references_and_sizes_are_validated() {
         w["warheads"][0]["falloff"] = serde_json::json!(vec![100; 64]);
     })
     .is_err());
+    // Warheads list a bounded number of damage types; too many distinct
+    // TakeCover types do not fit the damage type bit mask.
+    assert!(load_edited("weapons", "25mm", |w| w["warheads"][0]["damage_types"] = serde_json::json!(vec!["TriggerProne"; 17])).is_err());
+    let many: Vec<String> = (0..16).map(|k| format!("Type{k}")).collect();
+    let many2: Vec<String> = (16..33).map(|k| format!("Type{k}")).collect();
+    let r = crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": {
+        "E1": { "take_cover": { "damage_triggers": many } },
+        "E3": { "take_cover": { "damage_triggers": many2[..16].to_vec() } },
+        "E1R1": { "take_cover": { "damage_triggers": many2[16..].to_vec() } },
+    } })));
+    assert!(r.is_err(), "33 distinct damage types");
+    // Reasonable veterancy tuning is accepted and used.
+    let tuned = load_edited("actors", &ranked, |a| a["experience"]["firepower"] = serde_json::json!([150, 200, 250, 300])).unwrap();
+    assert_eq!(tuned.actors[tuned.actor_index(&ranked).unwrap()].experience.as_ref().unwrap().firepower, vec![150, 200, 250, 300]);
     // Tuning inside an array that keeps every kind is still allowed.
     let tuned = load_edited("weapons", "25mm", |w| w["warheads"][0]["damage"] = serde_json::json!(77)).unwrap();
     assert_eq!(tuned.weapons[tuned.weapons.iter().position(|w| w.name == "25mm").unwrap()].warheads[0].damage, 77);
@@ -481,6 +557,10 @@ fn exercise(over: &serde_json::Value, seed: u64) {
                 if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine {
                     continue;
                 }
+                // Rank bonuses and elite repair (veterancy.rs) of modded values take part too.
+                w.give_levels(i, 2);
+                w.actors[i].prone_ticks = 1000;
+                let a = &w.actors[i];
                 let (player, ids) = (a.owner, vec![w.make_ref(i)]);
                 let (ex, ey) = enemy(player as usize);
                 w.queue_order(Order::Deploy { player, ids: ids.clone() });

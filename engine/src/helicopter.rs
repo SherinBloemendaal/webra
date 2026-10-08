@@ -225,7 +225,8 @@ impl World {
     /// (OpenRA CanSlide). True once exactly there.
     fn heli_fly(&mut self, i: usize, tx: i32, ty: i32) -> bool {
         let unit = self.rules.actors[self.actors[i].ty as usize].unit.as_ref().unwrap();
-        let (speed, turn) = (unit.speed.max(1), unit.turn_speed);
+        // Veterans fly faster (SpeedMultiplier, veterancy.rs).
+        let (speed, turn) = (self.modified_speed(i, unit.speed).max(1), unit.turn_speed);
         let (max_x, max_y) = (self.map.width * CELL - 1, self.map.height * CELL - 1);
         let (tx, ty) = (tx.clamp(0, max_x), ty.clamp(0, max_y));
         let a = &mut self.actors[i];
@@ -436,6 +437,7 @@ impl World {
             }
             self.fire(i, t, w);
             let wi = &self.rules.weapons[w];
+            let full_reload = self.modified_reload(i, reload_override.unwrap_or(wi.reload));
             let a = &mut self.actors[i];
             // AmmoPool: one round per shot.
             if max_ammo > 0 {
@@ -446,7 +448,7 @@ impl World {
                 a.reload[slot] = wi.burst_delay(a.burst_shot[slot] - 1).max(1);
             } else {
                 a.burst_shot[slot] = 0;
-                a.reload[slot] = reload_override.unwrap_or(wi.reload).max(1);
+                a.reload[slot] = full_reload;
             }
         }
     }
@@ -930,6 +932,7 @@ impl World {
                         x: c.x,
                         y: c.y,
                         owner: c.owner,
+                        shot: crate::veterancy::Shot::NONE,
                     });
                 }
             }

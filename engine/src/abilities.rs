@@ -787,8 +787,9 @@ impl World {
                     (u, (base * wh.versus[info.armor] as i64 / 100) as i32)
                 })
                 .collect();
+            let (source, types) = (self.make_ref(src), wh.damage_types);
             for (u, d) in damages {
-                self.damage(u, d);
+                self.damage_from(u, d, source, types);
             }
         }
     }

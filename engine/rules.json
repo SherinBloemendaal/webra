@@ -79,6 +79,12 @@
      "needs_option": true
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -180,6 +186,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -264,6 +276,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -348,6 +366,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -444,6 +468,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -513,6 +543,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -625,6 +661,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -735,6 +777,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -853,6 +901,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -958,6 +1012,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1048,6 +1108,12 @@
     },
     "provides_radar": {}
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1132,6 +1198,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1314,6 +1386,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1492,6 +1570,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1597,6 +1681,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1721,6 +1811,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1869,6 +1965,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1962,6 +2064,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -2056,6 +2164,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2171,6 +2285,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2276,6 +2396,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2366,6 +2492,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -2434,6 +2566,9 @@
      "wall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2502,6 +2637,9 @@
      "wall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2569,6 +2707,9 @@
      "heavywall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2665,6 +2806,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2776,6 +2923,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2858,6 +3011,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2940,6 +3099,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3031,6 +3196,12 @@
      "range": 6144
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3120,6 +3291,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3195,6 +3372,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -3263,6 +3446,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3333,6 +3522,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3403,6 +3598,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3472,6 +3673,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3542,6 +3749,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3612,6 +3825,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3682,6 +3901,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3752,6 +3977,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3822,6 +4053,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -3891,6 +4128,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -3959,6 +4202,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -4038,6 +4287,63 @@
      "infantry"
     ]
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -4090,6 +4396,63 @@
     },
     "crushable": [
      "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
     ]
    },
    "unit": {
@@ -4145,6 +4508,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4211,6 +4580,12 @@
      "needs_option": false
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 60,
     "turn_speed": 20,
@@ -4263,6 +4638,12 @@
      "payload": 500
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4332,6 +4713,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 164,
     "turn_speed": 40,
@@ -4396,6 +4822,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -4454,6 +4925,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -4511,6 +5027,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4569,6 +5130,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4627,6 +5233,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -4692,6 +5343,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -4745,6 +5441,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4798,6 +5539,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -4873,6 +5659,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4927,6 +5758,12 @@
      "range": 7168
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 68,
     "turn_speed": 20,
@@ -4981,6 +5818,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -5035,6 +5878,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -5089,6 +5977,12 @@
     },
     "demo_truck": {}
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 67,
     "turn_speed": 20,
@@ -5146,6 +6040,51 @@
      "max_distance": 12
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 86,
     "turn_speed": 20,
@@ -5232,6 +6171,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5292,6 +6276,12 @@
      "detonation_weapon": 31
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 46,
     "turn_speed": 20,
@@ -5350,6 +6340,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 115,
     "turn_speed": 512,
@@ -5416,6 +6451,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 142,
     "turn_speed": 28,
@@ -5491,6 +6571,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 78,
     "turn_speed": 20,
@@ -5559,6 +6684,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 92,
     "turn_speed": 28,
@@ -5623,6 +6793,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -5701,6 +6916,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -5757,6 +7017,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5837,6 +7142,51 @@
      "range": 8192
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -5918,6 +7268,51 @@
      "range": 8192
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -6000,6 +7395,51 @@
      "range": 10240
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -6080,6 +7520,51 @@
      "range": 9216
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -6153,6 +7638,51 @@
      "range": 11264
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -6233,6 +7763,63 @@
      "infantry"
     ]
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -6286,6 +7873,63 @@
      "infantry"
     ]
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -6322,6 +7966,12 @@
    "self_heal": null,
    "turret_offsets": [],
    "abilities": {},
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 373,
     "turn_speed": 28,
@@ -6390,6 +8040,12 @@
      "eject_on_death": false
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": 1000,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -6449,6 +8105,12 @@
    "self_heal": null,
    "turret_offsets": [],
    "abilities": {},
+   "experience": null,
+   "gives_experience": {
+    "experience": 1000,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -6521,7 +8183,10 @@
      ],
      "off_when_critical": false
     }
-   }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null
   },
   {
    "id": "MINP",
@@ -6562,7 +8227,10 @@
      ],
      "off_when_critical": false
     }
-   }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null
   }
  ],
  "weapons": [
@@ -6604,7 +8272,13 @@
      ],
      "delay": 0,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6628,7 +8302,13 @@
      ],
      "delay": 5,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6652,7 +8332,13 @@
      ],
      "delay": 10,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6676,7 +8362,13 @@
      ],
      "delay": 15,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6700,7 +8392,13 @@
      ],
      "delay": 20,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -6739,7 +8437,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6760,7 +8463,12 @@
      ],
      "delay": 2,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6781,7 +8489,12 @@
      ],
      "delay": 4,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6802,7 +8515,12 @@
      ],
      "delay": 6,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6823,7 +8541,12 @@
      ],
      "delay": 8,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6844,7 +8567,12 @@
      ],
      "delay": 10,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -6883,7 +8611,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -6922,7 +8655,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -6961,7 +8700,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ElectricityDeath"
+     ]
     }
    ]
   },
@@ -7000,7 +8744,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7039,7 +8788,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7078,7 +8832,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7117,7 +8876,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7156,7 +8920,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7195,7 +8964,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7234,7 +9008,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7273,7 +9052,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7312,7 +9096,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7351,7 +9140,12 @@
      ],
      "delay": 0,
      "valid": 31,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7390,7 +9184,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7429,7 +9228,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7468,7 +9272,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7507,7 +9316,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 8
+     "invalid": 8,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7546,7 +9360,12 @@
      ],
      "delay": 0,
      "valid": 9,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7588,7 +9407,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7630,7 +9455,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7669,7 +9500,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7708,7 +9544,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7747,7 +9588,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 32
+     "invalid": 32,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7786,7 +9632,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ElectricityDeath"
+     ]
     }
    ]
   },
@@ -7825,7 +9676,8 @@
      ],
      "delay": 0,
      "valid": 7,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": []
     }
    ]
   },
@@ -7867,7 +9719,13 @@
      ],
      "delay": 0,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7891,7 +9749,13 @@
      ],
      "delay": 5,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7915,7 +9779,13 @@
      ],
      "delay": 10,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7939,7 +9809,13 @@
      ],
      "delay": 15,
      "valid": 87,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7978,7 +9854,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8017,7 +9898,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8056,7 +9942,8 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 1
+     "invalid": 1,
+     "damage_types": []
     }
    ]
   },
@@ -8095,7 +9982,8 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 1
+     "invalid": 1,
+     "damage_types": []
     }
    ]
   },
@@ -8134,7 +10022,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8173,7 +10066,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8212,7 +10110,10 @@
      ],
      "delay": 0,
      "valid": 128,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8251,7 +10152,12 @@
      ],
      "delay": 0,
      "valid": 80,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8290,7 +10196,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8329,7 +10240,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8368,7 +10284,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8410,7 +10331,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8452,7 +10378,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8494,7 +10425,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8536,7 +10472,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8575,7 +10516,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -8614,7 +10560,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8653,7 +10604,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8692,7 +10648,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -8734,7 +10695,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8773,7 +10739,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8812,7 +10783,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8851,7 +10827,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 32
+     "invalid": 32,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   }
