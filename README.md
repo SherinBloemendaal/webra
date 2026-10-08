@@ -52,6 +52,12 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
 
+### Phones and tablets
+- [x] **Touch controls** with Pointer Events (mouse play unchanged): tap to select or give the order, double tap for every unit of that type on screen, drag to box select, two fingers to pan and pinch to zoom, long press to force attack or attack-move
+- [x] Touch action bar for what the keyboard does on desktop: Add (Shift), attack move, force attack, stop, deploy, select all, cancel; building placement by dragging the footprint with Place and Cancel buttons; support powers aimed by tap
+- [x] Phone layouts: the build sidebar becomes a collapsible drawer (bottom in portrait, right in landscape), 44 px touch targets, safe-area insets for notches, compact HUD, Menu button for the game menu; the lobby and the website work at phone width
+- [x] Render resolution cap and a low quality setting for mobile GPUs
+
 ### Sound
 - [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
 - [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
@@ -61,7 +67,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Engineering
 - [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
-- [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format and editor
+- [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format, editor, touch gestures and layouts
 - [x] Security review of multiplayer with every finding fixed: see [docs/security.md](docs/security.md)
 - [x] CI on every push, semantic versioning from Conventional Commits, automatic deploys to Cloudflare
 
@@ -74,7 +80,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
 - [ ] Loading OpenRA `.oramap` maps
 - [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
-- [ ] Mobile/touch controls
+- [x] Mobile/touch controls
 
 ## Architecture
 
@@ -159,7 +165,7 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 
 ## Controls
 
-Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
+Press **Esc** in a game (or the **Menu** button) for the game menu: settings (scroll speeds, unit paths, render resolution and low quality, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
 
 | Input | Action |
 |-------|--------|
@@ -195,11 +201,34 @@ Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, 
 | F10 | Game menu |
 | P or Pause | Pause (single player; opens the menu) |
 | Alt + Enter | Fullscreen |
-| Sidebar left click | Build (Shift + click queues 5) |
-| Sidebar right click | Cancel (refunds what was paid) |
-| Click a finished building in the sidebar | Start placing it |
+| Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
+| Sidebar right click | Cancel the last queued one (refunds what was paid) |
+| Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
+
+### Touch (phones and tablets)
+
+Touch and pen input works next to the mouse and keyboard; the touch action bar appears at the bottom left of the battlefield on touch screens.
+
+| Gesture or button | Action |
+|-------------------|--------|
+| Tap | Select. With your units selected: give the order (move, attack, harvest, dock, repair, rally point); tap one of your own units to select it instead |
+| Double tap | Select all units of that type on screen |
+| Drag | Box select. In a targeting mode (attack move, force attack, sell, abilities): aim, then lift to act |
+| Two-finger drag | Pan the camera |
+| Pinch | Zoom |
+| Long press | Units selected: force attack the unit or building under the finger (your own too), or attack-move to the ground. Otherwise: cancel the current mode or clear the selection (the right click) |
+| **Add** | Stands in for Shift: taps and boxes add to (or remove from) the selection, attack move and sell mode stay active, sidebar cards queue 5 |
+| **A-Move**, **Force** | Attack move or force attack with the next tap |
+| **Stop**, **Deploy**, **All**, **Cancel** | Stop; deploy, unload or use an ability; select everything on screen (twice: the whole map); cancel the mode or clear the selection |
+| Placing a building | Tap or drag anywhere to move the footprint, then **Place** (or **Cancel**) |
+| Support power | Tap the target; drag from the target to choose the direction aircraft fly in |
+| Long press a sidebar card | Cancel the last queued one |
+| **Build** / **Map** (phones) | Show or hide the build sidebar drawer; it also tucks away while you place a building |
+| **Menu** | Game menu (pause, settings, controls, sound, leave) |
+
+Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over the battlefield only. On phones with a high pixel density, lower **Max resolution** or turn on **Low quality** in Settings when the frame rate drops.
 
 Notes on browsers:
 

@@ -46,6 +46,8 @@ mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
+mod tests_production;
+#[cfg(test)]
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
@@ -470,6 +472,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "gemBales": a.gem_bales,
             "ability": self.world.ability_json(i),
             // Helicopters: AmmoPool rounds left and size, and whether landed.
             "ammo": self.world.heli_ammo(i).0,
@@ -643,11 +646,10 @@ impl Game {
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
-                let av = w.availability(player, t as u16);
                 let reqs = w.requirements(player, t as u16);
                 json!({
                     "id": w.rules.actors[t].id,
-                    "enabled": av.enabled,
+                    "enabled": w.can_produce(player, t as u16),
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
@@ -947,7 +949,9 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
 fn preview_rgba(m: &map::Map) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
-        let rgb = if m.ore[i] > 0 {
+        let rgb = if m.gems[i] > 0 {
+            [190, 70, 150]
+        } else if m.ore[i] > 0 {
             [200, 160, 50]
         } else {
             match m.terrain[i] {

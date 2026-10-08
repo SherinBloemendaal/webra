@@ -652,6 +652,7 @@ impl World {
     fn terrain_name(&self, ci: usize) -> &'static str {
         use crate::map::Terrain;
         match self.map.terrain[ci] {
+            Terrain::Clear if self.map.gems[ci] > 0 => "Gems",
             Terrain::Clear if self.map.ore[ci] > 0 => "Ore",
             Terrain::Clear => "Clear",
             Terrain::Rough => "Rough",

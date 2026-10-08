@@ -132,6 +132,45 @@ test('map uploads are validated against the engine rules and hashed canonically'
   assert.ok(readFileSync(new URL('../../../engine/rules.json', import.meta.url)).length > 1000);
 });
 
+test('map uploads accept format 1 and format 2 (gems) maps and refuse bad gem layers', async () => {
+  const w = 32;
+  const layer = (fill = {}) => {
+    const b = Buffer.alloc(w * w);
+    for (const [i, v] of Object.entries(fill)) b[Number(i)] = v;
+    return b.toString('base64');
+  };
+  const map = {
+    format: 2,
+    name: 'Gems',
+    author: 'Me',
+    width: w,
+    height: w,
+    terrain: layer(),
+    ore: layer({ 300: 6 }),
+    gems: layer({ 301: 3, 302: 1 }),
+    spawns: [
+      [1, 1],
+      [20, 20],
+    ],
+  };
+  const p = await prepareMap(JSON.stringify(map));
+  assert.ok(p.canonical.includes(`"ore":"${map.ore}","gems":"${map.gems}","spawns"`), p.canonical.slice(0, 200));
+  // The format 1 version of the same map (no gems) is a different, still valid map.
+  const { gems: _g, ...old } = map;
+  const p1 = await prepareMap(JSON.stringify({ ...old, format: 1 }));
+  assert.notEqual(p1.hash, p.hash);
+  assert.ok(!p1.canonical.includes('"gems"'));
+  for (const [bad, re] of [
+    [{ ...map, format: 1 }, /format 1 maps have no gems layer/],
+    [{ ...old }, /format 2 maps need a gems layer/],
+    [{ ...map, gems: layer({ 300: 1 }) }, /both ore and gems/],
+    [{ ...map, gems: layer({ 301: 4 }) }, /gem density 4/],
+    [{ ...map, terrain: layer({ 301: 3 }) }, /gems can only lie on clear or rough ground/],
+  ]) {
+    await assert.rejects(prepareMap(JSON.stringify(bad)), (e) => e instanceof HttpError && e.status === 422 && re.test(e.message), re.source);
+  }
+});
+
 test('uploads the engine would refuse are rejected by the server too', async () => {
   const { initSync, Game } = await import('../../game/pkg/webra_sim.js');
   initSync({ module: readFileSync(new URL('../../game/pkg/webra_sim_bg.wasm', import.meta.url)) });

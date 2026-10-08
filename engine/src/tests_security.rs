@@ -26,6 +26,7 @@ fn busy_world() -> World {
             let i = w.map.idx(x, y);
             w.map.terrain[i] = crate::map::Terrain::Water;
             w.map.ore[i] = 0;
+            w.map.gems[i] = 0;
         }
     }
     w.pass = crate::flowfield::Passability::new(&w.map);

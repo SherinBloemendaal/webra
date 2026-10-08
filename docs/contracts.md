@@ -22,17 +22,18 @@ build copies `packages/protocol/src` to `dist/play/protocol/`). In the repo
 imports it only through the re-export file `apps/game/js/protocol.js` (from
 `../protocol/index.js`), so the same path works in local dev and in `dist/`.
 
-## 2. Map format (`.webra-map.json`, format 1)
+## 2. Map format (`.webra-map.json`, formats 1 and 2)
 
 ```jsonc
 {
-  "format": 1,
+  "format": 2,                      // 1 (ore only) or 2 (ore and gems), see below
   "name": "Twin Rivers",            // 1..64 chars
   "author": "Commander",            // 1..64 chars
   "description": "",                // 0..500 chars
   "width": 96, "height": 96,        // 32..256 each
   "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree
   "ore": "<base64>",                // width*height bytes, 0..12 ore density
+  "gems": "<base64>",               // format 2 only: width*height bytes, 0..3 gem density
   "spawns": [[8, 8], [85, 84]],     // 2..8 top-left cells of the starting construction yard / MCV
   "actors": [                       // optional pre-placed actors
     { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral
@@ -41,8 +42,37 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 }
 ```
 
+- Formats: format 2 is format 1 plus the `gems` layer. A format 2 map must
+  have `gems`; a format 1 map must not (`"gems": null` counts as absent).
+  Every reader (engine, `packages/protocol`, editor, server) accepts both.
+  Writers (the engine's `MapData::from_map` and `Game.generated_map`, the
+  editor) write format 2 when any cell holds gems and format 1 otherwise, so
+  maps without gems keep the identity they had before gems existed. A format
+  2 map with an all-zero gems layer is valid, but it is a different map
+  (different hash) from its format 1 twin.
+- Resources (OpenRA `ResourceLayer`): ore holds up to 12 bales per cell,
+  gems up to 3. Both lie on clear or rough ground only, and a cell holds ore
+  or gems, never both. A bale pays `player.ore_value` (25) or
+  `player.gem_value` (50) credits (OpenRA `PlayerResources.ResourceValues`);
+  a harvester carries 20 bales of either or both and the refinery pays each
+  bale at its own value. With the `oreRegrowth` option ore regrows and
+  spreads onto free clear ground; gems neither regrow nor spread (Red Alert).
+  Gem cells slow units like ore cells (OpenRA gives the `Gems` and `Ore`
+  terrain types the same locomotor speeds). Harvesters pick the nearest
+  resource cell by distance only, gems or ore alike, as OpenRA does
+  (`FindAndDeliverResources.ClosestHarvestablePos`). `Game.actor_json`
+  reports `bales` and `gemBales` (how many of them are gems); the terrain
+  texture (`Game.terrain_ptr`, RGBA per cell) has the terrain type in R, ore
+  density in G and gem density in B, each density scaled to 255 at its
+  maximum. Previews colour gem cells (190, 70, 150), ore cells (200, 160, 50).
+- Validation errors for the layers (engine wording, `packages/protocol`
+  matches it): `format 1 maps have no gems layer`, `format 2 maps need a gems
+  layer`, `unsupported map format N`, `invalid gem density N`, `gems can only
+  lie on clear or rough ground`, `a cell cannot hold both ore and gems`,
+  `the gems layer must have N bytes`, `gems is not valid base64`.
 - Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
-  above (`description`, `actors` and `rules` always present; `actors` entries
+  above (`description`, `actors` and `rules` always present, `gems` only in
+  format 2, right after `ore`; `actors` entries
   as `type, owner, x, y, facing`), keys inside `rules` sorted alphabetically at
   every level, integers only, no whitespace. `Game.map_canonical(json)` returns
   exactly that string; JavaScript implementations must match it byte for byte
@@ -65,7 +95,7 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
   `Game.map_canonical(mapJson)`, `Game.validate_map(mapJson)` returns
   `{ ok, errors: [], modded, hash }`; `Game.generated_map(seed, size, players)`
-  exports a generated map file; previews: `Game.map_file_preview(mapJson)` and
+  exports a generated map file (format 2: generated maps have gems); previews: `Game.map_file_preview(mapJson)` and
   `Game.map_preview_players(seed, size, players)` (RGBA per cell, spawns in
   player colours).
 
@@ -94,6 +124,11 @@ its ore fields south of the yard, rock walls north and south, open sides):
 3 and 4 players in two rows (the bottom half repeats the top half), 5 to 8
 on a ring. Their spawns are listed by column, top first, so slots 0 and 1
 (the left column of a 4-player map) against slots 2 and 3 is a mirror match.
+Gems lie only in contested fields, as the dense middle of an ore field: on
+2-player maps in the two contested fields of each half (mirrored), on 3 to 8
+player maps in every field halfway between two neighbouring bases. No base
+pocket holds gems, so every base has the same home ore and gems are always
+something neighbours fight over.
 
 ## 4. Online multiplayer
 
@@ -153,6 +188,29 @@ an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 skipped, returns the count). `Game.state_hash()` (hex string) for desync
 checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
+
+### Production queues (`engine/src/production.rs`)
+
+Orders `start_production {ty, count}` and `cancel_production {ty}` serve every
+queue, structures included (no extra order types):
+
+- Structures queue like units (OpenRA): left click queues one, shift queues
+  five. Only the first item of a queue is built. A finished structure waits
+  for placement and the items behind it do not start until it is placed, so
+  each structure queue has at most one ready structure. `place` only accepts
+  the finished head of the queue.
+- `cancel_production` removes the last queued item of that type and refunds
+  what was paid for it (a finished structure refunds its full cost).
+- OpenRA `CancelUnbuildableItems`: every tick, before production advances,
+  each queued item that can no longer be produced is cancelled and refunded,
+  wherever it is in the queue. That is an item whose prerequisites were lost
+  (a half-built Heavy Tank after the Service Depot died), and every Building
+  and Defense item once the player has no Construction Yard. The rest of the
+  queue carries on; the items can be queued again once the prerequisites (or
+  a deployed MCV) are back. Unit queues keep going from their own factories.
+  `start_production` and `place` are refused for such items.
+- `player_json().buildable[].enabled` is false for structures without a
+  Construction Yard, and their `requires` lists `Construction Yard`.
 
 ## 5. Domains for units
 
@@ -283,7 +341,16 @@ everything on `webra.sherin.dev`:
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
 Build: `npm run build` assembles `dist/` (website at the root, game under
-`play/`). Deploy: GitHub Actions `deploy.yml` runs `wrangler deploy` from
+`play/`) and writes `dist/version.json` and `dist/release-notes.json`. The
+release notes are CHANGELOG.md (written by release-please) as data, parsed by
+`tools/release-notes.mjs`: the newest 30 releases, newest first, each with
+`version`, `date`, `compareUrl` and `sections` of entries `{ scope, text,
+commit, url, refs? }`, plus `scopes` (commit scope to the name players read).
+The game loads it from `../release-notes.json` for its "What's new" dialog
+(once per new version, remembered in localStorage under
+`webra.releaseNotes.seen`) and its Release notes entries in the lobby and the
+game menu; the website's `/changelog` page shows the same file. The build
+fails when CHANGELOG.md has no release for the version in package.json. Deploy: GitHub Actions `deploy.yml` runs `wrangler deploy` from
 `apps/server` on every push to `main` after CI passes, using the repository
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Storage: Durable
 Objects (SQLite) for sessions, D1 database `webra` for maps and the session

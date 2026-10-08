@@ -80,7 +80,10 @@ pub struct Actor {
 
     // Harvesters
     pub harv: HarvState,
+    /// Bales on board, of any resource.
     pub bales: i32,
+    /// How many of `bales` are gems (OpenRA StoresResources keeps a count per type).
+    pub gem_bales: i32,
     pub harv_timer: i32,
     pub harv_cell: u32,
     pub refinery: u32,
@@ -173,6 +176,7 @@ impl Actor {
             moved: false,
             harv: HarvState::Search,
             bales: 0,
+            gem_bales: 0,
             harv_timer: 0,
             harv_cell: NONE,
             refinery: NONE,
@@ -1481,7 +1485,7 @@ impl World {
                 }
             }
         }
-        if any_harv && self.map.ore[ci] > 0 && self.players[player as usize].explored[ci] != 0 {
+        if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
         SmartAction::Move
@@ -1658,7 +1662,7 @@ impl World {
         mix(self.tick as i64);
         for a in &self.actors {
             if a.alive {
-                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
+                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales, a.gem_bales] {
                     mix(v as i64);
                 }
                 // Transports and submarines (cargo.rs, naval.rs).
@@ -1680,6 +1684,9 @@ impl World {
         }
         for &o in &self.map.ore {
             mix(o as i64);
+        }
+        for &g in &self.map.gems {
+            mix(g as i64);
         }
         h
     }
