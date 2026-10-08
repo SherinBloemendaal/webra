@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
+import { DebugMenu } from './debug.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -228,14 +229,31 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
   });
+  // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
+  let paused = false;
+  const debug = new DebugMenu($('field'), {
+    game,
+    input,
+    player,
+    rules,
+    colors: TEAM_COLORS,
+    online: !!online,
+    tickMs,
+    memory: wasm.memory,
+    isPaused: () => paused,
+    step: () => {
+      if (!paused || online) return false;
+      game.tick();
+      return true;
+    },
+  });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules };
+  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
   // ---- Pause --------------------------------------------------------------------
-  let paused = false;
   const setPaused = (on) => {
     paused = on;
     $('pause').hidden = !on;
@@ -276,10 +294,12 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     const dt = Math.min(now - last, 250);
     last = now;
     let alpha = paused ? 1 : acc / tickMs;
+    let simFrameMs = 0;
     if (online) {
       const t0 = performance.now();
       const r = online.driver.advance(dt);
-      if (r.ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / r.ticks) * 0.1;
+      simFrameMs = performance.now() - t0;
+      if (r.ticks > 0) simMs = simMs * 0.9 + (simFrameMs / r.ticks) * 0.1;
       alpha = r.alpha;
     } else if (!paused) {
       acc += dt;
@@ -290,7 +310,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
         acc -= tickMs;
         ticks++;
       }
-      if (ticks > 0) simMs = simMs * 0.9 + ((performance.now() - t0) / ticks) * 0.1;
+      simFrameMs = performance.now() - t0;
+      if (ticks > 0) simMs = simMs * 0.9 + (simFrameMs / ticks) * 0.1;
       if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
       alpha = acc / tickMs;
     }
@@ -305,6 +326,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
 
     // UI rects call into wasm (placement preview), which may grow its memory and
     // detach existing views, so collect them before taking views of wasm memory.
+    const renderStart = performance.now();
     const uiRects = input.uiRects();
     const v = input.viewRect();
     const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
@@ -314,6 +336,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
     rects.set(uiRects, simRectCount * 8);
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
+    // After drawing: the debug views call into wasm, which may detach the views above.
+    debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -330,6 +354,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);
+      debug.update(state);
       if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
         $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
