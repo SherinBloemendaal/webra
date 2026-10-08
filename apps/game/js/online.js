@@ -1121,8 +1121,12 @@ export class OnlineUI {
       rejoining: catchUp,
       recorder,
       onCaughtUp: () => {
+        // Players take their seat back; spectators confirm (the server counts them as catching up until then).
         if (!spectator) this.send({ t: 'resume' });
-        else this.gameLine('Caught up: watching live.');
+        else {
+          this.send({ t: 'synced' });
+          this.gameLine('Caught up: watching live.');
+        }
       },
       onCheck: (ok, tick) => {
         if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
