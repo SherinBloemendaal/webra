@@ -102,13 +102,15 @@ let jsResult = null;
 async function boot() {
   const bootEl = $('#boot');
   let renderer;
+  let atlas;
   try {
     await init();
     const engineRules = JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json());
     catalog = Object.fromEntries(engineRules.actors.map((a) => [a.id, a]));
     rulesBase = await loadRulesBase();
     renderer = await Renderer.create($('#view'));
-    renderer.setAtlas(buildAtlas(engineRules.actors));
+    atlas = buildAtlas(engineRules.actors);
+    renderer.setAtlas(atlas);
   } catch (err) {
     bootEl.classList.add('error');
     bootEl.textContent = `The editor cannot start: ${err.message ?? err}. It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
@@ -131,6 +133,7 @@ async function boot() {
     hover: (cell) => updateStatus(cell),
     selectionChanged: () => renderSelection(),
   });
+  ctl.overlays = atlas.overlays;
   minimap = new Minimap($('#minimap'), (x, y) => view.centerOn(x, y));
 
   buildTools();

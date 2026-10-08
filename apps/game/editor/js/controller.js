@@ -47,6 +47,9 @@ export class Controller {
     this.view = view;
     this.catalog = catalog; // { id: rules_json actor }
     this.order = new Map(Object.values(catalog).map((a, i) => [a.id, i]));
+    // Per actor index: non-zero when a building has an animated layer in its second
+    // sprite slot (js/sprites.js buildAtlas `overlays`); the editor shows its still frame.
+    this.overlays = new Uint32Array(0);
     this.state = state;
     this.hooks = hooks; // { status(text), changed() }
     this.gesture = null;
@@ -379,7 +382,7 @@ export class Controller {
       if (!visible(x, y, 96)) continue;
       const angle = building ? 0 : (a.facing * Math.PI * 2) / 1024;
       layers[building ? 0 : 2].push([x, y, angle, t * 2, team(a.owner)]);
-      if (info.turret) layers[building ? 1 : 3].push([x, y, angle, t * 2 + 1, team(a.owner)]);
+      if (info.turret || this.overlays[t]) layers[building ? 1 : 3].push([x, y, angle, t * 2 + 1, team(a.owner)]);
     }
     for (const layer of layers) for (const [x, y, angle, id, tm] of layer) sprite(x, y, angle, id, tm, 1);
 
@@ -472,7 +475,7 @@ export class Controller {
         const o = mirroredOwner(p.t, s.owner, doc.spawns, doc.width, doc.height);
         const owner = o >= 0 ? Math.min(o, 7) : NEUTRAL_TEAM;
         sprite(px, py, angle, t * 2, owner, 0.6);
-        if (info.turret) sprite(px, py, angle, t * 2 + 1, owner, 0.6);
+        if (info.turret || this.overlays[t]) sprite(px, py, angle, t * 2 + 1, owner, 0.6);
       }
     }
   }

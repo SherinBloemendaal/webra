@@ -34,6 +34,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
+import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 
 const UNIT_DRAW = {
@@ -511,11 +512,26 @@ function grey(s) {
 const COLOR_PASS = { team: grey, c: (col) => col };
 const MASK_PASS = { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000') };
 
+/** One frame of a building's animated layer (art/animated.js) as a sprite: its box cut out of frame f. */
+function layerSprite(anim, f) {
+  const [bx, by, bw, bh] = anim.box;
+  return [bw, bh, (ctx, P) => {
+    ctx.translate(-bx, -by);
+    anim.draw(ctx, P, f);
+  }];
+}
+
+/** The animated layer of a building sprite key, or null (buildings with a turret have none). */
+function buildingAnim(key) {
+  return BUILDING_TURRET[key] ? null : (BUILDING_ANIM[key] ?? null);
+}
+
 /**
  * Sprite definitions in atlas order: [w, h, draw] or null (empty). Every actor
  * has two slots: body and turret. Infantry have no turret; their second slot is
  * the prone pose (engine/src/veterancy.rs), the standing body when there is no
- * prone art.
+ * prone art. Buildings without a turret keep their animated layer there (the
+ * head frame the GPU animates, see buildAtlas).
  */
 export function spriteList(actors) {
   const list = [];
@@ -525,7 +541,8 @@ export function spriteList(actors) {
       const draw = BUILDING_DRAW[key];
       if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
       list.push([a.width * 24, a.height * 24, draw]);
-      list.push(BUILDING_TURRET[key] ?? null);
+      const anim = buildingAnim(key);
+      list.push(BUILDING_TURRET[key] ?? (anim ? layerSprite(anim, 0) : null));
     } else {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
@@ -543,12 +560,59 @@ export function spriteList(actors) {
   );
 }
 
+/** Floats per frame table entry (shaders/sprite.wgsl `Frame`). */
+export const FRAME_FLOATS = 12;
+
 /**
- * Build the colour atlas, mask atlas and frame table.
- * Frame table: 8 floats per sprite [u0, v0, u1, v1, w, h, 0, 0].
+ * Animated building layers: per actor index with one, its head slot (2i + 1),
+ * the first of its frames after the sprite list (`start`, shared by aliases),
+ * the frame count, rate and the layer's offset from the building centre.
+ */
+export function animationPlan(actors, listLength) {
+  const plan = [];
+  const starts = new Map();
+  let next = listLength;
+  actors.forEach((a, i) => {
+    if (a.kind !== 'building') return;
+    const key = spriteKey(a.id);
+    const anim = buildingAnim(key);
+    if (!anim) return;
+    if (!starts.has(key)) {
+      starts.set(key, next);
+      next += anim.frames;
+    }
+    const [bx, by, bw, bh] = anim.box;
+    const offset = [bx + bw / 2 - (a.width * 24) / 2, by + bh / 2 - (a.height * 24) / 2];
+    plan.push({ actor: i, key, anim, head: 2 * i + 1, start: starts.get(key), frames: anim.frames, fps: anim.fps, offset });
+  });
+  return plan;
+}
+
+/**
+ * Build the colour atlas, mask atlas, frame table and building overlay table.
+ * Frame table: FRAME_FLOATS per sprite
+ *   [u0, v0, u1, v1, w, h, offset x, offset y, anim start, anim frames, anim fps, 0]
+ * with sizes and offsets in world pixels. An entry with more than one anim
+ * frame is the head of an animation: the shader draws frame
+ * `start + k` instead (shaders/sprite.wgsl, js/anim.js animFrame).
+ * `overlays[t]` is the still frame of actor type t's animated layer, or 0; the
+ * engine draws it for fogged buildings and those without power
+ * (engine/src/overlays.rs, Game.set_building_overlays).
  */
 export function buildAtlas(actors) {
   const list = spriteList(actors);
+  const plan = animationPlan(actors, list.length);
+  const meta = new Map(); // atlas index -> { offset, anim: [start, frames, fps] }
+  const overlays = new Uint32Array(actors.length);
+  for (const p of plan) {
+    meta.set(p.head, { offset: p.offset, anim: [p.start, p.frames, p.fps] });
+    overlays[p.actor] = p.start;
+    if (meta.has(p.start)) continue; // an alias already added the frames
+    for (let f = 0; f < p.frames; f++) {
+      meta.set(p.start + f, { offset: p.offset, anim: [0, 0, 0] });
+      list.push(layerSprite(p.anim, f));
+    }
+  }
   const width = 1024;
   let x = 0;
   let y = 0;
@@ -576,7 +640,7 @@ export function buildAtlas(actors) {
   }
   const cctx = color.getContext('2d');
   const mctx = mask.getContext('2d');
-  const frames = new Float32Array(list.length * 8);
+  const frames = new Float32Array(list.length * FRAME_FLOATS);
   list.forEach((s, i) => {
     const p = places[i];
     const [w, h, draw] = s ?? [1, 1, null];
@@ -593,9 +657,12 @@ export function buildAtlas(actors) {
         ctx.restore();
       }
     }
+    const m = meta.get(i);
+    const [ox, oy] = m?.offset ?? [0, 0];
+    const [start, count, fps] = m?.anim ?? [0, 0, 0];
     frames.set(
-      [(p.x + PAD) / width, (p.y + PAD) / height, (p.x + PAD + w * RES) / width, (p.y + PAD + h * RES) / height, w, h, 0, 0],
-      i * 8,
+      [(p.x + PAD) / width, (p.y + PAD) / height, (p.x + PAD + w * RES) / width, (p.y + PAD + h * RES) / height, w, h, ox, oy, start, count, fps, 0],
+      i * FRAME_FLOATS,
     );
   });
   // The mask only matters where the colour atlas has alpha; clear the rest.
@@ -605,7 +672,7 @@ export function buildAtlas(actors) {
     if (cdata.data[i] === 0) mdata.data[i - 3] = mdata.data[i - 2] = mdata.data[i - 1] = 0;
   }
   mctx.putImageData(mdata, 0, 0);
-  return { color, mask, frames };
+  return { color, mask, frames, overlays };
 }
 
 /**
@@ -662,6 +729,8 @@ export function drawIcon(canvas, actor, teamRgb) {
     parts.push([BUILDING_DRAW[key], 0, 0]);
     const t = BUILDING_TURRET[key];
     if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    const anim = buildingAnim(key);
+    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
   } else {
     const d = UNIT_DRAW[key] ?? fallbackUnit(actor);
     [w, h] = d.body;
@@ -700,6 +769,8 @@ function cameoModel(typeName, kind) {
     const parts = [[BUILDING_DRAW[key], 0, 0]];
     const t = BUILDING_TURRET[key];
     if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    const anim = buildingAnim(key);
+    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
     return { building: true, w, h, parts };
   }
   const d = UNIT_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);

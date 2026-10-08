@@ -6,6 +6,7 @@ struct Globals {
     time: f32,         // seconds
     map_size: vec2f,   // map size in cells
     team_colors: array<vec4f, 8>,
+    anim: vec4f,       // render clock for sprite animations: seconds, enabled (js/anim.js)
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;

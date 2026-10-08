@@ -4,6 +4,7 @@
 import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
+import { AnimClock } from './anim.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
@@ -244,7 +245,16 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
   // Orders and production clicks made through `ui` get unit replies and announcements.
   const ui = audio ? audio.watch(game) : game;
-  renderer.setAtlas(buildAtlas(rules.actors));
+  const atlas = buildAtlas(rules.actors);
+  renderer.setAtlas(atlas);
+  // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
+  game.set_building_overlays(atlas.overlays);
+  const animClock = new AnimClock();
+  animClock.watchReducedMotion();
+  // Health bars besides the selection and the hovered actor (game menu, Settings).
+  const HEALTH_BARS = { off: 0, damaged: 1, all: 2 };
+  game.set_health_bars(HEALTH_BARS[settings.get('healthBars')] ?? 0);
+  settings.subscribe('healthBars', (v) => game.set_health_bars(HEALTH_BARS[v] ?? 0));
   // Mobile GPUs: the player caps the pixel ratio or picks low quality (game menu, Settings).
   renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
   // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
@@ -480,7 +490,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     const rects = new Float32Array(simRectCount * 8 + uiRects.length);
     rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
     rects.set(uiRects, simRectCount * 8);
-    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
+    // Building animations run on wall time but stop with the game (and for reduced motion).
+    animClock.advance(dt, paused);
+    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8, animClock.uniform());
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
     minimap?.frame(now);

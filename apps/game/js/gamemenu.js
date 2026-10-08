@@ -298,10 +298,26 @@ export class GameMenu {
       row.append(el('span', null, text), input);
       return row;
     };
+    const choice = (key, text, labels) => {
+      const row = el('label', 'game-menu-row');
+      const select = el('select', 'game-menu-select');
+      for (const option of SCHEMA[key].options) {
+        const o = el('option', null, labels[option] ?? option);
+        o.value = option;
+        select.append(o);
+      }
+      select.value = s.get(key);
+      select.addEventListener('change', () => {
+        select.value = s.set(key, select.value);
+      });
+      row.append(el('span', null, text), select);
+      return row;
+    };
     c.append(
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );
@@ -314,7 +330,7 @@ export class GameMenu {
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'pixelRatioCap', 'lowQuality']) s.reset(key);
+        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'pixelRatioCap', 'lowQuality']) s.reset(key);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),

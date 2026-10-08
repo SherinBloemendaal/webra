@@ -6,8 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas, drawCameo, getCameo, clearCameoCache } from '../js/sprites.js';
+import { buildAtlas, animationPlan, spriteList, drawCameo, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
+import { BUILDING_ANIM } from '../js/art/animated.js';
 
 const rules = JSON.parse(readFileSync(fileURLToPath(new URL('../../../engine/rules.json', import.meta.url)), 'utf8'));
 // The wasm rules export flattens the building block into width/height.
@@ -145,8 +146,8 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
     const { frames } = buildAtlas(actors);
     actors.forEach((a, i) => {
       if (a.kind !== 'building') return;
-      assert.equal(frames[i * 16 + 4], a.width * 24, `${a.id} sprite width`);
-      assert.equal(frames[i * 16 + 5], a.height * 24, `${a.id} sprite height`);
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 4], a.width * 24, `${a.id} sprite width`);
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24, `${a.id} sprite height`);
     });
   } finally {
     delete globalThis.document;
@@ -181,6 +182,116 @@ for (const a of buildings) {
     }
   });
 }
+
+// ---- Animated layers (art/animated.js) --------------------------------------------------
+
+/** A canvas stub document for buildAtlas; records the atlas size. */
+function stubDocument(sizes = []) {
+  return {
+    createElement: () => {
+      const canvas = { width: 0, height: 0 };
+      const ctx = fakeContext([], null);
+      canvas.getContext = () => {
+        sizes.push([canvas.width, canvas.height]);
+        return ctx;
+      };
+      return canvas;
+    },
+  };
+}
+
+test('animated layers: radar, smoke, beacons, fans and the crane hook, a handful of frames each', () => {
+  for (const key of ['DOME', 'POWR', 'APWR', 'PROC', 'BARR', 'HPAD', 'AFLD', 'ATEK', 'STEK', 'FACT']) {
+    const anim = BUILDING_ANIM[key];
+    assert.ok(anim, `${key} has an animated layer`);
+    assert.ok(BUILDING_DRAW[key], `${key} is a building`);
+    assert.ok(!BUILDING_TURRET[key], `${key} has no turret in the same sprite slot`);
+    assert.ok(Number.isInteger(anim.frames) && anim.frames >= 2 && anim.frames <= 8, `${key} frame count ${anim.frames}`);
+    assert.ok(anim.fps > 0 && anim.fps <= 12, `${key} rate ${anim.fps}`);
+    const [x, y, w, h] = anim.box;
+    const [fw, fh] = BUILDING_SIZE[key];
+    assert.ok(w > 0 && h > 0 && x >= 0 && x + w <= fw * 24 && y + h <= fh * 24, `${key} layer box inside the footprint (smoke may rise above it)`);
+  }
+});
+
+for (const [key, anim] of Object.entries(BUILDING_ANIM)) {
+  test(`animated layer ${key}: every frame finite, inside its box, deterministic, frames differ`, () => {
+    const [bx, by, bw, bh] = anim.box;
+    const logs = [];
+    for (let f = 0; f < anim.frames; f++) {
+      const runs = [];
+      for (let run = 0; run < 2; run++) {
+        const log = [];
+        const bounds = [];
+        const ctx = fakeContext(log, bounds);
+        anim.draw(ctx, passes({ team: 0 }).colour, f);
+        assert.equal(ctx.depth, 0, `${key} frame ${f} leaves save/restore unbalanced`);
+        for (const b of bounds) {
+          assert.ok(
+            b.x0 >= bx - 1.5 && b.y0 >= by - 1.5 && b.x1 <= bx + bw + 1.5 && b.y1 <= by + bh + 1.5,
+            `${key} frame ${f} draws outside its box ${anim.box}: ${JSON.stringify(b)}`,
+          );
+        }
+        runs.push(log.join('|'));
+      }
+      assert.equal(runs[0], runs[1], `${key} frame ${f} is not deterministic`);
+      logs.push(runs[0]);
+    }
+    assert.ok(logs[0].length > 0, `${key} frame 0 draws nothing`);
+    assert.ok(new Set(logs).size > 1, `${key} frames are all the same`);
+  });
+}
+
+test('the atlas holds every animation once: head slots point at their frames, fogged buildings get the still frame', () => {
+  const sizes = [];
+  globalThis.document = stubDocument(sizes);
+  try {
+    const listLength = spriteList(actors).length;
+    const { frames, overlays } = buildAtlas(actors);
+    const plan = animationPlan(actors, listLength);
+    const entry = (i) => Array.from(frames.slice(i * FRAME_FLOATS, (i + 1) * FRAME_FLOATS));
+    const keys = new Set(plan.map((p) => p.key));
+    const total = [...keys].reduce((n, k) => n + BUILDING_ANIM[k].frames, 0);
+    assert.equal(frames.length, (listLength + total) * FRAME_FLOATS, 'one copy of each animation after the sprite list');
+    assert.ok(plan.length > keys.size, 'fakes share the frames of their originals');
+    for (const p of plan) {
+      const a = actors[p.actor];
+      const head = entry(p.head);
+      assert.deepEqual(head.slice(8, 11), [p.start, p.frames, p.fps], `${a.id} head frame`);
+      assert.equal(overlays[p.actor], p.start, `${a.id} still frame for the engine`);
+      const [bx, by, bw, bh] = BUILDING_ANIM[p.key].box;
+      const offset = [bx + bw / 2 - (a.width * 24) / 2, by + bh / 2 - (a.height * 24) / 2];
+      for (let f = 0; f < p.frames; f++) {
+        const e = entry(p.start + f);
+        assert.deepEqual(e.slice(4, 8), [bw, bh, ...offset], `${a.id} frame ${f} size and offset`);
+        assert.deepEqual(e.slice(8, 11), [0, 0, 0], `${a.id} frame ${f} is a still frame`);
+      }
+      assert.deepEqual(head.slice(4, 8), [bw, bh, ...offset]);
+    }
+    // Same frames for aliases (FPWR draws like POWR).
+    const start = (id) => overlays[actors.findIndex((a) => a.id.toUpperCase() === id)];
+    assert.ok(start('POWR') > 0);
+    assert.equal(start('FPWR'), start('POWR'));
+    // Everything else: no overlay, no animation.
+    actors.forEach((a, i) => {
+      if (!plan.some((p) => p.actor === i)) assert.equal(overlays[i], 0, a.id);
+    });
+    for (let i = 0; i < listLength; i++) {
+      if (!plan.some((p) => p.head === i)) assert.equal(frames[i * FRAME_FLOATS + 9], 0, `sprite ${i} is not animated`);
+    }
+    // WebGPU's default texture limit.
+    for (const [w, h] of sizes) assert.ok(w <= 8192 && h <= 8192, `atlas ${w}x${h} fits a texture`);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test('the frame table matches the Frame struct of the sprite shader', () => {
+  const wgsl = readFileSync(fileURLToPath(new URL('../shaders/sprite.wgsl', import.meta.url)), 'utf8');
+  const struct = wgsl.match(/struct Frame \{([^}]*)\}/)[1];
+  const vec4s = struct.match(/: vec4f/g).length;
+  assert.equal(vec4s * 4, FRAME_FLOATS);
+});
 
 // ---- Cameos ---------------------------------------------------------------------------
 

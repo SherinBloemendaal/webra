@@ -76,6 +76,7 @@ export class Input {
     this.keys = new Set();
     // touch: the position comes from a finger (js/touch.js, building placement), so no edge scrolling.
     this.mouse = { x: -1, y: -1, inside: false, touch: false };
+    this.hover = NONE; // actor under the mouse, told to the engine for its health bar
     this.drag = null;
     this.pan = null;
     this.placing = null; // actor id being placed
@@ -773,6 +774,23 @@ export class Input {
       this.clampCamera();
     }
     this.updateCursor();
+    this.updateHover();
+  }
+
+  /**
+   * The actor under the mouse gets a health bar (engine/src/overlays.rs); none
+   * while dragging, panning or on touch screens, where nothing hovers.
+   */
+  updateHover() {
+    let id = NONE;
+    if (this.mouse.inside && !this.mouse.touch && !this.drag && !this.pan) {
+      const w = this.toWorld(this.mouse.x, this.mouse.y);
+      id = this.game.pick(this.player, w.x, w.y);
+    }
+    if (id !== this.hover) {
+      this.hover = id;
+      this.game.set_hover(id);
+    }
   }
 
   /** Whether the building being placed fits where the mouse is. */

@@ -12,8 +12,8 @@
 const STORAGE_KEY = 'webra.settings';
 
 /**
- * Known settings. Numbers are clamped to [min, max]; a stored value of the
- * wrong type falls back to the default.
+ * Known settings. Numbers are clamped to [min, max]; choices must be one of
+ * their options; a stored value of the wrong type falls back to the default.
  */
 export const SCHEMA = {
   // Multiplier on the edge scroll speed; 0 turns edge scrolling off.
@@ -26,6 +26,9 @@ export const SCHEMA = {
   pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3 },
   // Render below screen resolution (cheap speed-up for weak mobile GPUs).
   lowQuality: { type: 'boolean', default: false },
+  // Health bars besides the selection and the hovered actor (OpenRA status bars):
+  // 'off' (selected and hovered only), 'damaged' (also damaged actors), 'all'.
+  healthBars: { type: 'choice', default: 'off', options: ['off', 'damaged', 'all'] },
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: { type: 'object', default: {} },
 };
@@ -37,6 +40,7 @@ function normalize(key, value) {
     return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
   }
   if (spec.type === 'boolean') return typeof value === 'boolean' ? value : spec.default;
+  if (spec.type === 'choice') return spec.options.includes(value) ? value : spec.default;
   if (spec.type === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return structuredClone(spec.default);
     return structuredClone(value);

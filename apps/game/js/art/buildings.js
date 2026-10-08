@@ -55,9 +55,9 @@ const LIT = '#ffd98a';
 
 const WALL = K('#a4a193'); // concrete walls
 const ROOF = K('#b8b5a7'); // concrete roofs
-const STEEL = K('#70747a');
+export const STEEL = K('#70747a');
 const STEEL_L = K('#98a0a8');
-const STEEL_D = K('#3f4247');
+export const STEEL_D = K('#3f4247');
 const YEL = K(C.yellow);
 const YEL_D = K(C.yellowDark);
 
@@ -215,36 +215,36 @@ function roofFan(ctx, P, V, u, t, r) {
   disc(ctx, P.c(C.steelLight), x, y, 0.8);
 }
 
-/** Round fan seen from above on the ground or any flat top. */
-function fan(ctx, P, cx, cy, r) {
+/** Round fan seen from above on the ground or any flat top, its blades turned by `rot` radians. */
+export function fan(ctx, P, cx, cy, r, rot = 0) {
   circle(ctx, P.c(C.steelDark), cx, cy, r);
   circle(ctx, P.c('#1f2022'), cx, cy, r - 1);
   for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2 + 0.5;
+    const a = (i * Math.PI) / 2 + 0.5 + rot;
     poly(ctx, P.c(C.steel), [cx, cy, cx + Math.cos(a - 0.35) * (r - 1), cy + Math.sin(a - 0.35) * (r - 1), cx + Math.cos(a + 0.35) * (r - 1), cy + Math.sin(a + 0.35) * (r - 1)]);
   }
   circle(ctx, P.c(C.steelLight), cx, cy, 1);
 }
 
 /** A small lamp with a halo. */
-function lamp(ctx, P, x, y, bulb = '#ff4a3a', halo = 'rgba(255,90,70,0.35)') {
+export function lamp(ctx, P, x, y, bulb = '#ff4a3a', halo = 'rgba(255,90,70,0.35)') {
   circle(ctx, P.c(halo), x, y, 2.4);
   circle(ctx, P.c(C.steelDark), x, y, 1.3);
   circle(ctx, P.c(bulb), x, y, 0.9);
 }
 
-function teamLamp(ctx, P, x, y, r = 1.6) {
+export function teamLamp(ctx, P, x, y, r = 1.6) {
   circle(ctx, P.c(C.steelDark), x, y, r + 0.7);
   circle(ctx, P.team(0.85), x, y, r);
   circle(ctx, P.team(1.0), x - r * 0.3, y - r * 0.3, r * 0.4);
 }
 
-/** A standing mast from the ground up to height h with a warning lamp. */
+/** A standing mast from the ground up to height h with a warning lamp (none when bulb is null). */
 function mast(ctx, P, x, y, h, bulb) {
   const [x1, y1] = at(x, y, h);
   stroke(ctx, P.c(C.steelDark), 1.1, x, y, x1, y1);
   stroke(ctx, P.c(C.steelLight), 0.5, x - 0.3, y, x1 - 0.3, y1);
-  lamp(ctx, P, x1, y1, bulb);
+  if (bulb !== null) lamp(ctx, P, x1, y1, bulb);
 }
 
 /** Oil drum: a short upright cylinder. */
@@ -258,7 +258,7 @@ function crateAt(ctx, P, x, y, s = 4) {
 }
 
 /** Satellite dish on a post: the bowl is tilted towards the upper right. */
-function dishAt(ctx, P, cx, cy, z0, r, spec = K('#c4c7cb')) {
+export function dishAt(ctx, P, cx, cy, z0, r, spec = K('#c4c7cb')) {
   const [px, py] = at(cx, cy, z0 + r * 0.9);
   const [bx, by] = at(cx, cy, z0);
   stroke(ctx, P.c(C.steelDark), 1.2, bx, by, px, py);
@@ -272,13 +272,10 @@ function dishAt(ctx, P, cx, cy, z0, r, spec = K('#c4c7cb')) {
   circle(ctx, P.c(RED), px + r * 0.75, py - r * 1.1, 0.7);
 }
 
-/** Static steam or smoke rising from (x, y): soft grey puffs that drift to the right. */
-function smoke(ctx, P, x, y, size = 1) {
-  const puffs = [[0, 0, 1.6, 0.5], [1.2, -2.8, 2.1, 0.42], [2.8, -5.8, 2.6, 0.32], [5, -9, 3.1, 0.22]];
-  for (const [dx, dy, r, a] of puffs) {
-    circle(ctx, P.c(`rgba(214,214,208,${a})`), x + dx * size, y + dy * size, r * size);
-    circle(ctx, P.c(`rgba(250,250,246,${a * 0.6})`), x + dx * size - r * size * 0.3, y + dy * size - r * size * 0.3, r * size * 0.55);
-  }
+/** One soft grey smoke puff of radius r and opacity a. */
+export function puff(ctx, P, x, y, r, a) {
+  circle(ctx, P.c(`rgba(214,214,208,${a.toFixed(3)})`), x, y, r);
+  circle(ctx, P.c(`rgba(250,250,246,${(a * 0.6).toFixed(3)})`), x - r * 0.3, y - r * 0.3, r * 0.55);
 }
 
 /** Pipe run drawn on a roof or the ground: dark outline, lit core. */
@@ -354,11 +351,7 @@ export const BUILDING_DRAW = {
     box(ctx, P, 47, 47, 9, 8, 4.5, STEEL_D, STEEL_L, { z0: 26 });
     box(ctx, P, 24, 49, 31, 2.6, 2.2, YEL, K('#e8c850'), { z0: 31 });
     box(ctx, P, 54, 48, 5, 4, 3, K('#5c5f64'), K('#74787e'), { z0: 29.5 });
-    const [cx0, cy0] = at(28, 50.3, 31);
-    const [cx1, cy1] = at(28, 50.3, 19);
-    stroke(ctx, P.c(C.steelDark), 0.5, cx0, cy0, cx1, cy1);
-    box(ctx, P, 27, 49.5, 2, 1.6, 2.4, STEEL_D, STEEL, { z0: 16.6 });
-    teamLamp(ctx, P, at(49, 50, 33.5)[0], at(49, 50, 33.5)[1], 1.2);
+    // the hook going up and down and the tower lamp are animated (art/animated.js)
     // yard details
     drumAt(ctx, P, 60, 62);
     drumAt(ctx, P, 64, 64, K('#4f6b2f'));
@@ -391,8 +384,7 @@ export const BUILDING_DRAW = {
     roofVents(ctx, P, X, 2, 2, 4, 1.4, 4.4, 0.9);
     pipe(ctx, P, [...at(H.x + 16, H.y + 8, 10.5), ...at(H.x + 24, H.y + 8, 10.5)], 1.6, K(C.steel));
     cylinder(ctx, P, 35, 34, 2.4, 14, STEEL_D, STEEL, { z0: 10, bands: [[10, 12, T(0.62)]] });
-    const [sx, sy] = at(35, 34, 24);
-    smoke(ctx, P, sx, sy - 1.5, 0.8);
+    // the stack's smoke is animated (art/animated.js)
     lamp(ctx, P, 6, 51);
     drumAt(ctx, P, 42, 56);
   },
@@ -415,11 +407,10 @@ export const BUILDING_DRAW = {
     door(ctx, P, H, 27, 10, 5);
     wins(ctx, P, H, 4, 1.8, 3, 3.6, 2.2, 1.8, true);
     wins(ctx, P, H, 44, 1.8, 3, 3.6, 2.2, 1.8, true);
-    // turbine fans on the three lids
+    // turbine fan wells on the three lids; the turning fans are animated (art/animated.js)
     for (const x of [14, 36, 58]) {
       const [lx, ly] = at(x, 22, 12);
       disc(ctx, P.c(C.steelDark), lx, ly, 5.6);
-      fan(ctx, P, lx, ly, 4.6);
     }
     pipe(ctx, P, [...at(14, 30, 9.5), ...at(36, 30, 9.5), ...at(58, 30, 9.5)], 2, K(C.steel));
     mast(ctx, P, 66, 31, 6);
@@ -454,8 +445,7 @@ export const BUILDING_DRAW = {
     // rooftop piping and a stack
     pipe(ctx, P, [...at(26, 36, 10.5), ...at(32, 36, 10.5), ...at(32, 30, 10.5)], 2, K(C.steel));
     cylinder(ctx, P, 45, 40, 2.6, 8, STEEL, STEEL_L, { z0: 10 });
-    const [sx, sy] = at(45, 40, 18);
-    smoke(ctx, P, sx, sy - 1, 0.7);
+    // the stack's smoke is animated (art/animated.js)
     // unloading dock: steel grating with hazard edge
     rect(ctx, P.c(C.yellowDark), 0, 52, 26, 22);
     rect(ctx, P.c(C.steelDark), 1, 53, 24, 20);
@@ -534,11 +524,9 @@ export const BUILDING_DRAW = {
       star.push(stx + Math.cos(a) * rr, sty + Math.sin(a) * rr);
     }
     poly(ctx, P.team(1.0), star);
-    // chimney with a little smoke
+    // chimney; its smoke is animated (art/animated.js)
     const Ch = box(ctx, P, 31, 22, 4, 4, 5, K('#7a746a'), K('#8a847a'), { z0: 11 });
     patch(ctx, P.c(C.track), Ch, 'roof', 1, 1, 3, 3);
-    const [smx, smy] = Ch.roof(2, 2);
-    smoke(ctx, P, smx, smy - 1, 0.6);
     // door, windows and a team lintel
     door(ctx, P, H, 14, 10, 7, 2.6);
     patch(ctx, P.team(0.7), H, 'front', 13, 7.6, 25, 9);
@@ -645,7 +633,7 @@ export const BUILDING_DRAW = {
       ctx.arc(rx, ry, rr, 0.15, Math.PI - 0.15);
       ctx.stroke();
     }
-    dishAt(ctx, P, 39, 31, 8, 3.2);
+    // the turning radar dish is animated (art/animated.js)
     mast(ctx, P, 5, 28, 12);
     sandbags(ctx, P, 4, 48, 2);
     sandbags(ctx, P, 32, 48, 2);
@@ -677,7 +665,7 @@ export const BUILDING_DRAW = {
       const [bx, by] = D.roof(x - 2, y - 3);
       disc(ctx, P.c(C.yellow), bx, by, 2.8);
       disc(ctx, P.c(C.track), bx, by, 1.8);
-      teamLamp(ctx, P, bx, by, 1.1);
+      // the blinking lamp itself is animated (art/animated.js)
     }
     // fuel cart
     box(ctx, P, 38, 28, 6, 9, 3.4, STEEL_L, K('#a9b0b6'));
@@ -723,14 +711,14 @@ export const BUILDING_DRAW = {
     patch(ctx, grad(ctx, P, K(GLASS), 0, Cb.front(0, 4)[1], 0, Cb.front(0, 0)[1], [[0, 0.5], [1, -0.1]]), Cb, 'front', 0.8, 0.7, 11.2, 3.2);
     for (const u of [4, 8]) mark(ctx, P.c(C.steelDark), 0.5, Cb, 'front', u, 0.7, u, 3.2);
     patch(ctx, P.team(0.7), Cb, 'roof', 0, 7.4, 12, 9);
-    dishAt(ctx, P, 56, 20, 14, 2.4);
+    // the tower's turning dish is animated (art/animated.js)
     // fuel tank and windsock
     cylinder(ctx, P, 44, 20, 3.6, 6, K('#b8442e'), K('#c9c6bb'));
     const [wx, wy] = at(67, 34, 0);
     const [wx2, wy2] = at(67, 34, 8);
     stroke(ctx, P.c(C.steelDark), 0.9, wx, wy, wx2, wy2);
     poly(ctx, P.team(0.85), [wx2, wy2, wx2 - 6, wy2 + 1.4, wx2 - 6, wy2 + 3.6, wx2, wy2 + 4.8]);
-    teamLamp(ctx, P, 68, 6, 1.2);
+    // the beacon at (68, 6) and the runway light chase are animated (art/animated.js)
     sandbags(ctx, P, 28, 25.6, 3);
   },
 
@@ -757,9 +745,7 @@ export const BUILDING_DRAW = {
     ctx.stroke();
     ctx.restore();
     box(ctx, P, 33, 40, 7, 4, 3, STEEL, STEEL_L, { z0: 10 });
-    dishAt(ctx, P, 31, 36, 10, 7);
-    lamp(ctx, P, 5, 50);
-    lamp(ctx, P, 41, 50);
+    // the turning dish and the blinking lamps at (5, 50) and (41, 50) are animated (art/animated.js)
     sandbags(ctx, P, 4, 47.6, 2);
     sandbags(ctx, P, 33, 47.6, 2);
   },
@@ -791,13 +777,14 @@ export const BUILDING_DRAW = {
     band(ctx, P, L, T(0.5), 13.5, 15.5);
     wins(ctx, P, L, 3, 3.4, 3, 4.4, 4.4, 1.8);
     door(ctx, P, L, 8, 10, 3);
-    dishAt(ctx, P, 35, 33, 18, 4.6);
+    // the turning dish is animated (art/animated.js)
     roofVents(ctx, P, L, 3, 3, 4, 2, 2.4, 1.2);
     // conduits from the spheres to the lab
     pipe(ctx, P, [...at(17, 37, 6), ...at(22, 38, 6)], 1.4, K(C.steel));
     pipe(ctx, P, [...at(55, 37, 6), ...at(48, 38, 6)], 1.4, K(C.steel));
-    mast(ctx, P, 4, 46, 9);
-    mast(ctx, P, 68, 46, 9);
+    // mast lamps blink (art/animated.js)
+    mast(ctx, P, 4, 46, 9, null);
+    mast(ctx, P, 68, 46, 9, null);
     sandbags(ctx, P, 6, 48, 3);
     sandbags(ctx, P, 50, 48, 3);
   },

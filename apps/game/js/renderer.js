@@ -3,7 +3,10 @@
 
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
-const GLOBALS_BYTES = 160;
+// shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock.
+const GLOBALS_BYTES = 176;
+const ANIM_OFFSET = 40;
+const STILL = { time: 0, enabled: false };
 
 export const TEAM_COLORS = [
   [0.30, 0.55, 0.95], // player 1: blue
@@ -202,14 +205,16 @@ export class Renderer {
    * @param camera {x, y, zoom} zoom in CSS pixels per world pixel
    * @param sprites Float32Array of sprite instances
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
+   * @param anim {time, enabled} render clock of sprite animations (js/anim.js); still frames by default
    */
-  draw(camera, time, sprites, spriteCount, rects, rectCount) {
+  draw(camera, time, sprites, spriteCount, rects, rectCount, anim = STILL) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
     const g = new Float32Array(GLOBALS_BYTES / 4);
     g.set([this.canvas.width, this.canvas.height, camera.x, camera.y, zoom, time, this.mapW, this.mapH], 0);
     TEAM_COLORS.forEach((c, i) => g.set([c[0], c[1], c[2], 1], 8 + i * 4));
+    g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
     d.queue.writeBuffer(this.globals, 0, g);
 
     if (spriteCount > 0) {
