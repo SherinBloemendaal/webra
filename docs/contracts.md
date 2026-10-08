@@ -254,6 +254,18 @@ follows), `debug_actors(player, ...)` (JSON: ids, health, footprints, weapon
 ranges, targets) and `debug_stats()`; they only report explored cells and
 visible actors and never change the simulation.
 
+Radar minimap (engine/src/minimap.rs, apps/game/js/minimap.js). Read-only
+wasm calls, made a few times per second: `radar_state(player)` (0 no radar
+structure, 1 online, 2 jammed, 3 low power) and `minimap_blips(player)`
+(`Int32Array` of `[cellX, cellY, width, height, owner]` per blip, owner 255
+for neutral; structures first, then units). The radar is online while the
+player owns a powered `ProvidesRadar` structure (the Radar Dome) with no
+enemy radar jammer (`jams_radar`, OpenRA `ProximityExternalCondition@JAMMER`,
+18c0) in range. Blips are empty while it is offline; enemy actors appear only
+while visible and not cloaked, enemy structures also as remembered ghosts,
+and nothing hostile within range of an enemy jammer. Terrain and fog come
+from `terrain_ptr` and `fog_ptr`.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
