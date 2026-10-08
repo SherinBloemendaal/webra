@@ -88,25 +88,44 @@ the new paths are guarded like this:
   times per member and game, and never after leaving, being kicked or being
   removed for a protocol violation (the key is forgotten). A rejoin replaces
   an open connection of the same member (it leaves lockstep first), so two
-  connections never share a seat. Keys live in the tab's sessionStorage (the
+  connections never share a seat; every check that does not depend on that
+  connection (game running, rejoin cap, seat not gone, spectator places,
+  catch-up limits) runs first, so a refused rejoin never disconnects a member
+  who is still playing. Keys live in the tab's sessionStorage (the
   strict CSP keeps script injection out).
 - **Drop rules.** A lost connection takes the seat out of lockstep at once,
   so nobody is ever held up by a player who is reconnecting; the game does
-  not pause for anyone. A rejoining seat gets its stall budget back exactly as
-  it left it (the debt keeps draining over wall time like for every seat, and
-  the current drop window's hold time is kept), so disconnecting and coming
-  back never resets the limits (lockstep.js `suspend` / `rejoin`, tests in
-  lockstep.test.mjs). Its orders count from `next + delay` on, so it cannot
-  inject orders into frames others already sent. A seat that does not resume
-  in time (60 s plus 5 ms per tick played, at most 15 minutes) or does not
-  come back within the 2 minute grace is out for good.
+  not pause for anyone. A rejoining seat gets its stall debt back as it left
+  it (the debt keeps draining over wall time like for every seat), and its
+  hold time in the current drop window too while that window is still the
+  one it left in (a window that renewed meanwhile starts at zero for every
+  seat alike), so disconnecting and coming back never resets the limits
+  (lockstep.js `suspend` / `rejoin`, tests in lockstep.test.mjs). Its orders
+  count from `next + delay` on, so it cannot inject orders into frames others
+  already sent.
+- **Deadlines.** A seat that left play has 2 minutes from that moment to come
+  back. Catching up after a rejoin may take longer (60 s plus 5 ms per tick
+  played, at most 15 minutes), but if the connection drops again while
+  catching up, the seat only keeps what is left of the original 2 minutes:
+  rejoins never extend the grace, and with the cap of 10 rejoins a missing
+  seat holds the session (its storage and the 1 s alarm) for at most the
+  grace plus the catch-up times it actually used. After that it is out for
+  good.
 - **Order log.** Kept in Durable Object storage (gzip chunks, deleted with
   the session), capped at 16 MiB of JSON: a player flooding the largest
   orders every tick could fill it in about 80 s, after which rejoins and late
   spectators are refused but the game goes on (accepted, bounded). Catch-ups
-  stream the log one chunk at a time, at most 2 at once and 6 per minute per
-  session. Frames emitted during a catch-up are queued for that socket, so a
-  rejoining client never misses one.
+  stream the log one chunk at a time. A catch-up counts from its start until
+  the client confirms it processed everything (`resume` for players, `synced`
+  for spectators; a spectator that does not confirm in the catch-up time is
+  closed), and at most 2 count at once, so at most two logs of output can sit
+  in send buffers for slow readers. On top, at most 6 catch-ups start per
+  minute and their bytes are budgeted (the current log size each, bursts of
+  two full logs, one full log per minute). Frames emitted during a catch-up
+  are queued for that socket, so a rejoining client never misses one.
+- **Chat** has its own limit per connection (one line a second, bursts of
+  five); a connection that keeps flooding is closed, so a spectator cannot
+  flood every socket.
 - **Spectators.** Same password and host-key rules as players, a host-set
   limit (0..8), and they never count for stalls or hash majorities. The
   server removes a spectator that sends `orders` or `hash` (an honest client

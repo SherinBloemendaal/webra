@@ -223,6 +223,7 @@ Client to server:
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
+| `synced` | | spectator joining a running game, after catching up |
 | `options` | `options` (host only) | lobby |
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
@@ -279,18 +280,29 @@ keeps `{ id, client, key, name }` per tab in sessionStorage (`webra.rejoin.v1`).
   to everyone with `tick` = its `next frame + delay`: the rejoined player's
   orders count from that frame on (earlier frames go out without it), and it
   sends hashes for ticks from there on. It must resume within 60 s plus 5 ms
-  per tick played so far (at most 15 minutes).
-- The seat keeps its stall budget: the debt (and the current window's hold
-  time) it left with is restored, so disconnecting never resets the drop
-  rules. At most `MAX_REJOINS` (10) rejoins per member and game.
+  per tick played so far (at most 15 minutes). If its connection drops while
+  catching up, it keeps only what is left of the 2 minute grace that started
+  when it left play (rejoins never extend it).
+- The seat keeps its stall budget: the debt it left with is restored (it
+  drains over wall time as usual), and so is its hold time in the current
+  drop window while that window has not renewed, so disconnecting never
+  resets the drop rules. At most `MAX_REJOINS` (10) rejoins per member and
+  game; rejoins that are refused anyway (cap, seat gone, game over) never
+  touch the member's open connection.
 - A tab whose connection drops reconnects by itself with backoff and keeps
   its game (it only runs the frames it missed); after a page reload it
   rebuilds the game from the start message and the log.
 - The order log lives in Durable Object storage: chunks of up to 512 frames
   or 64 KiB of JSON, gzip compressed (`log:<n>`), deleted with the session.
   It stops at `LOG_MAX_BYTES` (16 MiB of JSON); from then on rejoins and late
-  spectators are refused and the game goes on. At most 2 catch-ups stream at
-  once, 6 per minute per session.
+  spectators are refused and the game goes on. A catch-up counts from its
+  start until the client confirms (`resume`, or `synced` from a spectator,
+  which must come within the catch-up time); at most 2 count at once, at most
+  6 start per minute, and their bytes are budgeted (each takes the log's
+  current size; bursts of two full logs, refilled by one full log per
+  minute). Refused ones get `rate_limited` and retry.
+- Chat: one line a second per connection, bursts of five; flooding closes
+  the connection.
 
 ### Spectators
 
