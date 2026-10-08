@@ -11,7 +11,8 @@
 set -euo pipefail
 
 ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
-ZONE_NAME=sherin.dev
+# sherin.dev; fixed like the account, so the token used here needs no zone access.
+ZONE_ID=<zone id>
 REPO=SherinBloemendaal/webra
 API=https://api.cloudflare.com/client/v4
 
@@ -56,10 +57,6 @@ ROUTES=$(group 'Workers Routes Write')
 ZONEREAD=$(group 'Zone Read')
 SETTINGS=$(group 'Account Settings Read')
 DNS=$(group 'DNS Write')
-
-ZONE_JSON=$(cf "$API/zones?name=$ZONE_NAME")
-ZONE_ID=$(jq -r '.result[0].id // empty' <<<"$ZONE_JSON")
-[ -n "$ZONE_ID" ] || { echo "zone $ZONE_NAME not found" >&2; exit 1; }
 
 BODY=$(jq -n \
   --arg account "com.cloudflare.api.account.$ACCOUNT_ID" \
