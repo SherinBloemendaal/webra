@@ -43,6 +43,8 @@ export class Renderer {
     this.rectCapacity = 0;
     this.mapW = 0;
     this.mapH = 0;
+    // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
+    this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
     device.lost.then((info) => console.error('WebGPU device lost:', info.message));
   }
 
@@ -186,7 +188,7 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = this.pixelRatio();
     const w = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
     const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {

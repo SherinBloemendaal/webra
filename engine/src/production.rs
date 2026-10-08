@@ -430,12 +430,12 @@ impl World {
         out
     }
 
-    /// Whether a structure cell may go on map cell `i`: right terrain, no ore,
+    /// Whether a structure cell may go on map cell `i`: right terrain, no ore or gems,
     /// no building, no units (except `ignore`), explored by the player.
     fn cell_free_for(&self, player: u8, on_water: bool, i: usize, ignore: Option<usize>) -> bool {
         let terrain_ok = if on_water { self.map.terrain[i] == Terrain::Water } else { self.map.terrain[i].buildable() };
         terrain_ok
-            && self.map.ore[i] == 0
+            && !self.map.has_resource(i)
             && self.building_at[i] == NONE
             && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
             && self.players[player as usize].explored[i] != 0

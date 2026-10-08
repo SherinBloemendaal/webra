@@ -11,7 +11,7 @@ export const TEST_MAP_KEY = 'webra.editor.testMap';
 /**
  * The map the page was opened with, or null when the URL asks for none.
  *
- * Returns the parsed map object (format 1; pass `JSON.stringify(map)` to
+ * Returns the parsed map object (format 1 or 2; pass `JSON.stringify(map)` to
  * `Game.from_map` / `Game.validate_map`). Throws an Error with a message for
  * the player when a map was requested but cannot be loaded (missing test map,
  * bad JSON, map service unavailable, hash mismatch).

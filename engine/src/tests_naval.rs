@@ -18,7 +18,14 @@ fn coast() -> World {
             terrain[(y * W + x) as usize] = Terrain::Water;
         }
     }
-    let map = Map { width: W, height: H, terrain, ore: vec![0; (W * H) as usize], spawns: vec![(2, 2), (2, 30)] };
+    let map = Map {
+        width: W,
+        height: H,
+        terrain,
+        ore: vec![0; (W * H) as usize],
+        gems: vec![0; (W * H) as usize],
+        spawns: vec![(2, 2), (2, 30)],
+    };
     let mut w = World::empty(Rules::load(), map, 11);
     for (f, start) in [("allies", (2, 2)), ("soviet", (2, 30))] {
         let fi = w.rules.faction_index(f).unwrap();

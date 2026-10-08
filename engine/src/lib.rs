@@ -469,6 +469,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "gemBales": a.gem_bales,
             "ability": self.world.ability_json(i),
             // Helicopters: AmmoPool rounds left and size, and whether landed.
             "ammo": self.world.heli_ammo(i).0,
@@ -933,7 +934,9 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
 fn preview_rgba(m: &map::Map) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
-        let rgb = if m.ore[i] > 0 {
+        let rgb = if m.gems[i] > 0 {
+            [190, 70, 150]
+        } else if m.ore[i] > 0 {
             [200, 160, 50]
         } else {
             match m.terrain[i] {

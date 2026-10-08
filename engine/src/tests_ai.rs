@@ -32,6 +32,7 @@ fn arena(size: i32, players: &[Seat]) -> World {
     for i in 0..map.cells() {
         map.terrain[i] = Terrain::Clear;
         map.ore[i] = 0;
+        map.gems[i] = 0;
     }
     let mut w = World::empty(rules, map, 3);
     w.pass = crate::flowfield::Passability::new(&w.map);
