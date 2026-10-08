@@ -108,6 +108,17 @@ export const FACTION_GROUPS = [
 export const FACTIONS = new Map();
 for (const g of FACTION_GROUPS) for (const f of g.items) FACTIONS.set(f.value, f);
 
+/**
+ * Side of a lobby faction choice, for the UI theme: 'allies', 'soviet', or
+ * null when it is not known yet (plain Random).
+ */
+export function factionSide(faction) {
+  if (faction === 'randomallies') return 'allies';
+  if (faction === 'randomsoviet') return 'soviet';
+  const group = FACTION_GROUPS.find((g) => g.label !== 'Random' && g.items.some((f) => f.value === faction));
+  return group ? group.label.toLowerCase() : null;
+}
+
 export const DEFAULTS = {
   mapSize: 96,
   startingCash: 5000,
@@ -119,6 +130,7 @@ export const DEFAULTS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  cheats: false,
 };
 
 const DEFAULT_PLAYERS = [
@@ -244,6 +256,7 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     buildRadius: bool('buildRadius'),
     redeployableMcv: bool('redeployableMcv'),
     oreRegrowth: bool('oreRegrowth'),
+    cheats: bool('cheats'),
     stressUnits:
       Number.isInteger(s.stressUnits) && s.stressUnits >= UNITS_MIN && s.stressUnits <= UNITS_MAX
         ? s.stressUnits
@@ -403,6 +416,7 @@ export function buildOptions(state, mapJson = null) {
     buildRadius: s.buildRadius,
     redeployableMcv: s.redeployableMcv,
     oreRegrowth: s.oreRegrowth,
+    cheats: s.cheats,
     map: s.mapSource === 'file' ? mapJson : null,
   };
 }

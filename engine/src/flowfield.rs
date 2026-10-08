@@ -33,6 +33,7 @@ const MIN_CACHED: usize = 32;
 /// `FlowField::dist` of a cell that cannot reach the goal.
 pub const DIST_NONE: u16 = u16::MAX;
 
+#[derive(Clone)]
 pub struct FlowField {
     pub goal: u32,
     pub loco: u8,
@@ -47,6 +48,7 @@ pub struct FlowField {
 }
 
 /// Passability shared by all ground locomotors, plus per-cell connectivity labels.
+#[derive(Clone)]
 pub struct Passability {
     pub blocked: Vec<bool>,
     pub component: Vec<u32>,
@@ -132,6 +134,7 @@ pub fn step(map: &Map, blocked: &[bool], x: i32, y: i32, d: usize) -> Option<usi
     Some(j)
 }
 
+#[derive(Clone)]
 pub struct FlowCache {
     fields: Vec<FlowField>,
     index: BTreeMap<(u32, u8), usize>,
@@ -159,13 +162,22 @@ impl FlowCache {
         &self.fields[f]
     }
 
-    /// The cached field toward `goal` for `loco` if it is up to date with
-    /// `pass`, without computing anything or touching the cache order. For
-    /// read-only users such as the path overlay (paths.rs).
-    pub fn peek(&self, pass: &Passability, goal: u32, loco: u8) -> Option<&FlowField> {
+    /// The cached field toward `goal` for locomotor `loco`, if it exists and
+    /// is current for passability `version`. Read only (debug views): never
+    /// computes, evicts or touches the use clock.
+    pub fn peek(&self, goal: u32, loco: u8, version: u32) -> Option<&[u8]> {
         let &i = self.index.get(&(goal, loco))?;
         let f = &self.fields[i];
-        (f.version == pass.version).then_some(f)
+        (f.version == version).then_some(f.dirs.as_slice())
+    }
+
+    /// Number of cached fields.
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
     }
 
     fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> usize {
@@ -346,7 +358,7 @@ mod tests {
 
     fn open_map(w: i32, h: i32) -> Map {
         let n = (w * h) as usize;
-        Map { width: w, height: h, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: vec![] }
+        Map { width: w, height: h, terrain: vec![Terrain::Clear; n], ore: vec![0; n], gems: vec![0; n], spawns: vec![] }
     }
 
     fn walk(map: &Map, pass: &Passability, cache: &mut FlowCache, locos: &[Locomotor], from: (i32, i32), goal: u32) -> usize {

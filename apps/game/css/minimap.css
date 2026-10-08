@@ -1,0 +1,101 @@
+/* Radar minimap at the top of the sidebar (js/minimap.js). The picture is one
+   pixel per cell, scaled up without smoothing. Sizes and the camera frame are
+   CSS variables set through the CSSOM (no style attributes, see the CSP). */
+
+#sidebar .mm {
+  position: relative;
+  flex: none;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #060807;
+  border: 1px solid var(--sb-edge, #3a4346);
+  border-radius: 3px;
+}
+
+#sidebar .mm-screen {
+  position: relative;
+  width: var(--mm-w, 100%);
+  height: var(--mm-h, 100%);
+}
+
+#sidebar .mm-static,
+#sidebar .mm-layer,
+#sidebar .mm-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#sidebar .mm-static,
+#sidebar .mm-map {
+  display: block;
+  image-rendering: pixelated;
+}
+
+#sidebar .mm-static {
+  visibility: hidden;
+}
+
+#sidebar .mm.static .mm-static {
+  visibility: visible;
+}
+
+/* Opens from a line across the middle, like the Red Alert radar coming online. */
+#sidebar .mm-layer {
+  overflow: hidden;
+  clip-path: inset(calc((1 - var(--mm-reveal, 0)) * 50%) 0);
+}
+
+#sidebar .mm-map {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#sidebar .mm-camera {
+  position: absolute;
+  left: var(--cam-l, 0);
+  top: var(--cam-t, 0);
+  width: var(--cam-w, 0);
+  height: var(--cam-h, 0);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+#sidebar .mm-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sb-dim, #8b9288);
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+#sidebar .mm.off .mm-label {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+@media (max-height: 760px) {
+  #sidebar .mm {
+    height: 150px;
+  }
+}
+
+/* Phone width: the sidebar runs along the bottom; keep the radar small. */
+@media (max-width: 720px) {
+  #sidebar .mm {
+    height: 110px;
+  }
+}

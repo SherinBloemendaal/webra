@@ -18,7 +18,14 @@ fn coast() -> World {
             terrain[(y * W + x) as usize] = Terrain::Water;
         }
     }
-    let map = Map { width: W, height: H, terrain, ore: vec![0; (W * H) as usize], spawns: vec![(2, 2), (2, 30)] };
+    let map = Map {
+        width: W,
+        height: H,
+        terrain,
+        ore: vec![0; (W * H) as usize],
+        gems: vec![0; (W * H) as usize],
+        spawns: vec![(2, 2), (2, 30)],
+    };
     let mut w = World::empty(Rules::load(), map, 11);
     for (f, start) in [("allies", (2, 2)), ("soviet", (2, 30))] {
         let fi = w.rules.faction_index(f).unwrap();
@@ -476,7 +483,9 @@ fn ships_render_turrets_at_their_offsets_and_subs_as_ripples() {
 #[test]
 fn missile_submarine_fires_anti_air_missiles() {
     let mut w = coast();
-    unit(&mut w, "MSUB", 0, 34, 20);
+    let msub = unit(&mut w, "MSUB", 0, 34, 20);
+    // Human submarines start on HoldFire (AutoTarget InitialStance): let it pick targets.
+    w.actors[msub].stance = crate::rules::Stance::AttackAnything;
     let yak = unit(&mut w, "YAK", 1, 37, 20);
     assert_eq!(w.actors[yak].kind, Kind::Aircraft);
     let aa = weapon(&w, "SubMissileAA");

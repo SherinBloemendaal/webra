@@ -12,8 +12,10 @@ import {
 } from '../src/crypto.js';
 import { checkOrigin, HttpError, readJson, readText } from '../src/http.js';
 import { prepareMap } from '../src/maps.js';
-import { ordersFitRules, validateCreateSession } from '../src/validate.js';
-import { HOST_KEY_RE } from '@webra/protocol';
+import { cheatsAllowed, ordersFitRules, validateCreateSession } from '../src/validate.js';
+import { DEFAULT_OPTIONS, HOST_KEY_RE, parseClientMessage } from '@webra/protocol';
+
+const ENGINE_RULES = JSON.parse(readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8'));
 
 test('passwords: salted PBKDF2, constant-time verify', async () => {
   const rec = await hashPassword('hunter2', 1000);
@@ -132,6 +134,45 @@ test('map uploads are validated against the engine rules and hashed canonically'
   assert.ok(readFileSync(new URL('../../../engine/rules.json', import.meta.url)).length > 1000);
 });
 
+test('map uploads accept format 1 and format 2 (gems) maps and refuse bad gem layers', async () => {
+  const w = 32;
+  const layer = (fill = {}) => {
+    const b = Buffer.alloc(w * w);
+    for (const [i, v] of Object.entries(fill)) b[Number(i)] = v;
+    return b.toString('base64');
+  };
+  const map = {
+    format: 2,
+    name: 'Gems',
+    author: 'Me',
+    width: w,
+    height: w,
+    terrain: layer(),
+    ore: layer({ 300: 6 }),
+    gems: layer({ 301: 3, 302: 1 }),
+    spawns: [
+      [1, 1],
+      [20, 20],
+    ],
+  };
+  const p = await prepareMap(JSON.stringify(map));
+  assert.ok(p.canonical.includes(`"ore":"${map.ore}","gems":"${map.gems}","spawns"`), p.canonical.slice(0, 200));
+  // The format 1 version of the same map (no gems) is a different, still valid map.
+  const { gems: _g, ...old } = map;
+  const p1 = await prepareMap(JSON.stringify({ ...old, format: 1 }));
+  assert.notEqual(p1.hash, p.hash);
+  assert.ok(!p1.canonical.includes('"gems"'));
+  for (const [bad, re] of [
+    [{ ...map, format: 1 }, /format 1 maps have no gems layer/],
+    [{ ...old }, /format 2 maps need a gems layer/],
+    [{ ...map, gems: layer({ 300: 1 }) }, /both ore and gems/],
+    [{ ...map, gems: layer({ 301: 4 }) }, /gem density 4/],
+    [{ ...map, terrain: layer({ 301: 3 }) }, /gems can only lie on clear or rough ground/],
+  ]) {
+    await assert.rejects(prepareMap(JSON.stringify(bad)), (e) => e instanceof HttpError && e.status === 422 && re.test(e.message), re.source);
+  }
+});
+
 test('uploads the engine would refuse are rejected by the server too', async () => {
   const { initSync, Game } = await import('../../game/pkg/webra_sim.js');
   initSync({ module: readFileSync(new URL('../../game/pkg/webra_sim_bg.wasm', import.meta.url)) });
@@ -151,4 +192,45 @@ test('orders must name actor types the engine knows', () => {
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }, { o: 'stop', player: 0, ids: [] }], 84), true);
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 84, cx: 1, cy: 1 }], 84), false);
   assert.equal(ordersFitRules([{ o: 'start_production', player: 0, ty: 65535, count: 1 }], 84), false);
+});
+
+test('command bar orders name no actor type and pass the rules check once the protocol accepts them', () => {
+  // Shape (stance names, id lists, coordinates) is checked by the protocol for
+  // every orders message before ordersFitRules runs (session.js).
+  const orders = [
+    { o: 'attack_ground', player: 0, ids: [1, 2], x: 1024, y: 2048 },
+    { o: 'guard', player: 0, ids: [1], target: 7 },
+    { o: 'scatter', player: 0, ids: [1, 2] },
+    { o: 'waypoint', player: 0, ids: [1], x: 0, y: 512, attack_move: false },
+    { o: 'set_stance', player: 0, ids: [1], stance: 'defend' },
+  ];
+  const msg = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders }));
+  assert.ok(msg.ok, msg.message);
+  assert.equal(ordersFitRules(msg.msg.orders, ENGINE_RULES.actors.length), true);
+  assert.equal(ordersFitRules([...msg.msg.orders, { o: 'place', player: 0, ty: ENGINE_RULES.actors.length, cx: 1, cy: 1 }], ENGINE_RULES.actors.length), false);
+  const bad = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 'berserk' }] }));
+  assert.equal(bad.ok, false);
+});
+
+test('cheat orders are relayed only in games with the cheats option', () => {
+  const normal = [{ o: 'stop', player: 0, ids: [1] }, { o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }];
+  const cheats = [
+    { o: 'dev_flag', player: 0, flag: 'fast_build', on: true },
+    { o: 'dev_cash', player: 0 },
+    { o: 'dev_kill', player: 0, ids: [5] },
+    { o: 'dev_experience', player: 0, ids: [5] },
+  ];
+  const off = { ...DEFAULT_OPTIONS };
+  const on = { ...DEFAULT_OPTIONS, cheats: true };
+  assert.equal(cheatsAllowed(normal, off), true);
+  assert.equal(cheatsAllowed([], off), true);
+  for (const c of cheats) {
+    assert.equal(cheatsAllowed([c], off), false, c.o);
+    assert.equal(cheatsAllowed([...normal, c], off), false, `${c.o} hidden among normal orders`);
+    assert.equal(cheatsAllowed([...normal, c], on), true, c.o);
+  }
+  // Anything but a literal true keeps cheats off (missing or old stored options).
+  for (const options of [undefined, null, {}, { cheats: 'true' }, { cheats: 1 }]) {
+    assert.equal(cheatsAllowed(cheats, options), false, JSON.stringify(options));
+  }
 });

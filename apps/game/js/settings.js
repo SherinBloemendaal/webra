@@ -1,111 +1,147 @@
-// Per-viewer game settings, kept in localStorage. Every read and write is
-// guarded: storage can be missing or throw (private windows, blocked site
-// data), and the game then runs on the defaults for this session.
+// User settings, kept in localStorage under one JSON key.
 //
-//   get(key)            current value (the default when never set)
-//   set(key, value)     change, store and notify subscribers
-//   subscribe(listener) listener(key, value) on every change; returns unsubscribe
+//   import { get, set, subscribe } from './settings.js';
+//   get('edgeScrollSpeed');                      // 1
+//   set('edgeScrollSpeed', 2);                   // clamped, stored, listeners called
+//   const off = subscribe((key, value) => ...);  // every change
+//   const off2 = subscribe('showUnitPaths', (value) => ...); // one key
 //
-// Keys:
-//   showUnitPaths  draw the planned route of selected own units (boolean)
+// Storage can be missing or throw (private windows, blocked site data, Node),
+// so every access is wrapped: the game then runs on defaults for the session.
 
-export const STORAGE_KEY = 'webra.settings';
+const STORAGE_KEY = 'webra.settings';
 
-export const DEFAULTS = Object.freeze({
-  showUnitPaths: false,
-});
+/**
+ * Known settings. Numbers are clamped to [min, max]; choices must be one of
+ * their options; a stored value of the wrong type falls back to the default.
+ */
+export const SCHEMA = {
+  // Multiplier on the edge scroll speed; 0 turns edge scrolling off.
+  edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3 },
+  // Multiplier on the arrow key scroll speed.
+  keyScrollSpeed: { type: 'number', default: 1, min: 0.25, max: 3 },
+  // Draw the paths of selected units (renderer side lives in another module).
+  showUnitPaths: { type: 'boolean', default: false },
+  // Highest canvas pixels per CSS pixel (js/layout.js renderPixelRatio); lower is faster on phones.
+  pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3 },
+  // Render below screen resolution (cheap speed-up for weak mobile GPUs).
+  lowQuality: { type: 'boolean', default: false },
+  // Health bars besides the selection and the hovered actor (OpenRA status bars):
+  // 'off' (selected and hovered only), 'damaged' (also damaged actors), 'all'.
+  healthBars: { type: 'choice', default: 'off', options: ['off', 'damaged', 'all'] },
+  // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
+  hotkeys: { type: 'object', default: {} },
+};
 
-const listeners = new Set();
-let values = load();
+function normalize(key, value) {
+  const spec = SCHEMA[key];
+  if (spec.type === 'number') {
+    const n = typeof value === 'number' ? value : Number.NaN;
+    return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
+  }
+  if (spec.type === 'boolean') return typeof value === 'boolean' ? value : spec.default;
+  if (spec.type === 'choice') return spec.options.includes(value) ? value : spec.default;
+  if (spec.type === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return structuredClone(spec.default);
+    return structuredClone(value);
+  }
+  return spec.default;
+}
 
-function storage() {
+function defaultStorage() {
   try {
-    return globalThis.localStorage ?? null;
+    // Browsers only: Node exposes an experimental localStorage that warns when touched.
+    return globalThis.window?.localStorage ?? null;
   } catch {
     return null;
   }
 }
 
-/** Stored values over the defaults; unknown keys and wrong types are dropped. */
-function parse(raw) {
-  const out = { ...DEFAULTS };
-  let data = null;
+function report(err) {
+  if (typeof globalThis.reportError === 'function') globalThis.reportError(err);
+  else console.error(err);
+}
+
+/**
+ * A settings store over `storage` (a Web Storage object, or null for memory only).
+ * The module exports one store over localStorage; tests create their own.
+ */
+export function createSettings(storage = defaultStorage()) {
+  const values = {};
+  let stored = {};
   try {
-    data = raw ? JSON.parse(raw) : null;
+    const raw = storage?.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed;
   } catch {
-    data = null;
+    // Unreadable or corrupt: start from defaults.
   }
-  if (data && typeof data === 'object') {
-    for (const key of Object.keys(DEFAULTS)) {
-      if (typeof data[key] === typeof DEFAULTS[key]) out[key] = data[key];
-    }
-  }
-  return out;
-}
+  for (const key of Object.keys(SCHEMA)) values[key] = normalize(key, stored[key]);
+  const listeners = new Set();
 
-function load() {
-  try {
-    return parse(storage()?.getItem(STORAGE_KEY));
-  } catch {
-    return { ...DEFAULTS };
-  }
-}
+  const check = (key) => {
+    if (!Object.hasOwn(SCHEMA, key)) throw new Error(`Unknown setting "${key}"`);
+  };
 
-function save() {
-  try {
-    storage()?.setItem(STORAGE_KEY, JSON.stringify(values));
-  } catch {
-    // Storage full or blocked: the setting still holds for this session.
-  }
-}
-
-function check(key) {
-  if (!Object.hasOwn(DEFAULTS, key)) throw new Error(`unknown setting ${key}`);
-}
-
-export function get(key) {
-  check(key);
-  return values[key];
-}
-
-export function set(key, value) {
-  check(key);
-  if (typeof value !== typeof DEFAULTS[key]) throw new TypeError(`setting ${key} must be a ${typeof DEFAULTS[key]}`);
-  if (values[key] === value) return;
-  values = { ...values, [key]: value };
-  save();
-  notify(key, value);
-}
-
-export function subscribe(listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function notify(key, value) {
-  for (const listener of [...listeners]) {
+  const save = () => {
     try {
-      listener(key, value);
-    } catch (err) {
-      console.error(err);
+      // Keep keys this build does not know (written by a newer build) intact.
+      storage?.setItem(STORAGE_KEY, JSON.stringify({ ...stored, ...values }));
+    } catch {
+      // Quota or blocked storage: the change still applies for this session.
     }
-  }
+  };
+
+  return {
+    /** Current value of a setting (objects are copies). */
+    get(key) {
+      check(key);
+      const v = values[key];
+      return v && typeof v === 'object' ? structuredClone(v) : v;
+    },
+    /** Change a setting; returns the stored (normalized) value. */
+    set(key, value) {
+      check(key);
+      const next = normalize(key, value);
+      if (JSON.stringify(next) === JSON.stringify(values[key])) return this.get(key);
+      values[key] = next;
+      save();
+      for (const fn of [...listeners]) {
+        try {
+          fn(key, this.get(key));
+        } catch (err) {
+          report(err);
+        }
+      }
+      return this.get(key);
+    },
+    /** Put a setting back to its default. */
+    reset(key) {
+      check(key);
+      return this.set(key, SCHEMA[key].default);
+    },
+    /**
+     * subscribe(fn): fn(key, value) on every change.
+     * subscribe(key, fn): fn(value) when that key changes.
+     * Returns a function that unsubscribes.
+     */
+    subscribe(keyOrFn, fn) {
+      let listener;
+      if (typeof keyOrFn === 'function') listener = keyOrFn;
+      else {
+        check(keyOrFn);
+        listener = (key, value) => key === keyOrFn && fn(value);
+      }
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
 }
 
-/** Re-read storage (another tab changed it, or tests swapped the storage). */
-export function reload() {
-  const old = values;
-  values = load();
-  for (const key of Object.keys(DEFAULTS)) {
-    if (old[key] !== values[key]) notify(key, values[key]);
-  }
-}
+const store = createSettings();
 
-// Changes made in another tab of the same viewer apply here too.
-try {
-  globalThis.addEventListener?.('storage', (e) => {
-    if (e.key === STORAGE_KEY || e.key === null) reload();
-  });
-} catch {
-  // No window (tests, workers).
-}
+export const get = (key) => store.get(key);
+export const set = (key, value) => store.set(key, value);
+export const reset = (key) => store.reset(key);
+export const subscribe = (keyOrFn, fn) => store.subscribe(keyOrFn, fn);
+export const settings = store;

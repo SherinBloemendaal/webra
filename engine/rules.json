@@ -35,7 +35,9 @@
    55,
    50
   ],
-  "ore_max_density": 12
+  "ore_max_density": 12,
+  "gem_value": 50,
+  "gem_max_density": 3
  },
  "actors": [
   {
@@ -61,6 +63,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -79,6 +82,12 @@
      "needs_option": true
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -171,6 +180,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -180,6 +190,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -255,6 +271,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -264,6 +281,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -339,6 +362,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -348,6 +372,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -435,6 +465,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -444,6 +475,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -504,6 +541,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -513,6 +551,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -616,6 +660,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -625,6 +670,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -726,6 +777,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -735,6 +787,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -844,6 +902,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -853,6 +912,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -949,6 +1014,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -958,6 +1024,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1038,6 +1110,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1046,8 +1119,16 @@
     "gap_sight": {
      "range": 6144
     },
-    "provides_radar": {}
+    "provides_radar": {
+     "jammable": true
+    }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1123,6 +1204,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1132,6 +1214,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1225,6 +1313,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1314,6 +1403,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1403,6 +1498,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1492,6 +1588,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1581,6 +1683,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1597,6 +1700,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1705,6 +1814,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1721,6 +1831,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1844,6 +1960,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1869,6 +1986,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1953,6 +2076,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -1962,6 +2086,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -2045,6 +2175,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2056,6 +2187,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2116,6 +2253,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2171,6 +2309,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2247,6 +2391,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2276,6 +2421,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2336,6 +2487,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -2366,6 +2518,12 @@
      }
     ]
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -2426,6 +2584,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2434,6 +2593,9 @@
      "wall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2494,6 +2656,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2502,6 +2665,9 @@
      "wall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2561,6 +2727,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "line_build": {
      "range": 8
@@ -2569,6 +2736,9 @@
      "heavywall"
     ]
    },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2636,6 +2806,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2665,6 +2839,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2732,6 +2912,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -2776,6 +2960,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2843,6 +3033,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2858,6 +3052,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2925,6 +3125,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -2940,6 +3144,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3016,6 +3226,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3031,6 +3245,12 @@
      "range": 6144
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3112,6 +3332,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3120,6 +3344,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3187,6 +3417,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -3195,6 +3429,12 @@
      "range": 5120
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -3254,6 +3494,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3263,6 +3504,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3324,6 +3571,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3333,6 +3581,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3394,6 +3648,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3403,6 +3658,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3463,6 +3724,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3472,6 +3734,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3533,6 +3801,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3542,6 +3811,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3603,6 +3878,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3612,6 +3888,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3673,6 +3955,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3682,6 +3965,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -3743,6 +4032,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3752,6 +4042,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -3813,6 +4109,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3822,6 +4119,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -3882,6 +4185,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3891,6 +4195,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -3950,6 +4260,7 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "accepts_cash": {},
     "iron_curtainable": {
@@ -3959,6 +4270,12 @@
      "range": 1024
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -4023,6 +4340,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -4036,6 +4357,63 @@
     },
     "crushable": [
      "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
     ]
    },
    "unit": {
@@ -4077,6 +4455,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -4090,6 +4472,63 @@
     },
     "crushable": [
      "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
     ]
    },
    "unit": {
@@ -4133,6 +4572,7 @@
     "damage_cooldown": 500
    },
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4145,6 +4585,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4190,6 +4636,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4211,6 +4658,12 @@
      "needs_option": false
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 60,
     "turn_speed": 20,
@@ -4248,6 +4701,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4263,6 +4717,12 @@
      "payload": 500
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4308,6 +4768,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4332,6 +4796,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 164,
     "turn_speed": 40,
@@ -4372,6 +4881,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -4396,6 +4909,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -4442,6 +5000,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4454,6 +5016,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -4499,6 +5106,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4511,6 +5122,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4557,6 +5213,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4569,6 +5229,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4615,6 +5320,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4627,6 +5336,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -4680,6 +5434,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4692,6 +5450,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -4733,6 +5536,10 @@
    "death_weapon": 21,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4745,6 +5552,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -4786,6 +5638,10 @@
    "death_weapon": 23,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4798,6 +5654,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -4836,6 +5737,7 @@
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "minelayer": {
      "mine": "MINV",
@@ -4873,6 +5775,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -4912,6 +5859,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4925,8 +5873,17 @@
     },
     "gap_sight": {
      "range": 7168
+    },
+    "jams_radar": {
+     "range": 18432
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 68,
     "turn_speed": 20,
@@ -4966,6 +5923,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -4981,6 +5939,12 @@
      "range": 4096
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -5023,6 +5987,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5035,6 +6003,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -5076,6 +6089,7 @@
    "death_weapon": 27,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": true
@@ -5089,6 +6103,12 @@
     },
     "demo_truck": {}
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 67,
     "turn_speed": 20,
@@ -5130,6 +6150,10 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5146,6 +6170,51 @@
      "max_distance": 12
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 86,
     "turn_speed": 20,
@@ -5192,6 +6261,10 @@
      0
     ]
    ],
+   "stance": [
+    "hold_fire",
+    "return_fire"
+   ],
    "abilities": {
     "cargo": {
      "types": [
@@ -5205,7 +6278,6 @@
      "eject_on_sell": true,
      "eject_on_death": false
     },
-    "hold_fire": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -5232,6 +6304,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5272,6 +6389,7 @@
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5292,6 +6410,12 @@
      "detonation_weapon": 31
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 46,
     "turn_speed": 20,
@@ -5329,6 +6453,7 @@
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [
@@ -5350,6 +6475,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 115,
     "turn_speed": 512,
@@ -5397,6 +6567,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5416,6 +6590,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 142,
     "turn_speed": 28,
@@ -5457,6 +6676,10 @@
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5491,6 +6714,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 78,
     "turn_speed": 20,
@@ -5540,6 +6808,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5559,6 +6831,51 @@
      "range": 4096
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 92,
     "turn_speed": 28,
@@ -5611,6 +6928,10 @@
      0
     ]
    ],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "iron_curtainable": {
      "kills": false
@@ -5623,6 +6944,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -5666,8 +7032,11 @@
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "return_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -5701,6 +7070,51 @@
      "range": 5120
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -5740,6 +7154,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [
@@ -5757,6 +7172,51 @@
      "range": 6144
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5791,7 +7251,6 @@
      "altitude_velocity": 58,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [
@@ -5831,12 +7290,60 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 8192
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -5873,7 +7380,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [
@@ -5912,12 +7418,60 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 8192
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -5954,7 +7508,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [
@@ -5994,12 +7547,60 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 10240
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -6036,7 +7637,6 @@
      "altitude_velocity": 43,
      "wait_distance": 4096,
      "take_off_on_resupply": true,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 8,
      "rotors": [
@@ -6074,12 +7674,60 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 9216
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -6110,7 +7758,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 6,
      "rotors": [],
@@ -6147,12 +7794,60 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
    "abilities": {
-    "hold_fire": {},
     "gap_sight": {
      "range": 11264
     }
    },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -6183,7 +7878,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": true,
      "facing_tolerance": 80,
      "ammo_pips": 8,
      "rotors": [],
@@ -6218,6 +7912,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -6231,6 +7929,63 @@
     },
     "crushable": [
      "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
     ]
    },
    "unit": {
@@ -6271,6 +8026,10 @@
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
    "abilities": {
     "detect_cloaked": {
      "range": 1536,
@@ -6284,6 +8043,63 @@
     },
     "crushable": [
      "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
     ]
    },
    "unit": {
@@ -6321,7 +8137,14 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {},
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 373,
     "turn_speed": 28,
@@ -6345,7 +8168,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [],
@@ -6378,6 +8200,7 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cargo": {
      "types": [],
@@ -6390,6 +8213,12 @@
      "eject_on_death": false
     }
    },
+   "experience": null,
+   "gives_experience": {
+    "experience": 1000,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -6413,7 +8242,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 0,
      "rotors": [],
@@ -6448,7 +8276,14 @@
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {},
+   "experience": null,
+   "gives_experience": {
+    "experience": 1000,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -6472,7 +8307,6 @@
      "altitude_velocity": 43,
      "wait_distance": 3072,
      "take_off_on_resupply": false,
-     "hold_fire": false,
      "facing_tolerance": 512,
      "ammo_pips": 10,
      "rotors": [],
@@ -6505,6 +8339,7 @@
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -6521,7 +8356,10 @@
      ],
      "off_when_critical": false
     }
-   }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null
   },
   {
    "id": "MINP",
@@ -6546,6 +8384,7 @@
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
+   "stance": null,
    "abilities": {
     "cloak": {
      "initial_delay": 0,
@@ -6562,7 +8401,10 @@
      ],
      "off_when_critical": false
     }
-   }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null
   }
  ],
  "weapons": [
@@ -6579,7 +8421,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 95,
+   "valid": 351,
    "invalid": 0,
    "warheads": [
     {
@@ -6604,7 +8446,13 @@
      ],
      "delay": 0,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6628,7 +8476,13 @@
      ],
      "delay": 5,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6652,7 +8506,13 @@
      ],
      "delay": 10,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6676,7 +8536,13 @@
      ],
      "delay": 15,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -6700,7 +8566,13 @@
      ],
      "delay": 20,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -6717,7 +8589,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -6739,7 +8611,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6760,7 +8637,12 @@
      ],
      "delay": 2,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6781,7 +8663,12 @@
      ],
      "delay": 4,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6802,7 +8689,12 @@
      ],
      "delay": 6,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6823,7 +8715,12 @@
      ],
      "delay": 8,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     },
     {
      "kind": "spread",
@@ -6844,7 +8741,12 @@
      ],
      "delay": 10,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -6861,7 +8763,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -6883,7 +8785,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -6900,7 +8807,7 @@
    "speed": 250,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -6922,7 +8829,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -6939,7 +8852,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -6961,7 +8874,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ElectricityDeath"
+     ]
     }
    ]
   },
@@ -7000,7 +8918,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7039,7 +8962,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7056,7 +8984,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7078,7 +9006,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7117,7 +9050,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7134,7 +9072,7 @@
    "speed": 213,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7156,7 +9094,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7173,7 +9116,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7195,7 +9138,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7212,7 +9160,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -7234,7 +9182,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7251,7 +9204,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7273,7 +9226,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7312,7 +9270,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7329,7 +9292,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7351,7 +9314,12 @@
      ],
      "delay": 0,
      "valid": 31,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
     }
    ]
   },
@@ -7368,7 +9336,7 @@
    "speed": 853,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7390,7 +9358,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7407,7 +9380,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7429,7 +9402,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7446,7 +9424,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7468,7 +9446,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7485,7 +9468,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 9,
    "warheads": [
     {
@@ -7507,7 +9490,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 8
+     "invalid": 8,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7546,7 +9534,12 @@
      ],
      "delay": 0,
      "valid": 9,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7563,7 +9556,7 @@
    "speed": 170,
    "inaccuracy": 213,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7588,7 +9581,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7605,7 +9604,7 @@
    "speed": 170,
    "inaccuracy": 213,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7630,7 +9629,13 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7647,7 +9652,7 @@
    "speed": 170,
    "inaccuracy": 1162,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7669,7 +9674,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -7686,7 +9696,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -7708,7 +9718,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7725,7 +9740,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7747,7 +9762,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 32
+     "invalid": 32,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7764,7 +9784,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7786,7 +9806,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ElectricityDeath"
+     ]
     }
    ]
   },
@@ -7825,7 +9850,8 @@
      ],
      "delay": 0,
      "valid": 7,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": []
     }
    ]
   },
@@ -7842,7 +9868,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 95,
+   "valid": 351,
    "invalid": 0,
    "warheads": [
     {
@@ -7867,7 +9893,13 @@
      ],
      "delay": 0,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7891,7 +9923,13 @@
      ],
      "delay": 5,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7915,7 +9953,13 @@
      ],
      "delay": 10,
      "valid": 95,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     },
     {
      "kind": "spread",
@@ -7939,7 +9983,13 @@
      ],
      "delay": 15,
      "valid": 87,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
     }
    ]
   },
@@ -7956,7 +10006,7 @@
    "speed": 298,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -7978,7 +10028,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -7995,7 +10050,7 @@
    "speed": 298,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8017,7 +10072,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8056,7 +10116,8 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 1
+     "invalid": 1,
+     "damage_types": []
     }
    ]
   },
@@ -8095,7 +10156,8 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 1
+     "invalid": 1,
+     "damage_types": []
     }
    ]
   },
@@ -8112,7 +10174,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -8134,7 +10196,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8151,7 +10218,7 @@
    "speed": 682,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 64,
    "warheads": [
     {
@@ -8173,7 +10240,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8212,7 +10284,10 @@
      ],
      "delay": 0,
      "valid": 128,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8251,7 +10326,12 @@
      ],
      "delay": 0,
      "valid": 80,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8268,7 +10348,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -8290,7 +10370,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8307,7 +10392,7 @@
    "speed": 170,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 64,
    "warheads": [
     {
@@ -8329,7 +10414,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8368,7 +10458,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8385,7 +10480,7 @@
    "speed": 204,
    "inaccuracy": 1962,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8410,7 +10505,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8427,7 +10527,7 @@
    "speed": 215,
    "inaccuracy": 614,
    "arc": true,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8452,7 +10552,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8494,7 +10599,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   },
@@ -8511,7 +10621,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -8536,7 +10646,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8553,7 +10668,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8575,7 +10690,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -8614,7 +10734,12 @@
      ],
      "delay": 0,
      "valid": 8,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8631,7 +10756,7 @@
    "speed": 256,
    "inaccuracy": 128,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8653,7 +10778,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8670,7 +10800,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8692,7 +10822,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "BulletDeath"
+     ]
     }
    ]
   },
@@ -8709,7 +10844,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 31,
+   "valid": 287,
    "invalid": 0,
    "warheads": [
     {
@@ -8734,7 +10869,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8751,7 +10891,7 @@
    "speed": 256,
    "inaccuracy": 316,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8773,7 +10913,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8790,7 +10935,7 @@
    "speed": 50,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8812,7 +10957,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 0
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
     }
    ]
   },
@@ -8829,7 +10979,7 @@
    "speed": 0,
    "inaccuracy": 0,
    "arc": false,
-   "valid": 23,
+   "valid": 279,
    "invalid": 0,
    "warheads": [
     {
@@ -8851,7 +11001,12 @@
      ],
      "delay": 0,
      "valid": 23,
-     "invalid": 32
+     "invalid": 32,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
     }
    ]
   }

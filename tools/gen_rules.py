@@ -66,6 +66,15 @@ AMMO_RELOAD_COUNT = 1               # OpenRA AmmoPoolInfo.ReloadCount default
 ALTITUDE_VELOCITY = '0c43'          # OpenRA AircraftInfo.AltitudeVelocity default
 WAIT_DISTANCE_FROM_RESUPPLY = '3c0'  # OpenRA AircraftInfo.WaitDistanceFromResupplyBase default
 FACING_TOLERANCE = 512              # OpenRA AttackBaseInfo.FacingTolerance default
+# Veterancy and prone infantry. The values themselves come from the catalog
+# (^GainsExperience, GivesExperience and TakeCover in mods/ra/rules); these are
+# the OpenRA trait defaults for fields the RA rules leave out:
+GIVES_EXPERIENCE = -1               # GivesExperienceInfo.Experience: -1 = the actor's Valued cost
+ACTOR_EXPERIENCE_MODIFIER = 10000   # GivesExperienceInfo.ActorExperienceModifier (percent)
+TAKE_COVER_DURATION = 100           # TakeCoverInfo.Duration (ticks prone after the last hit)
+TAKE_COVER_SPEED = 50               # TakeCoverInfo.SpeedModifier (percent while prone)
+CHANGES_HEALTH_DELAY = 5            # ChangesHealthInfo.Delay
+CHANGES_HEALTH_START_IF_BELOW = 50  # ChangesHealthInfo.StartIfBelow (percent)
 
 # Deliberate deviations from OpenRA's rules, applied to the exported actors
 # after extraction (shallow: each key replaces the exported field). Every entry
@@ -158,8 +167,9 @@ def parse_locomotors():
 
 
 # Target classes, as bit flags shared with the simulation (rules.rs).
+# 'Ground' is terrain (force-fire on the ground, engine TARGET_GROUND); no actor carries it.
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
-               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 0, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 256, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
                # Submarine is its own class (surfaced and submerged subs): depth charge
                # warheads hit it, while Underwater only matches submerged subs.
                'Ship': 16, 'Submarine': 128,
@@ -215,6 +225,8 @@ def weapon_info(name, weapons):
             'delay': int(v.get('Delay', 0)),
             'valid': target_mask(v.get('ValidTargets', 'Ground, Water')) or (1 | 2 | 4 | 16),
             'invalid': target_mask(v.get('InvalidTargets', '')),
+            # DamageTypes: TakeCover reacts to them (TriggerProne, Prone50Percent).
+            'damage_types': tokens(v.get('DamageTypes')),
         })
     if not warheads:
         raise SystemExit(f'weapon {name} has no damage warhead')
@@ -243,6 +255,93 @@ def weapon_info(name, weapons):
     }
 
 
+def experience_info(t):
+    """OpenRA GainsExperience with the rank bonuses its conditions switch on.
+
+    RA's ^GainsExperience grants the stacking condition `rank-veteran` once per
+    level (Conditions: experience thresholds as multiples of the actor's own
+    value) and `rank-elite` from `rank-veteran >= 4` (GrantCondition@RANK-ELITE).
+    Firepower, Damage, Speed and ReloadDelay multipliers and ChangesHealth@ELITE
+    require those conditions; they are resolved here to one modifier per level
+    (index 0 = level 1) and the first level that heals. Multipliers that require
+    other conditions (Iron Curtain, the dog's run) are not part of veterancy.
+    """
+    g = t.get('GainsExperience')
+    if g is None:
+        return None
+    g = g if isinstance(g, dict) else {}
+    conds = g.get('Conditions') or {}
+    names = set(conds.values())
+    if len(names) != 1:
+        raise SystemExit(f'GainsExperience conditions {conds} are not one stacking rank condition')
+    rank = names.pop()
+    thresholds = [int(k) for k in conds]  # YAML order: OpenRA grants them in this order
+    granted = {}
+    for v in trait(t, 'GrantCondition').values():
+        m = re.fullmatch(rf'{re.escape(rank)} >= (\d+)', (v or {}).get('RequiresCondition', '')) if isinstance(v, dict) else None
+        if m:
+            granted[v['Condition']] = int(m.group(1))
+
+    def level_test(cond):
+        """A function level -> bool for a rank condition, or None when `cond` is not one."""
+        m = re.fullmatch(rf'{re.escape(rank)} (==|>=) (\d+)', cond)
+        if m:
+            k = int(m.group(2))
+            return (lambda n: n == k) if m.group(1) == '==' else (lambda n: n >= k)
+        if cond in granted:
+            return lambda n: n >= granted[cond]
+        if rank in cond or any(c in cond for c in granted):
+            raise SystemExit(f'unsupported rank condition {cond!r}')
+        return None
+
+    levels = range(1, len(thresholds) + 1)
+
+    def modifiers(name):
+        out = []
+        for n in levels:
+            value = 100
+            for v in trait(t, name).values():
+                test = level_test(v.get('RequiresCondition', '')) if isinstance(v, dict) else None
+                if test and test(n):
+                    value = value * int(v['Modifier']) // 100
+            out.append(value)
+        return out
+
+    heal = None
+    for v in trait(t, 'ChangesHealth').values():
+        test = level_test(v.get('RequiresCondition', '')) if isinstance(v, dict) else None
+        if not test:
+            continue
+        active = [n for n in levels if test(n)]
+        if not active or active != list(range(active[0], len(thresholds) + 1)):
+            raise SystemExit(f'rank heal condition {v.get("RequiresCondition")!r} is not "from a level up"')
+        heal = {'rank': active[0], 'step': int(v.get('Step', 0)), 'percentage_step': int(v.get('PercentageStep', 0)),
+                'delay': int(v.get('Delay', CHANGES_HEALTH_DELAY)),
+                'start_if_below': int(v.get('StartIfBelow', CHANGES_HEALTH_START_IF_BELOW)),
+                'damage_cooldown': int(v.get('DamageCooldown', 0))}
+    return {'thresholds': thresholds, 'firepower': modifiers('FirepowerMultiplier'), 'damage': modifiers('DamageMultiplier'),
+            'speed': modifiers('SpeedMultiplier'), 'reload': modifiers('ReloadDelayMultiplier'), 'heal': heal}
+
+
+def gives_experience_info(t):
+    """OpenRA GivesExperience: experience the killer of this actor gains (-1: its cost)."""
+    if 'GivesExperience' not in t:
+        return None
+    g = t['GivesExperience'] if isinstance(t['GivesExperience'], dict) else {}
+    return {'experience': int(g.get('Experience', GIVES_EXPERIENCE)),
+            'actor_modifier': int(g.get('ActorExperienceModifier', ACTOR_EXPERIENCE_MODIFIER))}
+
+
+def take_cover_info(t):
+    """OpenRA TakeCover: infantry go prone when hit by a warhead with a trigger damage type."""
+    if 'TakeCover' not in t:
+        return None
+    c = t['TakeCover'] if isinstance(t['TakeCover'], dict) else {}
+    return {'duration': int(c.get('Duration', TAKE_COVER_DURATION)), 'speed_modifier': int(c.get('SpeedModifier', TAKE_COVER_SPEED)),
+            'damage_triggers': tokens(c.get('DamageTriggers')),
+            'damage_modifiers': [{'type': k, 'percent': int(v)} for k, v in (c.get('DamageModifiers') or {}).items()]}
+
+
 def has_damage(w):
     return any(k.startswith('Warhead') and isinstance(v, dict) and v.get('_') in ('SpreadDamage', 'TargetDamage', 'HealthPercentageDamage')
                for k, v in w.items())
@@ -265,11 +364,33 @@ def has(t, name):
     return bool(trait(t, name))
 
 
+# OpenRA UnitStance names as the engine spells them (rules.rs Stance).
+STANCES = {'HoldFire': 'hold_fire', 'ReturnFire': 'return_fire', 'Defend': 'defend', 'AttackAnything': 'attack_anything'}
+
+
+def stances(t):
+    """AutoTarget [InitialStance, InitialStanceAI] (both default to AttackAnything), or None without AutoTarget."""
+    if not has(t, 'AutoTarget'):
+        return None
+    at = first(t, 'AutoTarget')
+    return [STANCES[str(at.get('InitialStance', 'AttackAnything'))], STANCES[str(at.get('InitialStanceAI', 'AttackAnything'))]]
+
+
 def load_source_rules():
     """Resolved OpenRA actor rules from data/source (parse.py), keyed by actor name."""
     sys.path.insert(0, os.path.join(DATA, 'source'))
     import parse  # noqa: E402 (data/source/parse.py, only its parser is used)
     return parse
+
+
+def resource_types(src):
+    """Credits per bale (PlayerResources.ResourceValues) and the most bales a
+    cell holds (ResourceLayer.ResourceTypes.*.MaxDensity) of ore and gems."""
+    defs = src.load('rules', ['player', 'world'])
+    values = src.to_json(defs['^BasePlayer'][1])['PlayerResources']['ResourceValues']
+    types = src.to_json(defs['World'][1])['ResourceLayer']['ResourceTypes']
+    names = ['Ore', 'Gems']
+    return {n: int(values[n]) for n in names}, {n: int(types[n]['MaxDensity']) for n in names}
 
 
 def extra_actor(src, aid):
@@ -340,7 +461,13 @@ def main():
             'self_heal': None,
             # Forward/lateral offsets of each Turreted trait (render: ship turrets).
             'turret_offsets': [ints(v.get('Offset', '0,0,0'))[:2] for k, v in sorted(trait(t, 'Turreted').items()) if isinstance(v, dict)],
+            # AutoTarget: [InitialStance, InitialStanceAI]; null without AutoTarget (never picks targets itself).
+            'stance': stances(t),
             'abilities': {},
+            # Veterancy (GainsExperience, GivesExperience) and prone infantry (TakeCover).
+            'experience': experience_info(t),
+            'gives_experience': gives_experience_info(t),
+            'take_cover': take_cover_info(t) if kind == 'infantry' else None,
         }
         for slot, arm in trait(t, 'Armament').items():
             # Garrison weapons belong to the soldier inside, not the vehicle or building.
@@ -385,9 +512,6 @@ def main():
                                'reload_delay': int(pool.get('ReloadDelay', 50)),
                                'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
-        # AutoTarget.InitialStance HoldFire (Phase Transport): never picks targets on its own.
-        if isinstance(t.get('AutoTarget'), dict) and t['AutoTarget'].get('InitialStance') == 'HoldFire':
-            ab['hold_fire'] = {}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
         if 'AcceptsDeliveredCash' in t:
@@ -444,8 +568,16 @@ def main():
                                 'facing': int(tr.get('Facing', 384)), 'needs_option': 'RequiresCondition' in tr}
         if 'LineBuild' in t:
             ab['line_build'] = {'range': int(t['LineBuild'].get('Range', 5))}
+        # Radar (OpenRA ProvidesRadar): an enemy Mobile Radar Jammer's
+        # ProximityExternalCondition@JAMMER grants `jammed` to structures in range,
+        # which switches off radar that requires `!jammed`.
         if has(t, 'ProvidesRadar'):
-            ab['provides_radar'] = {}
+            pr = next(iter(trait(t, 'ProvidesRadar').values()))
+            pr = pr if isinstance(pr, dict) else {}
+            ab['provides_radar'] = {'jammable': 'jammed' in pr.get('RequiresCondition', '')}
+        jam = [v for v in trait(t, 'ProximityExternalCondition').values() if isinstance(v, dict) and v.get('Condition') == 'jammed']
+        if jam:
+            ab['jams_radar'] = {'range': wdist(jam[0].get('Range'))}
         if 'Crushable' in t and isinstance(t['Crushable'], dict) and a['queue'] != 'Infantry':
             ab['crushable'] = tokens(t['Crushable'].get('CrushClasses'))
         if kind == 'infantry':
@@ -594,8 +726,6 @@ def main():
                     'altitude_velocity': wdist(m.get('AltitudeVelocity', ALTITUDE_VELOCITY)),
                     'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),
                     'take_off_on_resupply': str(m.get('TakeOffOnResupply', 'false')).lower() == 'true',
-                    # AutoTarget InitialStance HoldFire: idle aircraft never pick targets on their own.
-                    'hold_fire': str(first(t, 'AutoTarget').get('InitialStance', '')) == 'HoldFire',
                     'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
                     # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
                     # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).
@@ -634,13 +764,20 @@ def main():
         if r:
             r['free_actor'] = ids_lower[r['free_actor'].lower()]
 
+    values, densities = resource_types(src)
+    for l in used_locos:
+        # Gems cells move like ore cells (the engine has one speed class for both).
+        if l != AIR_LOCOMOTOR:
+            assert locos[l].get('Gems', 0) == locos[l].get('Ore', 0), f'locomotor {l}: Gems and Ore speeds differ'
     player = {
         'starting_cash': 5000,           # OpenRA lobby default
-        'ore_value': 25,                 # PlayerResources.ResourceValues.Ore
+        'ore_value': values['Ore'],      # PlayerResources.ResourceValues.Ore
         'low_power_modifier': 300,       # ClassicProductionQueue.LowPowerModifier
         # ClassicProductionQueue.BuildTimeSpeedReduction default
         'speed_reduction': [100, 85, 75, 65, 60, 55, 50],
-        'ore_max_density': 12,
+        'ore_max_density': densities['Ore'],  # ResourceLayer.ResourceTypes.Ore.MaxDensity
+        'gem_value': values['Gems'],     # PlayerResources.ResourceValues.Gems
+        'gem_max_density': densities['Gems'],  # ResourceLayer.ResourceTypes.Gems.MaxDensity
     }
     rules = {
         'source': 'OpenRA mods/ra (bleed), generated by tools/gen_rules.py',

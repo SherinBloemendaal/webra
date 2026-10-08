@@ -785,7 +785,7 @@ fn field_ok(w: &World, player: u8, x0: i32, y0: i32) -> bool {
             let ci = w.map.idx(x, y);
             let inside = x >= x0 && x < x0 + FIELD && y >= y0 && y < y0 + FIELD;
             let near = x >= x0 - 2 && x < x0 + FIELD + 2 && y >= y0 - 2 && y < y0 + FIELD + 2;
-            if w.map.ore[ci] > 0 || (near && w.building_at[ci] != crate::world::NONE) {
+            if w.map.has_resource(ci) || (near && w.building_at[ci] != crate::world::NONE) {
                 return false;
             }
             if inside && (w.pass.blocked[ci] || w.players[player as usize].explored[ci] == 0 || w.mine_at(ci).is_some()) {

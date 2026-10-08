@@ -1,0 +1,61 @@
+// Build button pictures ("cameos") for the sidebar. One place decides where
+// the picture comes from:
+//
+// - the cameo art, `getCameo(typeName, size, opts)` from sprites.js (a cached
+//   canvas with the framed 3/4 view picture), for every type that has art;
+// - for a type without cameo art (getCameo returns null), the sprite icon
+//   (drawIcon) scaled into the button on a dark steel backdrop.
+
+import { drawIcon, getCameo } from './sprites.js';
+
+/**
+ * Paint the backdrop of the sprite fallback: a dark steel gradient with a
+ * faint horizon, so the sprite sits on a picture like the other cameos.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function paintBackdrop(ctx, w, h) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#2b333d');
+  g.addColorStop(0.55, '#1a2027');
+  g.addColorStop(1, '#0f1317');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.fillRect(0, Math.round(h * 0.62), w, 1);
+}
+
+/**
+ * A cameo painter. `art`, `fallback` and `backdrop` are injectable so the
+ * choice is unit tested without a canvas (tests/cameo.test.mjs).
+ *
+ * @param {object} [o]
+ * @param {(typeName: string, size: number, opts: {team?: number[], kind?: string, height?: number}) => CanvasImageSource | null} [o.art]
+ *   cached cameo picture, or null when the type has no cameo art
+ * @param {(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]) => void} [o.fallback] sprite icon painter
+ * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [o.backdrop]
+ * @returns {{ paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): 'art' | 'sprite' }}
+ */
+export function createCameoPainter({ art = getCameo, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
+  return {
+    paint(canvas, actor, teamRgb) {
+      const picture = art(actor.id, canvas.width, { team: teamRgb, kind: actor.kind, height: canvas.height });
+      const ctx = canvas.getContext('2d');
+      if (picture) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(picture, 0, 0, canvas.width, canvas.height);
+        return 'art';
+      }
+      // drawIcon clears the canvas, so it draws first and the backdrop goes
+      // underneath with destination-over.
+      fallback(canvas, actor, teamRgb);
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-over';
+      backdrop(ctx, canvas.width, canvas.height);
+      ctx.restore();
+      return 'sprite';
+    },
+  };
+}
+
+/** The painter the sidebar uses. */
+export const cameoPainter = createCameoPainter();
