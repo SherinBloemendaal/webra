@@ -147,6 +147,30 @@ the new paths are guarded like this:
   playback, seeking, saves, rejoin and spectator catch-up through the real
   relay), and the end-to-end smoke test against `wrangler dev`.
 
+## Simulation worker and cross-origin isolation (2026-10-08)
+
+The simulation moved into a module Web Worker (`apps/game/js/sim`) that
+shares render buffers with the page through SharedArrayBuffer. That needs a
+cross-origin isolated page, so the headers changed:
+
+- **COEP.** `/play` and everything under it send
+  `Cross-Origin-Embedder-Policy: require-corp`; with the existing
+  `Cross-Origin-Opener-Policy: same-origin` the game is cross-origin isolated.
+  Every resource the game loads is same-origin (the CSP allows nothing else:
+  scripts, styles, fonts, images, the engine, shaders, maps and the API), and
+  WebSockets are not subject to COEP, so `require-corp` blocks nothing. The
+  website pages keep COOP only: they share no memory.
+- **Workers.** The CSP's `worker-src` is now `'self'` (it allowed `blob:`,
+  which nothing used). The worker is a same-origin module script.
+- **What isolation exposes.** SharedArrayBuffer and high-resolution timers
+  make timing side channels easier within the process; isolation is what
+  keeps cross-origin data out of it, so the page holds only its own data.
+- **The boundary is not a trust boundary.** The worker runs the page's own
+  code; its messages carry the same orders the page made before (the engine
+  and the server still validate every order), and the worker only answers
+  whitelisted methods (`apps/game/js/sim/methods.js`): anything else is
+  refused. A failed or blocked worker leaves the game on the main thread.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
