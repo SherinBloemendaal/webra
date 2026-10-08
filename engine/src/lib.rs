@@ -28,6 +28,7 @@ pub mod rules;
 pub mod sound_events;
 mod trig_table;
 mod units;
+mod veterancy;
 mod vision;
 pub mod world;
 
@@ -53,6 +54,8 @@ mod tests_production;
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
+#[cfg(test)]
+mod tests_veterancy;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -503,6 +506,13 @@ impl Game {
             // Passengers: the transport they are in (NONE when outside).
             "carrier": a.carrier,
             "submerged": a.submerged,
+            // Veterancy (veterancy.rs): level, levels, and experience in value
+            // points (OpenRA counts percent of a value: 100 points per credit).
+            "rank": a.rank,
+            "maxRank": self.world.max_rank(i),
+            "xp": a.xp / 100,
+            "nextXp": self.world.level_experience(i, (a.rank as usize + 1).min(self.world.max_rank(i) as usize)) / 100,
+            "prone": self.world.is_prone(i),
         })
         .to_string()
     }
@@ -757,6 +767,11 @@ impl Game {
     /// Cheat: destroy the given actors (any owner).
     pub fn dev_kill(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::DevKill { player, ids });
+    }
+
+    /// Cheat: one more veterancy level for each of the player's own given units.
+    pub fn dev_experience(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::DevExperience { player, ids });
     }
 
     /// Debug view: `[x0, y0, width, height, flags...]` for the cells under the

@@ -32,6 +32,7 @@ import { NAVAL_DRAW, NAVAL_SPECIALS } from './art/naval.js';
 import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
+import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 
@@ -490,7 +491,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -510,8 +511,13 @@ function grey(s) {
 const COLOR_PASS = { team: grey, c: (col) => col };
 const MASK_PASS = { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000') };
 
-/** Sprite definitions in atlas order: [w, h, draw] or null (empty). */
-function spriteList(actors) {
+/**
+ * Sprite definitions in atlas order: [w, h, draw] or null (empty). Every actor
+ * has two slots: body and turret. Infantry have no turret; their second slot is
+ * the prone pose (engine/src/veterancy.rs), the standing body when there is no
+ * prone art.
+ */
+export function spriteList(actors) {
   const list = [];
   for (const a of actors) {
     const key = spriteKey(a.id);
@@ -524,10 +530,17 @@ function spriteList(actors) {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(d.turret ?? null);
+      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? d.body) : (d.turret ?? null));
     }
   }
-  return list.concat(SPECIALS, slots(NAVAL_SPECIALS), slots(PLANE_SPECIALS), slots(HELI_SPECIALS), slots(ABILITY_SPECIALS));
+  return list.concat(
+    SPECIALS,
+    slots(NAVAL_SPECIALS),
+    slots(PLANE_SPECIALS),
+    slots(HELI_SPECIALS),
+    slots(ABILITY_SPECIALS),
+    slots(VETERANCY_SPECIALS),
+  );
 }
 
 /**

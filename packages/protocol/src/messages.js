@@ -132,10 +132,12 @@ const ORDER_SCHEMA = {
   dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },
   dev_cash: {},
   dev_kill: { ids: idList },
+  // engine/src/veterancy.rs: one more veterancy level for the player's own listed units.
+  dev_experience: { ids: idList },
 };
 
 /** Cheat orders: allowed only when the game's options have `cheats: true`. */
-export const CHEAT_ORDER_KINDS = ['dev_flag', 'dev_cash', 'dev_kill'];
+export const CHEAT_ORDER_KINDS = ['dev_flag', 'dev_cash', 'dev_kill', 'dev_experience'];
 
 /** Whether an order is a cheat (debug menu) order. */
 export function isCheatOrder(o) {

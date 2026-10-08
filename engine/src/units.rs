@@ -61,6 +61,8 @@ impl World {
             }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
+                // Prone countdown and elite self repair (veterancy.rs).
+                self.tick_veterancy(i);
             }
             if self.actors[i].alive && !self.actors[i].cargo.is_empty() {
                 self.tick_cargo(i);
@@ -245,7 +247,8 @@ impl World {
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
         let speed_pct = self.rules.locomotors[unit.locomotor].speeds[self.map.speed_class(ci)];
-        let speed = unit.speed * speed_pct / 100;
+        // Rank speed bonus and prone infantry (veterancy.rs).
+        let speed = self.modified_speed(i, unit.speed * speed_pct / 100);
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
         let a = &mut self.actors[i];
         let has_turret = turret_speed.is_some();
@@ -616,7 +619,8 @@ impl World {
         self.rebuild_hash();
         let n = self.actors.len();
         let mut push = vec![(0i32, 0i32); n];
-        let mut crushed: Vec<usize> = Vec::new();
+        // (victim, crusher): crushing counts as a kill by the crusher (veterancy.rs).
+        let mut crushed: Vec<(usize, usize)> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
             // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
@@ -657,11 +661,11 @@ impl World {
                             let crush_reach = (min as i64) * (min as i64) * 9 / 16;
                             if d2 <= crush_reach {
                                 if a.moved && self.crushes(i, j) {
-                                    crushed.push(j);
+                                    crushed.push((j, i));
                                     continue;
                                 }
                                 if b.moved && self.crushes(j, i) {
-                                    crushed.push(i);
+                                    crushed.push((i, j));
                                     continue;
                                 }
                             }
@@ -691,8 +695,10 @@ impl World {
                 }
             }
         }
-        for k in crushed {
+        for (k, crusher) in crushed {
             if self.actors[k].alive {
+                let source = self.make_ref(crusher);
+                self.award_kill(k, source);
                 self.kill(k);
             }
         }
