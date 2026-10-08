@@ -102,5 +102,5 @@ if (!notes.releases.some((r) => r.version === version)) {
 const total = countFiles(dist);
 console.log(
   `build-dist: dist/ ready (webra ${info.version}, commit ${info.commit.slice(0, 12)}): ` +
-    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, release notes for ${notes.releases.length} releases`,
+    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}`,
 );
