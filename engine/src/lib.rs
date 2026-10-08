@@ -6,6 +6,7 @@
 
 mod abilities;
 mod abilities_api;
+mod actor_table;
 mod ai;
 mod ai_arsenal;
 mod air;
