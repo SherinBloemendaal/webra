@@ -723,7 +723,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     });
   }
 
-  // Instance path (js/crowd.js): the GPU pass unless ?instances=cpu, the debug toggle or the pass is unavailable.
+  // Instance path (js/crowd.js): the CPU path unless ?instances=gpu asks for the GPU pass (and it is available).
   const instancesParam = new URLSearchParams(location.search).get('instances');
   let instanceInfo = null;
   let uploadedFog = null;

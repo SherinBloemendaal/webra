@@ -187,7 +187,9 @@ test('the shader and the CPU reference agree on layouts and constants', () => {
 });
 
 test('the instance path: GPU by default, the CPU path by request, toggle or when unavailable', () => {
-  assert.equal(chooseInstancePath({ gpuReady: true }).path, 'gpu');
+  assert.equal(chooseInstancePath({ gpuReady: true }).path, 'cpu', 'the GPU pass is opt-in');
+  assert.equal(chooseInstancePath({ gpuReady: true, requested: 'gpu' }).path, 'gpu');
+  assert.equal(chooseInstancePath({ gpuReady: true, requested: 'gpu', forceCpu: true }).path, 'cpu');
   assert.equal(chooseInstancePath({ gpuReady: true, requested: 'cpu' }).path, 'cpu');
   assert.equal(chooseInstancePath({ gpuReady: true, forceCpu: true }).path, 'cpu');
   const off = chooseInstancePath({ gpuReady: false, gpuReason: 'compute workgroups of 256 are not supported' });

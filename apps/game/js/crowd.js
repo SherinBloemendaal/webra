@@ -155,16 +155,19 @@ export function recordBytes(records) {
 }
 
 /**
- * Which instance path to use this frame: the GPU pass unless `?instances=cpu`,
- * the debug menu's "CPU instance path" toggle, or the pass is unavailable.
+ * Which instance path to use this frame: the CPU path by default; the GPU pass
+ * when asked for with `?instances=gpu` and available, unless the debug menu's
+ * "CPU instance path" toggle is on.
  * @param {{ gpuReady: boolean, gpuReason?: string | null, requested?: string | null, forceCpu?: boolean }} o
  * @returns {{ path: 'cpu' | 'gpu', reason: string }}
  */
 export function chooseInstancePath({ gpuReady, gpuReason = null, requested = null, forceCpu = false }) {
   if (requested === 'cpu') return { path: 'cpu', reason: 'asked for with ?instances=cpu' };
   if (forceCpu) return { path: 'cpu', reason: 'chosen in the debug menu' };
+  // The GPU pass is opt-in until it has been seen working in browsers: ?instances=gpu.
+  if (requested !== 'gpu') return { path: 'cpu', reason: 'default (the GPU pass is opt-in with ?instances=gpu)' };
   if (!gpuReady) return { path: 'cpu', reason: gpuReason ? `the GPU pass is unavailable: ${gpuReason}` : 'the GPU pass is unavailable' };
-  return { path: 'gpu', reason: requested === 'gpu' ? 'asked for with ?instances=gpu' : 'compute and indirect draws available' };
+  return { path: 'gpu', reason: 'asked for with ?instances=gpu' };
 }
 
 /** Debug panel lines for the instance path (js/debug.js formatStats). */

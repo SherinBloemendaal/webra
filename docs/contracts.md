@@ -694,8 +694,10 @@ Records go to the main thread as transferred buffers in every worker mode
 latest records and fog until newer ones arrive. Between ticks a GPU path
 frame carries no render data at all (path lines excepted, when on).
 
-The main thread uses the GPU path unless `?instances=cpu` is set, the debug
-menu's "CPU instance path" box is ticked, or the pass is unavailable: no
+The main thread uses the CPU path by default: the GPU pass is opt-in with
+`?instances=gpu` until it has been seen working in browsers. With that
+parameter it uses the GPU path unless the debug menu's "CPU instance path"
+box is ticked or the pass is unavailable: no
 compute workgroups of 256, fewer than 5 storage buffers per compute stage,
 too little workgroup memory, a shader or pipeline error, or records larger
 than the device's storage buffer or dispatch limits (the renderer then
