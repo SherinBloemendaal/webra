@@ -159,6 +159,15 @@ impl FlowCache {
         &self.fields[f]
     }
 
+    /// The cached field toward `goal` for `loco` if it is up to date with
+    /// `pass`, without computing anything or touching the cache order. For
+    /// read-only users such as the path overlay (paths.rs).
+    pub fn peek(&self, pass: &Passability, goal: u32, loco: u8) -> Option<&FlowField> {
+        let &i = self.index.get(&(goal, loco))?;
+        let f = &self.fields[i];
+        (f.version == pass.version).then_some(f)
+    }
+
     fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> usize {
         self.clock += 1;
         let hit = match self.fields.get(self.last) {

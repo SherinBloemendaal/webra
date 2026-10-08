@@ -207,3 +207,61 @@ fn a_thousand_units_cross_a_generated_map_and_gather_at_the_goal() {
     let o = outcome(&mut w, &units, gx, gy, 30 * CELL, 25 * 240);
     assert_eq!((o.arrived, o.still_moving), (units.len(), 0), "{o:?}");
 }
+
+// ---- "Show unit paths" overlay (paths.rs) ------------------------------------
+
+/// Routes as lists of points, one per selected unit, from the overlay lines.
+fn routes(w: &World, player: u8, units: &[usize]) -> Vec<Vec<(f32, f32)>> {
+    units
+        .iter()
+        .map(|&i| {
+            let mut lines = Vec::new();
+            w.build_paths(player, 1.0, &[w.make_ref(i)], &mut lines);
+            let mut pts = Vec::new();
+            for seg in lines.chunks(crate::paths::LINE_FLOATS) {
+                if pts.is_empty() {
+                    pts.push((seg[0], seg[1]));
+                }
+                assert_eq!(*pts.last().unwrap(), (seg[0], seg[1]), "segments join up");
+                pts.push((seg[2], seg[3]));
+            }
+            pts
+        })
+        .collect()
+}
+
+#[test]
+fn unit_paths_follow_the_route_with_one_segment_per_turn() {
+    let mut w = arena(64, 64);
+    // Allies, so the two tanks do not fight on the way.
+    w.players[0].team = 1;
+    w.players[1].team = 1;
+    // A wall with its only opening at the bottom.
+    set_rock(&mut w, (0..58).map(|y| (32, y)));
+    let tnk = ty(&w, "1TNK");
+    let mine = w.spawn_unit(tnk, 0, cell_center(10), cell_center(10), 256);
+    let idle = w.spawn_unit(tnk, 0, cell_center(12), cell_center(12), 256);
+    let theirs = w.spawn_unit(tnk, 1, cell_center(10), cell_center(20), 256);
+    let (gx, gy) = (cell_center(50), cell_center(10));
+    w.order_move(&[mine], gx, gy, false);
+    w.order_move(&[theirs], gx, gy, false);
+    w.step();
+    let fields = w.flow.computed;
+    let r = routes(&w, 0, &[mine, idle, theirs]);
+    assert!(r[1].is_empty(), "an idle unit has no route");
+    assert!(r[2].is_empty(), "no routes of other players' units");
+    let route = &r[0];
+    let px = |v: i32| crate::render::px(v);
+    let a = &w.actors[mine];
+    assert_eq!(route[0], (px(a.x), px(a.y)), "starts at the unit");
+    assert_eq!(*route.last().unwrap(), (px(gx), px(gy)), "ends on the goal");
+    assert!(route.len() <= 8, "waypoints only at turns: {route:?}");
+    assert!(route.iter().any(|p| p.1 >= 58.0 * 24.0), "goes through the opening: {route:?}");
+    assert_eq!(w.flow.computed, fields, "drawing never computes a field");
+    // The route shrinks as the unit drives on, and is gone once it arrived.
+    for _ in 0..25 * 60 {
+        w.step();
+    }
+    assert_eq!(w.actors[mine].activity, Activity::Idle);
+    assert!(routes(&w, 0, &[mine])[0].is_empty());
+}

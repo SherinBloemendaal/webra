@@ -17,6 +17,7 @@ pub mod map;
 pub mod mapdata;
 pub mod math;
 mod naval;
+pub mod paths;
 mod plane;
 mod powers;
 mod production;
@@ -80,6 +81,8 @@ pub struct Game {
     fog: Vec<u8>,
     terrain: Vec<u8>,
     selection: Vec<u32>,
+    /// Route lines of the selected units (paths.rs).
+    paths: Vec<f32>,
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
     outbox: Vec<Order>,
@@ -175,6 +178,7 @@ impl Game {
             fog: Vec::new(),
             terrain: Vec::new(),
             selection: Vec::new(),
+            paths: Vec::new(),
             lockstep: false,
             outbox: Vec::new(),
         }
@@ -340,6 +344,20 @@ impl Game {
 
     pub fn rect_ptr(&self) -> *const f32 {
         self.rects.as_ptr()
+    }
+
+    /// Route lines of the selected units `player` owns ("Show unit paths"):
+    /// a few straight segments per unit, from where it is drawn (`alpha` as in
+    /// `build_render`) along its path to its destination. Returns the
+    /// segment count; read them through `path_ptr` (8 floats each:
+    /// `[x0, y0, x1, y1, r, g, b, a]`, world pixels).
+    pub fn build_paths(&mut self, player: u8, alpha: f32) -> usize {
+        self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut self.paths);
+        self.paths.len() / paths::LINE_FLOATS
+    }
+
+    pub fn path_ptr(&self) -> *const f32 {
+        self.paths.as_ptr()
     }
 
     // ---- Selection ---------------------------------------------------------
