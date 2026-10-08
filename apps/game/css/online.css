@@ -1,5 +1,6 @@
 /* Online multiplayer screens (js/online.js): server browser, online lobby,
-   dialogs and the in-game overlay. Same flat 1996 look as the skirmish lobby. */
+   dialogs and the in-game overlay. Same gunmetal chrome as the skirmish lobby
+   (colours and metal from theme.css). */
 
 #online-button {
   position: fixed;
@@ -7,16 +8,18 @@
   top: 14px;
   z-index: 30;
   padding: 9px 16px;
-  background: #7a2a20;
-  color: var(--text);
-  border: 1px solid #a63a2c;
-  border-top-color: #c25a48;
-  border-radius: 2px;
-  font: 700 13px system-ui, sans-serif;
-  letter-spacing: 1px;
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  font: 700 var(--ui-fs-m) var(--ui-font);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    var(--ui-bevel),
+    0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 #online-button:hover {
@@ -24,12 +27,12 @@
 }
 
 #online-root {
-  --o-panel: #1f241b;
-  --o-field: #0f120d;
-  --o-edge: #3a4233;
-  --o-gold: var(--accent, #d9b23a);
-  --o-red: #7a2a20;
-  --o-red-edge: #a63a2c;
+  --o-panel: var(--ui-metal-1);
+  --o-field: var(--ui-metal-0);
+  --o-edge: var(--ui-line);
+  --o-gold: var(--ui-accent-hi);
+  --o-red: #8f2a1f;
+  --o-red-edge: var(--ui-edge);
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -38,20 +41,28 @@
   overflow: auto;
   padding: 24px 16px;
   background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
-    radial-gradient(ellipse at top, #263022, var(--bg) 70%);
+    var(--ui-scan),
+    var(--ui-grid),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
   user-select: text;
 }
 
 .online-page {
   width: min(1080px, 100%);
   padding: 18px 20px 20px;
-  background: linear-gradient(180deg, #20251c, #171a14);
-  border: 1px solid #000;
-  border-top: 3px solid var(--o-gold);
-  border-radius: 2px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  background:
+    var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) left 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-shadow);
 }
 
 .online-head {
@@ -71,7 +82,7 @@
 
 .online-title {
   margin: 0;
-  font: 900 30px/1.1 Impact, 'Arial Black', sans-serif;
+  font: 900 30px/1.1 var(--ui-font-display);
   letter-spacing: 1.5px;
   text-transform: uppercase;
   overflow-wrap: anywhere;
@@ -109,11 +120,12 @@
 
 .online-btn {
   padding: 7px 14px;
-  background: #2b3226;
-  color: var(--text);
-  border: 1px solid var(--o-edge);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel);
   border-radius: 2px;
-  font: 700 12px system-ui, sans-serif;
+  font: 700 12px var(--ui-font);
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: pointer;
@@ -182,7 +194,7 @@
   padding: 0 5px;
   border: 1px solid var(--o-edge);
   border-radius: 2px;
-  font: 700 10px/16px system-ui, sans-serif;
+  font: 700 10px/16px var(--ui-font);
   letter-spacing: 0.5px;
   color: var(--muted);
   vertical-align: middle;
@@ -380,10 +392,12 @@
 .online-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 18px 20px;
-  background: #1b1f19;
-  color: var(--text);
-  border: 1px solid #000;
-  border-top: 3px solid var(--accent, #d9b23a);
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
   border-radius: 2px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
 }
@@ -397,7 +411,7 @@
   font-size: 14px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--accent, #d9b23a);
+  color: var(--ui-accent-hi);
 }
 
 .online-dialog-body {

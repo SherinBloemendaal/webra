@@ -6,16 +6,23 @@
   bottom: 24px;
   z-index: 60;
   padding: 3px 10px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #cfd8c4;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  font: 600 12px system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 var(--ui-fs-s) / 1.5 var(--ui-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 #audio-button:hover {
-  background: rgba(0, 0, 0, 0.75);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+#audio-button:active {
+  box-shadow: var(--ui-bevel-in);
 }
 
 #audio-panel {
@@ -26,7 +33,7 @@
   place-items: center;
   overflow: auto;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--ui-scan), rgba(0, 0, 0, 0.62);
 }
 
 .audio-card {
@@ -99,8 +106,8 @@
 .audio-local {
   margin: 0;
   padding: 8px 10px;
-  border-left: 3px solid var(--accent);
-  background: rgba(217, 178, 58, 0.08);
+  border-left: 3px solid var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
   font-size: 13px;
 }
 
@@ -110,7 +117,8 @@
   gap: 8px;
   margin-top: 8px;
   padding-top: 12px;
-  border-top: 1px solid var(--panel-edge);
+  border-top: 1px solid var(--ui-line);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
 .audio-content h2 {
@@ -125,7 +133,7 @@
 }
 
 button.danger {
-  color: var(--danger);
+  color: var(--ui-bad);
 }
 
 @media (max-width: 480px) {

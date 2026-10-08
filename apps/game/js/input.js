@@ -835,11 +835,12 @@ export class Input {
       const w = Math.abs(b.x - a.x);
       const h = Math.abs(b.y - a.y);
       const t = 1 / this.camera.zoom;
-      push(x0, y0, w, h, 0.4, 0.9, 0.4, 0.08);
-      push(x0, y0, w, t, 0.5, 1, 0.5, 0.9);
-      push(x0, y0 + h - t, w, t, 0.5, 1, 0.5, 0.9);
-      push(x0, y0, t, h, 0.5, 1, 0.5, 0.9);
-      push(x0 + w - t, y0, t, h, 0.5, 1, 0.5, 0.9);
+      // White outline over a faint fill, like OpenRA's selection box.
+      push(x0, y0, w, h, 1, 1, 1, 0.06);
+      push(x0, y0, w, t, 1, 1, 1, 0.9);
+      push(x0, y0 + h - t, w, t, 1, 1, 1, 0.9);
+      push(x0, y0, t, h, 1, 1, 1, 0.9);
+      push(x0 + w - t, y0, t, h, 1, 1, 1, 0.9);
     }
     if (this.orderFlash && performance.now() < this.orderFlash.until) {
       const f = this.orderFlash;

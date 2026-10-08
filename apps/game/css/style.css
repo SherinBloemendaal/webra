@@ -1,14 +1,5 @@
-/* Page layout, menu and HUD. The sidebar has its own stylesheet. */
-
-:root {
-  --bg: #0d0f0c;
-  --panel: #1b1f19;
-  --panel-edge: #343b2f;
-  --text: #e6e4d6;
-  --muted: #9c9a8a;
-  --accent: #d9b23a;
-  --danger: #e2503c;
-}
+/* Page layout, menus, dialogs and HUD. Colours, fonts and the metal recipes
+   come from theme.css; the sidebar has its own stylesheet. */
 
 * {
   box-sizing: border-box;
@@ -18,9 +9,9 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font: 14px/1.4 system-ui, 'Segoe UI', sans-serif;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font: 14px/1.4 var(--ui-font);
   overflow: hidden;
   user-select: none;
 }
@@ -51,11 +42,17 @@ body {
   left: 8px;
   top: 6px;
   padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 3px;
-  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
-  color: #cfd8c4;
+  background: rgba(6, 8, 11, 0.72);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: var(--ui-fs-s) / 1.6 var(--ui-font-mono);
+  color: var(--ui-muted);
   pointer-events: none;
+}
+
+#hud:empty {
+  display: none;
 }
 
 /* ---- Menu and game over -------------------------------------------------- */
@@ -70,14 +67,14 @@ body {
   overflow: auto;
   padding: 16px;
   background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
-    radial-gradient(ellipse at top, #263022, var(--bg) 70%);
+    var(--ui-scan),
+    var(--ui-grid),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
 }
 
 #gameover,
 #game-menu {
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--ui-scan), rgba(0, 0, 0, 0.62);
   z-index: 40;
 }
 
@@ -95,7 +92,7 @@ body {
 }
 
 .game-menu-card h1 {
-  font-size: 36px;
+  font-size: 30px;
 }
 
 .menu-card .game-menu-row {
@@ -109,21 +106,21 @@ body {
 .menu-card input.game-menu-range {
   width: 180px;
   padding: 0;
-  accent-color: var(--accent);
+  accent-color: var(--ui-accent);
 }
 
 .menu-card input.game-menu-check {
   width: 18px;
   height: 18px;
   padding: 0;
-  accent-color: var(--accent);
+  accent-color: var(--ui-accent);
 }
 
 .game-menu-value {
   min-width: 44px;
   text-align: right;
-  font: 12px ui-monospace, Menlo, Consolas, monospace;
-  color: var(--muted);
+  font: 12px var(--ui-font-mono);
+  color: var(--ui-muted);
 }
 
 .game-menu-scroll {
@@ -153,10 +150,11 @@ body {
 
 .game-menu-keycap {
   padding: 2px 6px;
-  background: #11140f;
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  font: 12px ui-monospace, Menlo, Consolas, monospace;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 12px var(--ui-font-mono);
   text-align: center;
   white-space: nowrap;
 }
@@ -170,7 +168,7 @@ body {
 }
 
 .game-menu-message {
-  color: var(--accent);
+  color: var(--ui-accent-hi);
 }
 
 #toast {
@@ -180,11 +178,15 @@ body {
   transform: translateX(-50%);
   max-width: min(520px, 90%);
   padding: 6px 12px;
-  background: rgba(0, 0, 0, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  color: #e6e4d6;
-  font: 13px system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    0 6px 18px rgba(0, 0, 0, 0.5);
+  color: var(--ui-text);
+  font: var(--ui-fs-m) var(--ui-font);
   pointer-events: none;
   z-index: 30;
 }
@@ -194,16 +196,23 @@ body {
   right: 8px;
   top: 6px;
   padding: 3px 10px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #cfd8c4;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  font: 600 12px system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 var(--ui-fs-s) / 1.5 var(--ui-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .hud-button:hover {
-  background: rgba(0, 0, 0, 0.75);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.hud-button:active {
+  box-shadow: var(--ui-bevel-in);
 }
 
 #version {
@@ -211,48 +220,66 @@ body {
   left: 8px;
   bottom: 6px;
   z-index: 60;
-  font: 11px ui-monospace, Menlo, Consolas, monospace;
-  color: rgba(220, 220, 200, 0.55);
+  font: var(--ui-fs-s) var(--ui-font-mono);
+  color: rgba(200, 210, 220, 0.5);
   pointer-events: none;
 }
 
+/* Dialog card (game over, game menu, sound settings): a riveted metal plate
+   with the side's accent along the top. */
 .menu-card {
+  position: relative;
   width: min(440px, 100%);
-  padding: 24px 28px;
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-top: 3px solid var(--accent);
-  border-radius: 4px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  padding: 22px 28px 24px;
+  background:
+    var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) left 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-shadow);
 }
 
 .menu-card h1 {
-  margin: 0;
-  font: 900 44px/1 Impact, 'Arial Black', sans-serif;
+  margin: 0 0 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ui-line);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+  font: 900 34px/1 var(--ui-font-display);
   letter-spacing: 2px;
   text-transform: uppercase;
+  color: #f2f4f6;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15),
+    2px 2px 0 #000;
 }
 
 .menu-card h1 span {
-  color: var(--danger);
+  color: var(--ui-accent-hi);
 }
 
 .menu-card h2 {
   margin: 22px 0 8px;
-  font-size: 13px;
-  letter-spacing: 1.5px;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--ui-accent-hi);
 }
 
 .tagline,
 .hint {
-  color: var(--muted);
+  color: var(--ui-muted);
   margin: 6px 0 0;
 }
 
 .error {
-  color: var(--danger);
+  color: var(--ui-bad);
 }
 
 .menu-card label {
@@ -267,34 +294,43 @@ body {
 .menu-card input {
   width: 200px;
   padding: 6px 8px;
-  background: #11140f;
-  color: var(--text);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
+  background: var(--ui-metal-0);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
   font: inherit;
 }
 
+/* Bevelled metal button; .primary is the side's colour. */
 .menu-card button {
   width: 100%;
   margin-top: 10px;
   padding: 10px;
-  background: #2b3226;
-  color: var(--text);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  font: 700 14px system-ui, sans-serif;
-  letter-spacing: 1px;
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 var(--ui-fs-m) / 1.2 var(--ui-font);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
   cursor: pointer;
 }
 
 .menu-card button.primary {
-  background: #7a2a20;
-  border-color: #a63a2c;
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
 }
 
 .menu-card button:hover:not(:disabled) {
-  filter: brightness(1.2);
+  filter: brightness(1.18);
+}
+
+.menu-card button:active:not(:disabled) {
+  box-shadow: var(--ui-bevel-in);
+  filter: brightness(0.92);
 }
 
 .menu-card button:disabled {
@@ -304,16 +340,28 @@ body {
 
 .controls {
   margin-top: 18px;
-  color: var(--muted);
+  color: var(--ui-muted);
 }
 
 .controls summary {
   cursor: pointer;
-  color: var(--text);
+  color: var(--ui-text);
 }
 
 .controls ul {
   padding-left: 18px;
+}
+
+/* The sidebar has its own Options button; the HUD Menu button stays for
+   narrow screens, where the sidebar sits under the battlefield. */
+@media (min-width: 721px) {
+  #menu-button {
+    display: none;
+  }
+
+  .debug-button.hud-button {
+    right: 8px;
+  }
 }
 
 @media (max-width: 720px) {

@@ -1,5 +1,5 @@
 /* Support power bar (js/powers.js): a column of buttons on the left edge of
-   the battlefield, under the HUD. Same dark steel and olive as the sidebar. */
+   the battlefield, under the HUD. Same gunmetal as the sidebar (theme.css). */
 
 #powers {
   position: absolute;
@@ -19,11 +19,15 @@
   align-items: baseline;
   gap: 2px 6px;
   padding: 4px 6px 6px;
-  background: rgba(21, 24, 26, 0.88);
-  border: 1px solid #3a4346;
-  border-radius: 3px;
-  color: #d8dccf;
-  font: 600 11px/1.2 system-ui, 'Segoe UI', sans-serif;
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.92), rgba(20, 24, 29, 0.92));
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-accent-lo);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-text);
+  font: 600 var(--ui-fs-s) / 1.2 var(--ui-font);
   text-align: left;
   cursor: default;
 }
@@ -35,15 +39,16 @@
 }
 
 #powers .power-time {
-  font: 10px ui-monospace, Menlo, Consolas, monospace;
-  color: #8b9288;
+  font: var(--ui-fs-xs) var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
 }
 
 #powers .power-bar {
   grid-column: 1 / -1;
-  height: 3px;
-  background: #0b0d0e;
-  border-radius: 2px;
+  height: 4px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
   overflow: hidden;
 }
 
@@ -51,45 +56,51 @@
   display: block;
   height: 100%;
   width: 0;
-  background: #6f7a3e;
+  background: var(--ui-accent);
 }
 
 #powers .power.paused .power-fill {
-  background: #e0a030;
+  background: var(--ui-warn);
 }
 
 #powers .power.ready {
-  border-color: #a3b05a;
+  border-left-color: var(--ui-ok);
   cursor: pointer;
   animation: power-ready 1.2s ease-in-out infinite;
 }
 
 #powers .power.ready .power-time {
-  color: #f2c94c;
+  color: var(--ui-ok);
 }
 
 #powers .power.ready .power-fill {
-  background: #f2c94c;
+  background: var(--ui-ok);
 }
 
 #powers .power.ready:hover {
-  background: rgba(39, 45, 48, 0.95);
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+#powers .power.ready:active {
+  box-shadow: var(--ui-bevel-in);
 }
 
 #powers .power.targeting {
   animation: none;
-  border-color: #f2c94c;
-  box-shadow: 0 0 0 1px #f2c94c inset;
+  border-color: var(--ui-money);
+  box-shadow: 0 0 0 1px var(--ui-money) inset;
 }
 
 #powers .power:focus-visible {
-  outline: 2px solid #f2c94c;
+  outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 
 @keyframes power-ready {
   50% {
-    box-shadow: 0 0 6px 1px rgba(242, 201, 76, 0.55);
+    box-shadow: 0 0 6px 1px rgba(79, 208, 103, 0.5);
   }
 }
 

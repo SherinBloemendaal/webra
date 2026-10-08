@@ -68,3 +68,28 @@ test('edge scrolling: direction from the mouse, blocked at the camera limits', a
   const small = cameraBounds(2000, 2000, 1000, 1000, 48);
   assert.equal(scrollBlocked(1, 1, { x: -48, y: -48 }, small), true);
 });
+
+test('chrome icons: every sidebar icon has path data and builds an inert SVG', async () => {
+  const { ICON_PATHS, icon } = await import('../js/ui-icons.js');
+  for (const name of ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval', 'sell', 'deploy', 'options', 'power']) {
+    assert.match(ICON_PATHS[name], /^M[-\d. MLZHVCAQSTlhvcaqstmz]+Z$/i, name);
+  }
+  const node = (tag) => ({
+    tag,
+    attrs: {},
+    children: [],
+    setAttribute(k, v) {
+      this.attrs[k] = v;
+    },
+    append(...c) {
+      this.children.push(...c);
+    },
+  });
+  const doc = { createElementNS: (ns, tag) => Object.assign(node(tag), { ns }) };
+  const svg = icon('options', doc);
+  assert.equal(svg.ns, 'http://www.w3.org/2000/svg');
+  assert.equal(svg.attrs['aria-hidden'], 'true');
+  assert.equal(svg.attrs.viewBox, '0 0 16 16');
+  assert.equal(svg.children[0].attrs.d, ICON_PATHS.options);
+  assert.throws(() => icon('nope', doc), /unknown icon/);
+});

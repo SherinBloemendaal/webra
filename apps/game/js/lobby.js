@@ -24,6 +24,7 @@ import {
   TEAMS,
   FACTION_GROUPS,
   FACTIONS,
+  factionSide,
   randomSeed,
   parseSeed,
   parseUnits,
@@ -1014,6 +1015,12 @@ export class Lobby {
     rec.row.className = `lobby-slot lobby-slot-${p.type}`;
     rec.row.style.setProperty('--slot-color', p.type === 'closed' ? 'var(--l-edge)' : rgbCss(this.colors[p.color]));
     rec.flag.dataset.faction = p.faction;
+    // The screen takes the colours of the side you picked (css/theme.css).
+    if (p.type === 'human') {
+      const side = factionSide(p.faction);
+      if (side) document.documentElement.dataset.faction = side;
+      else delete document.documentElement.dataset.faction;
+    }
     rec.desc.textContent = p.type === 'closed' ? 'Nobody plays in this slot.' : f.desc;
     this.pickers[slot].render();
   }

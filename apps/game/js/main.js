@@ -16,6 +16,7 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { NotificationView } from './notifications.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -220,6 +221,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
+  // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
+  document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
   // Orders and production clicks made through `ui` get unit replies and announcements.
   const ui = audio ? audio.watch(game) : game;
@@ -245,18 +248,29 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSellMode: (on) => sidebar?.setSellMode(on),
     onMenu: () => menu.open(),
   });
-  sidebar = new Sidebar($('sidebar'), ui, rules, player, {
-    onPlace: (id) => {
-      input.startPlacing(id);
-      sidebar.setPlacing(id);
+  sidebar = new Sidebar(
+    $('sidebar'),
+    ui,
+    rules,
+    player,
+    {
+      onPlace: (id) => {
+        input.startPlacing(id);
+        sidebar.setPlacing(id);
+      },
+      onCancelPlace: () => {
+        input.placing = null;
+        sidebar.setPlacing(null);
+      },
+      onSell: () => input.toggleSellMode(),
+      onDeploy: () => input.deploySelection(),
+      onMenu: () => menu.toggle(),
     },
-    onCancelPlace: () => {
-      input.placing = null;
-      sidebar.setPlacing(null);
-    },
-    onSell: () => input.toggleSellMode(),
-    onDeploy: () => input.deploySelection(),
-  });
+    { ticksPerSecond: Game.ticks_per_second() },
+  );
+  // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
+  const notices = new NotificationView($('field'));
+  audio?.onAnnounce((key) => notices.announce(key));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -285,7 +299,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     },
   });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug };
+  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug, notices };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -461,10 +475,10 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
+// The game clock is in the sidebar; the HUD keeps the performance figures.
 function updateHud(game, state, fps, simMs, stress, paused) {
-  const secs = Math.floor(state.tick / Game.ticks_per_second());
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
+  const parts = [`${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
+  if (paused) parts.unshift('Paused');
   if (stress) parts.push(`${game.actor_count()} units`, `${state.flowFields} flow fields`);
   $('hud').textContent = parts.join('  |  ');
 }
