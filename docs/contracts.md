@@ -325,7 +325,7 @@ checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
 
 Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
-`build_render` and `fog_ptr` renders the whole map with every actor live (no
+`build_render`, `build_render_records` and `fog_ptr` renders the whole map with every actor live (no
 ghosts, no owner-only decorations); `Game.observer_stats()` returns `[{
 player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
 buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
@@ -609,7 +609,7 @@ Main thread to worker:
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
-| `step` | `req { dt, paused, view, rect, audio, paths, table, queries }`, `recycle` | `frame` |
+| `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
@@ -625,7 +625,10 @@ driver status (save loading and its error, online catch-up and stall time,
 replay position, recorder full), answers to the step's queries, sound events
 (none while busy), the actor table when it changed, terrain bytes when they
 changed, and the render data: sprites and rects (8 floats each), fog bytes of
-`view`, and path lines when `paths` is set.
+`view`, and path lines when `paths` is set. With `instances: 'gpu'` (below)
+it carries tick-rate records and fog instead, only when they changed, plus
+`instances`, `buildMs` (time spent building render data this step) and
+`renderBytes` (render data handed over this step).
 
 Messages are handled in order. A `call` or `ask` sent before a `step` is
 applied (or answered) before that step's ticks, so an order reaches the same
@@ -648,6 +651,68 @@ slot, so this does not happen in normal play; the check is the guarantee. A
 section that outgrows its buffer gets a new SharedArrayBuffer for that slot,
 sent with the frame.
 
+### Instance paths (`js/crowd.js`, `js/crowd-gpu.js`, `shaders/instances.wgsl`)
+
+What the renderer draws for the simulation reaches it on one of two paths.
+The GPU path is the default; the CPU path is the fallback.
+
+| Path | Built by the simulation | Per render frame on the GPU side |
+|------|-------------------------|----------------------------------|
+| `cpu` | `Game.build_render(view, alpha, rect)` every step: sprites and rects interpolated by `alpha` and culled to `rect` | Upload and draw them |
+| `gpu` | `Game.build_render_records(view)` only when the tick, `view` or the render epoch (any `call`, `seek`, `debugStep`) changed: every sprite and rect of the whole map as a record with both ends of its interpolation and the cull of its group; sent with the fog | A compute pass interpolates the records by the frame's `alpha`, culls them against the camera, compacts the visible ones in order and writes the instance count of a `drawIndirect` |
+
+Both paths run the same engine code (`engine/src/instances.rs`, `Sink`): in
+`Eval` mode each record is evaluated at once, in `Record` mode it is stored.
+Evaluation per record, in 32-bit floats, in this order:
+
+- reference point `p = from + (to - from) * alpha`; culled unless the
+  margin is negative or `p` lies inside the view grown by the margin
+- angle `(angle + turn * alpha) * TAU / 1024` (raw units, `turn` already
+  wrapped by `angle_diff`, so facings interpolate the short way round)
+- with an extra part: plus the offset `o0 + (o1 - o0) * alpha`; plus an arm
+  `(sin b * forward + cos b * right, -cos b * forward + sin b * right)` with
+  `b` the body angle interpolated like the angle; angle times `angle_mul`
+  plus `angle_add`; scale and alpha interpolated to `scale1`, `alpha1`
+
+Flat layouts (f32): sprite record `[x0, y0, x1, y1, margin, angle, turn,
+sprite, team, scale, alpha, flash, extra]` (`extra` is an index into the
+extras array or -1), extra `[ox0, oy0, ox1, oy1, forward, right, body,
+body_turn, angle_mul, angle_add, scale1, alpha1]`, rect record `[x0, y0, x1,
+y1, margin, ox, oy, w, h, r, g, b, a]`. The output is the CPU path's
+instance layout (8 floats), so the sprite and rect pipelines are unchanged.
+
+The compute pass has three dispatches per kind (workgroups of 256): visible
+flags and a total per block, an exclusive scan of the block totals in one
+workgroup (its sum is the draw's instance count), and a write of each
+visible record at its block offset plus its rank in the block. The draw
+order is the record order, which is the CPU path's order (the renderer does
+not sort by y). The view for culling is the camera's rectangle of the frame
+being drawn; the CPU path culls with the rectangle sent with the step.
+
+Records go to the main thread as transferred buffers in every worker mode
+(the shared double buffer is not used for them), and the host keeps the
+latest records and fog until newer ones arrive. Between ticks a GPU path
+frame carries no render data at all (path lines excepted, when on).
+
+The main thread uses the GPU path unless `?instances=cpu` is set, the debug
+menu's "CPU instance path" box is ticked, or the pass is unavailable: no
+compute workgroups of 256, fewer than 5 storage buffers per compute stage,
+too little workgroup memory, a shader or pipeline error, or records larger
+than the device's storage buffer or dispatch limits (the renderer then
+switches to the CPU path for good). The debug menu's performance stats name
+the active path, why, and the frame's build time and render data size.
+
+Tests: `engine/src/tests_instances.rs` checks that records evaluated at any
+alpha and view equal `build_render` bit for bit (every actor type, effects,
+crashes, bombs, ability effects, overlays, AI games, the observer view);
+`apps/game/tests/crowd.test.mjs` runs `js/crowd.js` (the shader's math and
+compaction, in JavaScript) on records from the wasm `Game` against
+`build_render` (bit for bit, arms within 1/1000 px since sine and cosine
+differ between the engine's libm and JavaScript) and checks the compaction
+across blocks; `sim.test.mjs` checks records crossing each boundary mode.
+`cargo run -p shader-check` validates the shader. The GPU itself is not
+tested or measured headless.
+
 ### Game methods across the boundary
 
 The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
@@ -657,7 +722,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | Methods | Used by | Across the boundary |
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
-| `build_render`, `sprite_ptr`, `rect_*`, `build_paths`, `path_ptr`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_paths`, `path_ptr`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies` | setup, command bar | Static: read once at `start` |
 | `order_*`, `sell`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |

@@ -88,7 +88,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Fire stances (attack anything, defend, return fire, hold fire) and the command bar
 - [x] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [x] Simulation in a Web Worker with SharedArrayBuffer (transferred buffers, or the main thread, as fallbacks)
-- [ ] GPU compute for very large crowds: measured and not worth it yet, see [Determinism and performance](#determinism-and-performance)
+- [x] GPU compute for very large crowds: the simulation sends tick-rate instance records and a WebGPU compute pass interpolates, culls and compacts them every frame into an indirect draw (CPU path as the fallback), see [Determinism and performance](#determinism-and-performance)
 - [x] Loading OpenRA `.oramap` maps
 - [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
 - [x] Mobile/touch controls
@@ -109,7 +109,7 @@ flowchart LR
     world --> flow["Flow fields<br/>LRU cache of 256"]
     world --> hash["Spatial hash"]
     world --> ai["Skirmish AI"]
-    world --> inst["Instance buffers<br/>(flat Float32Array)"]
+    world --> inst["Instance records per tick<br/>(or instances per frame)"]
   end
 
   subgraph worker["Web Worker: js/sim/worker.js"]
@@ -118,7 +118,7 @@ flowchart LR
 
   subgraph web["apps/game/ : ES modules, no bundler (main thread)"]
     ui["Input + sidebar"] -- "game handle: orders, queries" --> core
-    core -- "frames: SharedArrayBuffer<br/>or transferred buffers" --> gpu["WebGPU renderer<br/>terrain, sprites, fog, rects"]
+    core -- "frames: SharedArrayBuffer<br/>or transferred buffers" --> gpu["WebGPU renderer<br/>instance pass (compute),<br/>terrain, sprites, fog, rects"]
     inst --> core
     sprites["Canvas2D procedural sprites"] --> gpu
   end
@@ -132,7 +132,7 @@ flowchart LR
 
 **Simulation worker (`apps/game/js/sim`).** The game runs in a dedicated module Web Worker: the wasm `Game`, the driver that decides when it ticks (skirmish and saves, online lockstep, replays) and the recorder. The main thread keeps rendering, input and UI and never waits for a tick. It sends each animation frame's time with the camera rectangle and gets back the newest frame: instance buffers, fog, terrain changes, sound events, an actor table (owner, kind and type per actor) and answers to the UI's queries. UI code talks to a game handle with the `Game`'s method names: orders go to the worker in order, queries answer synchronously from the last frame (a frame old, like the picture), and clicks and keys ask the worker for fresh answers before they act. Render data travels through SharedArrayBuffers (a double buffer with sequence counters) when the page is cross-origin isolated, else as transferred ArrayBuffers, and the main thread runs the same code itself when module workers are unavailable. The debug menu's performance stats show the mode; `?sim=direct|transfer|shared` picks one for testing. [docs/contracts.md](docs/contracts.md) (section 8) has the boundary method by method.
 
-**Rendering (`apps/game/`).** Plain ES modules, no bundler. The WebGPU renderer uses WGSL shaders in `apps/game/shaders` for terrain, instanced sprites with team colour masks, fog of war and rectangles. Rust writes instance data into flat `Float32Array`s, which the worker hands to the main thread and the renderer uploads to the GPU.
+**Rendering (`apps/game/`).** Plain ES modules, no bundler. The WebGPU renderer uses WGSL shaders in `apps/game/shaders` for terrain, instanced sprites with team colour masks, fog of war and rectangles. Rust writes the frame's sprites and rects as tick-rate records into flat `Float32Array`s (both ends of every interpolation and the cull of each group), only when a tick, an order or the selection changed them; the worker hands them to the main thread, and a compute pass (`shaders/instances.wgsl`) interpolates them by the frame's alpha, culls them against the camera and writes the instances and the count of an indirect draw every frame. Where compute is unavailable (or with `?instances=cpu`, or the debug menu's "CPU instance path"), the engine builds the interpolated, culled instances every frame instead, from the same code.
 
 ## Project layout
 
@@ -180,7 +180,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Headless AI vs AI match (seed 7) | `cargo run -p webra-sim --release --example ai_vs_ai -- 7` |
 | Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
-| Main thread cost per frame, simulation in a worker or not (after `npm run build:wasm`) | `node tools/sim-bench.mjs 20000` |
+| Render data cost per frame: simulation in a worker or not, CPU or GPU instance path, 60 and 144 fps (after `npm run build:wasm`) | `node tools/sim-bench.mjs 20000` |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
@@ -287,16 +287,25 @@ Notes on browsers:
   | 50,000 | 18.6 ms | 74 ms |
 
   WebAssembly runs the same code somewhat slower than native; the stress test HUD and the debug menu's performance stats show the live ms per tick.
-- **Main thread per frame.** `node tools/sim-bench.mjs 20000` (after `npm run build:wasm`) runs the 20,000 unit stress test headless at 60 frames per second with the whole map in view (15,000 sprites) and times what the main thread does per frame: step the simulation or post the step, handle the frame message, and copy the render data as the renderer's `writeBuffer` does. Measured on an Apple Silicon Mac with Node 26 (no browser, no GPU):
+- **Main thread per frame.** `node tools/sim-bench.mjs 20000` (after `npm run build:wasm`) runs the 20,000 unit stress test headless with the whole map in view (15,000 sprites) and times what the main thread does per frame: step the simulation or post the step, handle the frame message, and copy the render data as the renderer's `writeBuffer` does. Measured on an Apple Silicon Mac with Node 26 (no browser, no GPU), CPU instance path at 60 fps:
 
   | Simulation runs | Main thread per frame (avg / p95 / max) | Ticks per second |
   |-----------------|----------------------------------------:|-----------------:|
-  | Main thread (`direct`, as before) | 6.33 / 16.83 / 70.66 ms | 25.0 |
-  | Worker, transferred buffers | 0.08 / 0.12 / 0.85 ms | 24.9 |
-  | Worker, SharedArrayBuffer | 0.08 / 0.10 / 0.87 ms | 24.9 |
+  | Main thread (`direct`) | 5.89 / 15.65 / 49.05 ms | 25.0 |
+  | Worker, transferred buffers | 0.07 / 0.09 / 0.23 ms | 24.7 |
+  | Worker, SharedArrayBuffer | 0.08 / 0.11 / 0.68 ms | 24.7 |
 
   Ticks now cost the worker (6 ms per frame on average, up to 50 ms) instead of the main thread, so a heavy tick no longer drops animation frames or delays input. Browser frame times (GPU upload, compositing) were not measured.
-- **GPU compute, evaluated.** The simulation stays on the CPU with integer math for determinism; a WebGPU compute pass could only take over presentation work: interpolating, culling and ordering sprite instances. In the engine that work is `build_render`, which takes 0.48 ms (p95 0.58 ms) for those 15,000 sprites, and it now runs in the worker, not on the main thread. The main thread's remaining 0.08 ms per frame is mostly the copy into GPU buffers, which a compute pass would still need (it would read raw previous and current positions instead). There is nothing on the main thread for it to win, so WebRA keeps the CPU path. Revisit it if instance counts grow by an order of magnitude or if the per-frame upload shows up in browser profiles.
+- **GPU instance pass.** The simulation stays on the CPU with integer math for determinism; the GPU only takes over presentation: interpolating sprites and overlays between the previous and the current tick, culling them to the camera and compacting them in draw order (`engine/src/instances.rs`, `apps/game/shaders/instances.wgsl`, `apps/game/js/crowd-gpu.js`). The engine builds tick-rate records once per tick (or when the selection, the hovered actor or the view player change), so between ticks the simulation builds and sends nothing. `node tools/sim-bench.mjs 20000` runs the stress test headless with the whole map in view (15,000 sprites) for both instance paths, measured on an Apple Silicon Mac with Node 26:
+
+  | Render rate | Instance path | Worker build per frame (avg / p95) | Render data per frame |
+  |------------:|---------------|-----------------------------------:|----------------------:|
+  | 60 fps | CPU (every frame) | 0.56 / 0.65 ms | 577 KB |
+  | 60 fps | GPU (every tick) | 0.21 / 0.56 ms | 370 KB |
+  | 144 fps | CPU (every frame) | 0.55 / 0.63 ms | 577 KB |
+  | 144 fps | GPU (every tick) | 0.12 / 0.57 ms | 152 to 200 KB |
+
+  Worker figures are from the transfer mode; shared memory and the main thread give the same within noise. Building the records costs 0.43 ms per tick in the engine against 0.47 ms per frame for `build_render`, and a record is 52 bytes against 32 for an instance, so at 60 fps the saving is the per-frame build and about a third of the bytes, at 144 fps three quarters of both; frames between ticks carry no render data at all. The main thread's share stays below 0.1 ms per frame on both paths. The GPU side (upload, the three compute dispatches, the indirect draws) cannot run headless and is not measured; neither is its cost in a browser. `apps/game/tests/crowd.test.mjs` checks that the shader's math and compaction, run in JavaScript on engine records, draws exactly what `build_render` draws.
 
 ## Credits
 
