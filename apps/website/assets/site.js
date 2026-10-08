@@ -576,7 +576,7 @@ async function initMaps() {
         list,
         'No community maps yet',
         'Build one in the map editor and share it: it will show up here for everyone.',
-        el('a', { class: 'btn btn-gold', href: '/play/editor/', text: 'Open the map editor' }),
+        el('a', { class: 'btn btn-accent', href: '/play/editor/', text: 'Open the map editor' }),
       );
       return;
     }
@@ -637,7 +637,7 @@ function mapCard(m) {
     el(
       'div',
       { class: 'card-actions' },
-      el('a', { class: 'btn btn-gold btn-small', href: `/play/?map=${id}`, 'aria-label': `Play ${m.name}`, text: 'Play' }),
+      el('a', { class: 'btn btn-accent btn-small', href: `/play/?map=${id}`, 'aria-label': `Play ${m.name}`, text: 'Play' }),
       el('a', {
         class: 'btn btn-small',
         href: `/play/editor/?map=${id}`,
@@ -683,7 +683,7 @@ async function initLobbies() {
           list,
           'No open games right now',
           'Host one yourself and share the link, or check back in a minute. This list refreshes by itself.',
-          el('a', { class: 'btn btn-gold', href: '/play/', text: 'Host a game' }),
+          el('a', { class: 'btn btn-accent', href: '/play/', text: 'Host a game' }),
         );
       } else {
         list.removeAttribute('aria-busy');
@@ -762,12 +762,141 @@ function lobbyCard(s, ourVersion) {
   );
 }
 
+// ---- Changelog page -----------------------------------------------------------
+// dist/release-notes.json, written by tools/build-dist.mjs from CHANGELOG.md.
+// The game's "What's new" dialog (apps/game/js/releasenotes-dialog.js) shows
+// the same data.
+
+const isHttps = (v) => typeof v === 'string' && /^https:\/\/\S+$/.test(v);
+const isText = (v) => typeof v === 'string' && v.trim() !== '';
+const releaseDateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** Friendly name of a commit scope, from the names the build wrote. */
+function scopeName(scopes, scope) {
+  if (!isText(scope)) return 'General';
+  const names = [];
+  for (const part of scope.split(/[,/]/)) {
+    const key = part.trim().toLowerCase();
+    if (!key) continue;
+    const name = Object.hasOwn(scopes, key) && isText(scopes[key]) ? scopes[key] : key.charAt(0).toUpperCase() + key.slice(1);
+    if (!names.includes(name)) names.push(name);
+  }
+  return names.length ? names.join(', ') : 'General';
+}
+
+/** Entries grouped by scope name in order of appearance, General last. */
+function groupEntries(scopes, entries) {
+  const groups = new Map();
+  for (const e of entries) {
+    const name = scopeName(scopes, e.scope);
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(e);
+  }
+  const general = groups.get('General');
+  groups.delete('General');
+  if (general) groups.set('General', general);
+  return [...groups];
+}
+
+function changelogLink(href, text, label) {
+  return el('a', { href, text, 'aria-label': label, rel: 'noopener' });
+}
+
+function releaseArticle(r, scopes, liveVersion) {
+  const id = `v${r.version}`;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(r.date ?? '') ? new Date(`${r.date}T00:00:00Z`) : null;
+  const head = el(
+    'header',
+    { class: 'release-head' },
+    el('h2', { class: 'release-version' }, el('a', { href: `#${id}`, text: `v${r.version}` })),
+    r.version === liveVersion ? el('span', { class: 'badge badge-open', title: 'The version webra.sherin.dev runs now', text: 'Live' }) : null,
+    date && !Number.isNaN(date.getTime()) ? el('time', { class: 'release-date', datetime: r.date, text: releaseDateFormat.format(date) }) : null,
+  );
+  const article = el('article', { class: 'panel release', id, 'aria-labelledby': `${id}-title` }, head);
+  head.querySelector('h2').id = `${id}-title`;
+  const sections = Array.isArray(r.sections) ? r.sections.filter((s) => s && isText(s.title) && Array.isArray(s.entries)) : [];
+  if (!sections.length) article.append(el('p', { class: 'release-empty', text: 'Maintenance release without player-facing changes.' }));
+  for (const section of sections) {
+    const type = /^[a-z0-9-]+$/.test(section.type ?? '') ? section.type : 'other';
+    const block = el('section', { class: `release-section release-${type}` }, el('h3', { text: section.title }));
+    const entries = section.entries.filter((e) => e && isText(e.text));
+    for (const [name, list] of groupEntries(scopes, entries)) {
+      const ul = el('ul', { class: 'release-entries' });
+      for (const e of list) {
+        const commit = typeof e.commit === 'string' && /^[0-9a-f]{7,40}$/.test(e.commit) ? e.commit : null;
+        const refs = Array.isArray(e.refs) ? e.refs.filter((x) => x && isText(x.label) && isHttps(x.url)) : [];
+        ul.append(
+          el(
+            'li',
+            {},
+            el('span', { text: e.text }),
+            commit && isHttps(e.url) ? ' ' : null,
+            commit && isHttps(e.url) ? changelogLink(e.url, commit, `Commit ${commit} on GitHub`) : null,
+            ...refs.flatMap((x) => [' ', changelogLink(x.url, x.label, `${x.label} on GitHub`)]),
+          ),
+        );
+      }
+      block.append(el('div', { class: 'release-group' }, el('h4', { text: name }), ul));
+    }
+    article.append(block);
+  }
+  if (isHttps(r.compareUrl)) {
+    article.append(el('p', { class: 'release-compare' }, changelogLink(r.compareUrl, 'All changes in this release on GitHub')));
+  }
+  return article;
+}
+
+async function initChangelog() {
+  const box = document.querySelector('[data-releases]');
+  const status = document.querySelector('[data-status]');
+  if (!box || !status) return;
+  const load = async () => {
+    box.setAttribute('aria-busy', 'true');
+    status.textContent = 'Loading the changelog...';
+    let doc;
+    try {
+      doc = await getJson('/release-notes.json');
+      if (!doc || !Array.isArray(doc.releases)) throw new ApiError('The changelog data is damaged.');
+    } catch (err) {
+      box.removeAttribute('aria-busy');
+      status.textContent = '';
+      const retry = el('button', { class: 'btn btn-small', type: 'button', text: 'Try again' });
+      retry.addEventListener('click', load);
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'notice notice-error', role: 'alert' },
+          el('p', {}, el('strong', { text: 'The changelog could not be loaded. ' }), err instanceof ApiError ? err.message : 'Unexpected data.'),
+          el('p', { text: 'Running the site locally? release-notes.json is written by "npm run build" into dist/.' }),
+          el('p', {}, retry, ' ', el('a', { href: 'https://github.com/SherinBloemendaal/webra/blob/main/CHANGELOG.md', text: 'Read CHANGELOG.md on GitHub' })),
+        ),
+      );
+      return;
+    }
+    const scopes = doc.scopes && typeof doc.scopes === 'object' ? doc.scopes : {};
+    const releases = doc.releases.filter((r) => r && typeof r.version === 'string' && /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(r.version));
+    const live = (await siteVersion())?.version ?? null;
+    box.removeAttribute('aria-busy');
+    status.textContent = releases.length === 1 ? '1 release' : `${releases.length} releases`;
+    box.replaceChildren(...releases.map((r) => releaseArticle(r, scopes, live)));
+    if (!releases.length) box.append(el('div', { class: 'panel empty' }, el('h2', { text: 'No releases yet' }), el('p', { text: 'The first release will show up here.' })));
+    // A link to one release (/changelog#v0.3.0) lands on it once the list exists.
+    try {
+      if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
+    } catch {
+      // A malformed hash: stay at the top.
+    }
+  };
+  load();
+}
+
 // ---- Boot -------------------------------------------------------------------
 
 const PAGES = {
   home: () => Promise.all([initHeroScene(), initGallery(), initFactions()]),
   maps: initMaps,
   multiplayer: initLobbies,
+  changelog: initChangelog,
 };
 
 initNav();

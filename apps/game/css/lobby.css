@@ -1,31 +1,38 @@
-/* Pre-game skirmish lobby, built by js/lobby.js. Flat 1996 military look:
-   steel and olive panels with bevels, gold labels and red primary actions.
+/* Pre-game skirmish lobby, built by js/lobby.js. Riveted gunmetal panels with
+   bevels, labels and primary actions in the side's accent (theme.css).
    Everything is scoped under #menu. */
 
 #menu {
-  --l-panel: #1f241b;
-  --l-panel-2: #181c15;
-  --l-head: #12150f;
-  --l-field: #0f120d;
-  --l-edge: #3a4233;
-  --l-edge-hi: rgba(255, 255, 255, 0.07);
-  --l-edge-lo: rgba(0, 0, 0, 0.55);
-  --l-gold: var(--accent, #d9b23a);
-  --l-gold-dim: #8f7726;
-  --l-red: #8c2c1f;
-  --l-red-hi: #b8402d;
-  --l-text: var(--text, #e6e4d6);
-  --l-muted: var(--muted, #9c9a8a);
-  --l-danger: var(--danger, #e2503c);
-  --l-radius: 2px;
+  --l-panel: var(--ui-metal-2);
+  --l-panel-2: var(--ui-metal-1);
+  --l-head: #0d1014;
+  --l-field: var(--ui-metal-0);
+  --l-edge: var(--ui-line);
+  --l-edge-hi: var(--ui-bevel-hi);
+  --l-edge-lo: var(--ui-bevel-lo);
+  --l-gold: var(--ui-accent-hi);
+  --l-gold-dim: var(--ui-accent-lo);
+  --l-red: #8f2a1f;
+  --l-red-hi: var(--ui-accent);
+  --l-text: var(--ui-text);
+  --l-muted: var(--ui-muted);
+  --l-danger: var(--ui-bad);
+  --l-radius: var(--ui-radius);
 }
 
 #menu .lobby {
   width: min(1080px, 100%);
   min-width: 0;
   padding: 18px 20px 20px;
-  background: linear-gradient(180deg, #20251c, #171a14);
-  border: 1px solid #000;
+  position: relative;
+  background:
+    var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) left 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
   border-top: 3px solid var(--l-gold);
   border-radius: var(--l-radius);
   box-shadow:
@@ -47,7 +54,7 @@
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 4px 18px;
   padding-bottom: 14px;
   margin-bottom: 16px;
@@ -66,16 +73,33 @@
   opacity: 0.8;
 }
 
+/* The WebRA name on a riveted, bevelled steel plate. */
 #menu .lobby-logo {
   margin: 0;
-  font: 900 46px/1 Impact, 'Arial Black', sans-serif;
-  letter-spacing: 3px;
-  color: var(--l-text);
-  text-shadow: 2px 2px 0 #000;
+  padding: 7px 22px 5px;
+  background:
+    var(--ui-rivet) left 3px top 3px / 8px 8px no-repeat,
+    var(--ui-rivet) right 3px top 3px / 8px 8px no-repeat,
+    var(--ui-rivet) left 3px bottom 3px / 8px 8px no-repeat,
+    var(--ui-rivet) right 3px bottom 3px / 8px 8px no-repeat,
+    var(--ui-brushed),
+    linear-gradient(180deg, #67717c, #3a414a 48%, #2a3037 52%, #424a54);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.28),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.6),
+    0 3px 0 rgba(0, 0, 0, 0.45);
+  font: 900 40px/1 var(--ui-font-display);
+  letter-spacing: 4px;
+  color: #dfe4ea;
+  text-shadow:
+    0 -1px 0 rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 #menu .lobby-logo span {
-  color: var(--l-danger);
+  color: var(--ui-accent-hi);
 }
 
 #menu .lobby-tagline {
@@ -83,6 +107,28 @@
   color: var(--l-muted);
   font-size: 13px;
   letter-spacing: 0.3px;
+}
+
+#menu .lobby-notes {
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--l-gold-dim);
+  color: var(--l-gold);
+  font: 700 11px/1.4 var(--ui-font);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#menu .lobby-notes:hover {
+  border-bottom-style: solid;
+  filter: brightness(1.2);
+}
+
+#menu .lobby-notes:focus-visible {
+  outline: 2px solid var(--l-gold);
+  outline-offset: 2px;
 }
 
 /* ---- Error banner --------------------------------------------------------- */
@@ -109,7 +155,7 @@
   height: 20px;
   background: var(--l-danger);
   color: #1a0b08;
-  font: 900 14px/1 'Arial Black', sans-serif;
+  font: 900 14px/1 var(--ui-font-display);
   border-radius: 1px;
 }
 
@@ -131,7 +177,7 @@
 #menu .lobby-panel {
   min-width: 0;
   background: linear-gradient(180deg, var(--l-panel), var(--l-panel-2));
-  border: 1px solid #070806;
+  border: 1px solid var(--ui-edge);
   border-radius: var(--l-radius);
   box-shadow:
     inset 1px 1px 0 var(--l-edge-hi),
@@ -145,7 +191,7 @@
   background: var(--l-head);
   border-bottom: 1px solid var(--l-edge);
   border-left: 3px solid var(--l-red-hi);
-  font: 700 12px/1.2 system-ui, 'Segoe UI', sans-serif;
+  font: 700 12px/1.2 var(--ui-font);
   letter-spacing: 1.8px;
   text-transform: uppercase;
   color: var(--l-gold);
@@ -167,11 +213,11 @@
   background-color: var(--l-field);
   color: var(--l-text);
   border: 1px solid var(--l-edge);
-  border-top-color: #060705;
-  border-left-color: #060705;
+  border-top-color: var(--ui-edge);
+  border-left-color: var(--ui-edge);
   border-radius: var(--l-radius);
   box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.4);
-  font: 13px/1 system-ui, 'Segoe UI', sans-serif;
+  font: 13px/1 var(--ui-font);
   user-select: text;
 }
 
@@ -201,9 +247,9 @@
 
 #menu .lobby-select:hover,
 #menu .lobby-input:hover {
-  border-color: #56604b;
-  border-top-color: #060705;
-  border-left-color: #060705;
+  border-color: var(--ui-accent);
+  border-top-color: var(--ui-edge);
+  border-left-color: var(--ui-edge);
 }
 
 #menu .lobby-input[aria-invalid='true'] {
@@ -216,7 +262,7 @@
 }
 
 #menu .lobby :focus-visible {
-  outline: 2px solid var(--l-gold);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 
@@ -262,14 +308,14 @@
   gap: 8px;
   height: 32px;
   padding: 0 14px;
-  background: linear-gradient(180deg, #384131, #2a3125);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--l-text);
-  border: 1px solid #070806;
+  border: 1px solid var(--ui-edge);
   border-radius: var(--l-radius);
   box-shadow:
     inset 1px 1px 0 rgba(255, 255, 255, 0.12),
     inset -1px -1px 0 rgba(0, 0, 0, 0.45);
-  font: 700 12px/1 system-ui, 'Segoe UI', sans-serif;
+  font: 700 12px/1 var(--ui-font);
   letter-spacing: 1.2px;
   text-transform: uppercase;
   white-space: nowrap;
@@ -277,7 +323,7 @@
 }
 
 #menu .lobby-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, #45503c, #323a2c);
+  background: linear-gradient(180deg, #4a5360, var(--ui-metal-3));
 }
 
 #menu .lobby-btn:active:not(:disabled) {
@@ -296,15 +342,16 @@
   height: 46px;
   min-width: 220px;
   padding: 0 28px;
-  background: linear-gradient(180deg, #a83524, var(--l-red));
-  border-color: #2b0c07;
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  border-color: var(--ui-edge);
+  color: #fff;
   font-size: 15px;
   letter-spacing: 2.5px;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
 }
 
 #menu .lobby-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #c2402c, #9e3423);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-primary-hi) 82%, #fff), var(--ui-primary-hi));
 }
 
 /* ---- Map source and map files ------------------------------------------------ */
@@ -316,7 +363,7 @@
 }
 
 #menu .lobby-source-btn[aria-pressed='true'] {
-  background: linear-gradient(180deg, #5a4a1c, #3d3213);
+  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
   border-color: var(--l-gold-dim);
   color: #fff;
 }
@@ -352,7 +399,7 @@
   padding: 2px 5px;
   background: var(--l-danger);
   color: #1a0b08;
-  font: 900 10px/1 'Arial Black', sans-serif;
+  font: 900 10px/1 var(--ui-font-display);
   letter-spacing: 1px;
   cursor: help;
 }
@@ -394,7 +441,7 @@
 
 #menu .lobby-btn-danger {
   background: linear-gradient(180deg, #a83524, var(--l-red));
-  border-color: #2b0c07;
+  border-color: var(--ui-edge);
 }
 
 #menu .lobby-btn-danger:hover:not(:disabled) {
@@ -409,6 +456,54 @@
   color: #f3cfc7;
   font-size: 12.5px;
   overflow-wrap: anywhere;
+}
+
+#menu .lobby-import {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-line);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+#menu .lobby-import[hidden] {
+  display: none;
+}
+
+#menu .lobby-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#menu .oramap-report-title {
+  margin: 6px 0;
+  color: #fff;
+}
+
+#menu .oramap-report h3 {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#menu .oramap-report ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#menu .oramap-report-errors h3,
+#menu .oramap-report-rules h3 {
+  color: #f08a76;
+}
+
+#menu .oramap-report-warnings h3 {
+  color: #e8c25a;
 }
 
 #menu .lobby-file-row {
@@ -426,7 +521,7 @@
   position: relative;
   padding: 4px;
   background: #000;
-  border: 1px solid #070806;
+  border: 1px solid var(--ui-edge);
   box-shadow:
     inset 1px 1px 0 rgba(0, 0, 0, 0.8),
     0 0 0 1px var(--l-edge);
@@ -479,7 +574,7 @@
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
   color: #fff;
-  font: 900 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  font: 900 11px/1 var(--ui-font-mono);
   text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
   pointer-events: auto;
   cursor: default;
@@ -508,7 +603,7 @@
 #menu .lobby-preview-caption {
   margin: 8px 0 12px;
   color: var(--l-muted);
-  font: 12px/1.3 ui-monospace, Menlo, Consolas, monospace;
+  font: 12px/1.3 var(--ui-font-mono);
   text-align: center;
   user-select: text;
 }
@@ -521,7 +616,7 @@
 
 #menu .lobby-seed {
   flex: 1;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--ui-font-mono);
 }
 
 #menu .lobby-dice {
@@ -591,7 +686,7 @@
   background: var(--l-head);
   border: 1px solid var(--l-edge);
   color: var(--l-gold);
-  font: 700 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  font: 700 11px/1 var(--ui-font-mono);
 }
 
 #menu .lobby-ai-name {
@@ -694,7 +789,7 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font: 900 11px/1 'Arial Black', sans-serif;
+  font: 900 11px/1 var(--ui-font-display);
   text-shadow: 1px 1px 0 #000;
 }
 
@@ -749,14 +844,14 @@
   padding: 0 8px 0 6px;
   background: var(--l-field);
   border: 1px solid var(--l-edge);
-  border-top-color: #060705;
-  border-left-color: #060705;
+  border-top-color: var(--ui-edge);
+  border-left-color: var(--ui-edge);
   border-radius: var(--l-radius);
   cursor: pointer;
 }
 
 #menu .lobby-color-btn:hover:not(:disabled) {
-  border-color: #56604b;
+  border-color: var(--ui-accent);
 }
 
 #menu .lobby-swatch {
@@ -819,7 +914,7 @@
 
 #menu .lobby-color-opt.active {
   border-color: var(--l-gold);
-  background: rgba(217, 178, 58, 0.12);
+  background: color-mix(in srgb, var(--ui-accent) 16%, transparent);
 }
 
 #menu .lobby-color-opt[aria-selected='true'] .lobby-swatch {
@@ -837,7 +932,7 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font: 700 10px/1 ui-monospace, Menlo, Consolas, monospace;
+  font: 700 10px/1 var(--ui-font-mono);
   text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
   pointer-events: none;
 }
@@ -881,8 +976,8 @@
   margin: 0;
   background: var(--l-field);
   border: 1px solid var(--l-edge);
-  border-top-color: #060705;
-  border-left-color: #060705;
+  border-top-color: var(--ui-edge);
+  border-left-color: var(--ui-edge);
   border-radius: 1px;
   cursor: pointer;
 }
@@ -891,6 +986,21 @@
   background: var(--l-gold);
   border-color: var(--l-gold-dim);
   box-shadow: inset 0 0 0 3px var(--l-field);
+}
+
+/* Shown while the "Debug menu" (cheats) option is on. */
+#menu .lobby-cheats-warning {
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  border: 1px solid #b0412e;
+  border-radius: 2px;
+  background: rgba(176, 65, 46, 0.18);
+  color: #ffb4a2;
+  font-size: 12px;
+}
+
+#menu .lobby-cheats-warning[hidden] {
+  display: none;
 }
 
 /* ---- Bottom bar ---------------------------------------------------------------- */
@@ -924,7 +1034,7 @@
 
 #menu .lobby-units {
   width: 92px;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--ui-font-mono);
 }
 
 #menu .lobby-go {

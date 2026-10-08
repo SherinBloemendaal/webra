@@ -1,0 +1,354 @@
+/* Touch controls (js/touch.js) and the phone layouts (js/layout.js).
+   body.touch is set on touch screens (coarse pointer, or the first touch);
+   #app[data-layout] is 'desktop', 'portrait' or 'landscape'. */
+
+/* ---- Battlefield --------------------------------------------------------- */
+
+/* No browser panning, pinch zoom or double-tap zoom over the battlefield only:
+   js/touch.js turns those gestures into camera moves. */
+#field,
+#view {
+  touch-action: none;
+}
+
+#app {
+  /* Notches, rounded corners and the home indicator (viewport-fit=cover). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Touch action bar and placement buttons -------------------------------- */
+
+#touch-bar,
+#touch-place {
+  display: none;
+}
+
+body.touch #touch-bar {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+}
+
+body.touch #touch-place {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  padding: 6px;
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  transform: translateX(-50%);
+}
+
+.touch-place-hint {
+  padding: 0 4px;
+  color: var(--ui-muted);
+  font: 12px var(--ui-font);
+  white-space: nowrap;
+}
+
+.touch-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, rgba(58, 66, 77, 0.92), rgba(34, 40, 48, 0.92));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 12px/1.1 var(--ui-font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+}
+
+.touch-button:active {
+  box-shadow: var(--ui-bevel-in);
+}
+
+.touch-button[aria-pressed='true'] {
+  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
+  color: #fff;
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 6px var(--ui-accent-glow);
+}
+
+.touch-button:disabled {
+  opacity: 0.4;
+}
+
+.touch-button.touch-primary {
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
+}
+
+/* ---- Larger targets on touch screens (44 px) -------------------------------- */
+
+body.touch .hud-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+  touch-action: manipulation;
+}
+
+body.touch .debug-panel {
+  top: 56px;
+}
+
+body.touch #powers .power {
+  min-height: 44px;
+}
+
+body.touch #sidebar .sb-tab,
+body.touch #sidebar .sb-tool {
+  min-height: 44px;
+}
+
+body.touch #sidebar button {
+  touch-action: manipulation;
+}
+
+/* Hover tooltips stick on touch screens; the cameos show what is missing
+   instead (.sb-req in sidebar.css). */
+body.touch #sidebar .sb-tip {
+  display: none;
+}
+
+body.touch .menu-card button,
+body.touch .menu-card select,
+body.touch .menu-card input:not([type='checkbox']):not([type='range']) {
+  min-height: 44px;
+}
+
+body.touch .menu-card input.game-menu-check {
+  width: 28px;
+  height: 28px;
+}
+
+/* The Sound button and the version tag would sit on the action bar: the game
+   menu has a Sound entry. */
+body.touch #app:not([hidden]) ~ #audio-button,
+body.touch #app:not([hidden]) ~ #version,
+#app[data-layout='portrait']:not([hidden]) ~ #audio-button,
+#app[data-layout='portrait']:not([hidden]) ~ #version,
+#app[data-layout='landscape']:not([hidden]) ~ #audio-button,
+#app[data-layout='landscape']:not([hidden]) ~ #version {
+  display: none;
+}
+
+/* ---- Phone layouts ------------------------------------------------------------ */
+
+#app.sidebar-collapsed #sidebar {
+  display: none;
+}
+
+#app[data-layout='portrait'] #hud,
+#app[data-layout='landscape'] #hud {
+  font-size: 11px;
+}
+
+/* Portrait: the sidebar is a drawer along the bottom. The radar and the
+   selection on the left; buttons, money and production on the right, with
+   the production tabs as a row over the cameos. */
+#app[data-layout='portrait'] {
+  flex-direction: column;
+}
+
+#app[data-layout='portrait'] #sidebar {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 42%;
+  display: grid;
+  grid-template-columns: minmax(0, 32%) minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    'radar tools'
+    'radar status'
+    'radar silo'
+    'sel main';
+  gap: 5px 8px;
+  padding: 6px 8px;
+  border-left: 0;
+  border-top: 1px solid var(--ui-edge);
+  box-shadow:
+    inset 0 1px 0 var(--ui-bevel-hi),
+    0 -3px 10px rgba(0, 0, 0, 0.5);
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tools {
+  grid-area: tools;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-radar {
+  grid-area: radar;
+  width: 100%;
+  align-self: start;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-status {
+  grid-area: status;
+  font-size: 16px;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-silo {
+  grid-area: silo;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-main {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: var(--sb-power-width) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'power tabs'
+    'power grid';
+}
+
+#app[data-layout='portrait'] #sidebar .sb-power {
+  grid-area: power;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tabs {
+  grid-area: tabs;
+  flex-direction: row;
+  width: auto;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-tab {
+  flex: 1 1 0;
+  width: auto;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-grid {
+  grid-area: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+}
+
+#app[data-layout='portrait'] #sidebar .sb-sel {
+  grid-area: sel;
+  align-self: end;
+  min-height: 0;
+  padding: 3px 6px;
+  overflow: hidden;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-sel-detail {
+  display: none;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-hp {
+  margin: 2px 0;
+}
+
+/* Landscape: a narrow drawer on the right, the selection panel left out (the
+   map shows it), a smaller radar and two cameo columns. */
+#app[data-layout='landscape'] #sidebar {
+  width: 196px;
+  min-width: 196px;
+  max-width: 196px;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-radar {
+  width: min(100%, 28vh);
+}
+
+#app[data-layout='landscape'] #sidebar .sb-status {
+  font-size: 15px;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-sel {
+  display: none;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-tabs {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-tab {
+  flex: none;
+}
+
+#app[data-layout='landscape'] #sidebar .sb-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Phones: fewer action bar labels per row. */
+#app[data-layout='portrait'] .touch-button {
+  padding: 0 9px;
+}
+
+/* ---- Lobby and menus on phones ------------------------------------------------- */
+
+@media (pointer: coarse) {
+  #menu .lobby-select,
+  #menu .lobby-input,
+  #menu .lobby-btn,
+  #menu .lobby-color-btn {
+    min-height: 44px;
+  }
+
+  #menu .lobby-remove {
+    width: 44px;
+  }
+
+  #menu .lobby-toggle {
+    min-height: 44px;
+  }
+
+  #menu .lobby-color-list {
+    grid-template-columns: repeat(4, 44px);
+  }
+
+  #menu .lobby-color-opt {
+    min-height: 44px;
+  }
+
+  .online-btn,
+  .online-input,
+  .online-select,
+  #online-button,
+  #audio-button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* The Play online entry moves from the lobby's title bar to the bottom corner. */
+  #online-button {
+    top: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  #menu {
+    padding-bottom: 76px;
+  }
+
+  #audio-button {
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}

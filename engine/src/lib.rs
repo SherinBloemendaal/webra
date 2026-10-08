@@ -11,12 +11,14 @@ mod ai_arsenal;
 mod air;
 mod cargo;
 mod combat;
+pub mod debug;
 pub mod flowfield;
 mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod mapgen;
 pub mod math;
+pub mod minimap;
 mod naval;
 mod plane;
 mod powers;
@@ -24,8 +26,10 @@ mod production;
 pub mod render;
 pub mod rng;
 pub mod rules;
+pub mod sound_events;
 mod trig_table;
 mod units;
+mod veterancy;
 mod vision;
 pub mod weather;
 pub mod world;
@@ -37,13 +41,23 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_debug;
+#[cfg(test)]
 mod tests_helis;
+#[cfg(test)]
+mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
+mod tests_production;
+#[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_sound;
+#[cfg(test)]
+mod tests_veterancy;
 #[cfg(test)]
 mod tests_weather;
 
@@ -220,6 +234,29 @@ impl Game {
         self.world.step();
     }
 
+    // ---- Audio events (sound_events.rs) -------------------------------------
+
+    /// Turn the audio event log on or off. Off by default; it never affects
+    /// the simulation, so lockstep peers may differ here.
+    pub fn set_audio_events(&mut self, on: bool) {
+        self.world.sound.set_enabled(on);
+    }
+
+    /// Audio events since the last call, flat: `audio_event_stride()` values
+    /// per event (`[kind, a, x, y, owner, b]`, world units). Empties the log.
+    pub fn take_audio_events(&mut self) -> Vec<i32> {
+        self.world.sound.take()
+    }
+
+    pub fn audio_event_stride() -> u32 {
+        sound_events::EVENT_STRIDE as u32
+    }
+
+    /// World units per cell, to convert audio event positions to pixels.
+    pub fn world_units_per_cell() -> i32 {
+        CELL
+    }
+
     // ---- Lockstep multiplayer (docs/contracts.md section 4) ------------------
 
     /// In lockstep mode, local orders go to an outbox instead of the world.
@@ -380,6 +417,8 @@ impl Game {
             .collect();
         json!({
             "actors": actors,
+            // Weapon names in rules order: audio events name weapons by index.
+            "weapons": r.weapons.iter().map(|w| &w.name).collect::<Vec<_>>(),
             "factions": r.factions,
             "pxPerCell": PX_PER_CELL,
             "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai})).collect::<Vec<_>>(),
@@ -411,6 +450,24 @@ impl Game {
 
     pub fn fog_len(&self) -> usize {
         self.fog.len()
+    }
+
+    // ---- Radar minimap (minimap.rs, apps/game/js/minimap.js) ----------------
+
+    /// 0: no radar structure, 1: online, 2: jammed, 3: low power.
+    pub fn radar_state(&self, player: u8) -> u8 {
+        self.world.radar_state(player) as u8
+    }
+
+    /// Radar blips `player` may see, `[cell x, cell y, width, height, owner]`
+    /// each (owner 255: neutral); empty while the radar is offline. Read only.
+    pub fn minimap_blips(&self, player: u8) -> Vec<i32> {
+        if player as usize >= self.world.players.len() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        self.world.minimap_blips(player, &mut out);
+        out
     }
 
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
@@ -492,6 +549,29 @@ impl Game {
             .collect()
     }
 
+    /// Centre (world pixels, `[x, y]`) of the given actors that `player` owns
+    /// and that are alive on the map (not inside a transport); empty when none
+    /// are. Centres the camera on a control group or the selection.
+    pub fn units_center(&self, player: u8, ids: Vec<u32>) -> Vec<f32> {
+        let w = &self.world;
+        let (mut sx, mut sy, mut n) = (0i64, 0i64, 0i64);
+        for id in ids {
+            let Some(i) = w.resolve(id) else { continue };
+            let a = &w.actors[i];
+            if a.owner != player || !a.in_world() {
+                continue;
+            }
+            sx += i64::from(a.x);
+            sy += i64::from(a.y);
+            n += 1;
+        }
+        if n == 0 {
+            return Vec::new();
+        }
+        let to_px = |wu: i64| (wu as f64 / n as f64) as f32 * PX_PER_CELL / CELL as f32;
+        vec![to_px(sx), to_px(sy)]
+    }
+
     /// JSON description of an actor for the selection panel.
     pub fn actor_json(&self, id: u32) -> String {
         let Some(i) = self.world.resolve(id) else { return "null".into() };
@@ -507,6 +587,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "gemBales": a.gem_bales,
             "ability": self.world.ability_json(i),
             // Helicopters: AmmoPool rounds left and size, and whether landed.
             "ammo": self.world.heli_ammo(i).0,
@@ -522,6 +603,13 @@ impl Game {
             // Desert heat (weather.rs): percent of the overheat point, and whether it is overheated.
             "heat": a.env.heat * 100 / weather::HEAT_MAX,
             "overheated": a.env.overheated,
+            // Veterancy (veterancy.rs): level, levels, and experience in value
+            // points (OpenRA counts percent of a value: 100 points per credit).
+            "rank": a.rank,
+            "maxRank": self.world.max_rank(i),
+            "xp": a.xp / 100,
+            "nextXp": self.world.level_experience(i, (a.rank as usize + 1).min(self.world.max_rank(i) as usize)) / 100,
+            "prone": self.world.is_prone(i),
         })
         .to_string()
     }
@@ -676,11 +764,10 @@ impl Game {
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
-                let av = w.availability(player, t as u16);
                 let reqs = w.requirements(player, t as u16);
                 json!({
                     "id": w.rules.actors[t].id,
-                    "enabled": av.enabled,
+                    "enabled": w.can_produce(player, t as u16),
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
@@ -736,6 +823,9 @@ impl Game {
             "powers": powers,
             "tick": w.tick,
             "flowFields": w.flow.computed,
+            // Debug menu (debug.rs): whether cheats work in this game, and this player's flags.
+            "cheats": w.cheats_enabled(),
+            "dev": debug::DevFlag::ALL.iter().map(|&f| (f.name().to_string(), serde_json::Value::Bool(p.dev.get(f)))).collect::<serde_json::Map<_, _>>(),
         })
         .to_string()
     }
@@ -748,6 +838,120 @@ impl Game {
 
     pub fn actor_count(&self) -> usize {
         self.world.actors.iter().filter(|a| a.alive).count()
+    }
+
+    // ---- Debug menu (debug.rs, apps/game/js/debug.js) ------------------------
+
+    /// Whether the game was started with the "Debug menu" (cheats) option.
+    pub fn cheats_enabled(&self) -> bool {
+        self.world.cheats_enabled()
+    }
+
+    /// Cheat: switch a flag (`fast_build`, `build_anywhere`, `unlimited_power`,
+    /// `fast_charge`, `disable_shroud`, `all_tech`). An order like any other, so
+    /// it goes through lockstep online; the engine ignores it without cheats.
+    pub fn dev_flag(&mut self, player: u8, flag: &str, on: bool) {
+        if let Some(flag) = debug::DevFlag::from_name(flag) {
+            self.submit(Order::DevFlag { player, flag, on });
+        }
+    }
+
+    /// Cheat: give the player cash (debug::DEV_CASH).
+    pub fn dev_give_cash(&mut self, player: u8) {
+        self.submit(Order::DevCash { player });
+    }
+
+    /// Cheat: destroy the given actors (any owner).
+    pub fn dev_kill(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::DevKill { player, ids });
+    }
+
+    /// Cheat: one more veterancy level for each of the player's own given units.
+    pub fn dev_experience(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::DevExperience { player, ids });
+    }
+
+    /// Debug view: `[x0, y0, width, height, flags...]` for the cells under the
+    /// world-pixel rectangle; flags are debug::cell bits. Read only.
+    pub fn debug_cells(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<i32> {
+        let c = |px: f32| (px / PX_PER_CELL).floor() as i32;
+        let (x, y, w, h, flags) = self.world.debug_cells(player, c(x0), c(y0), c(x1), c(y1));
+        let mut out = vec![x, y, w, h];
+        out.extend(flags.into_iter().map(i32::from));
+        out
+    }
+
+    /// Debug view: the flow field an own moving unit follows, as
+    /// `[goal x, goal y, x0, y0, width, height, dir...]` for the cells under the
+    /// world-pixel rectangle (dirs: 0..8 clockwise from north, 8 goal, 255 none).
+    /// Empty when the unit follows no current field. Read only.
+    pub fn debug_flow(&self, player: u8, id: u32, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<i32> {
+        let c = |px: f32| (px / PX_PER_CELL).floor() as i32;
+        let Some((goal, x, y, w, h, dirs)) = self.world.debug_flow(player, id, c(x0), c(y0), c(x1), c(y1)) else { return Vec::new() };
+        let width = self.world.map.width as u32;
+        let mut out = vec![(goal % width) as i32, (goal / width) as i32, x, y, w, h];
+        out.extend(dirs.into_iter().map(i32::from));
+        out
+    }
+
+    /// Debug view: actors visible to `player` inside the world-pixel rectangle,
+    /// with ids, health, footprints, weapon ranges and targets (JSON, world
+    /// pixels). Read only.
+    pub fn debug_actors(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> String {
+        let w = &self.world;
+        let px = |wu: i32| wu as f32 * PX_PER_CELL / math::CELL as f32;
+        let margin = 4.0 * PX_PER_CELL;
+        let inside = |x: f32, y: f32| x >= x0 - margin && x <= x1 + margin && y >= y0 - margin && y <= y1 + margin;
+        let seen = |i: usize| w.is_visible_to(i, player) && !w.is_cloaked_from(i, player);
+        let mut out = Vec::new();
+        for i in 0..w.actors.len() {
+            let a = &w.actors[i];
+            if !a.alive || !a.in_world() || (player as usize) >= w.players.len() || !seen(i) {
+                continue;
+            }
+            let (x, y) = (px(a.x), px(a.y));
+            if !inside(x, y) {
+                continue;
+            }
+            let info = &w.rules.actors[a.ty as usize];
+            let weapons: Vec<_> = info
+                .weapons
+                .iter()
+                .map(|&k| json!({"name": w.rules.weapons[k].name, "range": px(w.rules.weapons[k].range), "minRange": px(w.rules.weapons[k].min_range)}))
+                .collect();
+            let target = w.resolve(a.target).filter(|&t| seen(t)).map(|t| json!([px(w.actors[t].x), px(w.actors[t].y)]));
+            let building = info.building.as_ref().map(|b| json!({"cx": a.cx, "cy": a.cy, "w": b.width, "h": b.height}));
+            let own = a.owner == player;
+            out.push(json!({
+                "id": w.make_ref(i),
+                "index": i,
+                "type": info.id,
+                "owner": a.owner,
+                "x": x,
+                "y": y,
+                "altitude": px(a.altitude),
+                "hp": a.hp,
+                "maxHp": info.hp,
+                "radius": info.unit.as_ref().map_or(0.0, |u| px(u.radius)),
+                "sight": px(info.sight),
+                "building": building,
+                "weapons": weapons,
+                "target": target,
+                // Orders of other players stay private.
+                "activity": if own { format!("{:?}", a.activity) } else { String::new() },
+                "goal": if own && a.goal != NONE && a.activity != world::Activity::Idle {
+                    json!([(a.goal % w.map.width as u32) as i32, (a.goal / w.map.width as u32) as i32])
+                } else {
+                    serde_json::Value::Null
+                },
+            }));
+        }
+        serde_json::Value::Array(out).to_string()
+    }
+
+    /// Debug view: simulation counters for the performance panel (JSON).
+    pub fn debug_stats(&self) -> String {
+        self.world.debug_stats().to_string()
     }
 }
 
@@ -868,6 +1072,7 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
         biome: parse_biome(&name("biome", "temperate")?)?,
         weather: weather::WeatherMode::from_name(&name("weather", "full")?)
             .ok_or_else(|| JsError::new("options.weather must be full, cosmetic or off"))?,
+        cheats: flag("cheats", false),
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }
@@ -887,7 +1092,13 @@ fn parse_biome(s: &str) -> Result<Option<weather::Biome>, JsError> {
 fn preview_rgba(m: &map::Map, biome: weather::Biome) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
-        let rgb = if m.ore[i] > 0 { [200, 160, 50] } else { weather::preview_color(biome, m.terrain[i]) };
+        let rgb = if m.gems[i] > 0 {
+            [190, 70, 150]
+        } else if m.ore[i] > 0 {
+            [200, 160, 50]
+        } else {
+            weather::preview_color(biome, m.terrain[i])
+        };
         out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
     }
     const COLORS: [[u8; 3]; 8] =

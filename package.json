@@ -1,6 +1,6 @@
 {
   "name": "webra",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "WebRA monorepo: Red Alert in the browser (engine, game client, website, multiplayer server)",
   "license": "GPL-3.0-or-later",
@@ -16,7 +16,8 @@
     "check:js": "node tools/check-js.mjs",
     "test:engine": "cargo test -p webra-sim --release",
     "test:web": "node --test apps/game/tests/*.test.mjs",
-    "test": "npm run test:engine && npm run test:protocol && npm run test:server && npm run build:wasm && npm run check:js && npm run test:web",
+    "test:tools": "node --test tools/*.test.mjs",
+    "test": "npm run test:engine && npm run test:protocol && npm run test:server && npm run build:wasm && npm run check:js && npm run test:web && npm run test:tools",
     "test:protocol": "node --test packages/protocol/test/*.test.mjs",
     "test:server": "node --test apps/server/test/*.test.mjs"
   }

@@ -71,7 +71,9 @@ test('hash is sha256 hex of the canonical JSON and independent of input key orde
 
 test('invalid maps report problems', () => {
   const cases = [
-    [{ format: 2 }, /format/],
+    [{ format: 3 }, /unsupported map format 3/],
+    [{ format: 2 }, /format 2 maps need a gems layer/],
+    [{ gems: Buffer.alloc(32 * 32).toString('base64') }, /format 1 maps have no gems layer/],
     [{ name: '' }, /name/],
     [{ author: 'x'.repeat(65) }, /author/],
     [{ description: 'x'.repeat(501) }, /description/],
@@ -100,6 +102,55 @@ test('invalid maps report problems', () => {
   assert.equal(validateMap(null).ok, false);
   assert.equal(validateMap([]).ok, false);
 });
+
+/** A format 2 map: makeMap plus gems on the given cells (density 3 unless set). */
+function gemMap(cells = { [32 * 20 + 20]: 3 }, extra = {}) {
+  const gems = Buffer.alloc(32 * 32);
+  for (const [i, d] of Object.entries(cells)) gems[Number(i)] = d;
+  return makeMap(32, 32, { format: 2, gems: gems.toString('base64'), ...extra });
+}
+
+test('format 2 maps carry a gems layer between ore and spawns', async () => {
+  const r = validateMap(gemMap());
+  assert.ok(r.ok, r.errors.join('; '));
+  assert.equal(r.map.format, 2);
+  const c = r.canonical;
+  assert.ok(c.startsWith('{"format":2,'));
+  assert.ok(c.indexOf('"ore":') < c.indexOf('"gems":') && c.indexOf('"gems":') < c.indexOf('"spawns":'), c.slice(0, 120));
+  assert.equal(canonicalMapJson(r.map), c);
+  assert.equal(await mapHash(r.map), createHash('sha256').update(c).digest('hex'));
+  // An all-zero gems layer is still a valid format 2 map.
+  assert.ok(validateMap(gemMap({})).ok);
+  // Format 1 maps keep their canonical form: no gems key, and null means none.
+  const old = validateMap(makeMap());
+  assert.ok(!old.canonical.includes('"gems"'));
+  const nulled = validateMap(makeMap(32, 32, { gems: null }));
+  assert.ok(nulled.ok, nulled.errors.join('; '));
+  assert.equal(nulled.canonical, old.canonical);
+});
+
+test('the gems layer is checked like the engine checks it', () => {
+  const ore = 32 * 10 + 10; // makeMap puts ore there
+  const rock = Buffer.alloc(32 * 32);
+  rock[32 * 20 + 20] = 2;
+  const cases = [
+    [gemMap({ [32 * 20 + 20]: 4 }), 'invalid gem density 4'],
+    [gemMap({ [ore]: 1 }), 'a cell cannot hold both ore and gems'],
+    [gemMap(undefined, { terrain: rock.toString('base64') }), 'gems can only lie on clear or rough ground'],
+    [gemMap(undefined, { gems: Buffer.alloc(32 * 31).toString('base64') }), 'the gems layer must have 1024 bytes'],
+    [gemMap(undefined, { gems: '!'.repeat(base64Len(32 * 32)) }), 'gems is not valid base64'],
+    [gemMap(undefined, { gems: 7 }), 'gems must be base64 text'],
+  ];
+  for (const [map, message] of cases) {
+    const r = validateMap(map);
+    assert.equal(r.ok, false, message);
+    assert.ok(r.errors.includes(message), `${message}: ${r.errors.join('; ')}`);
+  }
+});
+
+function base64Len(n) {
+  return Math.ceil(n / 3) * 4;
+}
 
 test('parseMap enforces the 1 MiB limit before parsing', () => {
   const huge = JSON.stringify(makeMap(32, 32, { description: 'x' })).replace('"x"', `"${'x'.repeat(MAP_MAX_BYTES)}"`);

@@ -63,7 +63,10 @@ export function paintTerrain(doc, cells, material, symmetry) {
   eachSymmetricCell(doc, cells, symmetry, (x, y) => doc.setCell(x, y, material, undefined));
 }
 
-/** Paint ore density (0 removes). Only passable cells can hold ore; others are skipped. */
+/**
+ * Paint ore density (0 removes ore). Only passable cells can hold ore; others
+ * are skipped. Ore replaces gems on the cells it is painted on.
+ */
 export function paintOre(doc, cells, density, symmetry) {
   const d = Math.max(0, Math.min(LIMITS.maxOre, density | 0));
   eachSymmetricCell(doc, cells, symmetry, (x, y) => {
@@ -71,11 +74,22 @@ export function paintOre(doc, cells, density, symmetry) {
   });
 }
 
-/** Eraser: back to clear ground without ore, and remove actors touching the cells. */
+/**
+ * Paint gem density (0 removes gems). Only passable cells can hold gems;
+ * others are skipped. Gems replace ore on the cells they are painted on.
+ */
+export function paintGems(doc, cells, density, symmetry) {
+  const d = Math.max(0, Math.min(LIMITS.maxGems, density | 0));
+  eachSymmetricCell(doc, cells, symmetry, (x, y) => {
+    if (isPassable(doc.terrain[doc.idx(x, y)])) doc.setCell(x, y, undefined, undefined, d);
+  });
+}
+
+/** Eraser: back to clear ground without ore or gems, and remove actors touching the cells. */
 export function erase(doc, cells, symmetry, catalog) {
   const hit = new Set();
   eachSymmetricCell(doc, cells, symmetry, (x, y) => {
-    doc.setCell(x, y, TERRAIN.CLEAR, 0);
+    doc.setCell(x, y, TERRAIN.CLEAR, 0, 0);
     hit.add(doc.idx(x, y));
   });
   const doomed = doc.actors.filter((a) => actorCells(a, catalog).some(([x, y]) => hit.has(doc.idx(x, y))));

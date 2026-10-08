@@ -7,6 +7,8 @@
 
 use crate::math::{dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
 use crate::rules::{Kind, Projectile as ProjKind, WarheadKind};
+use crate::sound_events::{SoundEventKind, DAMAGE_EVENT_QUIET_TICKS};
+use crate::veterancy::Shot;
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
 
 const SCAN_INTERVAL: i32 = 8;
@@ -313,15 +315,16 @@ impl World {
                 return;
             }
             let wi = &self.rules.weapons[w];
+            // Veterans reload faster (ReloadDelayMultiplier, veterancy.rs); burst delays stay.
+            let full_reload = self.modified_reload(i, reload_override.unwrap_or(wi.reload));
             let a = &mut self.actors[i];
             a.burst_shot[slot] += 1;
             if a.burst_shot[slot] < wi.burst {
                 a.reload[slot] = wi.burst_delay(a.burst_shot[slot] - 1).max(1);
             } else {
                 a.burst_shot[slot] = 0;
-                let reload = reload_override.unwrap_or(wi.reload).max(1);
                 // Overheated vehicles fire slower (weather.rs).
-                a.reload[slot] = if a.env.overheated { reload * crate::weather::OVERHEAT_RELOAD_PCT / 100 } else { reload };
+                a.reload[slot] = if a.env.overheated { full_reload * crate::weather::OVERHEAT_RELOAD_PCT / 100 } else { full_reload };
             }
         }
     }
@@ -339,6 +342,10 @@ impl World {
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
+        let shooter_ty = self.actors[i].ty as i32;
+        self.sound.push(SoundEventKind::Fire, w as i32, sx, sy, owner, shooter_ty);
+        // The shooter gets the kill and its rank's firepower applies (veterancy.rs).
+        let shot = self.shot_of(i);
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
         let (mut tx, mut ty) = self.aim_point(t, sx, sy);
         let wi = &self.rules.weapons[w];
@@ -352,19 +359,19 @@ impl World {
             }
         }
         match wi.projectile {
-            ProjKind::Instant => self.impact(w, tx, ty, owner),
+            ProjKind::Instant => self.impact_shot(w, tx, ty, owner, shot),
             ProjKind::Tesla => {
                 self.effects.push(Effect { x: sx, y: sy, tx, ty, kind: EffectKind::TeslaBolt, ttl: 6, max: 6 });
-                self.impact(w, tx, ty, owner);
+                self.impact_shot(w, tx, ty, owner, shot);
             }
             ProjKind::Bullet | ProjKind::Missile => {
                 let tref = self.make_ref(t);
-                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing });
+                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target: tref, facing, shot });
             }
             // GravityBomb: falls from the shooter's altitude where it was released (plane.rs).
             ProjKind::Bomb => {
                 let alt = self.actors[i].altitude;
-                self.drop_bomb(w, sx, sy, owner, alt);
+                self.drop_bomb(w, sx, sy, owner, alt, shot);
             }
         }
     }
@@ -396,7 +403,7 @@ impl World {
             due
         };
         for p in due {
-            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.owner);
+            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.shot);
         }
         let mut k = 0;
         while k < self.projectiles.len() {
@@ -414,9 +421,9 @@ impl World {
             let d = dist(p.x, p.y, tx, ty);
             let speed = wi.speed.max(1);
             if d <= speed {
-                let (w, owner) = (p.weapon as usize, p.owner);
+                let (w, owner, shot) = (p.weapon as usize, p.owner, p.shot);
                 self.projectiles.swap_remove(k);
-                self.impact(w, tx, ty, owner);
+                self.impact_shot(w, tx, ty, owner, shot);
                 continue;
             }
             let p = &mut self.projectiles[k];
@@ -431,8 +438,14 @@ impl World {
         }
     }
 
-    /// A weapon lands at a point: each warhead applies now or after its delay.
+    /// A weapon nobody in particular fired lands at a point (see `impact_shot`).
     pub(crate) fn impact(&mut self, w: usize, x: i32, y: i32, owner: u8) {
+        self.impact_shot(w, x, y, owner, Shot::NONE);
+    }
+
+    /// A weapon lands at a point: each warhead applies now or after its delay.
+    /// `shot` credits kills to the shooter and carries its firepower.
+    pub(crate) fn impact_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot) {
         let max_damage = self.rules.weapons[w].max_damage();
         let (kind, ttl) = if max_damage >= 20000 {
             (EffectKind::NukeExplosion, 40)
@@ -442,20 +455,22 @@ impl World {
             (EffectKind::Piff, 6)
         };
         // Shells landing in open water splash instead (naval.rs).
-        let (kind, ttl) = self.water_impact_effect(x, y, ttl).unwrap_or((kind, ttl));
+        let splash = self.water_impact_effect(x, y, ttl);
+        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(splash.is_some()));
+        let (kind, ttl) = splash.unwrap_or((kind, ttl));
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
             if delay > 0 {
-                self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner });
+                self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
             } else {
-                self.apply_warhead(w, h, x, y, owner);
+                self.apply_warhead(w, h, x, y, shot);
             }
         }
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, _owner: u8) {
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, shot: Shot) {
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -509,24 +524,49 @@ impl World {
                     WarheadKind::Percent => info.hp as i64 * wh.damage as i64 / 100,
                     _ => wh.damage as i64,
                 };
+                // The shooter's FirepowerMultiplier (veterancy.rs), then versus and falloff.
+                let base = base * shot.firepower as i64 / 100;
                 (u, (base * wh.versus[info.armor] as i64 / 100 * fall / 100) as i32)
             })
             .collect();
+        let types = wh.damage_types;
         for (u, dmg) in damages {
-            self.damage(u, dmg);
+            self.damage_from(u, dmg, shot.source, types);
         }
     }
 
+    /// Damage without a shooter to credit and without damage types (tests).
+    #[cfg(test)]
     pub(crate) fn damage(&mut self, u: usize, dmg: i32) {
+        self.damage_from(u, dmg, NONE, 0);
+    }
+
+    /// Damage `u` by `dmg` (before its own modifiers), hit by actor reference
+    /// `source` (or NONE) with damage type bits `types`. The victim's rank and
+    /// prone modifiers apply, a trigger type throws infantry prone, and a kill
+    /// gives `source` experience (veterancy.rs).
+    pub(crate) fn damage_from(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
         if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick {
+            return;
+        }
+        let dmg = self.modified_damage(u, dmg, types);
+        if dmg <= 0 {
             return;
         }
         let tick = self.tick;
         let a = &mut self.actors[u];
+        // One "under attack" event per burst of fire on a structure (sound_events.rs).
+        let report = a.kind == Kind::Building && (a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS);
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
-        if a.hp <= 0 {
+        if report {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::BuildingDamaged, ty, x, y, owner, 0);
+        }
+        self.take_cover(u, types);
+        if self.actors[u].hp <= 0 {
+            self.award_kill(u, source);
             self.kill(u);
         }
     }
@@ -538,6 +578,8 @@ impl World {
             return;
         }
         let a = &self.actors[i];
+        // FireWarheadsOnDeath: the dying actor's firepower, nobody to credit (DamageSource Self).
+        let shot = Shot { source: NONE, firepower: self.firepower_modifier(i) };
         if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
             // One tick later, so chain reactions ripple outward instead of recursing.
             for h in 0..self.rules.weapons[w].warheads.len() {
@@ -549,6 +591,7 @@ impl World {
                     x: a.x,
                     y: a.y,
                     owner: a.owner,
+                    shot,
                 });
             }
         }

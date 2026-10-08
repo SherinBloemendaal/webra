@@ -13,7 +13,7 @@
 //! - `apply_generated_shroud()` at the end of every vision update,
 //! - `render_abilities(..)` from `build_render`.
 
-use crate::map::Terrain;
+use crate::map::{Resource, Terrain};
 use crate::math::{dist, dist_sq, facing_of, facing_vec, CELL};
 use crate::rules::{Domain, Kind, Projectile as ProjKind, SupportPowerInfo, WarheadKind};
 use crate::world::{cell_center, Activity, Effect, EffectKind, World, NONE};
@@ -120,8 +120,9 @@ pub struct Nuke {
     pub camera_remove: i32,
 }
 
-/// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes).
-fn terrain_allowed(names: &[String], t: Terrain, ore: bool) -> bool {
+/// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
+/// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
+fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
     let name = match t {
         Terrain::Clear => "Clear",
         Terrain::Rough => "Rough",
@@ -130,7 +131,12 @@ fn terrain_allowed(names: &[String], t: Terrain, ore: bool) -> bool {
         Terrain::Tree => "Tree",
         Terrain::Ford => "Ford",
     };
-    names.iter().any(|n| n == name || (ore && n == "Ore"))
+    let res = match resource {
+        Some(Resource::Ore) => "Ore",
+        Some(Resource::Gems) => "Gems",
+        None => "",
+    };
+    names.iter().any(|n| n == name || n == res)
 }
 
 impl World {
@@ -378,7 +384,7 @@ impl World {
         ci < self.map.cells()
             && !self.pass.blocked[ci]
             && self.building_at[ci] == NONE
-            && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.ore[ci] > 0)
+            && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
             && self.mine_at(ci).is_none()
     }
 
@@ -788,8 +794,9 @@ impl World {
                     (u, (base * wh.versus[info.armor] as i64 / 100) as i32)
                 })
                 .collect();
+            let (source, types) = (self.make_ref(src), wh.damage_types);
             for (u, d) in damages {
-                self.damage(u, d);
+                self.damage_from(u, d, source, types);
             }
         }
     }

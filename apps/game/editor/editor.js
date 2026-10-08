@@ -2,7 +2,7 @@
 // Reuses the game's engine package (actor catalog, generated maps, validation),
 // WebGPU renderer and sprite atlas.
 
-import init, { Game } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from '../js/renderer.js';
 import { buildAtlas, drawIcon } from '../js/sprites.js';
 import { TEST_MAP_KEY } from '../js/maploader.js';
@@ -28,6 +28,8 @@ import {
 } from './js/mapformat.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
+import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
+import { renderReport } from '../js/oramap/report.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
 const AUTHOR_KEY = 'webra.editor.author';
@@ -52,21 +54,21 @@ const PALETTE_GROUPS = [
 ];
 
 const SHORTCUTS = [
-  ['B F R O E S A V', 'Brush, fill, rectangle, ore, eraser, spawns, actor, select'],
+  ['B F R O C E S A V', 'Brush, fill, rectangle, ore, gems (crystals), eraser, spawns, actor, select'],
   ['1 to 5', 'Terrain: clear, rough, rock, water, trees'],
   ['[ and ]', 'Brush size (1, 3, 5, 9)'],
-  ['- and =', 'Ore density'],
+  ['- and =', 'Ore or gem density'],
   ['M', 'Cycle symmetry mode'],
   ['G', 'Toggle grid'],
   [', and .', 'Rotate the actor to place (and selected units)'],
   ['Delete', 'Delete the selected actors or spawn'],
   ['Escape', 'Cancel the current drag, clear the selection'],
-  ['Right drag', 'Brush and rectangle paint clear ground, ore brush removes ore, actor tool deletes'],
+  ['Right drag', 'Brush and rectangle paint clear ground, ore and gem brushes remove ore or gems, actor tool deletes'],
   ['Arrows, middle drag, Space + drag', 'Pan the map'],
   ['Wheel', 'Zoom at the cursor'],
   ['Home', 'Fit the whole map'],
   ['Ctrl+Z, Ctrl+Shift+Z (Ctrl+Y)', 'Undo, redo'],
-  ['Ctrl+S, Ctrl+O, Ctrl+Alt+N', 'Save, open, new map'],
+  ['Ctrl+S, Ctrl+O, Ctrl+Alt+N', 'Save, open (also OpenRA .oramap), new map'],
   ['Ctrl+Enter', 'Test play'],
   ['?', 'This help'],
 ];
@@ -78,6 +80,7 @@ const state = {
   material: TERRAIN.WATER,
   size: 3,
   ore: 8,
+  gems: 3,
   symmetry: 'none',
   grid: true,
   actorType: null,
@@ -180,15 +183,15 @@ function newBlankMap(width = 96, height = 96, base = TERRAIN.CLEAR) {
 function loadPrefs() {
   try {
     const p = JSON.parse(store.get(PREFS_KEY) ?? '{}');
-    for (const k of ['material', 'size', 'ore', 'symmetry', 'grid']) if (k in p) state[k] = p[k];
+    for (const k of ['material', 'size', 'ore', 'gems', 'symmetry', 'grid']) if (k in p) state[k] = p[k];
   } catch {
     // Corrupt preferences: keep the defaults.
   }
 }
 
 function savePrefs() {
-  const { material, size, ore, symmetry, grid } = state;
-  store.set(PREFS_KEY, JSON.stringify({ material, size, ore, symmetry, grid }));
+  const { material, size, ore, gems, symmetry, grid } = state;
+  store.set(PREFS_KEY, JSON.stringify({ material, size, ore, gems, symmetry, grid }));
 }
 
 // ---- Render loop --------------------------------------------------------------------------
@@ -356,7 +359,8 @@ function buildTools() {
   const sizes = BRUSH_SIZES.map((n) =>
     el('button', { type: 'button', class: 'seg', 'data-size': String(n), title: `Brush size ${n}`, onclick: () => setSize(n) }, String(n)),
   );
-  const ore = el('input', { type: 'range', min: '1', max: String(LIMITS.maxOre), value: String(state.ore), oninput: () => setOre(Number(ore.value)) });
+  const ore = el('input', { type: 'range', id: 'ore-density', min: '1', max: String(LIMITS.maxOre), value: String(state.ore), oninput: () => setOre(Number(ore.value)) });
+  const gems = el('input', { type: 'range', id: 'gem-density', min: '1', max: String(LIMITS.maxGems), value: String(state.gems), oninput: () => setGems(Number(gems.value)) });
   const symmetry = el(
     'select',
     { id: 'symmetry', onchange: () => setSymmetry(symmetry.value) },
@@ -367,11 +371,16 @@ function buildTools() {
     el('h2', {}, 'Tools'),
     el('div', { class: 'tool-list' }, toolButtons),
     el('div', { class: 'opt', 'data-for': 'brush fill rect' }, [el('h2', {}, 'Terrain'), el('div', { class: 'swatches' }, materials)]),
-    el('div', { class: 'opt', 'data-for': 'brush ore eraser' }, [el('h2', {}, 'Brush size'), el('div', { class: 'segs' }, sizes)]),
+    el('div', { class: 'opt', 'data-for': 'brush ore gems eraser' }, [el('h2', {}, 'Brush size'), el('div', { class: 'segs' }, sizes)]),
     el('div', { class: 'opt', 'data-for': 'ore' }, [
       el('h2', {}, ['Ore density ', el('span', { id: 'ore-value', class: 'muted' })]),
       ore,
-      el('p', { class: 'hint' }, 'Ore only lies on clear or rough ground.'),
+      el('p', { class: 'hint' }, 'Ore only lies on clear or rough ground. It grows back and spreads when the lobby allows ore regrowth.'),
+    ]),
+    el('div', { class: 'opt', 'data-for': 'gems' }, [
+      el('h2', {}, ['Gem density ', el('span', { id: 'gem-value', class: 'muted' })]),
+      gems,
+      el('p', { class: 'hint' }, 'Gems only lie on clear or rough ground. A bale of gems pays twice as much as ore; gems never grow back.'),
     ]),
     el('div', { class: 'opt', 'data-for': 'actor' }, [
       el('h2', {}, 'Actor'),
@@ -392,7 +401,9 @@ function syncTools() {
   document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('active', Number(b.dataset.size) === state.size));
   document.querySelectorAll('#tools .opt').forEach((o) => (o.hidden = !o.dataset.for.split(' ').includes(state.tool)));
   $('#ore-value').textContent = `${state.ore} / ${LIMITS.maxOre}`;
-  $('#tools input[type=range]').value = String(state.ore);
+  $('#ore-density').value = String(state.ore);
+  $('#gem-value').textContent = `${state.gems} / ${LIMITS.maxGems}`;
+  $('#gem-density').value = String(state.gems);
   $('#symmetry').value = state.symmetry;
   $('#grid').checked = state.grid;
   $('#facing-value').textContent = `${state.facing} / 1024`;
@@ -427,6 +438,18 @@ function setOre(n) {
   state.ore = Math.max(1, Math.min(LIMITS.maxOre, n));
   savePrefs();
   syncTools();
+}
+
+function setGems(n) {
+  state.gems = Math.max(1, Math.min(LIMITS.maxGems, n));
+  savePrefs();
+  syncTools();
+}
+
+/** - and =: the density of the gem brush when it is active, else of the ore brush. */
+function stepDensity(d) {
+  if (state.tool === 'gems') return setGems(state.gems + d);
+  return setOre(state.ore + d);
 }
 
 function setSymmetry(m) {
@@ -686,6 +709,10 @@ function loadMap(map, label) {
 
 function openFile(file) {
   if (!file) return;
+  if (isOramapFile(file.name)) {
+    importOramapFile(file);
+    return;
+  }
   if (file.size > LIMITS.maxBytes * 2) {
     toast('That file is far too large for a map.', true);
     return;
@@ -700,6 +727,59 @@ function openFile(file) {
     }
     if (loadMap(map, `Open ${file.name}`)) toast(`Opened ${file.name}.`);
   });
+}
+
+/**
+ * Import an OpenRA .oramap package: convert it (js/oramap), show the import
+ * report, and open the result for editing once the author confirms. Rules
+ * the conversion kept make a modded map; the report repeats the modded
+ * warning, and the author may open the map without them.
+ */
+async function importOramapFile(file) {
+  if (file.size > ORAMAP_MAX_BYTES) {
+    toast(`That .oramap file is larger than ${ORAMAP_MAX_BYTES / 1024 / 1024} MiB.`, true);
+    return;
+  }
+  let result;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    result = await importOramap(bytes, {
+      baseRules: JSON.parse(base_rules_json()),
+      validate: (json) => JSON.parse(Game.validate_map(json)),
+      fileName: file.name,
+    });
+  } catch (err) {
+    showImportReport(err?.report ?? null, null, `Could not import ${file.name}: ${err?.message ?? err}`);
+    return;
+  }
+  showImportReport(result.report, result.map, null);
+}
+
+function showImportReport(report, map, failure) {
+  $('#import-report')?.remove();
+  const open = (withRules) => {
+    const m = withRules ? map : { ...map, rules: null };
+    if (loadMap(m, `Import ${report.title}`)) toast(`Imported "${report.title}".`);
+  };
+  const buttons = [];
+  if (map) {
+    buttons.push(el('button', { type: 'submit', class: 'primary', value: 'open', onclick: () => open(true) }, map.rules ? 'Open with its rules (MODDED)' : 'Open in the editor'));
+    if (map.rules) buttons.push(el('button', { type: 'submit', value: 'plain', onclick: () => open(false) }, 'Open without rules'));
+  }
+  buttons.push(el('button', { type: 'submit', value: 'cancel' }, map ? 'Cancel' : 'Close'));
+  const dialog = el('dialog', { id: 'import-report', class: 'menu-card dialog wide' }, [
+    el('form', { method: 'dialog' }, [
+      el('h1', {}, 'OpenRA map import'),
+      failure ? el('p', { class: 'error' }, failure) : null,
+      map?.rules ? el('p', { class: 'error' }, MODDED_WARNING) : null,
+      report ? renderReport(report) : null,
+      map && report?.validation && !report.validation.ok ? el('p', { class: 'hint' }, 'Fix the listed problems in the editor before test play or publishing.') : null,
+      el('div', { class: 'row' }, buttons),
+    ]),
+  ]);
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 function saveFile() {
@@ -793,7 +873,7 @@ function helpOverlay() {
     el('form', { method: 'dialog' }, [
       el('h1', {}, 'Shortcuts'),
       el('table', { class: 'keys' }, SHORTCUTS.map(([k, d]) => el('tr', {}, [el('th', {}, k), el('td', {}, d)]))),
-      el('p', { class: 'hint' }, 'Spawns are the top-left cell of each player\'s 3x4 construction yard and need clear ground. Ore only lies on clear or rough ground.'),
+      el('p', { class: 'hint' }, 'Spawns are the top-left cell of each player\'s 3x4 construction yard and need clear ground. Ore and gems only lie on clear or rough ground.'),
       el('div', { class: 'row' }, el('button', { type: 'submit', class: 'primary' }, 'Close')),
     ]),
   ]);
@@ -880,10 +960,10 @@ function bindKeys() {
         return setSize(BRUSH_SIZES[Math.max(0, Math.min(BRUSH_SIZES.length - 1, i))]);
       }
       case '-':
-        return setOre(state.ore - 1);
+        return stepDensity(-1);
       case '=':
       case '+':
-        return setOre(state.ore + 1);
+        return stepDensity(1);
       case 'm':
       case 'M': {
         const i = SYMMETRY_MODES.findIndex((s) => s.id === state.symmetry);
@@ -924,7 +1004,7 @@ function updateStatus(cell) {
     return;
   }
   const i = doc.idx(cell.x, cell.y);
-  const ore = doc.ore[i] ? `, ore ${doc.ore[i]}` : '';
+  const ore = doc.ore[i] ? `, ore ${doc.ore[i]}` : doc.gems[i] ? `, gems ${doc.gems[i]}` : '';
   s.textContent = `${cell.x}, ${cell.y}  ${TERRAIN_NAMES[doc.terrain[i]]}${ore}  |  zoom ${view.camera.zoom.toFixed(2)}`;
 }
 

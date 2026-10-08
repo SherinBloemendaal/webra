@@ -44,6 +44,36 @@ are validated against the Construction Yard footprint of the map's own rules
 without one) and the MCV cell, and wall line filling checks every cell of each
 piece (a modded multi-cell wall could overwrite a neighbour's cells).
 
+## Debug menu cheats (2026-10-08)
+
+The debug menu (OpenRA developer mode) adds cheat orders: `dev_flag`
+(instant build, build anywhere, unlimited power, instant charge, reveal map,
+all tech), `dev_cash`, `dev_kill` (destroy any actor) and `dev_experience`
+(raise own units one veterancy level). They are guarded in
+three places:
+
+- **Lobby:** they only work when the host enabled the "Debug menu" option
+  (`cheats`, off by default). Changing it resets everyone's ready flag, the
+  online lobby shows "CHEATS ENABLED" to every player, and the agreed game
+  options in the `start` message carry it, so every peer starts with the same
+  setting. Rooms stored before the option existed read back with it off.
+- **Server:** `apps/server/src/validate.js` `cheatsAllowed` refuses any
+  `orders` message holding a cheat order in a game whose frozen options do
+  not have `cheats: true`; the sender is dropped like for other protocol
+  violations, so nothing reaches the other peers. The protocol schema checks
+  their shape strictly (known flags only, no amount field, id lists capped).
+- **Engine:** every cheat handler checks `GameOptions::cheats` and does
+  nothing without it, whatever the network delivers. Cheat flags are part of
+  the state hash in games with cheats. Fuzz tests send hostile cheat orders to
+  games with and without the option.
+
+With the option on, cheats are by design symmetric: every player has the
+same menu and every peer applies the same orders, so they cannot desync a
+game. The read-only views (cell grid, pathing, combat geometry, actor tags)
+are local and only report explored cells and actors the player can see, so
+they reveal nothing beyond what the screen already shows (a modified client
+can still reveal the map, see "Map hack" below).
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

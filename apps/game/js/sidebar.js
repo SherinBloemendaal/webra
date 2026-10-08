@@ -1,20 +1,34 @@
-// In-game sidebar: credits, power meter, production tabs, build palette and
-// the selection panel. The DOM is built once; update() only patches text,
-// classes and CSS variables so it is cheap to call ~10x per second.
+// In-game sidebar, laid out like the Red Alert sidebar of OpenRA: a row of
+// command buttons, the radar slot, money and game clock, then the power
+// meter, a column of production tabs and the build grid of cameos, and the
+// selection panel. The DOM is built once; update() only patches text, classes
+// and CSS variables so it is cheap to call ~10x per second.
 
-import { drawIcon } from './sprites.js';
 import { TEAM_COLORS } from './renderer.js';
+import { cameoPainter } from './cameo.js';
+import { icon } from './ui-icons.js';
+import {
+  BuildEta,
+  cancelEndsPlacement,
+  clickAction,
+  formatClock,
+  isStructureQueue,
+  placementLost,
+  SHIFT_COUNT,
+  summarizeQueues,
+} from './production.js';
 
 // Must match QueueType in engine/src/rules.rs.
 const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'];
+const QUEUE_ICONS = ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval'];
 const QUEUE_BUILDINGS = 0;
-/** Buildings and Defense items are placed on the map when finished (one at a time). */
-const isStructureQueue = (q) => q === 0 || q === 1;
-const SHIFT_COUNT = 5;
 
-// Icon canvas size in CSS pixels; the backing store is scaled by devicePixelRatio.
-const ICON_W = 96;
-const ICON_H = 64;
+// Cameo canvas size in CSS pixels (square, see js/cameo.js); the backing
+// store is scaled by devicePixelRatio.
+const CAMEO_SIZE = 64;
+
+// Power meter: above this share of the generated power the bar turns amber.
+const POWER_TIGHT = 0.85;
 
 // Credits counter: like the 1996 sidebar the display ticks toward the real
 // value instead of jumping. Speed grows with the gap so big swings stay short.
@@ -51,13 +65,16 @@ export class Sidebar {
    * @param {object} game wasm Game instance
    * @param {object} rules parsed rules_json()
    * @param {number} playerId local player id
-   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void}} callbacks
+   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onSell?: () => void,
+   *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean}} callbacks
+   * @param {{ticksPerSecond?: number}} [options] game ticks per second, for the clocks
    */
-  constructor(root, game, rules, playerId, callbacks = {}) {
+  constructor(root, game, rules, playerId, callbacks = {}, options = {}) {
     this.root = root;
     this.game = game;
     this.playerId = playerId;
     this.callbacks = callbacks;
+    this.ticksPerSecond = options.ticksPerSecond || 25;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
 
     this.actors = new Map();
@@ -82,58 +99,112 @@ export class Sidebar {
 
   // ---- DOM construction (once) -----------------------------------------
 
+  /** Square icon button of the top row. */
+  toolButton(name, label, title, onClick) {
+    const b = el('button', `sb-tool sb-tool-${name}`);
+    b.type = 'button';
+    b.setAttribute('aria-label', label);
+    b.title = title;
+    b.append(icon(name));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
   build() {
     const root = this.root;
     root.textContent = '';
     root.classList.add('sb');
+    root.setAttribute('aria-label', 'Command sidebar');
     root.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Credits and ore storage.
-    const top = el('div', 'sb-top');
-    const creditsLabel = el('div', 'sb-credits-label', 'Credits');
-    this.creditsEl = el('div', 'sb-credits', '0');
-    this.creditsEl.setAttribute('aria-live', 'off');
-    this.oreEl = el('div', 'sb-ore', 'Ore 0 / 0');
-    top.append(creditsLabel, this.creditsEl, this.oreEl);
+    // Command buttons. Only what the engine implements: there is no repair
+    // or power down order yet, so those buttons are left out.
+    const tools = el('div', 'sb-tools');
+    this.sellBtn = this.toolButton('sell', 'Sell', 'Sell a structure for 50% of its value (scaled by health). Hotkey: Z', () => this.callbacks.onSell?.());
+    this.sellBtn.setAttribute('aria-pressed', 'false');
+    this.deployBtn = this.toolButton(
+      'deploy',
+      'Deploy',
+      'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: F or D',
+      () => this.callbacks.onDeploy?.(),
+    );
+    tools.append(this.sellBtn, this.deployBtn);
+    if (this.callbacks.onMenu) {
+      this.menuBtn = this.toolButton('options', 'Options', 'Game menu: settings, controls, leave (Esc)', () => this.callbacks.onMenu());
+      this.menuBtn.classList.add('sb-tool-end');
+      tools.append(this.menuBtn);
+    }
 
-    // Power meter.
+    // Radar slot: the minimap draws in here. Empty, it shows "radar offline".
+    this.radarEl = el('div', 'sb-radar');
+    this.radarEl.id = 'radar';
+    this.radarEl.dataset.offlineLabel = 'Radar offline';
+
+    // Money and game clock, with the ore silos as a thin bar underneath.
+    const status = el('div', 'sb-status');
+    const money = el('div', 'sb-money');
+    money.append(el('span', 'sb-money-sign', '$'));
+    this.creditsEl = el('span', 'sb-credits', '0');
+    this.creditsEl.setAttribute('aria-live', 'off');
+    money.append(this.creditsEl);
+    this.moneyEl = money;
+    this.clockEl = el('time', 'sb-clock-text', formatClock(0));
+    this.clockEl.title = 'Game time';
+    status.append(money, this.clockEl);
+    const silo = el('div', 'sb-silo');
+    this.siloFill = el('div', 'sb-silo-fill');
+    silo.append(this.siloFill);
+    this.oreEl = el('span', 'ui-sr-only', 'Ore 0 / 0');
+    silo.append(this.oreEl);
+    this.siloEl = silo;
+
+    // Power meter: a vertical bar of the power used against the produced
+    // capacity (the marker), like Red Alert's.
     const power = el('div', 'sb-power');
-    const powerHead = el('div', 'sb-power-head');
-    this.powerLabelEl = el('span', 'sb-power-label', 'Power');
-    this.powerTextEl = el('span', 'sb-power-text', '0 / 0');
-    powerHead.append(this.powerLabelEl, this.powerTextEl);
     const meter = el('div', 'sb-power-meter');
     meter.setAttribute('role', 'meter');
-    meter.setAttribute('aria-label', 'Power usage');
+    meter.setAttribute('aria-label', 'Power used');
+    meter.setAttribute('aria-valuemin', '0');
     this.powerFillEl = el('div', 'sb-power-fill');
     this.powerCapEl = el('div', 'sb-power-cap');
     meter.append(this.powerFillEl, this.powerCapEl);
+    const bolt = el('div', 'sb-power-icon');
+    bolt.append(icon('power'));
     this.powerMeterEl = meter;
     this.powerRootEl = power;
-    power.append(powerHead, meter);
+    power.append(meter, bolt);
 
-    // Tabs.
+    // Production tabs: a column of icon buttons.
     const tabs = el('div', 'sb-tabs');
     tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-orientation', 'vertical');
+    tabs.setAttribute('aria-label', 'Production');
     this.tabs = QUEUE_NAMES.map((name, q) => {
       const btn = el('button', 'sb-tab');
       btn.type = 'button';
+      btn.id = `sb-tab-${q}`;
       btn.setAttribute('role', 'tab');
-      const label = el('span', 'sb-tab-label', name);
+      btn.setAttribute('aria-controls', 'sb-grid');
+      btn.setAttribute('aria-label', name);
+      btn.title = name;
       const badge = el('span', 'sb-tab-badge');
       badge.hidden = true;
-      btn.append(label, badge);
+      btn.append(icon(QUEUE_ICONS[q]), badge);
       btn.addEventListener('click', () => {
         this.selectTab(q);
       });
       tabs.append(btn);
-      return { btn, badge };
+      return { btn, badge, name, state: '' };
     });
 
     // Card grid.
     this.gridEl = el('div', 'sb-grid');
+    this.gridEl.id = 'sb-grid';
     this.gridEl.setAttribute('role', 'tabpanel');
     this.emptyEl = el('div', 'sb-empty', 'Nothing available');
+
+    const main = el('div', 'sb-main');
+    main.append(power, tabs, this.gridEl);
 
     // Hover tooltip (fixed positioned next to the hovered card).
     this.tipEl = el('div', 'sb-tip');
@@ -161,23 +232,11 @@ export class Sidebar {
     this.selEl = sel;
     sel.classList.add('empty');
 
-    // Command buttons: sell mode and deploy (MCV / pack up the Construction Yard).
-    const tools = el('div', 'sb-tools');
-    this.sellBtn = el('button', 'sb-tool', 'Sell');
-    this.sellBtn.type = 'button';
-    this.sellBtn.title = 'Sell a structure for 50% of its value (scaled by health). Hotkey: Z';
-    this.sellBtn.addEventListener('click', () => this.callbacks.onSell?.());
-    this.deployBtn = el('button', 'sb-tool', 'Deploy');
-    this.deployBtn.type = 'button';
-    this.deployBtn.title = 'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: D';
-    this.deployBtn.addEventListener('click', () => this.callbacks.onDeploy?.());
-    tools.append(this.sellBtn, this.deployBtn);
-
-    root.append(top, power, tools, tabs, this.gridEl, sel, this.tipEl);
+    root.append(tools, this.radarEl, status, silo, main, sel, this.tipEl);
     this.selectTab(this.activeTab);
   }
 
-  /** Card for one actor type, created lazily the first time it becomes visible. */
+  /** Card (cameo) for one actor type, created lazily the first time it becomes visible. */
   card(id) {
     let c = this.cards.get(id);
     if (c) return c;
@@ -189,24 +248,28 @@ export class Sidebar {
 
     const canvas = el('canvas', 'sb-icon');
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    canvas.width = Math.round(ICON_W * dpr);
-    canvas.height = Math.round(ICON_H * dpr);
+    canvas.width = Math.round(CAMEO_SIZE * dpr);
+    canvas.height = Math.round(CAMEO_SIZE * dpr);
     this.paintIcon(canvas, actor);
 
+    // Build clock: a clock-wipe shade over the picture, with the time left.
     const clock = el('div', 'sb-clock');
+    const eta = el('span', 'sb-eta');
+    eta.hidden = true;
     const count = el('span', 'sb-count');
     count.hidden = true;
-    const ready = el('span', 'sb-ready', 'READY');
+    const ready = el('span', 'sb-ready', 'Ready');
     const name = el('span', 'sb-name', actor.name);
-    const cost = el('span', 'sb-cost', `$${actor.cost}`);
     const slot = el('span', 'sb-slot');
     slot.hidden = true;
+    // What is missing, on the cameo itself for touch screens (no hover tooltip there).
     const req = el('span', 'sb-req');
+    req.setAttribute('aria-hidden', 'true');
     req.hidden = true;
-    btn.append(canvas, clock, count, ready, slot, req, name, cost);
-    btn.setAttribute('aria-label', `${actor.name}, ${actor.cost} credits`);
+    btn.append(canvas, clock, eta, count, ready, slot, req, name);
 
-    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey));
+    // shiftLatched: the touch action bar's Add toggle stands in for Shift.
+    btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.onCardCancel(id);
@@ -228,11 +291,15 @@ export class Sidebar {
       actor,
       btn,
       clock,
+      eta,
+      etaText: '',
+      timer: new BuildEta(),
       count,
       slot,
       req,
       reqText: '',
       slotText: '',
+      label: '',
       // Last applied state, to skip redundant DOM writes.
       enabled: null,
       building: null,
@@ -241,12 +308,13 @@ export class Sidebar {
       progress: -1,
     };
     this.cards.set(id, c);
+    this.updateLabel(c);
     return c;
   }
 
   paintIcon(canvas, actor) {
     try {
-      drawIcon(canvas, actor, this.teamRgb);
+      cameoPainter.paint(canvas, actor, this.teamRgb);
     } catch (err) {
       // An icon without a draw routine must not break the whole sidebar;
       // report once per type so the missing art is visible in the console.
@@ -261,26 +329,20 @@ export class Sidebar {
 
   onCardClick(id, shift) {
     const c = this.cards.get(id);
-    if (!c || c.enabled === false) return;
-    const actor = c.actor;
-    if (isStructureQueue(actor.queue)) {
-      if (c.ready) {
-        this.callbacks.onPlace?.(id);
-        return;
-      }
-      // The building queue holds one item at a time; shift does not batch.
-      this.game.start_production(this.playerId, id, 1);
-      return;
-    }
-    this.game.start_production(this.playerId, id, shift ? SHIFT_COUNT : 1);
+    if (!c) return;
+    const action = clickAction({ queue: c.actor.queue, enabled: c.enabled, ready: c.ready }, shift);
+    if (!action) return;
+    if (action.place) this.callbacks.onPlace?.(id);
+    else this.game.start_production(this.playerId, id, action.count);
   }
 
   onCardCancel(id) {
     const c = this.cards.get(id);
     if (!c) return;
-    const wasReady = c.ready && isStructureQueue(c.actor.queue);
+    // Disabled cards can be cancelled too, so nothing ever stays stuck.
+    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued });
     this.game.cancel_production(this.playerId, id);
-    if (wasReady) this.callbacks.onCancelPlace?.();
+    if (endsPlacement) this.callbacks.onCancelPlace?.();
   }
 
   selectTab(q) {
@@ -290,6 +352,7 @@ export class Sidebar {
       t.btn.classList.toggle('active', on);
       t.btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
+    this.gridEl.setAttribute('aria-labelledby', this.tabs[q].btn.id);
     this.gridKey = '';
     if (this.state) this.update(this.state);
   }
@@ -309,7 +372,7 @@ export class Sidebar {
     this.tipDesc.hidden = !a.description;
     this.updateTipWarning(c);
     const hint = isStructureQueue(a.queue)
-      ? 'Left click: build / place. Right click: cancel.'
+      ? `Left click: build / place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
       : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
     setText(this.tipHint, hint);
     this.tipEl.hidden = false;
@@ -339,32 +402,37 @@ export class Sidebar {
     this.state = state;
     this.updateCredits(state);
     this.updatePower(state);
+    setText(this.clockEl, formatClock((state.tick ?? 0) / this.ticksPerSecond));
 
     // Summarise queues: per id, the number queued and the head item.
-    const perId = new Map();
-    const tabActivity = [0, 0, 0];
-    const tabReady = [false, false, false];
-    state.queues.forEach((items, q) => {
-      tabActivity[q] = items.length;
-      for (const it of items) {
-        let s = perId.get(it.id);
-        if (!s) {
-          s = { count: 0, progress: it.progress, done: it.done };
-          perId.set(it.id, s);
-        }
-        s.count += 1;
-        if (it.done) tabReady[q] = true;
-      }
-    });
+    const { perId, activity: tabActivity, ready: tabReady } = summarizeQueues(state.queues);
+    // The structure being placed was cancelled (lost its Construction Yard or
+    // prerequisites): leave placement mode instead of placing nothing.
+    if (placementLost(perId, this.placingId)) this.callbacks.onCancelPlace?.();
 
-    // Tabs: activity badge and "no producer" look.
+    // Tabs: activity badge, and whether anything of the tab can be built
+    // ("available"), only seen ("locked") or nothing produces it ("no-producer").
+    const buildableTabs = new Set();
+    for (const b of state.buildable) if (b.enabled) buildableTabs.add(b.queue);
     this.tabs.forEach((t, q) => {
       const has = !!(state.hasProducer && state.hasProducer[q]);
-      t.btn.classList.toggle('no-producer', !has);
-      const n = tabActivity[q];
+      const look = !has ? 'no-producer' : buildableTabs.has(q) ? 'available' : 'locked';
+      if (t.state !== look) {
+        t.state = look;
+        t.btn.classList.toggle('no-producer', look === 'no-producer');
+        t.btn.classList.toggle('available', look === 'available');
+        t.btn.classList.toggle('locked', look === 'locked');
+      }
+      const n = tabActivity[q] ?? 0;
+      const ready = !!tabReady[q];
       t.badge.hidden = n === 0;
-      if (n) setText(t.badge, tabReady[q] ? '!' : String(n));
-      t.badge.classList.toggle('ready', tabReady[q]);
+      if (n) setText(t.badge, ready ? '!' : String(n));
+      t.badge.classList.toggle('ready', ready);
+      let label = t.name;
+      if (look === 'no-producer') label += ', no production building';
+      if (ready) label += ', ready';
+      else if (n) label += `, ${n} in production`;
+      if (t.btn.getAttribute('aria-label') !== label) t.btn.setAttribute('aria-label', label);
     });
 
     // Every item of the active tab: what this faction can get first (palette
@@ -393,14 +461,15 @@ export class Sidebar {
       const c = this.cards.get(id);
       const on = enabled.get(id);
       const s = perId.get(id);
-      this.updateCard(c, on, s);
+      this.updateCard(c, on, s, state.tick ?? 0);
       this.updateRequirements(c, info.get(id), i);
+      this.updateLabel(c);
     });
     // Refresh an open tooltip in case availability changed.
     if (this.tipCard) this.updateTipWarning(this.cards.get(this.tipCard));
   }
 
-  updateCard(c, enabled, s) {
+  updateCard(c, enabled, s, tick = 0) {
     if (c.enabled !== enabled) {
       c.enabled = enabled;
       c.btn.classList.toggle('disabled', !enabled);
@@ -421,9 +490,18 @@ export class Sidebar {
     }
     if (!building) {
       c.progress = -1;
+      c.timer.reset();
     } else if (Math.abs(c.progress - progress) > 0.001) {
       c.progress = progress;
       setVar(c.clock, '--p', progress.toFixed(4));
+    }
+    // Time left, estimated from the progress rate (production.js BuildEta).
+    const left = building ? c.timer.observe(progress, tick) : null;
+    const eta = left === null ? '' : formatClock(left / this.ticksPerSecond);
+    if (c.etaText !== eta) {
+      c.etaText = eta;
+      setText(c.eta, eta);
+      c.eta.hidden = !eta;
     }
     if (c.queued !== count) {
       c.queued = count;
@@ -432,17 +510,30 @@ export class Sidebar {
     }
   }
 
-  /** Requirement line ("Needs Service Depot" / "Soviet only") and numpad slot. */
+  /** Accessible name of a card: name, cost, and its production state. */
+  updateLabel(c) {
+    let label = `${c.actor.name}, ${c.actor.cost} credits`;
+    if (c.enabled === false) label += c.reqText ? `, unavailable: ${c.reqText}` : ', unavailable';
+    if (c.ready) label += isStructureQueue(c.actor.queue) ? ', ready to place' : ', ready';
+    else if (c.building) label += c.etaText ? `, building, ${c.etaText} left` : ', building';
+    if (c.queued > 1) label += `, ${c.queued} queued`;
+    if (c.label !== label) {
+      c.label = label;
+      c.btn.setAttribute('aria-label', label);
+    }
+  }
+
+  /** What is still missing ("Needs Service Depot" / "Soviet only"), and the numpad slot. */
   updateRequirements(c, b, index) {
     c.requires = b.requires || [];
     c.exclusive = b.exclusive || null;
-    // Cards show the first way to unlock each requirement; the tooltip lists all.
+    // The label names the first way to unlock each requirement; the tooltip lists all.
     const short = c.requires.map((r) => r.split(' or ')[0]);
-    const text = b.enabled ? '' : c.exclusive || (short.length ? `Needs ${short.join(', ')}` : '');
-    if (c.reqText !== text) {
-      c.reqText = text;
-      setText(c.req, text);
-      c.req.hidden = !text;
+    const reqText = b.enabled ? '' : c.exclusive || (short.length ? `Needs ${short.join(', ')}` : '');
+    if (c.reqText !== reqText) {
+      c.reqText = reqText;
+      setText(c.req, reqText);
+      c.req.hidden = !reqText;
     }
     const locked = !!c.exclusive;
     c.btn.classList.toggle('exclusive', locked);
@@ -498,7 +589,16 @@ export class Sidebar {
 
   updateCredits(state) {
     const target = Math.max(0, Math.round(state.funds ?? state.cash + state.resources));
-    setText(this.oreEl, `Ore ${Math.round(state.resources)} / ${Math.round(state.storage)}`);
+    const ore = Math.round(state.resources);
+    const storage = Math.round(state.storage);
+    setText(this.oreEl, `Ore ${ore} / ${storage}`);
+    setVar(this.siloFill, '--silo', (storage > 0 ? Math.min(1, ore / storage) : 0).toFixed(4));
+    this.siloEl.classList.toggle('full', storage > 0 && ore >= storage);
+    const tip = `Credits ${target}. Ore in silos: ${ore} / ${storage}`;
+    if (this.moneyEl.title !== tip) {
+      this.moneyEl.title = tip;
+      this.siloEl.title = tip;
+    }
     if (!this.creditsInitialised) {
       // First update: show the real value immediately.
       this.creditsInitialised = true;
@@ -544,11 +644,16 @@ export class Sidebar {
     setVar(this.powerFillEl, '--fill', (used / scale).toFixed(4));
     setVar(this.powerCapEl, '--cap', (gen / scale).toFixed(4));
     const low = !!state.lowPower;
+    const tight = !low && gen > 0 && used > gen * POWER_TIGHT;
     this.powerRootEl.classList.toggle('low', low);
-    setText(this.powerLabelEl, low ? 'LOW POWER' : 'Power');
-    setText(this.powerTextEl, `${used} / ${gen}`);
+    this.powerRootEl.classList.toggle('tight', tight);
+    const text = `Power: ${used} used of ${gen} produced${low ? ' (low power)' : ''}`;
+    if (this.powerRootEl.title !== text) {
+      this.powerRootEl.title = text;
+      this.powerMeterEl.setAttribute('aria-valuetext', text);
+    }
     this.powerMeterEl.setAttribute('aria-valuenow', String(used));
-    this.powerMeterEl.setAttribute('aria-valuemax', String(gen));
+    this.powerMeterEl.setAttribute('aria-valuemax', String(Math.max(gen, used)));
   }
 
   // ---- Selection and placement -------------------------------------------
@@ -583,6 +688,9 @@ export class Sidebar {
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
     if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
+    const vet = veterancyText(info, info.owner === this.playerId);
+    if (vet) detail += `   ${vet}`;
     // Ability state (engine actor_json().ability).
     const ab = info.ability;
     if (ab && info.owner === this.playerId) {
@@ -601,4 +709,23 @@ export class Sidebar {
     this.placingId = id;
     if (id && this.actors.has(id)) this.card(id).btn.classList.add('placing');
   }
+}
+
+const RANK_NAMES = ['Rookie', 'Veteran', 'Veteran II', 'Veteran III'];
+
+/**
+ * Selection panel text for veterancy (engine actor_json(): rank, maxRank, xp,
+ * nextXp, prone): "Elite", "Veteran II  XP 450/800", "Rookie  XP 0/200", plus
+ * "Prone". Experience is in value points (an enemy worth $100 gives 100) and
+ * only shown for `own` units. Empty for actors that gain no experience.
+ */
+export function veterancyText(info, own) {
+  const parts = [];
+  if (info?.maxRank > 0) {
+    const elite = info.rank >= info.maxRank;
+    parts.push(elite ? 'Elite' : (RANK_NAMES[info.rank] ?? `Veteran ${info.rank}`));
+    if (own && !elite) parts.push(`XP ${info.xp}/${info.nextXp}`);
+  }
+  if (info?.prone) parts.push('Prone');
+  return parts.join('  ');
 }

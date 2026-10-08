@@ -513,11 +513,11 @@ pub(crate) fn apply_water(m: &mut Map, f: &Features, style: MapStyle, rng: &mut 
         match f.mask.v[i] {
             WATER => {
                 m.terrain[i] = Terrain::Water;
-                m.ore[i] = 0;
+                m.clear_resource(i);
             }
             FORD => {
                 m.terrain[i] = Terrain::Ford;
-                m.ore[i] = 0;
+                m.clear_resource(i);
             }
             _ => {}
         }
@@ -556,7 +556,7 @@ pub(crate) fn draw_land(m: &mut Map, rng: &mut Rng, style: MapStyle, zone: &[boo
         if m.contains(x, y) && !zone[m.idx(x, y)] {
             let i = m.idx(x, y);
             m.terrain[i] = t;
-            m.ore[i] = 0;
+            m.clear_resource(i);
         }
     };
     if rng.chance(45) {
@@ -742,7 +742,7 @@ pub(crate) fn dig_channel(m: &mut Map, path: &[usize], zone: &[bool]) {
                     let i = m.idx(cx, cy);
                     if !zone[i] && !m.terrain[i].ship_passable() {
                         m.terrain[i] = Terrain::Water;
-                        m.ore[i] = 0;
+                        m.clear_resource(i);
                     }
                 }
             }
@@ -790,7 +790,7 @@ pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[
                         Terrain::Rock | Terrain::Tree => m.terrain[i] = Terrain::Clear,
                         Terrain::Water => {
                             m.terrain[i] = Terrain::Ford;
-                            m.ore[i] = 0;
+                            m.clear_resource(i);
                         }
                         _ => {}
                     }

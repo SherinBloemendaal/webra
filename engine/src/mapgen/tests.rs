@@ -18,7 +18,7 @@ fn mirrored(m: &Map) -> bool {
     (0..m.height).all(|y| {
         (0..m.width).all(|x| {
             let (i, j) = (m.idx(x, y), m.idx(m.width - 1 - x, y));
-            m.terrain[i] == m.terrain[j] && m.ore[i] == m.ore[j]
+            m.terrain[i] == m.terrain[j] && m.ore[i] == m.ore[j] && m.gems[i] == m.gems[j]
         })
     })
 }
@@ -53,7 +53,7 @@ fn every_style_is_fair_and_connected() {
                         assert!(m.connected(m.spawns[0], s), "{what}: spawn {s:?} reachable by ground");
                     }
                     for i in 0..m.cells() {
-                        assert!(m.ore[i] == 0 || m.terrain[i].holds_ore(), "{what}: ore on {:?}", m.terrain[i]);
+                        assert!(!m.has_resource(i) || m.terrain[i].holds_ore(), "{what}: ore or gems on {:?}", m.terrain[i]);
                     }
                     let stats = measure(&m);
                     if style.naval() {

@@ -165,9 +165,12 @@ fn ai_builds_a_base_and_army() {
 fn ai_vs_ai_game_runs_and_fights() {
     let mut w = World::new(13, 80, &[("allies", true), ("soviet", true)]);
     let mut max_units = 0;
-    // Seed 13 is a land map with ore fields beside the passes: both
-    // economies last, and the game takes about 19 minutes.
-    for _ in 0..(25 * 60 * 25) {
+    // Contested gems pay more per trip, so both sides rebuild longer: games
+    // with gems on seeds 10 to 17 ended after 9 to 18 minutes (7 to 13 before).
+    // Veterancy and prone infantry spread them further: elite armies end some
+    // games sooner, soldiers taking cover drag others out (5 to 26 minutes).
+    // Map styles (mapgen) make richer, more varied maps on top of that.
+    for _ in 0..(25 * 60 * 30) {
         w.step();
         max_units = max_units.max(w.actors.iter().filter(|a| a.alive && a.kind != Kind::Building).count());
         if w.winner.is_some() {
@@ -177,7 +180,7 @@ fn ai_vs_ai_game_runs_and_fights() {
     let killed: u32 = w.losses.iter().sum();
     assert!(max_units >= 10, "armies were built: {max_units}");
     assert!(killed >= 5, "fighting happened: {killed} dead");
-    assert!(w.winner.is_some(), "one AI destroyed the other within 25 minutes");
+    assert!(w.winner.is_some(), "one AI destroyed the other within 30 minutes");
 }
 
 #[test]
@@ -237,6 +240,64 @@ fn idle_ore_truck_goes_back_to_work() {
     w.queue_order(Order::Move { player: 0, ids: vec![href], x: cell_center(sx + 8), y: cell_center(sy + 12), attack_move: false });
     run(&mut w, 25 * 10);
     assert_eq!(w.actors[h].activity, Activity::Harvest, "truck resumed harvesting after the move");
+}
+
+/// Gems pay twice what ore pays per bale (OpenRA ResourceValues), a truck
+/// carries both at once and every bale is paid at its own value, and gems
+/// never grow back.
+#[test]
+fn harvesters_mine_gems_and_ore_and_refineries_pay_by_type() {
+    use crate::map::Terrain;
+    let mut w = World::new(3, 80, &[("allies", false), ("soviet", false)]);
+    w.options.ore_regrowth = false;
+    for i in 0..w.map.cells() {
+        w.map.ore[i] = 0;
+        w.map.gems[i] = 0;
+    }
+    let (sx, sy) = w.players[0].start;
+    w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
+    w.spawn_building(ty(&w, "PROC"), 0, sx, sy + 5);
+    for k in 0..3 {
+        w.spawn_building(ty(&w, "SILO"), 0, sx + 8 + k, sy);
+    }
+    w.refresh_tokens();
+    // A field south of the refinery: gems in the middle row, ore around them.
+    for y in sy + 11..sy + 14 {
+        for x in sx - 2..sx + 6 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = Terrain::Clear;
+            if y == sy + 12 {
+                w.map.gems[i] = 3;
+            } else {
+                w.map.ore[i] = 4;
+            }
+        }
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    let mined = |w: &World| -> i32 {
+        let ore: i32 = w.map.ore.iter().map(|&o| o as i32).sum();
+        let gems: i32 = w.map.gems.iter().map(|&g| g as i32).sum();
+        (8 * 2 * 4 - ore) * 25 + (8 * 3 - gems) * 50
+    };
+    let h = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.is_harvester(i)).unwrap();
+    let start = w.players[0].funds();
+    let mut saw_gems = false;
+    for _ in 0..25 * 150 {
+        w.step();
+        let a = &w.actors[h];
+        assert!(a.gem_bales >= 0 && a.gem_bales <= a.bales);
+        saw_gems |= a.gem_bales > 0;
+        let on_board = (a.bales - a.gem_bales) * 25 + a.gem_bales * 50;
+        assert_eq!(w.players[0].funds() - start + on_board, mined(&w), "every mined bale is paid at its type's value");
+    }
+    assert!(saw_gems, "the truck carried gems");
+    assert!(w.map.gems.iter().map(|&g| g as i32).sum::<i32>() < 24, "gems were mined");
+    assert!(w.players[0].funds() - start >= 1000, "delivered at least a load: {}", w.players[0].funds() - start);
+    // Mined-out gem cells stay empty even with regrowth on.
+    w.options.ore_regrowth = true;
+    let gems = w.map.gems.clone();
+    run(&mut w, 25 * 60);
+    assert!(w.map.gems.iter().zip(&gems).all(|(&now, &then)| now <= then), "gems never grow back");
 }
 
 // ---- Content and rules ---------------------------------------------------------
@@ -596,6 +657,7 @@ fn naval_yards_go_on_water_only() {
             let i = w.map.idx(x, y);
             w.map.terrain[i] = crate::map::Terrain::Water;
             w.map.ore[i] = 0;
+            w.map.gems[i] = 0;
         }
     }
     assert!(w.can_place(0, syrd, sx, sy - 3), "on water within 2 cells of the base");
@@ -808,10 +870,12 @@ fn mirrored_units_drive_mirrored_paths() {
 }
 
 /// Identical AIs on mirrored spawns: neither player slot may win most games.
+/// 20 games keep a fair coin under 1.5 % of failing (10 games: 11 %, and
+/// every combat change reshuffles the outcomes).
 #[test]
 fn mirror_matches_are_fair() {
     let mut wins = [0u32; 2];
-    for seed in 0..10u64 {
+    for seed in 0..20u64 {
         let mut w = World::new(seed, 80, &[("allies", true), ("allies", true)]);
         for _ in 0..(25 * 60 * 25) {
             w.step();
@@ -823,7 +887,7 @@ fn mirror_matches_are_fair() {
             wins[p as usize] += 1;
         }
     }
-    assert!(wins[0] <= 7 && wins[1] <= 7, "wins per slot over 10 mirror matches: {wins:?}");
+    assert!(wins[0] <= 15 && wins[1] <= 15, "wins per slot over 20 mirror matches: {wins:?}");
 }
 
 // ---- AI in free for all and team games ----------------------------------------
@@ -1017,6 +1081,7 @@ fn lake_world() -> World {
             let i = w.map.idx(x, y);
             w.map.terrain[i] = Terrain::Water;
             w.map.ore[i] = 0;
+            w.map.gems[i] = 0;
         }
     }
     for y in 0..64 {

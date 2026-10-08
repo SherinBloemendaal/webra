@@ -32,6 +32,7 @@ import {
   suggestedMapSize,
   inspectMapFile,
   spawnMarkers,
+  factionSide,
 } from '../js/lobby-state.js';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
@@ -182,7 +183,7 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, name: 'Commander' });
   assert.deepEqual(o.players[2], { slot: 2, type: 'closed' });
   assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, difficulty: 'hard' });
-  for (const key of ['seed', 'mapSize', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth']) {
+  for (const key of ['seed', 'mapSize', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats']) {
     assert.ok(key in o, key);
   }
   s.mapSource = 'file';
@@ -282,4 +283,15 @@ test('value sets match the multiplayer protocol', () => {
   assert.deepEqual([...FACTIONS.keys()].sort(), [...protocol.FACTIONS].sort());
   assert.equal(TEAM_COUNT, protocol.TEAM_MAX);
   assert.equal(MAX_SLOTS, protocol.MAX_PLAYERS);
+});
+
+test('the lobby theme follows the side of the chosen faction', () => {
+  assert.equal(factionSide('england'), 'allies');
+  assert.equal(factionSide('germany'), 'allies');
+  assert.equal(factionSide('randomallies'), 'allies');
+  assert.equal(factionSide('russia'), 'soviet');
+  assert.equal(factionSide('ukraine'), 'soviet');
+  assert.equal(factionSide('randomsoviet'), 'soviet');
+  assert.equal(factionSide('random'), null);
+  assert.equal(factionSide('atlantis'), null);
 });

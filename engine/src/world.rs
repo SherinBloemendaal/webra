@@ -5,6 +5,7 @@ use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
 use crate::rules::{FootCell, Kind, QueueType, Rules, QUEUE_COUNT};
+use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
 /// Simulation ticks per second at normal speed (OpenRA: 40 ms per tick).
@@ -79,7 +80,10 @@ pub struct Actor {
 
     // Harvesters
     pub harv: HarvState,
+    /// Bales on board, of any resource.
     pub bales: i32,
+    /// How many of `bales` are gems (OpenRA StoresResources keeps a count per type).
+    pub gem_bales: i32,
     pub harv_timer: i32,
     pub harv_cell: u32,
     pub refinery: u32,
@@ -127,6 +131,17 @@ pub struct Actor {
     pub air: crate::plane::AirState,
     /// Snow momentum and desert heat (weather.rs).
     pub env: crate::weather::UnitEnv,
+
+    // Veterancy and prone infantry (veterancy.rs)
+    /// Experience, in OpenRA's units: percent of the actor's own value
+    /// (killing an enemy worth 100 gives 10000 with the default modifier).
+    pub xp: i64,
+    /// Veterancy level: 0 rookie, then one per GainsExperience threshold reached.
+    pub rank: u8,
+    /// Ticks left prone (TakeCover); 0 when standing.
+    pub prone_ticks: i32,
+    /// Elite self repair (ChangesHealth@ELITE) step timer.
+    pub rank_heal_timer: i32,
 }
 
 impl Actor {
@@ -163,6 +178,7 @@ impl Actor {
             moved: false,
             harv: HarvState::Search,
             bales: 0,
+            gem_bales: 0,
             harv_timer: 0,
             harv_cell: NONE,
             refinery: NONE,
@@ -188,6 +204,10 @@ impl Actor {
             detected_by: 0,
             air: crate::plane::AirState::default(),
             env: crate::weather::UnitEnv::default(),
+            xp: 0,
+            rank: 0,
+            prone_ticks: 0,
+            rank_heal_timer: 0,
         }
     }
 
@@ -246,6 +266,8 @@ pub struct Player {
     pub team: u8,
     /// Owner of neutral map actors: never plays, never wins or loses.
     pub neutral: bool,
+    /// Debug menu cheat flags (debug.rs); only orders of a game with cheats set them.
+    pub dev: crate::debug::DevFlags,
 }
 
 impl Player {
@@ -253,7 +275,7 @@ impl Player {
         self.cash + self.resources
     }
     pub fn low_power(&self) -> bool {
-        self.power_use > self.power_gen
+        self.power_use > self.power_gen && !self.dev.unlimited_power
     }
 }
 
@@ -266,6 +288,8 @@ pub struct Projectile {
     pub owner: u8,
     pub target: u32,
     pub facing: i32,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -302,6 +326,8 @@ pub struct PendingImpact {
     pub x: i32,
     pub y: i32,
     pub owner: u8,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 /// Lobby options (see apps/game/js/lobby.js). Defaults follow OpenRA's.
@@ -323,6 +349,8 @@ pub struct GameOptions {
     pub biome: Option<crate::weather::Biome>,
     /// What weather does (weather.rs).
     pub weather: crate::weather::WeatherMode,
+    /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
+    pub cheats: bool,
 }
 
 impl Default for GameOptions {
@@ -339,6 +367,7 @@ impl Default for GameOptions {
             map_style: crate::mapgen::MapStyle::Random,
             biome: Some(crate::weather::Biome::Temperate),
             weather: crate::weather::WeatherMode::Full,
+            cheats: false,
         }
     }
 }
@@ -471,10 +500,37 @@ pub enum Order {
         x: i32,
         y: i32,
     },
+    /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
+    /// unless the game has the cheats option.
+    DevFlag {
+        player: u8,
+        flag: crate::debug::DevFlag,
+        on: bool,
+    },
+    /// Debug menu: give the player cash (debug.rs). Ignored without cheats.
+    DevCash {
+        player: u8,
+    },
+    /// Debug menu: destroy actors of any owner (debug.rs). Ignored without cheats.
+    DevKill {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// Debug menu: raise the player's own listed units one veterancy level
+    /// (OpenRA's "level up" debug order, veterancy.rs). Ignored without cheats.
+    DevExperience {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
+    /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
+    pub fn is_cheat(&self) -> bool {
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. } | Order::DevExperience { .. })
+    }
+
     pub fn player(&self) -> u8 {
         match self {
             Order::Move { player, .. }
@@ -491,7 +547,11 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player,
+            | Order::Teleport { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player,
         }
     }
 
@@ -512,7 +572,11 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player = p,
+            | Order::Teleport { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player = p,
         }
     }
 
@@ -527,7 +591,9 @@ impl Order {
             | Order::Deploy { ids, .. }
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. }
-            | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::Teleport { ids, .. }
+            | Order::DevKill { ids, .. }
+            | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -595,6 +661,8 @@ pub struct World {
     pub powers: crate::powers::PowersState,
     /// Biome and weather (weather.rs).
     pub env: crate::weather::Environment,
+    /// Write-only audio event log for the client (sound_events.rs).
+    pub sound: crate::sound_events::SoundEvents,
 }
 
 impl World {
@@ -751,6 +819,7 @@ impl World {
             crashes: Vec::new(),
             powers: Default::default(),
             env: Default::default(),
+            sound: Default::default(),
             map,
         }
     }
@@ -777,6 +846,7 @@ impl World {
             start,
             team: 0,
             neutral: false,
+            dev: Default::default(),
         });
     }
 
@@ -927,6 +997,8 @@ impl World {
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1258,6 +1330,11 @@ impl World {
                 Order::SupportPower { player, key, x, y, x2, y2 } => {
                     self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
+                // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
+                Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
+                Order::DevCash { player } => self.dev_give_cash(player),
+                Order::DevKill { player, ids } => self.dev_kill(player, &ids),
+                Order::DevExperience { player, ids } => self.dev_give_experience(player, &ids),
             }
         }
     }
@@ -1427,7 +1504,7 @@ impl World {
                 }
             }
         }
-        if any_harv && self.map.ore[ci] > 0 && self.players[player as usize].explored[ci] != 0 {
+        if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
         SmartAction::Move
@@ -1608,7 +1685,7 @@ impl World {
         mix(self.tick as i64);
         for a in &self.actors {
             if a.alive {
-                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
+                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales, a.gem_bales] {
                     mix(v as i64);
                 }
                 // Transports and submarines (cargo.rs, naval.rs).
@@ -1617,15 +1694,26 @@ impl World {
                 // Snow momentum and desert heat (weather.rs).
                 mix(a.env.vel as i64);
                 mix(a.env.heat as i64);
+                // Veterancy and prone infantry (veterancy.rs).
+                mix(a.xp);
+                mix(a.rank as i64);
+                mix(a.prone_ticks as i64);
             }
         }
         mix(self.env.weather as i64);
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Cheat flags are simulation state; they can only be set with the cheats option.
+            if self.options.cheats {
+                mix(p.dev.bits() as i64);
+            }
         }
         for &o in &self.map.ore {
             mix(o as i64);
+        }
+        for &g in &self.map.gems {
+            mix(g as i64);
         }
         h
     }

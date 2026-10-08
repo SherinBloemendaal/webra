@@ -1,6 +1,7 @@
 // Editor viewport: camera (pan and zoom like the game), pointer input in cells,
 // and drawing through the game's WebGPU renderer. Terrain goes to the renderer
-// in the same RGBA layout the engine produces (R type, G ore scaled, B 0, A 255);
+// in the same RGBA layout the engine produces (R type, G ore and B gems scaled
+// to 255 at their maximum density, A 255);
 // the fog layer is uploaded fully visible.
 
 const CELL = 24; // world pixels per cell (render.rs PX_PER_CELL)
@@ -8,6 +9,7 @@ const PAN_SPEED = 900; // CSS px per second at zoom 1
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 4;
 const ORE_MAX = 12;
+const GEM_MAX = 3;
 const NEUTRAL_TEAM = 7;
 
 export class EditorView {
@@ -50,7 +52,7 @@ export class EditorView {
     for (let i = 0, n = doc.width * doc.height; i < n; i++) {
       b[i * 4] = doc.terrain[i];
       b[i * 4 + 1] = Math.min(255, Math.floor((doc.ore[i] * 255) / ORE_MAX));
-      b[i * 4 + 2] = 0;
+      b[i * 4 + 2] = Math.min(255, Math.floor((doc.gems[i] * 255) / GEM_MAX));
       b[i * 4 + 3] = 255;
     }
     this.renderer.uploadTerrain(b);

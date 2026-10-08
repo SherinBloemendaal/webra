@@ -86,6 +86,8 @@ impl World {
         }
         // Gap generators re-shroud cells for their enemies (abilities.rs).
         self.apply_generated_shroud();
+        // Debug menu "disable shroud" (debug.rs) beats every other rule.
+        self.apply_dev_vision();
         self.update_ghosts();
     }
 

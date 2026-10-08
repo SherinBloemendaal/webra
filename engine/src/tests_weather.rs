@@ -12,8 +12,8 @@ const SIZE: i32 = 48;
 
 /// A flat 48x48 field of `ground` with two passive players and the given sky.
 fn field(biome: Biome, mode: WeatherMode, ground: Terrain) -> World {
-    let n = (SIZE * SIZE) as usize;
-    let map = Map { width: SIZE, height: SIZE, terrain: vec![ground; n], ore: vec![0; n], spawns: vec![(2, 2), (40, 40)] };
+    let mut map = Map::filled(SIZE, SIZE, ground);
+    map.spawns = vec![(2, 2), (40, 40)];
     let mut w = World::empty(Rules::load(), map, 5);
     for (f, start) in [("allies", (2, 2)), ("soviet", (40, 40))] {
         let fi = w.rules.faction_index(f).unwrap();
