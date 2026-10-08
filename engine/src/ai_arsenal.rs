@@ -478,8 +478,13 @@ pub(crate) fn queue_ships(w: &mut World, player: u8) {
     if ships >= ars.ships {
         return;
     }
-    let options = armed_types(w, player, QueueType::Ship, None);
     let mix = enemy_mix(w, player);
+    // Only ships that can hurt something the enemy fields: a submarine
+    // against an enemy without ships would only sink money.
+    let options: Vec<usize> = armed_types(w, player, QueueType::Ship, None)
+        .into_iter()
+        .filter(|&t| mix.iter().any(|&(armor, class, _)| firepower(w, t, armor, class) > 0))
+        .collect();
     if let Some(t) = best_against(w, &options, &mix, unit_budget(w, player, &ars)) {
         w.start_production(player, t as u16, 1);
     }

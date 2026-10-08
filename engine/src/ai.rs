@@ -11,6 +11,7 @@
 //! Aircraft, ships, unit abilities and superweapons live in ai_arsenal.rs.
 
 use crate::ai_arsenal as arsenal;
+use crate::ai_economy as economy;
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
 use crate::world::{cell_center, Activity, AiDifficulty, HarvState, Order, World};
@@ -22,6 +23,12 @@ const NEAR_TIE: i32 = 8 * CELL;
 const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
 /// A gathered army that has not grown for this long attacks below wave size.
 const ARMY_STALL_TICKS: u32 = 90 * crate::world::TICKS_PER_SECOND;
+/// An army that grows too slowly to ever fill its wave (both economies
+/// thin) attacks with what it has after this long without a wave, once the
+/// opening is over: otherwise two such armies wait at home for good.
+const WAVE_PATIENCE_TICKS: u32 = 120 * crate::world::TICKS_PER_SECOND;
+const WAVE_PATIENCE_FROM: u32 = 480 * crate::world::TICKS_PER_SECOND;
+const MIN_LATE_WAVE: usize = 4;
 
 #[derive(Clone)]
 pub struct AiState {
@@ -47,10 +54,14 @@ pub struct AiState {
     pub(crate) next_special_at: u32,
     /// Armed enemy aircraft were seen: build anti-air.
     pub seen_air: bool,
+    /// Tick of the last structure sold for cash (ai_economy.rs).
+    pub(crate) last_sale: u32,
     /// Army size last seen and the tick it last grew: a wave that stopped
     /// growing (no money, no factory) attacks with what it has.
     army_seen: usize,
     army_grew_at: u32,
+    /// Tick of the last attack wave (WAVE_PATIENCE_TICKS).
+    last_wave: u32,
 }
 
 impl AiState {
@@ -75,8 +86,10 @@ impl AiState {
             minefields: Vec::new(),
             next_special_at: 0,
             seen_air: false,
+            last_sale: 0,
             army_seen: 0,
             army_grew_at: 0,
+            last_wave: 0,
         }
     }
 }
@@ -95,11 +108,22 @@ pub fn think(w: &mut World, player: u8) {
     place_ready_building(w, player, QueueType::Defense);
     arsenal::watch_the_sky(w, player);
     send_idle_harvesters(w, player);
-    queue_buildings(w, player);
-    queue_defenses(w, player);
-    queue_units(w, player);
-    arsenal::queue_aircraft(w, player);
-    arsenal::queue_ships(w, player);
+    // No income left (ai_economy.rs): money only goes into the army, and
+    // what the base can do without is sold for one more.
+    let starving = economy::no_income(w, player) && w.players[player as usize].funds() < economy::BROKE_FUNDS * 4;
+    if starving {
+        economy::cancel_luxuries(w, player);
+        economy::sell_when_broke(w, player);
+        queue_power_only(w, player);
+    } else {
+        queue_buildings(w, player);
+        queue_defenses(w, player);
+    }
+    queue_units(w, player, starving);
+    if !starving {
+        arsenal::queue_aircraft(w, player);
+        arsenal::queue_ships(w, player);
+    }
     command_army(w, player);
     arsenal::command_aircraft(w, player);
     arsenal::command_ships(w, player);
@@ -162,24 +186,37 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
         .filter(|a| a.alive && a.kind == Kind::Building && w.are_enemies(player, a.owner))
         .map(|a| w.cell_of(a.x, a.y))
         .collect();
+    let home = w.cell_of(base_point(w, player).0, base_point(w, player).1);
+    let enemy_bases: Vec<(i32, i32)> = (0..w.players.len() as u8)
+        .filter(|&p| is_live_enemy(w, player, p))
+        .map(|p| w.cell_of(base_point(w, p).0, base_point(w, p).1))
+        .collect();
     for i in waiting {
         let (ux, uy) = w.cell_of(w.actors[i].x, w.actors[i].y);
         let comp = w.pass.component[w.map.idx(ux, uy)];
-        let mut best: Option<(i64, usize)> = None;
+        // Ore on our side of the map first (nearer our base than any enemy
+        // base: short, safe trips), explored before unexplored; then any ore
+        // the truck can reach (the AI knows the map's resources), so it never
+        // waits while ore lies elsewhere.
+        let mut best: Option<(bool, bool, i64, usize)> = None;
         for ci in 0..w.map.cells() {
-            if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0
-            {
+            if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp {
                 continue;
             }
             let (x, y) = (ci as i32 % w.map.width, ci as i32 / w.map.width);
             if enemy_buildings.iter().any(|&(bx, by)| (bx - x).abs() <= 10 && (by - y).abs() <= 10) {
                 continue;
             }
+            let unexplored = w.players[player as usize].explored[ci] == 0;
             let d = ((x - ux) * (x - ux) + (y - uy) * (y - uy)) as i64;
-            if best.is_none_or(|(bd, _)| d < bd) {
-                best = Some((d, ci));
+            let d2 = |(bx, by): (i32, i32)| ((x - bx) * (x - bx) + (y - by) * (y - by)) as i64;
+            let far_side = enemy_bases.iter().any(|&b| d2(b) < d2(home));
+            let key = (far_side, unexplored, d);
+            if best.is_none_or(|(bf, bu, bd, _)| key < (bf, bu, bd)) {
+                best = Some((far_side, unexplored, d, ci));
             }
         }
+        let best = best.map(|(_, _, d, ci)| (d, ci));
         if let Some((_, ci)) = best {
             let (x, y) = (cell_center(ci as i32 % w.map.width), cell_center(ci as i32 / w.map.width));
             let r = w.make_ref(i);
@@ -237,6 +274,19 @@ pub(crate) fn build_order_done(w: &World, player: u8) -> bool {
         let want = needed.iter().find(|(t, _)| *t == tok).unwrap().1;
         count_providing(w, player, tok) >= want || building_for(w, player, tok).is_none()
     })
+}
+
+/// While starving: only a power plant when production would stall without one.
+fn queue_power_only(w: &mut World, player: u8) {
+    if !w.players[player as usize].queues[QueueType::Building as usize].items.is_empty() || !w.has_producer(player, QueueType::Building) {
+        return;
+    }
+    let p = &w.players[player as usize];
+    if p.power_use > p.power_gen {
+        if let Some(ty) = building_for(w, player, "anypower") {
+            w.start_production(player, ty, 1);
+        }
+    }
 }
 
 fn queue_buildings(w: &mut World, player: u8) {
@@ -309,8 +359,10 @@ fn queue_defenses(w: &mut World, player: u8) {
     }
 }
 
-fn queue_units(w: &mut World, player: u8) {
-    let order_done = build_order_done(w, player);
+/// Army production. `starving` (no income, ai_economy.rs): every credit goes
+/// into units, nothing is held back for the build order.
+fn queue_units(w: &mut World, player: u8, starving: bool) {
+    let order_done = build_order_done(w, player) || starving;
     let funds = w.players[player as usize].funds();
     let mut candidates: Vec<u16> = (0..w.rules.actors.len() as u16).filter(|&a| w.availability(player, a).enabled).collect();
     candidates.sort_by_key(|&a| std::cmp::Reverse(w.rules.actors[a as usize].cost));
@@ -319,7 +371,7 @@ fn queue_units(w: &mut World, player: u8) {
     let count_kind = |k: Kind| w.actors.iter().filter(|a| a.alive && a.owner == player && a.kind == k).count();
     let (infantry, vehicles) = (count_kind(Kind::Infantry), count_kind(Kind::Vehicle));
     let iq = QueueType::Infantry as usize;
-    if w.players[player as usize].queues[iq].items.len() < 2 && infantry < 6 + vehicles * 2 && (order_done || funds >= 600) {
+    if w.players[player as usize].queues[iq].items.len() < 2 && (infantry < 6 + vehicles * 2 || starving) && (order_done || funds >= 600) {
         // Anti-air soldiers while enemy aircraft are about, else the cheapest soldier.
         let inf = arsenal::anti_air_infantry(w, player, infantry + vehicles).or_else(|| {
             candidates.iter().rev().copied().find(|&a| {
@@ -339,7 +391,8 @@ fn queue_units(w: &mut World, player: u8) {
     if !w.players[player as usize].queues[vq].items.is_empty() {
         return;
     }
-    if harvesters < refineries + 1 && refineries > 0 {
+    // Trucks only while there is ore they can reach (ai_economy.rs).
+    if harvesters < refineries + 1 && refineries > 0 && economy::reachable_resources(w, player) > 0 {
         if let Some(&h) = candidates.iter().find(|&&a| w.rules.actors[a as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some())) {
             if harvesters < refineries || funds >= 1500 {
                 w.start_production(player, h, 1);
@@ -583,10 +636,29 @@ fn command_army(w: &mut World, player: u8) {
     }
     st.army_seen = army.len();
     let stalled = w.tick >= st.army_grew_at + ARMY_STALL_TICKS;
-    if gathered.len() >= wave || (!gathered.is_empty() && stalled) {
+    let patience = w.tick >= WAVE_PATIENCE_FROM && w.tick >= st.last_wave + WAVE_PATIENCE_TICKS && gathered.len() >= MIN_LATE_WAVE;
+    // An enemy without structures only has its last units left: hunt them
+    // down with whatever is at hand instead of waiting for a full wave.
+    let finishing = target_player.is_some_and(|t| !has_buildings(w, t));
+    if finishing {
+        if let Some((tx, ty)) = target {
+            // The whole army, not only the units at the rally point.
+            let hunters: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity != Activity::Attack).collect();
+            if !hunters.is_empty() {
+                w.order_move(&hunters, tx, ty, true);
+            }
+            return;
+        }
+    }
+    if gathered.len() >= wave || (!gathered.is_empty() && (stalled || finishing)) || patience {
         if let Some((tx, ty)) = target {
             w.order_move(&gathered, tx, ty, true);
-            w.ai[player as usize].wave_size = (wave + 2).min(max_wave);
+            // A full wave makes the next one bigger; a wave that went early
+            // (the army grows too slowly) sets the next one to its own size,
+            // so a thin economy attacks more often instead of hoarding.
+            let next = if gathered.len() >= wave { (wave + 2).min(max_wave) } else { gathered.len().clamp(MIN_LATE_WAVE + 2, wave) };
+            w.ai[player as usize].wave_size = next;
+            w.ai[player as usize].last_wave = w.tick;
         }
         return;
     }
@@ -759,8 +831,9 @@ fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i3
             None => w.are_enemies(player, a.owner) && !w.players[a.owner as usize].defeated,
         };
         // Buildings are known (like most skirmish AIs, it knows the bases);
-        // units only count when they are in the world and not mines.
-        if !a.alive || !wanted || !a.in_world() || a.kind == Kind::Mine {
+        // units only count when they are in the world and not mines, and
+        // not ships (a ground army would stand on the shore for good).
+        if !a.alive || !wanted || !a.in_world() || a.kind == Kind::Mine || a.kind == Kind::Ship {
             continue;
         }
         let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };

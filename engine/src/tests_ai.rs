@@ -540,3 +540,86 @@ fn hard_ai_games_stay_deterministic() {
     }
     assert_eq!(a.state_hash(), b.state_hash());
 }
+
+// ---- Running dry (ai_economy.rs) --------------------------------------------------
+
+/// No ore anywhere and no money: the AI sells what it can do without (tech,
+/// radar, depot, spare power) for an army, but keeps its Construction Yard,
+/// factories, enough power and its defences.
+#[test]
+fn a_broke_ai_without_income_sells_its_surplus_for_an_army() {
+    let mut w = arena(64, &[("england", Some(AiDifficulty::Normal), 0, (4, 4)), ("russia", None, 0, (40, 44))]);
+    complete_base(&mut w, 0);
+    put(&mut w, "PBOX", 0, 20, 20);
+    w.players[0].cash = 0;
+    let before = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Building).count();
+    run(&mut w, 25 * 120);
+    let left: Vec<String> = w
+        .actors
+        .iter()
+        .filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Building)
+        .map(|a| w.rules.actors[a.ty as usize].id.clone())
+        .collect();
+    assert!(left.len() < before, "sold something: {left:?}");
+    for keep in ["FACT", "TENT", "WEAP", "PBOX"] {
+        assert!(left.iter().any(|id| id == keep), "kept {keep}: {left:?}");
+    }
+    // Refineries without ore go first; it stops once it has its army.
+    assert!(!left.iter().any(|id| id == "PROC"), "useless refineries go first: {left:?}");
+    let p = &w.players[0];
+    assert!(p.power_gen >= p.power_use, "still enough power: {} / {}", p.power_use, p.power_gen);
+    let army = w
+        .actors
+        .iter()
+        .filter(|a| a.alive && a.owner == 0 && a.kind != Kind::Building && !w.rules.actors[a.ty as usize].weapons.is_empty())
+        .count();
+    assert!(army >= 4, "the money went into an army: {army}");
+}
+
+/// With money and ore it sells nothing.
+#[test]
+fn an_ai_with_income_keeps_its_base() {
+    let mut w = arena(64, &[("england", Some(AiDifficulty::Normal), 0, (4, 4)), ("russia", None, 0, (40, 44))]);
+    complete_base(&mut w, 0);
+    for y in 30..36 {
+        for x in 4..12 {
+            let i = w.map.idx(x, y);
+            w.map.ore[i] = 10;
+        }
+    }
+    w.players[0].cash = 0;
+    let before = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Building).count();
+    run(&mut w, 25 * 60);
+    let after = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Building).count();
+    assert!(after >= before, "nothing sold: {before} -> {after}");
+}
+
+/// Ore trucks with nothing left nearby drive to ore anywhere they can reach,
+/// on their own side of the map first, even where nobody has looked yet.
+#[test]
+fn waiting_ore_trucks_find_ore_they_have_not_seen() {
+    let mut w = arena(64, &[("england", Some(AiDifficulty::Normal), 0, (4, 4)), ("russia", None, 0, (40, 44))]);
+    complete_base(&mut w, 0);
+    // Ore far out of sight on our side, and nearer to the enemy as well.
+    for (x0, y0) in [(4, 50), (40, 30)] {
+        for y in y0..y0 + 3 {
+            for x in x0..x0 + 3 {
+                let i = w.map.idx(x, y);
+                w.map.ore[i] = 10;
+            }
+        }
+    }
+    let harv = w.actors.iter().position(|a| a.alive && a.owner == 0 && w.rules.actors[a.ty as usize].id == "HARV").expect("a free truck");
+    assert_eq!(w.players[0].explored[w.map.idx(5, 51)], 0, "not explored");
+    run(&mut w, 25 * 40);
+    let a = &w.actors[harv];
+    let goal = (a.goal as i32 % w.map.width, a.goal as i32 / w.map.width);
+    let target =
+        if a.harv_cell == crate::world::NONE { goal } else { (a.harv_cell as i32 % w.map.width, a.harv_cell as i32 / w.map.width) };
+    assert!(
+        target.1 >= 49 && target.0 <= 8,
+        "the truck heads for the ore on our side: target {target:?}, at {},{}",
+        a.x / CELL,
+        a.y / CELL
+    );
+}

@@ -273,6 +273,22 @@ is cosmetic (no damage). Effects with `weather: full`:
 | Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
 
 The AI rests overheated vehicles until they cool down (they still defend).
+Long games can harvest every field a base reaches, so the AI also handles
+running dry (`engine/src/ai_economy.rs`): waiting ore trucks drive to any
+ore they can reach (their own side of the map first, unexplored fields too);
+with no income left (no reachable ore, no refinery or no truck) it cancels
+queued structures, aircraft and ships, puts every credit into the army and,
+while it is broke with fewer than four army units, sells one structure every
+8 s that it can do without (refineries without ore, aircraft and naval yards
+without aircraft or ships, tech and support structures, spare power), never
+its Construction Yard, its first barracks and war factory or its defences.
+Warships are only bought when they can hurt something the enemy fields.
+Waves that do not fill up go after 90 s without growth or 120 s without a
+wave (after the eighth minute) and set the next wave to their size; an enemy
+without structures is hunted by the whole army; ground waves never aim at
+ships. Generated maps join every land region of 60 cells or more to the bases
+by fords, and the land the bases reach holds at least 4.5 % (two players) or
+6 % ore and gems, a third more on the water styles.
 Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
 
