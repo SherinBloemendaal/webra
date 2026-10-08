@@ -4,27 +4,75 @@
 // Classic Red Alert mouse: with your units selected, LEFT click gives the
 // order (move, attack, harvest, dock, repair) and left click on one of your
 // own units selects it instead. Right click clears the selection.
+//
+// Keyboard: Esc, the digit row (control groups, js/controlgroups.js), the
+// numpad (sidebar) and the arrow keys are handled here; every other key goes
+// through the hotkey registry (js/hotkeys.js), where this class registers its
+// actions with OpenRA's default keys. README.md (Controls) lists them all.
 
-import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS } from './cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS, scrollCursor } from './cursors.js';
+import { hotkeys as defaultHotkeys } from './hotkeys.js';
+import { settings as defaultSettings } from './settings.js';
+import { ControlGroups, DOUBLE_TAP_MS, groupCommand, groupKeyFromEvent } from './controlgroups.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
-const PAN_SPEED = 900; // CSS px per second
+const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 4;
+const DEFAULT_ZOOM = 1.5;
+const BOOKMARKS = 4;
+
+/** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
+export function edgeDirection(x, y, w, h, edge = EDGE) {
+  let dx = 0;
+  let dy = 0;
+  if (x < edge) dx = -1;
+  else if (x > w - edge) dx = 1;
+  if (y < edge) dy = -1;
+  else if (y > h - edge) dy = 1;
+  return { dx, dy };
+}
+
+/** Camera position limits (world px) for a view of vw x vh world px over a map of mapW x mapH. */
+export function cameraBounds(vw, vh, mapW, mapH, margin = 2 * CELL) {
+  return {
+    minX: -margin,
+    maxX: Math.max(-margin, mapW - vw + margin),
+    minY: -margin,
+    maxY: Math.max(-margin, mapH - vh + margin),
+  };
+}
+
+/** True when the camera cannot move in direction (dx, dy) on any axis. */
+export function scrollBlocked(dx, dy, camera, bounds) {
+  const canX = dx < 0 ? camera.x > bounds.minX : dx > 0 ? camera.x < bounds.maxX : false;
+  const canY = dy < 0 ? camera.y > bounds.minY : dy > 0 ? camera.y < bounds.maxY : false;
+  return !canX && !canY;
+}
 
 export class Input {
-  constructor(canvas, game, rules, player, hooks) {
+  constructor(canvas, game, rules, player, hooks, { hotkeys = defaultHotkeys, settings = defaultSettings } = {}) {
     this.canvas = canvas;
     this.game = game;
     this.rules = rules;
     this.player = player;
-    this.hooks = hooks; // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir) }
-    this.camera = { x: 0, y: 0, zoom: 1.5 };
+    // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() }
+    this.hooks = hooks;
+    this.hotkeys = hotkeys;
+    this.settings = settings;
+    this.camera = { x: 0, y: 0, zoom: DEFAULT_ZOOM };
     this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
     this.selection = [];
     this.ownUnits = null;
-    this.groups = new Map();
+    this.groups = new ControlGroups();
+    this.bookmarks = new Map(); // slot -> { x, y, zoom } (view centre)
+    this.lastSelectTap = { name: null, time: -Infinity }; // Q / W double tap
+    this.edgeScroll = null; // { dx, dy, blocked } while the mouse scrolls the view
+    this.suspended = false; // game menu open: no input, no scrolling
+    this.viewSize = { w: canvas.clientWidth, h: canvas.clientHeight };
     this.keys = new Set();
     this.mouse = { x: -1, y: -1, inside: false };
     this.drag = null;
@@ -40,6 +88,7 @@ export class Input {
     this.targeting = null;
     this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
     this.bind();
+    this.unregister = this.registerHotkeys();
   }
 
   // ---- Coordinates ------------------------------------------------------------
@@ -54,18 +103,39 @@ export class Input {
     return { x0: this.camera.x, y0: this.camera.y, x1: this.camera.x + w, y1: this.camera.y + h };
   }
 
+  /** World point at the middle of the view. */
+  viewCenter() {
+    return this.toWorld(this.canvas.clientWidth / 2, this.canvas.clientHeight / 2);
+  }
+
   centerOn(x, y) {
     this.camera.x = x - this.canvas.clientWidth / this.camera.zoom / 2;
     this.camera.y = y - this.canvas.clientHeight / this.camera.zoom / 2;
     this.clampCamera();
   }
 
+  bounds() {
+    return cameraBounds(this.canvas.clientWidth / this.camera.zoom, this.canvas.clientHeight / this.camera.zoom, this.mapPx.w, this.mapPx.h);
+  }
+
   clampCamera() {
-    const vw = this.canvas.clientWidth / this.camera.zoom;
-    const vh = this.canvas.clientHeight / this.camera.zoom;
-    const margin = 2 * CELL;
-    this.camera.x = Math.min(Math.max(this.camera.x, -margin), Math.max(-margin, this.mapPx.w - vw + margin));
-    this.camera.y = Math.min(Math.max(this.camera.y, -margin), Math.max(-margin, this.mapPx.h - vh + margin));
+    const b = this.bounds();
+    this.camera.x = Math.min(Math.max(this.camera.x, b.minX), b.maxX);
+    this.camera.y = Math.min(Math.max(this.camera.y, b.minY), b.maxY);
+  }
+
+  /** Zoom to `zoom`, keeping the view centre in place. */
+  setZoom(zoom) {
+    const c = this.viewCenter();
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    this.centerOn(c.x, c.y);
+  }
+
+  /** Centre the camera on the given own actors (control group, selection). */
+  centerOnUnits(ids) {
+    if (!ids.length) return;
+    const c = this.game.units_center(this.player, Uint32Array.from(ids));
+    if (c.length === 2) this.centerOn(c[0], c[1]);
   }
 
   // ---- Selection ----------------------------------------------------------------
@@ -281,6 +351,7 @@ export class Input {
   }
 
   onMouseDown(e) {
+    if (this.suspended) return;
     const p = this.local(e);
     const w = this.toWorld(p.x, p.y);
     if (e.button === 1) {
@@ -356,7 +427,7 @@ export class Input {
       if (!e.shiftKey) this.attackMove = false;
       return;
     }
-    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey };
+    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
   }
 
   onMouseMove(e) {
@@ -425,7 +496,7 @@ export class Input {
         this.game.set_rally(this.player, this.selection[0], b.x, b.y);
         this.flashOrder(b, ACTION.MOVE);
       } else {
-        this.clickSelect(b, d.shift);
+        this.clickSelect(b, d.shift, d.ctrl);
       }
       return;
     }
@@ -433,11 +504,17 @@ export class Input {
     this.setSelection(d.shift ? this.selection.concat(ids) : ids);
   }
 
-  clickSelect(w, shift) {
+  /** Whole map rectangle in world px, for map-wide selection. */
+  mapRect() {
+    return { x0: 0, y0: 0, x1: this.mapPx.w, y1: this.mapPx.h };
+  }
+
+  clickSelect(w, shift, ctrl = false) {
     const id = this.game.pick(this.player, w.x, w.y);
     const now = performance.now();
     if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
-      const v = this.viewRect();
+      // Double click: same type on screen; Ctrl + double click: on the whole map.
+      const v = ctrl ? this.mapRect() : this.viewRect();
       const same = Array.from(this.game.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
       if (same.length) this.setSelection(same);
       this.lastClick = { time: 0, id: NONE };
@@ -460,18 +537,22 @@ export class Input {
 
   onWheel(e) {
     e.preventDefault();
+    if (this.suspended) return;
     const p = this.local(e);
     const before = this.toWorld(p.x, p.y);
     const factor = Math.exp(-e.deltaY * 0.0015);
-    this.camera.zoom = Math.min(4, Math.max(0.5, this.camera.zoom * factor));
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
     this.camera.x = before.x - p.x / this.camera.zoom;
     this.camera.y = before.y - p.y / this.camera.zoom;
     this.clampCamera();
   }
 
   onKeyDown(e) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    this.keys.add(e.key);
+    const t = e.target;
+    if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+    if (this.suspended) return;
+    // Alt + arrow jumps to a map edge (a hotkey); it must not also start scrolling.
+    if (!(e.altKey && e.key.startsWith('Arrow'))) this.keys.add(e.key);
     // Numpad drives the sidebar (works with NumLock on or off):
     // 1-9 build that card (Shift: 5, Ctrl: cancel one), + / - switch tabs.
     if (e.code.startsWith('Numpad')) {
@@ -497,68 +578,218 @@ export class Input {
         return;
       }
     }
-    const k = e.key.toLowerCase();
-    if (k === 'escape') {
-      if (this.targeting) this.cancelTargeting();
-      else if (this.power) this.cancelPower();
-      else if (this.sellMode) this.setSellMode(false);
-      else if (this.placing) this.cancelPlacing();
-      else if (this.attackMove) this.attackMove = false;
-      else this.setSelection([]);
-    } else if (k === 'a' && !e.ctrlKey && !e.metaKey) {
-      if (this.selectedOwnUnits().length) this.attackMove = true;
-    } else if (k === 'd' && !e.ctrlKey && !e.metaKey) {
-      this.deploySelection();
-    } else if (k === 'z' && !e.ctrlKey && !e.metaKey) {
-      this.toggleSellMode();
-    } else if (k === 's' && !e.ctrlKey && !e.metaKey) {
-      const units = this.selectedOwnUnits();
-      if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
-    } else if (k === 'h' || k === ' ') {
+    if (e.key === 'Escape') {
+      // Esc cancels the current mode first; with nothing to cancel it opens the game menu.
       e.preventDefault();
-      const [x, y] = this.game.start_position(this.player);
-      this.centerOn(x, y);
-    } else if (/^[1-9]$/.test(e.key)) {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        this.groups.set(e.key, this.selectedOwnUnits());
-      } else if (this.groups.has(e.key)) {
-        // The game drops dead ids from a selection; keep the stored group in sync.
-        this.game.set_selection(Uint32Array.from(this.groups.get(e.key)));
-        const alive = Array.from(this.game.selection());
-        this.groups.set(e.key, alive);
-        this.setSelection(alive);
-      }
+      if (!this.cancelMode()) this.hooks.onMenu?.();
+      return;
     }
+    const group = groupKeyFromEvent(e);
+    if (group !== null && this.groupKey(e, group)) return;
+    this.hotkeys.handle(e);
+  }
+
+  /** Cancel targeting, power, sell, placement or attack move. False when none was active. */
+  cancelMode() {
+    if (this.targeting) this.cancelTargeting();
+    else if (this.power) this.cancelPower();
+    else if (this.sellMode) this.setSellMode(false);
+    else if (this.placing) this.cancelPlacing();
+    else if (this.attackMove) this.attackMove = false;
+    else return false;
+    return true;
+  }
+
+  /** Own actors among `ids` that are still alive (inside a transport counts). */
+  ownAlive(ids) {
+    return ids.filter((id) => {
+      const info = this.info(id);
+      return info !== null && info.owner === this.player;
+    });
+  }
+
+  /**
+   * Digit row: Ctrl/Cmd+N stores the selected units as group N, N selects it
+   * (twice quickly: and centres the camera), Shift+N adds it to the selection.
+   */
+  groupKey(e, key) {
+    const cmd = groupCommand(e);
+    if (!cmd) return false;
+    // Ctrl/Cmd+number is a tab switch in some browsers: hold it back where allowed.
+    e.preventDefault();
+    if (cmd === 'assign') {
+      if (!e.repeat) this.groups.assign(key, this.selectedOwnUnits());
+      return true;
+    }
+    if (e.repeat) return true;
+    const alive = (ids) => this.ownAlive(ids);
+    if (cmd === 'add') {
+      const ids = this.groups.members(key, alive);
+      if (ids.length) {
+        this.setSelection(this.selection.concat(ids));
+        this.refreshSelection();
+      }
+      return true;
+    }
+    const { ids, center } = this.groups.recall(key, performance.now(), alive);
+    if (!ids.length) return true;
+    this.setSelection(ids);
+    this.refreshSelection();
+    if (center) this.centerOnUnits(ids);
+    return true;
+  }
+
+  /** True on the second press of `name` within the double tap time. */
+  doubleTap(name) {
+    const now = performance.now();
+    const twice = this.lastSelectTap.name === name && now - this.lastSelectTap.time <= DOUBLE_TAP_MS;
+    this.lastSelectTap = twice ? { name: null, time: -Infinity } : { name, time: now };
+    return twice;
+  }
+
+  /** Own units of the selected types, on screen (or on the whole map). */
+  selectSameTypes(rect) {
+    const seen = new Set();
+    const out = [];
+    for (const id of this.selectedOwnUnits()) {
+      const type = this.info(id)?.type;
+      if (!type || seen.has(type)) continue;
+      seen.add(type);
+      out.push(...this.game.select_same_type(this.player, id, rect.x0, rect.y0, rect.x1, rect.y1));
+    }
+    return out;
+  }
+
+  /** Register this class's hotkey actions (defaults from OpenRA's RA set). Returns an unregister function. */
+  registerHotkeys() {
+    const reg = (name, keys, handler, label, group, opts = {}) => this.hotkeys.registerAction(name, keys, handler, { label, group, ...opts });
+    const offs = [
+      reg('attackMove', 'A', () => {
+        if (this.selectedOwnUnits().length) this.attackMove = true;
+      }, 'Attack move', 'Orders'),
+      reg('stop', 'S', () => {
+        const units = this.selectedOwnUnits();
+        if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
+      }, 'Stop', 'Orders'),
+      // OpenRA deploys with F; D (WebRA's first key) keeps working until another action takes it.
+      reg('deploy', ['F', 'D'], () => this.deploySelection(), 'Deploy, unload, pack up', 'Orders'),
+      reg('sell', 'Z', () => this.toggleSellMode(), 'Sell mode', 'Orders'),
+      reg('selectAll', 'Q', () => {
+        const r = this.doubleTap('selectAll') ? this.mapRect() : this.viewRect();
+        this.setSelection(Array.from(this.game.select_box(this.player, r.x0, r.y0, r.x1, r.y1)));
+      }, 'Select all units on screen (twice: whole map)', 'Selection'),
+      reg('selectByType', 'W', () => {
+        const ids = this.selectSameTypes(this.doubleTap('selectByType') ? this.mapRect() : this.viewRect());
+        if (ids.length) this.setSelection(ids);
+      }, 'Select units of the selected types on screen (twice: whole map)', 'Selection'),
+      reg('base', ['H', 'Space'], () => {
+        const [x, y] = this.game.start_position(this.player);
+        this.centerOn(x, y);
+      }, 'Jump to base', 'Camera'),
+      reg('toSelection', 'Home', () => this.centerOnUnits(this.selection), 'Jump to selection', 'Camera'),
+      reg('zoomIn', ']', () => this.setZoom(this.camera.zoom * 1.25), 'Zoom in', 'Camera', { repeat: true }),
+      reg('zoomOut', '[', () => this.setZoom(this.camera.zoom / 1.25), 'Zoom out', 'Camera', { repeat: true }),
+      reg('resetZoom', '.', () => this.setZoom(DEFAULT_ZOOM), 'Reset zoom', 'Camera'),
+      reg('jumpTop', 'Alt+ArrowUp', () => this.jumpToEdge(0, -1), 'Jump to top edge', 'Camera'),
+      reg('jumpBottom', 'Alt+ArrowDown', () => this.jumpToEdge(0, 1), 'Jump to bottom edge', 'Camera'),
+      reg('jumpLeft', 'Alt+ArrowLeft', () => this.jumpToEdge(-1, 0), 'Jump to left edge', 'Camera'),
+      reg('jumpRight', 'Alt+ArrowRight', () => this.jumpToEdge(1, 0), 'Jump to right edge', 'Camera'),
+    ];
+    // Camera bookmarks. OpenRA uses Ctrl+Q/W/E/R and Alt+Q/W/E/R, but browsers
+    // keep Ctrl+Q and Ctrl+W (quit, close tab), so WebRA uses F1..F4 to jump
+    // and Shift+F1..F4 to save.
+    for (let i = 1; i <= BOOKMARKS; i++) {
+      offs.push(
+        reg(`bookmarkSave${i}`, `Shift+F${i}`, () => {
+          const c = this.viewCenter();
+          this.bookmarks.set(i, { x: c.x, y: c.y, zoom: this.camera.zoom });
+        }, `Save camera bookmark ${i}`, 'Camera'),
+        reg(`bookmarkJump${i}`, `F${i}`, () => {
+          const b = this.bookmarks.get(i);
+          if (!b) return;
+          this.camera.zoom = b.zoom;
+          this.centerOn(b.x, b.y);
+        }, `Jump to camera bookmark ${i}`, 'Camera'),
+      );
+    }
+    return () => offs.forEach((off) => off());
+  }
+
+  /** Move the view to a map edge, keeping the other axis. */
+  jumpToEdge(dx, dy) {
+    const b = this.bounds();
+    if (dx) this.camera.x = dx < 0 ? b.minX : b.maxX;
+    if (dy) this.camera.y = dy < 0 ? b.minY : b.maxY;
+  }
+
+  /** Game menu open or closed: input stops and held keys are released. */
+  setSuspended(on) {
+    this.suspended = !!on;
+    if (!on) return;
+    this.keys.clear();
+    this.drag = null;
+    this.pan = null;
+    this.mineDrag = null;
+    this.powerDrag = null;
+    this.edgeScroll = null;
+  }
+
+  /** Keep the view centre when the canvas changes size (window resize, fullscreen). */
+  trackViewSize() {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (w === this.viewSize.w && h === this.viewSize.h) return;
+    const cx = this.camera.x + this.viewSize.w / this.camera.zoom / 2;
+    const cy = this.camera.y + this.viewSize.h / this.camera.zoom / 2;
+    this.viewSize = { w, h };
+    this.centerOn(cx, cy);
   }
 
   /** Per-frame camera scrolling from arrow keys and screen edges. */
   update(dt) {
-    let dx = 0;
-    let dy = 0;
-    if (this.keys.has('ArrowLeft')) dx -= 1;
-    if (this.keys.has('ArrowRight')) dx += 1;
-    if (this.keys.has('ArrowUp')) dy -= 1;
-    if (this.keys.has('ArrowDown')) dy += 1;
-    if (this.mouse.inside && !this.drag && !this.pan) {
-      const w = this.canvas.clientWidth;
-      const h = this.canvas.clientHeight;
-      if (this.mouse.x < EDGE) dx -= 1;
-      if (this.mouse.x > w - EDGE) dx += 1;
-      if (this.mouse.y < EDGE) dy -= 1;
-      if (this.mouse.y > h - EDGE) dy += 1;
+    this.trackViewSize();
+    this.edgeScroll = null;
+    if (this.suspended) return;
+    let kx = 0;
+    let ky = 0;
+    if (this.keys.has('ArrowLeft')) kx -= 1;
+    if (this.keys.has('ArrowRight')) kx += 1;
+    if (this.keys.has('ArrowUp')) ky -= 1;
+    if (this.keys.has('ArrowDown')) ky += 1;
+    const edgeSpeed = this.settings.get('edgeScrollSpeed');
+    let ex = 0;
+    let ey = 0;
+    if (edgeSpeed > 0 && this.mouse.inside && !this.drag && !this.pan) {
+      ({ dx: ex, dy: ey } = edgeDirection(this.mouse.x, this.mouse.y, this.canvas.clientWidth, this.canvas.clientHeight));
+      if (ex || ey) this.edgeScroll = { dx: ex, dy: ey, blocked: scrollBlocked(ex, ey, this.camera, this.bounds()) };
     }
-    if (dx || dy) {
-      this.camera.x += (dx * PAN_SPEED * dt) / this.camera.zoom;
-      this.camera.y += (dy * PAN_SPEED * dt) / this.camera.zoom;
+    const keySpeed = this.settings.get('keyScrollSpeed');
+    const vx = kx ? kx * keySpeed : ex * edgeSpeed;
+    const vy = ky ? ky * keySpeed : ey * edgeSpeed;
+    if (vx || vy) {
+      this.camera.x += (vx * PAN_SPEED * dt) / this.camera.zoom;
+      this.camera.y += (vy * PAN_SPEED * dt) / this.camera.zoom;
       this.clampCamera();
     }
     this.updateCursor();
   }
 
+  /** Whether the building being placed fits where the mouse is. */
+  placementValid() {
+    const w = this.toWorld(this.mouse.x, this.mouse.y);
+    const { cx, cy } = this.placementCell(w.x, w.y);
+    const cells = this.game.placement_preview(this.player, this.placing, cx, cy);
+    if (!cells.length) return false;
+    for (let i = 2; i < cells.length; i += 3) if (cells[i] !== 1) return false;
+    return true;
+  }
+
   updateCursor() {
     let cursor = CURSORS.select;
-    if (this.sellMode) {
+    if (this.edgeScroll) {
+      // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
+      cursor = scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked);
+    } else if (this.sellMode) {
       const w = this.toWorld(this.mouse.x, this.mouse.y);
       const hit = this.game.pick(this.player, w.x, w.y);
       cursor = hit !== NONE && this.game.sell_value(this.player, hit) > 0 ? CURSORS.sell : CURSORS.blocked;
@@ -570,8 +801,10 @@ export class Input {
     } else if (this.mineDrag || ((this.keys.has('Control') || this.keys.has('Meta')) && this.mouse.inside && !this.drag && this.selectedMinelayers().length)) {
       cursor = CURSORS.mine;
     } else if (this.power) cursor = CURSORS.attack;
-    else if (this.placing) cursor = 'none';
-    else if (this.attackMove) cursor = CURSORS.attackMove;
+    else if (this.placing) {
+      // The footprint preview shows the cells; the cursor shows the spot.
+      if (this.mouse.inside) cursor = this.placementValid() ? CURSORS.place : CURSORS.blocked;
+    } else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
       const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
       if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;

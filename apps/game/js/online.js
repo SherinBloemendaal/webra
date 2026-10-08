@@ -899,7 +899,9 @@ export class OnlineUI {
       }
     });
     window.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // Plain Enter only: Alt+Enter is the fullscreen hotkey (js/hotkeys.js).
+      if (e.key !== 'Enter' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       e.preventDefault();
       chatInput.hidden = false;
       chatInput.focus();

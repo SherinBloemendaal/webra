@@ -39,8 +39,64 @@ const ARROW =
   `<path d="M3 2 L3 24 L9 18.5 L13.5 28 L17.5 26 L13 17 L21 17 Z" fill="#d9b23a" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/>` +
   `<path d="M5.5 7 L5.5 18.5 L9.5 15" fill="none" stroke="#fff3c0" stroke-width="1.2" stroke-linecap="round"/>`;
 
+/** Corner brackets around the centre: where the building goes (footprint drawn by the game). */
+const PLACE = (() => {
+  const corner = (r) =>
+    `<g transform="rotate(${r} 16 16)"><path d="M4 11 L4 4 L11 4" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<path d="M4 11 L4 4 L11 4" fill="none" stroke="#5fe36a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  return [0, 90, 180, 270].map(corner).join('') + `<path d="M16 11 L16 21 M11 16 L21 16" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round"/><path d="M16 11 L16 21 M11 16 L21 16" stroke="#e8e8e8" stroke-width="1.8" stroke-linecap="round"/>`;
+})();
+
+/** Edge scroll directions, clockwise from north, with their (dx, dy). */
+export const SCROLL_DIRS = [
+  ['N', 0, -1],
+  ['NE', 1, -1],
+  ['E', 1, 0],
+  ['SE', 1, 1],
+  ['S', 0, 1],
+  ['SW', -1, 1],
+  ['W', -1, 0],
+  ['NW', -1, -1],
+];
+
+/**
+ * Edge scroll arrow (Red Alert / OpenRA scroll cursors): a bold arrow pointing
+ * off the screen, hotspot on its tip. Blocked (the view cannot move further
+ * that way) is the same arrow in grey with a red bar across the tip.
+ */
+function scrollArrow(angle, blocked) {
+  const fill = blocked ? '#8a8a7a' : '#d9b23a';
+  const shine = blocked ? '#c4c4b4' : '#fff3c0';
+  const bar = blocked
+    ? `<path d="M9 6 L23 6" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round"/><path d="M9 6 L23 6" stroke="#ff4a3a" stroke-width="2.6" stroke-linecap="round"/>`
+    : '';
+  const svg =
+    `<g transform="rotate(${angle} 16 16)">` +
+    `<path d="M16 2 L27 13 L20.5 13 L20.5 27 L11.5 27 L11.5 13 L5 13 Z" fill="${fill}" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/>` +
+    `<path d="M16 5.5 L9.5 11.5 M14 15 L14 24.5" fill="none" stroke="${shine}" stroke-width="1.2" stroke-linecap="round"/>` +
+    bar +
+    `</g>`;
+  // Hotspot: the tip (16, 2) turned around the centre, kept inside the image.
+  const rad = (angle * Math.PI) / 180;
+  const hx = Math.min(31, Math.max(0, Math.round(16 + 14 * Math.sin(rad))));
+  const hy = Math.min(31, Math.max(0, Math.round(16 - 14 * Math.cos(rad))));
+  return cursor(svg, hx, hy, blocked ? 'not-allowed' : 'move');
+}
+
+function scrollCursors() {
+  const out = {};
+  SCROLL_DIRS.forEach(([dir], i) => {
+    out[`scroll${dir}`] = scrollArrow(i * 45, false);
+    out[`scroll${dir}Blocked`] = scrollArrow(i * 45, true);
+  });
+  return out;
+}
+
 export const CURSORS = {
   select: cursor(ARROW, 3, 2, 'default'),
+  // Building placement: valid spot (an invalid one shows `blocked`).
+  place: cursor(PLACE, 16, 16, 'crosshair'),
+  ...scrollCursors(),
   move: cursor(chevrons('#5fe36a'), 16, 16, 'pointer'),
   attack: cursor(reticle('#ff4a3a'), 16, 16, 'crosshair'),
   attackMove: cursor(
@@ -186,3 +242,9 @@ export const POWER_CURSORS = {
   GrantExternalConditionPower: CURSORS.ironCurtain,
   NukePower: CURSORS.nuke,
 };
+
+/** Edge scroll cursor for a scroll direction (dx, dy in -1..1), or null when not scrolling. */
+export function scrollCursor(dx, dy, blocked = false) {
+  const d = SCROLL_DIRS.find(([, x, y]) => x === Math.sign(dx) && y === Math.sign(dy));
+  return d ? CURSORS[`scroll${d[0]}${blocked ? 'Blocked' : ''}`] : null;
+}

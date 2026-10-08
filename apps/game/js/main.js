@@ -8,6 +8,11 @@ import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
+import { CURSORS } from './cursors.js';
+import { hotkeys } from './hotkeys.js';
+import { settings } from './settings.js';
+import { GameMenu } from './gamemenu.js';
+import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -188,6 +193,9 @@ function startStress(seed, units, lobby) {
 // lockstep driver then decides when the simulation ticks and there is no pause.
 function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   $('menu').hidden = true;
+  // The game's own arrow everywhere in the game screen (sidebar included);
+  // the battlefield canvas sets its cursor per frame (js/input.js).
+  $('app').style.cursor = CURSORS.select;
   // The lobby's "Play online" entry must not float over the game (any mode).
   const onlineEntry = $('online-button');
   if (onlineEntry) onlineEntry.hidden = true;
@@ -209,6 +217,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
+    onMenu: () => menu.open(),
   });
   sidebar = new Sidebar($('sidebar'), game, rules, player, {
     onPlace: (id) => {
@@ -234,34 +243,79 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
-  // ---- Pause --------------------------------------------------------------------
+  // ---- Game menu and pause -------------------------------------------------------
+  // Esc (js/input.js), F10, the HUD button, and in single player P / Pause open
+  // the menu (js/gamemenu.js). Single player pauses while it is open; online
+  // games cannot pause (the lockstep server drops a player who holds the game
+  // up), so there the menu opens over the running game.
   let paused = false;
-  const setPaused = (on) => {
-    paused = on;
-    $('pause').hidden = !on;
-    $('pause-button').textContent = on ? 'Resume' : 'Pause';
-  };
+  let leaving = false;
   const leave = () => {
+    leaving = true;
     online?.onQuit();
     location.reload();
   };
-  // Online games cannot pause: the other players keep going.
-  $('pause-button').hidden = !!online;
-  $('pause-button').addEventListener('click', () => setPaused(!paused));
-  $('resume').addEventListener('click', () => setPaused(false));
-  $('quit').addEventListener('click', leave);
+  const exit = () => {
+    leaving = true;
+    online?.onQuit();
+    location.href = new URL('../', location.href).href;
+  };
+  const fullscreen = {
+    available: () => fullscreenAvailable(),
+    active: () => isFullscreen(),
+    toggle: () => toggleFullscreen(),
+  };
+  const menu = new GameMenu($('game-menu'), {
+    online: !!online,
+    hotkeys,
+    settings,
+    fullscreen,
+    onChange: (open, isPaused) => {
+      input.setSuspended(open);
+      paused = isPaused;
+      $('menu-button').textContent = open ? 'Resume' : 'Menu';
+    },
+    onLeave: leave,
+    onExit: exit,
+  });
+  $('menu-button').hidden = false;
+  $('menu-button').addEventListener('click', () => menu.toggle());
   $('again').addEventListener('click', leave);
-  window.addEventListener('keydown', (e) => {
-    if (online || e.target instanceof HTMLInputElement) return;
-    if (e.key === 'p' || e.key === 'P' || e.key === 'Pause' || e.key === 'F10') {
-      e.preventDefault();
-      setPaused(!paused);
-    }
+  hotkeys.registerAction('menu', 'F10', () => menu.toggle(), { label: 'Game menu (Esc also opens it)', group: 'Game' });
+  if (!online) hotkeys.registerAction('pause', ['Pause', 'P'], () => menu.toggle(), { label: 'Pause (opens the menu)', group: 'Game' });
+  hotkeys.registerAction(
+    'fullscreen',
+    'Alt+Enter',
+    async () => {
+      const r = await fullscreen.toggle();
+      if (!r.ok) showToast(r.message);
+    },
+    { label: 'Fullscreen', group: 'Game' },
+  );
+  // Production tabs, OpenRA's Red Alert keys (E R T Y U I), and Tab / Shift+Tab to cycle.
+  ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'].forEach((name, q) => {
+    hotkeys.registerAction(`productionTab${name}`, 'ERTYUI'[q], () => sidebar.selectTab(q), { label: `${name} tab`, group: 'Production' });
   });
-  // A single-player game pauses when its tab is hidden.
+  // Not while a button has focus, so Tab still moves between the sidebar's buttons there.
+  hotkeys.registerAction('nextTab', 'Tab', () => sidebar.cycleTab(1), { label: 'Next production tab', group: 'Production', inControls: false });
+  hotkeys.registerAction('previousTab', 'Shift+Tab', () => sidebar.cycleTab(-1), { label: 'Previous production tab', group: 'Production', inControls: false });
+  // Fullscreen changes the canvas size; the renderer and input follow it each
+  // frame, the toast says when the browser refused.
+  onFullscreenChange(() => {
+    if (menu.isOpen) menu.render();
+  });
+  // A single-player game opens the menu (and so pauses) when its tab is hidden.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !stress && !online) setPaused(true);
+    if (document.hidden && !stress && !online) menu.open();
   });
+  // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
+  if (!stress) {
+    window.addEventListener('beforeunload', (e) => {
+      if (leaving || over) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+  }
 
   let acc = 0;
   let last = performance.now();
@@ -356,3 +410,14 @@ function updateHud(game, state, fps, simMs, stress, paused) {
 }
 
 boot();
+
+/** Short message over the battlefield (for example when fullscreen is refused). */
+function showToast(text) {
+  const box = $('toast');
+  box.textContent = text;
+  box.hidden = false;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
+    box.hidden = true;
+  }, 4000);
+}
