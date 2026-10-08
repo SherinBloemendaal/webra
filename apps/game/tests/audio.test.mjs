@@ -422,6 +422,36 @@ test('local orders and production through the watched game get replies', () => {
   assert.deepEqual(calls, [['order', [5, 6]], ['build', 'E1'], ['cancel']]);
 });
 
+test('announcer lines reach the on-screen notifications, also with sound off', () => {
+  const audio = new AudioSystem({ storage: memoryStorage(), doc: null });
+  const shown = [];
+  const pushed = [];
+  audio.announcer.push = (key) => pushed.push(key);
+  const off = audio.onAnnounce((key) => shown.push(key));
+  audio.announce('unitReady');
+  audio.prefs.set({ enabled: false });
+  audio.announce('insufficientFunds');
+  assert.deepEqual(shown, ['unitReady', 'insufficientFunds']);
+  assert.deepEqual(pushed, ['unitReady'], 'only spoken while sound is on');
+  // With sound off the engine events still reach the director (for the text),
+  // but effects stay silent.
+  const events = [];
+  audio.game = { take_audio_events: () => [5, 0, 0, 0, 0, 0] };
+  audio.director = { onEvents: (ev) => events.push(Array.from(ev)) };
+  let played = 0;
+  audio.mixer.play = () => {
+    played++;
+    return null;
+  };
+  audio.frame({ x0: 0, y0: 0, x1: 10, y1: 10 });
+  assert.equal(events.length, 1);
+  audio.effect({ synth: 'cannon', originals: [] });
+  assert.equal(played, 0);
+  off();
+  audio.announce('unitLost');
+  assert.equal(shown.length, 2, 'unsubscribed');
+});
+
 // ---- Engine events through WebAssembly --------------------------------------------------------------
 
 test('the engine reports fire, impact and death events to the client', () => {

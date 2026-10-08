@@ -46,6 +46,8 @@ export class AudioSystem {
     this.game = null;
     this.inGame = false;
     this.listeners = new Set();
+    /** Announcer line listeners (the on-screen notifications), called even with sound off. */
+    this.announceListeners = new Set();
     this.prefs.subscribe((p) => {
       this.mixer.apply(p);
       if (!p.speech || !p.enabled) this.speech.cancel();
@@ -102,6 +104,16 @@ export class AudioSystem {
 
   changed() {
     for (const fn of this.listeners) fn();
+  }
+
+  /**
+   * Call `fn(key)` for every announcer line the director decides on (EVA key,
+   * catalog.js), whether or not sound is on, so the game can show it as text.
+   * @returns unsubscribe
+   */
+  onAnnounce(fn) {
+    this.announceListeners.add(fn);
+    return () => this.announceListeners.delete(fn);
   }
 
   // ---- Game hooks (main.js) ---------------------------------------------------
@@ -187,7 +199,8 @@ export class AudioSystem {
     if (!this.director || !this.game) return;
     const events = this.game.take_audio_events();
     if (!events.length) return;
-    if (!this.prefs.get().enabled) return;
+    // With sound off the director still runs: its announcer lines are shown
+    // as text (onAnnounce); effect() and voice() stay silent.
     let visible;
     if (fog) {
       const bytes = fog();
@@ -222,6 +235,7 @@ export class AudioSystem {
   // ---- Sink (director.js) --------------------------------------------------------
 
   effect(sound, { gain = 1, pan = 0 } = {}) {
+    if (!this.prefs.get().enabled) return;
     const r = this.bank.resolve(sound);
     if (r) this.mixer.play(r.buffer, { bus: 'effects', gain, pan, rate: r.rate });
   }
@@ -246,6 +260,13 @@ export class AudioSystem {
   }
 
   announce(key) {
+    for (const fn of this.announceListeners) {
+      try {
+        fn(key);
+      } catch (err) {
+        console.warn('announce listener failed:', err);
+      }
+    }
     if (this.prefs.get().enabled) this.announcer.push(key);
   }
 
@@ -285,7 +306,10 @@ export class AudioSystem {
   /** Short test sound for the settings panel. */
   test(kind) {
     this.mixer.unlock();
-    if (kind === 'voices') this.announce('unitReady');
+    // Straight to the announcer: a test line is not a game notification.
+    if (kind === 'voices') {
+      if (this.prefs.get().enabled) this.announcer.push('unitReady');
+    }
     else this.effect({ synth: 'cannon', originals: ['cannon1.aud'] }, { gain: 1, pan: 0 });
   }
 }
