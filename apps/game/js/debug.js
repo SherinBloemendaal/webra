@@ -129,7 +129,7 @@ export class PerfHistory {
 }
 
 /** Lines of the performance panel. */
-export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memoryBytes = 0 } = {}) {
+export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memoryBytes = 0, sim = null } = {}) {
   const f = perf.summary('frame');
   const r = perf.summary('render');
   const s = perf.summary('sim');
@@ -145,6 +145,20 @@ export function formatStats(stats, perf, { fps = 0, simMs = 0, tickMs = 40, memo
     );
   }
   if (memoryBytes > 0) lines.push(`wasm memory ${(memoryBytes / (1024 * 1024)).toFixed(1)} MB`);
+  if (sim) lines.push(...simLines(sim));
+  return lines;
+}
+
+/**
+ * Where the simulation runs (js/sim/host.js stats()): the mode and why, and
+ * for a worker its time per frame, the step round trip and torn frames.
+ */
+export function simLines(sim) {
+  const lines = [`simulation: ${sim.label} (${sim.reason})`];
+  if (sim.workerMs !== null && sim.workerMs !== undefined) {
+    const torn = sim.mode === 'shared' ? `  torn frames ${sim.torn}` : '';
+    lines.push(`worker sim/frame ${sim.workerMs.toFixed(2)} ms  step round trip ${(sim.roundTripMs ?? 0).toFixed(1)} ms${torn}`);
+  }
   return lines;
 }
 
@@ -184,7 +198,7 @@ export class DebugMenu {
    * @param {HTMLElement} field the battlefield element (holds the game canvas)
    * @param {{
    *   game: any, input: any, player: number, rules: any, colors: number[][],
-   *   online: boolean, tickMs: number, memory?: WebAssembly.Memory,
+   *   online: boolean, tickMs: number, memoryBytes?: () => number, sim?: () => object,
    *   step?: () => boolean, isPaused?: () => boolean, setPaused?: (on: boolean) => void,
    * }} ctx `step` runs one simulation tick while paused (local games only)
    */
@@ -363,7 +377,8 @@ export class DebugMenu {
         fps: this.fps,
         simMs: this.simMs,
         tickMs: this.ctx.tickMs,
-        memoryBytes: this.ctx.memory?.buffer.byteLength ?? 0,
+        memoryBytes: this.ctx.memoryBytes?.() ?? 0,
+        sim: this.ctx.sim?.() ?? null,
       }).join('\n');
     }
   }

@@ -184,14 +184,15 @@ export class TouchControls {
     this.update();
   }
 
-  /** Force attack whatever is under client point (x, y). True when an order was given. */
-  forceAttack(x, y) {
+  /** Force attack whatever is under client point (x, y). Resolves with true when an order was given. */
+  async forceAttack(x, y) {
     const i = this.input;
     const units = i.selectedOwnUnits();
+    if (!units.length) return false;
     const p = this.local(x, y);
     const w = i.toWorld(p.x, p.y);
-    const hit = i.game.pick(i.player, w.x, w.y);
-    if (!units.length || hit === NONE || units.includes(hit)) return false;
+    const hit = await i.ask.pick(i.player, w.x, w.y);
+    if (hit === NONE || units.includes(hit)) return false;
     i.game.order_attack(i.player, Uint32Array.from(units), hit);
     i.flashOrder(w, ACTION.ATTACK);
     return true;
@@ -205,25 +206,27 @@ export class TouchControls {
       return;
     }
     if (this.force) {
-      if (this.forceAttack(x, y) && !this.queue) this.force = false;
-      this.update();
+      this.forceAttack(x, y).then((ordered) => {
+        if (ordered && !this.queue) this.force = false;
+        this.update();
+      });
       return;
     }
     this.click(x, y);
     this.update();
   }
 
-  onDoubleTap({ x, y }) {
+  async onDoubleTap({ x, y }) {
     const i = this.input;
     if (this.modeActive()) {
       this.onTap({ x, y });
       return;
     }
     const p = this.local(x, y);
-    const intent = i.clickIntent(i.toWorld(p.x, p.y));
+    const v = i.viewRect();
+    const intent = await i.clickIntentNow(i.toWorld(p.x, p.y));
     if (intent.kind === 'select' && intent.id !== undefined && !this.queue) {
-      const v = i.viewRect();
-      const same = Array.from(i.game.select_same_type(i.player, intent.id, v.x0, v.y0, v.x1, v.y1));
+      const same = Array.from(await i.ask.select_same_type(i.player, intent.id, v.x0, v.y0, v.x1, v.y1));
       if (same.length) i.setSelection(same);
       i.lastClick = { time: 0, id: NONE };
       this.update();
@@ -232,7 +235,7 @@ export class TouchControls {
     this.onTap({ x, y });
   }
 
-  onLongPress({ x, y }) {
+  async onLongPress({ x, y }) {
     const i = this.input;
     if (i.placing) return;
     navigator.vibrate?.(15);
@@ -245,7 +248,7 @@ export class TouchControls {
       this.cancel();
       return;
     }
-    if (this.forceAttack(x, y)) return;
+    if (await this.forceAttack(x, y)) return;
     const p = this.local(x, y);
     const w = i.toWorld(p.x, p.y);
     i.game.order_move(i.player, Uint32Array.from(units), w.x, w.y, true);

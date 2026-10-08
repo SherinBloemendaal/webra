@@ -155,13 +155,15 @@ async function loadDialog(store, ctx) {
 
 /**
  * Game menu actions for a recorded game: save (skirmish, to the browser or a
- * file) and download the replay. Each `run()` returns the message to show.
+ * file) and download the replay. Each `run()` resolves with the message to show.
+ * `recorder` is the handle on the recorder that runs with the simulation
+ * (js/sim/proxy.js RecorderHandle): `start`, `full`, and `encode(kind)`
+ * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads.
  */
-export function recordActions({ game, recorder, local, stress = false, store = null }) {
+export function recordActions({ recorder, ready = () => true, stress = false, store = null }) {
   if (stress || !recorder) return [];
   const saves = store ?? SaveStore.browser();
-  const ready = () => !(local && local.loading);
-  const save = () => recorder.encode('save', game.tick_count(), game.state_hash());
+  const fail = (err) => err?.message ?? String(err);
   const actions = [];
   if (recorder.start.mode === 'skirmish' && recorder.start.player !== null) {
     actions.push({
@@ -170,30 +172,43 @@ export function recordActions({ game, recorder, local, stress = false, store = n
       run: async () => {
         if (!ready()) return 'Wait until the game has loaded.';
         if (recorder.full) return 'This game is too long to save.';
-        await saves.add(save());
-        return `Saved at ${formatTicks(game.tick_count())}. Load it from the lobby (Load game).`;
+        try {
+          const { text, ticks } = await recorder.encode('save');
+          await saves.add(text);
+          return `Saved at ${formatTicks(ticks)}. Load it from the lobby (Load game).`;
+        } catch (err) {
+          return `Could not save: ${fail(err)}`;
+        }
       },
     });
     actions.push({
       id: 'savefile',
       label: 'Save to file',
-      run: () => {
+      run: async () => {
         if (!ready()) return 'Wait until the game has loaded.';
         if (recorder.full) return 'This game is too long to save.';
-        const text = save();
-        downloadText(recordFileName({ ...recorder.start }, 'save'), text);
-        return 'Save file downloaded.';
+        try {
+          const { text } = await recorder.encode('save');
+          downloadText(recordFileName({ ...recorder.start }, 'save'), text);
+          return 'Save file downloaded.';
+        } catch (err) {
+          return `Could not save: ${fail(err)}`;
+        }
       },
     });
   }
   actions.push({
     id: 'replay',
     label: 'Download replay',
-    run: () => {
+    run: async () => {
       if (!ready()) return 'Wait until the game has loaded.';
-      const text = recorder.encode('replay', game.tick_count());
-      downloadText(recordFileName({ ...recorder.start }, 'replay'), text);
-      return recorder.full ? 'Replay downloaded (the game was too long: it stops early).' : 'Replay downloaded.';
+      try {
+        const { text, full } = await recorder.encode('replay');
+        downloadText(recordFileName({ ...recorder.start }, 'replay'), text);
+        return full ? 'Replay downloaded (the game was too long: it stops early).' : 'Replay downloaded.';
+      } catch (err) {
+        return `Could not download the replay: ${fail(err)}`;
+      }
     },
   });
   return actions;

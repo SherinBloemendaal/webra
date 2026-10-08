@@ -350,6 +350,9 @@ function fakeElement(tag = 'div') {
   };
 }
 
+/** Let pending promises (fresh game answers) settle. */
+const flush = () => new Promise((r) => setImmediate(r));
+
 function installDom() {
   globalThis.window ??= { addEventListener() {} };
   globalThis.document = { createElement: fakeElement, body: fakeElement('body') };
@@ -415,19 +418,24 @@ async function setup(actors) {
   const field = fakeElement('main');
   const touch = new TouchControls({ canvas, field, input, hotkeys, gestures: { setTimer: clock.setTimer, clearTimer: clock.clearTimer } });
   const ev = (id, x, y, pointerType = 'touch') => ({ pointerId: id, clientX: x, clientY: y, timeStamp: clock.now, pointerType, preventDefault() {} });
+  // Each gesture resolves once what it started has finished: clicks ask the
+  // game for fresh answers (js/input.js `ask`), which settle asynchronously.
   const p = {
-    down: (id, x, y, type) => canvas.dispatch('pointerdown', ev(id, x, y, type)),
-    move: (id, x, y, type) => canvas.dispatch('pointermove', ev(id, x, y, type)),
-    up: (id, x, y, type) => canvas.dispatch('pointerup', ev(id, x, y, type)),
-    tap(x, y) {
-      this.down(1, x, y);
+    down: (id, x, y, type) => (canvas.dispatch('pointerdown', ev(id, x, y, type)), flush()),
+    move: (id, x, y, type) => (canvas.dispatch('pointermove', ev(id, x, y, type)), flush()),
+    up: (id, x, y, type) => (canvas.dispatch('pointerup', ev(id, x, y, type)), flush()),
+    async tap(x, y) {
+      await this.down(1, x, y);
       clock.advance(40);
-      this.up(1, x, y);
+      await flush();
+      await this.up(1, x, y);
     },
-    longPress(x, y) {
-      this.down(1, x, y);
+    async longPress(x, y) {
+      await this.down(1, x, y);
       clock.advance(GESTURE_DEFAULTS.longPressMs + 10);
-      this.up(1, x, y);
+      await flush();
+      await flush();
+      await this.up(1, x, y);
     },
   };
   const bar = (id) => touch.buttons.get(id);
@@ -445,64 +453,75 @@ const ARMY = {
 test('touch: tap selects, tap on the ground or an enemy gives the order; mouse pointers are ignored', async () => {
   const { input, game, p, clock } = await setup(ARMY);
   assert.equal(document.body.classList.contains('touch'), false);
-  p.tap(100, 100);
+  await p.tap(100, 100);
   assert.ok(document.body.classList.contains('touch'), 'the first touch shows the touch UI');
   assert.deepEqual(input.selection, [1]);
   clock.advance(1000);
-  p.tap(300, 200);
+  await flush();
+  await p.tap(300, 200);
   assert.deepEqual(game.calls.at(-1), ['order_smart', 0, [1], 300, 200]);
   clock.advance(1000);
-  p.tap(400, 300);
+  await flush();
+  await p.tap(400, 300);
   assert.deepEqual(game.calls.at(-1), ['order_smart', 0, [1], 400, 300], 'attack through the smart order');
   const n = game.calls.length;
-  p.down(7, 500, 500, 'mouse');
-  p.up(7, 500, 500, 'mouse');
+  await p.down(7, 500, 500, 'mouse');
+  await p.up(7, 500, 500, 'mouse');
   assert.equal(game.calls.length, n, 'mouse goes through js/input.js mouse handlers, not here');
 });
 
 test('touch: Add toggle adds and removes taps and boxes; double tap selects the type on screen', async () => {
   const { input, p, bar, clock } = await setup(ARMY);
-  p.tap(100, 100);
+  await p.tap(100, 100);
   clock.advance(1000);
+  await flush();
   bar('queue').dispatch('click');
+  await flush();
   assert.equal(bar('queue').getAttribute('aria-pressed'), 'true');
-  p.tap(180, 100);
+  await p.tap(180, 100);
   assert.deepEqual(input.selection, [1, 3]);
   clock.advance(1000);
-  p.tap(100, 100);
+  await flush();
+  await p.tap(100, 100);
   assert.deepEqual(input.selection, [3], 'tapping a selected unit with Add removes it');
   bar('queue').dispatch('click');
+  await flush();
   clock.advance(1000);
+  await flush();
   // Double tap on a rifleman: all riflemen on screen (not the tank, and 4 is on screen too).
-  p.tap(140, 100);
+  await p.tap(140, 100);
   clock.advance(120);
-  p.tap(141, 101);
+  await flush();
+  await p.tap(141, 101);
   assert.deepEqual(input.selection.sort(), [1, 2, 4]);
 });
 
 test('touch: drag box-selects (with Add: adds), a second finger cancels the box', async () => {
   const { input, p, clock, bar } = await setup(ARMY);
-  p.down(1, 80, 80);
-  p.move(1, 120, 90);
+  await p.down(1, 80, 80);
+  await p.move(1, 120, 90);
   assert.ok(input.drag, 'the box is drawn while dragging');
-  p.move(1, 150, 120);
-  p.up(1, 150, 120);
+  await p.move(1, 150, 120);
+  await p.up(1, 150, 120);
   assert.deepEqual(input.selection, [1, 2]);
   assert.equal(input.drag, null);
   bar('queue').dispatch('click');
-  p.down(1, 690, 490);
-  p.move(1, 720, 520);
-  p.up(1, 720, 520);
+  await flush();
+  await p.down(1, 690, 490);
+  await p.move(1, 720, 520);
+  await p.up(1, 720, 520);
   assert.deepEqual(input.selection, [1, 2, 4]);
   // A pinch that starts as a box leaves the selection alone.
   bar('queue').dispatch('click');
+  await flush();
   clock.advance(1000);
-  p.down(1, 0, 0);
-  p.move(1, 300, 300);
-  p.down(2, 500, 500);
+  await flush();
+  await p.down(1, 0, 0);
+  await p.move(1, 300, 300);
+  await p.down(2, 500, 500);
   assert.equal(input.drag, null);
-  p.up(1, 300, 300);
-  p.up(2, 500, 500);
+  await p.up(1, 300, 300);
+  await p.up(2, 500, 500);
   assert.deepEqual(input.selection, [1, 2, 4]);
 });
 
@@ -511,50 +530,55 @@ test('touch: two fingers pan and pinch-zoom the camera around the fingers', asyn
   input.camera.x = 200;
   input.camera.y = 200;
   const under = input.toWorld(400, 300);
-  p.down(1, 350, 300);
-  p.down(2, 450, 300);
-  p.move(1, 300, 300);
-  p.move(2, 500, 300);
+  await p.down(1, 350, 300);
+  await p.down(2, 450, 300);
+  await p.move(1, 300, 300);
+  await p.move(2, 500, 300);
   assert.ok(Math.abs(input.camera.zoom - 2) < 1e-9);
   const after = input.toWorld(400, 300);
   assert.ok(Math.abs(after.x - under.x) < 1e-6 && Math.abs(after.y - under.y) < 1e-6);
-  p.move(1, 320, 340);
-  p.move(2, 520, 340);
+  await p.move(1, 320, 340);
+  await p.move(2, 520, 340);
   const panned = input.toWorld(420, 340);
   assert.ok(Math.abs(panned.x - under.x) < 1e-6 && Math.abs(panned.y - under.y) < 1e-6, 'the map follows the fingers');
-  p.up(1, 320, 340);
-  p.up(2, 520, 340);
+  await p.up(1, 320, 340);
+  await p.up(2, 520, 340);
   assert.deepEqual(input.selection, [], 'no tap fired');
 });
 
 test('touch: long press force-attacks, attack-moves, or cancels; Force toggle attacks any actor', async () => {
   const { input, game, p, bar, clock } = await setup(ARMY);
-  p.longPress(400, 400);
+  await p.longPress(400, 400);
   assert.equal(game.calls.length, 0, 'nothing selected: right click, which clears');
-  p.tap(100, 100);
+  await p.tap(100, 100);
   clock.advance(1000);
-  p.longPress(400, 300);
+  await flush();
+  await p.longPress(400, 300);
   assert.deepEqual(game.calls.at(-1), ['order_attack', 0, [1], 9]);
-  p.longPress(180, 100);
+  await p.longPress(180, 100);
   assert.deepEqual(game.calls.at(-1), ['order_attack', 0, [1], 3], 'own unit too: force fire');
-  p.longPress(600, 100);
+  await p.longPress(600, 100);
   assert.deepEqual(game.calls.at(-1), ['order_move', 0, [1], 600, 100, true], 'ground: attack move');
   // Long press cancels a mode instead.
   bar('attackMove').dispatch('click');
+  await flush();
   assert.equal(input.attackMove, true, 'the bar runs the attackMove hotkey action');
   const n = game.calls.length;
-  p.longPress(600, 100);
+  await p.longPress(600, 100);
   assert.equal(input.attackMove, false);
   assert.equal(game.calls.length, n);
   // Force: the next tap attacks whatever it hits, then the mode ends.
   bar('force').dispatch('click');
+  await flush();
   assert.equal(bar('force').getAttribute('aria-pressed'), 'true');
   clock.advance(1000);
-  p.tap(140, 100);
+  await flush();
+  await p.tap(140, 100);
   assert.deepEqual(game.calls.at(-1), ['order_attack', 0, [1], 2]);
   assert.equal(touch_pressed(bar('force')), false);
   // Cancel: clears the selection when no mode is active.
   bar('cancel').dispatch('click');
+  await flush();
   assert.deepEqual(input.selection, []);
   assert.equal(bar('force').disabled, true, 'unit commands need units');
 });
@@ -563,12 +587,14 @@ const touch_pressed = (b) => b.getAttribute('aria-pressed') === 'true';
 
 test('touch: attack move from the bar, then tap the destination (drag: aim and release)', async () => {
   const { input, game, p, bar, clock } = await setup(ARMY);
-  p.tap(100, 100);
+  await p.tap(100, 100);
   clock.advance(1000);
+  await flush();
   bar('attackMove').dispatch('click');
-  p.down(1, 300, 300);
-  p.move(1, 350, 320);
-  p.up(1, 360, 330);
+  await flush();
+  await p.down(1, 300, 300);
+  await p.move(1, 350, 320);
+  await p.up(1, 360, 330);
   assert.deepEqual(game.calls.at(-1), ['order_move', 0, [1], 360, 330, true]);
   assert.equal(input.attackMove, false);
 });
@@ -583,17 +609,18 @@ test('touch: placement shows the footprint mid-view, tap and drag move it, Place
   assert.deepEqual([input.mouse.x, input.mouse.y, input.mouse.inside, input.mouse.touch], [400, 300, true, true]);
   input.update(0.1);
   assert.equal(input.camera.x, 0, 'no edge scrolling from a finger');
-  p.tap(240, 120);
+  await p.tap(240, 120);
   assert.deepEqual([input.mouse.x, input.mouse.y], [240, 120]);
   assert.equal(game.calls.length, 0, 'a tap moves the footprint, it does not build');
   // Drag from anywhere moves the footprint by the finger's movement.
-  p.down(1, 600, 500);
-  p.move(1, 630, 520);
-  p.up(1, 648, 524);
+  await p.down(1, 600, 500);
+  await p.move(1, 630, 520);
+  await p.up(1, 648, 524);
   assert.deepEqual([input.mouse.x, input.mouse.y], [288, 144]);
   touch.update();
   assert.equal(touch.placeButton.disabled, false);
   touch.placeButton.dispatch('click');
+  await flush();
   assert.deepEqual(game.calls.at(-1), ['place_building', 0, 'powr', 11, 5]);
   assert.equal(input.placing, null);
   touch.update();
@@ -604,13 +631,13 @@ test('touch: placement shows the footprint mid-view, tap and drag move it, Place
 test('touch: support power targets by tap; a drag sets the direction', async () => {
   const { input, game, p } = await setup(ARMY);
   input.startPowerTargeting({ key: 'paratroopers', kind: 'ParatroopersPower', name: 'Paratroopers' });
-  p.tap(300, 200);
+  await p.tap(300, 200);
   assert.deepEqual(game.calls.at(-1), ['activate_power', 0, 'paratroopers', 300, 200, undefined, undefined]);
   assert.equal(input.power, null);
   input.startPowerTargeting({ key: 'paratroopers', kind: 'ParatroopersPower', name: 'Paratroopers' });
-  p.down(1, 300, 200);
-  p.move(1, 340, 200);
-  p.up(1, 400, 260);
+  await p.down(1, 300, 200);
+  await p.move(1, 340, 200);
+  await p.up(1, 400, 260);
   assert.deepEqual(game.calls.at(-1), ['activate_power', 0, 'paratroopers', 300, 200, 400, 260]);
 });
 

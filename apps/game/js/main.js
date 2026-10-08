@@ -7,6 +7,11 @@
 // lobby's Load game and Replays buttons (js/records.js) load them again.
 // Spectators and the replay viewer watch with the observer panel
 // (js/observer.js): whole map or one player's view, and player stats.
+//
+// The simulation (the wasm Game, its driver, the recorder) runs in a Web
+// Worker when the browser allows it (js/sim): the UI talks to a game handle
+// with the Game's method names, and the loop draws the newest frame the
+// worker sent, so ticks never block rendering or input.
 
 import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
@@ -31,9 +36,10 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { createSimHost } from './sim/host.js';
+import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
 
 const PLAYER = 0;
-const MAX_TICKS_PER_FRAME = 8;
 
 // OpenRA game speeds: milliseconds per simulation tick.
 const SPEEDS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
@@ -47,6 +53,8 @@ const RANDOM_POOLS = {
 const $ = (id) => document.getElementById(id);
 
 let wasm;
+/** The engine compiled once: the page and the simulation worker instantiate it. */
+let wasmModule = null;
 let renderer;
 /** js/replay.js and js/records.js (recording, saves, replays), or null when they failed to load. */
 let records = null;
@@ -60,7 +68,7 @@ let releaseNotes = null;
 async function boot() {
   let gpuError = null;
   try {
-    wasm = await init();
+    wasm = await loadEngine();
   } catch (err) {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
@@ -102,6 +110,25 @@ async function boot() {
   offerLinkedMap(lobby);
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
+}
+
+/** Compile the engine (kept for the simulation worker) and instantiate it for the lobby. */
+async function loadEngine() {
+  const url = new URL('../pkg/webra_sim_bg.wasm', import.meta.url);
+  try {
+    wasmModule = await WebAssembly.compileStreaming(fetch(url));
+  } catch {
+    // Served without the wasm MIME type: compile from the bytes.
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    wasmModule = await WebAssembly.compile(await res.arrayBuffer());
+  }
+  return init({ module_or_path: wasmModule });
+}
+
+/** Where the next game's simulation runs (js/sim/host.js): a worker if possible. */
+function newSimHost() {
+  return createSimHost({ Game, memory: () => wasm.memory, module: wasmModule });
 }
 
 /**
@@ -176,6 +203,7 @@ function setupOnline(lobby, gpuError) {
       ui = mountOnline(root, {
         Game,
         version: version(),
+        createGame: createOnlineGame,
         colors: TEAM_COLORS,
         colorNames: COLOR_NAMES,
         onBack: () => {
@@ -183,10 +211,10 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ game, player, driver, options, onQuit, recorder = null, spectator = false }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false }) => {
           entry.hidden = true;
           applyColors(options.players);
-          start(game, {
+          start(host, {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
@@ -207,6 +235,25 @@ function setupOnline(lobby, gpuError) {
   // Invite links (?join=<session id>, also #join=) open the online screen
   // directly, and so does a reload during an online game (it rejoins).
   if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash) || hasRejoinRecord()) open();
+}
+
+/**
+ * The simulation of an online game (js/online.js): the LockstepDriver runs
+ * where the game runs; `driver` forwards the network to it and sends what it
+ * sends on `conn`.
+ */
+async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
+  const host = await newSimHost();
+  let info;
+  try {
+    info = await host.start(spec);
+  } catch (err) {
+    host.dispose();
+    throw err;
+  }
+  const driver = new DriverHandle(host, conn, { tickMs: spec.tickMs, onCaughtUp, onCheck });
+  const recorder = info.recorder ? new RecorderHandle(host, info.recorder.start) : null;
+  return { host, game: host.game, driver, recorder };
 }
 
 /** Whether this tab was in an online game before a reload (js/online.js keeps the rejoin key per tab). */
@@ -255,6 +302,30 @@ function applyColors(slots) {
     });
 }
 
+/** Only one game starts at a time (starting is asynchronous: the simulation worker loads first). */
+let starting = false;
+
+/**
+ * Start a game's simulation (js/sim/host.js) from a js/sim/core.js start spec.
+ * Returns `{ host, info }`, or null after showing `failText` and the error.
+ */
+async function launch(spec, lobby, failText) {
+  if (starting) return null;
+  starting = true;
+  let host = null;
+  try {
+    host = await newSimHost();
+    const info = await host.start(spec);
+    return { host, info };
+  } catch (err) {
+    host?.dispose();
+    lobby.showError(`${failText}: ${err.message ?? err}`);
+    return null;
+  } finally {
+    starting = false;
+  }
+}
+
 async function startSkirmish(options, lobby) {
   if (!renderer) return;
   // Skirmish slots: closed slots do not play, so engine players are the
@@ -265,15 +336,15 @@ async function startSkirmish(options, lobby) {
   const player = Math.max(0, playing.findIndex((p) => p.type === 'human'));
   // Recorded games start from the replay form of the options (closed slots
   // left out, slots renumbered: the same game for the engine), so the replay
-  // starts exactly like this game.
+  // starts exactly like this game. The recorder runs with the simulation.
   let engineOptions = resolved;
-  let recorder = null;
+  let recording = null;
   let canonicalMap = map ?? null;
   if (records) {
     try {
       engineOptions = records.replayOptions(resolved);
       if (map) canonicalMap = Game.map_canonical(map);
-      recorder = new records.Recorder({
+      recording = {
         mode: 'skirmish',
         options: engineOptions,
         map: canonicalMap,
@@ -281,25 +352,19 @@ async function startSkirmish(options, lobby) {
         player,
         engine: version(),
         title: skirmishTitle(engineOptions, player),
-      });
+      };
     } catch (err) {
       console.warn('This game is not recorded:', err.message ?? err);
       engineOptions = resolved;
       canonicalMap = map ?? null;
-      recorder = null;
+      recording = null;
     }
   }
-  let game;
-  try {
-    const json = JSON.stringify(engineOptions);
-    game = canonicalMap ? Game.from_map(canonicalMap, json) : Game.from_options(json);
-  } catch (err) {
-    lobby.showError(`Could not start the game: ${err.message ?? err}`);
-    return;
-  }
+  const tickMs = SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal;
+  const run = await launch({ kind: 'skirmish', options: engineOptions, map: canonicalMap, player, recorder: recording, tickMs }, lobby, 'Could not start the game');
+  if (!run) return;
   applyColors(playing);
-  const local = records ? new records.LocalDriver(game, { player, recorder }) : null;
-  start(game, { stress: false, tickMs: SPEEDS[resolved.gameSpeed] ?? SPEEDS.normal, player, local, recorder });
+  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run) });
 }
 
 /** "England vs 2 opponents" style title for a recorded skirmish. */
@@ -324,18 +389,17 @@ async function loadSave(replay, lobby) {
   if (!renderer || !records) return;
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
-  let game;
   try {
     if (!(await acceptMap(replay))) return;
-    game = records.newGame(Game, replay);
   } catch (err) {
     return lobby.showError(`Could not load the save: ${err.message ?? err}`);
   }
+  const tickMs = SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal;
+  // The recording goes on from the save's frames (js/sim/core.js).
+  const run = await launch({ kind: 'save', replay, tickMs }, lobby, 'Could not load the save');
+  if (!run) return;
   applyColors(replay.options.players);
-  // The recording goes on from the save's frames.
-  const recorder = new records.Recorder({ ...replay, frames: replay.frames, hashes: replay.hashes, createdAt: Date.now() });
-  const local = new records.LocalDriver(game, { player: replay.player, recorder, preload: replay });
-  start(game, { stress: false, tickMs: SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal, player: replay.player, local, recorder });
+  start(run.host, { stress: false, tickMs, player: replay.player, recorder: recorderOf(run) });
 }
 
 /** Open the replay viewer. */
@@ -343,41 +407,48 @@ async function watchReplay(replay, lobby) {
   if (!renderer || !records) return;
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
-  let controller;
   try {
     if (!(await acceptMap(replay))) return;
-    controller = new records.ReplayController(Game, replay);
   } catch (err) {
     return lobby.showError(`Could not open the replay: ${err.message ?? err}`);
   }
+  const tickMs = SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal;
+  const run = await launch({ kind: 'replay', replay, tickMs }, lobby, 'Could not open the replay');
+  if (!run) return;
   applyColors(replay.options.players);
-  start(controller.game, {
+  start(run.host, {
     stress: false,
-    tickMs: SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal,
+    tickMs,
     player: 0,
-    replay: controller,
+    replay: new ReplayHandle(run.host, run.info.replayLength),
     viewer: viewerPlayers(replay.options.players),
   });
 }
 
-function startStress(seed, units, lobby) {
+async function startStress(seed, units, lobby) {
   if (!renderer) return;
   const n = Math.max(100, Math.min(200000, units || 10000));
   const size = Math.max(96, Math.ceil(Math.sqrt(n) * 2.2));
-  try {
-    start(Game.new_stress(seed >>> 0, n, size), { stress: true, tickMs: SPEEDS.normal });
-  } catch (err) {
-    lobby.showError(`Could not start the stress test: ${err.message ?? err}`);
-  }
+  const run = await launch({ kind: 'stress', seed: seed >>> 0, units: n, size, tickMs: SPEEDS.normal }, lobby, 'Could not start the stress test');
+  if (run) start(run.host, { stress: true, tickMs: SPEEDS.normal });
 }
 
+/** The game menu's handle on the recorder that runs with the simulation, or null. */
+function recorderOf({ host, info }) {
+  return info.recorder ? new RecorderHandle(host, info.recorder.start) : null;
+}
+
+// `host` runs the simulation (js/sim/host.js): skirmish games and saves with
+// a LocalDriver, online games with the LockstepDriver, replays with a
+// ReplayController, all where the game runs (a worker when possible).
 // `player` and `online` are set for online games (see setupOnline): the
 // lockstep driver then decides when the simulation ticks and there is no pause.
-// `local` (js/replay.js LocalDriver) runs and records skirmish games, `replay`
-// (ReplayController) plays a replay back; `viewer` (the players' names and
-// colours) turns the screen into a spectator view: no sidebar, no orders, the
-// observer panel with the view switcher and stats.
-function start(game, { stress, tickMs, player = PLAYER, online = null, local = null, replay = null, recorder = null, viewer = null }) {
+// `replay` (ReplayHandle) controls a replay; `recorder` (RecorderHandle) saves
+// and downloads; `viewer` (the players' names and colours) turns the screen
+// into a spectator view: no sidebar, no orders, the observer panel with the
+// view switcher and stats.
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null }) {
+  const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
   // The game's own arrow everywhere in the game screen (sidebar included);
@@ -397,7 +468,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   const ui = viewer && records ? records.viewOnly(watched) : watched;
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
   const view = { player: viewer && records ? records.OBSERVER_VIEW : player };
-  const busy = () => !!(local?.loading || online?.driver.catchingUp || replay?.seeking);
+  // Driver state from the newest frame (loading a save, catching up, seeking).
+  let status = { busy: false };
+  const busy = () => !!status.busy;
   const atlas = buildAtlas(rules.actors);
   renderer.setAtlas(atlas);
   // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
@@ -474,7 +547,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   );
   // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
   // test leaves the slot empty, which shows "Radar offline".
-  const minimap = stress ? null : new Minimap($('radar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
+  const minimap = stress ? null : new Minimap($('radar'), { game: ui, fog: (p) => game.fog_bytes(p), player, input, colors: TEAM_COLORS });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
@@ -505,15 +578,15 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     colors: TEAM_COLORS,
     online: !!online,
     tickMs,
-    memory: wasm.memory,
+    memoryBytes: () => status.memoryBytes ?? 0,
+    sim: () => host.stats(),
     isPaused: () => paused,
     setPaused: online || replay ? undefined : (on) => {
       paused = on;
     },
     step: () => {
       if (!paused || online || replay || busy()) return false;
-      if (local) local.tick();
-      else game.tick();
+      host.command('debugStep').catch(() => {});
       return true;
     },
   });
@@ -535,7 +608,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, local, replay, recorder };
+  window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -559,7 +632,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
-  const recordActions = records && recorder ? records.recordActions({ game, recorder, local, stress, showToast }) : [];
+  const recordActions = records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress }) : [];
   const fullscreen = {
     available: () => fullscreenAvailable(),
     active: () => isFullscreen(),
@@ -622,14 +695,22 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     if (menu.isOpen) menu.render();
   });
   // A single-player game opens the menu (and so pauses) when its tab is hidden.
+  // Online, the lockstep driver keeps up from network events meanwhile (it
+  // runs where the game runs, so it is told).
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && !stress && !online && !replay) menu.open();
+    if (online) host.command('hidden', [document.hidden]).catch(() => {});
+  });
+  // The worker stopped (an engine error): the game cannot go on.
+  host.on('failed', (message) => {
+    leaving = true;
+    showToast(`The game stopped: ${message}`);
   });
   const replayButton = $('gameover-replay');
   const download = recordActions.find((a) => a.id === 'replay');
   if (replayButton && download) {
     replayButton.hidden = false;
-    replayButton.addEventListener('click', () => showToast(download.run()));
+    replayButton.addEventListener('click', async () => showToast(await download.run()));
   }
   // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
   if (!stress && !replay) {
@@ -640,7 +721,6 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     });
   }
 
-  let acc = 0;
   let last = performance.now();
   let simMs = 0;
   let fpsFrames = 0;
@@ -648,79 +728,64 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   let fps = 0;
   let uiTime = 0;
   let over = false;
+  let drawn = 0;
 
   function frame(now) {
     const dt = Math.min(now - last, 250);
     last = now;
-    let alpha = paused ? 1 : acc / tickMs;
-    let simFrameMs = 0;
-    if (online || replay) {
-      const t0 = performance.now();
-      const r = online ? online.driver.advance(dt) : replay.advance(dt, tickMs);
-      simFrameMs = performance.now() - t0;
-      if (r.ticks > 0 && !busy()) simMs = simMs * 0.9 + (simFrameMs / r.ticks) * 0.1;
-      alpha = r.alpha;
-    } else if (local?.loading) {
-      // Loading a save: re-simulate it within a time budget per frame.
-      if (local.load()) {
-        acc = 0;
-        if (local.error) {
-          leaving = true;
-          showToast(local.error);
-          setTimeout(() => location.reload(), 4000);
-        }
-      }
-    } else if (!paused) {
-      acc += dt;
-      let ticks = 0;
-      const t0 = performance.now();
-      while (acc >= tickMs && ticks < MAX_TICKS_PER_FRAME) {
-        if (local) local.tick();
-        else game.tick();
-        acc -= tickMs;
-        ticks++;
-      }
-      simFrameMs = performance.now() - t0;
-      if (ticks > 0) simMs = simMs * 0.9 + (simFrameMs / ticks) * 0.1;
-      if (ticks === MAX_TICKS_PER_FRAME) acc = 0; // too slow: drop time instead of spiralling
-      alpha = acc / tickMs;
-    }
-
     const catching = busy();
-    progress?.show(catching ? progressText() : null);
     if ((catching || menu.isOpen) !== input.suspended) input.setSuspended(catching || menu.isOpen);
     input.update(dt / 1000);
-    if (game.terrain_dirty()) {
-      const ptr = game.terrain_ptr();
-      const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
-      renderer.uploadTerrain(terrain);
-      minimap?.terrainChanged(terrain);
+    // Advance the simulation by this frame's time. In a worker this only
+    // sends the time: the frame drawn below is the newest one it sent back.
+    const v = input.viewRect();
+    const t0 = performance.now();
+    const f = host.step({ dt, paused, view: view.player, rect: [v.x0, v.y0, v.x1, v.y1], audio: true, paths: settings.get('showUnitPaths') });
+    // Main thread time the simulation took this frame (in a worker: posting the step).
+    const simFrameMs = performance.now() - t0;
+    if (!f) {
+      requestAnimationFrame(frame);
+      return;
     }
-    const fogPtr = game.fog_ptr(view.player);
-    renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
-    // Sounds of what happened this frame, heard from the camera (fog hides enemy sounds).
-    // Fast-forwarding (loading, rejoining, seeking) stays silent.
-    if (catching) game.take_audio_events();
-    else audio?.frame(input.viewRect(), () => new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
+    const fresh = f.id !== drawn;
+    if (fresh) {
+      drawn = f.id;
+      status = f.status;
+      simMs = f.simMs;
+      online?.driver.update(status.online);
+      replay?.update(status.replay);
+      recorder?.update(status.recorderFull);
+      if (status.loadError && !leaving) {
+        leaving = true;
+        showToast(status.loadError);
+        setTimeout(() => location.reload(), 4000);
+      }
+      if (f.terrain) {
+        renderer.uploadTerrain(f.terrain);
+        minimap?.terrainChanged(f.terrain);
+      }
+      renderer.uploadFog(f.fog());
+    }
+    progress?.show(busy() ? progressText() : null);
+    // Sounds of what happened, heard from the camera (fog hides enemy sounds).
+    // Fast-forwarding (loading, rejoining, seeking) stays silent: the simulation drops them.
+    audio?.frame(v, () => f.fog());
 
-    // UI rects call into wasm (placement preview), which may grow its memory and
-    // detach existing views, so collect them before taking views of wasm memory.
+    // UI rects may call into wasm (placement preview, main thread mode), which
+    // may grow its memory, so the frame's views are made after them.
     const renderStart = performance.now();
     const uiRects = input.uiRects();
     commandBar.frame();
-    const v = input.viewRect();
-    const spriteCount = game.build_render(view.player, alpha, v.x0, v.y0, v.x1, v.y1);
-    // "Show unit paths" (Esc menu setting): routes of the selected units (8 floats per segment).
-    const lineCount = settings.get('showUnitPaths') ? game.build_paths(view.player, alpha) : 0;
-    const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
-    const lines = lineCount ? new Float32Array(wasm.memory.buffer, game.path_ptr(), lineCount * 8) : null;
-    const simRectCount = game.rect_count();
-    const rects = new Float32Array(simRectCount * 8 + uiRects.length);
-    rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
-    rects.set(uiRects, simRectCount * 8);
+    const simRects = f.rects();
+    const rects = new Float32Array(simRects.length + uiRects.length);
+    rects.set(simRects);
+    rects.set(uiRects, simRects.length);
     // Building animations run on wall time but stop with the game (and for reduced motion).
     animClock.advance(dt, paused);
-    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8, animClock.uniform(), lines, lineCount);
+    const lines = f.lineCount ? f.lines() : null;
+    renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount);
+    // Shared memory: count a frame the worker wrote over while it was read (js/sim/framebuffer.js).
+    f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
     minimap?.frame(now);
@@ -734,8 +799,10 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     if (now - uiTime >= 100) {
       uiTime = now;
       input.refreshSelection();
-      const state = JSON.parse(game.player_json(player));
-      if (!viewer) {
+      // Null in a worker until its first answer.
+      const json = game.player_json(player);
+      const state = json ? JSON.parse(json) : null;
+      if (state && !viewer) {
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
         commandBar.update();
@@ -743,12 +810,13 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
         sidebar.setSelection(selectionInfo(game, input.selection));
         sidebar.setDeployState(input.deployState());
       }
-      observer?.update(JSON.parse(game.observer_stats()), game.tick_count());
+      const stats = viewer ? game.observer_stats() : null;
+      if (stats) observer?.update(JSON.parse(stats), game.tick_count());
       replayBar?.update();
-      updateHud(game, state, fps, simMs, stress, paused, layout.compact, replay ? 'Replay' : online?.spectator ? 'Spectating' : null);
+      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator ? 'Spectating' : null);
       touch.update();
-      debug.update(state);
-      if (!over && !stress && !viewer && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
+      if (state) debug.update(state);
+      if (state && !over && !stress && !viewer && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
         $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
         $('gameover').hidden = false;
@@ -760,7 +828,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   requestAnimationFrame(frame);
 
   function progressText() {
-    if (local?.loading) return `Loading the saved game... ${Math.round(local.progress() * 100)}%`;
+    if (status.loading) return `Loading the saved game... ${Math.round((status.loadProgress ?? 0) * 100)}%`;
     if (online?.driver.catchingUp) {
       const d = online.driver;
       return d.waitingSync ? 'Joining the game...' : `Catching up with the game... ${Math.round(d.progress() * 100)}%`;
@@ -776,8 +844,7 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
-function updateHud(game, state, fps, simMs, stress, paused, compact, mode = null) {
-  const units = stress ? game.actor_count() : 0;
+function updateHud(state, fps, simMs, stress, units, paused, compact, mode = null) {
   const hud = hudText({ paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
   // Spectators and replays say so in front.
   const text = mode ? `${mode}  |  ${hud}` : hud;

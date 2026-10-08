@@ -9,11 +9,17 @@
 // numpad (sidebar) and the arrow keys are handled here; every other key goes
 // through the hotkey registry (js/hotkeys.js), where this class registers its
 // actions with OpenRA's default keys. README.md (Controls) lists them all.
+//
+// The game may run in a worker (js/sim): what is drawn each frame (cursor,
+// placement footprint) reads the game handle's synchronous answers, which are
+// one frame old there; what a click or key does asks fresh answers
+// (`this.ask`, promises) and acts when they arrive.
 
 import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS, scrollCursor } from './cursors.js';
 import { hotkeys as defaultHotkeys } from './hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups, DOUBLE_TAP_MS, groupCommand, groupKeyFromEvent } from './controlgroups.js';
+import { actorInfo, askOf, queryOf } from './sim/methods.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
@@ -57,6 +63,8 @@ export class Input {
   constructor(canvas, game, rules, player, hooks, { hotkeys = defaultHotkeys, settings = defaultSettings } = {}) {
     this.canvas = canvas;
     this.game = game;
+    /** Fresh answers for actions (js/sim/methods.js askOf). */
+    this.ask = askOf(game);
     this.rules = rules;
     this.player = player;
     // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() },
@@ -135,9 +143,9 @@ export class Input {
   }
 
   /** Centre the camera on the given own actors (control group, selection). */
-  centerOnUnits(ids) {
+  async centerOnUnits(ids) {
     if (!ids.length) return;
-    const c = this.game.units_center(this.player, Uint32Array.from(ids));
+    const c = await this.ask.units_center(this.player, Uint32Array.from(ids));
     if (c.length === 2) this.centerOn(c[0], c[1]);
   }
 
@@ -159,8 +167,9 @@ export class Input {
     }
   }
 
+  /** Owner, kind and type of an actor (js/sim/methods.js actorInfo), or null. */
   info(id) {
-    return id === NONE ? null : JSON.parse(this.game.actor_json(id));
+    return id === NONE ? null : actorInfo(this.game, id);
   }
 
   /** Selected units that belong to the local player (cached per selection change). */
@@ -186,17 +195,36 @@ export class Input {
    * { kind: 'order', action } | { kind: 'rally' } | { kind: 'select', id } | { kind: 'none' }.
    */
   clickIntent(w) {
+    const units = this.selectedOwnUnits();
     const hit = this.game.pick(this.player, w.x, w.y);
+    const deploy = hit !== NONE && this.selection.includes(hit) ? this.game.deploy_state(this.player, hit) : 0;
+    const action = units.length ? this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y) : 0;
+    return this.decideClick(hit, deploy, action, units);
+  }
+
+  /** `clickIntent` with fresh answers from the game (a click, not the cursor). */
+  async clickIntentNow(w) {
+    const units = this.selectedOwnUnits();
+    const [hit, action] = await Promise.all([
+      this.ask.pick(this.player, w.x, w.y),
+      units.length ? this.ask.cursor_action(this.player, Uint32Array.from(units), w.x, w.y) : 0,
+    ]);
+    const deploy = hit !== NONE && this.selection.includes(hit) ? await this.ask.deploy_state(this.player, hit) : 0;
+    return this.decideClick(hit, deploy, action, units);
+  }
+
+  /**
+   * The intent from the actor under the click (`hit`), its deploy state when
+   * it is selected (`deploy`) and the smart order `action` of the own `units`.
+   */
+  decideClick(hit, deploy, action, units) {
     const hitInfo = this.info(hit);
     // Clicking a selected MCV (or Construction Yard) deploys it, like the original.
     if (hit !== NONE && this.selection.includes(hit)) {
-      const st = this.game.deploy_state(this.player, hit);
-      if (st === 1) return { kind: 'deploy', id: hit };
-      if (st === 2) return { kind: 'blocked' };
+      if (deploy === 1) return { kind: 'deploy', id: hit };
+      if (deploy === 2) return { kind: 'blocked' };
     }
-    const units = this.selectedOwnUnits();
     if (units.length) {
-      const action = this.game.cursor_action(this.player, Uint32Array.from(units), w.x, w.y);
       // Own units and buildings are selected, unless the order targets them (dock, repair, enter a transport).
       const ownHit = hitInfo && hitInfo.owner === this.player;
       const targetsOwn = action === ACTION.DOCK || action === ACTION.REPAIR || action === ACTION.LOAD || action === ACTION.DELIVER_CASH;
@@ -259,18 +287,18 @@ export class Input {
   }
 
   /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
-  deploySelection() {
-    // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy).
-    const chrono = this.selection.filter((id) => this.game.ability_deploy_state(this.player, id) === 3);
-    if (chrono.length) {
+  async deploySelection() {
+    if (!this.selection.length) return;
+    // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy);
+    // else MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
+    const { teleport, deploy } = await this.ask.deploy_targets(this.player, Uint32Array.from(this.selection));
+    if (teleport.length) {
       this.cancelPower();
-      this.targeting = { kind: 'teleport', ids: chrono };
+      this.targeting = { kind: 'teleport', ids: Array.from(teleport) };
       this.attackMove = false;
       return;
     }
-    // MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
-    const ids = this.selection.filter((id) => this.game.deploy_state(this.player, id) !== 0 || this.game.ability_deploy_state(this.player, id) === 1);
-    if (ids.length) this.game.deploy(this.player, Uint32Array.from(ids));
+    if (deploy.length) this.game.deploy(this.player, Uint32Array.from(deploy));
   }
 
   cancelTargeting() {
@@ -279,10 +307,12 @@ export class Input {
   }
 
   /** Click while targeting an ability or support power. */
-  targetClick(w) {
+  async targetClick(w) {
     const t = this.targeting;
     if (t.kind === 'teleport') {
-      if (this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y)) {
+      const ok = await this.ask.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y);
+      // Still teleporting with these tanks (not cancelled meanwhile).
+      if (ok && this.targeting === t) {
         this.game.order_teleport(this.player, Uint32Array.from(t.ids), w.x, w.y);
         this.flashOrder(w, ACTION.MOVE);
         this.cancelTargeting();
@@ -302,14 +332,8 @@ export class Input {
 
   /** 0: nothing selected can deploy, 1: something can deploy now, 2: blocked. */
   deployState() {
-    let best = 0;
-    for (const id of this.selection) {
-      const st = this.game.deploy_state(this.player, id);
-      const ab = this.game.ability_deploy_state(this.player, id);
-      if (st === 1 || ab === 1 || ab === 3) return 1;
-      if (st === 2 || ab === 2) best = 2;
-    }
-    return best;
+    if (!this.selection.length) return 0;
+    return queryOf(this.game, 'deploy_summary', this.player, Uint32Array.from(this.selection));
   }
 
   cancelPlacing() {
@@ -394,24 +418,13 @@ export class Input {
       return;
     }
     if (this.sellMode) {
-      const hit = this.game.pick(this.player, w.x, w.y);
-      if (hit !== NONE && this.game.sell_value(this.player, hit) > 0) {
-        this.game.sell(this.player, hit);
-        this.flashOrder(w, ACTION.HARVEST);
-      }
+      this.sellAt(w);
       if (!e.shiftKey) this.setSellMode(false);
       return;
     }
     if (this.placing) {
       const { cx, cy } = this.placementCell(w.x, w.y);
-      const cells = this.game.placement_preview(this.player, this.placing, cx, cy);
-      let ok = cells.length > 0;
-      for (let i = 2; i < cells.length; i += 3) ok = ok && cells[i] === 1;
-      if (ok) {
-        this.game.place_building(this.player, this.placing, cx, cy);
-        this.placing = null;
-        this.hooks.onPlaced();
-      }
+      this.placeAt(this.placing, cx, cy);
       return;
     }
     if (this.targeting) {
@@ -435,6 +448,27 @@ export class Input {
       return;
     }
     this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+  }
+
+  /** Sell mode click: sell the own structure there, if it can be sold. */
+  async sellAt(w) {
+    const hit = await this.ask.pick(this.player, w.x, w.y);
+    if (hit === NONE || (await this.ask.sell_value(this.player, hit)) <= 0) return;
+    this.game.sell(this.player, hit);
+    this.flashOrder(w, ACTION.HARVEST);
+  }
+
+  /** Place structure `id` with its top-left cell at (cx, cy) when every footprint cell is free. */
+  async placeAt(id, cx, cy) {
+    const cells = await this.ask.placement_preview(this.player, id, cx, cy);
+    // Placement cancelled or switched to another structure meanwhile.
+    if (this.placing !== id) return;
+    let ok = cells.length > 0;
+    for (let i = 2; i < cells.length; i += 3) ok = ok && cells[i] === 1;
+    if (!ok) return;
+    this.game.place_building(this.player, id, cx, cy);
+    this.placing = null;
+    this.hooks.onPlaced();
   }
 
   onMouseMove(e) {
@@ -491,26 +525,37 @@ export class Input {
     const a = this.toWorld(d.sx, d.sy);
     const b = this.toWorld(d.ex, d.ey);
     if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < 6) {
-      // Force move / force attack / queued orders (Alt, Ctrl, Shift + click).
-      if (this.hooks.commandClick?.(b, d)) return;
-      const intent = d.shift ? { kind: 'select' } : this.clickIntent(b);
-      if (intent.kind === 'order') {
-        this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
-        this.flashOrder(b, intent.action);
-      } else if (intent.kind === 'deploy') {
-        this.game.deploy(this.player, Uint32Array.from([intent.id]));
-      } else if (intent.kind === 'blocked') {
-        // Nothing to do: the deploy cursor already shows why.
-      } else if (intent.kind === 'rally') {
-        this.game.set_rally(this.player, this.selection[0], b.x, b.y);
-        this.flashOrder(b, ACTION.MOVE);
-      } else {
-        this.clickSelect(b, d.shift, d.ctrl);
-      }
+      this.finishClick(b, d);
       return;
     }
-    const ids = Array.from(this.game.select_box(this.player, a.x, a.y, b.x, b.y));
-    this.setSelection(d.shift ? this.selection.concat(ids) : ids);
+    this.boxSelect(a, b, d.shift);
+  }
+
+  /** A left click (no drag) at world point `b` with the drag's modifiers `d`. */
+  async finishClick(b, d) {
+    const now = performance.now();
+    // Force move / force attack / queued orders (Alt, Ctrl, Shift + click).
+    if (await this.hooks.commandClick?.(b, d)) return;
+    const intent = d.shift ? { kind: 'select' } : await this.clickIntentNow(b);
+    if (intent.kind === 'order') {
+      this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
+      this.flashOrder(b, intent.action);
+    } else if (intent.kind === 'deploy') {
+      this.game.deploy(this.player, Uint32Array.from([intent.id]));
+    } else if (intent.kind === 'blocked') {
+      // Nothing to do: the deploy cursor already shows why.
+    } else if (intent.kind === 'rally') {
+      this.game.set_rally(this.player, this.selection[0], b.x, b.y);
+      this.flashOrder(b, ACTION.MOVE);
+    } else {
+      await this.clickSelect(b, d.shift, d.ctrl, now);
+    }
+  }
+
+  /** Box selection from world point `a` to `b` (Shift: added to the selection). */
+  async boxSelect(a, b, shift) {
+    const ids = Array.from(await this.ask.select_box(this.player, a.x, a.y, b.x, b.y));
+    this.setSelection(shift ? this.selection.concat(ids) : ids);
   }
 
   /** Whole map rectangle in world px, for map-wide selection. */
@@ -518,15 +563,15 @@ export class Input {
     return { x0: 0, y0: 0, x1: this.mapPx.w, y1: this.mapPx.h };
   }
 
-  clickSelect(w, shift, ctrl = false) {
-    const id = this.game.pick(this.player, w.x, w.y);
-    const now = performance.now();
+  /** Select what is at world point `w` (`now`: when it was clicked, for double clicks). */
+  async clickSelect(w, shift, ctrl = false, now = performance.now()) {
+    const v = ctrl ? this.mapRect() : this.viewRect();
+    const id = await this.ask.pick(this.player, w.x, w.y);
     if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
       // Double click: same type on screen; Ctrl + double click: on the whole map.
-      const v = ctrl ? this.mapRect() : this.viewRect();
-      const same = Array.from(this.game.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
-      if (same.length) this.setSelection(same);
       this.lastClick = { time: 0, id: NONE };
+      const same = Array.from(await this.ask.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
+      if (same.length) this.setSelection(same);
       return;
     }
     this.lastClick = { time: now, id };
@@ -659,15 +704,17 @@ export class Input {
   }
 
   /** Own units of the selected types, on screen (or on the whole map). */
-  selectSameTypes(rect) {
+  async selectSameTypes(rect) {
     const seen = new Set();
-    const out = [];
+    const asks = [];
     for (const id of this.selectedOwnUnits()) {
       const type = this.info(id)?.type;
       if (!type || seen.has(type)) continue;
       seen.add(type);
-      out.push(...this.game.select_same_type(this.player, id, rect.x0, rect.y0, rect.x1, rect.y1));
+      asks.push(this.ask.select_same_type(this.player, id, rect.x0, rect.y0, rect.x1, rect.y1));
     }
+    const out = [];
+    for (const ids of await Promise.all(asks)) out.push(...ids);
     return out;
   }
 
@@ -685,12 +732,12 @@ export class Input {
       // OpenRA deploys with F; D (WebRA's first key) keeps working until another action takes it.
       reg('deploy', ['F', 'D'], () => this.deploySelection(), 'Deploy, unload, pack up', 'Orders'),
       reg('sell', 'Z', () => this.toggleSellMode(), 'Sell mode', 'Orders'),
-      reg('selectAll', 'Q', () => {
+      reg('selectAll', 'Q', async () => {
         const r = this.doubleTap('selectAll') ? this.mapRect() : this.viewRect();
-        this.setSelection(Array.from(this.game.select_box(this.player, r.x0, r.y0, r.x1, r.y1)));
+        this.setSelection(Array.from(await this.ask.select_box(this.player, r.x0, r.y0, r.x1, r.y1)));
       }, 'Select all units on screen (twice: whole map)', 'Selection'),
-      reg('selectByType', 'W', () => {
-        const ids = this.selectSameTypes(this.doubleTap('selectByType') ? this.mapRect() : this.viewRect());
+      reg('selectByType', 'W', async () => {
+        const ids = await this.selectSameTypes(this.doubleTap('selectByType') ? this.mapRect() : this.viewRect());
         if (ids.length) this.setSelection(ids);
       }, 'Select units of the selected types on screen (twice: whole map)', 'Selection'),
       reg('base', ['H', 'Space'], () => {

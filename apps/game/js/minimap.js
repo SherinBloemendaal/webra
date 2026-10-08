@@ -13,6 +13,8 @@
 // rebuilt a few times per second (one pass over the cells plus one per blip);
 // every frame only the camera rectangle moves.
 
+import { askOf } from './sim/methods.js';
+
 const CELL_PX = 24;
 /** Radar picture refresh interval (ms): units move at 4 Hz on the radar. */
 export const REFRESH_MS = 250;
@@ -164,14 +166,14 @@ export class Minimap {
    * @param {HTMLElement} parent the sidebar's radar slot (#radar, js/sidebar.js)
    * @param {object} o
    * @param {object} o.game Game (orders go through it, so pass the audio-watched one)
-   * @param {WebAssembly.Memory} o.memory wasm memory, for the fog view
+   * @param {(player: number) => Uint8Array | null} o.fog the player's fog bytes (game handle `fog_bytes`, js/sim/proxy.js); null until known
    * @param {number} o.player local player
    * @param {object} o.input js/input.js Input (camera, selection, order flash)
    * @param {number[][]} o.colors team colours (TEAM_COLORS, may be reordered in place)
    */
-  constructor(parent, { game, memory, player, input, colors }) {
+  constructor(parent, { game, fog, player, input, colors }) {
     this.game = game;
-    this.memory = memory;
+    this.fog = fog;
     this.player = player;
     this.input = input;
     this.colors = colors;
@@ -282,9 +284,12 @@ export class Minimap {
     const units = this.input.selectedOwnUnits();
     if (!units.length) return;
     const ids = Uint32Array.from(units);
-    const action = this.game.cursor_action(this.player, ids, w.x, w.y);
     this.game.order_smart(this.player, ids, w.x, w.y);
-    this.input.flashOrder?.(w, action);
+    // The flash shows what the order does (move or attack), once the simulation answered.
+    askOf(this.game)
+      .cursor_action(this.player, ids, w.x, w.y)
+      .then((action) => this.input.flashOrder?.(w, action))
+      .catch(() => {});
   }
 
   // ---- Per frame -----------------------------------------------------------------
@@ -327,9 +332,9 @@ export class Minimap {
     this.setLabel(radarLabel(state));
     if (!online || !this.image) return;
     const blips = this.game.minimap_blips(this.player);
-    // A view of wasm memory right after the call that fills it.
-    const fogPtr = this.game.fog_ptr(this.player);
-    const fog = new Uint8Array(this.memory.buffer, fogPtr, this.game.fog_len());
+    // Main thread mode: a view of wasm memory right after the call that fills it.
+    const fog = this.fog(this.player);
+    if (!fog) return;
     composeRadar(this.image.data, this.terrain, fog, blips, this.colors, this.mapW, this.mapH);
     this.ctx.putImageData(this.image, 0, 0);
   }

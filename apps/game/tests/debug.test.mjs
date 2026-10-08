@@ -229,4 +229,11 @@ test('menu helpers: grids, preferences, timings', () => {
   assert.match(lines.join('\n'), /FPS 60/);
   assert.match(lines.join('\n'), /flow fields: 4 computed, 2 cached/);
   assert.match(lines.join('\n'), /wasm memory 32\.0 MB/);
+  // Where the simulation runs (js/sim/host.js stats()).
+  const worker = formatStats(null, h, { sim: { mode: 'shared', label: 'Worker (shared memory)', reason: 'cross-origin isolated: shared memory', workerMs: 6.25, roundTripMs: 7.5, torn: 0 } }).join('\n');
+  assert.match(worker, /simulation: Worker \(shared memory\) \(cross-origin isolated: shared memory\)/);
+  assert.match(worker, /worker sim\/frame 6\.25 ms  step round trip 7\.5 ms  torn frames 0/);
+  const direct = formatStats(null, h, { sim: { mode: 'direct', label: 'Main thread', reason: 'no module workers: main thread', workerMs: null } }).join('\n');
+  assert.match(direct, /simulation: Main thread/);
+  assert.doesNotMatch(direct, /worker sim/);
 });
