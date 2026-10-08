@@ -51,6 +51,8 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
 - [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
+- [x] OpenRA style overlays: selection corner brackets in the owner's colour, thin segmented health bars (green, yellow, red) for the selection and the unit under the mouse, optionally for all damaged or all units (Settings), rank chevrons next to the bar
+- [x] Animated buildings like Red Alert: turning radar dishes, chimney smoke, blinking beacons and runway lights, turbine fans, the construction yard's crane hook; they pause with the game and stand still for prefers-reduced-motion
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Red Alert style interface in the spirit of OpenRA: gunmetal chrome with bevels and rivets in your side's colour (steel blue Allies, red Soviets), a sidebar with command buttons, radar slot, money and game clock, a vertical power meter, production tab icons and a three-column build grid with clock-wipe progress, time left, queue counts and Ready labels; announcer lines also appear as text at the bottom of the screen ("Unit ready. (3)"), with sound on or off
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
@@ -266,7 +268,7 @@ Notes on browsers:
   | 20,000 | 6.9 ms | 37 ms |
   | 50,000 | 18.6 ms | 74 ms |
 
-  WebAssembly runs the same code somewhat slower than native; the in-game HUD shows the live ms per tick.
+  WebAssembly runs the same code somewhat slower than native; the stress test HUD and the debug menu's performance stats show the live ms per tick.
 
 ## Credits
 
