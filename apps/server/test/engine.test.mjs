@@ -78,6 +78,15 @@ test('the engine binding validates maps like the game build', () => {
   assert.equal(e.validateMap('not json').ok, false);
   assert.equal(e.instances, 1, 'a healthy instance is reused');
   assert.equal(engine().validateMap(JSON.stringify(blankMap())).hash, v.hash);
+  // Format 2 maps with a gems layer, checked by the engine as well.
+  const gems = Buffer.alloc(32 * 32);
+  gems[100] = 3;
+  const withGems = { ...blankMap(), format: 2, gems: gems.toString('base64') };
+  const g = e.validateMap(JSON.stringify(withGems));
+  assert.equal(g.ok, true, g.errors.join('; '));
+  assert.notEqual(g.hash, v.hash);
+  gems[100] = 4;
+  assert.deepEqual(e.validateMap(JSON.stringify({ ...withGems, gems: gems.toString('base64') })).errors, ['invalid gem density 4']);
 });
 
 test('after a trap the engine is instantiated afresh', () => {
