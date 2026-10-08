@@ -171,6 +171,24 @@ reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
 transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
 out of the world: not pickable, not box-selectable, dropped from the selection.
 
+### Veterancy and prone infantry (`engine/src/veterancy.rs`)
+
+Kills give the killer the victim's value as experience (OpenRA
+`GivesExperience`, `GainsExperience`); levels at 2, 4, 8 and 16 times the
+unit's own cost, level 4 elite, with RA's firepower, damage, speed and reload
+bonuses and elite self repair. Soldiers hit by a `TriggerProne` warhead lie
+prone (`TakeCover`): half damage from `Prone50Percent` warheads, half speed,
+for 50 ticks after the last hit. rules.json carries the values per actor
+(`experience`: `thresholds` and per-level `firepower`, `damage`, `speed`,
+`reload` percentages and `heal`; `gives_experience`; `take_cover`) and per
+warhead (`damage_types`); modded maps can tune them within
+`Rules::validate`'s bounds. `Game.actor_json` reports `rank` (0 rookie),
+`maxRank`, `xp` and `nextXp` (value points: $100 of kills is 100) and
+`prone`. Sprites: a ranked unit gets a rank decoration
+(`SpriteIds::veterancy_base` + 0..2 chevrons, + 3 elite,
+apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
+`2t + 1` is the prone pose.
+
 ### Helicopters (`engine/src/helicopter.rs`)
 
 Built at the Helipad (HPAD) and start landed on it. VTOL: take off and land
@@ -243,10 +261,11 @@ lockstep: `{"o": "dev_flag", player, flag, on}` with `flag` one of
 `fast_build`, `build_anywhere`, `unlimited_power`, `fast_charge`,
 `disable_shroud`, `all_tech` (per player); `{"o": "dev_cash", player}` (adds
 20000, cash capped at 100000000); `{"o": "dev_kill", player, ids}` (destroys
-actors of any owner). The engine ignores them unless the game options have
+actors of any owner); `{"o": "dev_experience", player, ids}` (one more
+veterancy level for each of the player's own listed units). The engine ignores them unless the game options have
 `cheats: true`, and the server drops a client that sends one in a game
 without it. Wasm: `cheats_enabled`, `dev_flag(player, flag, on)`,
-`dev_give_cash`, `dev_kill`; `player_json(p)` has `cheats` and `dev` (the
+`dev_give_cash`, `dev_kill`, `dev_experience`; `player_json(p)` has `cheats` and `dev` (the
 flags). Read-only views: `debug_cells(player, x0, y0, x1, y1)` (`[x0, y0, w,
 h, flags...]`, bits in debug.rs `cell`), `debug_flow(player, id, ...)`
 (`[goalX, goalY, x0, y0, w, h, dir...]`, the flow field an own moving unit
