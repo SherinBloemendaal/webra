@@ -172,3 +172,22 @@ test('the debug menu option: host only, carried into the start options, off for 
   assert.equal(back.options.seed, 3);
   assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
 });
+
+test('map style, biome and weather: host only, carried into the start options, defaults for old rooms', () => {
+  const { room, host, guest } = lobby(2);
+  assert.deepEqual([room.options.mapStyle, room.options.biome, room.options.weather], ['random', 'random', 'full']);
+  const pick = { mapStyle: 'islands', biome: 'snow', weather: 'cosmetic' };
+  throwsRoom(() => room.setOptions(guest, { ...room.options, ...pick }), 'not_host');
+  room.setOptions(host, { ...room.options, ...pick });
+  assert.equal(room.lobbyView().options.biome, 'snow', 'every player sees it in the lobby');
+  room.setReady(guest, true, null);
+  const start = room.start(host, first);
+  assert.deepEqual([start.options.mapStyle, start.options.biome, start.options.weather], ['islands', 'snow', 'cosmetic'], 'all peers agree on them');
+  assert.ok(parseServerMessage(encodeServer({ t: 'start', ...start })).ok);
+
+  // A room stored before the options existed reads back with the defaults.
+  const { mapStyle: _s, biome: _b, weather: _w, ...old } = DEFAULT_OPTIONS;
+  const back = Room.fromJSON({ ...lobby(2).room.toJSON(), options: { ...old, seed: 4 } });
+  assert.deepEqual([back.options.mapStyle, back.options.biome, back.options.weather], ['random', 'random', 'full']);
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
+});

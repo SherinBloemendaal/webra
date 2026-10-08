@@ -186,6 +186,36 @@ test('uploads the engine would refuse are rejected by the server too', async () 
   await assert.rejects(prepareMap(JSON.stringify(map)), (e) => e instanceof HttpError && e.status === 422 && /spawn 2/.test(e.message));
 });
 
+test('map uploads keep an optional biome and accept fords, both gates agree', async () => {
+  const w = 32;
+  const terrain = Buffer.alloc(w * w);
+  for (let x = 0; x < w; x++) terrain[16 * w + x] = 5; // a ford across the map
+  const map = {
+    format: 1,
+    name: 'Ford',
+    author: 'Me',
+    width: w,
+    height: w,
+    terrain: terrain.toString('base64'),
+    ore: Buffer.alloc(w * w).toString('base64'),
+    spawns: [
+      [1, 1],
+      [20, 20],
+    ],
+  };
+  const plain = await prepareMap(JSON.stringify(map));
+  assert.ok(!plain.canonical.includes('biome'));
+  const desert = await prepareMap(JSON.stringify({ ...map, biome: 'desert' }));
+  assert.ok(desert.canonical.endsWith('"rules":null,"biome":"desert"}'));
+  assert.notEqual(desert.hash, plain.hash);
+  assert.equal(desert.modded, false, 'a biome is not a rules override');
+  assert.equal((await prepareMap(JSON.stringify({ ...map, biome: 'temperate' }))).hash, plain.hash);
+  await assert.rejects(prepareMap(JSON.stringify({ ...map, biome: 'moon' })), (e) => e instanceof HttpError && e.status === 422 && /biome/.test(e.message));
+  const ore = Buffer.alloc(w * w);
+  ore[16 * w + 3] = 4; // ore on the ford
+  await assert.rejects(prepareMap(JSON.stringify({ ...map, ore: ore.toString('base64') })), (e) => e instanceof HttpError && /ore can only lie/.test(e.message));
+});
+
 test('orders must name actor types the engine knows', () => {
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }, { o: 'stop', player: 0, ids: [] }], 84), true);
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 84, cx: 1, cy: 1 }], 84), false);
