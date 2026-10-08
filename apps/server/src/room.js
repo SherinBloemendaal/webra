@@ -392,12 +392,22 @@ export class Room {
     return this.seatStates?.[seat]?.state ?? null;
   }
 
-  /** The connection of an active seat was lost (or it stalled): it may come back until now + graceMs. */
+  /**
+   * The connection of an active seat was lost (or it stalled): it may come
+   * back until now + graceMs. The grace runs from the moment the seat left
+   * play and is not restarted by rejoins: a syncing seat that loses its
+   * connection again gets at most what is left of that grace (time spent
+   * catching up counts against it), never its longer resume deadline.
+   */
   suspendSeat(seat, record, now, graceMs) {
     const s = this.seatStates?.[seat];
     if (!s || s.state === 'gone') return false;
-    // A syncing seat keeps the deadline it already had; an active one starts its grace now.
-    if (s.state === 'active') s.until = now + graceMs;
+    if (s.state === 'active') {
+      s.until = now + graceMs;
+      s.graceUntil = s.until;
+    } else if (s.state === 'syncing') {
+      s.until = Math.min(s.until, s.graceUntil ?? now + graceMs);
+    }
     s.state = 'away';
     if (record) s.record = record;
     return true;
@@ -409,12 +419,28 @@ export class Room {
    * suspended by the caller first. Returns the seat, or -1 for spectators.
    * Throws RoomError when the client may not rejoin.
    */
-  beginRejoin(client, now, resumeMs) {
-    if (this.phase !== 'game') fail('The game is not running.', 'bad_state');
+  /**
+   * Why `client` cannot rejoin whatever its current connection does, or
+   * null: checked before an open connection of the member is replaced, so a
+   * refused rejoin never disturbs a connected member.
+   */
+  rejoinProblem(client) {
+    if (this.phase !== 'game') return new RoomError('The game is not running.', 'bad_state');
+    if ((this.rejoins[client] ?? 0) >= MAX_REJOINS) return new RoomError('You rejoined too often.', 'forbidden');
     const seat = this.seatOf(client);
-    if ((this.rejoins[client] ?? 0) >= MAX_REJOINS) fail('You rejoined too often.', 'forbidden');
+    if (seat >= 0) {
+      return this.seatStates[seat].state === 'gone' ? new RoomError('You can no longer rejoin this game.', 'forbidden') : null;
+    }
+    if (!Object.hasOwn(this.keys, client)) return new RoomError('You are not in this game.', 'forbidden');
+    if (!this.isSpectator(client) && this.spectators.length >= this.maxSpectators) return new RoomError('The spectator places are taken.', 'full');
+    return null;
+  }
+
+  beginRejoin(client, now, resumeMs) {
+    const problem = this.rejoinProblem(client);
+    if (problem) throw problem;
+    const seat = this.seatOf(client);
     if (seat < 0) {
-      if (!Object.hasOwn(this.keys, client)) fail('You are not in this game.', 'forbidden');
       if (this.isSpectator(client)) fail('You are already watching.', 'bad_state');
       if (this.spectators.length >= this.maxSpectators) fail('The spectator places are taken.', 'full');
       this.rejoins[client] = (this.rejoins[client] ?? 0) + 1;
@@ -437,6 +463,7 @@ export class Room {
     if (!s || s.state !== 'syncing') fail('You are not rejoining.', 'bad_state');
     s.state = 'active';
     s.until = 0;
+    s.graceUntil = null;
     const record = s.record;
     s.record = null;
     return record;
@@ -448,6 +475,7 @@ export class Room {
     if (!s || s.state === 'gone') return false;
     s.state = 'gone';
     s.until = 0;
+    s.graceUntil = null;
     s.record = null;
     return true;
   }

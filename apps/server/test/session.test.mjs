@@ -2,7 +2,7 @@
 // rejoin keys, reconnecting into a running game, spectators, the order log.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_REJOINS, parseServerMessage, PROTOCOL_VERSION, RECONNECT_GRACE_MS, SEAT_KEY_RE } from '@webra/protocol';
+import { LOG_MAX_BYTES, MAX_REJOINS, parseServerMessage, PROTOCOL_VERSION, RECONNECT_GRACE_MS, SEAT_KEY_RE } from '@webra/protocol';
 import { makeSession } from './fake-do.mjs';
 
 const hello = (s, name, extra = {}) => ({ t: 'hello', protocol: PROTOCOL_VERSION, version: s.version, name, ...extra });
@@ -238,4 +238,102 @@ test('a spectator rejoins with its key; players cannot join a running game', asy
   const player = s.connect('player');
   await s.send(player, hello(s, 'Late player'));
   assert.match(player.take('error')[0].message, /spectator/);
+});
+
+/** Wall time passes in 1 s steps while the host keeps playing at normal speed. */
+function hostClock(t, s, host, hSeat, from) {
+  let next = from;
+  return async (ms) => {
+    for (let i = 0; i < ms / 1000; i++) {
+      t.mock.timers.tick(1000);
+      await play(s, [{ ws: host, seat: hSeat }], next, next + 25);
+      next += 25;
+      await s.session.alarm();
+    }
+  };
+}
+
+test('a rejoining seat that drops again only gets what is left of its grace', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 2_000_000 });
+  const { s, host, guest, gw, hSeat, gSeat } = await started();
+  await play(s, [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }], 0, 5);
+  await s.drop(guest);
+  const advance = hostClock(t, s, host, hSeat, 5);
+  await advance(100_000);
+  // A long game gives a long resume deadline, longer than the grace left.
+  const back = s.connect('back');
+  await s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  assert.equal(s.session.room.seatState(gSeat), 'syncing');
+  assert.ok(s.session.room.seatStates[gSeat].until > Date.now() + 20_000);
+  await advance(1000);
+  await s.drop(back);
+  assert.equal(s.session.room.seatStates[gSeat].until, 2_000_000 + RECONNECT_GRACE_MS, 'the original grace');
+  await advance(17_000);
+  assert.equal(s.session.room.seatState(gSeat), 'away');
+  await advance(3000);
+  assert.equal(s.session.room.seatState(gSeat), 'gone');
+  assert.deepEqual(host.take('left').map((m) => m.reason), ['disconnected', 'expired']);
+});
+
+test('a refused rejoin never disconnects the member that is still playing', async () => {
+  const { s, host, guest, gw, gSeat } = await started();
+  s.session.room.rejoins[gw.you] = MAX_REJOINS;
+  const other = s.connect('other');
+  await s.send(other, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  assert.match(other.take('error')[0].message, /too often/);
+  assert.equal(guest.closed, null);
+  assert.equal(s.session.room.seatState(gSeat), 'active');
+  assert.deepEqual(host.take('left'), []);
+});
+
+test('catch-ups count until the client confirms; the byte budget follows the log size', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 3_000_000 });
+  const { s, host, guest, hSeat, gSeat } = await started({ spectators: 0, start: false });
+  await s.send(host, { t: 'spectators', max: 4 });
+  await s.send(host, { t: 'start' });
+  await play(s, [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }], 0, 10);
+  const watch = async (name) => {
+    const ws = s.connect(name);
+    await s.send(ws, hello(s, name, { spectate: true }));
+    return ws;
+  };
+  const a = await watch('a');
+  const b = await watch('b');
+  assert.equal(a.take('sync').length, 1);
+  assert.equal(b.take('sync').length, 1);
+  // Two catch-ups are unconfirmed: a third waits even though the first two finished sending.
+  const c = await watch('c');
+  assert.equal(c.take('error')[0].code, 'rate_limited');
+  await s.send(a, { t: 'synced' });
+  const d = await watch('d');
+  assert.equal(d.take('sync').length, 1, 'a confirmation frees a place');
+  await s.send(a, { t: 'synced' });
+  assert.equal(a.take('error')[0].code, 'bad_state', 'nothing left to confirm');
+  // A spectator that never confirms is closed once its catch-up time is over.
+  t.mock.timers.tick(61_000);
+  await play(s, [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }], 10, 12);
+  await s.session.alarm();
+  assert.ok(b.closed && d.closed);
+  assert.equal(a.closed, null);
+  // A full-size log uses up the byte budget: two catch-ups a minute, then a pause.
+  s.session.log.bytes = LOG_MAX_BYTES;
+  s.session.catchUpBytes.tokens = s.session.catchUpBytes.burst;
+  const e = await watch('e');
+  await s.send(e, { t: 'synced' });
+  const f = await watch('f');
+  await s.send(f, { t: 'synced' });
+  const g = await watch('g');
+  assert.equal(g.take('error')[0].code, 'rate_limited');
+});
+
+test('chat has its own rate limit and a flood closes the connection', async () => {
+  const { s, host, guest, watchers } = await started({ spectators: 1 });
+  const w = watchers[0].ws;
+  for (let i = 0; i < 8; i++) await s.send(w, { t: 'chat', text: `spam ${i}` });
+  assert.equal(guest.take('chat').length, 5, 'a burst of five, then one a second');
+  assert.equal(w.take('error')[0].code, 'rate_limited');
+  assert.equal(w.closed, null);
+  for (let i = 0; i < 30; i++) await s.send(w, { t: 'chat', text: 'spam' });
+  assert.ok(w.closed, 'flooding closes the connection');
+  void host;
 });

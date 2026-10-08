@@ -312,6 +312,10 @@ async function main() {
   assert.equal(lateSync.tick, 89);
   assert.deepEqual(lateLog.map((f) => f[0]), [5, 64, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88]);
   assert.deepEqual(lateLog.at(-1)[1], [[hSeat, [{ o: 'stop', player: hSeat, ids: bigIds }]]]);
+  // The spectator confirms its catch-up (it stops counting against the catch-up limit).
+  lateWatcher.send({ t: 'synced' });
+  lateWatcher.send({ t: 'synced' });
+  assert.equal((await lateWatcher.type('error')).code, 'bad_state', 'confirmed once');
 
   // Silence: the host stops sending and is dropped after about 10 s.
   const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', 15000);

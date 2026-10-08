@@ -24,6 +24,7 @@ import {
   ERRORS,
   errorMessage,
   MAX_MESSAGE_BYTES,
+  LOG_MAX_BYTES,
   MAX_SERVER_MESSAGE_BYTES,
   parseClientMessage,
   PROTOCOL_VERSION,
@@ -67,8 +68,19 @@ const GAME_ALARM_MS = 1000;
 /** Catch-ups (rejoins and late spectators read the whole order log) per session: burst and rate per second. */
 const SYNC_BURST = 6;
 const SYNC_RATE = 6 / 60;
-/** Catch-ups streaming the order log at the same time. */
+/**
+ * Catch-ups in progress at once: from the first log message until the client
+ * confirms it caught up (`resume` for players, `synced` for spectators), so
+ * this bounds the log output buffered for slow readers, not only the reads.
+ */
 const MAX_SYNCING = 2;
+/** Catch-up output budget: bursts of two full logs, refilled by one full log per minute. */
+const CATCH_UP_BYTES_BURST = 2 * LOG_MAX_BYTES;
+const CATCH_UP_BYTES_PER_SECOND = LOG_MAX_BYTES / 60;
+/** Chat per connection: one line a second, bursts of five; a flood closes the connection. */
+const CHAT_RATE = 1;
+const CHAT_BURST = 5;
+const CHAT_FLOOD_LIMIT = 20;
 /** Order log frames per `log` message stay below the server message limit. */
 const LOG_MESSAGE_BUDGET = MAX_SERVER_MESSAGE_BYTES - 4 * 1024;
 /** Time a rejoining client gets to fast-forward, per tick of the game so far, and at most. */
@@ -91,7 +103,11 @@ export class Session extends DurableObject {
     /** Sockets catching up -> frames broadcast meanwhile (sent after the log). */
     this.syncing = new Map();
     this.syncBucket = new TokenBucket(SYNC_RATE, SYNC_BURST);
+    this.catchUpBytes = new TokenBucket(CATCH_UP_BYTES_PER_SECOND, CATCH_UP_BYTES_BURST);
+    /** Sockets catching up until they confirm -> { client, role, until }. */
+    this.catching = new Map();
     this.buckets = new WeakMap();
+    this.chatBuckets = new WeakMap();
     this.failures = new Map();
     this.lastDirectory = null;
     ctx.blockConcurrencyWhile(async () => {
@@ -197,11 +213,13 @@ export class Session extends DurableObject {
 
   async webSocketClose(ws) {
     this.syncing.delete(ws);
+    this.catching.delete(ws);
     await this.disconnect(ws, 'disconnected');
   }
 
   async webSocketError(ws) {
     this.syncing.delete(ws);
+    this.catching.delete(ws);
     await this.disconnect(ws, 'disconnected');
   }
 
@@ -280,11 +298,11 @@ export class Session extends DurableObject {
       return;
     }
     // A spectator joining a running game catches up like a rejoining player.
-    if (this.syncing.size >= MAX_SYNCING || !this.syncBucket.take()) {
+    if (!this.admitCatchUp(ws, joined.client, 'spectator')) {
       await this.disconnect(ws, 'left');
       return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many players are joining. Try again shortly.', true);
     }
-    await this.catchUp(ws);
+    await this.catchUp(ws, joined.client, 'spectator');
   }
 
   sessionInfo() {
@@ -297,6 +315,25 @@ export class Session extends DurableObject {
       maxPlayers: meta.maxPlayers,
       version: meta.version,
     };
+  }
+
+  /**
+   * Room for one more catch-up: fewer than MAX_SYNCING unconfirmed, the
+   * per-minute count and the byte budget (the log's current size) allow it.
+   */
+  admitCatchUp(ws, client, role, now = Date.now()) {
+    if (this.catching.size >= MAX_SYNCING) return false;
+    if (!this.syncBucket.take(now)) return false;
+    const bytes = Math.min(CATCH_UP_BYTES_BURST, Math.max(1, this.log?.bytes ?? 0));
+    if (!this.catchUpBytes.take(now, bytes)) return false;
+    // Reserved now (the rejoin may still await): counted until the client confirms.
+    this.catching.set(ws, { client, role, until: now + this.catchUpMs() });
+    return true;
+  }
+
+  /** How long a catch-up may take before the client must confirm it (longer games take longer). */
+  catchUpMs() {
+    return Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + (this.lockstep?.next ?? 0) * RESUME_MS_PER_TICK);
   }
 
   /** Whether a member can still catch up with the running game (relay and full log present). */
@@ -333,7 +370,13 @@ export class Session extends DurableObject {
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
     if (!this.lockstep) return this.sessionLost();
     if (!this.canCatchUp()) return this.reject(ws, ERRORS.STATE, 'This game is too long to rejoin.', true);
-    if (this.syncing.size >= MAX_SYNCING || !this.syncBucket.take()) {
+    // Everything that does not depend on the member's current connection is
+    // checked before that connection is touched: a refused rejoin never
+    // disconnects a member who is still playing.
+    const problem = this.room.rejoinProblem(client);
+    if (problem) return this.reject(ws, problem.code, problem.message, true);
+    const role = this.room.seatOf(client) >= 0 ? 'player' : 'spectator';
+    if (!this.admitCatchUp(ws, client, role, now)) {
       return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many rejoins. Try again shortly.', true);
     }
 
@@ -345,17 +388,21 @@ export class Session extends DurableObject {
       oldAtt.gone = true;
       old.serializeAttachment(oldAtt);
       this.syncing.delete(old);
+      this.catching.delete(old);
       this.send(old, { t: S2C.ERROR, code: ERRORS.STATE, message: 'You joined from another connection.' });
       this.close(old, CLOSE_NORMAL, 'replaced');
       await this.memberLost(client, 'disconnected');
-      if (!this.room || this.room.phase !== 'game') return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
+      if (!this.room || this.room.phase !== 'game') {
+        this.catching.delete(ws);
+        return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
+      }
     }
     let seat;
     try {
       // Fast-forwarding takes longer in longer games.
-      const resumeMs = Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + this.lockstep.next * RESUME_MS_PER_TICK);
-      seat = this.room.beginRejoin(client, now, resumeMs);
+      seat = this.room.beginRejoin(client, now, this.catchUpMs());
     } catch (err) {
+      this.catching.delete(ws);
       if (err instanceof RoomError) return this.reject(ws, err.code, err.message, true);
       throw err;
     }
@@ -364,7 +411,7 @@ export class Session extends DurableObject {
     ws.serializeAttachment(att);
     await this.saveRoom();
     this.send(ws, { t: S2C.WELCOME, you: client, hostId: this.room.hostId, session: this.sessionInfo(), role: att.role });
-    await this.catchUp(ws);
+    await this.catchUp(ws, client, att.role);
   }
 
   /**
@@ -374,8 +421,11 @@ export class Session extends DurableObject {
    * sent after `sync`; a frame both logged and queued arrives twice, which
    * clients ignore. So it never misses a frame.
    */
-  async catchUp(ws) {
+  async catchUp(ws, client, role) {
     this.syncing.set(ws, []);
+    // Counted until the client confirms (see MAX_SYNCING, admitCatchUp);
+    // unconfirmed spectators are closed by the alarm.
+    this.catching.set(ws, { client, role, until: Date.now() + this.catchUpMs() });
     this.send(ws, { t: S2C.START, ...structuredClone(this.room.startMsg) });
     let batch = [];
     let bytes = 0;
@@ -459,7 +509,7 @@ export class Session extends DurableObject {
         this.broadcastLobby();
         return;
       case C2S.CHAT:
-        this.chat(client, msg.text);
+        this.chatFrom(ws, client, msg.text);
         return;
       case C2S.START:
         await this.startGame(client);
@@ -483,6 +533,7 @@ export class Session extends DurableObject {
       case C2S.ORDERS:
       case C2S.HASH:
       case C2S.RESUME:
+      case C2S.SYNCED:
         throw new RoomError('The game has not started.', ERRORS.STATE);
       default:
         throw new RoomError('Unexpected message.', ERRORS.BAD_MESSAGE);
@@ -557,6 +608,7 @@ export class Session extends DurableObject {
       case C2S.RESUME: {
         if (seat < 0) throw new RoomError('Spectators have no seat to resume.', ERRORS.STATE);
         const record = this.room.resumeSeat(seat);
+        this.catching.delete(ws);
         const tick = this.lockstep.rejoin(seat, record);
         await this.saveRoom();
         this.broadcast({ t: S2C.BACK, player: seat, client, name: this.clientName(client) ?? 'Player', tick });
@@ -564,8 +616,12 @@ export class Session extends DurableObject {
         this.emitFrames(this.lockstep.flush());
         return;
       }
+      case C2S.SYNCED:
+        // A spectator processed the whole catch-up.
+        if (!this.catching.delete(ws)) throw new RoomError('Nothing to confirm.', ERRORS.STATE);
+        return;
       case C2S.CHAT:
-        this.chat(client, msg.text);
+        this.chatFrom(ws, client, msg.text);
         return;
       case C2S.LEAVE:
         await this.disconnect(ws, 'left');
@@ -598,6 +654,7 @@ export class Session extends DurableObject {
   async disconnect(ws, reason) {
     const att = this.attachment(ws);
     this.syncing.delete(ws);
+    this.catching.delete(ws);
     if (att.client === null || att.gone) return;
     att.gone = true;
     try {
@@ -707,6 +764,14 @@ export class Session extends DurableObject {
         }
         if (!this.room) return;
       }
+      // Spectators that never confirmed their catch-up.
+      for (const [ws, c] of [...this.catching]) {
+        if (c.role !== 'spectator' || c.until > now) continue;
+        this.catching.delete(ws);
+        this.reject(ws, ERRORS.DROPPED, 'You did not catch up with the game in time.', true);
+        await this.disconnect(ws, 'expired');
+        if (!this.room) return;
+      }
       // Seats that did not come back (or did not catch up) in time.
       for (const seat of this.room.expiredSeats(now)) {
         const client = this.room.seats[seat];
@@ -716,6 +781,7 @@ export class Session extends DurableObject {
           att.gone = true;
           ws.serializeAttachment(att);
           this.syncing.delete(ws);
+          this.catching.delete(ws);
           this.send(ws, { t: S2C.ERROR, code: ERRORS.DROPPED, message: 'You did not catch up with the game in time.' });
           this.close(ws, CLOSE_NORMAL, 'expired');
         }
@@ -751,6 +817,7 @@ export class Session extends DurableObject {
     this.lockstep = null;
     this.log = null;
     this.syncing.clear();
+    this.catching.clear();
     if (id) {
       try {
         await removeSession(this.env.DB, id);
@@ -809,6 +876,18 @@ export class Session extends DurableObject {
 
   async saveRoom() {
     await this.ctx.storage.put('room', this.room.toJSON());
+  }
+
+  /** Chat from a connection, with its own rate limit (spectators cannot flood every socket). */
+  chatFrom(ws, client, textValue) {
+    let bucket = this.chatBuckets.get(ws);
+    if (!bucket) {
+      bucket = new TokenBucket(CHAT_RATE, CHAT_BURST);
+      this.chatBuckets.set(ws, bucket);
+    }
+    if (bucket.take()) return this.chat(client, textValue);
+    if (bucket.refused > CHAT_FLOOD_LIMIT) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many chat messages.', true);
+    if (bucket.refused % 5 === 1) this.send(ws, { t: S2C.ERROR, code: ERRORS.RATE_LIMITED, message: 'Chat is limited to one line a second.' });
   }
 
   chat(client, textValue) {

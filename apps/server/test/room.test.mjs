@@ -260,3 +260,25 @@ test('leaving a lobby or being kicked forgets the rejoin key', () => {
   assert.equal(Object.hasOwn(room.keys, guest), false);
   void host;
 });
+
+test('a syncing seat that loses its connection keeps only its original grace', () => {
+  const { room, host, guest } = lobby(2);
+  room.setKey(guest, 'b'.repeat(64));
+  room.setReady(guest, true, null);
+  room.start(host, first);
+  const g = room.seatOf(guest);
+  room.suspendSeat(g, null, 1000, 120_000);
+  room.beginRejoin(guest, 100_000, 600_000);
+  assert.equal(room.seatStates[g].until, 700_000, 'catching up may take long');
+  room.suspendSeat(g, null, 101_000, 120_000);
+  assert.equal(room.seatStates[g].until, 121_000, 'but a drop ends at the original grace');
+  // Resuming ends that absence: the next one starts a fresh grace.
+  room.beginRejoin(guest, 110_000, 600_000);
+  room.resumeSeat(g);
+  room.suspendSeat(g, null, 200_000, 120_000);
+  assert.equal(room.seatStates[g].until, 320_000);
+  // State-independent refusals come before anything else.
+  assert.equal(room.rejoinProblem(guest), null);
+  room.rejoins[guest] = 10;
+  assert.match(room.rejoinProblem(guest).message, /too often/);
+});
