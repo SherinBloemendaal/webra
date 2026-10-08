@@ -7,6 +7,9 @@ import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
+import { CommandBar } from './commandbar.js';
+// Stand-in until the central hotkey registry (js/hotkeys.js) lands: same registerAction signature.
+import { registerAction, localKeys } from './commandkeys.js';
 import { Lobby } from './lobby.js';
 
 const PLAYER = 0;
@@ -198,12 +201,20 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
 
   let sidebar = null;
   let powerBar = null;
+  let commandBar = null;
   const input = new Input($('view'), game, rules, player, {
     onPowerTargeting: (key) => powerBar?.setTargeting(key),
     onSelectionChanged: (ids) => {
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
+      commandBar?.update();
     },
+    // Command bar (js/commandbar.js): armed modes and Ctrl / Alt / Shift clicks.
+    commandMouseDown: (w, e) => commandBar?.mouseDown(w, e) ?? false,
+    commandClick: (w, mods) => commandBar?.click(w, mods) ?? false,
+    commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
+    cancelCommand: () => commandBar?.cancel() ?? false,
+    queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
     onPlaced: () => sidebar?.setPlacing(null),
     onCancelPlace: () => sidebar?.setPlacing(null),
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
@@ -228,8 +239,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
   });
+  commandBar = new CommandBar($('field'), { game, input, player, registerAction, keyOf: (name) => localKeys.keyOf(name) });
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules };
+  window.webra = { game, input, sidebar, powerBar, commandBar, renderer, wasm, rules };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -306,6 +318,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     // UI rects call into wasm (placement preview), which may grow its memory and
     // detach existing views, so collect them before taking views of wasm memory.
     const uiRects = input.uiRects();
+    commandBar.frame();
     const v = input.viewRect();
     const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
@@ -327,6 +340,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       const state = JSON.parse(game.player_json(player));
       sidebar.update(state);
       powerBar.update(state.powers ?? []);
+      commandBar.update();
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
       updateHud(game, state, fps, simMs, stress, paused);

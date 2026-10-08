@@ -1,0 +1,106 @@
+/* Command bar (js/commandbar.js): a compact row of icon buttons over the
+   bottom-left corner of the battlefield, in the sidebar's dark steel and
+   olive. It lives inside #field, so it never covers the sidebar. */
+
+#commandbar {
+  position: absolute;
+  left: 8px;
+  bottom: 22px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+
+#commandbar .cb-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(21, 24, 26, 0.88);
+  border: 1px solid #3a4346;
+  border-radius: 3px;
+  pointer-events: auto;
+}
+
+#commandbar .cb-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: #1f2427;
+  border: 1px solid #3a4346;
+  border-radius: 2px;
+  color: #d8dccf;
+  cursor: pointer;
+}
+
+#commandbar .cb-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+#commandbar .cb-button:hover:not(:disabled) {
+  background: #272d30;
+  border-color: #55605f;
+}
+
+#commandbar .cb-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+#commandbar .cb-button:disabled svg {
+  filter: grayscale(1);
+}
+
+/* Armed mode or the selection's stance. */
+#commandbar .cb-button.active {
+  background: #353d22;
+  border-color: #f2c94c;
+  box-shadow: 0 0 0 1px #f2c94c inset;
+}
+
+/* A stance only part of the selection uses: a half-lit border and a corner mark. */
+#commandbar .cb-button.mixed {
+  border-color: #a3b05a;
+  border-style: dashed;
+}
+
+#commandbar .cb-button.mixed::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 5px;
+  height: 5px;
+  background: #a3b05a;
+  border-radius: 1px;
+}
+
+#commandbar .cb-button:focus-visible {
+  outline: 2px solid #f2c94c;
+  outline-offset: 1px;
+}
+
+/* Phones: smaller buttons; the stances wrap onto a second row when needed. */
+@media (max-width: 720px) {
+  #commandbar {
+    left: 4px;
+    bottom: 4px;
+    max-width: calc(100% - 8px);
+  }
+
+  #commandbar .cb-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  #commandbar .cb-button svg {
+    width: 20px;
+    height: 20px;
+  }
+}

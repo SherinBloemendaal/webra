@@ -19,7 +19,10 @@ export class Input {
     this.game = game;
     this.rules = rules;
     this.player = player;
-    this.hooks = hooks; // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir) }
+    // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir) },
+    // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
+    // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) }
+    this.hooks = hooks;
     this.camera = { x: 0, y: 0, zoom: 1.5 };
     this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
     this.selection = [];
@@ -301,6 +304,7 @@ export class Input {
         this.cancelPlacing();
         return;
       }
+      if (this.hooks.cancelCommand?.()) return;
       if (this.attackMove) {
         this.attackMove = false;
         return;
@@ -343,6 +347,7 @@ export class Input {
       this.targetClick(w);
       return;
     }
+    if (this.hooks.commandMouseDown?.(w, e)) return;
     if ((e.ctrlKey || e.metaKey) && this.selectedMinelayers().length) {
       this.mineDrag = { sx: w.x, sy: w.y, ex: w.x, ey: w.y, units: this.selectedMinelayers() };
       return;
@@ -350,13 +355,15 @@ export class Input {
     if (this.attackMove) {
       const units = this.selectedOwnUnits();
       if (units.length) {
-        this.game.order_move(this.player, Uint32Array.from(units), w.x, w.y, true);
+        // Shift (or the command bar's queue toggle) queues it as a waypoint.
+        if (this.hooks.queuesAttackMove?.(e.shiftKey)) this.game.order_waypoint(this.player, Uint32Array.from(units), w.x, w.y, true);
+        else this.game.order_move(this.player, Uint32Array.from(units), w.x, w.y, true);
         this.flashOrder(w, ACTION.ATTACK);
       }
       if (!e.shiftKey) this.attackMove = false;
       return;
     }
-    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey };
+    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
   }
 
   onMouseMove(e) {
@@ -413,6 +420,8 @@ export class Input {
     const a = this.toWorld(d.sx, d.sy);
     const b = this.toWorld(d.ex, d.ey);
     if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < 6) {
+      // Force move / force attack / queued orders (Alt, Ctrl, Shift + click).
+      if (this.hooks.commandClick?.(b, d)) return;
       const intent = d.shift ? { kind: 'select' } : this.clickIntent(b);
       if (intent.kind === 'order') {
         this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
@@ -503,7 +512,9 @@ export class Input {
       else if (this.power) this.cancelPower();
       else if (this.sellMode) this.setSellMode(false);
       else if (this.placing) this.cancelPlacing();
-      else if (this.attackMove) this.attackMove = false;
+      else if (this.hooks.cancelCommand?.()) {
+        // A command bar mode was disarmed.
+      } else if (this.attackMove) this.attackMove = false;
       else this.setSelection([]);
     } else if (k === 'a' && !e.ctrlKey && !e.metaKey) {
       if (this.selectedOwnUnits().length) this.attackMove = true;
@@ -573,8 +584,10 @@ export class Input {
     else if (this.placing) cursor = 'none';
     else if (this.attackMove) cursor = CURSORS.attackMove;
     else if (this.mouse.inside && !this.drag && !this.pan) {
-      const intent = this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
-      if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
+      const command = this.commandBarCursor();
+      const intent = command ? { kind: 'command' } : this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
+      if (command) cursor = command;
+      else if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
       else if (intent.kind === 'rally') cursor = CURSORS.rally;
       else if (intent.kind === 'deploy') cursor = CURSORS.deploy;
       else if (intent.kind === 'blocked') cursor = CURSORS.blocked;
@@ -583,6 +596,13 @@ export class Input {
       this.cursor = cursor;
       this.canvas.style.cursor = cursor;
     }
+  }
+
+  /** Command bar cursor (armed mode or held Ctrl / Alt / Shift), or null. */
+  commandBarCursor() {
+    const k = this.keys;
+    const mods = { ctrl: k.has('Control') || k.has('Meta'), alt: k.has('Alt'), shift: k.has('Shift') };
+    return this.hooks.commandCursor?.(this.toWorld(this.mouse.x, this.mouse.y), mods) ?? null;
   }
 
   /** Short marker where an order was given, like the original's flashing target. */
