@@ -398,6 +398,29 @@ impl Game {
             .collect()
     }
 
+    /// Centre (world pixels, `[x, y]`) of the given actors that `player` owns
+    /// and that are alive on the map (not inside a transport); empty when none
+    /// are. Centres the camera on a control group or the selection.
+    pub fn units_center(&self, player: u8, ids: Vec<u32>) -> Vec<f32> {
+        let w = &self.world;
+        let (mut sx, mut sy, mut n) = (0i64, 0i64, 0i64);
+        for id in ids {
+            let Some(i) = w.resolve(id) else { continue };
+            let a = &w.actors[i];
+            if a.owner != player || !a.in_world() {
+                continue;
+            }
+            sx += i64::from(a.x);
+            sy += i64::from(a.y);
+            n += 1;
+        }
+        if n == 0 {
+            return Vec::new();
+        }
+        let to_px = |wu: i64| (wu as f64 / n as f64) as f32 * PX_PER_CELL / CELL as f32;
+        vec![to_px(sx), to_px(sy)]
+    }
+
     /// JSON description of an actor for the selection panel.
     pub fn actor_json(&self, id: u32) -> String {
         let Some(i) = self.world.resolve(id) else { return "null".into() };
