@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
-import { barState, commandClick, COMMAND_CURSORS, COMMANDS, ICONS, nextStance, pendingStances, STANCES } from '../js/commandbar.js';
-import { comboFromEvent, LocalKeys, normalizeCombo } from '../js/commandkeys.js';
+import { barState, commandClick, COMMAND_CURSORS, COMMAND_HOTKEYS, COMMANDS, ICONS, nextStance, pendingStances, STANCES } from '../js/commandbar.js';
+import { HotkeyRegistry } from '../js/hotkeys.js';
+import { createSettings } from '../js/settings.js';
 import { STANCES as PROTOCOL_STANCES } from '../js/protocol.js';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
@@ -141,33 +142,32 @@ test('icons and cursors are CSP-safe SVG', () => {
     assert.ok(m, name);
     assert.match(decodeURIComponent(m[1]), /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" width="32" height="32"/);
   }
-  // Every order has a hotkey or a modifier hint for its tooltip.
-  for (const c of COMMANDS) assert.ok(c.key || c.hint, c.id);
 });
 
-// ---- Key adapter -------------------------------------------------------------------------
+// ---- Hotkeys ----------------------------------------------------------------------------
 
-test('local key adapter: registerAction signature, combos, repeats', () => {
-  assert.equal(normalizeCombo('shift+g'), 'Shift+G');
-  assert.equal(normalizeCombo('cmd+alt+x'), 'Ctrl+Alt+X');
-  assert.equal(normalizeCombo('hyper+x'), null);
-  const ev = (o) => ({ code: '', key: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'CANVAS' }, preventDefault() {}, ...o });
-  assert.equal(comboFromEvent(ev({ code: 'KeyG', key: 'g' })), 'G');
-  assert.equal(comboFromEvent(ev({ code: 'KeyQ', key: 'a' })), 'A', 'AZERTY: the printed letter counts');
-  assert.equal(comboFromEvent(ev({ code: 'Digit2', key: '@', shiftKey: true })), 'Shift+2');
-  assert.equal(comboFromEvent(ev({ code: 'ShiftLeft', key: 'Shift' })), null);
-  const keys = new LocalKeys();
-  let ran = 0;
-  const off = keys.registerAction('command-guard', 'G', () => ran++);
-  assert.throws(() => keys.registerAction('command-guard', 'G', () => {}));
-  assert.equal(keys.keyOf('command-guard'), 'G');
-  assert.equal(keys.handle(ev({ code: 'KeyG', key: 'g' })), true);
-  assert.equal(keys.handle(ev({ code: 'KeyG', key: 'g', repeat: true })), true, 'held keys do not repeat the order');
-  assert.equal(keys.handle(ev({ code: 'KeyG', key: 'g', target: { tagName: 'INPUT' } })), false, 'typing in a field');
-  assert.equal(keys.handle(ev({ code: 'KeyG', key: 'g', shiftKey: true })), false);
-  assert.equal(ran, 1);
-  off();
-  assert.equal(keys.handle(ev({ code: 'KeyG', key: 'g' })), false);
+test('command hotkeys: Guard takes D from deploy (OpenRA), G and X and C work, stances can be bound', () => {
+  const reg = new HotkeyRegistry(createSettings(null));
+  // What js/input.js registers before the bar exists.
+  for (const [name, keys] of [['attackMove', 'A'], ['stop', 'S'], ['deploy', ['F', 'D']], ['sell', 'Z'], ['selectAll', 'Q'], ['selectByType', 'W'], ['base', ['H', 'Space']]]) {
+    reg.registerAction(name, keys, () => {});
+  }
+  const ran = [];
+  for (const h of COMMAND_HOTKEYS) reg.registerAction(h.name, h.keys, () => ran.push(h.name), { label: h.label, group: 'Orders' });
+  assert.equal(reg.actionFor('D'), 'guard', 'OpenRA: D guards; F deploys');
+  assert.equal(reg.actionFor('F'), 'deploy');
+  assert.equal(reg.actionFor('G'), 'guard');
+  assert.equal(reg.actionFor('X'), 'scatter');
+  assert.equal(reg.actionFor('C'), 'stanceCycle');
+  for (const s of STANCES) assert.deepEqual(reg.bindingsFor(s.action), [], `${s.action}: no default key, bindable in the menu`);
+  assert.equal(reg.rebind('stanceHoldFire', 'Alt+H').ok, true);
+  const ev = (code, key, o = {}) => ({ code, key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'CANVAS' }, preventDefault() {}, ...o });
+  assert.equal(reg.handle(ev('KeyD', 'd')), true);
+  assert.equal(reg.handle(ev('KeyH', 'h', { altKey: true })), true);
+  assert.deepEqual(ran, ['guard', 'stanceHoldFire']);
+  // Every order button names a registered action or a modifier hint for its tooltip.
+  const names = new Set([...reg.list().map((a) => a.name)]);
+  for (const c of COMMANDS) assert.ok(c.hint || names.has(c.action), c.id);
 });
 
 // ---- Engine API -------------------------------------------------------------------------

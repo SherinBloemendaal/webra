@@ -11,6 +11,7 @@ import {
   C2S,
   CHAT_MAX,
   COLOR_COUNT,
+  DEV_FLAGS,
   DIFFICULTIES,
   ERROR_CODE_RE,
   ERROR_MESSAGE_MAX,
@@ -134,7 +135,20 @@ const ORDER_SCHEMA = {
   scatter: { ids: idList },
   waypoint: { ids: idList, x: i32, y: i32, attack_move: bool },
   set_stance: { ids: idList, stance: (v, w) => oneOf(v, STANCES, w) },
+  // engine/src/debug.rs: debug menu cheats, only valid in games with the
+  // `cheats` option (the server refuses them otherwise, see CHEAT_ORDER_KINDS).
+  dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },
+  dev_cash: {},
+  dev_kill: { ids: idList },
 };
+
+/** Cheat orders: allowed only when the game's options have `cheats: true`. */
+export const CHEAT_ORDER_KINDS = ['dev_flag', 'dev_cash', 'dev_kill'];
+
+/** Whether an order is a cheat (debug menu) order. */
+export function isCheatOrder(o) {
+  return isPlainObject(o) && CHEAT_ORDER_KINDS.includes(o.o);
+}
 
 /** Largest minefield one lay_mines order may cover (engine abilities::MAX_MINEFIELD_CELLS). */
 export const MINEFIELD_MAX_CELLS = 32 * 32;

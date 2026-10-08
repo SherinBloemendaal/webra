@@ -1,0 +1,147 @@
+/* Sound button and sound settings dialog (js/audio/panel.js). */
+
+#audio-button {
+  position: fixed;
+  left: 8px;
+  bottom: 24px;
+  z-index: 60;
+  padding: 3px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #cfd8c4;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font: 600 12px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+#audio-button:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+#audio-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.audio-card {
+  width: min(520px, 100%);
+  user-select: text;
+}
+
+.audio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.audio-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.2em;
+  align-items: center;
+  gap: 10px;
+}
+
+.audio-row output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.audio-check {
+  grid-template-columns: auto 1fr;
+}
+
+.menu-card .audio-check label {
+  margin: 0;
+}
+
+.menu-card .audio-row input[type='range'] {
+  width: 100%;
+  padding: 0;
+}
+
+.audio-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audio-buttons button,
+.audio-music button,
+.audio-close {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+}
+
+.audio-note,
+.audio-status,
+.audio-progress {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.audio-local {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(217, 178, 58, 0.08);
+  font-size: 13px;
+}
+
+.audio-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-edge);
+}
+
+.audio-content h2 {
+  margin: 0;
+}
+
+.audio-music {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+@media (max-width: 480px) {
+  .audio-row {
+    grid-template-columns: 1fr 3.2em;
+  }
+
+  .audio-row label {
+    grid-column: 1 / -1;
+  }
+
+  .audio-check {
+    grid-template-columns: auto 1fr;
+  }
+
+  .audio-check label {
+    grid-column: auto;
+  }
+}

@@ -27,6 +27,7 @@ fn flatten(w: &mut World) {
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;
+        w.map.gems[i] = 0;
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);

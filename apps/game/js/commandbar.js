@@ -5,14 +5,16 @@
 //   Attack move (A)    move, attacking enemies met on the way
 //   Force move         Alt+click: move there whatever is under the cursor
 //   Force attack       Ctrl+click: fire on the ground, or on any unit (own too)
-//   Guard (G)          then click an own or allied unit to follow and protect
-//   Deploy (D)         MCVs, transports, ability units
+//   Guard (D, G)       then click an own or allied unit to follow and protect
+//   Deploy (F)         MCVs, transports, ability units
 //   Scatter (X)        each unit steps to a random free neighbouring cell
 //   Stop (S)
 //   Queue orders       Shift+click (or this toggle): add waypoints
 //
-// and the fire stances (C cycles): Attack anything, Defend, Return fire, Hold
-// fire. A stance shared by part of the selection shows as mixed.
+// and the fire stances (C cycles; each stance can get a key in the game menu):
+// Attack anything, Defend, Return fire, Hold fire. A stance shared by part of
+// the selection shows as mixed. Keys go through the hotkey registry
+// (js/hotkeys.js), so tooltips show the current bindings.
 //
 // Buttons enable and disable with the selection (`Game.command_state`). The
 // armed modes (force move, force attack, guard) act on the next left click on
@@ -21,28 +23,40 @@
 // (commandMouseDown, commandClick, commandCursor, cancelCommand, queueAttackMove).
 
 import { CURSORS } from './cursors.js';
+import { formatCombo } from './hotkeys.js';
 
 const NONE = 0xffffffff;
 const OUTLINE = '#101010';
 
 /** Fire stances, as the engine names them (rules.rs Stance), in bar order. */
 export const STANCES = [
-  { id: 'attack_anything', label: 'Attack anything', help: 'Attack enemies that come into range, and chase them.' },
-  { id: 'defend', label: 'Defend', help: 'Attack enemies in range without moving.' },
-  { id: 'return_fire', label: 'Return fire', help: 'Only shoot back at attackers in range.' },
-  { id: 'hold_fire', label: 'Hold fire', help: 'Never fire unless ordered to.' },
+  { id: 'attack_anything', action: 'stanceAttackAnything', label: 'Attack anything', help: 'Attack enemies that come into range, and chase them.' },
+  { id: 'defend', action: 'stanceDefend', label: 'Defend', help: 'Attack enemies in range without moving.' },
+  { id: 'return_fire', action: 'stanceReturnFire', label: 'Return fire', help: 'Only shoot back at attackers in range.' },
+  { id: 'hold_fire', action: 'stanceHoldFire', label: 'Hold fire', help: 'Never fire unless ordered to.' },
 ];
 
-/** Order buttons: id, label, key action (or a modifier hint) and help text. */
+/**
+ * Order buttons: id, label, the hotkey action that also runs it (registered
+ * here or by js/input.js) or a modifier hint, and help text.
+ */
 export const COMMANDS = [
-  { id: 'attackMove', label: 'Attack move', key: 'A', help: 'Move, attacking enemies on the way.' },
+  { id: 'attackMove', label: 'Attack move', action: 'attackMove', help: 'Move, attacking enemies on the way.' },
   { id: 'forceMove', label: 'Force move', hint: 'Alt+click', help: 'Move there, whatever is under the cursor.' },
   { id: 'forceAttack', label: 'Force attack', hint: 'Ctrl+click', help: 'Fire on the ground or on any unit, own ones too.' },
-  { id: 'guard', label: 'Guard', action: 'command-guard', key: 'G', help: 'Click a unit to follow and protect it.' },
-  { id: 'deploy', label: 'Deploy', key: 'D', help: 'Deploy, unload or use the ability of the selected units.' },
-  { id: 'scatter', label: 'Scatter', action: 'command-scatter', key: 'X', help: 'Each unit steps aside to a free spot nearby.' },
-  { id: 'stop', label: 'Stop', key: 'S', help: 'Stop what the units are doing.' },
+  { id: 'guard', label: 'Guard', action: 'guard', help: 'Click a unit to follow and protect it.' },
+  { id: 'deploy', label: 'Deploy', action: 'deploy', help: 'Deploy, unload or use the ability of the selected units.' },
+  { id: 'scatter', label: 'Scatter', action: 'scatter', help: 'Each unit steps aside to a free spot nearby.' },
+  { id: 'stop', label: 'Stop', action: 'stop', help: 'Stop what the units are doing.' },
   { id: 'queue', label: 'Queue orders', hint: 'Shift+click', help: 'Add waypoints: moves run one after another.' },
+];
+
+/** Hotkeys this bar registers: name, default keys (OpenRA: Guard D, Scatter X), label. */
+export const COMMAND_HOTKEYS = [
+  { name: 'guard', keys: ['D', 'G'], label: 'Guard' },
+  { name: 'scatter', keys: 'X', label: 'Scatter' },
+  { name: 'stanceCycle', keys: 'C', label: 'Cycle fire stance' },
+  ...STANCES.map((s) => ({ name: s.action, keys: [], label: `Fire stance: ${s.label}` })),
 ];
 
 // ---- Icons ------------------------------------------------------------------------------
@@ -196,9 +210,9 @@ export function commandClick(c) {
 export class CommandBar {
   /**
    * @param {HTMLElement} parent the battlefield element
-   * @param {{ game, input, player: number, registerAction: Function, keyOf?: (name: string) => string | null }} opts
+   * @param {{ game, input, player: number, hotkeys: import('./hotkeys.js').HotkeyRegistry }} opts
    */
-  constructor(parent, { game, input, player, registerAction, keyOf }) {
+  constructor(parent, { game, input, player, hotkeys }) {
     this.game = game;
     this.input = input;
     this.player = player;
@@ -206,7 +220,7 @@ export class CommandBar {
     this.queue = false; // sticky queue-orders toggle
     this.cmd = null;
     this.state = null;
-    this.keyOf = keyOf ?? (() => null);
+    this.hotkeys = hotkeys;
     this.root = document.createElement('div');
     this.root.id = 'commandbar';
     this.root.setAttribute('role', 'toolbar');
@@ -226,10 +240,29 @@ export class CommandBar {
     this.root.addEventListener('mousedown', (e) => e.stopPropagation());
     this.root.addEventListener('keydown', (e) => this.onKeyDown(e));
     parent.appendChild(this.root);
-    registerAction('command-guard', 'G', () => this.run('guard'), { label: 'Guard', group: 'Orders' });
-    registerAction('command-scatter', 'X', () => this.run('scatter'), { label: 'Scatter', group: 'Orders' });
-    registerAction('command-stance-cycle', 'C', () => this.cycleStance(), { label: 'Cycle fire stance', group: 'Orders' });
+    const handlers = {
+      guard: () => this.run('guard'),
+      scatter: () => this.run('scatter'),
+      stanceCycle: () => this.cycleStance(),
+      ...Object.fromEntries(STANCES.map((s) => [s.action, () => this.setStance(s.id)])),
+    };
+    this.offKeys = COMMAND_HOTKEYS.map((h) => hotkeys.registerAction(h.name, h.keys, handlers[h.name], { label: h.label, group: 'Orders' }));
+    // Tooltips follow rebinding in the game menu.
+    this.offChange = hotkeys.onChange(() => this.update());
     this.update();
+  }
+
+  /** Current key of a hotkey action, for tooltips ("Ctrl+X" or "Cmd+X"), or null. */
+  keyOf(action) {
+    const combo = action ? this.hotkeys.bindingsFor(action)[0] : null;
+    return combo ? formatCombo(combo) : null;
+  }
+
+  /** Remove the bar and its hotkeys. */
+  destroy() {
+    this.offKeys.forEach((off) => off());
+    this.offChange();
+    this.root.remove();
   }
 
   button(id, icon, onClick) {
@@ -285,12 +318,12 @@ export class CommandBar {
       el.disabled = !st.enabled;
       el.classList.toggle('active', st.active);
       if (c.id !== 'deploy' && c.id !== 'stop' && c.id !== 'scatter') el.setAttribute('aria-pressed', String(st.active));
-      const key = (c.action && this.keyOf(c.action)) || c.key || c.hint;
-      const text = `${c.label} (${key})`;
+      const key = this.keyOf(c.action) ?? c.hint;
+      const text = key ? `${c.label} (${key})` : c.label;
       el.title = `${text}: ${c.help}`;
       el.setAttribute('aria-label', text);
     }
-    const cycle = this.keyOf('command-stance-cycle') ?? 'C';
+    const cycle = this.keyOf('stanceCycle');
     for (const s of STANCES) {
       const el = this.buttons.get(s.id);
       const st = this.state.stances[s.id];
@@ -299,7 +332,8 @@ export class CommandBar {
       el.classList.toggle('mixed', st === 'some');
       el.setAttribute('aria-pressed', st === 'all' ? 'true' : st === 'some' ? 'mixed' : 'false');
       const mixed = st === 'some' ? ' (some of the selection)' : '';
-      el.title = `${s.label}${mixed}: ${s.help} (${cycle} cycles stances)`;
+      const key = this.keyOf(s.action);
+      el.title = `${s.label}${key ? ` (${key})` : ''}${mixed}: ${s.help}${cycle ? ` ${cycle} cycles the stances.` : ''}`;
       el.setAttribute('aria-label', `Stance: ${s.label}${mixed}`);
     }
   }

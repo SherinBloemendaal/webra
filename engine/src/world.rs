@@ -5,6 +5,7 @@ use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
 use crate::rules::{FootCell, Kind, QueueType, Rules, Stance, QUEUE_COUNT};
+use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
 /// Simulation ticks per second at normal speed (OpenRA: 40 ms per tick).
@@ -109,7 +110,10 @@ pub struct Actor {
 
     // Harvesters
     pub harv: HarvState,
+    /// Bales on board, of any resource.
     pub bales: i32,
+    /// How many of `bales` are gems (OpenRA StoresResources keeps a count per type).
+    pub gem_bales: i32,
     pub harv_timer: i32,
     pub harv_cell: u32,
     pub refinery: u32,
@@ -197,6 +201,7 @@ impl Actor {
             waypoints: Vec::new(),
             harv: HarvState::Search,
             bales: 0,
+            gem_bales: 0,
             harv_timer: 0,
             harv_cell: NONE,
             refinery: NONE,
@@ -279,6 +284,8 @@ pub struct Player {
     pub team: u8,
     /// Owner of neutral map actors: never plays, never wins or loses.
     pub neutral: bool,
+    /// Debug menu cheat flags (debug.rs); only orders of a game with cheats set them.
+    pub dev: crate::debug::DevFlags,
 }
 
 impl Player {
@@ -286,7 +293,7 @@ impl Player {
         self.cash + self.resources
     }
     pub fn low_power(&self) -> bool {
-        self.power_use > self.power_gen
+        self.power_use > self.power_gen && !self.dev.unlimited_power
     }
 }
 
@@ -353,6 +360,8 @@ pub struct GameOptions {
     pub build_radius: bool,
     pub redeployable_mcv: bool,
     pub ore_regrowth: bool,
+    /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
+    pub cheats: bool,
 }
 
 impl Default for GameOptions {
@@ -366,6 +375,7 @@ impl Default for GameOptions {
             build_radius: true,
             redeployable_mcv: true,
             ore_regrowth: true,
+            cheats: false,
         }
     }
 }
@@ -530,10 +540,31 @@ pub enum Order {
         ids: Vec<u32>,
         stance: Stance,
     },
+    /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
+    /// unless the game has the cheats option.
+    DevFlag {
+        player: u8,
+        flag: crate::debug::DevFlag,
+        on: bool,
+    },
+    /// Debug menu: give the player cash (debug.rs). Ignored without cheats.
+    DevCash {
+        player: u8,
+    },
+    /// Debug menu: destroy actors of any owner (debug.rs). Ignored without cheats.
+    DevKill {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
+    /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
+    pub fn is_cheat(&self) -> bool {
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. })
+    }
+
     pub fn player(&self) -> u8 {
         match self {
             Order::Move { player, .. }
@@ -555,7 +586,10 @@ impl Order {
             | Order::Guard { player, .. }
             | Order::Scatter { player, .. }
             | Order::Waypoint { player, .. }
-            | Order::SetStance { player, .. } => *player,
+            | Order::SetStance { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. } => *player,
         }
     }
 
@@ -581,7 +615,10 @@ impl Order {
             | Order::Guard { player, .. }
             | Order::Scatter { player, .. }
             | Order::Waypoint { player, .. }
-            | Order::SetStance { player, .. } => *player = p,
+            | Order::SetStance { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. } => *player = p,
         }
     }
 
@@ -601,7 +638,8 @@ impl Order {
             | Order::Guard { ids, .. }
             | Order::Scatter { ids, .. }
             | Order::Waypoint { ids, .. }
-            | Order::SetStance { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::SetStance { ids, .. }
+            | Order::DevKill { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -636,7 +674,10 @@ impl Order {
             | Order::Place { .. }
             | Order::Rally { .. }
             | Order::Sell { .. }
-            | Order::SupportPower { .. } => None,
+            | Order::SupportPower { .. }
+            | Order::DevFlag { .. }
+            | Order::DevCash { .. }
+            | Order::DevKill { .. } => None,
         }
     }
 }
@@ -695,6 +736,8 @@ pub struct World {
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
+    /// Write-only audio event log for the client (sound_events.rs).
+    pub sound: crate::sound_events::SoundEvents,
 }
 
 impl World {
@@ -847,6 +890,7 @@ impl World {
             abil: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
+            sound: Default::default(),
             map,
         }
     }
@@ -873,6 +917,7 @@ impl World {
             start,
             team: 0,
             neutral: false,
+            dev: Default::default(),
         });
     }
 
@@ -1025,6 +1070,8 @@ impl World {
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1380,6 +1427,10 @@ impl World {
                     self.order_waypoint(&units, x, y, attack_move);
                 }
                 Order::SetStance { player, ids, stance } => self.set_stance(player, &ids, stance),
+                // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
+                Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
+                Order::DevCash { player } => self.dev_give_cash(player),
+                Order::DevKill { player, ids } => self.dev_kill(player, &ids),
             }
         }
     }
@@ -1566,7 +1617,7 @@ impl World {
                 }
             }
         }
-        if any_harv && self.map.ore[ci] > 0 && self.players[player as usize].explored[ci] != 0 {
+        if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
         SmartAction::Move
@@ -1743,7 +1794,7 @@ impl World {
         mix(self.tick as i64);
         for a in &self.actors {
             if a.alive {
-                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
+                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales, a.gem_bales] {
                     mix(v as i64);
                 }
                 // Transports and submarines (cargo.rs, naval.rs).
@@ -1758,9 +1809,16 @@ impl World {
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Cheat flags are simulation state; they can only be set with the cheats option.
+            if self.options.cheats {
+                mix(p.dev.bits() as i64);
+            }
         }
         for &o in &self.map.ore {
             mix(o as i64);
+        }
+        for &g in &self.map.gems {
+            mix(g as i64);
         }
         h
     }

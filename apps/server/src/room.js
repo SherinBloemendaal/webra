@@ -57,6 +57,8 @@ export class Room {
   static fromJSON(data) {
     const r = new Room();
     Object.assign(r, structuredClone(data));
+    // Rooms stored before an option existed get its default (cheats stay off).
+    r.options = { ...DEFAULT_OPTIONS, ...r.options };
     return r;
   }
 

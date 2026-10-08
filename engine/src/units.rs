@@ -1,6 +1,7 @@
 //! Per-tick unit behaviour: movement, crowd separation, combat, harvesting, repair.
 
 use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
+use crate::map::Resource;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
 use crate::rules::Kind;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
@@ -342,7 +343,7 @@ impl World {
             }
             HarvState::ToOre => {
                 let c = self.actors[i].harv_cell;
-                if c == NONE || self.map.ore[c as usize] == 0 {
+                if c == NONE || !self.map.has_resource(c as usize) {
                     self.actors[i].harv = HarvState::Search;
                     return;
                 }
@@ -369,17 +370,19 @@ impl World {
                     return;
                 }
                 a.harv_timer = hv.bale_load_delay;
-                if self.map.ore[c] > 0 {
-                    self.map.ore[c] -= 1;
+                // One bale of whatever the cell holds; the truck counts gems apart.
+                if let Some(r) = self.map.take_bale(c) {
                     self.terrain_dirty = true;
-                    self.actors[i].bales += 1;
+                    let a = &mut self.actors[i];
+                    a.bales += 1;
+                    a.gem_bales += (r == Resource::Gems) as i32;
                 }
                 let a = &mut self.actors[i];
                 if a.bales >= hv.capacity {
                     a.harv = HarvState::ToDock;
                     a.best_dist = i32::MAX;
                     a.stuck_ticks = 0;
-                } else if self.map.ore[c] == 0 {
+                } else if !self.map.has_resource(c) {
                     a.harv = HarvState::Search;
                 }
             }
@@ -422,9 +425,13 @@ impl World {
                 }
                 a.harv_timer = hv.bale_unload_delay.max(1);
                 if a.bales > 0 {
+                    // Each bale pays its own type's value (PlayerResources.ResourceValues):
+                    // ore bales first, then gems.
+                    let gem = a.bales == a.gem_bales;
                     a.bales -= 1;
+                    a.gem_bales -= gem as i32;
                     let owner = a.owner;
-                    let value = self.rules.player.ore_value;
+                    let value = if gem { self.rules.player.gem_value } else { self.rules.player.ore_value };
                     self.give_resources(owner, value);
                 }
                 if self.actors[i].bales == 0 {
@@ -476,6 +483,10 @@ impl World {
         self.cell_index(x, y) as u32
     }
 
+    /// The nearest unclaimed ore or gem cell. As in OpenRA
+    /// (FindAndDeliverResources.ClosestHarvestablePos) only the distance
+    /// counts, not the resource's value: a truck mines the field it is sent
+    /// to or the nearest one, gems or ore alike.
     fn find_ore(&mut self, i: usize, hv: &crate::rules::HarvesterInfo) -> Option<u32> {
         let a = &self.actors[i];
         let (origin, radius) = if a.harv_cell != NONE {
@@ -518,7 +529,7 @@ impl World {
                     continue;
                 }
                 let c = self.map.idx(x, y);
-                if self.map.ore[c] == 0 || self.pass.blocked[c] || self.pass.component[c] != comp {
+                if !self.map.has_resource(c) || self.pass.blocked[c] || self.pass.component[c] != comp {
                     continue;
                 }
                 if claimed.contains(&(c as u32)) {

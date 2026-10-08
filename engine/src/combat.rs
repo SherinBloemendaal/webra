@@ -7,6 +7,7 @@
 
 use crate::math::{dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
 use crate::rules::{Kind, Projectile as ProjKind, Stance, WarheadKind};
+use crate::sound_events::{SoundEventKind, DAMAGE_EVENT_QUIET_TICKS};
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
 
 const SCAN_INTERVAL: i32 = 8;
@@ -431,6 +432,8 @@ impl World {
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
+        let shooter_ty = self.actors[i].ty as i32;
+        self.sound.push(SoundEventKind::Fire, w as i32, sx, sy, owner, shooter_ty);
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
         let (mut tx, mut ty) = match ft {
             FireTarget::Actor(t) => self.aim_point(t, sx, sy),
@@ -547,7 +550,9 @@ impl World {
             (EffectKind::Piff, 6)
         };
         // Shells landing in open water splash instead (naval.rs).
-        let (kind, ttl) = self.water_impact_effect(x, y, ttl).unwrap_or((kind, ttl));
+        let splash = self.water_impact_effect(x, y, ttl);
+        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(splash.is_some()));
+        let (kind, ttl) = splash.unwrap_or((kind, ttl));
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
@@ -643,14 +648,21 @@ impl World {
         }
         let tick = self.tick;
         let a = &mut self.actors[u];
+        // One "under attack" event per burst of fire on a structure (sound_events.rs).
+        let report = a.kind == Kind::Building && (a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS);
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
-        if a.hp <= 0 {
+        if report {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::BuildingDamaged, ty, x, y, owner, 0);
+        }
+        if self.actors[u].hp <= 0 {
             self.kill(u);
             return;
         }
         // OpenRA AutoTarget.Damaged: only idle actors react, never to own or allied fire.
+        let a = &self.actors[u];
         let idle = a.activity == Activity::Idle && (a.kind != Kind::Building || a.target == NONE);
         if idle {
             if let Some(s) = self.resolve(source) {

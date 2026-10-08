@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -66,7 +66,15 @@ export const RANDOM_FACTIONS = {
 };
 export const PLAYABLE_FACTIONS = ['england', 'france', 'germany', 'russia', 'ukraine'];
 export const FACTIONS = [...Object.keys(RANDOM_FACTIONS), ...PLAYABLE_FACTIONS];
-export const BOOLEAN_OPTIONS = ['fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth'];
+/**
+ * `cheats` is the "Debug menu" option (OpenRA's `cheats` lobby option): only
+ * then may players send cheat orders (CHEAT_ORDER_KINDS), and the server
+ * refuses them otherwise.
+ */
+export const BOOLEAN_OPTIONS = ['fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
+
+/** Cheat flags of the `dev_flag` order (engine/src/debug.rs DevFlag). */
+export const DEV_FLAGS = ['fast_build', 'build_anywhere', 'unlimited_power', 'fast_charge', 'disable_shroud', 'all_tech'];
 
 /** Milliseconds per simulation tick for each game speed (OpenRA timing). */
 export const SPEED_MS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
@@ -83,6 +91,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  cheats: false,
 });
 
 /** Slot types in an online lobby. */

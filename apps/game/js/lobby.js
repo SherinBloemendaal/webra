@@ -80,6 +80,11 @@ const TOGGLE_OPTIONS = [
   { key: 'buildRadius', label: 'Build radius', title: 'Limits structure placement to areas around a Construction Yard.' },
   { key: 'redeployableMcv', label: 'Redeployable MCVs', title: 'Allows undeploying a Construction Yard back into an MCV.' },
   { key: 'oreRegrowth', label: 'Ore regrowth', title: 'Ore fields slowly grow back after they have been harvested.' },
+  {
+    key: 'cheats',
+    label: 'Debug menu',
+    title: 'Enables the cheats of the debug menu (instant build, free cash, reveal map and more) for every player.',
+  },
 ];
 
 let uid = 0;
@@ -327,6 +332,7 @@ export class Lobby {
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
+   *   onReleaseNotes?: () => void,
    * }} config `maps` gives player-count previews and map files; without it
    *   only `mapPreview` (two players) is used and map files are unavailable.
    */
@@ -338,6 +344,7 @@ export class Lobby {
     this.legacyPreview = config.mapPreview || null;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
+    this.onReleaseNotes = config.onReleaseNotes || null;
     this.blocked = false;
     this.previewFrame = 0;
     this.spawnCache = { key: '', cells: [] };
@@ -482,6 +489,15 @@ export class Lobby {
     h1.append(el('span', null, 'RA'));
     const tag = el('p', 'lobby-tagline', 'Skirmish lobby. Pick your side, set the battlefield and deploy.');
     head.append(h1, tag);
+    if (this.onReleaseNotes) {
+      // A text button after the tagline: the top right corner belongs to "Play online".
+      const notes = el('button', 'lobby-notes', 'Release notes');
+      notes.type = 'button';
+      notes.title = 'What changed in each WebRA version';
+      notes.setAttribute('aria-haspopup', 'dialog');
+      notes.addEventListener('click', () => this.onReleaseNotes());
+      head.append(notes);
+    }
 
     // Error banner.
     this.errorBox = el('div', 'lobby-error');
@@ -847,14 +863,22 @@ export class Lobby {
       box.type = 'checkbox';
       box.addEventListener('change', () => {
         this.state[opt.key] = box.checked;
+        this.renderCheats();
       });
       this.optionToggles[opt.key] = box;
       row.append(box, el('span', null, opt.label));
       toggles.append(row);
     }
+    // Cheats change the game: say so plainly while the option is on.
+    this.cheatsWarning = el('p', 'lobby-cheats-warning', 'Cheats enabled: the debug menu (` key) can build instantly, give cash and reveal the map.');
+    this.cheatsWarning.setAttribute('role', 'status');
 
-    content.append(selects, toggles);
+    content.append(selects, toggles, this.cheatsWarning);
     return section;
+  }
+
+  renderCheats() {
+    this.cheatsWarning.hidden = !this.state.cheats;
   }
 
   buildBar() {
@@ -913,6 +937,7 @@ export class Lobby {
     this.renderUnits();
     for (const opt of SELECT_OPTIONS) this.optionSelects[opt.key].value = String(s[opt.key]);
     for (const opt of TOGGLE_OPTIONS) this.optionToggles[opt.key].checked = s[opt.key];
+    this.renderCheats();
     this.renderMapSizes();
     this.renderMapSource();
     this.renderSlots();
