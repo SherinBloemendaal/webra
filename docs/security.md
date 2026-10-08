@@ -48,7 +48,8 @@ piece (a modded multi-cell wall could overwrite a neighbour's cells).
 
 The debug menu (OpenRA developer mode) adds cheat orders: `dev_flag`
 (instant build, build anywhere, unlimited power, instant charge, reveal map,
-all tech), `dev_cash` and `dev_kill` (destroy any actor). They are guarded in
+all tech), `dev_cash`, `dev_kill` (destroy any actor) and `dev_experience`
+(raise own units one veterancy level). They are guarded in
 three places:
 
 - **Lobby:** they only work when the host enabled the "Debug menu" option

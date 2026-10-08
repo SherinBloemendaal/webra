@@ -18,6 +18,7 @@ pub fn px(wu: i32) -> f32 {
 }
 
 /// Sprite ids: actor `t` has body `2t` and turret `2t + 1`; specials follow.
+/// Infantry have no turret: their `2t + 1` is the prone pose (veterancy.rs).
 /// Must match the SPECIALS order in apps/game/js/sprites.js.
 pub struct SpriteIds {
     pub bullet: f32,
@@ -39,6 +40,7 @@ pub struct SpriteIds {
     pub planes_base: f32,
     pub helis_base: f32,
     pub abilities_base: f32,
+    pub veterancy_base: f32,
 }
 
 impl SpriteIds {
@@ -61,6 +63,7 @@ impl SpriteIds {
             planes_base: b + 20.0,
             helis_base: b + 28.0,
             abilities_base: b + 36.0,
+            veterancy_base: b + 44.0,
         }
     }
 }
@@ -220,7 +223,9 @@ impl World {
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            push_sprite(sprites, x, y, body_angle, (a.ty * 2) as f32, a.owner as f32, 1.0, body_alpha, flash);
+            // Prone infantry lie flat (TakeCover, veterancy.rs).
+            let body = if self.draws_prone(i) { a.ty * 2 + 1 } else { a.ty * 2 };
+            push_sprite(sprites, x, y, body_angle, body as f32, a.owner as f32, 1.0, body_alpha, flash);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 push_sprite(
                     &mut turrets,
@@ -243,6 +248,8 @@ impl World {
         // Paratroopers, bombs, contrails and wreck smoke under the aircraft (plane.rs).
         self.render_air_extras(player, alpha, view, &ids, sprites);
         sprites.extend_from_slice(&aircraft);
+        // Rank chevrons on top of every unit (veterancy.rs).
+        self.render_veterancy(player, alpha, view, ids.veterancy_base, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));

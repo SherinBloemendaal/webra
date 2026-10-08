@@ -251,12 +251,13 @@ test('cheat orders: strict shapes, recognised as cheats', () => {
     ...DEV_FLAGS.map((flag) => ({ o: 'dev_flag', player: 0, flag, on: true })),
     { o: 'dev_cash', player: 1 },
     { o: 'dev_kill', player: 0, ids: [1, 4194305] },
+    { o: 'dev_experience', player: 1, ids: [7] },
   ];
   for (const o of cheats) {
     assert.deepEqual(ok({ t: 'orders', tick: 4, orders: [o] }).orders[0], o);
     assert.equal(isCheatOrder(o), true, o.o);
   }
-  assert.deepEqual(CHEAT_ORDER_KINDS, ['dev_flag', 'dev_cash', 'dev_kill']);
+  assert.deepEqual(CHEAT_ORDER_KINDS, ['dev_flag', 'dev_cash', 'dev_kill', 'dev_experience']);
   assert.ok(CHEAT_ORDER_KINDS.every((k) => ORDER_KINDS.includes(k)));
   for (const k of ORDER_KINDS) assert.equal(isCheatOrder({ o: k }), CHEAT_ORDER_KINDS.includes(k), k);
   assert.equal(isCheatOrder(null), false);
@@ -265,6 +266,9 @@ test('cheat orders: strict shapes, recognised as cheats', () => {
   bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_flag', player: 0, flag: 'fast_build' }] }, /required/);
   bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_cash', player: 0, amount: 1e6 }] }, /unknown field/);
   bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_kill', player: 0, ids: Array.from({ length: 2001 }, () => 1) }] });
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_experience', player: 0, ids: Array.from({ length: 2001 }, () => 1) }] });
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_experience', player: 0, ids: [1], levels: 4 }] }, /unknown field/);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_experience', player: 0 }] }, /required/);
 });
 
 test('errorMessage truncates and strips non-printable text', () => {

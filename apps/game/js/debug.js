@@ -4,7 +4,8 @@
 // Two kinds of tools:
 //
 // - Cheats change the simulation, so they are engine orders like any other
-//   (Game.dev_flag / dev_give_cash / dev_kill, engine/src/debug.rs). Online
+//   (Game.dev_flag / dev_give_cash / dev_kill / dev_experience, engine/src/debug.rs
+//   and veterancy.rs). Online
 //   they travel through lockstep and every peer applies them on the same tick.
 //   They only work when the game was started with the lobby option "Debug
 //   menu" (options key `cheats`): the engine ignores them otherwise and the
@@ -261,6 +262,10 @@ export class DebugMenu {
         this.action('Destroy selected', 'Destroy the selected actors, of any owner.', () => {
           const ids = this.ctx.input.selection;
           if (ids.length > 0) this.game.dev_kill(this.player, Uint32Array.from(ids));
+        }),
+        this.action('Give experience to selection', 'Raise each selected own unit one veterancy rank (OpenRA: level up).', () => {
+          const ids = this.ctx.input.selection;
+          if (ids.length > 0) this.game.dev_experience(this.player, Uint32Array.from(ids));
         }),
       );
       cheats.append(grid, actions);

@@ -45,6 +45,7 @@ function cheatAll(game, player, killIds) {
   for (const c of CHEATS) game.dev_flag(player, c.flag, true);
   game.dev_give_cash(player);
   game.dev_kill(player, Uint32Array.from(killIds));
+  game.dev_experience(player, Uint32Array.from(killIds));
 }
 
 test('the menu offers exactly the engine and protocol cheat flags', () => {

@@ -21,7 +21,7 @@
 
 .debug-button.debug-button-cheats {
   color: #ffb4a2;
-  border-color: #b0412e;
+  border-color: var(--ui-bad);
 }
 
 .debug-panel {
@@ -33,11 +33,17 @@
   max-height: calc(100% - 48px);
   overflow: auto;
   padding: 8px 10px 10px;
-  background: rgba(17, 20, 18, 0.94);
-  border: 1px solid #3a4346;
-  border-radius: 3px;
-  color: #d8dccf;
-  font: 12px/1.4 system-ui, 'Segoe UI', sans-serif;
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.96), rgba(20, 24, 29, 0.96));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    0 8px 24px rgba(0, 0, 0, 0.5);
+  color: var(--ui-text);
+  font: 12px/1.4 var(--ui-font);
   user-select: none;
 }
 
@@ -49,8 +55,9 @@
 
 .debug-title {
   margin: 0;
-  font-size: 14px;
-  letter-spacing: 0.5px;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .debug-heading {
@@ -59,12 +66,12 @@
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: #9c9a8a;
+  color: var(--ui-accent-hi);
 }
 
 .debug-note {
   margin: 0 0 6px;
-  color: #9c9a8a;
+  color: var(--ui-muted);
 }
 
 .debug-note-cheats {
@@ -87,6 +94,7 @@
 
 .debug-check input {
   margin: 0;
+  accent-color: var(--ui-accent);
 }
 
 .debug-actions {
@@ -99,17 +107,23 @@
 .debug-action,
 .debug-close {
   padding: 3px 9px;
-  background: #262c27;
-  color: #d8dccf;
-  border: 1px solid #4a544b;
-  border-radius: 2px;
-  font: 600 12px system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 600 12px var(--ui-font);
   cursor: pointer;
 }
 
 .debug-action:hover:not(:disabled),
 .debug-close:hover {
-  background: #323a33;
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.debug-action:active:not(:disabled),
+.debug-close:active {
+  box-shadow: var(--ui-bevel-in);
 }
 
 .debug-action:disabled {
@@ -120,11 +134,12 @@
 .debug-stats {
   margin: 10px 0 0;
   padding: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 2px;
-  font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel-in);
+  font: 11px/1.45 var(--ui-font-mono);
   white-space: pre-wrap;
-  color: #cfd8c4;
+  color: var(--ui-text);
 }
 
 .debug-graph {
@@ -132,6 +147,6 @@
   width: 100%;
   height: 60px;
   margin-top: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 2px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
 }

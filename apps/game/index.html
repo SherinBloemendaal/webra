@@ -2,16 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>WebRA</title>
+    <link rel="stylesheet" href="css/theme.css" />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/minimap.css" />
     <link rel="stylesheet" href="css/lobby.css" />
     <link rel="stylesheet" href="css/online.css" />
     <link rel="stylesheet" href="css/powers.css" />
     <link rel="stylesheet" href="css/audio.css" />
     <link rel="stylesheet" href="css/debug.css" />
     <link rel="stylesheet" href="css/releasenotes.css" />
+    <link rel="stylesheet" href="css/touch.css" />
     <link rel="stylesheet" href="css/commandbar.css" />
   </head>
   <body>
@@ -26,7 +29,11 @@
       <main id="field">
         <canvas id="view"></canvas>
         <div id="hud"></div>
-        <button id="menu-button" class="hud-button" type="button" title="Game menu (Esc)" hidden>Menu</button>
+        <div class="hud-buttons">
+          <!-- Phones: show or hide the build sidebar drawer (js/layout.js) -->
+          <button id="sidebar-toggle" class="hud-button" type="button" aria-controls="sidebar" hidden>Map</button>
+          <button id="menu-button" class="hud-button" type="button" title="Game menu (Esc)" hidden>Menu</button>
+        </div>
         <div id="toast" role="status" hidden></div>
       </main>
       <aside id="sidebar"></aside>

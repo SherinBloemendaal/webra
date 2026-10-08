@@ -474,8 +474,16 @@ fn waypoints_wait_for_an_ordered_attack() {
     run(&mut w, 1);
     assert_eq!(w.actors[tank].activity, Activity::Attack);
     assert_eq!(w.actors[tank].waypoints.len(), 1);
-    run(&mut w, 300);
+    // Prone infantry (veterancy.rs) takes longer to kill: wait for the fight.
+    for _ in 0..1500 {
+        if !w.actors[foe].alive {
+            break;
+        }
+        assert_eq!(w.actors[tank].waypoints.len(), 1, "queued until the attack ends");
+        w.step();
+    }
     assert!(!w.actors[foe].alive, "the attack finished first");
+    run(&mut w, 300);
     assert!(w.actors[tank].waypoints.is_empty());
     assert!(dist(w.actors[tank].x, w.actors[tank].y, cell_center(20), cell_center(30)) < 2 * CELL, "then the queued move");
 }
@@ -578,4 +586,34 @@ fn command_orders_stay_in_lockstep() {
         }
     }
     assert_eq!(a.state_hash(), b.state_hash());
+}
+
+#[test]
+fn kills_from_attack_ground_and_return_fire_credit_the_shooter() {
+    // One shooter field (veterancy Shot) serves experience and return fire.
+    let mut w = flat_world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    let foe = passive(&mut w, "E1", 1, 24, 20);
+    set_stance(&mut w, 0, &[tank], Stance::HoldFire);
+    let ids = refs(&w, &[tank]);
+    w.queue_order(Order::AttackGround { player: 0, ids, x: cell_center(24), y: cell_center(20) });
+    for _ in 0..1500 {
+        if !w.actors[foe].alive {
+            break;
+        }
+        w.step();
+    }
+    assert!(!w.actors[foe].alive, "the shells killed the soldier on the spot");
+    assert!(w.actors[tank].xp > 0, "the kill counts for the tank");
+    // Return fire: the attacker's shells in flight name it, so the victim answers it.
+    let shooter = unit(&mut w, "1TNK", 1, 23, 23);
+    set_stance(&mut w, 1, &[shooter], Stance::HoldFire);
+    let ids = refs(&w, &[tank]);
+    w.queue_order(Order::Stop { player: 0, ids });
+    set_stance(&mut w, 0, &[tank], Stance::ReturnFire);
+    let ids = refs(&w, &[shooter]);
+    let target = w.make_ref(tank);
+    w.queue_order(Order::Attack { player: 1, ids, target });
+    run(&mut w, 150);
+    assert!(w.actors[shooter].hp < max_hp(&w, shooter), "shot back at the attacker");
 }

@@ -576,7 +576,7 @@ async function initMaps() {
         list,
         'No community maps yet',
         'Build one in the map editor and share it: it will show up here for everyone.',
-        el('a', { class: 'btn btn-gold', href: '/play/editor/', text: 'Open the map editor' }),
+        el('a', { class: 'btn btn-accent', href: '/play/editor/', text: 'Open the map editor' }),
       );
       return;
     }
@@ -637,7 +637,7 @@ function mapCard(m) {
     el(
       'div',
       { class: 'card-actions' },
-      el('a', { class: 'btn btn-gold btn-small', href: `/play/?map=${id}`, 'aria-label': `Play ${m.name}`, text: 'Play' }),
+      el('a', { class: 'btn btn-accent btn-small', href: `/play/?map=${id}`, 'aria-label': `Play ${m.name}`, text: 'Play' }),
       el('a', {
         class: 'btn btn-small',
         href: `/play/editor/?map=${id}`,
@@ -683,7 +683,7 @@ async function initLobbies() {
           list,
           'No open games right now',
           'Host one yourself and share the link, or check back in a minute. This list refreshes by itself.',
-          el('a', { class: 'btn btn-gold', href: '/play/', text: 'Host a game' }),
+          el('a', { class: 'btn btn-accent', href: '/play/', text: 'Host a game' }),
         );
       } else {
         list.removeAttribute('aria-busy');

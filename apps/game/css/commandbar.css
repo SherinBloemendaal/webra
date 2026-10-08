@@ -1,12 +1,15 @@
 /* Command bar (js/commandbar.js): a compact row of icon buttons over the
-   bottom-left corner of the battlefield, in the sidebar's dark steel and
-   olive. It lives inside #field, so it never covers the sidebar. */
+   bottom-left corner of the battlefield, in the theme's metal panels
+   (css/theme.css tokens). It lives inside #field, so it never covers the
+   sidebar. It sits above the Sound button on desktop and above the touch
+   action bar (js/touch.js) on touch screens: the bar sets --cb-bottom from
+   the touch bar's height. */
 
 #commandbar {
   position: absolute;
   left: 8px;
-  bottom: 22px;
-  z-index: 5;
+  bottom: var(--cb-bottom, 52px);
+  z-index: 6;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -18,9 +21,13 @@
   display: flex;
   gap: 2px;
   padding: 2px;
-  background: rgba(21, 24, 26, 0.88);
-  border: 1px solid #3a4346;
-  border-radius: 3px;
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
   pointer-events: auto;
 }
 
@@ -31,11 +38,13 @@
   width: 30px;
   height: 30px;
   padding: 0;
-  background: #1f2427;
-  border: 1px solid #3a4346;
-  border-radius: 2px;
-  color: #d8dccf;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-text);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 #commandbar .cb-button svg {
@@ -44,8 +53,7 @@
 }
 
 #commandbar .cb-button:hover:not(:disabled) {
-  background: #272d30;
-  border-color: #55605f;
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
 }
 
 #commandbar .cb-button:disabled {
@@ -59,14 +67,14 @@
 
 /* Armed mode or the selection's stance. */
 #commandbar .cb-button.active {
-  background: #353d22;
-  border-color: #f2c94c;
-  box-shadow: 0 0 0 1px #f2c94c inset;
+  background: linear-gradient(180deg, var(--ui-accent-lo), var(--ui-metal-1));
+  border-color: var(--ui-accent-hi);
+  box-shadow: var(--ui-bevel-in), 0 0 6px var(--ui-accent-glow);
 }
 
-/* A stance only part of the selection uses: a half-lit border and a corner mark. */
+/* A stance only part of the selection uses: a dashed edge and a corner mark. */
 #commandbar .cb-button.mixed {
-  border-color: #a3b05a;
+  border-color: var(--ui-accent);
   border-style: dashed;
 }
 
@@ -77,29 +85,48 @@
   bottom: 2px;
   width: 5px;
   height: 5px;
-  background: #a3b05a;
+  background: var(--ui-accent-hi);
   border-radius: 1px;
 }
 
 #commandbar .cb-button:focus-visible {
-  outline: 2px solid #f2c94c;
+  outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 
-/* Phones: smaller buttons; the stances wrap onto a second row when needed. */
+/* Touch screens: the touch action bar already has attack move, force attack,
+   stop, deploy and the Add (Shift) toggle; keep the rest, at finger size. */
+body.touch #commandbar .cb-attackMove,
+body.touch #commandbar .cb-forceAttack,
+body.touch #commandbar .cb-stop,
+body.touch #commandbar .cb-deploy,
+body.touch #commandbar .cb-queue {
+  display: none;
+}
+
+body.touch #commandbar .cb-button {
+  width: 44px;
+  height: 44px;
+}
+
+body.touch #commandbar .cb-button svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* Narrow screens without touch: smaller buttons, stances wrap when needed. */
 @media (max-width: 720px) {
-  #commandbar {
+  body:not(.touch) #commandbar {
     left: 4px;
-    bottom: 4px;
     max-width: calc(100% - 8px);
   }
 
-  #commandbar .cb-button {
+  body:not(.touch) #commandbar .cb-button {
     width: 28px;
     height: 28px;
   }
 
-  #commandbar .cb-button svg {
+  body:not(.touch) #commandbar .cb-button svg {
     width: 20px;
     height: 20px;
   }

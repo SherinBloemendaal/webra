@@ -286,7 +286,7 @@ export class CommandBar {
       return;
     }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const list = [...this.buttons.values()].filter((b) => !b.disabled);
+    const list = [...this.buttons.values()].filter((b) => !b.disabled && b.offsetParent !== null);
     const i = list.indexOf(document.activeElement);
     if (i < 0) return;
     e.preventDefault();
@@ -298,8 +298,17 @@ export class CommandBar {
     return this.input.selectedOwnUnits();
   }
 
+  /** Stay above the touch action bar (js/touch.js) while it shows. */
+  place() {
+    const bar = document.getElementById('touch-bar');
+    const h = bar && bar.offsetParent !== null ? bar.offsetHeight : 0;
+    if (h > 0) this.root.style.setProperty('--cb-bottom', `${h + 14}px`);
+    else this.root.style.removeProperty('--cb-bottom');
+  }
+
   /** Refresh from the selection (call on selection changes and every UI tick). */
   update() {
+    this.place();
     const ids = Uint32Array.from(this.input.selection);
     this.cmd = JSON.parse(this.game.command_state(this.player, ids));
     const p = this.pending;

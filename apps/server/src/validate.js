@@ -42,7 +42,7 @@ export function ordersFitRules(orders, actorCount) {
 }
 
 /**
- * Cheat orders (debug menu: dev_flag, dev_cash, dev_kill) are only relayed in
+ * Cheat orders (debug menu: dev_flag, dev_cash, dev_kill, dev_experience) are only relayed in
  * games whose agreed options have `cheats: true`. The client only offers them
  * then, so anything else is a protocol violation. The engine ignores them in
  * such a game as well; refusing them here keeps them off every peer's wire.

@@ -11,6 +11,7 @@
 
 import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
 import { SCHEMA } from './settings.js';
+import { touchControls } from './touch.js';
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -301,6 +302,8 @@ export class GameMenu {
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
+      check('lowQuality', 'Low quality (faster on phones)'),
     );
     const fs = this.opts.fullscreen;
     const fsRow = el('div', 'game-menu-row');
@@ -311,7 +314,7 @@ export class GameMenu {
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths']) s.reset(key);
+        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'pixelRatioCap', 'lowQuality']) s.reset(key);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),
@@ -361,6 +364,14 @@ export class GameMenu {
       fixed.append(row);
     }
     list.append(fixed);
+    list.append(el('h2', null, 'Touch'));
+    const touch = el('div', 'game-menu-keys');
+    for (const [gesture, what] of touchControls()) {
+      const row = el('div', 'game-menu-key-row game-menu-fixed');
+      row.append(el('span', 'game-menu-key-label', what), el('span', 'game-menu-keycap', gesture));
+      touch.append(row);
+    }
+    list.append(touch);
     list.append(
       el(
         'p',

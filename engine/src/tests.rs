@@ -162,7 +162,9 @@ fn ai_vs_ai_game_runs_and_fights() {
     let mut max_units = 0;
     // Contested gems pay more per trip, so both sides rebuild longer: games
     // with gems on seeds 10 to 17 ended after 9 to 18 minutes (7 to 13 before).
-    for _ in 0..(25 * 60 * 20) {
+    // Veterancy and prone infantry spread them further: elite armies end some
+    // games sooner, soldiers taking cover drag others out (5 to 26 minutes).
+    for _ in 0..(25 * 60 * 30) {
         w.step();
         max_units = max_units.max(w.actors.iter().filter(|a| a.alive && a.kind != Kind::Building).count());
         if w.winner.is_some() {
@@ -172,7 +174,7 @@ fn ai_vs_ai_game_runs_and_fights() {
     let killed: u32 = w.losses.iter().sum();
     assert!(max_units >= 10, "armies were built: {max_units}");
     assert!(killed >= 5, "fighting happened: {killed} dead");
-    assert!(w.winner.is_some(), "one AI destroyed the other within 20 minutes");
+    assert!(w.winner.is_some(), "one AI destroyed the other within 30 minutes");
 }
 
 #[test]
@@ -862,10 +864,12 @@ fn mirrored_units_drive_mirrored_paths() {
 }
 
 /// Identical AIs on mirrored spawns: neither player slot may win most games.
+/// 20 games keep a fair coin under 1.5 % of failing (10 games: 11 %, and
+/// every combat change reshuffles the outcomes).
 #[test]
 fn mirror_matches_are_fair() {
     let mut wins = [0u32; 2];
-    for seed in 0..10u64 {
+    for seed in 0..20u64 {
         let mut w = World::new(seed, 80, &[("allies", true), ("allies", true)]);
         for _ in 0..(25 * 60 * 25) {
             w.step();
@@ -877,7 +881,7 @@ fn mirror_matches_are_fair() {
             wins[p as usize] += 1;
         }
     }
-    assert!(wins[0] <= 7 && wins[1] <= 7, "wins per slot over 10 mirror matches: {wins:?}");
+    assert!(wins[0] <= 15 && wins[1] <= 15, "wins per slot over 20 mirror matches: {wins:?}");
 }
 
 // ---- AI in free for all and team games ----------------------------------------

@@ -52,6 +52,9 @@ struct RawActor {
     turret_offsets: Vec<Vec<i32>>,
     stance: Option<(Stance, Stance)>,
     abilities: Abilities,
+    experience: Option<ExperienceInfo>,
+    gives_experience: Option<GivesExperienceInfo>,
+    take_cover: Option<RawTakeCover>,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
 }
@@ -62,6 +65,77 @@ pub struct SelfHeal {
     pub delay: i32,
     pub start_if_below: i32,
     pub damage_cooldown: i32,
+}
+
+/// OpenRA `GainsExperience` with RA's rank bonuses (veterancy.rs). Every list
+/// has one entry per level, index 0 = level 1; modifiers are percentages.
+#[derive(Deserialize, Clone)]
+pub struct ExperienceInfo {
+    /// Experience needed for each level, as a multiple of the actor's own
+    /// value (`Conditions` keys: 200 = twice its cost in killed enemies).
+    pub thresholds: Vec<i32>,
+    /// FirepowerMultiplier: damage of the actor's warheads.
+    pub firepower: Vec<i32>,
+    /// DamageMultiplier: damage the actor takes.
+    pub damage: Vec<i32>,
+    /// SpeedMultiplier: movement speed.
+    pub speed: Vec<i32>,
+    /// ReloadDelayMultiplier: delay between bursts.
+    pub reload: Vec<i32>,
+    /// ChangesHealth@ELITE: self repair from level `rank` up.
+    pub heal: Option<RankHeal>,
+}
+
+/// OpenRA `ChangesHealth` switched on by a rank (elite self repair).
+#[derive(Deserialize, Clone)]
+pub struct RankHeal {
+    /// First level (1-based) that heals.
+    pub rank: i32,
+    pub step: i32,
+    /// Percentage of the maximum health healed per step, on top of `step`.
+    pub percentage_step: i32,
+    pub delay: i32,
+    pub start_if_below: i32,
+    pub damage_cooldown: i32,
+}
+
+/// OpenRA `GivesExperience`: what the killer of this actor gains.
+#[derive(Deserialize, Clone)]
+pub struct GivesExperienceInfo {
+    /// Experience value; -1 uses the actor's cost.
+    pub experience: i32,
+    /// ActorExperienceModifier: percentage of the value the killing actor gains.
+    pub actor_modifier: i32,
+}
+
+#[derive(Deserialize)]
+struct RawTakeCover {
+    duration: i32,
+    speed_modifier: i32,
+    damage_triggers: Vec<String>,
+    damage_modifiers: Vec<RawDamageModifier>,
+}
+
+#[derive(Deserialize)]
+struct RawDamageModifier {
+    #[serde(rename = "type")]
+    ty: String,
+    percent: i32,
+}
+
+/// OpenRA `TakeCover` (veterancy.rs): infantry go prone when a warhead with a
+/// trigger damage type hits them, take less damage from some damage types and
+/// move slower while prone. Damage types are bits of `Rules::damage_types`.
+#[derive(Clone)]
+pub struct TakeCoverInfo {
+    /// Ticks the actor stays prone after the last triggering hit.
+    pub duration: i32,
+    /// Movement speed while prone, percent.
+    pub speed_modifier: i32,
+    /// Damage type bits that make the actor go prone (DamageTriggers).
+    pub triggers: u32,
+    /// (damage type bit, percent) applied to hits of that type while prone (DamageModifiers).
+    pub modifiers: Vec<(u32, i32)>,
 }
 
 /// Special abilities from OpenRA traits. Each is optional.
@@ -79,7 +153,11 @@ pub struct Abilities {
     pub delivers_cash: Option<DeliversCashInfo>,
     pub transforms: Option<TransformsInfo>,
     pub line_build: Option<LineBuildInfo>,
-    pub provides_radar: Option<serde_json::Value>,
+    /// OpenRA `ProvidesRadar`: owning one that is powered (and not jammed) turns the radar minimap on (minimap.rs).
+    pub provides_radar: Option<ProvidesRadarInfo>,
+    /// Mobile Radar Jammer (`ProximityExternalCondition@JAMMER`, condition `jammed`):
+    /// enemy radar structures in range go offline and enemy radar shows no blips in range (minimap.rs).
+    pub jams_radar: Option<RangeInfo>,
     pub crushable: Option<Vec<String>>,
     pub support_powers: Option<Vec<SupportPowerInfo>>,
     /// OpenRA `MineImmune`: drives over mines without setting them off (Minelayer).
@@ -93,6 +171,13 @@ pub struct Abilities {
     pub iron_curtainable: Option<IronCurtainableInfo>,
     /// The Chronosphere can shift it (Chronoshiftable).
     pub chronoshiftable: Option<ChronoshiftableInfo>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+pub struct ProvidesRadarInfo {
+    /// `RequiresCondition: !jammed`: an enemy radar jammer in range switches it off.
+    #[serde(default)]
+    pub jammable: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -378,6 +463,7 @@ struct RawWarhead {
     delay: i32,
     valid: u32,
     invalid: u32,
+    damage_types: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -608,6 +694,11 @@ pub struct ActorInfo {
     /// never picks targets on its own and has no stance (Demolition Truck).
     pub stance: Option<(Stance, Stance)>,
     pub abilities: Abilities,
+    /// Veterancy (veterancy.rs): GainsExperience and GivesExperience.
+    pub experience: Option<ExperienceInfo>,
+    pub gives_experience: Option<GivesExperienceInfo>,
+    /// Prone infantry (veterancy.rs): TakeCover.
+    pub take_cover: Option<TakeCoverInfo>,
     pub building: Option<BuildingInfo>,
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
@@ -662,6 +753,8 @@ pub struct Warhead {
     pub delay: i32,
     pub valid: u32,
     pub invalid: u32,
+    /// DamageTypes that TakeCover reacts to, as bits of `Rules::damage_types`.
+    pub damage_types: u32,
 }
 
 impl Warhead {
@@ -757,6 +850,9 @@ pub struct Rules {
     /// Per locomotor: `Crushes: mine` (sets off mines it drives over).
     pub locomotor_crushes_mines: Vec<bool>,
     pub tokens: Vec<String>,
+    /// Damage type names that some actor's TakeCover refers to; bit `k` of a
+    /// warhead's or TakeCover's damage type mask is `damage_types[k]`.
+    pub damage_types: Vec<String>,
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
     pub obtainable: Vec<Vec<bool>>,
@@ -872,7 +968,72 @@ impl Rules {
         if let Some(b) = &a.building {
             self.validate_building(a, b)?;
         }
+        self.validate_veterancy(a)?;
         self.validate_abilities(a)
+    }
+
+    /// Veterancy and prone infantry (veterancy.rs).
+    fn validate_veterancy(&self, a: &ActorInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.{f}", a.id);
+        let percents = |what: &str, list: &[i32], len: usize| -> Result<(), String> {
+            if list.len() != len {
+                return Err(n(&format!("experience.{what} needs one value per threshold")));
+            }
+            for &v in list {
+                within(&n(&format!("experience.{what}")), v, 0, MAX_PERCENT)?;
+            }
+            Ok(())
+        };
+        let mut fastest = 100;
+        if let Some(x) = &a.experience {
+            let levels = x.thresholds.len();
+            count(&n("experience.thresholds"), levels, MAX_LEVELS)?;
+            for &t in &x.thresholds {
+                within(&n("experience.thresholds"), t, 0, 100_000)?;
+            }
+            if x.thresholds.windows(2).any(|w| w[1] < w[0]) {
+                return Err(n("experience.thresholds must not decrease"));
+            }
+            percents("firepower", &x.firepower, levels)?;
+            percents("damage", &x.damage, levels)?;
+            percents("speed", &x.speed, levels)?;
+            percents("reload", &x.reload, levels)?;
+            fastest = x.speed.iter().copied().fold(100, i32::max);
+            if let Some(h) = &x.heal {
+                within(&n("experience.heal.rank"), h.rank, 1, levels.max(1) as i32)?;
+                within(&n("experience.heal.step"), h.step, 0, 100_000_000)?;
+                within(&n("experience.heal.percentage_step"), h.percentage_step, 0, 100)?;
+                within(&n("experience.heal.delay"), h.delay, 1, TIMER)?;
+                within(&n("experience.heal.start_if_below"), h.start_if_below, 0, 100)?;
+                within(&n("experience.heal.damage_cooldown"), h.damage_cooldown, 0, TIMER)?;
+            }
+        }
+        if let Some(g) = &a.gives_experience {
+            within(&n("gives_experience.experience"), g.experience, -1, 1_000_000)?;
+            within(&n("gives_experience.actor_modifier"), g.actor_modifier, 0, 1_000_000)?;
+        }
+        if let Some(tc) = &a.take_cover {
+            // Infantry only: the prone pose is drawn with the sprite slot a turret would use.
+            if a.kind != Kind::Infantry {
+                return Err(n("take_cover: only infantry can go prone"));
+            }
+            within(&n("take_cover.duration"), tc.duration, 1, TIMER)?;
+            within(&n("take_cover.speed_modifier"), tc.speed_modifier, 0, MAX_PERCENT)?;
+            for &(_, p) in &tc.modifiers {
+                within(&n("take_cover.damage_modifiers"), p, 0, MAX_PERCENT)?;
+            }
+            fastest = fastest * tc.speed_modifier.max(100) / 100;
+        }
+        // Rank and prone speed bonuses stay within the movement bound of unit.speed.
+        if let Some(u) = &a.unit {
+            within(
+                &n("unit.speed with rank and prone modifiers"),
+                (u.speed as i64 * fastest as i64 / 100).min(i32::MAX as i64) as i32,
+                0,
+                2 * CELLS,
+            )?;
+        }
+        Ok(())
     }
 
     fn validate_unit(&self, a: &ActorInfo, u: &UnitInfo) -> Result<(), String> {
@@ -985,6 +1146,9 @@ impl Rules {
         }
         if let Some(r) = &ab.jams_missiles {
             within(&n("jams_missiles.range"), r.range, 0, 64 * CELLS)?;
+        }
+        if let Some(r) = &ab.jams_radar {
+            within(&n("jams_radar.range"), r.range, 0, 64 * CELLS)?;
         }
         // Shroud and gap sight ranges size the cached vision circles.
         if let Some(r) = &ab.creates_shroud {
@@ -1131,6 +1295,24 @@ impl Rules {
             }
         };
         let ids: Vec<String> = raw.actors.iter().map(|a| a.id.clone()).collect();
+        // Damage types TakeCover refers to get one bit each; other types never matter.
+        let mut damage_types: Vec<String> = Vec::new();
+        for a in &raw.actors {
+            let Some(tc) = &a.take_cover else { continue };
+            let n = |f: &str| format!("actors.{}.take_cover.{f}", truncate(&a.id));
+            if tc.damage_triggers.len() > MAX_TAKE_COVER_TYPES || tc.damage_modifiers.len() > MAX_TAKE_COVER_TYPES {
+                return Err(n(&format!("damage_triggers and damage_modifiers may have at most {MAX_TAKE_COVER_TYPES} entries")));
+            }
+            for t in tc.damage_triggers.iter().chain(tc.damage_modifiers.iter().map(|m| &m.ty)) {
+                if !damage_types.contains(t) {
+                    damage_types.push(t.clone());
+                }
+            }
+        }
+        if damage_types.len() > 32 {
+            return Err(format!("take_cover: at most 32 different damage types, found {}", damage_types.len()));
+        }
+        let type_bit = |t: &str| damage_types.iter().position(|d| d == t).map_or(0, |k| 1u32 << k);
         let index_of = |id: &str| ids.iter().position(|i| i.eq_ignore_ascii_case(id));
         let mut actors = Vec::new();
         for a in raw.actors {
@@ -1229,6 +1411,12 @@ impl Rules {
             }
             let queue = QueueType::parse(&a.queue).ok_or_else(|| n("queue: unsupported queue"))?;
             let transforms_into = a.abilities.transforms.as_ref().and_then(|t| index_of(&t.into));
+            let take_cover = a.take_cover.map(|tc| TakeCoverInfo {
+                duration: tc.duration,
+                speed_modifier: tc.speed_modifier,
+                triggers: tc.damage_triggers.iter().fold(0, |m, t| m | type_bit(t)),
+                modifiers: tc.damage_modifiers.iter().map(|m| (type_bit(&m.ty), m.percent)).collect(),
+            });
             actors.push(ActorInfo {
                 id: a.id,
                 name: a.name,
@@ -1252,10 +1440,18 @@ impl Rules {
                 turret_offsets,
                 stance: a.stance,
                 abilities: a.abilities,
+                experience: a.experience,
+                gives_experience: a.gives_experience,
+                take_cover,
                 building,
                 unit: a.unit,
                 transforms_into,
             });
+        }
+        for w in &raw.weapons {
+            if w.warheads.iter().any(|h| h.damage_types.len() > MAX_DAMAGE_TYPES) {
+                return Err(format!("weapons.{}.warheads.damage_types may have at most {MAX_DAMAGE_TYPES} entries", truncate(&w.name)));
+            }
         }
         let weapons = raw
             .weapons
@@ -1295,6 +1491,7 @@ impl Rules {
                         delay: h.delay,
                         valid: h.valid,
                         invalid: h.invalid,
+                        damage_types: h.damage_types.iter().fold(0, |m, t| m | type_bit(t)),
                     })
                     .collect(),
             })
@@ -1322,6 +1519,7 @@ impl Rules {
             locomotors,
             locomotor_crushes_mines,
             tokens,
+            damage_types,
             obtainable: Vec::new(),
         };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();
@@ -1403,6 +1601,13 @@ impl Rules {
 
 /// World units per cell, for range bounds.
 const CELLS: i32 = 1024;
+/// Most damage types one warhead may list, and one TakeCover may refer to per list.
+const MAX_DAMAGE_TYPES: usize = 16;
+const MAX_TAKE_COVER_TYPES: usize = 16;
+/// Most veterancy levels (rank decorations, level-up loops).
+pub const MAX_LEVELS: usize = 8;
+/// Upper bound for percentage modifiers (firepower, damage, speed, reload, prone).
+const MAX_PERCENT: i32 = 1000;
 /// Upper bound for timers and delays, in ticks (over an hour of game time).
 const TIMER: i32 = 100_000;
 /// Largest vision-like radius (sight, gap generator shroud and sight): vision

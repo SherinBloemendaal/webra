@@ -1,7 +1,7 @@
 // Boot: load the simulation (WebAssembly), the WebGPU renderer and the lobby,
 // then run the fixed-step game loop with interpolated rendering.
 
-import init, { Game, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
@@ -17,7 +17,12 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { NotificationView } from './notifications.js';
+import { importOramap } from './oramap/index.js';
+import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
+import { TouchControls } from './touch.js';
+import { Layout, hudText, renderPixelRatio } from './layout.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -62,6 +67,13 @@ async function boot() {
       spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
+      // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
+      importOramap: (bytes, fileName) =>
+        importOramap(bytes, {
+          baseRules: JSON.parse(base_rules_json()),
+          validate: (json) => JSON.parse(Game.validate_map(json)),
+          fileName,
+        }),
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
@@ -228,15 +240,27 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
+  // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
+  document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
   // Orders and production clicks made through `ui` get unit replies and announcements.
   const ui = audio ? audio.watch(game) : game;
   renderer.setAtlas(buildAtlas(rules.actors));
+  // Mobile GPUs: the player caps the pixel ratio or picks low quality (game menu, Settings).
+  renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
+  // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
+  const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
   let powerBar = null;
   let commandBar = null;
+  let touch = null;
+  const placementEnded = () => {
+    sidebar?.setPlacing(null);
+    layout.setPlacing(false);
+    touch?.update();
+  };
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
@@ -254,25 +278,46 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
     cancelCommand: () => commandBar?.cancel() ?? false,
     queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
-    onPlaced: () => sidebar?.setPlacing(null),
-    onCancelPlace: () => sidebar?.setPlacing(null),
+    onPlaced: placementEnded,
+    onCancelPlace: placementEnded,
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
     onMenu: () => menu.open(),
   });
-  sidebar = new Sidebar($('sidebar'), ui, rules, player, {
-    onPlace: (id) => {
-      input.startPlacing(id);
-      sidebar.setPlacing(id);
+  sidebar = new Sidebar(
+    $('sidebar'),
+    ui,
+    rules,
+    player,
+    {
+      onPlace: (id) => {
+        input.startPlacing(id);
+        sidebar.setPlacing(id);
+        layout.setPlacing(true);
+        touch?.update();
+      },
+      onCancelPlace: () => {
+        input.placing = null;
+        placementEnded();
+      },
+      shiftLatched: () => !!touch?.queue,
+      onSell: () => input.toggleSellMode(),
+      onDeploy: () => input.deploySelection(),
+      onMenu: () => menu.toggle(),
     },
-    onCancelPlace: () => {
-      input.placing = null;
-      sidebar.setPlacing(null);
-    },
-    onSell: () => input.toggleSellMode(),
-    onDeploy: () => input.deploySelection(),
-  });
+    { ticksPerSecond: Game.ticks_per_second() },
+  );
+  // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
+  // test leaves the slot empty, which shows "Radar offline".
+  const minimap = stress ? null : new Minimap($('radar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
+  // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
+  // bar and placement buttons, long press on sidebar cards.
+  touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
+  touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
+  // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
+  const notices = new NotificationView($('field'));
+  audio?.onAnnounce((key) => notices.announce(key));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -302,8 +347,10 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       return true;
     },
   });
+  // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
+  $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, commandBar, renderer, wasm, rules, debug };
+  window.webra = { game, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -337,6 +384,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     fullscreen,
     onChange: (open, isPaused) => {
       input.setSuspended(open);
+      if (open) touch.reset();
       paused = isPaused;
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
@@ -423,7 +471,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     input.update(dt / 1000);
     if (game.terrain_dirty()) {
       const ptr = game.terrain_ptr();
-      renderer.uploadTerrain(new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len()));
+      const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
+      renderer.uploadTerrain(terrain);
+      minimap?.terrainChanged(terrain);
     }
     const fogPtr = game.fog_ptr(player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
@@ -445,6 +495,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
+    minimap?.frame(now);
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -462,7 +513,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       audio?.playerState(state);
       sidebar.setSelection(selectionInfo(game, input.selection));
       sidebar.setDeployState(input.deployState());
-      updateHud(game, state, fps, simMs, stress, paused);
+      updateHud(game, state, fps, simMs, stress, paused, layout.compact);
+      touch.update();
       debug.update(state);
       if (!over && !stress && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
@@ -482,12 +534,11 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
-function updateHud(game, state, fps, simMs, stress, paused) {
-  const secs = Math.floor(state.tick / Game.ticks_per_second());
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
-  if (stress) parts.push(`${game.actor_count()} units`, `${state.flowFields} flow fields`);
-  $('hud').textContent = parts.join('  |  ');
+function updateHud(game, state, fps, simMs, stress, paused, compact) {
+  const seconds = state.tick / Game.ticks_per_second();
+  const units = stress ? game.actor_count() : 0;
+  const text = hudText({ seconds, paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
+  if ($('hud').textContent !== text) $('hud').textContent = text;
 }
 
 boot();

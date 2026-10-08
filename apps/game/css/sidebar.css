@@ -1,36 +1,35 @@
-/* In-game sidebar. Dark steel and olive, flat and crisp, in the spirit of
-   the 1996 Red Alert sidebar. Every selector is scoped under #sidebar. */
+/* In-game sidebar (js/sidebar.js), laid out like the Red Alert sidebar of
+   OpenRA: command buttons, radar, money and clock, then the power meter, the
+   production tabs and the cameo grid. Colours and metal come from theme.css.
+   Every selector is scoped under #sidebar. */
 
 #sidebar {
-  --sb-bg: #15181a;
-  --sb-panel: #1f2427;
-  --sb-panel-2: #272d30;
-  --sb-edge: #3a4346;
-  --sb-edge-hi: #55605f;
-  --sb-olive: #6f7a3e;
-  --sb-olive-hi: #a3b05a;
-  --sb-text: #d8dccf;
-  --sb-dim: #8b9288;
-  --sb-gold: #f2c94c;
-  --sb-ok: #5fbf4a;
-  --sb-warn: #e0a030;
-  --sb-bad: #e0473a;
-  --sb-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --sb-cameo-gap: 2px;
+  --sb-tab-size: 30px;
+  --sb-power-width: 12px;
 
   box-sizing: border-box;
-  width: 240px;
-  min-width: 240px;
-  max-width: 240px;
+  width: 264px;
+  min-width: 264px;
+  max-width: 264px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 5px;
+  padding: 6px;
   overflow: hidden;
-  background: var(--sb-bg);
-  border-left: 2px solid var(--sb-edge);
-  color: var(--sb-text);
-  font: 12px/1.3 system-ui, 'Segoe UI', sans-serif;
+  background:
+    var(--ui-rivet) left 2px bottom 2px / 8px 8px no-repeat,
+    var(--ui-rivet) right 2px bottom 2px / 8px 8px no-repeat,
+    var(--ui-scan),
+    var(--ui-brushed),
+    linear-gradient(90deg, var(--ui-metal-1), var(--ui-metal-2) 50%, var(--ui-metal-1));
+  border-left: 1px solid var(--ui-edge);
+  box-shadow:
+    inset 1px 0 0 var(--ui-bevel-hi),
+    -3px 0 10px rgba(0, 0, 0, 0.5);
+  color: var(--ui-text);
+  font: var(--ui-fs-s) / 1.3 var(--ui-font);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -45,296 +44,489 @@
   display: none !important;
 }
 
-/* ---- Credits ------------------------------------------------------------ */
+/* ---- Shared bevel button (top row and tabs) ------------------------------ */
 
-#sidebar .sb-top {
-  flex: none;
-  padding: 6px 8px;
-  background: var(--sb-panel);
-  border: 1px solid var(--sb-edge);
-  border-radius: 3px;
-  text-align: center;
+#sidebar .sb-tool,
+#sidebar .sb-tab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-muted);
+  cursor: pointer;
 }
 
-#sidebar .sb-credits-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
+#sidebar .sb-tool:hover:not(:disabled),
+#sidebar .sb-tab:hover {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+  color: var(--ui-text);
+}
+
+#sidebar .sb-tool:active:not(:disabled),
+#sidebar .sb-tab:active {
+  box-shadow: var(--ui-bevel-in);
+  background: var(--ui-metal-1);
+}
+
+#sidebar .sb-tool:focus-visible,
+#sidebar .sb-tab:focus-visible,
+#sidebar .sb-card:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+/* ---- Command buttons -------------------------------------------------------- */
+
+#sidebar .sb-tools {
+  flex: none;
+  display: flex;
+  gap: 3px;
+}
+
+#sidebar .sb-tool {
+  width: 30px;
+  height: 28px;
+}
+
+#sidebar .sb-tool-end {
+  margin-left: auto;
+}
+
+#sidebar .sb-tool.active {
+  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
+  color: #fff;
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 6px var(--ui-accent-glow);
+}
+
+#sidebar .sb-tool.blocked {
+  color: var(--ui-bad);
+}
+
+#sidebar .sb-tool:disabled {
+  color: var(--ui-dim);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- Radar slot ------------------------------------------------------------
+   The minimap (another module) draws inside #radar. While it is empty the
+   slot shows a dark radar screen with "Radar offline". */
+
+#sidebar .sb-radar {
+  position: relative;
+  flex: none;
+  align-self: center;
+  width: min(100%, 36vh);
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #040608;
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 0 1px var(--ui-metal-4);
+}
+
+/* The minimap (js/minimap.js, css/minimap.css) fills the slot. */
+#sidebar .sb-radar .mm {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+#sidebar .sb-radar .mm-label {
+  color: var(--ui-muted);
+  font-family: var(--ui-font-mono);
+}
+
+#sidebar .sb-radar:empty::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 23%, rgba(var(--sb-radar-rgb, 110, 150, 190), 0.16) 23.5% 24%, transparent 24.5% 47%,
+      rgba(var(--sb-radar-rgb, 110, 150, 190), 0.16) 47.5% 48%, transparent 48.5%),
+    linear-gradient(rgba(var(--sb-radar-rgb, 110, 150, 190), 0.12), rgba(var(--sb-radar-rgb, 110, 150, 190), 0.12)) center / 1px 100% no-repeat,
+    linear-gradient(rgba(var(--sb-radar-rgb, 110, 150, 190), 0.12), rgba(var(--sb-radar-rgb, 110, 150, 190), 0.12)) center / 100% 1px no-repeat,
+    var(--ui-grid),
+    radial-gradient(circle at 50% 45%, #10161d, #040608 75%);
+}
+
+#sidebar .sb-radar:empty::after {
+  content: attr(data-offline-label);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--ui-line);
+  color: var(--ui-dim);
+  font: 700 var(--ui-fs-xs) / 1.4 var(--ui-font-mono);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--sb-dim);
+  white-space: nowrap;
 }
 
-#sidebar .sb-credits {
-  font: 700 22px/1.15 var(--sb-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-gold);
-  letter-spacing: 0.04em;
-}
+/* ---- Money and clock --------------------------------------------------------- */
 
-#sidebar .sb-credits.up {
-  color: #ffe08a;
-}
-
-#sidebar .sb-credits.down {
-  color: #e8b040;
-}
-
-#sidebar .sb-ore {
-  font: 11px/1.3 var(--sb-mono);
-  color: var(--sb-dim);
-}
-
-/* ---- Power -------------------------------------------------------------- */
-
-#sidebar .sb-power {
+#sidebar .sb-status {
   flex: none;
-}
-
-#sidebar .sb-power-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 3px;
-  font-size: 11px;
-}
-
-#sidebar .sb-power-label {
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sb-dim);
-}
-
-#sidebar .sb-power-text {
-  font-family: var(--sb-mono);
+  gap: 8px;
+  padding: 3px 8px 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 75%, #000), #06080b);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  font: 700 18px / 1.15 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--sb-dim);
+  color: #f4f6f8;
+  text-shadow: 1px 1px 0 #000;
+}
+
+#sidebar .sb-money {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+#sidebar .sb-money-sign {
+  color: var(--ui-money);
+}
+
+#sidebar .sb-credits.up {
+  color: #fff3c4;
+}
+
+#sidebar .sb-credits.down {
+  color: var(--ui-money);
+}
+
+#sidebar .sb-clock-text {
+  color: var(--ui-text);
+}
+
+/* Ore silos: how full the storage is. */
+#sidebar .sb-silo {
+  flex: none;
+  position: relative;
+  height: 4px;
+  margin-top: -3px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-top: 0;
+}
+
+#sidebar .sb-silo-fill {
+  height: 100%;
+  width: calc(var(--silo, 0) * 100%);
+  background: var(--ui-money);
+  opacity: 0.75;
+  transition: width 0.3s ease;
+}
+
+#sidebar .sb-silo.full .sb-silo-fill {
+  background: var(--ui-warn);
+  opacity: 1;
+}
+
+/* ---- Power, tabs and cameos -------------------------------------------------- */
+
+#sidebar .sb-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 4px;
+}
+
+#sidebar .sb-power {
+  flex: none;
+  width: var(--sb-power-width);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 
 #sidebar .sb-power-meter {
   position: relative;
-  height: 10px;
-  background: #0c0e0f;
-  border: 1px solid var(--sb-edge);
-  border-radius: 2px;
+  flex: 1;
+  width: 100%;
+  min-height: 40px;
   overflow: hidden;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel-in);
+}
+
+/* Segment lines over the bar, like the 1996 meter. */
+#sidebar .sb-power-meter::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.55) 3px 4px);
+  pointer-events: none;
 }
 
 #sidebar .sb-power-fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(var(--fill, 0) * 100%);
-  background: var(--sb-ok);
-  transition: width 0.3s ease, background-color 0.3s ease;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--fill, 0) * 100%);
+  background: linear-gradient(90deg, #237a35, var(--ui-ok), #237a35);
+  transition: height 0.3s ease;
 }
 
-/* Marker for the generated capacity. */
-#sidebar .sb-power-cap {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  left: calc(var(--cap, 0) * 100% - 2px);
-  width: 2px;
-  background: var(--sb-text);
-  transition: left 0.3s ease;
-}
-
-#sidebar .sb-power.low .sb-power-label {
-  color: var(--sb-bad);
-  animation: sb-blink 1s steps(2, start) infinite;
-}
-
-#sidebar .sb-power.low .sb-power-text {
-  color: var(--sb-bad);
+#sidebar .sb-power.tight .sb-power-fill {
+  background: linear-gradient(90deg, #8a6d10, var(--ui-warn), #8a6d10);
 }
 
 #sidebar .sb-power.low .sb-power-fill {
-  background: var(--sb-bad);
+  background: linear-gradient(90deg, #7d1c12, var(--ui-bad), #7d1c12);
 }
 
-/* ---- Tabs --------------------------------------------------------------- */
+/* Marker for the produced capacity. */
+#sidebar .sb-power-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--cap, 0) * 100% - 1px);
+  height: 2px;
+  background: #fff;
+  box-shadow: 0 0 3px #fff;
+  z-index: 1;
+  transition: bottom 0.3s ease;
+}
+
+#sidebar .sb-power-icon {
+  color: var(--ui-ok);
+}
+
+#sidebar .sb-power-icon .ui-icon {
+  width: 12px;
+  height: 12px;
+}
+
+#sidebar .sb-power.tight .sb-power-icon {
+  color: var(--ui-warn);
+}
+
+#sidebar .sb-power.low .sb-power-icon {
+  color: var(--ui-bad);
+  animation: sb-blink 1s steps(2, start) infinite;
+}
 
 #sidebar .sb-tabs {
   flex: none;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 3px;
+  width: var(--sb-tab-size);
 }
 
 #sidebar .sb-tab {
-  position: relative;
-  padding: 6px 2px;
-  background: var(--sb-panel);
-  border: 1px solid var(--sb-edge);
-  border-radius: 3px;
-  color: var(--sb-dim);
-  font: 600 11px/1.2 system-ui, 'Segoe UI', sans-serif;
-  letter-spacing: 0.02em;
-  cursor: pointer;
+  width: var(--sb-tab-size);
+  height: var(--sb-tab-size);
 }
 
-#sidebar .sb-tab:hover {
-  background: var(--sb-panel-2);
-  color: var(--sb-text);
+#sidebar .sb-tab.available {
+  color: var(--ui-text);
+}
+
+#sidebar .sb-tab.locked {
+  color: var(--ui-muted);
+}
+
+#sidebar .sb-tab.no-producer {
+  color: var(--ui-dim);
+  background: var(--ui-metal-1);
 }
 
 #sidebar .sb-tab.active {
-  background: var(--sb-olive);
-  border-color: var(--sb-olive-hi);
+  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
   color: #fff;
-}
-
-#sidebar .sb-tab.no-producer .sb-tab-label {
-  opacity: 0.45;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 6px var(--ui-accent-glow);
 }
 
 #sidebar .sb-tab-badge {
   position: absolute;
-  top: -5px;
-  right: -3px;
-  min-width: 15px;
-  height: 15px;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
   padding: 0 3px;
-  border-radius: 8px;
-  background: var(--sb-gold);
-  color: #1a1a1a;
-  font: 700 10px/15px var(--sb-mono);
+  border: 1px solid var(--ui-edge);
+  border-radius: 7px;
+  background: var(--ui-money);
+  color: #15120a;
+  font: 700 9px / 12px var(--ui-font-mono);
   text-align: center;
 }
 
 #sidebar .sb-tab-badge.ready {
-  background: var(--sb-ok);
-  color: #0d1a0a;
+  background: var(--ui-ok);
+  color: #06140a;
   animation: sb-pulse 0.9s ease-in-out infinite alternate;
 }
 
-/* ---- Card grid ---------------------------------------------------------- */
-
 #sidebar .sb-grid {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: 82px;
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sb-cameo-gap);
   align-content: start;
-  padding-right: 2px;
+  padding: var(--sb-cameo-gap);
+  background: #050709;
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel-in);
   scrollbar-width: thin;
-  scrollbar-color: var(--sb-edge) transparent;
+  scrollbar-color: var(--ui-metal-4) transparent;
 }
 
 #sidebar .sb-empty {
   grid-column: 1 / -1;
   padding: 16px 4px;
-  color: var(--sb-dim);
+  color: var(--ui-dim);
   text-align: center;
   font-style: italic;
 }
+
+/* ---- Cameos -------------------------------------------------------------------- */
 
 #sidebar .sb-card {
   position: relative;
   display: block;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1;
   padding: 0;
   overflow: hidden;
-  background: var(--sb-panel);
-  border: 1px solid var(--sb-edge);
-  border-radius: 3px;
-  color: var(--sb-text);
+  background: var(--ui-metal-0);
+  border: 1px solid #000;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: var(--ui-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 #sidebar .sb-card:hover {
-  border-color: var(--sb-edge-hi);
-  background: var(--sb-panel-2);
+  box-shadow: inset 0 0 0 1px var(--ui-accent-hi);
 }
 
-#sidebar .sb-card:focus-visible,
-#sidebar .sb-tab:focus-visible {
-  outline: 2px solid var(--sb-gold);
-  outline-offset: 1px;
+#sidebar .sb-card:active:not(.disabled) .sb-icon {
+  transform: translate(1px, 1px);
 }
 
 #sidebar .sb-icon {
   display: block;
   width: 100%;
-  height: 64px;
-  object-fit: contain;
-  background: linear-gradient(#20272a, #171b1d);
+  height: 100%;
 }
 
 #sidebar .sb-name {
   position: absolute;
-  left: 4px;
-  right: 40px;
-  bottom: 2px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 2px;
   overflow: hidden;
-  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.72);
+  color: #eef1f4;
+  font: 700 8.5px / 1.25 var(--ui-font);
+  letter-spacing: 0.02em;
+  text-align: center;
   text-overflow: ellipsis;
-  font-size: 11px;
-  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-#sidebar .sb-cost {
-  position: absolute;
-  right: 4px;
-  bottom: 2px;
-  font: 11px var(--sb-mono);
-  color: var(--sb-gold);
-}
-
-/* Build clock: the dark part shrinks clockwise as production advances. */
+/* Build clock: a shade that the progress wipes away clockwise from 12. */
 #sidebar .sb-clock {
   position: absolute;
-  inset: 0 0 18px 0;
+  inset: 0;
   display: none;
   pointer-events: none;
-  background: conic-gradient(
-    transparent 0turn calc(var(--p, 0) * 1turn),
-    rgba(0, 0, 0, 0.62) calc(var(--p, 0) * 1turn) 1turn
-  );
+  background: conic-gradient(transparent 0turn calc(var(--p, 0) * 1turn), rgba(0, 0, 0, 0.66) calc(var(--p, 0) * 1turn) 1turn);
 }
 
 #sidebar .sb-card.building .sb-clock {
   display: block;
 }
 
+/* Time left, over the picture like OpenRA's "00:15". */
+#sidebar .sb-eta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 32%;
+  transform: translateY(-50%);
+  color: #fff;
+  font: 700 11px / 1 var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  pointer-events: none;
+}
+
+#sidebar .sb-card.ready .sb-eta {
+  display: none;
+}
+
 #sidebar .sb-count {
   position: absolute;
-  top: 3px;
-  right: 3px;
-  min-width: 18px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.75);
-  border: 1px solid var(--sb-gold);
-  color: var(--sb-gold);
-  font: 700 11px/1.2 var(--sb-mono);
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  padding: 0 3px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid var(--ui-money);
+  color: var(--ui-money);
+  font: 700 10px / 12px var(--ui-font-mono);
   text-align: center;
+  pointer-events: none;
 }
 
 #sidebar .sb-ready {
   position: absolute;
   left: 50%;
-  top: 32px;
+  top: 40%;
   transform: translate(-50%, -50%);
   display: none;
-  padding: 2px 6px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.7);
-  color: var(--sb-ok);
-  font: 700 12px/1.2 var(--sb-mono);
-  letter-spacing: 0.12em;
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--ui-ok);
+  font: 700 11px / 1.2 var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 0 #000;
   pointer-events: none;
 }
 
 #sidebar .sb-card.ready {
-  border-color: var(--sb-ok);
   animation: sb-ready-glow 0.9s ease-in-out infinite alternate;
 }
 
@@ -344,128 +536,108 @@
 }
 
 #sidebar .sb-card.placing {
-  border-color: var(--sb-gold);
-  box-shadow: inset 0 0 0 1px var(--sb-gold);
+  box-shadow: inset 0 0 0 2px var(--ui-money);
   animation: none;
 }
 
 #sidebar .sb-card.placing .sb-ready {
-  color: var(--sb-gold);
+  color: var(--ui-money);
   animation: none;
 }
 
 #sidebar .sb-card.disabled {
   cursor: not-allowed;
-  border-color: #2a3032;
 }
 
 #sidebar .sb-card.disabled .sb-icon {
-  filter: grayscale(1) brightness(0.45);
+  filter: grayscale(1) brightness(0.42);
 }
 
-#sidebar .sb-card.disabled .sb-name,
-#sidebar .sb-card.disabled .sb-cost {
-  color: #5c625c;
-}
-
-/* Numpad hotkey for the first nine cards. */
-#sidebar .sb-slot {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  min-width: 15px;
-  padding: 0 3px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #b9c2b4;
-  font: 700 10px/14px var(--sb-mono);
-  text-align: center;
-  pointer-events: none;
-}
-
-/* What is still needed before the item unlocks. */
-#sidebar .sb-req {
-  position: absolute;
-  left: 3px;
-  right: 3px;
-  top: 30px;
-  transform: translateY(-50%);
-  padding: 2px 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.72);
-  color: #e0b25a;
-  font: 600 10px/1.2 system-ui, 'Segoe UI', sans-serif;
-  text-align: center;
-  white-space: normal;
-  pointer-events: none;
+#sidebar .sb-card.disabled .sb-name {
+  color: #7a838d;
 }
 
 /* Items of the other side or another country: never available to this faction. */
-#sidebar .sb-card.exclusive .sb-req {
-  color: #d9776b;
-}
-
 #sidebar .sb-card.exclusive .sb-icon {
-  filter: grayscale(1) brightness(0.3);
+  filter: grayscale(1) brightness(0.25);
 }
 
-/* ---- Tooltip ------------------------------------------------------------ */
+/* Numpad hotkey for the first nine cameos. */
+#sidebar .sb-slot {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  min-width: 12px;
+  padding: 0 2px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #b6bfc8;
+  font: 700 9px / 12px var(--ui-font-mono);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ---- Tooltip ------------------------------------------------------------------- */
 
 #sidebar .sb-tip {
   position: fixed;
   z-index: 50;
-  width: 220px;
+  width: 230px;
   padding: 8px 10px;
-  background: rgba(18, 21, 22, 0.97);
-  border: 1px solid var(--sb-edge-hi);
-  border-left: 3px solid var(--sb-olive-hi);
-  border-radius: 3px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.98), rgba(20, 24, 29, 0.98));
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    0 6px 18px rgba(0, 0, 0, 0.6);
   pointer-events: none;
 }
 
 #sidebar .sb-tip-name {
-  font-weight: 700;
-  font-size: 13px;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  color: #fff;
 }
 
 #sidebar .sb-tip-stats {
   margin-top: 2px;
-  font: 11px var(--sb-mono);
-  color: var(--sb-gold);
+  font: var(--ui-fs-s) var(--ui-font-mono);
+  color: var(--ui-money);
   white-space: pre;
 }
 
 #sidebar .sb-tip-desc {
   margin-top: 5px;
-  color: var(--sb-text);
+  color: var(--ui-text);
 }
 
 #sidebar .sb-tip-warn {
   margin-top: 5px;
-  color: var(--sb-bad);
+  color: var(--ui-bad);
   font-weight: 600;
 }
 
 #sidebar .sb-tip-hint {
   margin-top: 6px;
-  font-size: 10px;
-  color: var(--sb-dim);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-muted);
 }
 
-/* ---- Selection panel ---------------------------------------------------- */
+/* ---- Selection panel ------------------------------------------------------------ */
 
 #sidebar .sb-sel {
   flex: none;
-  min-height: 58px;
-  padding: 6px 8px;
-  background: var(--sb-panel);
-  border: 1px solid var(--sb-edge);
-  border-radius: 3px;
+  min-height: 52px;
+  padding: 5px 8px;
+  background: linear-gradient(180deg, var(--ui-metal-0), #0a0d10);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
 }
 
 #sidebar .sb-sel.empty .sb-sel-name {
-  color: var(--sb-dim);
+  color: var(--ui-dim);
   font-weight: 400;
   font-style: italic;
 }
@@ -474,104 +646,103 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: 700;
-  font-size: 13px;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
 }
 
+/* Health: green, yellow, red in segments, like the bars over units. */
 #sidebar .sb-hp {
+  position: relative;
   height: 6px;
   margin: 4px 0 3px;
-  background: #0c0e0f;
-  border: 1px solid var(--sb-edge);
-  border-radius: 2px;
+  background: #000;
+  border: 1px solid var(--ui-edge);
   overflow: hidden;
+}
+
+#sidebar .sb-hp::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 5px, rgba(0, 0, 0, 0.7) 5px 6px);
 }
 
 #sidebar .sb-hp-fill {
   height: 100%;
   width: calc(var(--hp, 1) * 100%);
-  background: var(--sb-ok);
+  background: var(--ui-ok);
   transition: width 0.2s ease;
 }
 
 #sidebar .sb-hp-fill.mid {
-  background: var(--sb-warn);
+  background: var(--ui-warn);
 }
 
 #sidebar .sb-hp-fill.low {
-  background: var(--sb-bad);
+  background: var(--ui-bad);
 }
 
 #sidebar .sb-sel-detail {
-  font: 11px var(--sb-mono);
-  color: var(--sb-dim);
+  font: var(--ui-fs-s) var(--ui-font-mono);
+  color: var(--ui-muted);
 }
 
-/* ---- Animations --------------------------------------------------------- */
+/* ---- Animations ------------------------------------------------------------------ */
 
 @keyframes sb-pulse {
-  from { opacity: 1; }
-  to { opacity: 0.45; }
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
 }
 
 @keyframes sb-blink {
-  to { visibility: hidden; }
+  to {
+    visibility: hidden;
+  }
 }
 
 @keyframes sb-ready-glow {
-  from { box-shadow: inset 0 0 0 1px rgba(95, 191, 74, 0.9); }
-  to { box-shadow: inset 0 0 0 1px rgba(95, 191, 74, 0.1); }
+  from {
+    box-shadow: inset 0 0 0 2px rgba(79, 208, 103, 0.95);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px rgba(79, 208, 103, 0.15);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   #sidebar .sb-card.ready,
   #sidebar .sb-card.ready .sb-ready,
   #sidebar .sb-tab-badge.ready,
-  #sidebar .sb-power.low .sb-power-label {
+  #sidebar .sb-power.low .sb-power-icon {
     animation: none;
   }
 }
 
-/* ---- Command buttons (sell / deploy) -------------------------------------- */
-
-#sidebar .sb-tools {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 0 8px 6px;
+/* What is still missing, written on the cameo: only on touch screens, which
+   have no hover tooltip (body.touch, js/touch.js). The phone drawer layouts
+   are in touch.css. */
+#sidebar .sb-req {
+  display: none;
 }
 
-#sidebar .sb-tool {
-  padding: 5px 0;
-  background: linear-gradient(#2c3330, #222826);
-  color: var(--sb-text, #e6e4d6);
-  border: 1px solid #3c4541;
-  border-radius: 2px;
-  font: 700 11px/1.2 system-ui, 'Segoe UI', sans-serif;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
+body.touch #sidebar .sb-card .sb-req:not([hidden]) {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  display: block;
+  padding: 1px 2px;
+  transform: translateY(-60%);
+  background: rgba(0, 0, 0, 0.78);
+  color: var(--ui-warn);
+  font: 600 8.5px / 1.15 var(--ui-font);
+  text-align: center;
+  pointer-events: none;
 }
 
-#sidebar .sb-tool:hover:not(:disabled) {
-  filter: brightness(1.25);
-}
-
-#sidebar .sb-tool.active {
-  border-color: var(--sb-gold, #d9b23a);
-  color: var(--sb-gold, #d9b23a);
-  box-shadow: inset 0 0 0 1px var(--sb-gold, #d9b23a);
-}
-
-#sidebar .sb-tool.blocked {
-  color: #d9776b;
-}
-
-#sidebar .sb-tool:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-#sidebar .sb-tab {
-  font-size: 10px;
+body.touch #sidebar .sb-card.exclusive .sb-req {
+  color: #ff9a88;
 }

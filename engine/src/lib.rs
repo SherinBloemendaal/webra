@@ -18,6 +18,7 @@ mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod math;
+pub mod minimap;
 mod naval;
 mod plane;
 mod powers;
@@ -28,6 +29,7 @@ pub mod rules;
 pub mod sound_events;
 mod trig_table;
 mod units;
+mod veterancy;
 mod vision;
 pub mod world;
 
@@ -44,6 +46,8 @@ mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
+mod tests_minimap;
+#[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
@@ -53,6 +57,8 @@ mod tests_production;
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
+#[cfg(test)]
+mod tests_veterancy;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -358,6 +364,24 @@ impl Game {
         self.fog.len()
     }
 
+    // ---- Radar minimap (minimap.rs, apps/game/js/minimap.js) ----------------
+
+    /// 0: no radar structure, 1: online, 2: jammed, 3: low power.
+    pub fn radar_state(&self, player: u8) -> u8 {
+        self.world.radar_state(player) as u8
+    }
+
+    /// Radar blips `player` may see, `[cell x, cell y, width, height, owner]`
+    /// each (owner 255: neutral); empty while the radar is offline. Read only.
+    pub fn minimap_blips(&self, player: u8) -> Vec<i32> {
+        if player as usize >= self.world.players.len() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        self.world.minimap_blips(player, &mut out);
+        out
+    }
+
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
     pub fn build_render(&mut self, player: u8, alpha: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
         let view = View { x0, y0, x1, y1 };
@@ -502,6 +526,13 @@ impl Game {
             // Passengers: the transport they are in (NONE when outside).
             "carrier": a.carrier,
             "submerged": a.submerged,
+            // Veterancy (veterancy.rs): level, levels, and experience in value
+            // points (OpenRA counts percent of a value: 100 points per credit).
+            "rank": a.rank,
+            "maxRank": self.world.max_rank(i),
+            "xp": a.xp / 100,
+            "nextXp": self.world.level_experience(i, (a.rank as usize + 1).min(self.world.max_rank(i) as usize)) / 100,
+            "prone": self.world.is_prone(i),
         })
         .to_string()
     }
@@ -843,6 +874,11 @@ impl Game {
     /// Cheat: destroy the given actors (any owner).
     pub fn dev_kill(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::DevKill { player, ids });
+    }
+
+    /// Cheat: one more veterancy level for each of the player's own given units.
+    pub fn dev_experience(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::DevExperience { player, ids });
     }
 
     /// Debug view: `[x0, y0, width, height, flags...]` for the cells under the

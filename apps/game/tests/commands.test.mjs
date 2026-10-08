@@ -165,6 +165,9 @@ test('command hotkeys: Guard takes D from deploy (OpenRA), G and X and C work, s
   assert.equal(reg.handle(ev('KeyD', 'd')), true);
   assert.equal(reg.handle(ev('KeyH', 'h', { altKey: true })), true);
   assert.deepEqual(ran, ['guard', 'stanceHoldFire']);
+  // The touch action bar (js/touch.js) runs actions by name.
+  for (const name of ['guard', 'scatter', 'stanceCycle', ...STANCES.map((s) => s.action)]) assert.equal(reg.run(name), true, name);
+  assert.equal(ran.length, 2 + 3 + STANCES.length);
   // Every order button names a registered action or a modifier hint for its tooltip.
   const names = new Set([...reg.list().map((a) => a.name)]);
   for (const c of COMMANDS) assert.ok(c.hint || names.has(c.action), c.id);

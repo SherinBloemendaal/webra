@@ -159,6 +159,17 @@ pub struct Actor {
     pub heli: crate::helicopter::HeliState,
     /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
     pub air: crate::plane::AirState,
+
+    // Veterancy and prone infantry (veterancy.rs)
+    /// Experience, in OpenRA's units: percent of the actor's own value
+    /// (killing an enemy worth 100 gives 10000 with the default modifier).
+    pub xp: i64,
+    /// Veterancy level: 0 rookie, then one per GainsExperience threshold reached.
+    pub rank: u8,
+    /// Ticks left prone (TakeCover); 0 when standing.
+    pub prone_ticks: i32,
+    /// Elite self repair (ChangesHealth@ELITE) step timer.
+    pub rank_heal_timer: i32,
 }
 
 impl Actor {
@@ -226,6 +237,10 @@ impl Actor {
             cloak_timer: 0,
             detected_by: 0,
             air: crate::plane::AirState::default(),
+            xp: 0,
+            rank: 0,
+            prone_ticks: 0,
+            rank_heal_timer: 0,
         }
     }
 
@@ -306,8 +321,8 @@ pub struct Projectile {
     pub owner: u8,
     pub target: u32,
     pub facing: i32,
-    /// Shooter (a reference, or NONE): victims may shoot back at it.
-    pub source: u32,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -344,8 +359,8 @@ pub struct PendingImpact {
     pub x: i32,
     pub y: i32,
     pub owner: u8,
-    /// Shooter (a reference, or NONE).
-    pub source: u32,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 /// Lobby options (see apps/game/js/lobby.js). Defaults follow OpenRA's.
@@ -556,13 +571,19 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// Debug menu: raise the player's own listed units one veterancy level
+    /// (OpenRA's "level up" debug order, veterancy.rs). Ignored without cheats.
+    DevExperience {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
     /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
     pub fn is_cheat(&self) -> bool {
-        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. })
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. } | Order::DevExperience { .. })
     }
 
     pub fn player(&self) -> u8 {
@@ -589,7 +610,8 @@ impl Order {
             | Order::SetStance { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
-            | Order::DevKill { player, .. } => *player,
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player,
         }
     }
 
@@ -618,7 +640,8 @@ impl Order {
             | Order::SetStance { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
-            | Order::DevKill { player, .. } => *player = p,
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player = p,
         }
     }
 
@@ -639,7 +662,8 @@ impl Order {
             | Order::Scatter { ids, .. }
             | Order::Waypoint { ids, .. }
             | Order::SetStance { ids, .. }
-            | Order::DevKill { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::DevKill { ids, .. }
+            | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -677,7 +701,8 @@ impl Order {
             | Order::SupportPower { .. }
             | Order::DevFlag { .. }
             | Order::DevCash { .. }
-            | Order::DevKill { .. } => None,
+            | Order::DevKill { .. }
+            | Order::DevExperience { .. } => None,
         }
     }
 }
@@ -1431,6 +1456,7 @@ impl World {
                 Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
                 Order::DevCash { player } => self.dev_give_cash(player),
                 Order::DevKill { player, ids } => self.dev_kill(player, &ids),
+                Order::DevExperience { player, ids } => self.dev_give_experience(player, &ids),
             }
         }
     }
@@ -1804,6 +1830,10 @@ impl World {
                 mix(a.stance as i64);
                 mix(a.guard as i64);
                 mix(a.waypoints.len() as i64);
+                // Veterancy and prone infantry (veterancy.rs).
+                mix(a.xp);
+                mix(a.rank as i64);
+                mix(a.prone_ticks as i64);
             }
         }
         for p in &self.players {

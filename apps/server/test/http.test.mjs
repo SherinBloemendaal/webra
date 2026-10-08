@@ -218,6 +218,7 @@ test('cheat orders are relayed only in games with the cheats option', () => {
     { o: 'dev_flag', player: 0, flag: 'fast_build', on: true },
     { o: 'dev_cash', player: 0 },
     { o: 'dev_kill', player: 0, ids: [5] },
+    { o: 'dev_experience', player: 0, ids: [5] },
   ];
   const off = { ...DEFAULT_OPTIONS };
   const on = { ...DEFAULT_OPTIONS, cheats: true };

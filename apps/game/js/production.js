@@ -62,3 +62,66 @@ export function placementLost(perId, placingId) {
   const s = perId.get(placingId);
   return !s || !s.done;
 }
+
+/** Game ticks of progress history used to estimate the remaining build time. */
+export const ETA_WINDOW_TICKS = 50;
+
+/**
+ * Remaining build time of the item at the head of a queue, estimated from how
+ * fast its progress actually moves (player_json() has progress, not ticks), so
+ * low power slowing production shows up in the clock. While production stalls
+ * (no money) the clock stands still, and the rate is measured afresh once it
+ * moves again. Measured in game ticks, so pausing the game does not skew it.
+ */
+export class BuildEta {
+  constructor(windowTicks = ETA_WINDOW_TICKS) {
+    this.windowTicks = windowTicks;
+    this.samples = []; // { tick, progress }, oldest first
+    this.last = null; // last estimate in ticks, kept while production stalls
+  }
+
+  reset() {
+    this.samples = [];
+    this.last = null;
+  }
+
+  /**
+   * Record the progress (0..1) at game tick `tick`.
+   * @returns {number | null} estimated ticks left, or null while unknown
+   */
+  observe(progress, tick) {
+    const prev = this.samples[this.samples.length - 1];
+    // A new item started (progress went back) or time went back: start over.
+    if (prev && (progress < prev.progress - 1e-6 || tick < prev.tick)) this.reset();
+    const head = this.samples[this.samples.length - 1];
+    if (head && head.tick === tick) {
+      head.progress = progress;
+    } else if (head && progress <= head.progress) {
+      // Stalled: keep the clock, and measure from here once it moves again.
+      this.samples = [{ tick, progress }];
+      return this.last;
+    } else {
+      this.samples.push({ tick, progress });
+    }
+    while (this.samples.length > 2 && tick - this.samples[1].tick >= this.windowTicks) this.samples.shift();
+    if (progress >= 1) {
+      this.last = 0;
+      return 0;
+    }
+    const first = this.samples[0];
+    const dt = tick - first.tick;
+    const dp = progress - first.progress;
+    // (The epsilon keeps float noise from rounding a whole tick up.)
+    if (dt > 0 && dp > 0) this.last = Math.ceil(((1 - progress) * dt) / dp - 1e-6);
+    return this.last;
+  }
+}
+
+/** Clock text like the 1996 sidebar: "mm:ss", or "h:mm:ss" from an hour on. */
+export function formatClock(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return `${h > 0 ? `${h}:` : ''}${String(m).padStart(2, '0')}:${ss}`;
+}

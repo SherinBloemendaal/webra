@@ -20,8 +20,8 @@ const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 4;
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 4;
 const DEFAULT_ZOOM = 1.5;
 const BOOKMARKS = 4;
 
@@ -76,7 +76,8 @@ export class Input {
     this.suspended = false; // game menu open: no input, no scrolling
     this.viewSize = { w: canvas.clientWidth, h: canvas.clientHeight };
     this.keys = new Set();
-    this.mouse = { x: -1, y: -1, inside: false };
+    // touch: the position comes from a finger (js/touch.js, building placement), so no edge scrolling.
+    this.mouse = { x: -1, y: -1, inside: false, touch: false };
     this.drag = null;
     this.pan = null;
     this.placing = null; // actor id being placed
@@ -769,7 +770,7 @@ export class Input {
     const edgeSpeed = this.settings.get('edgeScrollSpeed');
     let ex = 0;
     let ey = 0;
-    if (edgeSpeed > 0 && this.mouse.inside && !this.drag && !this.pan) {
+    if (edgeSpeed > 0 && this.mouse.inside && !this.mouse.touch && !this.drag && !this.pan) {
       ({ dx: ex, dy: ey } = edgeDirection(this.mouse.x, this.mouse.y, this.canvas.clientWidth, this.canvas.clientHeight));
       if (ex || ey) this.edgeScroll = { dx: ex, dy: ey, blocked: scrollBlocked(ex, ey, this.camera, this.bounds()) };
     }
@@ -854,11 +855,12 @@ export class Input {
       const w = Math.abs(b.x - a.x);
       const h = Math.abs(b.y - a.y);
       const t = 1 / this.camera.zoom;
-      push(x0, y0, w, h, 0.4, 0.9, 0.4, 0.08);
-      push(x0, y0, w, t, 0.5, 1, 0.5, 0.9);
-      push(x0, y0 + h - t, w, t, 0.5, 1, 0.5, 0.9);
-      push(x0, y0, t, h, 0.5, 1, 0.5, 0.9);
-      push(x0 + w - t, y0, t, h, 0.5, 1, 0.5, 0.9);
+      // White outline over a faint fill, like OpenRA's selection box.
+      push(x0, y0, w, h, 1, 1, 1, 0.06);
+      push(x0, y0, w, t, 1, 1, 1, 0.9);
+      push(x0, y0 + h - t, w, t, 1, 1, 1, 0.9);
+      push(x0, y0, t, h, 1, 1, 1, 0.9);
+      push(x0 + w - t, y0, t, h, 1, 1, 1, 0.9);
     }
     if (this.orderFlash && performance.now() < this.orderFlash.until) {
       const f = this.orderFlash;
