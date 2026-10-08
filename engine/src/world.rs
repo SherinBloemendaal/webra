@@ -5,6 +5,7 @@ use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
 use crate::rules::{FootCell, Kind, QueueType, Rules, QUEUE_COUNT};
+use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
 /// Simulation ticks per second at normal speed (OpenRA: 40 ms per tick).
@@ -580,6 +581,8 @@ pub struct World {
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
+    /// Write-only audio event log for the client (sound_events.rs).
+    pub sound: crate::sound_events::SoundEvents,
 }
 
 impl World {
@@ -732,6 +735,7 @@ impl World {
             abil: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
+            sound: Default::default(),
             map,
         }
     }
@@ -908,6 +912,8 @@ impl World {
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).

@@ -23,6 +23,7 @@ mod production;
 pub mod render;
 pub mod rng;
 pub mod rules;
+pub mod sound_events;
 mod trig_table;
 mod units;
 mod vision;
@@ -42,6 +43,8 @@ mod tests_naval;
 mod tests_planes;
 #[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_sound;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -182,6 +185,29 @@ impl Game {
         self.world.step();
     }
 
+    // ---- Audio events (sound_events.rs) -------------------------------------
+
+    /// Turn the audio event log on or off. Off by default; it never affects
+    /// the simulation, so lockstep peers may differ here.
+    pub fn set_audio_events(&mut self, on: bool) {
+        self.world.sound.set_enabled(on);
+    }
+
+    /// Audio events since the last call, flat: `audio_event_stride()` values
+    /// per event (`[kind, a, x, y, owner, b]`, world units). Empties the log.
+    pub fn take_audio_events(&mut self) -> Vec<i32> {
+        self.world.sound.take()
+    }
+
+    pub fn audio_event_stride() -> u32 {
+        sound_events::EVENT_STRIDE as u32
+    }
+
+    /// World units per cell, to convert audio event positions to pixels.
+    pub fn world_units_per_cell() -> i32 {
+        CELL
+    }
+
     // ---- Lockstep multiplayer (docs/contracts.md section 4) ------------------
 
     /// In lockstep mode, local orders go to an outbox instead of the world.
@@ -286,6 +312,8 @@ impl Game {
             .collect();
         json!({
             "actors": actors,
+            // Weapon names in rules order: audio events name weapons by index.
+            "weapons": r.weapons.iter().map(|w| &w.name).collect::<Vec<_>>(),
             "factions": r.factions,
             "pxPerCell": PX_PER_CELL,
             "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai})).collect::<Vec<_>>(),

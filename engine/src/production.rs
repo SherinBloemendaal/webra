@@ -3,6 +3,7 @@
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -273,7 +274,10 @@ impl World {
                 let due = (cost as i64 * (item.total - item.remaining + 1) as i64 / item.total as i64) as i32;
                 let delta = due - item.paid;
                 if !self.spend(player, delta) {
-                    continue; // insufficient funds: production stalls
+                    // Insufficient funds: production stalls (sound_events.rs throttles the event).
+                    let tick = self.tick;
+                    self.sound.push_funds(tick, player, first_ty);
+                    continue;
                 }
                 let item = &mut self.players[player as usize].queues[qi].items[0];
                 item.paid = due;
@@ -283,6 +287,7 @@ impl World {
                 }
                 item.done = true;
                 if q.is_structure() {
+                    self.sound.push(SoundEventKind::ConstructionReady, first_ty as i32, 0, 0, player, 0);
                     continue;
                 }
             }
@@ -325,6 +330,8 @@ impl World {
             (ex, ey, facing) = (cx, cy, f);
         }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        let (ux, uy) = (self.actors[u].x, self.actors[u].y);
+        self.sound.push(SoundEventKind::UnitProduced, ty as i32, ux, uy, player, 0);
         // Helicopters start landed on their helipad (helicopter.rs).
         self.heli_produced(u, b);
         // Planes park on their airfield (plane.rs).
@@ -442,6 +449,8 @@ impl World {
         }
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
         self.players[player as usize].queues[qi].items.remove(0);
+        let (bx, by) = (self.actors[b].x, self.actors[b].y);
+        self.sound.push(SoundEventKind::BuildingPlaced, ty as i32, bx, by, player, 0);
         self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);
@@ -507,8 +516,9 @@ impl World {
             return false;
         }
         let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
-        let (owner, x, y) = (a.owner, a.x, a.y);
+        let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         self.remove(b);
         true
