@@ -165,6 +165,11 @@ fn deploy_mcv(w: &mut World, player: u8) {
 /// Ore trucks that found nothing near their refinery (the fields there are
 /// mined out) drive to the nearest explored ore they can reach, away from
 /// enemy structures, instead of waiting for regrowth.
+/// How a waiting ore truck ranks an ore cell (lower first): on the enemy's
+/// side, unexplored, distance, distance to our base, distance to the middle
+/// column, row.
+type OreChoice = (bool, bool, i64, i64, i32, i32);
+
 fn send_idle_harvesters(w: &mut World, player: u8) {
     let waiting: Vec<usize> = (0..w.actors.len())
         .filter(|&i| {
@@ -198,7 +203,7 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
         // base: short, safe trips), explored before unexplored; then any ore
         // the truck can reach (the AI knows the map's resources), so it never
         // waits while ore lies elsewhere.
-        let mut best: Option<(bool, bool, i64, usize)> = None;
+        let mut best: Option<(OreChoice, usize)> = None;
         for ci in 0..w.map.cells() {
             if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp {
                 continue;
@@ -211,12 +216,15 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
             let d = ((x - ux) * (x - ux) + (y - uy) * (y - uy)) as i64;
             let d2 = |(bx, by): (i32, i32)| ((x - bx) * (x - bx) + (y - by) * (y - by)) as i64;
             let far_side = enemy_bases.iter().any(|&b| d2(b) < d2(home));
-            let key = (far_side, unexplored, d);
-            if best.is_none_or(|(bf, bu, bd, _)| key < (bf, bu, bd)) {
-                best = Some((far_side, unexplored, d, ci));
+            // Ties: nearer our base, then nearer the map's middle column, then
+            // higher up; never scan order, so mirrored trucks on a mirrored
+            // map pick mirrored cells.
+            let key = (far_side, unexplored, d, d2(home), (2 * x - (w.map.width - 1)).abs(), y);
+            if best.is_none_or(|(bk, _)| key < bk) {
+                best = Some((key, ci));
             }
         }
-        let best = best.map(|(_, _, d, ci)| (d, ci));
+        let best = best.map(|(k, ci)| (k.2, ci));
         if let Some((_, ci)) = best {
             let (x, y) = (cell_center(ci as i32 % w.map.width), cell_center(ci as i32 / w.map.width));
             let r = w.make_ref(i);
