@@ -78,7 +78,11 @@ pub struct Abilities {
     pub delivers_cash: Option<DeliversCashInfo>,
     pub transforms: Option<TransformsInfo>,
     pub line_build: Option<LineBuildInfo>,
-    pub provides_radar: Option<serde_json::Value>,
+    /// OpenRA `ProvidesRadar`: owning one that is powered (and not jammed) turns the radar minimap on (minimap.rs).
+    pub provides_radar: Option<ProvidesRadarInfo>,
+    /// Mobile Radar Jammer (`ProximityExternalCondition@JAMMER`, condition `jammed`):
+    /// enemy radar structures in range go offline and enemy radar shows no blips in range (minimap.rs).
+    pub jams_radar: Option<RangeInfo>,
     pub crushable: Option<Vec<String>>,
     pub support_powers: Option<Vec<SupportPowerInfo>>,
     /// OpenRA `MineImmune`: drives over mines without setting them off (Minelayer).
@@ -95,6 +99,13 @@ pub struct Abilities {
     pub iron_curtainable: Option<IronCurtainableInfo>,
     /// The Chronosphere can shift it (Chronoshiftable).
     pub chronoshiftable: Option<ChronoshiftableInfo>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+pub struct ProvidesRadarInfo {
+    /// `RequiresCondition: !jammed`: an enemy radar jammer in range switches it off.
+    #[serde(default)]
+    pub jammable: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -955,6 +966,9 @@ impl Rules {
         }
         if let Some(r) = &ab.jams_missiles {
             within(&n("jams_missiles.range"), r.range, 0, 64 * CELLS)?;
+        }
+        if let Some(r) = &ab.jams_radar {
+            within(&n("jams_radar.range"), r.range, 0, 64 * CELLS)?;
         }
         // Shroud and gap sight ranges size the cached vision circles.
         if let Some(r) = &ab.creates_shroud {

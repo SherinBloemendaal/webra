@@ -1048,7 +1048,9 @@
     "gap_sight": {
      "range": 6144
     },
-    "provides_radar": {}
+    "provides_radar": {
+     "jammable": true
+    }
    },
    "building": {
     "width": 2,
@@ -4927,6 +4929,9 @@
     },
     "gap_sight": {
      "range": 7168
+    },
+    "jams_radar": {
+     "range": 18432
     }
    },
    "unit": {

@@ -48,6 +48,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Ore economy with regrowth, refinery and silo storage, power with low-power slowdown and shutdown of powered defences
 - [x] Classic production queues (Buildings, Defense, Infantry, Vehicles, Aircraft, Naval), OpenRA placement rules, selling, MCV deploy and pack-up
 - [x] OpenRA weapon data: range and minimum range, burst, projectile speed and inaccuracy, warheads with spread, falloff, delays and armour versus tables, death explosions, crushing
+- [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
 
@@ -72,7 +73,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ## Roadmap
 
-- [ ] Minimap / radar (Radar Dome) and radar jamming
+- [x] Minimap / radar (Radar Dome) and radar jamming
 - [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
 - [ ] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
@@ -192,6 +193,7 @@ Press **Esc** in a game (or the **Menu** button) for the game menu: settings (sc
 | Arrow keys / screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Alt + arrow keys | Jump to that map edge |
 | Middle mouse drag | Pan the camera |
+| Radar: left click or drag, right click | Move the camera there; order the selected units there |
 | Mouse wheel, ] and [, . | Zoom in, zoom out, reset zoom |
 | H or Space | Center on your base |
 | Home | Center on the selection |
