@@ -21,6 +21,7 @@ const NEAR_TIE: i32 = 8 * CELL;
 /// How long an attack target is kept before it is reconsidered (one minute).
 const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
 
+#[derive(Clone)]
 pub struct AiState {
     offset: u32,
     think_interval: u32,

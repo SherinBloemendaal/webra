@@ -86,6 +86,7 @@ impl Default for HeliState {
 }
 
 /// A helicopter husk falling after being shot down.
+#[derive(Clone)]
 pub struct Crash {
     pub ty: u16,
     pub owner: u8,
@@ -976,10 +977,9 @@ impl World {
     /// Falling husks visible to `player`: shadow on the ground, husk and smoke above.
     pub(crate) fn push_heli_crashes(&self, player: u8, alpha: f32, view: &View, ground: &mut Vec<f32>, out: &mut Vec<f32>) {
         let ids = crate::render::SpriteIds::new(self.rules.actors.len());
-        let vis = &self.players[player as usize].visible;
         let tau = std::f32::consts::TAU;
         for c in &self.crashes {
-            if vis[self.cell_index(c.x, c.y)] == 0 {
+            if !self.render_sees_cell(player, self.cell_index(c.x, c.y)) {
                 continue;
             }
             let (x, y) = (px(c.x), px(c.y));

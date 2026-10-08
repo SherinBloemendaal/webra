@@ -102,7 +102,7 @@ pub struct FallingBomb {
     pub owner: u8,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PowersState {
     /// Power instances per player, sorted by palette order, then key.
     pub players: Vec<Vec<PowerInstance>>,

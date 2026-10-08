@@ -860,7 +860,6 @@ impl World {
     ) {
         use crate::render::px;
         let lerp = |a: i32, b: i32| px(a) + (px(b) - px(a)) * alpha;
-        let vis = &self.players[player as usize].visible;
         let parachute = ids.planes_base;
         let bomb = ids.planes_base + 1.0;
         let puff = ids.planes_base + 2.0;
@@ -922,7 +921,7 @@ impl World {
         for b in &self.powers.bombs {
             let (x, y) = (px(b.x), px(b.y));
             let ci = self.cell_index(b.x, b.y);
-            if (b.owner == player || vis[ci] != 0) && view.contains(x, y, 48.0) {
+            if (b.owner == player || self.render_sees_cell(player, ci)) && view.contains(x, y, 48.0) {
                 let lift = px(b.altitude) + px(b.speed) * (1.0 - alpha);
                 sprites.extend_from_slice(&[x, y - lift, 0.0, bomb, b.owner as f32, 1.0, 1.0, 0.0]);
             }

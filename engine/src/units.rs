@@ -419,7 +419,7 @@ impl World {
                     a.bales -= 1;
                     let owner = a.owner;
                     let value = self.rules.player.ore_value;
-                    self.give_resources(owner, value);
+                    self.give_harvested(owner, value);
                 }
                 if self.actors[i].bales == 0 {
                     self.actors[r].dock_user = NONE;
@@ -605,7 +605,8 @@ impl World {
         self.rebuild_hash();
         let n = self.actors.len();
         let mut push = vec![(0i32, 0i32); n];
-        let mut crushed: Vec<usize> = Vec::new();
+        // Crushed units and the owner of the crusher (observer.rs kill credit).
+        let mut crushed: Vec<(usize, u8)> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
             // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
@@ -646,11 +647,11 @@ impl World {
                             let crush_reach = (min as i64) * (min as i64) * 9 / 16;
                             if d2 <= crush_reach {
                                 if a.moved && self.crushes(i, j) {
-                                    crushed.push(j);
+                                    crushed.push((j, a.owner));
                                     continue;
                                 }
                                 if b.moved && self.crushes(j, i) {
-                                    crushed.push(i);
+                                    crushed.push((i, b.owner));
                                     continue;
                                 }
                             }
@@ -680,9 +681,9 @@ impl World {
                 }
             }
         }
-        for k in crushed {
+        for (k, by) in crushed {
             if self.actors[k].alive {
-                self.kill(k);
+                self.with_damage_source(by, |w| w.kill(k));
             }
         }
         for (i, &(px, py)) in push.iter().enumerate() {

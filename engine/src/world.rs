@@ -224,6 +224,7 @@ pub struct Ghost {
     pub cy: i32,
 }
 
+#[derive(Clone)]
 pub struct Player {
     pub faction: usize,
     pub side: usize,
@@ -257,6 +258,7 @@ impl Player {
     }
 }
 
+#[derive(Clone)]
 pub struct Projectile {
     pub x: i32,
     pub y: i32,
@@ -283,6 +285,7 @@ pub enum EffectKind {
     Naval(u8),
 }
 
+#[derive(Clone)]
 pub struct Effect {
     pub x: i32,
     pub y: i32,
@@ -295,6 +298,7 @@ pub struct Effect {
 }
 
 /// A warhead that lands later (delayed warheads, chained death explosions).
+#[derive(Clone)]
 pub struct PendingImpact {
     pub tick: u32,
     pub weapon: u16,
@@ -575,6 +579,7 @@ pub enum SmartAction {
     DeliverCash = 7,
 }
 
+#[derive(Clone)]
 pub struct World {
     pub rules: Rules,
     pub map: Map,
@@ -616,6 +621,12 @@ pub struct World {
     pub powers: crate::powers::PowersState,
     /// Write-only audio event log for the client (sound_events.rs).
     pub sound: crate::sound_events::SoundEvents,
+    /// Observer statistics (observer.rs). Not part of `state_hash`.
+    pub observer: crate::observer::ObserverStats,
+    /// Render only (observer.rs): while true, visibility helpers report
+    /// everything as visible. Set by `Game::build_render` for the spectator
+    /// view for the duration of that call; always false while `step` runs.
+    pub render_all: bool,
 }
 
 impl World {
@@ -769,6 +780,8 @@ impl World {
             crashes: Vec::new(),
             powers: Default::default(),
             sound: Default::default(),
+            observer: Default::default(),
+            render_all: false,
             map,
         }
     }
@@ -939,12 +952,15 @@ impl World {
         }
         // Airborne planes fall first and die where they hit the ground (plane.rs).
         if self.begin_crash(i) {
+            // Remember who shot it down; the kill counts at impact (observer.rs).
+            self.note_shot_down(i);
             return;
         }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
         self.actors[i].alive = false;
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
+        self.record_death(i);
         self.dying.push(i as u32);
         let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
         self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
@@ -1093,6 +1109,10 @@ impl World {
 
     pub fn is_visible_to(&self, i: usize, player: u8) -> bool {
         let a = &self.actors[i];
+        // Spectator view (observer.rs): everything on the map is visible.
+        if self.render_all {
+            return a.in_world();
+        }
         if a.owner == player {
             return true;
         }
@@ -1539,6 +1559,8 @@ impl World {
     // ---- Tick --------------------------------------------------------------
 
     pub fn step(&mut self) {
+        // The spectator view flag is render only (observer.rs).
+        debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
         for a in self.actors.iter_mut() {
             a.px = a.x;

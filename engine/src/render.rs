@@ -130,7 +130,8 @@ impl World {
                 ]);
             }
         }
-        for g in p.ghosts.values() {
+        // The spectator view (observer.rs) draws every structure live, no ghosts.
+        for g in p.ghosts.values().filter(|_| !self.render_all) {
             if let Some(i) = self.resolve(g.actor) {
                 if self.is_visible_to(i, player) && !self.is_cloaked_from(i, player) {
                     continue; // drawn live above
@@ -231,7 +232,7 @@ impl World {
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));
             let ci = self.cell_index(pr.x, pr.y);
-            if p.visible[ci] != 0 && view.contains(x, y, 16.0) {
+            if self.render_sees_cell(player, ci) && view.contains(x, y, 16.0) {
                 let ang = pr.facing as f32 * std::f32::consts::TAU / 1024.0;
                 let wi = &self.rules.weapons[pr.weapon as usize];
                 let (sprite, ang) = match (self.naval_projectile_sprite(pr.weapon as usize), wi.projectile) {
@@ -248,7 +249,7 @@ impl World {
         for e in &self.effects {
             let (x, y) = (px(e.x), px(e.y));
             let ci = self.cell_index(e.x, e.y);
-            if p.visible[ci] == 0 || !view.contains(x, y, 48.0) {
+            if !self.render_sees_cell(player, ci) || !view.contains(x, y, 48.0) {
                 continue;
             }
             let t = 1.0 - (e.ttl as f32 - alpha).max(0.0) / e.max as f32;
@@ -321,7 +322,7 @@ impl World {
             rects.extend_from_slice(&[l, t - 5.0, w, 3.0, 0.0, 0.0, 0.0, 0.7]);
             rects.extend_from_slice(&[l, t - 5.0, w * frac, 3.0, col[0], col[1], col[2], 1.0]);
             // Cargo pips: one per weight unit of Cargo.MaxWeight, filled per passenger.
-            if self.is_transport(i) && self.are_allies(a.owner, player) {
+            if self.is_transport(i) && self.render_allied(a.owner, player) {
                 let max = self.cargo_max(i).clamp(0, 12);
                 let full = self.cargo_weight(i);
                 for k in 0..max {
@@ -337,12 +338,13 @@ impl World {
                 rects.extend_from_slice(&[l, t + h + 2.0, w * load, 2.0, 0.95, 0.75, 0.2, 1.0]);
             }
             self.push_heli_ammo_pips(i, l, t + h, w, rects);
-            if a.kind == Kind::Building && a.owner == player {
+            if a.kind == Kind::Building && self.render_owns(a.owner, player) {
                 if let Some((rx, ry)) = a.rally {
                     push_sprite(sprites, px(rx), px(ry), 0.0, ids.rally, a.owner as f32, 1.0, 1.0, 0.0);
                 }
             }
-            if a.kind != Kind::Building && a.owner == player && a.activity == Activity::Move && a.goal != crate::world::NONE {
+            if a.kind != Kind::Building && self.render_owns(a.owner, player) && a.activity == Activity::Move && a.goal != crate::world::NONE
+            {
                 let gx = (a.goal as i32 % self.map.width) as f32 * 24.0 + 12.0;
                 let gy = (a.goal as i32 / self.map.width) as f32 * 24.0 + 12.0;
                 rects.extend_from_slice(&[gx - 1.5, gy - 1.5, 3.0, 3.0, 0.3, 1.0, 0.4, 0.8]);

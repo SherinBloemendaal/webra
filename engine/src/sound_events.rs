@@ -84,7 +84,7 @@ pub fn power_code(kind: &str) -> i32 {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SoundEvents {
     enabled: bool,
     data: Vec<i32>,

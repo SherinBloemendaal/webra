@@ -18,6 +18,7 @@ pub mod map;
 pub mod mapdata;
 pub mod math;
 mod naval;
+pub mod observer;
 mod plane;
 mod powers;
 mod production;
@@ -44,6 +45,8 @@ mod tests_helis;
 mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
+#[cfg(test)]
+mod tests_replay;
 #[cfg(test)]
 mod tests_security;
 #[cfg(test)]
@@ -341,8 +344,14 @@ impl Game {
         self.terrain.len()
     }
 
+    /// Fog bytes for `player`, or the whole map visible for
+    /// `observer_player()` (spectators, replays).
     pub fn fog_ptr(&mut self, player: u8) -> *const u8 {
-        self.world.fog_bytes(player, &mut self.fog);
+        if player == observer::OBSERVER {
+            self.world.observer_fog_bytes(&mut self.fog);
+        } else {
+            self.world.fog_bytes(player, &mut self.fog);
+        }
         self.fog.as_ptr()
     }
 
@@ -351,11 +360,19 @@ impl Game {
     }
 
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
+    /// `player` may be `observer_player()`: the whole map, every actor live,
+    /// no owner-only decorations (observer.rs).
     pub fn build_render(&mut self, player: u8, alpha: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
         let view = View { x0, y0, x1, y1 };
         // Units that got into a transport drop out of the selection.
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
+        // The spectator view renders as slot 0 with every visibility check
+        // passing; the flag is cleared again before anything else can run.
+        let observer = player == observer::OBSERVER;
+        self.world.render_all = observer;
+        let player = if observer { 0 } else { player };
         self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
+        self.world.render_all = false;
         self.sprites.len() / render::SPRITE_FLOATS
     }
 

@@ -456,7 +456,7 @@ impl World {
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, _owner: u8) {
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, owner: u8) {
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -513,9 +513,12 @@ impl World {
                 (u, (base * wh.versus[info.armor] as i64 / 100 * fall / 100) as i32)
             })
             .collect();
-        for (u, dmg) in damages {
-            self.damage(u, dmg);
-        }
+        // Kills credit the weapon's owner (observer.rs).
+        self.with_damage_source(owner, |w| {
+            for (u, dmg) in damages {
+                w.damage(u, dmg);
+            }
+        });
     }
 
     pub(crate) fn damage(&mut self, u: usize, dmg: i32) {

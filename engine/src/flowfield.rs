@@ -19,6 +19,7 @@ const COST_STRAIGHT: u32 = 100;
 const COST_DIAGONAL: u32 = 141;
 const MAX_CACHED: usize = 256;
 
+#[derive(Clone)]
 pub struct FlowField {
     pub goal: u32,
     pub loco: u8,
@@ -28,6 +29,7 @@ pub struct FlowField {
 }
 
 /// Passability shared by all ground locomotors, plus per-cell connectivity labels.
+#[derive(Clone)]
 pub struct Passability {
     pub blocked: Vec<bool>,
     pub component: Vec<u32>,
@@ -113,6 +115,7 @@ pub fn step(map: &Map, blocked: &[bool], x: i32, y: i32, d: usize) -> Option<usi
     Some(j)
 }
 
+#[derive(Clone)]
 pub struct FlowCache {
     fields: Vec<FlowField>,
     index: BTreeMap<(u32, u8), usize>,

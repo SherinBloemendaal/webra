@@ -38,6 +38,7 @@ pub const SPEED_ROUGH: usize = 1;
 pub const SPEED_ORE: usize = 2;
 pub const SPEED_WATER: usize = 3;
 
+#[derive(Clone)]
 pub struct Map {
     pub width: i32,
     pub height: i32,
