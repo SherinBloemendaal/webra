@@ -235,13 +235,14 @@ impl Map {
         m.ore_field(&mut rng, sx + 4, sy + 2 + toward_centre * 13, 4, ore_max, 0);
         m.ore_field(&mut rng, mx - 3, sy + 2 + toward_centre * 6, 4, ore_max, CONTESTED_GEM_CORE);
         m.ore_field(&mut rng, mx - 9, my + toward_centre * (height / 4), 4, ore_max, CONTESTED_GEM_CORE);
-        // Ore of the style; river crossings, islands and passes in the middle
-        // third of the map carry gems in their middle as well.
+        // Ore of the style; river crossings, islands and passes near the
+        // mirror axis carry gems in their middle as well.
         for &(x, y, r) in land_spots.iter().chain(&water.spots) {
             if !zone[m.idx(x.clamp(0, width - 1), y.clamp(0, height - 1))] {
                 m.ore_field(&mut rng, x, y, r, ore_max, style_gem_core(width, x, r));
             }
         }
+        m.top_up_ore(&mut Rng::new(seed ^ 0x0de0_0000_0000_0007), &zone, (n * ORE_SHARE_TWO / 1000) as usize, ore_max, None);
 
         m.mirror_x();
         if style.naval() {
@@ -368,6 +369,8 @@ impl Map {
                 m.ore_field(&mut Rng::new(pocket_seed ^ 0x0e0e ^ (k as u64)), x, y, sr, ore_max, style_gem_core(width, x, sr));
             }
         }
+        let band = rows.then_some(height / 2);
+        m.top_up_ore(&mut Rng::new(pocket_seed ^ 0x0de0), &zone, (n * ORE_SHARE_POCKETS / 1000) as usize, ore_max, band);
         // The pockets are symmetric already; this makes the contested fields
         // of the right half the mirror images of the left half's.
         m.mirror_x();
@@ -531,6 +534,48 @@ impl Map {
             self.terrain[i] = Terrain::Clear;
         }
         self.put_resource(i, value, max, gems);
+    }
+
+    /// Water takes land that maps without it use for ore, so economies on
+    /// water maps would run dry long before land maps'. Add ore fields on
+    /// open land of the left half, away from the bases, until the map
+    /// (mirrored) holds `target` ore and gem cells. With `band` (two rows of
+    /// bases) fields go into the top band and repeat in the bottom band.
+    fn top_up_ore(&mut self, rng: &mut Rng, zone: &[bool], target: usize, ore_max: u8, band: Option<i32>) {
+        let (w, h) = (self.width, self.height);
+        let count = |m: &Map| (0..m.cells()).filter(|&i| m.has_resource(i) && (i as i32 % w) < w / 2).count() * 2;
+        let r = 3;
+        for _ in 0..80 {
+            if count(self) >= target {
+                return;
+            }
+            let x = rng.range(r + 1, w / 2 - r - 1);
+            let y = rng.range(r + 1, band.unwrap_or(h) - r - 1);
+            // Open land only: no base nearby, no water under most of the field.
+            let open = |m: &Map, cy: i32| {
+                let mut land = 0;
+                for yy in cy - r - 2..=cy + r + 2 {
+                    for xx in x - r - 2..=x + r + 2 {
+                        if !m.contains(xx, yy) || zone[m.idx(xx, yy)] {
+                            return false;
+                        }
+                        if !m.terrain[m.idx(xx, yy)].ship_passable() {
+                            land += 1;
+                        }
+                    }
+                }
+                land >= (2 * r + 5) * (2 * r + 5) * 9 / 10
+            };
+            if !open(self, y) || band.is_some_and(|b| !open(self, y + b)) {
+                continue;
+            }
+            let gems = style_gem_core(w, x, r);
+            let field_seed = rng.next_u64();
+            self.ore_field(&mut Rng::new(field_seed), x, y, r, ore_max, gems);
+            if let Some(b) = band {
+                self.ore_field(&mut Rng::new(field_seed), x, y + b, r, ore_max, gems);
+            }
+        }
     }
 
     /// Copy the top half of the map onto the bottom half (same picture, shifted down).
@@ -723,6 +768,12 @@ impl Map {
         changed
     }
 }
+
+/// Ore and gem cells, per mille of the map, that a generated map holds at
+/// least (what the generator made before map styles: about 4.5 % on
+/// two-player maps, 6 to 7 % with more players).
+const ORE_SHARE_TWO: usize = 45;
+const ORE_SHARE_POCKETS: usize = 60;
 
 /// Radius of the gem middle of the contested fields of two-player maps.
 const CONTESTED_GEM_CORE: i32 = 2;
