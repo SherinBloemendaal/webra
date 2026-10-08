@@ -177,6 +177,10 @@ pub struct Actor {
     pub prone_ticks: i32,
     /// Elite self repair (ChangesHealth@ELITE) step timer.
     pub rank_heal_timer: i32,
+    /// Tick the actor appeared (0 for actors of the starting map). Presentation
+    /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
+    /// of the state hash and nothing in the simulation depends on it.
+    pub born: u32,
 }
 
 impl Actor {
@@ -250,6 +254,7 @@ impl Actor {
             rank: 0,
             prone_ticks: 0,
             rank_heal_timer: 0,
+            born: 0,
         }
     }
 
@@ -1068,6 +1073,7 @@ impl World {
         // Cloaked actors (submarines) hide after their InitialDelay.
         a.cloak_timer = info.abilities.cloak.as_ref().map_or(0, |c| c.initial_delay);
         a.stance = self.initial_stance(ty, owner);
+        a.born = self.tick;
         self.actors[i] = a;
         self.init_abilities(i);
         i
@@ -1102,6 +1108,7 @@ impl World {
         a.py = a.y;
         a.hp = info.hp;
         a.stance = self.initial_stance(ty, owner);
+        a.born = self.tick;
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
         self.actors[i] = a;

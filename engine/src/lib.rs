@@ -66,6 +66,8 @@ mod tests_pathing;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
+mod tests_poses;
+#[cfg(test)]
 mod tests_production;
 #[cfg(test)]
 mod tests_replay;
@@ -79,7 +81,7 @@ mod tests_veterancy;
 mod tests_weather;
 
 use math::CELL;
-use render::{View, PX_PER_CELL};
+use render::{px, View, PX_PER_CELL};
 use rules::{FootCell, Kind, QueueType, Stance};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -431,6 +433,8 @@ impl Game {
                     "order": a.palette_order,
                     "width": b.map_or(1, |b| b.width),
                     "height": b.map_or(1, |b| b.height),
+                    // Where the art is centred relative to the footprint's centre, world pixels (OpenRA LocalCenterOffset).
+                    "centerOffset": b.map_or([0.0, 0.0], |b| [px(b.center_offset.0), px(b.center_offset.1)]),
                     "footprint": b.map(|b| b.footprint.iter().map(|&(x, y, c)| json!([x, y, match c { FootCell::Empty => 0, FootCell::Occupied => 1, FootCell::Passable => 2 }])).collect::<Vec<_>>()),
                     "power": b.map_or(0, |b| b.power),
                     "turret": a.turret_turn_speed.is_some(),
@@ -606,6 +610,14 @@ impl Game {
     /// (apps/game/js/sprites.js `buildAtlas` returns this table as `overlays`).
     pub fn set_building_overlays(&mut self, frames: Vec<u32>) {
         self.world.render_opts.building_overlays = frames;
+    }
+
+    /// Sprite poses (render.rs `Pose`) in the body sprite ids, for art with
+    /// pre-rendered animations (original graphics, texture packs; see
+    /// docs/contracts.md section 8). Presentation only: the simulation never
+    /// reads it, so the state hash is the same either way.
+    pub fn set_sprite_poses(&mut self, on: bool) {
+        self.world.render_opts.poses = on;
     }
 
     /// Selected ids that are still alive.

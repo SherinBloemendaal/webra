@@ -76,6 +76,44 @@ impl SpriteIds {
 
 const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
 
+/// What a body or turret sprite shows, for art with pre-rendered animations
+/// (apps/game/js/content: original graphics and texture packs pick their
+/// sequence and frame from it in shaders/sprite.wgsl). Reported only with
+/// `RenderOptions::poses`; presentation only, read from the world, never
+/// written to it. Same numbers as `POSE` in apps/game/js/content/sequences.js.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Pose {
+    Idle = 0,
+    Move = 1,
+    Attack = 2,
+    /// Below half health (OpenRA DamageState.Heavy: the "damaged-" sequences).
+    Damaged = 3,
+    /// Just placed: the age is the ticks since then (the "make" animation).
+    Make = 4,
+    Harvest = 5,
+    /// Unloading at the refinery.
+    Dock = 6,
+    /// The first frame only: no power, or remembered under the fog.
+    Still = 7,
+    DamagedStill = 8,
+}
+
+/// Sprite ids with poses: `slot + POSE_STRIDE * (pose + POSE_CODES * age)`.
+/// Slots stay below `POSE_STRIDE`, so `id % POSE_STRIDE` is always the slot
+/// (docs/contracts.md section 8).
+pub const POSE_STRIDE: u32 = 4096;
+pub const POSE_CODES: u32 = 16;
+/// Largest age the id carries (ticks since the actor appeared, or a wall's connection mask).
+pub const MAX_POSE_AGE: u32 = 127;
+
+/// The sprite id of `slot` showing `pose` at `age`.
+#[inline]
+pub fn posed(slot: u32, pose: Pose, age: u32) -> f32 {
+    debug_assert!(slot < POSE_STRIDE);
+    (slot + POSE_STRIDE * (pose as u32 + POSE_CODES * age.min(MAX_POSE_AGE))) as f32
+}
+
 pub struct View {
     pub x0: f32,
     pub y0: f32,
@@ -144,12 +182,14 @@ impl World {
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
             let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            sink.sprite(sprites, at.look((a.ty * 2) as f32, a.owner as f32, 1.0, alpha, flash));
+            sink.sprite(sprites, at.look(self.body_sprite(i, a.ty as u32 * 2), a.owner as f32, 1.0, alpha, flash));
             // Radar dishes, smoke and lights (overlays.rs), over every building body.
             self.push_building_overlay(i, x, y, alpha, flash, sink, &mut building_turrets);
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 // Interpolated by the frame's alpha like unit turrets (the angle used to be taken at the building's opacity).
-                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
+                let slot = a.ty as u32 * 2 + 1;
+                let turret = if self.render_opts.poses && self.heavily_damaged(i) { posed(slot, Pose::Damaged, 0) } else { slot as f32 };
+                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(turret, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut building_turrets, r);
             }
         }
@@ -167,7 +207,8 @@ impl World {
             }
             let (x, y) = (px(g.cx * CELL + b.width * CELL / 2), px(g.cy * CELL + b.height * CELL / 2));
             if sink.visible([x, y], [x, y], 96.0) {
-                sink.sprite(sprites, SpriteRec::at(x, y, 96.0).look((g.ty * 2) as f32, g.owner as f32, 1.0, 1.0, 0.0));
+                let body = if self.render_opts.poses { posed(g.ty as u32 * 2, Pose::Still, 0) } else { (g.ty * 2) as f32 };
+                sink.sprite(sprites, SpriteRec::at(x, y, 96.0).look(body, g.owner as f32, 1.0, 1.0, 0.0));
                 self.push_ghost_overlay(g.ty, g.owner, x, y, sink, &mut building_turrets);
             }
         }
@@ -220,7 +261,13 @@ impl World {
             let body = if self.draws_prone(i) { a.ty * 2 + 1 } else { a.ty * 2 };
             sink.sprite(
                 sprites,
-                at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(body as f32, a.owner as f32, 1.0, body_alpha, flash),
+                at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
+                    self.body_sprite(i, body as u32),
+                    a.owner as f32,
+                    1.0,
+                    body_alpha,
+                    flash,
+                ),
             );
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
@@ -422,6 +469,79 @@ impl World {
             // Forward is (sin, -cos) of the hull angle, right is (cos, sin).
             sink.sprite(turrets, turret.extended().arm(px(fwd), px(side), a.pfacing, turn));
         }
+    }
+
+    /// Below half health, like OpenRA's DamageState.Heavy (hp < 50%).
+    fn heavily_damaged(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        (a.hp as i64) * 2 < self.rules.actors[a.ty as usize].hp as i64
+    }
+
+    /// Walls (LineBuild): which neighbours are walls of the same type, OpenRA
+    /// WithWallSpriteBody bits (1 north, 2 east, 4 south, 8 west).
+    fn wall_connections(&self, i: usize) -> u32 {
+        let a = &self.actors[i];
+        let mut mask = 0;
+        for (bit, dx, dy) in [(1, 0, -1), (2, 1, 0), (4, 0, 1), (8, -1, 0)] {
+            let (x, y) = (a.cx + dx, a.cy + dy);
+            if !self.map.contains(x, y) {
+                continue;
+            }
+            let other = self.building_at[self.map.idx(x, y)];
+            if other != crate::world::NONE && self.actors.get(other as usize).is_some_and(|o| o.alive && o.ty == a.ty) {
+                mask |= bit;
+            }
+        }
+        mask
+    }
+
+    /// The pose of a live structure's body sprite, and its age.
+    fn building_pose(&self, i: usize) -> (Pose, u32) {
+        let a = &self.actors[i];
+        let info = &self.rules.actors[a.ty as usize];
+        let damaged = self.heavily_damaged(i);
+        if info.is_wall() {
+            return (if damaged { Pose::Damaged } else { Pose::Idle }, self.wall_connections(i));
+        }
+        let age = self.tick.saturating_sub(a.born);
+        if a.born > 0 && age < MAX_POSE_AGE {
+            return (Pose::Make, age);
+        }
+        if info.requires_power && self.players[a.owner as usize].low_power() {
+            return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);
+        }
+        (if damaged { Pose::Damaged } else { Pose::Idle }, 0)
+    }
+
+    /// The pose of a unit's body sprite: walking, firing, harvesting or docking.
+    fn unit_pose(&self, i: usize) -> Pose {
+        let a = &self.actors[i];
+        let moving = a.x != a.px || a.y != a.py;
+        let harvester = self.rules.actors[a.ty as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some());
+        if harvester {
+            return match a.harv {
+                crate::world::HarvState::Unloading => Pose::Dock,
+                crate::world::HarvState::Harvesting if !moving => Pose::Harvest,
+                _ if moving => Pose::Move,
+                _ => Pose::Idle,
+            };
+        }
+        if moving {
+            Pose::Move
+        } else if matches!(a.activity, Activity::Attack | Activity::AttackGround) {
+            Pose::Attack
+        } else {
+            Pose::Idle
+        }
+    }
+
+    /// `slot` with the pose of actor `i`'s body when poses are on.
+    fn body_sprite(&self, i: usize, slot: u32) -> f32 {
+        if !self.render_opts.poses {
+            return slot as f32;
+        }
+        let (pose, age) = if self.actors[i].kind == Kind::Building { self.building_pose(i) } else { (self.unit_pose(i), 0) };
+        posed(slot, pose, age)
     }
 
     /// One byte per cell for the local player: 0 shroud, 128 fog, 255 visible.

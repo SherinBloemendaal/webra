@@ -44,11 +44,15 @@ pub struct RenderOptions {
     /// when the type has none. The animated head frame is the type's second
     /// sprite slot (`2t + 1`), see apps/game/js/sprites.js `buildAtlas`.
     pub building_overlays: Vec<u32>,
+    /// Sprite poses (render.rs `Pose`): body sprites carry what the actor is
+    /// doing, for art with pre-rendered animations (original graphics,
+    /// texture packs). Off by default: sprite ids are then the plain slots.
+    pub poses: bool,
 }
 
 impl Default for RenderOptions {
     fn default() -> RenderOptions {
-        RenderOptions { hover: NONE, health_bars: HealthBars::Selected, building_overlays: Vec::new() }
+        RenderOptions { hover: NONE, health_bars: HealthBars::Selected, building_overlays: Vec::new(), poses: false }
     }
 }
 
