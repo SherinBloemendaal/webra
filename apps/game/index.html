@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="css/powers.css" />
     <link rel="stylesheet" href="css/audio.css" />
     <link rel="stylesheet" href="css/debug.css" />
+    <link rel="stylesheet" href="css/records.css" />
   </head>
   <body>
     <!-- Pre-game lobby, built by js/lobby.js -->
@@ -19,6 +20,9 @@
     <!-- Online multiplayer (js/online.js, loaded on demand by js/main.js) -->
     <button id="online-button" type="button" title="Play against other people over the internet" hidden>Play online</button>
     <section id="online-root" hidden></section>
+
+    <!-- Saved games and replays (js/records.js) -->
+    <div id="records-entry" hidden></div>
 
     <div id="app" hidden>
       <main id="field">
@@ -34,6 +38,7 @@
       <div class="menu-card">
         <h1 id="gameover-title">Mission accomplished</h1>
         <button id="again" class="primary" type="button">Play again</button>
+        <button id="gameover-replay" type="button" hidden>Download replay</button>
       </div>
     </section>
 

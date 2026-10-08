@@ -1,0 +1,290 @@
+/* Saves, replays and spectating: lobby buttons, dialogs, the observer panel,
+   the replay bar and the progress overlay (js/records.js, js/observer.js). */
+
+#records-entry {
+  position: fixed;
+  right: 16px;
+  top: 58px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.records-entry-button {
+  padding: 7px 14px;
+  background: #2a3123;
+  color: var(--text);
+  border: 1px solid #4a5540;
+  border-top-color: #66735a;
+  border-radius: 2px;
+  font: 700 12px system-ui, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.records-entry-button:hover {
+  filter: brightness(1.2);
+}
+
+.records-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 18px 20px;
+  background: #1b1f19;
+  color: var(--text);
+  border: 1px solid #000;
+  border-top: 3px solid var(--accent, #d9b23a);
+  border-radius: 2px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+.records-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.records-dialog-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent, #d9b23a);
+}
+
+.records-dialog-body {
+  display: grid;
+  gap: 12px;
+}
+
+.records-dialog button {
+  padding: 6px 12px;
+  background: #2a3123;
+  color: var(--text);
+  border: 1px solid #4a5540;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.records-dialog button.records-primary {
+  background: #4b5a24;
+  border-color: #7d8f3e;
+}
+
+.records-dialog button.records-danger {
+  background: #7a2a20;
+  border-color: #a63a2c;
+}
+
+.records-list {
+  display: grid;
+  gap: 6px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.records-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  background: #0f120d;
+  border: 1px solid #343b2f;
+}
+
+.records-info {
+  display: grid;
+  min-width: 0;
+}
+
+.records-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.records-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.records-warning {
+  color: #e8a23a;
+  font-size: 12px;
+}
+
+.records-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#gameover-replay {
+  margin-top: 8px;
+}
+
+/* ---- Observer panel (spectators and replays) ------------------------------------ */
+
+.observer-panel {
+  position: absolute;
+  right: 8px;
+  top: 36px;
+  z-index: 6;
+  max-width: min(640px, calc(100% - 16px));
+  display: grid;
+  gap: 4px;
+  font: 12px/1.4 system-ui, sans-serif;
+  color: #dfe6d4;
+}
+
+.observer-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.observer-view,
+.observer-toggle {
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: 3px solid var(--player-color, #d9b23a);
+  border-radius: 2px;
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-view[aria-pressed='true'] {
+  background: rgba(217, 178, 58, 0.35);
+  border-color: var(--accent, #d9b23a);
+  border-left-color: var(--player-color, #d9b23a);
+}
+
+.observer-stats {
+  display: grid;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow-x: auto;
+}
+
+.observer-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1.4fr) repeat(7, minmax(52px, 1fr));
+  gap: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.observer-row-head {
+  color: var(--muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.observer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 3px solid var(--player-color, transparent);
+  padding-left: 4px;
+}
+
+.observer-defeated {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.observer-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Replay bar ------------------------------------------------------------------- */
+
+.replay-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(760px, calc(100% - 16px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: #dfe6d4;
+  font: 12px system-ui, sans-serif;
+}
+
+.replay-bar button {
+  padding: 3px 9px;
+  background: #2a3123;
+  color: inherit;
+  border: 1px solid #4a5540;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.replay-bar button[aria-pressed='true'] {
+  background: #4b5a24;
+  border-color: #7d8f3e;
+}
+
+.replay-speeds {
+  display: flex;
+  gap: 3px;
+}
+
+.replay-seek {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--accent, #d9b23a);
+}
+
+.replay-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-note {
+  flex-basis: 100%;
+  color: #e8a23a;
+}
+
+.replay-note:empty {
+  display: none;
+}
+
+/* ---- Progress while fast-forwarding ------------------------------------------------- */
+
+.records-progress {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  padding: 10px 18px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(217, 178, 58, 0.6);
+  border-radius: 3px;
+  color: var(--text);
+  font: 600 14px system-ui, sans-serif;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .observer-row {
+    grid-template-columns: minmax(70px, 1.2fr) repeat(3, minmax(50px, 1fr));
+  }
+  .observer-row > .observer-cell:nth-child(n + 5) {
+    display: none;
+  }
+}
