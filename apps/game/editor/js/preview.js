@@ -2,7 +2,7 @@
 // engine's map preview (engine/src/lib.rs) so editor, lobby and minimap agree.
 
 import { TEAM_COLORS } from '../../js/renderer.js';
-import { PREVIEW_COLORS, PREVIEW_GEMS, PREVIEW_ORE } from './mapformat.js';
+import { BIOME_PREVIEW_COLORS, PREVIEW_COLORS, PREVIEW_GEMS, PREVIEW_ORE } from './mapformat.js';
 import { actorCells } from './edits.js';
 import { SPAWN_H, SPAWN_W } from './symmetry.js';
 
@@ -14,8 +14,9 @@ const teamColor = (owner) => (owner >= 0 ? TEAM_COLORS[Math.min(owner, 7)] : [0.
 export function terrainImage(doc, catalog) {
   const img = new ImageData(doc.width, doc.height);
   const d = img.data;
+  const colors = BIOME_PREVIEW_COLORS[doc.meta?.biome] ?? PREVIEW_COLORS;
   for (let i = 0; i < doc.width * doc.height; i++) {
-    const rgb = doc.gems[i] > 0 ? PREVIEW_GEMS : doc.ore[i] > 0 ? PREVIEW_ORE : PREVIEW_COLORS[doc.terrain[i]] ?? [0, 0, 0];
+    const rgb = doc.gems[i] > 0 ? PREVIEW_GEMS : doc.ore[i] > 0 ? PREVIEW_ORE : colors[doc.terrain[i]] ?? [0, 0, 0];
     d[i * 4] = rgb[0];
     d[i * 4 + 1] = rgb[1];
     d[i * 4 + 2] = rgb[2];

@@ -22,8 +22,10 @@ import {
   sha256Hex,
   validateMap,
   PREVIEW_GEMS,
+  TERRAIN_NAMES,
 } from '../editor/js/mapformat.js';
 import { MapDoc } from '../editor/js/doc.js';
+import { paintOre } from '../editor/js/edits.js';
 import { countOverrides, deepMerge, pruneOverrides, validateOverrides } from '../editor/js/overrides.js';
 import { rulesBaseFrom } from '../editor/js/rulesbase.js';
 
@@ -165,11 +167,38 @@ test('layers must decode to width*height bytes with valid values', () => {
   assert.ok(validateMap({ ...map, terrain: encodeBase64(new Uint8Array(10)) }).errors.some((e) => e.includes('terrain has 10 bytes')));
   assert.ok(validateMap({ ...map, ore: 'not base64!' }).errors.some((e) => e.includes('ore is not valid base64')));
   const badTerrain = makeMap({}, (t) => (t[5] = 9));
-  assert.ok(validateMap(badTerrain).errors.some((e) => e.includes('outside 0..4')));
+  assert.ok(validateMap(badTerrain).errors.some((e) => e.includes('outside 0..5')));
   const badOre = makeMap({}, (_t, o) => (o[5] = 13));
   assert.ok(validateMap(badOre).errors.some((e) => e.includes('above 12')));
   const oreOnRock = makeMap({}, (t, o) => ((t[5] = TERRAIN.ROCK), (o[5] = 4)));
   assert.ok(validateMap(oreOnRock).errors.some((e) => e.includes('ore can only lie on clear or rough ground')));
+});
+
+test('fords: passable terrain 5 without ore or gems', () => {
+  const ford = makeMap({}, (t) => (t[5] = TERRAIN.FORD));
+  assert.deepEqual(validateMap(ford).errors, []);
+  assert.equal(TERRAIN_NAMES[TERRAIN.FORD], 'Ford');
+  const oreOnFord = makeMap({}, (t, o) => ((t[5] = TERRAIN.FORD), (o[5] = 3)));
+  assert.ok(validateMap(oreOnFord).errors.some((e) => e.includes('ore can only lie on clear or rough ground')));
+  // Painting ore onto a ford is refused like on water; ground units cross it.
+  const doc = new MapDoc(makeMap({}, (t) => (t[5] = TERRAIN.FORD)));
+  const x = 5 % doc.width;
+  const y = Math.floor(5 / doc.width);
+  paintOre(doc, [[x, y]], 6, 'none');
+  assert.equal(doc.ore[5], 0);
+});
+
+test('biome: optional, kept by the document, last in the canonical form when not temperate', async () => {
+  const plain = makeMap();
+  assert.equal(new MapDoc(plain).meta.biome, 'temperate');
+  assert.ok(!canonicalJson(new MapDoc(plain).toMap()).includes('biome'), 'temperate maps keep their old identity');
+  assert.equal(await mapHash({ ...plain, biome: 'temperate' }), await mapHash(plain));
+  const snow = { ...plain, biome: 'snow' };
+  assert.deepEqual(validateMap(snow).errors, []);
+  assert.ok(canonicalJson(snow).endsWith(',"rules":null,"biome":"snow"}'));
+  assert.notEqual(await mapHash(snow), await mapHash(plain));
+  assert.equal(new MapDoc(snow).toMap().biome, 'snow');
+  assert.ok(validateMap({ ...plain, biome: 'jungle' }).errors.some((e) => e.includes('biome must be one of')));
 });
 
 test('the gems layer: density 0..3, passable ground, never with ore on one cell', () => {

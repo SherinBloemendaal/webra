@@ -1,7 +1,7 @@
 // Editing operations on a MapDoc, with symmetry. No DOM; every function works
 // inside the caller's open transaction (doc.begin / doc.commit).
 
-import { LIMITS, TERRAIN, catalogEntry, footprintOf, isBuildable, isPassable } from './mapformat.js';
+import { LIMITS, TERRAIN, catalogEntry, footprintOf, holdsResource, isBuildable, isPassable } from './mapformat.js';
 import { SPAWN_H, SPAWN_W, applyTransform, mirroredOwner, symmetricPositions, transformFacing, transformsFor } from './symmetry.js';
 
 export const BRUSH_SIZES = [1, 3, 5, 9];
@@ -70,7 +70,7 @@ export function paintTerrain(doc, cells, material, symmetry) {
 export function paintOre(doc, cells, density, symmetry) {
   const d = Math.max(0, Math.min(LIMITS.maxOre, density | 0));
   eachSymmetricCell(doc, cells, symmetry, (x, y) => {
-    if (isPassable(doc.terrain[doc.idx(x, y)])) doc.setCell(x, y, undefined, d);
+    if (holdsResource(doc.terrain[doc.idx(x, y)])) doc.setCell(x, y, undefined, d);
   });
 }
 
@@ -81,7 +81,7 @@ export function paintOre(doc, cells, density, symmetry) {
 export function paintGems(doc, cells, density, symmetry) {
   const d = Math.max(0, Math.min(LIMITS.maxGems, density | 0));
   eachSymmetricCell(doc, cells, symmetry, (x, y) => {
-    if (isPassable(doc.terrain[doc.idx(x, y)])) doc.setCell(x, y, undefined, undefined, d);
+    if (holdsResource(doc.terrain[doc.idx(x, y)])) doc.setCell(x, y, undefined, undefined, d);
   });
 }
 

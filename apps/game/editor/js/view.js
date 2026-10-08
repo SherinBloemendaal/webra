@@ -4,6 +4,8 @@
 // to 255 at their maximum density, A 255);
 // the fog layer is uploaded fully visible.
 
+import { buildTerrainAtlas, cellTiles } from '../../js/art/terrain.js';
+
 const CELL = 24; // world pixels per cell (render.rs PX_PER_CELL)
 const PAN_SPEED = 900; // CSS px per second at zoom 1
 const MIN_ZOOM = 0.15;
@@ -45,6 +47,14 @@ export class EditorView {
       this.terrainBytes = new Uint8Array(doc.width * doc.height * 4);
     }
     this.terrainDirty = true;
+    this.setBiome(doc.meta?.biome ?? 'temperate');
+  }
+
+  /** Terrain art of the map's biome (the same tiles as in the game). */
+  setBiome(biome) {
+    if (biome === this.biome) return;
+    this.biome = biome;
+    this.renderer.setTerrainAtlas(buildTerrainAtlas(biome));
   }
 
   updateTerrain(doc) {
@@ -56,6 +66,8 @@ export class EditorView {
       b[i * 4 + 3] = 255;
     }
     this.renderer.uploadTerrain(b);
+    // Tiles, shorelines and decals follow the terrain being edited.
+    this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, 0));
     this.terrainDirty = false;
   }
 

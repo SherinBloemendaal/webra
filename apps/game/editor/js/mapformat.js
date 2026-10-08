@@ -11,8 +11,10 @@ export const MAP_FORMAT = 2;
 export const MAP_FORMAT_ORE_ONLY = 1;
 export const MAP_FILE_SUFFIX = '.webra-map.json';
 
-export const TERRAIN = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4 });
-export const TERRAIN_NAMES = ['Clear', 'Rough', 'Rock', 'Water', 'Tree'];
+export const TERRAIN = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4, FORD: 5 });
+export const TERRAIN_NAMES = ['Clear', 'Rough', 'Rock', 'Water', 'Tree', 'Ford'];
+/** Map biomes (engine/src/weather.rs); a map without `biome` is temperate. */
+export const BIOMES = ['temperate', 'snow', 'desert'];
 
 export const LIMITS = Object.freeze({
   minSize: 32,
@@ -29,19 +31,41 @@ export const LIMITS = Object.freeze({
   maxActors: 2000,
 });
 
-/** Map preview colours, the same as `Game.map_preview` in engine/src/lib.rs. */
-export const PREVIEW_COLORS = [
-  [62, 88, 44],
-  [96, 92, 58],
-  [128, 118, 102],
-  [36, 70, 102],
-  [28, 54, 24],
-];
+/** Map preview colours per biome, the same as the engine's previews (engine/src/weather.rs preview_color). */
+export const BIOME_PREVIEW_COLORS = {
+  temperate: [
+    [62, 88, 44],
+    [96, 92, 58],
+    [128, 118, 102],
+    [36, 70, 102],
+    [28, 54, 24],
+    [74, 112, 118],
+  ],
+  snow: [
+    [206, 214, 222],
+    [158, 196, 222],
+    [112, 114, 124],
+    [34, 62, 96],
+    [40, 66, 58],
+    [110, 150, 182],
+  ],
+  desert: [
+    [200, 168, 110],
+    [218, 188, 124],
+    [150, 94, 60],
+    [38, 116, 138],
+    [92, 122, 58],
+    [112, 168, 158],
+  ],
+};
+export const PREVIEW_COLORS = BIOME_PREVIEW_COLORS.temperate;
 export const PREVIEW_ORE = [200, 160, 50];
 export const PREVIEW_GEMS = [190, 70, 150];
 
-/** Cells ground units can cross (engine/src/map.rs Terrain::passable). */
-export const isPassable = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH;
+/** Cells ground units can cross (engine/src/map.rs Terrain::passable): fords too. */
+export const isPassable = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH || t === TERRAIN.FORD;
+/** Cells that can hold ore or gems (engine/src/map.rs Terrain::holds_ore). */
+export const holdsResource = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH;
 /** Cells structures can stand on (engine/src/map.rs Terrain::buildable). */
 export const isBuildable = (t) => t === TERRAIN.CLEAR;
 
@@ -102,6 +126,8 @@ export function canonicalMap(map) {
     spawns: (map.spawns ?? []).map((s) => [s[0], s[1]]),
     actors: (map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
     rules: map.rules === undefined || map.rules === null ? null : sortKeys(map.rules),
+    // Last, and only when not temperate: maps from before biomes keep their identity.
+    ...(map.biome === undefined || map.biome === 'temperate' ? {} : { biome: map.biome }),
   };
 }
 
@@ -240,7 +266,7 @@ export function catalogEntry(catalog, type) {
 // ---- Validation -------------------------------------------------------------------
 
 const isInt = (v) => Number.isInteger(v);
-const TOP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules'];
+const TOP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
 
 /**
  * Validate a map against contract section 2.
@@ -281,6 +307,7 @@ export function validateMap(map, opts = {}) {
     error('Format 2 maps need a gems layer.');
   }
   if (hasGems && typeof map.gems !== 'string') error('gems must be base64 text.');
+  if (map.biome !== undefined && !BIOMES.includes(map.biome)) error(`biome must be one of ${BIOMES.join(', ')}.`);
 
   const text = (key, min, max) => {
     const v = map[key];
@@ -320,18 +347,18 @@ export function validateMap(map, opts = {}) {
     let gemsOnBlocked = 0;
     let both = 0;
     for (let i = 0; i < layers.terrain.length; i++) {
-      if (layers.terrain[i] > TERRAIN.TREE) badTerrain++;
+      if (layers.terrain[i] > TERRAIN.FORD) badTerrain++;
       if (layers.ore[i] > LIMITS.maxOre) badOre++;
-      else if (layers.ore[i] > 0 && !isPassable(layers.terrain[i])) oreOnBlocked++;
+      else if (layers.ore[i] > 0 && !holdsResource(layers.terrain[i])) oreOnBlocked++;
       if (layers.gems[i] > LIMITS.maxGems) badGems++;
-      else if (layers.gems[i] > 0 && !isPassable(layers.terrain[i])) gemsOnBlocked++;
+      else if (layers.gems[i] > 0 && !holdsResource(layers.terrain[i])) gemsOnBlocked++;
       if (layers.ore[i] > 0 && layers.gems[i] > 0) both++;
     }
-    if (badTerrain) error(`terrain has ${badTerrain} cells with values outside 0..4.`);
+    if (badTerrain) error(`terrain has ${badTerrain} cells with values outside 0..5.`);
     if (badOre) error(`ore has ${badOre} cells with density above ${LIMITS.maxOre}.`);
-    if (oreOnBlocked) error(`${oreOnBlocked} ore cells lie on impassable terrain; ore can only lie on clear or rough ground.`);
+    if (oreOnBlocked) error(`${oreOnBlocked} ore cells lie on other terrain; ore can only lie on clear or rough ground.`);
     if (badGems) error(`gems has ${badGems} cells with density above ${LIMITS.maxGems}.`);
-    if (gemsOnBlocked) error(`${gemsOnBlocked} gem cells lie on impassable terrain; gems can only lie on clear or rough ground.`);
+    if (gemsOnBlocked) error(`${gemsOnBlocked} gem cells lie on other terrain; gems can only lie on clear or rough ground.`);
     if (both) error(`${both} cells hold both ore and gems; a cell holds one or the other.`);
   }
 

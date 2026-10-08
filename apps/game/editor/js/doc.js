@@ -4,7 +4,7 @@
 // object (spawns, actors) or property changes, then `commit()`. Cell changes are
 // stored as per-cell before/after values; objects and properties as snapshots.
 
-import { createMap, decodeLayers, encodeBase64, formatFor, isPassable } from './mapformat.js';
+import { createMap, decodeLayers, encodeBase64, formatFor, holdsResource } from './mapformat.js';
 import { pruneOverrides } from './overrides.js';
 
 const HISTORY_LIMIT = 200;
@@ -33,7 +33,7 @@ export class MapDoc {
     this.gems = gems;
     this.spawns = clone(map.spawns ?? []);
     this.actors = clone(map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 }));
-    this.meta = { name: map.name ?? '', author: map.author ?? '', description: map.description ?? '' };
+    this.meta = { name: map.name ?? '', author: map.author ?? '', description: map.description ?? '', biome: map.biome ?? 'temperate' };
     this.rules = map.rules ? clone(map.rules) : null;
   }
 
@@ -56,6 +56,8 @@ export class MapDoc {
       spawns: clone(this.spawns),
       actors: clone(this.actors),
       rules: pruneOverrides(this.rules),
+      // Optional: a temperate map leaves it out (and keeps its identity).
+      ...(this.meta.biome && this.meta.biome !== 'temperate' ? { biome: this.meta.biome } : {}),
     };
   }
 
@@ -116,7 +118,7 @@ export class MapDoc {
     let g = gems === undefined ? this.gems[i] : gems;
     if (gems === undefined && ore > 0) g = 0;
     if (ore === undefined && gems > 0) o = 0;
-    if (!isPassable(t)) o = g = 0;
+    if (!holdsResource(t)) o = g = 0;
     if (t === this.terrain[i] && o === this.ore[i] && g === this.gems[i]) return false;
     this.autoBegin('Edit');
     if (!this.tx.cells.has(i)) this.tx.cells.set(i, [this.terrain[i], this.ore[i], this.gems[i]]);

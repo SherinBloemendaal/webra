@@ -18,6 +18,7 @@ import {
   LIMITS,
   TERRAIN,
   TERRAIN_NAMES,
+  BIOMES,
   byteLength,
   canonicalJson,
   createMap,
@@ -41,6 +42,7 @@ const MATERIALS = [
   { t: TERRAIN.ROCK, key: '3', color: '#807666' },
   { t: TERRAIN.WATER, key: '4', color: '#244666' },
   { t: TERRAIN.TREE, key: '5', color: '#1c3618' },
+  { t: TERRAIN.FORD, key: '6', color: '#4a7076' },
 ];
 
 const WALLS = new Set(['SBAG', 'FENC', 'BRIK']);
@@ -55,7 +57,7 @@ const PALETTE_GROUPS = [
 
 const SHORTCUTS = [
   ['B F R O C E S A V', 'Brush, fill, rectangle, ore, gems (crystals), eraser, spawns, actor, select'],
-  ['1 to 5', 'Terrain: clear, rough, rock, water, trees'],
+  ['1 to 6', 'Terrain: clear, rough, rock, water, trees, ford'],
   ['[ and ]', 'Brush size (1, 3, 5, 9)'],
   ['- and =', 'Ore or gem density'],
   ['M', 'Cycle symmetry mode'],
@@ -248,7 +250,11 @@ function onDocChange(change, { initial = false } = {}) {
   if (change.resized) view.setMap(doc);
   if (change.cells || change.resized) view.terrainDirty = true;
   if (change.cells || change.objects || change.resized) minimap.invalidate();
-  if (change.meta || change.resized) syncMetaFields();
+  if (change.meta || change.resized) {
+    syncMetaFields();
+    view.setBiome(doc.meta.biome ?? 'temperate');
+    minimap.invalidate();
+  }
   if (change.objects || change.resized) {
     renderOwnerOptions();
     renderSelection();
@@ -489,6 +495,22 @@ function buildMapPane() {
     field('name', 'Name', LIMITS.nameMax),
     field('author', 'Author', LIMITS.authorMax),
     field('description', 'Description', LIMITS.descriptionMax, true),
+    el('label', { class: 'field stacked', title: 'Terrain look and weather of the map. Not a rules change: the map stays unmodded.' }, [
+      el('span', { class: 'label' }, 'Biome '),
+      el(
+        'select',
+        {
+          id: 'meta-biome',
+          onchange: (e) => {
+            doc.begin('Edit biome', 'meta.biome');
+            doc.touchMeta();
+            doc.meta.biome = e.target.value;
+            doc.commit();
+          },
+        },
+        BIOMES.map((b) => el('option', { value: b }, b.charAt(0).toUpperCase() + b.slice(1))),
+      ),
+    ]),
     el('p', { id: 'map-stats', class: 'hint' }),
     el('h2', {}, 'Validation'),
     el('div', { id: 'validation-head', class: 'verdict' }),
@@ -502,6 +524,8 @@ function syncMetaFields() {
     const input = $(`#meta-${k}`);
     if (input && input.value !== doc.meta[k]) input.value = doc.meta[k];
   }
+  const biome = $('#meta-biome');
+  if (biome && biome.value !== (doc.meta.biome ?? 'temperate')) biome.value = doc.meta.biome ?? 'temperate';
 }
 
 // ---- Actors pane ----------------------------------------------------------------------------
@@ -817,7 +841,11 @@ function newMapDialog() {
   const seed = el('input', { type: 'number', min: '0', value: String(Math.floor(Math.random() * 100000)) });
   const players = el('select', {}, [2, 3, 4, 5, 6, 7, 8].map((n) => el('option', { value: String(n) }, `${n} players`)));
   const genSize = el('input', { type: 'number', min: String(LIMITS.minSize), max: String(LIMITS.maxSize), value: '96' });
+  const option = (v) => el('option', { value: v }, v.charAt(0).toUpperCase() + v.slice(1));
+  const genStyle = el('select', {}, ['random', 'land', 'rivers', 'lakes', 'islands'].map(option));
+  const genBiome = el('select', {}, ['random', ...BIOMES].map(option));
   const hasGenerator = typeof Game.generated_map === 'function';
+  const hasStyles = typeof Game.generated_map_styled === 'function';
   const kind = (v) => el('input', { type: 'radio', name: 'newkind', value: v, checked: v === 'blank' });
   const blankRadio = kind('blank');
   const genRadio = kind('generated');
@@ -837,6 +865,8 @@ function newMapDialog() {
         el('label', {}, ['Size ', genSize]),
         el('label', {}, ['Players ', players]),
         el('label', {}, ['Seed ', seed]),
+        hasStyles ? el('label', {}, ['Style ', genStyle]) : null,
+        hasStyles ? el('label', {}, ['Biome ', genBiome]) : null,
         hasGenerator ? null : el('p', { class: 'hint' }, 'Needs an engine build with Game.generated_map.'),
       ]),
       el('p', { class: 'hint' }, 'The current map stays in the undo history.'),
@@ -855,7 +885,12 @@ function newMapDialog() {
     let map;
     if (genRadio.checked) {
       if (!inRange(num(genSize))) return toast(`Size must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
-      map = JSON.parse(Game.generated_map(Math.max(0, num(seed)) >>> 0, num(genSize), num(players)));
+      const genSeed = Math.max(0, num(seed)) >>> 0;
+      map = JSON.parse(
+        hasStyles
+          ? Game.generated_map_styled(genSeed, num(genSize), num(players), genStyle.value, genBiome.value)
+          : Game.generated_map(genSeed, num(genSize), num(players)),
+      );
       map.author = store.get(AUTHOR_KEY) || map.author;
     } else {
       if (!inRange(num(width)) || !inRange(num(height))) return toast(`Width and height must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
