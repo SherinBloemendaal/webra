@@ -400,7 +400,7 @@ impl World {
         }
     }
 
-    /// One byte per cell for the local player: 0 shroud, 1 fog, 2 visible.
+    /// One byte per cell for the local player: 0 shroud, 128 fog, 255 visible.
     pub fn fog_bytes(&self, player: u8, out: &mut Vec<u8>) {
         let p = &self.players[player as usize];
         out.clear();
