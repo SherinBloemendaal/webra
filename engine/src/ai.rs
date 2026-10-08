@@ -82,7 +82,6 @@ pub fn think(w: &mut World, player: u8) {
         return;
     }
     deploy_mcv(w, player);
-    cancel_blocked(w, player);
     place_ready_building(w, player, QueueType::Building);
     place_ready_building(w, player, QueueType::Defense);
     arsenal::watch_the_sky(w, player);
@@ -127,17 +126,6 @@ fn deploy_mcv(w: &mut World, player: u8) {
         let (x, y) = (w.actors[i].x, w.actors[i].y);
         let dx = if (w.tick / 100).is_multiple_of(2) { 2 * CELL } else { -2 * CELL };
         w.order_move(&[i], x + dx, y + CELL, false);
-    }
-}
-
-/// Cancel queued items whose prerequisites were destroyed (e.g. a half-built
-/// tech center after the war factory died), so the base can be rebuilt.
-fn cancel_blocked(w: &mut World, player: u8) {
-    for qi in 0..crate::rules::QUEUE_COUNT {
-        let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { continue };
-        if !w.availability(player, item.ty).enabled {
-            w.cancel_production(player, item.ty);
-        }
     }
 }
 

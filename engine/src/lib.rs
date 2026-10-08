@@ -41,6 +41,8 @@ mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
+mod tests_production;
+#[cfg(test)]
 mod tests_security;
 
 use math::CELL;
@@ -579,11 +581,10 @@ impl Game {
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
-                let av = w.availability(player, t as u16);
                 let reqs = w.requirements(player, t as u16);
                 json!({
                     "id": w.rules.actors[t].id,
-                    "enabled": av.enabled,
+                    "enabled": w.can_produce(player, t as u16),
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
