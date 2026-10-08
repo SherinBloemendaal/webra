@@ -167,7 +167,7 @@ export class Sidebar {
     this.sellBtn.addEventListener('click', () => this.callbacks.onSell?.());
     this.deployBtn = el('button', 'sb-tool', 'Deploy');
     this.deployBtn.type = 'button';
-    this.deployBtn.title = 'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: D';
+    this.deployBtn.title = 'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: F or D';
     this.deployBtn.addEventListener('click', () => this.callbacks.onDeploy?.());
     tools.append(this.sellBtn, this.deployBtn);
 

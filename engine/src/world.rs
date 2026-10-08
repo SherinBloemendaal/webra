@@ -5,6 +5,7 @@ use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
 use crate::rules::{FootCell, Kind, QueueType, Rules, QUEUE_COUNT};
+use crate::sound_events::{kind_code, SoundEventKind};
 use std::collections::BTreeMap;
 
 /// Simulation ticks per second at normal speed (OpenRA: 40 ms per tick).
@@ -243,6 +244,8 @@ pub struct Player {
     pub team: u8,
     /// Owner of neutral map actors: never plays, never wins or loses.
     pub neutral: bool,
+    /// Debug menu cheat flags (debug.rs); only orders of a game with cheats set them.
+    pub dev: crate::debug::DevFlags,
 }
 
 impl Player {
@@ -250,7 +253,7 @@ impl Player {
         self.cash + self.resources
     }
     pub fn low_power(&self) -> bool {
-        self.power_use > self.power_gen
+        self.power_use > self.power_gen && !self.dev.unlimited_power
     }
 }
 
@@ -313,6 +316,8 @@ pub struct GameOptions {
     pub build_radius: bool,
     pub redeployable_mcv: bool,
     pub ore_regrowth: bool,
+    /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
+    pub cheats: bool,
 }
 
 impl Default for GameOptions {
@@ -326,6 +331,7 @@ impl Default for GameOptions {
             build_radius: true,
             redeployable_mcv: true,
             ore_regrowth: true,
+            cheats: false,
         }
     }
 }
@@ -458,10 +464,31 @@ pub enum Order {
         x: i32,
         y: i32,
     },
+    /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
+    /// unless the game has the cheats option.
+    DevFlag {
+        player: u8,
+        flag: crate::debug::DevFlag,
+        on: bool,
+    },
+    /// Debug menu: give the player cash (debug.rs). Ignored without cheats.
+    DevCash {
+        player: u8,
+    },
+    /// Debug menu: destroy actors of any owner (debug.rs). Ignored without cheats.
+    DevKill {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
+    /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
+    pub fn is_cheat(&self) -> bool {
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. })
+    }
+
     pub fn player(&self) -> u8 {
         match self {
             Order::Move { player, .. }
@@ -478,7 +505,10 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player,
+            | Order::Teleport { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. } => *player,
         }
     }
 
@@ -499,7 +529,10 @@ impl Order {
             | Order::ReturnToBase { player, .. }
             | Order::SupportPower { player, .. }
             | Order::LayMines { player, .. }
-            | Order::Teleport { player, .. } => *player = p,
+            | Order::Teleport { player, .. }
+            | Order::DevFlag { player, .. }
+            | Order::DevCash { player }
+            | Order::DevKill { player, .. } => *player = p,
         }
     }
 
@@ -514,7 +547,8 @@ impl Order {
             | Order::Deploy { ids, .. }
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. }
-            | Order::Teleport { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::Teleport { ids, .. }
+            | Order::DevKill { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -580,6 +614,8 @@ pub struct World {
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
     pub powers: crate::powers::PowersState,
+    /// Write-only audio event log for the client (sound_events.rs).
+    pub sound: crate::sound_events::SoundEvents,
 }
 
 impl World {
@@ -732,6 +768,7 @@ impl World {
             abil: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
+            sound: Default::default(),
             map,
         }
     }
@@ -758,6 +795,7 @@ impl World {
             start,
             team: 0,
             neutral: false,
+            dev: Default::default(),
         });
     }
 
@@ -908,6 +946,8 @@ impl World {
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
         self.dying.push(i as u32);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1239,6 +1279,10 @@ impl World {
                 Order::SupportPower { player, key, x, y, x2, y2 } => {
                     self.activate_support_power(player, &key, x, y, x2.zip(y2));
                 }
+                // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
+                Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
+                Order::DevCash { player } => self.dev_give_cash(player),
+                Order::DevKill { player, ids } => self.dev_kill(player, &ids),
             }
         }
     }
@@ -1596,6 +1640,10 @@ impl World {
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Cheat flags are simulation state; they can only be set with the cheats option.
+            if self.options.cheats {
+                mix(p.dev.bits() as i64);
+            }
         }
         for &o in &self.map.ore {
             mix(o as i64);

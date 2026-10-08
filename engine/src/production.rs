@@ -3,6 +3,7 @@
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -92,6 +93,13 @@ impl World {
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
+        // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
+        // except the marker of actors that are never buildable.
+        if p.dev.all_tech {
+            let never =
+                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+            return Availability { visible: !never, enabled: !never };
+        }
         let mut visible = true;
         let mut enabled = true;
         for pr in &info.prerequisites {
@@ -119,6 +127,9 @@ impl World {
             if !names.is_empty() {
                 out.push(Requirement { label: names.join(" or "), never: false });
             }
+        }
+        if self.availability(player, ty).enabled {
+            return out;
         }
         for pr in &self.rules.actors[ty as usize].prerequisites {
             if p.tokens[pr.token as usize] != pr.negate {
@@ -303,6 +314,8 @@ impl World {
             let reductions = self.rules.player.speed_reduction.clone();
             let low_power_mod = self.rules.player.low_power_modifier;
             let low_power = self.players[player as usize].low_power();
+            // Debug menu "instant build" (debug.rs): done on this tick, still paid in full.
+            let fast_build = self.players[player as usize].dev.fast_build;
             let item = &mut self.players[player as usize].queues[qi].items[0];
             if item.done {
                 if q.is_structure() {
@@ -315,8 +328,11 @@ impl World {
                     item.total = (build_ticks * red / 100).max(1);
                     item.remaining = item.total;
                 }
+                if fast_build {
+                    item.remaining = item.remaining.min(1);
+                }
                 // Low power slows production by LowPowerModifier percent.
-                let modifier = if low_power { low_power_mod } else { 100 };
+                let modifier = if low_power && !fast_build { low_power_mod } else { 100 };
                 item.slow += 100;
                 if item.slow < modifier {
                     continue;
@@ -325,7 +341,10 @@ impl World {
                 let due = (cost as i64 * (item.total - item.remaining + 1) as i64 / item.total as i64) as i32;
                 let delta = due - item.paid;
                 if !self.spend(player, delta) {
-                    continue; // insufficient funds: production stalls
+                    // Insufficient funds: production stalls (sound_events.rs throttles the event).
+                    let tick = self.tick;
+                    self.sound.push_funds(tick, player, first_ty);
+                    continue;
                 }
                 let item = &mut self.players[player as usize].queues[qi].items[0];
                 item.paid = due;
@@ -335,6 +354,7 @@ impl World {
                 }
                 item.done = true;
                 if q.is_structure() {
+                    self.sound.push(SoundEventKind::ConstructionReady, first_ty as i32, 0, 0, player, 0);
                     continue;
                 }
             }
@@ -377,6 +397,8 @@ impl World {
             (ex, ey, facing) = (cx, cy, f);
         }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        let (ux, uy) = (self.actors[u].x, self.actors[u].y);
+        self.sound.push(SoundEventKind::UnitProduced, ty as i32, ux, uy, player, 0);
         // Helicopters start landed on their helipad (helicopter.rs).
         self.heli_produced(u, b);
         // Planes park on their airfield (plane.rs).
@@ -453,6 +475,10 @@ impl World {
     /// buildable area, and (with the "Build radius" option) within range of a
     /// base provider (construction yard).
     fn in_build_area(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
+        // Debug menu "build anywhere" (debug.rs): no adjacency or build radius.
+        if self.players[player as usize].dev.build_anywhere {
+            return true;
+        }
         let b = self.rules.actors[ty as usize].building.as_ref().unwrap();
         let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
         let mut adjacent = false;
@@ -496,6 +522,8 @@ impl World {
         }
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
         self.players[player as usize].queues[qi].items.remove(0);
+        let (bx, by) = (self.actors[b].x, self.actors[b].y);
+        self.sound.push(SoundEventKind::BuildingPlaced, ty as i32, bx, by, player, 0);
         self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);
@@ -561,8 +589,9 @@ impl World {
             return false;
         }
         let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
-        let (owner, x, y) = (a.owner, a.x, a.y);
+        let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         self.remove(b);
         true

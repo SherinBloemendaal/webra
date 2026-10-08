@@ -86,6 +86,17 @@
   color: #f0c060;
 }
 
+/* Lobby notice while the "Debug menu" (cheats) option is on. */
+.online-cheats {
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  border: 1px solid #b0412e;
+  border-radius: 2px;
+  background: rgba(176, 65, 46, 0.25);
+  color: #ffb4a2;
+  font-weight: bold;
+}
+
 .online-error {
   margin: 0 0 12px;
   padding: 8px 12px;
