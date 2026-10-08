@@ -231,8 +231,9 @@ export class AudioSystem {
     this.director?.onPlayerState(state);
   }
 
-  selection(ids) {
-    this.director?.onSelection(ids);
+  /** @param {number[]} ids @param {{ byPlayer?: boolean }} [info] whether the player made this selection */
+  selection(ids, info = {}) {
+    this.director?.onSelection(ids, info);
   }
 
   selectTarget() {

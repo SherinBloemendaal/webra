@@ -67,7 +67,7 @@ export class Input {
     this.ask = askOf(game);
     this.rules = rules;
     this.player = player;
-    // { onSelectionChanged(ids), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() },
+    // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) }
     this.hooks = hooks;
@@ -155,7 +155,7 @@ export class Input {
     this.selection = Array.from(new Set(ids));
     this.ownUnits = null;
     this.game.set_selection(Uint32Array.from(this.selection));
-    this.hooks.onSelectionChanged(this.selection);
+    this.hooks.onSelectionChanged(this.selection, { byPlayer: true });
   }
 
   refreshSelection() {
@@ -163,7 +163,8 @@ export class Input {
     if (alive.length !== this.selection.length) {
       this.selection = alive;
       this.ownUnits = null;
-      this.hooks.onSelectionChanged(this.selection);
+      // Units died or boarded a transport: not the player's doing, so no voice.
+      this.hooks.onSelectionChanged(this.selection, { byPlayer: false });
     }
   }
 

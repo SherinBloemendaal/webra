@@ -201,7 +201,7 @@ test('announcements respect their cooldowns', () => {
   assert.equal(calls.announce.filter((k) => k === 'unitLost').length, 1);
 });
 
-test('one reply per order, selection reports only for newly picked units', () => {
+test('one reply per order, and a report on every selection the player makes (OpenRA)', () => {
   const actors = {
     11: { type: 'E1', owner: 0, building: false },
     12: { type: '1TNK', owner: 0, building: false },
@@ -222,10 +222,17 @@ test('one reply per order, selection reports only for newly picked units', () =>
   assert.equal(calls.voices[1].synth, 'radio_select');
   advance(1);
   d.onSelection([12]);
-  d.onSelection([]);
-  assert.equal(calls.voices.length, 2, 'refresh or losing units is silent');
+  assert.equal(calls.voices.length, 3, 'selecting the same unit again reports again');
+  advance(1);
+  d.onSelection([12], { byPlayer: false });
+  d.onSelection([], { byPlayer: true });
+  assert.equal(calls.voices.length, 3, 'units dropping out and an empty selection are silent');
   d.onSelection([12, 11]);
-  assert.equal(calls.voices.length, 3, 'adding a unit reports');
+  d.onSelection([11]);
+  assert.equal(calls.voices.length, 4, 'quick clicks are throttled');
+  advance(VOICE_GAP);
+  d.onSelection([13, 14]);
+  assert.equal(calls.voices.length, 4, 'enemy units and structures do not report');
 });
 
 test('production clicks, low power and ready powers', () => {

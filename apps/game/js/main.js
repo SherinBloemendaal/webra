@@ -517,8 +517,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       powerBar?.setTargeting(key);
       if (key) audio?.selectTarget();
     },
-    onSelectionChanged: (ids) => {
-      audio?.selection(ids);
+    onSelectionChanged: (ids, info) => {
+      audio?.selection(ids, info);
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
       commandBar?.update();

@@ -146,11 +146,18 @@ export class Director {
     if (u) this.reply(u.type, u.kind, 'action');
   }
 
-  /** The selection changed: report when the player picked up a unit not selected before. */
-  onSelection(ids) {
-    const added = ids.filter((id) => !this.selection.has(id));
+  /**
+   * The selection changed. Like OpenRA, every selection the player makes with
+   * own units in it gets a reply ("Reporting", "Yes sir"), from the first own
+   * unit; VOICE_GAP keeps quick clicks from stacking. Units dropping out of the
+   * selection (killed, boarded) stay silent.
+   * @param {number[]} ids
+   * @param {{ byPlayer?: boolean }} [info]
+   */
+  onSelection(ids, { byPlayer = true } = {}) {
     this.selection = new Set(ids);
-    const u = added.length ? this.ownUnit(added) : null;
+    if (!byPlayer || !ids.length) return;
+    const u = this.ownUnit(ids);
     if (u) this.reply(u.type, u.kind, 'select');
   }
 
