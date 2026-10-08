@@ -17,6 +17,7 @@ import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
 import { Minimap } from './minimap.js';
+import { mountReleaseNotes } from './releasenotes-dialog.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -38,6 +39,8 @@ let renderer;
 let audio = null;
 /** The Sound dialog (js/audio/panel.js), also opened from the game menu. */
 let audioPanel = null;
+/** Release notes dialog (js/releasenotes-dialog.js): lobby, game menu and "What's new". */
+let releaseNotes = null;
 
 async function boot() {
   let gpuError = null;
@@ -48,6 +51,7 @@ async function boot() {
   }
   $('version').textContent = wasm ? `v${version()}` : '';
   setupAudio();
+  releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
     colors: TEAM_COLORS,
     colorNames: COLOR_NAMES,
@@ -61,6 +65,7 @@ async function boot() {
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
+    onReleaseNotes: () => releaseNotes.open(),
   });
   if (!gpuError) {
     try {
@@ -72,6 +77,8 @@ async function boot() {
   if (gpuError) lobby.showError(gpuError);
   setupOnline(lobby, gpuError);
   offerLinkedMap(lobby);
+  // Once per new version: what changed since this browser last played.
+  releaseNotes.showWhatsNewOnce();
 }
 
 function setupAudio() {
@@ -326,6 +333,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
     onSound: audioPanel ? () => audioPanel.open() : undefined,
+    onReleaseNotes: () => releaseNotes.open(),
     onLeave: leave,
     onExit: exit,
   });

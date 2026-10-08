@@ -332,9 +332,13 @@ impl World {
                 }
             }
             if let Some(hv) = info.unit.as_ref().and_then(|u| u.harvester.as_ref()) {
-                let load = a.bales as f32 / hv.capacity as f32;
+                // Load bar: ore yellow, gems red after it (OpenRA pips: Ore pip-yellow, Gems pip-red).
+                let cap = hv.capacity.max(1) as f32;
+                let ore = (a.bales - a.gem_bales) as f32 / cap;
+                let gems = a.gem_bales as f32 / cap;
                 rects.extend_from_slice(&[l, t + h + 2.0, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
-                rects.extend_from_slice(&[l, t + h + 2.0, w * load, 2.0, 0.95, 0.75, 0.2, 1.0]);
+                rects.extend_from_slice(&[l, t + h + 2.0, w * ore, 2.0, 0.95, 0.75, 0.2, 1.0]);
+                rects.extend_from_slice(&[l + w * ore, t + h + 2.0, w * gems, 2.0, 0.9, 0.2, 0.3, 1.0]);
             }
             self.push_heli_ammo_pips(i, l, t + h, w, rects);
             if a.kind == Kind::Building && a.owner == player {
@@ -405,14 +409,16 @@ impl World {
         }));
     }
 
-    /// RGBA per cell: R terrain type, G ore density (scaled), B ore max flag.
+    /// RGBA per cell: R terrain type, G ore density and B gem density, each
+    /// scaled so that the type's maximum is 255.
     pub fn terrain_bytes(&self, out: &mut Vec<u8>) {
         out.clear();
         let max = self.rules.player.ore_max_density.max(1) as u32;
+        let gem_max = self.rules.player.gem_max_density.max(1) as u32;
         for i in 0..self.map.cells() {
             out.push(self.map.terrain[i] as u8);
-            out.push((self.map.ore[i] as u32 * 255 / max) as u8);
-            out.push(0);
+            out.push((self.map.ore[i].min(max as u8) as u32 * 255 / max) as u8);
+            out.push((self.map.gems[i].min(gem_max as u8) as u32 * 255 / gem_max) as u8);
             out.push(255);
         }
     }

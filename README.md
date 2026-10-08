@@ -194,9 +194,9 @@ Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, 
 | F10 | Game menu |
 | P or Pause | Pause (single player; opens the menu) |
 | Alt + Enter | Fullscreen |
-| Sidebar left click | Build (Shift + click queues 5) |
-| Sidebar right click | Cancel (refunds what was paid) |
-| Click a finished building in the sidebar | Start placing it |
+| Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
+| Sidebar right click | Cancel the last queued one (refunds what was paid) |
+| Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
 

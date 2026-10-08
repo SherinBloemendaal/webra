@@ -120,6 +120,14 @@ impl World {
     pub fn requirements(&self, player: u8, ty: u16) -> Vec<Requirement> {
         let p = &self.players[player as usize];
         let mut out: Vec<Requirement> = Vec::new();
+        // Structures also need a building that produces their queue (the Construction Yard).
+        let q = self.rules.actors[ty as usize].queue;
+        if q.is_structure() && !self.has_producer(player, q) {
+            let names = self.queue_producer_names(q);
+            if !names.is_empty() {
+                out.push(Requirement { label: names.join(" or "), never: false });
+            }
+        }
         if self.availability(player, ty).enabled {
             return out;
         }
@@ -155,6 +163,18 @@ impl World {
             let Some(b) = &a.building else { continue };
             let idx = self.rules.actor_index(&a.id).unwrap();
             if self.rules.obtainable[faction][idx] && b.provides[faction].contains(&token) && !names.contains(&a.name) {
+                names.push(a.name.clone());
+            }
+        }
+        names
+    }
+
+    /// Names of the buildings that produce queue `q` (the Construction Yard for
+    /// structures; it comes from an MCV, so it is not "obtainable" itself).
+    fn queue_producer_names(&self, q: QueueType) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for a in &self.rules.actors {
+            if a.building.as_ref().is_some_and(|b| b.produces.contains(&q)) && !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
@@ -205,17 +225,25 @@ impl World {
         })
     }
 
+    /// Whether `player` may produce `ty` right now: every prerequisite is met
+    /// and, for structures, a building that produces its queue (the
+    /// Construction Yard) stands. OpenRA: the item is in `BuildableItems()`,
+    /// which is empty while a classic queue has no producer.
+    pub fn can_produce(&self, player: u8, ty: u16) -> bool {
+        let q = self.rules.actors[ty as usize].queue;
+        self.availability(player, ty).enabled && (!q.is_structure() || self.has_producer(player, q))
+    }
+
+    /// Queue `count` items of `ty`. Structures queue like units (OpenRA): only
+    /// the first item is built, and a finished structure waits for placement
+    /// while the items behind it wait too.
     pub fn start_production(&mut self, player: u8, ty: u16, count: i32) {
-        if ty as usize >= self.rules.actors.len() || !self.availability(player, ty).enabled {
+        if ty as usize >= self.rules.actors.len() || !self.can_produce(player, ty) {
             return;
         }
         let q = self.rules.actors[ty as usize].queue;
         let queue = &mut self.players[player as usize].queues[q as usize];
         for _ in 0..count.max(1) {
-            // Classic sidebar: only one building at a time.
-            if q.is_structure() && !queue.items.is_empty() {
-                return;
-            }
             if queue.items.len() >= MAX_QUEUED {
                 return;
             }
@@ -236,10 +264,37 @@ impl World {
         }
     }
 
+    /// OpenRA `CancelUnbuildableItems`: every queued item that can no longer
+    /// be produced is removed and what was paid for it refunded. That covers
+    /// items whose prerequisites were destroyed (a half-built tank after its
+    /// service depot died) and, for the Building and Defense queues, every item
+    /// once the last Construction Yard is gone. Nothing else in the queue is
+    /// held up, and the items can be queued again once the prerequisites (or a
+    /// new Construction Yard) are back.
+    fn cancel_unbuildable(&mut self, player: u8) {
+        for qi in 0..crate::rules::QUEUE_COUNT {
+            if self.players[player as usize].queues[qi].items.is_empty() {
+                continue;
+            }
+            let q = QueueType::from_index(qi);
+            let producer = !q.is_structure() || self.has_producer(player, q);
+            // Back to front, so removing an item does not shift the ones still to check.
+            for i in (0..self.players[player as usize].queues[qi].items.len()).rev() {
+                let ty = self.players[player as usize].queues[qi].items[i].ty;
+                if producer && self.availability(player, ty).enabled {
+                    continue;
+                }
+                let item = self.players[player as usize].queues[qi].items.remove(i);
+                self.refund(player, item.paid);
+            }
+        }
+    }
+
     pub(crate) fn tick_production(&mut self, player: u8) {
         if self.players[player as usize].defeated {
             return;
         }
+        self.cancel_unbuildable(player);
         for qi in 0..crate::rules::QUEUE_COUNT {
             let q = QueueType::from_index(qi);
             if self.players[player as usize].queues[qi].items.is_empty() {
@@ -248,12 +303,9 @@ impl World {
             let first_ty = self.players[player as usize].queues[qi].items[0].ty;
             let producers =
                 if q.is_structure() { usize::from(self.has_producer(player, q)) } else { self.producers_of(player, first_ty).len() };
-            // No factory (or it was destroyed): the queue waits.
+            // No factory (or it was destroyed): the queue waits. (Structure
+            // queues without a Construction Yard were emptied above.)
             if producers == 0 {
-                continue;
-            }
-            // Production pauses while prerequisites are lost (e.g. the repair depot died).
-            if !self.availability(player, first_ty).enabled {
                 continue;
             }
             let info = &self.rules.actors[first_ty as usize];
@@ -378,12 +430,12 @@ impl World {
         out
     }
 
-    /// Whether a structure cell may go on map cell `i`: right terrain, no ore,
+    /// Whether a structure cell may go on map cell `i`: right terrain, no ore or gems,
     /// no building, no units (except `ignore`), explored by the player.
     fn cell_free_for(&self, player: u8, on_water: bool, i: usize, ignore: Option<usize>) -> bool {
         let terrain_ok = if on_water { self.map.terrain[i] == Terrain::Water } else { self.map.terrain[i].buildable() };
         terrain_ok
-            && self.map.ore[i] == 0
+            && !self.map.has_resource(i)
             && self.building_at[i] == NONE
             && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
             && self.players[player as usize].explored[i] != 0
@@ -463,7 +515,9 @@ impl World {
         }
         let qi = self.rules.actors[ty as usize].queue as usize;
         let ready = self.players[player as usize].queues[qi].items.first().is_some_and(|it| it.ty == ty && it.done);
-        if !ready || !self.can_place(player, ty, cx, cy) {
+        // The Construction Yard or a prerequisite may have died this tick, before
+        // production cancels the item: such a structure cannot be placed either.
+        if !ready || !self.can_produce(player, ty) || !self.can_place(player, ty, cx, cy) {
             return false;
         }
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
