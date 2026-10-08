@@ -13,7 +13,9 @@ import {
 import { checkOrigin, HttpError, readJson, readText } from '../src/http.js';
 import { prepareMap } from '../src/maps.js';
 import { ordersFitRules, validateCreateSession } from '../src/validate.js';
-import { HOST_KEY_RE } from '@webra/protocol';
+import { HOST_KEY_RE, parseClientMessage } from '@webra/protocol';
+
+const ENGINE_RULES = JSON.parse(readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8'));
 
 test('passwords: salted PBKDF2, constant-time verify', async () => {
   const rec = await hashPassword('hunter2', 1000);
@@ -151,4 +153,22 @@ test('orders must name actor types the engine knows', () => {
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }, { o: 'stop', player: 0, ids: [] }], 84), true);
   assert.equal(ordersFitRules([{ o: 'place', player: 0, ty: 84, cx: 1, cy: 1 }], 84), false);
   assert.equal(ordersFitRules([{ o: 'start_production', player: 0, ty: 65535, count: 1 }], 84), false);
+});
+
+test('command bar orders name no actor type and pass the rules check once the protocol accepts them', () => {
+  // Shape (stance names, id lists, coordinates) is checked by the protocol for
+  // every orders message before ordersFitRules runs (session.js).
+  const orders = [
+    { o: 'attack_ground', player: 0, ids: [1, 2], x: 1024, y: 2048 },
+    { o: 'guard', player: 0, ids: [1], target: 7 },
+    { o: 'scatter', player: 0, ids: [1, 2] },
+    { o: 'waypoint', player: 0, ids: [1], x: 0, y: 512, attack_move: false },
+    { o: 'set_stance', player: 0, ids: [1], stance: 'defend' },
+  ];
+  const msg = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders }));
+  assert.ok(msg.ok, msg.message);
+  assert.equal(ordersFitRules(msg.msg.orders, ENGINE_RULES.actors.length), true);
+  assert.equal(ordersFitRules([...msg.msg.orders, { o: 'place', player: 0, ty: ENGINE_RULES.actors.length, cx: 1, cy: 1 }], ENGINE_RULES.actors.length), false);
+  const bad = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 'berserk' }] }));
+  assert.equal(bad.ok, false);
 });
