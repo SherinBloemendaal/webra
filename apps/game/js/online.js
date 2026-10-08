@@ -58,6 +58,7 @@ const TOGGLES = [
   ['buildRadius', 'Build radius'],
   ['redeployableMcv', 'Redeployable MCVs'],
   ['oreRegrowth', 'Ore regrowth'],
+  ['cheats', 'Debug menu (cheats)'],
 ];
 
 // ---- DOM helpers -------------------------------------------------------------
@@ -656,6 +657,12 @@ export class OnlineUI {
       toggles.append(row);
     }
     box.append(grid, toggles);
+    // Cheats change the game for everyone: every player sees it before getting ready.
+    if (o.cheats) {
+      const warn = el('p', 'online-cheats', 'CHEATS ENABLED: every player can use the debug menu (instant build, free cash, reveal map).');
+      warn.setAttribute('role', 'status');
+      box.append(warn);
+    }
   }
 
   renderMap() {
@@ -861,7 +868,7 @@ export class OnlineUI {
     conn.on('desync', (d) => this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true));
     this.inGame = true;
     this.root.hidden = true;
-    this.buildGameOverlay(m.players);
+    this.buildGameOverlay(m.players, m.options.cheats === true);
     this.ctx.onStartGame({
       game,
       player: me.player,
@@ -874,7 +881,7 @@ export class OnlineUI {
     });
   }
 
-  buildGameOverlay(players) {
+  buildGameOverlay(players, cheats = false) {
     const field2 = document.getElementById('field') || document.body;
     const box = el('div', 'online-game');
     box.id = 'online-game';
@@ -910,6 +917,7 @@ export class OnlineUI {
     field2.append(box);
     const names = players.map((p) => p.name).join(', ');
     this.gameLine(`Online game: ${names}. Press Enter to chat.`);
+    if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);
     }, 250);

@@ -11,6 +11,10 @@ import {
   parseServerMessage,
   PROTOCOL_VERSION,
   ProtocolError,
+  CHEAT_ORDER_KINDS,
+  DEV_FLAGS,
+  isCheatOrder,
+  ORDER_KINDS,
   S2C,
   validateGameOptions,
   validateLobbyOptions,
@@ -32,7 +36,7 @@ const HOST_KEY = 'A'.repeat(43);
 
 test('hello: valid, normalized and strict', () => {
   const m = ok({ t: 'hello', protocol: PROTOCOL_VERSION, version: '0.2.0+abc123', name: '  Tanya   Adams ', hostKey: HOST_KEY });
-  assert.deepEqual(m, { t: 'hello', protocol: 1, version: '0.2.0+abc123', name: 'Tanya Adams', hostKey: HOST_KEY });
+  assert.deepEqual(m, { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.2.0+abc123', name: 'Tanya Adams', hostKey: HOST_KEY });
   ok({ t: 'hello', protocol: 1, version: '1.0.0', name: 'x', password: 'secret' });
   bad({ t: 'hello', protocol: 1, version: '1.0.0', name: '' }, /empty/);
   bad({ t: 'hello', protocol: 1, version: '1.0.0', name: 'x'.repeat(25) }, /at most 24/);
@@ -87,6 +91,12 @@ test('slot, options, map and ready', () => {
   bad({ t: 'options', options: { ...DEFAULT_OPTIONS, players: [] } }, /unknown field/);
   const { seed: _seed, ...missing } = DEFAULT_OPTIONS;
   bad({ t: 'options', options: missing }, /seed/);
+  // The debug menu (cheats) option is off by default, required and boolean.
+  assert.equal(DEFAULT_OPTIONS.cheats, false);
+  assert.equal(ok({ t: 'options', options: { ...DEFAULT_OPTIONS, cheats: true } }).options.cheats, true);
+  bad({ t: 'options', options: { ...DEFAULT_OPTIONS, cheats: 1 } }, /cheats/);
+  const { cheats: _cheats, ...noCheats } = DEFAULT_OPTIONS;
+  bad({ t: 'options', options: noCheats }, /cheats/);
 
   const hash = 'a'.repeat(64);
   assert.equal(ok({ t: 'map', map: null }).map, null);
@@ -217,6 +227,27 @@ test('server message validation catches inconsistent data', () => {
     false,
   );
   assert.equal(parseServerMessage('{"t":"hello"}').ok, false);
+});
+
+test('cheat orders: strict shapes, recognised as cheats', () => {
+  const cheats = [
+    ...DEV_FLAGS.map((flag) => ({ o: 'dev_flag', player: 0, flag, on: true })),
+    { o: 'dev_cash', player: 1 },
+    { o: 'dev_kill', player: 0, ids: [1, 4194305] },
+  ];
+  for (const o of cheats) {
+    assert.deepEqual(ok({ t: 'orders', tick: 4, orders: [o] }).orders[0], o);
+    assert.equal(isCheatOrder(o), true, o.o);
+  }
+  assert.deepEqual(CHEAT_ORDER_KINDS, ['dev_flag', 'dev_cash', 'dev_kill']);
+  assert.ok(CHEAT_ORDER_KINDS.every((k) => ORDER_KINDS.includes(k)));
+  for (const k of ORDER_KINDS) assert.equal(isCheatOrder({ o: k }), CHEAT_ORDER_KINDS.includes(k), k);
+  assert.equal(isCheatOrder(null), false);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_flag', player: 0, flag: 'god_mode', on: true }] }, /flag/);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_flag', player: 0, flag: 'fast_build', on: 'yes' }] }, /on/);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_flag', player: 0, flag: 'fast_build' }] }, /required/);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_cash', player: 0, amount: 1e6 }] }, /unknown field/);
+  bad({ t: 'orders', tick: 4, orders: [{ o: 'dev_kill', player: 0, ids: Array.from({ length: 2001 }, () => 1) }] });
 });
 
 test('errorMessage truncates and strips non-printable text', () => {
