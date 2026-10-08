@@ -39,6 +39,7 @@ mod tests_abilities;
 mod tests_ai;
 #[cfg(test)]
 mod tests_commands;
+#[cfg(test)]
 mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
