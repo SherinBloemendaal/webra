@@ -38,7 +38,7 @@ pub const BLIP_INTS: usize = 5;
 /// Owner value of blips that belong to a neutral player.
 pub const NEUTRAL_OWNER: i32 = 255;
 
-/// An enemy radar jammer as seen by one player: position, owner and range.
+/// An enemy radar jammer as seen by one player: position and range.
 struct Jammer {
     x: i32,
     y: i32,
