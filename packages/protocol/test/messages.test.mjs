@@ -12,6 +12,7 @@ import {
   PROTOCOL_VERSION,
   ProtocolError,
   S2C,
+  STANCES,
   validateGameOptions,
   validateLobbyOptions,
 } from '../src/index.js';
@@ -128,8 +129,13 @@ test('orders and hash', () => {
     { o: 'support_power', player: 1, key: 'ParatroopersPower@paratroopers', x: 0, y: 0, x2: 4096, y2: 0 },
     { o: 'lay_mines', player: 1, ids: [4], x0: 3, y0: 4, x1: 6, y1: 4 },
     { o: 'teleport', player: 1, ids: [4], x: 1024, y: 2048 },
+    { o: 'attack_ground', player: 1, ids: [4, 5], x: -10, y: 2048 },
+    { o: 'guard', player: 1, ids: [4], target: 9 },
+    { o: 'scatter', player: 1, ids: [4, 5, 6] },
+    { o: 'waypoint', player: 1, ids: [4], x: 100, y: 200, attack_move: true },
+    ...STANCES.map((stance) => ({ o: 'set_stance', player: 1, ids: [4], stance })),
   ]) {
-    ok({ t: 'orders', tick: 1, orders: [o] });
+    assert.deepEqual(ok({ t: 'orders', tick: 1, orders: [o] }).orders[0], o);
   }
   bad({ t: 'orders', tick: -1, orders: [] });
   bad({ t: 'orders', tick: 3, orders: {} });
@@ -145,6 +151,17 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'GpsPower', x: 0, y: 0, x2: 0.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'lay_mines', player: 0, ids: [1], x0: 0, y0: 0, x1: 63, y1: 63 }] }, /minefield/);
+  // Command bar orders (engine/src/commands.rs).
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 'aggressive' }] }, /unsupported value/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 3 }] }, /unsupported value/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1] }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'waypoint', player: 0, ids: [1], x: 0, y: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'waypoint', player: 0, ids: [1], x: 0, y: 0, attack_move: 1 }] }, /true or false/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'guard', player: 0, ids: [1], target: -1 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'guard', player: 0, ids: [1], target: 2 ** 32 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'attack_ground', player: 0, ids: [1], x: 2 ** 31, y: 0 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: Array(2001).fill(1) }] }, /at most/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: [1], x: 0 }] }, /unknown field/);
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');
   assert.deepEqual(ok({ t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' }), { t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' });
