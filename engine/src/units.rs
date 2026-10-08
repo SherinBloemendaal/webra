@@ -1,6 +1,7 @@
 //! Per-tick unit behaviour: movement, crowd separation, combat, harvesting, repair.
 
 use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
+use crate::map::Resource;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
 use crate::rules::Kind;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
@@ -60,6 +61,8 @@ impl World {
             }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
+                // Prone countdown and elite self repair (veterancy.rs).
+                self.tick_veterancy(i);
             }
             if self.actors[i].alive && !self.actors[i].cargo.is_empty() {
                 self.tick_cargo(i);
@@ -244,7 +247,8 @@ impl World {
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
         let speed_pct = self.rules.locomotors[unit.locomotor].speeds[self.map.speed_class(ci)];
-        let speed = unit.speed * speed_pct / 100;
+        // Rank speed bonus and prone infantry (veterancy.rs).
+        let speed = self.modified_speed(i, unit.speed * speed_pct / 100);
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
         let a = &mut self.actors[i];
         let has_turret = turret_speed.is_some();
@@ -336,7 +340,7 @@ impl World {
             }
             HarvState::ToOre => {
                 let c = self.actors[i].harv_cell;
-                if c == NONE || self.map.ore[c as usize] == 0 {
+                if c == NONE || !self.map.has_resource(c as usize) {
                     self.actors[i].harv = HarvState::Search;
                     return;
                 }
@@ -363,17 +367,19 @@ impl World {
                     return;
                 }
                 a.harv_timer = hv.bale_load_delay;
-                if self.map.ore[c] > 0 {
-                    self.map.ore[c] -= 1;
+                // One bale of whatever the cell holds; the truck counts gems apart.
+                if let Some(r) = self.map.take_bale(c) {
                     self.terrain_dirty = true;
-                    self.actors[i].bales += 1;
+                    let a = &mut self.actors[i];
+                    a.bales += 1;
+                    a.gem_bales += (r == Resource::Gems) as i32;
                 }
                 let a = &mut self.actors[i];
                 if a.bales >= hv.capacity {
                     a.harv = HarvState::ToDock;
                     a.best_dist = i32::MAX;
                     a.stuck_ticks = 0;
-                } else if self.map.ore[c] == 0 {
+                } else if !self.map.has_resource(c) {
                     a.harv = HarvState::Search;
                 }
             }
@@ -416,9 +422,13 @@ impl World {
                 }
                 a.harv_timer = hv.bale_unload_delay.max(1);
                 if a.bales > 0 {
+                    // Each bale pays its own type's value (PlayerResources.ResourceValues):
+                    // ore bales first, then gems.
+                    let gem = a.bales == a.gem_bales;
                     a.bales -= 1;
+                    a.gem_bales -= gem as i32;
                     let owner = a.owner;
-                    let value = self.rules.player.ore_value;
+                    let value = if gem { self.rules.player.gem_value } else { self.rules.player.ore_value };
                     self.give_harvested(owner, value);
                 }
                 if self.actors[i].bales == 0 {
@@ -470,6 +480,10 @@ impl World {
         self.cell_index(x, y) as u32
     }
 
+    /// The nearest unclaimed ore or gem cell. As in OpenRA
+    /// (FindAndDeliverResources.ClosestHarvestablePos) only the distance
+    /// counts, not the resource's value: a truck mines the field it is sent
+    /// to or the nearest one, gems or ore alike.
     fn find_ore(&mut self, i: usize, hv: &crate::rules::HarvesterInfo) -> Option<u32> {
         let a = &self.actors[i];
         let (origin, radius) = if a.harv_cell != NONE {
@@ -512,7 +526,7 @@ impl World {
                     continue;
                 }
                 let c = self.map.idx(x, y);
-                if self.map.ore[c] == 0 || self.pass.blocked[c] || self.pass.component[c] != comp {
+                if !self.map.has_resource(c) || self.pass.blocked[c] || self.pass.component[c] != comp {
                     continue;
                 }
                 if claimed.contains(&(c as u32)) {
@@ -605,8 +619,9 @@ impl World {
         self.rebuild_hash();
         let n = self.actors.len();
         let mut push = vec![(0i32, 0i32); n];
-        // Crushed units and the owner of the crusher (observer.rs kill credit).
-        let mut crushed: Vec<(usize, u8)> = Vec::new();
+        // (victim, crusher): crushing counts as a kill by the crusher
+        // (veterancy.rs, and for its owner in the observer stats).
+        let mut crushed: Vec<(usize, usize)> = Vec::new();
         for i in 0..n {
             let a = &self.actors[i];
             // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
@@ -647,11 +662,11 @@ impl World {
                             let crush_reach = (min as i64) * (min as i64) * 9 / 16;
                             if d2 <= crush_reach {
                                 if a.moved && self.crushes(i, j) {
-                                    crushed.push((j, a.owner));
+                                    crushed.push((j, i));
                                     continue;
                                 }
                                 if b.moved && self.crushes(j, i) {
-                                    crushed.push((i, b.owner));
+                                    crushed.push((i, j));
                                     continue;
                                 }
                             }
@@ -681,8 +696,11 @@ impl World {
                 }
             }
         }
-        for (k, by) in crushed {
+        for (k, crusher) in crushed {
             if self.actors[k].alive {
+                let source = self.make_ref(crusher);
+                self.award_kill(k, source);
+                let by = self.actors[crusher].owner;
                 self.with_damage_source(by, |w| w.kill(k));
             }
         }

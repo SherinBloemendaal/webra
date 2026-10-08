@@ -17,6 +17,7 @@ mod helicopter;
 pub mod map;
 pub mod mapdata;
 pub mod math;
+pub mod minimap;
 mod naval;
 pub mod observer;
 mod plane;
@@ -28,6 +29,7 @@ pub mod rules;
 pub mod sound_events;
 mod trig_table;
 mod units;
+mod veterancy;
 mod vision;
 pub mod world;
 
@@ -42,15 +44,21 @@ mod tests_debug;
 #[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
+mod tests_minimap;
+#[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
 mod tests_planes;
+#[cfg(test)]
+mod tests_production;
 #[cfg(test)]
 mod tests_replay;
 #[cfg(test)]
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
+#[cfg(test)]
+mod tests_veterancy;
 
 use math::CELL;
 use render::{View, PX_PER_CELL};
@@ -359,6 +367,24 @@ impl Game {
         self.fog.len()
     }
 
+    // ---- Radar minimap (minimap.rs, apps/game/js/minimap.js) ----------------
+
+    /// 0: no radar structure, 1: online, 2: jammed, 3: low power.
+    pub fn radar_state(&self, player: u8) -> u8 {
+        self.world.radar_state(player) as u8
+    }
+
+    /// Radar blips `player` may see, `[cell x, cell y, width, height, owner]`
+    /// each (owner 255: neutral); empty while the radar is offline. Read only.
+    pub fn minimap_blips(&self, player: u8) -> Vec<i32> {
+        if player as usize >= self.world.players.len() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        self.world.minimap_blips(player, &mut out);
+        out
+    }
+
     /// Build instance buffers for the view rectangle (world pixels). Returns the sprite count.
     /// `player` may be `observer_player()`: the whole map, every actor live,
     /// no owner-only decorations (observer.rs).
@@ -484,6 +510,7 @@ impl Game {
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
             "bales": a.bales,
+            "gemBales": a.gem_bales,
             "ability": self.world.ability_json(i),
             // Helicopters: AmmoPool rounds left and size, and whether landed.
             "ammo": self.world.heli_ammo(i).0,
@@ -496,6 +523,13 @@ impl Game {
             // Passengers: the transport they are in (NONE when outside).
             "carrier": a.carrier,
             "submerged": a.submerged,
+            // Veterancy (veterancy.rs): level, levels, and experience in value
+            // points (OpenRA counts percent of a value: 100 points per credit).
+            "rank": a.rank,
+            "maxRank": self.world.max_rank(i),
+            "xp": a.xp / 100,
+            "nextXp": self.world.level_experience(i, (a.rank as usize + 1).min(self.world.max_rank(i) as usize)) / 100,
+            "prone": self.world.is_prone(i),
         })
         .to_string()
     }
@@ -650,11 +684,10 @@ impl Game {
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
-                let av = w.availability(player, t as u16);
                 let reqs = w.requirements(player, t as u16);
                 json!({
                     "id": w.rules.actors[t].id,
-                    "enabled": av.enabled,
+                    "enabled": w.can_produce(player, t as u16),
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
@@ -751,6 +784,11 @@ impl Game {
     /// Cheat: destroy the given actors (any owner).
     pub fn dev_kill(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::DevKill { player, ids });
+    }
+
+    /// Cheat: one more veterancy level for each of the player's own given units.
+    pub fn dev_experience(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::DevExperience { player, ids });
     }
 
     /// Debug view: `[x0, y0, width, height, flags...]` for the cells under the
@@ -949,7 +987,9 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
 fn preview_rgba(m: &map::Map) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
-        let rgb = if m.ore[i] > 0 {
+        let rgb = if m.gems[i] > 0 {
+            [190, 70, 150]
+        } else if m.ore[i] > 0 {
             [200, 160, 50]
         } else {
             match m.terrain[i] {

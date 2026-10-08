@@ -161,6 +161,7 @@ export function viewOnly(game) {
     'dev_flag',
     'dev_give_cash',
     'dev_kill',
+    'dev_experience',
   ]);
   const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'sell_value']);
   return new Proxy(game, {

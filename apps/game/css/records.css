@@ -288,3 +288,28 @@
     display: none;
   }
 }
+
+/* Spectators and replays: no build sidebar and no drawer toggle (js/main.js). */
+#app.viewer #sidebar,
+#app.viewer #sidebar-toggle {
+  display: none !important;
+}
+
+@media (pointer: coarse) {
+  .records-entry-button,
+  .replay-bar button,
+  .observer-view,
+  .observer-toggle {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Next to the Play online entry, which moves to the bottom corner. */
+  #records-entry {
+    top: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px);
+    flex-direction: row;
+  }
+}

@@ -4,7 +4,7 @@
 // object (spawns, actors) or property changes, then `commit()`. Cell changes are
 // stored as per-cell before/after values; objects and properties as snapshots.
 
-import { MAP_FORMAT, createMap, decodeLayers, encodeBase64, isPassable } from './mapformat.js';
+import { createMap, decodeLayers, encodeBase64, formatFor, isPassable } from './mapformat.js';
 import { pruneOverrides } from './overrides.js';
 
 const HISTORY_LIMIT = 200;
@@ -25,21 +25,26 @@ export class MapDoc {
 
   /** Replace the whole document without touching history (used by undo of a replace). */
   load(map) {
-    const { terrain, ore } = decodeLayers(map);
+    const { terrain, ore, gems } = decodeLayers(map);
     this.width = map.width;
     this.height = map.height;
     this.terrain = terrain;
     this.ore = ore;
+    this.gems = gems;
     this.spawns = clone(map.spawns ?? []);
     this.actors = clone(map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 }));
     this.meta = { name: map.name ?? '', author: map.author ?? '', description: map.description ?? '' };
     this.rules = map.rules ? clone(map.rules) : null;
   }
 
-  /** The document as a format-1 map object. */
+  /**
+   * The document as a map object: format 2 with a gems layer when any cell
+   * holds gems, format 1 without one otherwise (like the engine's exporter).
+   */
   toMap() {
+    const format = formatFor(this.gems);
     return {
-      format: MAP_FORMAT,
+      format,
       name: this.meta.name,
       author: this.meta.author,
       description: this.meta.description,
@@ -47,6 +52,7 @@ export class MapDoc {
       height: this.height,
       terrain: encodeBase64(this.terrain),
       ore: encodeBase64(this.ore),
+      ...(format === 1 ? {} : { gems: encodeBase64(this.gems) }),
       spawns: clone(this.spawns),
       actors: clone(this.actors),
       rules: pruneOverrides(this.rules),
@@ -97,18 +103,26 @@ export class MapDoc {
     return this.tx !== null;
   }
 
-  /** Set terrain and/or ore of a cell (pass `undefined` to keep one). Impassable terrain drops ore. */
-  setCell(x, y, terrain, ore) {
+  /**
+   * Set terrain, ore and/or gems of a cell (pass `undefined` to keep one). A
+   * cell holds ore or gems, never both: putting one on a cell removes the
+   * other. Impassable terrain drops both.
+   */
+  setCell(x, y, terrain, ore, gems) {
     if (!this.inside(x, y)) return false;
     const i = this.idx(x, y);
     const t = terrain === undefined ? this.terrain[i] : terrain;
     let o = ore === undefined ? this.ore[i] : ore;
-    if (!isPassable(t)) o = 0;
-    if (t === this.terrain[i] && o === this.ore[i]) return false;
+    let g = gems === undefined ? this.gems[i] : gems;
+    if (gems === undefined && ore > 0) g = 0;
+    if (ore === undefined && gems > 0) o = 0;
+    if (!isPassable(t)) o = g = 0;
+    if (t === this.terrain[i] && o === this.ore[i] && g === this.gems[i]) return false;
     this.autoBegin('Edit');
-    if (!this.tx.cells.has(i)) this.tx.cells.set(i, [this.terrain[i], this.ore[i]]);
+    if (!this.tx.cells.has(i)) this.tx.cells.set(i, [this.terrain[i], this.ore[i], this.gems[i]]);
     this.terrain[i] = t;
     this.ore[i] = o;
+    this.gems[i] = g;
     this.tx.dirtyCells = true;
     return true;
   }
@@ -138,14 +152,17 @@ export class MapDoc {
     let changed = false;
     if (tx.cells.size) {
       const n = tx.cells.size;
-      entry.cells = { idx: new Uint32Array(n), tb: new Uint8Array(n), ob: new Uint8Array(n), ta: new Uint8Array(n), oa: new Uint8Array(n) };
+      const bytes = () => new Uint8Array(n);
+      entry.cells = { idx: new Uint32Array(n), tb: bytes(), ob: bytes(), gb: bytes(), ta: bytes(), oa: bytes(), ga: bytes() };
       let k = 0;
-      for (const [i, [t, o]] of tx.cells) {
+      for (const [i, [t, o, g]] of tx.cells) {
         entry.cells.idx[k] = i;
         entry.cells.tb[k] = t;
         entry.cells.ob[k] = o;
+        entry.cells.gb[k] = g;
         entry.cells.ta[k] = this.terrain[i];
         entry.cells.oa[k] = this.ore[i];
+        entry.cells.ga[k] = this.gems[i];
         k++;
       }
       changed = true;
@@ -192,9 +209,10 @@ export class MapDoc {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
-    for (const [i, [t, o]] of tx.cells) {
+    for (const [i, [t, o, g]] of tx.cells) {
       this.terrain[i] = t;
       this.ore[i] = o;
+      this.gems[i] = g;
     }
     if (tx.objects) {
       this.spawns = tx.objects.spawns;
@@ -251,9 +269,11 @@ export class MapDoc {
       const { idx } = e.cells;
       const t = side === 'before' ? e.cells.tb : e.cells.ta;
       const o = side === 'before' ? e.cells.ob : e.cells.oa;
+      const g = side === 'before' ? e.cells.gb : e.cells.ga;
       for (let k = 0; k < idx.length; k++) {
         this.terrain[idx[k]] = t[k];
         this.ore[idx[k]] = o[k];
+        this.gems[idx[k]] = g[k];
       }
     }
     if (e.objects) {

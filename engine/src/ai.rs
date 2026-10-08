@@ -83,7 +83,6 @@ pub fn think(w: &mut World, player: u8) {
         return;
     }
     deploy_mcv(w, player);
-    cancel_blocked(w, player);
     place_ready_building(w, player, QueueType::Building);
     place_ready_building(w, player, QueueType::Defense);
     arsenal::watch_the_sky(w, player);
@@ -131,17 +130,6 @@ fn deploy_mcv(w: &mut World, player: u8) {
     }
 }
 
-/// Cancel queued items whose prerequisites were destroyed (e.g. a half-built
-/// tech center after the war factory died), so the base can be rebuilt.
-fn cancel_blocked(w: &mut World, player: u8) {
-    for qi in 0..crate::rules::QUEUE_COUNT {
-        let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { continue };
-        if !w.availability(player, item.ty).enabled {
-            w.cancel_production(player, item.ty);
-        }
-    }
-}
-
 /// Ore trucks that found nothing near their refinery (the fields there are
 /// mined out) drive to the nearest explored ore they can reach, away from
 /// enemy structures, instead of waiting for regrowth.
@@ -171,7 +159,8 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
         let comp = w.pass.component[w.map.idx(ux, uy)];
         let mut best: Option<(i64, usize)> = None;
         for ci in 0..w.map.cells() {
-            if w.map.ore[ci] == 0 || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0 {
+            if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0
+            {
                 continue;
             }
             let (x, y) = (ci as i32 % w.map.width, ci as i32 / w.map.width);
@@ -442,7 +431,7 @@ fn ore_distance_field(w: &World, sx: i32, sy: i32, radius: i32) -> Vec<i32> {
         for x in sx - radius..=sx + radius {
             if w.map.contains(x, y) {
                 let i = w.map.idx(x, y);
-                if w.map.ore[i] > 0 && !w.pass.blocked[i] {
+                if w.map.has_resource(i) && !w.pass.blocked[i] {
                     d[i] = 0;
                     heap.push(std::cmp::Reverse((0, i)));
                 }

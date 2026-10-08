@@ -8,7 +8,7 @@
 // Spectators and the replay viewer watch with the observer panel
 // (js/observer.js): whole map or one player's view, and player stats.
 
-import init, { Game, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { Input } from './input.js';
@@ -23,6 +23,12 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
+import { NotificationView } from './notifications.js';
+import { importOramap } from './oramap/index.js';
+import { Minimap } from './minimap.js';
+import { mountReleaseNotes } from './releasenotes-dialog.js';
+import { TouchControls } from './touch.js';
+import { Layout, hudText, renderPixelRatio } from './layout.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -46,6 +52,8 @@ let records = null;
 let audio = null;
 /** The Sound dialog (js/audio/panel.js), also opened from the game menu. */
 let audioPanel = null;
+/** Release notes dialog (js/releasenotes-dialog.js): lobby, game menu and "What's new". */
+let releaseNotes = null;
 
 async function boot() {
   let gpuError = null;
@@ -56,6 +64,7 @@ async function boot() {
   }
   $('version').textContent = wasm ? `v${version()}` : '';
   setupAudio();
+  releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
     colors: TEAM_COLORS,
     colorNames: COLOR_NAMES,
@@ -66,9 +75,17 @@ async function boot() {
       spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
+      // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
+      importOramap: (bytes, fileName) =>
+        importOramap(bytes, {
+          baseRules: JSON.parse(base_rules_json()),
+          validate: (json) => JSON.parse(Game.validate_map(json)),
+          fileName,
+        }),
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
+    onReleaseNotes: () => releaseNotes.open(),
   });
   if (!gpuError) {
     try {
@@ -81,6 +98,8 @@ async function boot() {
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
   offerLinkedMap(lobby);
+  // Once per new version: what changed since this browser last played.
+  releaseNotes.showWhatsNewOnce();
 }
 
 /**
@@ -367,6 +386,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
+  // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
+  document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
@@ -376,10 +397,20 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   const view = { player: viewer && records ? records.OBSERVER_VIEW : player };
   const busy = () => !!(local?.loading || online?.driver.catchingUp || replay?.seeking);
   renderer.setAtlas(buildAtlas(rules.actors));
+  // Mobile GPUs: the player caps the pixel ratio or picks low quality (game menu, Settings).
+  renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
+  // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
+  const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
   renderer.setMapSize(game.map_width(), game.map_height());
 
   let sidebar = null;
   let powerBar = null;
+  let touch = null;
+  const placementEnded = () => {
+    sidebar?.setPlacing(null);
+    layout.setPlacing(false);
+    touch?.update();
+  };
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
@@ -390,26 +421,48 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
       sidebar?.setSelection(selectionInfo(game, ids));
       sidebar?.setDeployState(input.deployState());
     },
-    onPlaced: () => sidebar?.setPlacing(null),
-    onCancelPlace: () => sidebar?.setPlacing(null),
+    onPlaced: placementEnded,
+    onCancelPlace: placementEnded,
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
     onTab: (dir) => sidebar?.cycleTab(dir),
     onSellMode: (on) => sidebar?.setSellMode(on),
     onMenu: () => menu.open(),
   });
-  if (viewer) $('sidebar').style.display = 'none';
-  sidebar = new Sidebar($('sidebar'), ui, rules, player, {
-    onPlace: (id) => {
-      input.startPlacing(id);
-      sidebar.setPlacing(id);
+  // Spectators and replays have no sidebar (and no sidebar drawer on phones).
+  if (viewer) $('app').classList.add('viewer');
+  sidebar = new Sidebar(
+    $('sidebar'),
+    ui,
+    rules,
+    player,
+    {
+      onPlace: (id) => {
+        input.startPlacing(id);
+        sidebar.setPlacing(id);
+        layout.setPlacing(true);
+        touch?.update();
+      },
+      onCancelPlace: () => {
+        input.placing = null;
+        placementEnded();
+      },
+      shiftLatched: () => !!touch?.queue,
+      onSell: () => input.toggleSellMode(),
+      onDeploy: () => input.deploySelection(),
+      onMenu: () => menu.toggle(),
     },
-    onCancelPlace: () => {
-      input.placing = null;
-      sidebar.setPlacing(null);
-    },
-    onSell: () => input.toggleSellMode(),
-    onDeploy: () => input.deploySelection(),
-  });
+    { ticksPerSecond: Game.ticks_per_second() },
+  );
+  // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
+  // test leaves the slot empty, which shows "Radar offline".
+  const minimap = stress ? null : new Minimap($('radar'), { game: ui, memory: wasm.memory, player, input, colors: TEAM_COLORS });
+  // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
+  // bar and placement buttons, long press on sidebar cards.
+  touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
+  touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
+  // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
+  const notices = new NotificationView($('field'));
+  audio?.onAnnounce((key) => notices.announce(key));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -454,8 +507,10 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
   }
   if (replay && records) replayBar = new records.ReplayBar($('field'), replay);
   const progress = records ? new records.ProgressOverlay($('field')) : null;
+  // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
+  $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, input, sidebar, powerBar, renderer, wasm, rules, debug, local, replay, recorder };
+  window.webra = { game, input, sidebar, powerBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, local, replay, recorder };
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -494,10 +549,12 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     fullscreen,
     onChange: (open, isPaused) => {
       input.setSuspended(open);
+      if (open) touch.reset();
       paused = isPaused;
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
     onSound: audioPanel ? () => audioPanel.open() : undefined,
+    onReleaseNotes: () => releaseNotes.open(),
     onLeave: leave,
     onExit: exit,
   });
@@ -600,7 +657,9 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     input.update(dt / 1000);
     if (game.terrain_dirty()) {
       const ptr = game.terrain_ptr();
-      renderer.uploadTerrain(new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len()));
+      const terrain = new Uint8Array(wasm.memory.buffer, ptr, game.terrain_len());
+      renderer.uploadTerrain(terrain);
+      minimap?.terrainChanged(terrain);
     }
     const fogPtr = game.fog_ptr(view.player);
     renderer.uploadFog(new Uint8Array(wasm.memory.buffer, fogPtr, game.fog_len()));
@@ -623,6 +682,7 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
     renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
+    minimap?.frame(now);
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -643,7 +703,8 @@ function start(game, { stress, tickMs, player = PLAYER, online = null, local = n
       }
       observer?.update(JSON.parse(game.observer_stats()), game.tick_count());
       replayBar?.update();
-      updateHud(game, state, fps, simMs, stress, paused, replay ? 'replay' : online?.spectator ? 'spectating' : null);
+      updateHud(game, state, fps, simMs, stress, paused, layout.compact, replay ? 'Replay' : online?.spectator ? 'Spectating' : null);
+      touch.update();
       debug.update(state);
       if (!over && !stress && !viewer && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
         over = true;
@@ -673,13 +734,13 @@ function selectionInfo(game, ids) {
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 
-function updateHud(game, state, fps, simMs, stress, paused, mode = null) {
-  const secs = Math.floor(state.tick / Game.ticks_per_second());
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  const parts = [paused ? `${time} (paused)` : time, `${fps.toFixed(0)} fps`, `sim ${simMs.toFixed(2)} ms/tick`];
-  if (mode) parts.unshift(mode === 'replay' ? 'Replay' : 'Spectating');
-  if (stress) parts.push(`${game.actor_count()} units`, `${state.flowFields} flow fields`);
-  $('hud').textContent = parts.join('  |  ');
+function updateHud(game, state, fps, simMs, stress, paused, compact, mode = null) {
+  const seconds = state.tick / Game.ticks_per_second();
+  const units = stress ? game.actor_count() : 0;
+  const hud = hudText({ seconds, paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
+  // Spectators and replays say so in front.
+  const text = mode ? `${mode}  |  ${hud}` : hud;
+  if ($('hud').textContent !== text) $('hud').textContent = text;
 }
 
 boot();

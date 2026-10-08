@@ -100,6 +100,8 @@ pub struct FallingBomb {
     pub speed: i32,
     pub weapon: u16,
     pub owner: u8,
+    /// The aircraft that dropped it (kills, firepower; veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 #[derive(Clone, Default)]

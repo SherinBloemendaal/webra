@@ -1,6 +1,6 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
-// Fullscreen, Leave to lobby, Exit, plus the game's record actions (save the
-// game, download the replay; js/records.js).
+// Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
+// actions (save the game, download the replay; js/records.js).
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
 // games cannot pause (docs/contracts.md: the server drops a player who holds
@@ -12,6 +12,7 @@
 
 import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
 import { SCHEMA } from './settings.js';
+import { touchControls } from './touch.js';
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -106,6 +107,7 @@ export class GameMenu {
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
    *   onChange(open: boolean, paused: boolean): void,
    *   onSound?(): void,
+   *   onReleaseNotes?(): void,
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -165,7 +167,7 @@ export class GameMenu {
 
   onKey(e) {
     if (!this.isOpen) return;
-    // A dialog opened from the menu (Sound) handles its own keys: Esc closes it, not the menu.
+    // A dialog opened from the menu (Sound, Release notes) handles its own keys: Esc closes it, not the menu.
     const t = e.target;
     if (t instanceof Element && !this.root.contains(t) && t.closest('[role="dialog"]')) return;
     if (this.capture) {
@@ -249,6 +251,7 @@ export class GameMenu {
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
+      ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
@@ -325,6 +328,8 @@ export class GameMenu {
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
+      check('lowQuality', 'Low quality (faster on phones)'),
     );
     const fs = this.opts.fullscreen;
     const fsRow = el('div', 'game-menu-row');
@@ -335,7 +340,7 @@ export class GameMenu {
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths']) s.reset(key);
+        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'pixelRatioCap', 'lowQuality']) s.reset(key);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),
@@ -385,6 +390,14 @@ export class GameMenu {
       fixed.append(row);
     }
     list.append(fixed);
+    list.append(el('h2', null, 'Touch'));
+    const touch = el('div', 'game-menu-keys');
+    for (const [gesture, what] of touchControls()) {
+      const row = el('div', 'game-menu-key-row game-menu-fixed');
+      row.append(el('span', 'game-menu-key-label', what), el('span', 'game-menu-keycap', gesture));
+      touch.append(row);
+    }
+    list.append(touch);
     list.append(
       el(
         'p',

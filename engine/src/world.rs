@@ -80,7 +80,10 @@ pub struct Actor {
 
     // Harvesters
     pub harv: HarvState,
+    /// Bales on board, of any resource.
     pub bales: i32,
+    /// How many of `bales` are gems (OpenRA StoresResources keeps a count per type).
+    pub gem_bales: i32,
     pub harv_timer: i32,
     pub harv_cell: u32,
     pub refinery: u32,
@@ -126,6 +129,17 @@ pub struct Actor {
     pub heli: crate::helicopter::HeliState,
     /// Aircraft state: ammo, airfield, flight phase, support missions, parachutes (plane.rs).
     pub air: crate::plane::AirState,
+
+    // Veterancy and prone infantry (veterancy.rs)
+    /// Experience, in OpenRA's units: percent of the actor's own value
+    /// (killing an enemy worth 100 gives 10000 with the default modifier).
+    pub xp: i64,
+    /// Veterancy level: 0 rookie, then one per GainsExperience threshold reached.
+    pub rank: u8,
+    /// Ticks left prone (TakeCover); 0 when standing.
+    pub prone_ticks: i32,
+    /// Elite self repair (ChangesHealth@ELITE) step timer.
+    pub rank_heal_timer: i32,
 }
 
 impl Actor {
@@ -162,6 +176,7 @@ impl Actor {
             moved: false,
             harv: HarvState::Search,
             bales: 0,
+            gem_bales: 0,
             harv_timer: 0,
             harv_cell: NONE,
             refinery: NONE,
@@ -186,6 +201,10 @@ impl Actor {
             cloak_timer: 0,
             detected_by: 0,
             air: crate::plane::AirState::default(),
+            xp: 0,
+            rank: 0,
+            prone_ticks: 0,
+            rank_heal_timer: 0,
         }
     }
 
@@ -268,6 +287,8 @@ pub struct Projectile {
     pub owner: u8,
     pub target: u32,
     pub facing: i32,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -306,6 +327,8 @@ pub struct PendingImpact {
     pub x: i32,
     pub y: i32,
     pub owner: u8,
+    /// Who fired it, and with what firepower (veterancy.rs).
+    pub shot: crate::veterancy::Shot,
 }
 
 /// Lobby options (see apps/game/js/lobby.js). Defaults follow OpenRA's.
@@ -484,13 +507,19 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// Debug menu: raise the player's own listed units one veterancy level
+    /// (OpenRA's "level up" debug order, veterancy.rs). Ignored without cheats.
+    DevExperience {
+        player: u8,
+        ids: Vec<u32>,
+    },
 }
 
 impl Order {
     /// Issuing player of this order.
     /// Debug menu cheat orders (debug.rs): they only work in games with the cheats option.
     pub fn is_cheat(&self) -> bool {
-        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. })
+        matches!(self, Order::DevFlag { .. } | Order::DevCash { .. } | Order::DevKill { .. } | Order::DevExperience { .. })
     }
 
     pub fn player(&self) -> u8 {
@@ -512,7 +541,8 @@ impl Order {
             | Order::Teleport { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
-            | Order::DevKill { player, .. } => *player,
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player,
         }
     }
 
@@ -536,7 +566,8 @@ impl Order {
             | Order::Teleport { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
-            | Order::DevKill { player, .. } => *player = p,
+            | Order::DevKill { player, .. }
+            | Order::DevExperience { player, .. } => *player = p,
         }
     }
 
@@ -552,7 +583,8 @@ impl Order {
             | Order::Land { ids, .. }
             | Order::ReturnToBase { ids, .. }
             | Order::Teleport { ids, .. }
-            | Order::DevKill { ids, .. } => ids.len() <= MAX_IDS,
+            | Order::DevKill { ids, .. }
+            | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
@@ -1303,6 +1335,7 @@ impl World {
                 Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
                 Order::DevCash { player } => self.dev_give_cash(player),
                 Order::DevKill { player, ids } => self.dev_kill(player, &ids),
+                Order::DevExperience { player, ids } => self.dev_give_experience(player, &ids),
             }
         }
     }
@@ -1472,7 +1505,7 @@ impl World {
                 }
             }
         }
-        if any_harv && self.map.ore[ci] > 0 && self.players[player as usize].explored[ci] != 0 {
+        if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
         SmartAction::Move
@@ -1651,12 +1684,16 @@ impl World {
         mix(self.tick as i64);
         for a in &self.actors {
             if a.alive {
-                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales] {
+                for v in [a.ty as i32, a.owner as i32, a.x, a.y, a.facing, a.turret, a.hp, a.bales, a.gem_bales] {
                     mix(v as i64);
                 }
                 // Transports and submarines (cargo.rs, naval.rs).
                 mix(a.carrier as i64);
                 mix(a.submerged as i64);
+                // Veterancy and prone infantry (veterancy.rs).
+                mix(a.xp);
+                mix(a.rank as i64);
+                mix(a.prone_ticks as i64);
             }
         }
         for p in &self.players {
@@ -1669,6 +1706,9 @@ impl World {
         }
         for &o in &self.map.ore {
             mix(o as i64);
+        }
+        for &g in &self.map.gems {
+            mix(g as i64);
         }
         h
     }

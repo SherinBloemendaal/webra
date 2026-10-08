@@ -34,6 +34,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Save and load** for skirmish: save to the browser or to a file from the game menu, continue later with Load game; loading re-simulates the game and checks its state hash
 - [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
+- [x] **OpenRA maps**: import `.oramap` files in the lobby and the map editor; the browser unpacks the package (with zip bomb limits), converts terrain from the Red Alert tilesets, ore and gems, trees, spawns and known actors, maps rules values onto WebRA's modded rules, and shows an import report of what was converted, skipped or not supported (Lua is never run)
 - [x] Lobby options like OpenRA: starting cash and units (MCV only, light or heavy support, construction yard), tech level, game speed, fog of war, explored map, build radius, redeployable MCVs, ore regrowth
 - [x] Stress test mode (tens of thousands of units)
 
@@ -51,8 +52,18 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Ore economy with regrowth, refinery and silo storage, power with low-power slowdown and shutdown of powered defences
 - [x] Classic production queues (Buildings, Defense, Infantry, Vehicles, Aircraft, Naval), OpenRA placement rules, selling, MCV deploy and pack-up
 - [x] OpenRA weapon data: range and minimum range, burst, projectile speed and inaccuracy, warheads with spread, falloff, delays and armour versus tables, death explosions, crushing
+- [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
+- [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
+- [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
+- [x] Red Alert style interface in the spirit of OpenRA: gunmetal chrome with bevels and rivets in your side's colour (steel blue Allies, red Soviets), a sidebar with command buttons, radar slot, money and game clock, a vertical power meter, production tab icons and a three-column build grid with clock-wipe progress, time left, queue counts and Ready labels; announcer lines also appear as text at the bottom of the screen ("Unit ready. (3)"), with sound on or off
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
+
+### Phones and tablets
+- [x] **Touch controls** with Pointer Events (mouse play unchanged): tap to select or give the order, double tap for every unit of that type on screen, drag to box select, two fingers to pan and pinch to zoom, long press to force attack or attack-move
+- [x] Touch action bar for what the keyboard does on desktop: Add (Shift), attack move, force attack, stop, deploy, select all, cancel; building placement by dragging the footprint with Place and Cancel buttons; support powers aimed by tap
+- [x] Phone layouts: the build sidebar becomes a collapsible drawer (bottom in portrait, right in landscape), 44 px touch targets, safe-area insets for notches, compact HUD, Menu button for the game menu; the lobby and the website work at phone width
+- [x] Render resolution cap and a low quality setting for mobile GPUs
 
 ### Sound
 - [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
@@ -63,19 +74,20 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Engineering
 - [x] Deterministic integer-only simulation in Rust, compiled to WebAssembly, rendered with WebGPU
-- [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format and editor
+- [x] Over 200 automated tests: engine (including AI vs AI games, fairness, and fuzzing of hostile orders and modded rules), WebAssembly API, protocol, server, map format, editor, touch gestures and layouts
 - [x] Security review of multiplayer with every finding fixed: see [docs/security.md](docs/security.md)
 - [x] CI on every push, semantic versioning from Conventional Commits, automatic deploys to Cloudflare
 
 ## Roadmap
 
-- [ ] Minimap / radar (Radar Dome) and radar jamming
-- [ ] Veterancy, infantry prone, fire stances (hold fire, return fire)
+- [x] Minimap / radar (Radar Dome) and radar jamming
+- [x] Veterancy, infantry prone
+- [ ] Fire stances (hold fire, return fire)
 - [x] Reconnecting to an online game, spectators, replays (record orders), save/load
 - [ ] Simulation in a Web Worker with SharedArrayBuffer; GPU compute for very large crowds
-- [ ] Loading OpenRA `.oramap` maps
+- [x] Loading OpenRA `.oramap` maps
 - [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
-- [ ] Mobile/touch controls
+- [x] Mobile/touch controls
 
 ## Architecture
 
@@ -128,7 +140,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog extracted from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, README assets
 ```
 
@@ -156,11 +168,12 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 | Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
+| Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 
 ## Controls
 
-Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
+Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, render resolution and low quality, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
 
 | Input | Action |
 |-------|--------|
@@ -188,6 +201,7 @@ Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, 
 | Arrow keys / screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Alt + arrow keys | Jump to that map edge |
 | Middle mouse drag | Pan the camera |
+| Radar: left click or drag, right click | Move the camera there; order the selected units there |
 | Mouse wheel, ] and [, . | Zoom in, zoom out, reset zoom |
 | H or Space | Center on your base |
 | Home | Center on the selection |
@@ -196,11 +210,34 @@ Press **Esc** in a game for the game menu: settings (scroll speeds, unit paths, 
 | F10 | Game menu |
 | P or Pause | Pause (single player; opens the menu) |
 | Alt + Enter | Fullscreen |
-| Sidebar left click | Build (Shift + click queues 5) |
-| Sidebar right click | Cancel (refunds what was paid) |
-| Click a finished building in the sidebar | Start placing it |
+| Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
+| Sidebar right click | Cancel the last queued one (refunds what was paid) |
+| Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
+
+### Touch (phones and tablets)
+
+Touch and pen input works next to the mouse and keyboard; the touch action bar appears at the bottom left of the battlefield on touch screens.
+
+| Gesture or button | Action |
+|-------------------|--------|
+| Tap | Select. With your units selected: give the order (move, attack, harvest, dock, repair, rally point); tap one of your own units to select it instead |
+| Double tap | Select all units of that type on screen |
+| Drag | Box select. In a targeting mode (attack move, force attack, sell, abilities): aim, then lift to act |
+| Two-finger drag | Pan the camera |
+| Pinch | Zoom |
+| Long press | Units selected: force attack the unit or building under the finger (your own too), or attack-move to the ground. Otherwise: cancel the current mode or clear the selection (the right click) |
+| **Add** | Stands in for Shift: taps and boxes add to (or remove from) the selection, attack move and sell mode stay active, sidebar cards queue 5 |
+| **A-Move**, **Force** | Attack move or force attack with the next tap |
+| **Stop**, **Deploy**, **All**, **Cancel** | Stop; deploy, unload or use an ability; select everything on screen (twice: the whole map); cancel the mode or clear the selection |
+| Placing a building | Tap or drag anywhere to move the footprint, then **Place** (or **Cancel**) |
+| Support power | Tap the target; drag from the target to choose the direction aircraft fly in |
+| Long press a sidebar card | Cancel the last queued one |
+| **Build** / **Map** (phones) | Show or hide the build sidebar drawer; it also tucks away while you place a building |
+| **Menu** | Game menu (pause, settings, controls, sound, leave) |
+
+Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over the battlefield only. On phones with a high pixel density, lower **Max resolution** or turn on **Low quality** in Settings when the frame rate drops.
 
 Notes on browsers:
 
@@ -216,6 +253,8 @@ Notes on browsers:
 [data/CATALOG.md](data/CATALOG.md) is the full Red Alert catalog extracted from OpenRA's `mods/ra` rules: 94 buildable actors and 77 weapons, with inheritance resolved and the tech tree solved per faction. The machine-readable versions are [data/actors.json](data/actors.json) and [data/weapons.json](data/weapons.json); the original YAML and the scripts that produced them (`parse.py`, `gen_md.py`) live in [data/source](data/source).
 
 `tools/gen_rules.py` picks the actors needed for the current milestone and writes `engine/rules.json`, which is embedded in the WebAssembly module.
+
+`tools/gen_oramap_tables.py` turns OpenRA's Red Alert tilesets (`data/source/tilesets`) and decoration and civilian actors (`data/source/rules`) into the lookup tables of the `.oramap` importer (`apps/game/js/oramap/tables.js`).
 
 ## Determinism and performance
 

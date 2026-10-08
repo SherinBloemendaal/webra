@@ -1,10 +1,11 @@
-// Map format 1 (docs/contracts.md section 2): base64 layers, canonical JSON,
+// Map formats 1 and 2 (docs/contracts.md section 2): base64 layers, canonical JSON,
 // sha256 identity, validation and rules overrides.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   LIMITS,
+  MAP_FORMAT,
   TERRAIN,
   byteLength,
   canonicalJson,
@@ -12,6 +13,7 @@ import {
   decodeBase64,
   decodeLayers,
   encodeBase64,
+  formatFor,
   isModded,
   mapFileName,
   mapHash,
@@ -19,7 +21,9 @@ import {
   reachableFrom,
   sha256Hex,
   validateMap,
+  PREVIEW_GEMS,
 } from '../editor/js/mapformat.js';
+import { MapDoc } from '../editor/js/doc.js';
 import { countOverrides, deepMerge, pruneOverrides, validateOverrides } from '../editor/js/overrides.js';
 import { rulesBaseFrom } from '../editor/js/rulesbase.js';
 
@@ -42,14 +46,19 @@ const CATALOG = {
   '1TNK': { kind: 'vehicle', width: 1, height: 1, footprint: null },
 };
 
-/** A map with editable layers; `edit(terrain, ore)` mutates them before encoding. */
+/**
+ * A map with editable layers; `edit(terrain, ore, width, gems)` mutates them
+ * before encoding. A map that ends up with gems is written as format 2.
+ */
 function makeMap(opts = {}, edit) {
   const map = createMap({ width: 48, height: 48, name: 'Test', author: 'Tester', ...opts });
   if (edit) {
-    const { terrain, ore } = decodeLayers(map);
-    edit(terrain, ore, map.width);
+    const { terrain, ore, gems } = decodeLayers(map);
+    edit(terrain, ore, map.width, gems);
     map.terrain = encodeBase64(terrain);
     map.ore = encodeBase64(ore);
+    map.format = formatFor(gems);
+    if (map.format === MAP_FORMAT) map.gems = encodeBase64(gems);
   }
   return map;
 }
@@ -141,7 +150,12 @@ test('size, text and format limits', () => {
   assert.ok(!validateMap({ ...makeMap(), author: 'x'.repeat(65) }).ok);
   assert.ok(!validateMap({ ...makeMap(), description: 'x'.repeat(501) }).ok);
   assert.ok(validateMap({ ...makeMap(), description: 'x'.repeat(500) }).ok);
-  assert.ok(!validateMap({ ...makeMap(), format: 2 }).ok);
+  assert.ok(validateMap({ ...makeMap(), format: 2 }).errors.includes('Format 2 maps need a gems layer.'));
+  assert.ok(!validateMap({ ...makeMap(), format: 3 }).ok);
+  const gems = encodeBase64(new Uint8Array(48 * 48));
+  assert.ok(validateMap({ ...makeMap(), gems }).errors.includes('Format 1 maps have no gems layer.'));
+  assert.ok(validateMap({ ...makeMap(), format: 2, gems }).ok, 'an all-zero gems layer is valid in format 2');
+  assert.ok(validateMap({ ...makeMap(), gems: null }).ok, 'null means no gems layer');
   assert.ok(validateMap({ ...makeMap(), extra: 1 }).errors.some((e) => e.includes('Unknown field "extra"')));
   assert.ok(!validateMap(null).ok);
 });
@@ -156,6 +170,25 @@ test('layers must decode to width*height bytes with valid values', () => {
   assert.ok(validateMap(badOre).errors.some((e) => e.includes('above 12')));
   const oreOnRock = makeMap({}, (t, o) => ((t[5] = TERRAIN.ROCK), (o[5] = 4)));
   assert.ok(validateMap(oreOnRock).errors.some((e) => e.includes('ore can only lie on clear or rough ground')));
+});
+
+test('the gems layer: density 0..3, passable ground, never with ore on one cell', () => {
+  const ok = makeMap({}, (_t, _o, _w, g) => (g[5] = 3));
+  assert.equal(ok.format, 2);
+  assert.deepEqual(validateMap(ok).errors, []);
+  const errors = (edit) => validateMap(makeMap({}, edit)).errors;
+  assert.ok(errors((_t, _o, _w, g) => (g[5] = 4)).some((e) => e.includes('gems has 1 cells with density above 3')));
+  assert.ok(errors((t, _o, _w, g) => ((t[5] = TERRAIN.WATER), (g[5] = 1))).some((e) => e.includes('gems can only lie on clear or rough ground')));
+  assert.ok(errors((t, _o, _w, g) => ((t[5] = TERRAIN.ROUGH), (g[5] = 1))).length === 0, 'rough ground is fine');
+  assert.ok(errors((_t, o, _w, g) => ((o[5] = 2), (g[5] = 1))).some((e) => e.includes('hold both ore and gems')));
+  assert.ok(validateMap({ ...ok, gems: encodeBase64(new Uint8Array(10)) }).errors.some((e) => e.includes('gems has 10 bytes')));
+  assert.ok(validateMap({ ...ok, gems: 'not base64!' }).errors.some((e) => e.includes('gems is not valid base64')));
+  assert.ok(validateMap({ ...ok, gems: 5 }).errors.some((e) => e.includes('gems must be base64 text')));
+  // Canonical form: gems right after ore, only when present.
+  const keys = Object.keys(JSON.parse(canonicalJson(ok)));
+  assert.deepEqual(keys, ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules']);
+  assert.ok(!canonicalJson({ ...makeMap(), gems: null }).includes('gems'));
+  assert.equal(formatFor(new Uint8Array(4)), 1);
 });
 
 test('spawn count, bounds and passable ground', () => {
@@ -358,11 +391,17 @@ test('canonical JSON and hash match the engine for a modded map with actors', as
 test('validation agrees with the engine on broken maps', () => {
   const base = () => JSON.parse(Game.generated_map(9, 64, 2));
   const edit = (map, fn) => {
-    const { terrain, ore } = decodeLayers(map);
-    fn(terrain, ore, map.width);
+    const { terrain, ore, gems } = decodeLayers(map);
+    fn(terrain, ore, map.width, gems);
     map.terrain = encodeBase64(terrain);
     map.ore = encodeBase64(ore);
+    map.gems = encodeBase64(gems);
     return map;
+  };
+  const gemCell = (map) => decodeLayers(map).gems.findIndex((v) => v > 0);
+  const withoutGems = () => {
+    const { gems: _g, ...m } = base();
+    return { ...m, format: 1 };
   };
   const cases = {
     valid: base(),
@@ -377,9 +416,27 @@ test('validation agrees with the engine on broken maps', () => {
       t[i] = TERRAIN.ROCK;
       o[i] = 3;
     }),
-    'unreachable spawn': edit(base(), (t, o, w) => {
-      for (let y = 0; y < 64; y++) for (let x = 30; x < 34; x++) (t[y * w + x] = TERRAIN.WATER), (o[y * w + x] = 0);
+    'unreachable spawn': edit(base(), (t, o, w, g) => {
+      for (let y = 0; y < 64; y++) for (let x = 30; x < 34; x++) (t[y * w + x] = TERRAIN.WATER), (o[y * w + x] = 0), (g[y * w + x] = 0);
     }),
+    'gems on water': edit(base(), (t, _o, _w, g) => {
+      t[gemCell(base())] = TERRAIN.WATER;
+      g[gemCell(base())] = 2;
+    }),
+    'gem density 4': edit(base(), (_t, _o, _w, g) => (g[gemCell(base())] = 4)),
+    'ore and gems on one cell': edit(base(), (_t, o, _w, g) => {
+      const i = gemCell(base());
+      o[i] = 1;
+      g[i] = 1;
+    }),
+    'gems on rough': edit(base(), (t) => {
+      t[gemCell(base())] = TERRAIN.ROUGH;
+    }),
+    'format 1 with gems': { ...base(), format: 1 },
+    'format 2 without gems': { ...withoutGems(), format: 2 },
+    'format 1 without gems': withoutGems(),
+    'format 3': { ...base(), format: 3 },
+    'short gems layer': { ...base(), gems: encodeBase64(new Uint8Array(64)) },
     'unknown actor': { ...base(), actors: [{ type: 'NOPE', owner: -1, x: 1, y: 1, facing: 0 }] },
     'bad owner': { ...base(), actors: [{ type: 'E1', owner: 2, x: 1, y: 1, facing: 0 }] },
     'one spawn': { ...base(), spawns: [[8, 8]] },
@@ -396,4 +453,25 @@ test('validation agrees with the engine on broken maps', () => {
     const r = ours(map);
     assert.equal(r.ok, e.ok, `${name}: engine ${JSON.stringify(e.errors)} vs ours ${JSON.stringify(r.errors)}`);
   }
+  for (const ok of ['valid', 'gems on rough', 'format 1 without gems']) assert.ok(engineValidate(cases[ok]).ok, ok);
+});
+
+test('generated maps carry gems as format 2; maps without gems keep format 1 and its identity', async () => {
+  const map = JSON.parse(Game.generated_map(9, 64, 2));
+  assert.equal(map.format, 2);
+  assert.ok(decodeLayers(map).gems.some((g) => g > 0), 'generated maps place gem fields');
+  // The engine and the editor document write the same file.
+  const doc = new MapDoc(map);
+  assert.equal(canonicalJson(doc.toMap()), Game.map_canonical(JSON.stringify(map)));
+  // Without gems both write format 1, so older maps keep their hash.
+  const { gems: _g, ...rest } = map;
+  const old = { ...rest, format: 1 };
+  const plain = new MapDoc(old).toMap();
+  assert.equal(plain.format, 1);
+  assert.ok(!('gems' in plain));
+  assert.equal(await mapHash(plain), Game.map_hash(JSON.stringify(old)));
+  // The lobby preview shows gems in their own colour.
+  const rgba = Game.map_file_preview(JSON.stringify(map));
+  const i = decodeLayers(map).gems.findIndex((g) => g > 0);
+  assert.deepEqual(Array.from(rgba.slice(i * 4, i * 4 + 3)), PREVIEW_GEMS);
 });

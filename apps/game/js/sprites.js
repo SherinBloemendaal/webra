@@ -32,7 +32,9 @@ import { NAVAL_DRAW, NAVAL_SPECIALS } from './art/naval.js';
 import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
-import { BUILDING_DRAW, BUILDING_TURRET } from './art/buildings.js';
+import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
+import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
+import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -489,7 +491,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -509,8 +511,13 @@ function grey(s) {
 const COLOR_PASS = { team: grey, c: (col) => col };
 const MASK_PASS = { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000') };
 
-/** Sprite definitions in atlas order: [w, h, draw] or null (empty). */
-function spriteList(actors) {
+/**
+ * Sprite definitions in atlas order: [w, h, draw] or null (empty). Every actor
+ * has two slots: body and turret. Infantry have no turret; their second slot is
+ * the prone pose (engine/src/veterancy.rs), the standing body when there is no
+ * prone art.
+ */
+export function spriteList(actors) {
   const list = [];
   for (const a of actors) {
     const key = spriteKey(a.id);
@@ -523,10 +530,17 @@ function spriteList(actors) {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(d.turret ?? null);
+      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? d.body) : (d.turret ?? null));
     }
   }
-  return list.concat(SPECIALS, slots(NAVAL_SPECIALS), slots(PLANE_SPECIALS), slots(HELI_SPECIALS), slots(ABILITY_SPECIALS));
+  return list.concat(
+    SPECIALS,
+    slots(NAVAL_SPECIALS),
+    slots(PLANE_SPECIALS),
+    slots(HELI_SPECIALS),
+    slots(ABILITY_SPECIALS),
+    slots(VETERANCY_SPECIALS),
+  );
 }
 
 /**
@@ -620,10 +634,9 @@ function fallbackUnit(actor) {
   return null;
 }
 
-/** Sidebar icon: body + turret composited in a team colour. */
-export function drawIcon(canvas, actor, teamRgb) {
-  const ctx = canvas.getContext('2d');
-  const P = {
+/** Colour pass for icons and cameos: team levels scale the player's colour. */
+function iconPalette(teamRgb) {
+  return {
     team: (s) => {
       const k = 0.35 + s * 1.05;
       const [r, g, b] = teamRgb.map((c) => Math.round(Math.min(1, c * k) * 255));
@@ -631,6 +644,12 @@ export function drawIcon(canvas, actor, teamRgb) {
     },
     c: (col) => col,
   };
+}
+
+/** Sidebar icon: body + turret composited in a team colour. */
+export function drawIcon(canvas, actor, teamRgb) {
+  const ctx = canvas.getContext('2d');
+  const P = iconPalette(teamRgb);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Each part is [draw, dx, dy]: turrets are drawn centred on the body.
   const parts = [];
@@ -663,4 +682,104 @@ export function drawIcon(canvas, actor, teamRgb) {
     ctx.restore();
   }
   ctx.restore();
+}
+
+// ---- Cameos ---------------------------------------------------------------------------
+
+const CAMEO_TEAM = [0.2, 0.5, 0.95];
+/** Units are turned this far (radians) so they show their side, as RA cameos do. */
+const CAMEO_TURN = 0.62;
+
+/** Draw order and extent of the model behind a type name, or null when it has no art. */
+function cameoModel(typeName, kind) {
+  const key = spriteKey(typeName);
+  if (BUILDING_DRAW[key]) {
+    const [cw, ch] = BUILDING_SIZE[key];
+    const w = cw * 24;
+    const h = ch * 24;
+    const parts = [[BUILDING_DRAW[key], 0, 0]];
+    const t = BUILDING_TURRET[key];
+    if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    return { building: true, w, h, parts };
+  }
+  const d = UNIT_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);
+  if (!d) return null;
+  const [w, h] = d.body;
+  const parts = [[d.body[2], 0, 0]];
+  if (d.turret) parts.push([d.turret[2], (w - d.turret[0]) / 2, (h - d.turret[1]) / 2]);
+  return { building: false, w, h, parts };
+}
+
+/**
+ * Draw the sidebar cameo of a building or unit into the rectangle (0, 0) to
+ * (size, opts.height ?? size) of ctx: a framed dark backdrop with the model in
+ * 3/4 view. Buildings are the atlas drawings; units are turned towards the
+ * viewer and lit by a spotlight. opts.team is the player's colour as [r, g, b]
+ * in 0..1 (default blue); opts.kind names the actor kind for ships and aircraft
+ * without dedicated art. Returns false (drawing nothing) for a type without art.
+ */
+export function drawCameo(ctx, typeName, size, opts = {}) {
+  const model = cameoModel(typeName, opts.kind);
+  if (!model) return false;
+  const width = size;
+  const height = opts.height ?? size;
+  const P = iconPalette(opts.team ?? CAMEO_TEAM);
+  const inner = cameoInner(width, height);
+  ctx.save();
+  paintCameoBackdrop(ctx, width, height);
+  ctx.beginPath();
+  ctx.rect(inner.x, inner.y, inner.w, inner.h);
+  ctx.clip();
+  const { w, h } = model;
+  let scale;
+  if (model.building) {
+    scale = Math.min(inner.w / w, inner.h / h) * 0.94;
+    ctx.translate(inner.x + (inner.w - w * scale) / 2, inner.y + (inner.h - h * scale) / 2);
+  } else {
+    const ex = Math.abs(w * Math.cos(CAMEO_TURN)) + Math.abs(h * Math.sin(CAMEO_TURN));
+    const ey = Math.abs(w * Math.sin(CAMEO_TURN)) + Math.abs(h * Math.cos(CAMEO_TURN));
+    scale = Math.min(inner.w / ex, inner.h / ey) * 0.88;
+    paintCameoShadow(ctx, inner.x + inner.w * 0.54, inner.y + inner.h * 0.72, ex * scale * 0.5, ex * scale * 0.2);
+    ctx.translate(inner.x + inner.w / 2, inner.y + inner.h * 0.46);
+    ctx.rotate(CAMEO_TURN);
+    ctx.translate((-w * scale) / 2, (-h * scale) / 2);
+  }
+  ctx.scale(scale, scale);
+  for (const [draw, dx, dy] of model.parts) {
+    ctx.save();
+    ctx.translate(dx, dy);
+    draw(ctx, P);
+    ctx.restore();
+  }
+  ctx.restore();
+  ctx.save();
+  paintCameoFrame(ctx, width, height);
+  ctx.restore();
+  return true;
+}
+
+const cameoCache = new Map();
+
+/**
+ * A cached canvas holding the cameo, so the sidebar draws each picture once.
+ * The key is the sprite key, size, height and team colour.
+ */
+export function getCameo(typeName, size, opts = {}) {
+  const team = opts.team ?? CAMEO_TEAM;
+  const height = opts.height ?? size;
+  const id = `${spriteKey(typeName)}|${size}x${height}|${team.map((c) => c.toFixed(3)).join(',')}`;
+  let canvas = cameoCache.get(id);
+  if (canvas === undefined) {
+    canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = height;
+    canvas = drawCameo(canvas.getContext('2d'), typeName, size, { ...opts, height }) ? canvas : null;
+    cameoCache.set(id, canvas);
+  }
+  return canvas;
+}
+
+/** Forget all cached cameos (after a team colour change, say). */
+export function clearCameoCache() {
+  cameoCache.clear();
 }
