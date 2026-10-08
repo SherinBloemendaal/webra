@@ -295,7 +295,7 @@ mod tests {
 
     fn open_map(w: i32, h: i32) -> Map {
         let n = (w * h) as usize;
-        Map { width: w, height: h, terrain: vec![Terrain::Clear; n], ore: vec![0; n], spawns: vec![] }
+        Map { width: w, height: h, terrain: vec![Terrain::Clear; n], ore: vec![0; n], gems: vec![0; n], spawns: vec![] }
     }
 
     fn walk(map: &Map, pass: &Passability, cache: &mut FlowCache, locos: &[Locomotor], from: (i32, i32), goal: u32) -> usize {

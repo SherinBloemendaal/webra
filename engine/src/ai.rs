@@ -170,7 +170,8 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
         let comp = w.pass.component[w.map.idx(ux, uy)];
         let mut best: Option<(i64, usize)> = None;
         for ci in 0..w.map.cells() {
-            if w.map.ore[ci] == 0 || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0 {
+            if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp || w.players[player as usize].explored[ci] == 0
+            {
                 continue;
             }
             let (x, y) = (ci as i32 % w.map.width, ci as i32 / w.map.width);
@@ -441,7 +442,7 @@ fn ore_distance_field(w: &World, sx: i32, sy: i32, radius: i32) -> Vec<i32> {
         for x in sx - radius..=sx + radius {
             if w.map.contains(x, y) {
                 let i = w.map.idx(x, y);
-                if w.map.ore[i] > 0 && !w.pass.blocked[i] {
+                if w.map.has_resource(i) && !w.pass.blocked[i] {
                     d[i] = 0;
                     heap.push(std::cmp::Reverse((0, i)));
                 }
