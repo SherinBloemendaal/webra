@@ -109,10 +109,38 @@ export function validateReplay(v) {
 }
 
 /**
+ * The header of a replay or save (format, kind, mode, engine version,
+ * creation time, title), validated on its own: enough to tell the player
+ * which version made the file. Throws ProtocolError.
+ */
+export function replayHeader(v) {
+  if (!isPlainObject(v)) fail('not a WebRA replay or save file');
+  if (v.format !== REPLAY_FORMAT) fail('not a WebRA replay or save file');
+  if (v.version !== REPLAY_VERSION) fail(`unsupported replay format version ${int(v.version, 0, 0xffff, 'version')}`);
+  if (typeof v.engine !== 'string' || !VERSION_RE.test(v.engine)) fail('engine version is malformed');
+  return {
+    format: REPLAY_FORMAT,
+    version: REPLAY_VERSION,
+    kind: oneOf(v.kind, REPLAY_KINDS, 'kind'),
+    mode: oneOf(v.mode, REPLAY_MODES, 'mode'),
+    engine: v.engine,
+    createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, 'createdAt'),
+    title: text(v.title, 1, REPLAY_TITLE_MAX, 'title'),
+  };
+}
+
+/**
  * Parse a replay or save file's text. Resolves `{ ok: true, replay }` or
  * `{ ok: false, error }` (a readable message); never throws for bad input.
+ *
+ * With `version` (the running engine build), a file made by another build is
+ * not validated beyond its header: its settings follow that build's rules
+ * (older files lack options added since), and it cannot be played here
+ * anyway. It resolves `{ ok: true, replay: header, foreign: true }`, so the
+ * caller can say which version made it. Files of this build are validated
+ * strictly.
  */
-export async function parseReplay(raw) {
+export async function parseReplay(raw, { version = null } = {}) {
   try {
     if (typeof raw !== 'string') fail('a replay file is JSON text');
     if (raw.length > REPLAY_MAX_BYTES || utf8Length(raw) > REPLAY_MAX_BYTES) {
@@ -125,6 +153,10 @@ export async function parseReplay(raw) {
       fail('the file is not valid JSON');
     }
     if (!isPlainObject(parsed)) fail('not a WebRA replay or save file');
+    if (version !== null) {
+      const header = replayHeader(parsed);
+      if (header.engine !== version) return { ok: true, replay: header, foreign: true };
+    }
     const replay = validateReplay(parsed);
     if (replay.map !== null && (await sha256Hex(replay.map)) !== replay.mapHash) fail('the map does not match its hash');
     return { ok: true, replay };

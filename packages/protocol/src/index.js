@@ -51,6 +51,7 @@ export {
 export {
   encodeReplay,
   parseReplay,
+  replayHeader,
   REPLAY_FORMAT,
   REPLAY_HASH_INTERVAL,
   REPLAY_KINDS,

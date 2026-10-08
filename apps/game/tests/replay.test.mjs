@@ -157,6 +157,42 @@ test('a save whose game does not match its state hashes is refused', async () =>
   assert.equal(c.diverged, 500);
 });
 
+test('files of an older build say which version made them; files of this build stay strict', async () => {
+  const a = playSkirmish(260, { saveAt: 250 });
+  // As an older build wrote them: another engine version, options without the ones added since.
+  const oldFile = (text) => {
+    const v = JSON.parse(text);
+    v.engine = '0.4.0+0ld0ld00';
+    for (const k of ['mapStyle', 'biome', 'weather']) delete v.options[k];
+    return JSON.stringify(v);
+  };
+  for (const text of [oldFile(a.save), oldFile(a.recorder.encode('replay', 260))]) {
+    const r = await parseReplay(text, { version: version() });
+    assert.ok(r.ok && r.foreign, r.error);
+    assert.equal(r.replay.engine, '0.4.0+0ld0ld00');
+    const msg = engineMismatch(r.replay, version());
+    assert.match(msg, /made with WebRA 0\.4\.0\+0ld0ld00/);
+    assert.match(msg, /only load in the version that made them/);
+    // Without a version to compare (and for this build's own files) the settings are checked in full.
+    assert.equal((await parseReplay(text)).ok, false);
+  }
+  // A file claiming this build but missing the options is refused.
+  const v = JSON.parse(a.save);
+  delete v.options.weather;
+  const strict = await parseReplay(JSON.stringify(v), { version: version() });
+  assert.equal(strict.ok, false);
+  assert.match(strict.error, /weather/);
+  // A save of this build loads in full.
+  const own = await parseReplay(a.save, { version: version() });
+  assert.ok(own.ok && !own.foreign && own.replay.frames);
+  // The save store: an old save lists and loads its header, so the lobby can explain it.
+  const store = new SaveStore(new MemoryBackend());
+  const id = await store.backend.add({ title: 'Old', createdAt: 1, ticks: 250, engine: '0.4.0+0ld0ld00', data: oldFile(a.save) });
+  const loaded = await store.load(id, version());
+  assert.ok(loaded.ok && loaded.foreign);
+  assert.match(engineMismatch(loaded.replay, version()), /This save was made with WebRA 0\.4\.0/);
+});
+
 test('saves in the browser store: validated, listed newest first, capped', async () => {
   const store = new SaveStore(new MemoryBackend());
   const a = playSkirmish(260, { saveAt: 250 });

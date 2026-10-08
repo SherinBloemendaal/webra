@@ -62,10 +62,14 @@ export function confirmModdedMap(mapName) {
   }).then((v) => v === true);
 }
 
-/** Read and validate a replay or save file. Resolves { ok, replay } or { ok: false, error }. */
-export async function openRecordFile(file) {
+/**
+ * Read and validate a replay or save file. Resolves { ok, replay } or { ok: false, error }.
+ * A file of another build (`version`) resolves with its header only and `foreign`
+ * (js/replay.js engineMismatch then explains it).
+ */
+export async function openRecordFile(file, version = null) {
   try {
-    const r = await parseReplay(await readFileText(file));
+    const r = await parseReplay(await readFileText(file), { version });
     return r.ok ? r : { ok: false, error: `This file cannot be used: ${r.error}.` };
   } catch (err) {
     return { ok: false, error: err.message ?? String(err) };
@@ -92,7 +96,7 @@ async function watchFile(ctx) {
   if (!ctx.canPlay()) return ctx.showError('WebGPU is not available.');
   const file = await pickFile();
   if (!file) return;
-  const r = await openRecordFile(file);
+  const r = await openRecordFile(file, ctx.version);
   if (!r.ok) return ctx.showError(r.error);
   ctx.onWatchReplay(r.replay);
 }
@@ -120,7 +124,7 @@ async function loadDialog(store, ctx) {
         info.append(el('strong', null, s.title), el('span', 'records-muted', `${formatTicks(s.ticks)} played, saved ${new Date(s.createdAt).toLocaleString()}`));
         if (s.engine !== ctx.version) info.append(el('span', 'records-warning', `Made with WebRA ${s.engine}`));
         const load = button('Load', 'records-primary', async () => {
-          const r = await store.load(s.id);
+          const r = await store.load(s.id, ctx.version);
           if (!r.ok) {
             status.textContent = `This save cannot be loaded: ${r.error}.`;
             return;
@@ -140,7 +144,7 @@ async function loadDialog(store, ctx) {
       button('Load from file', null, async () => {
         const file = await pickFile();
         if (!file) return;
-        const r = await openRecordFile(file);
+        const r = await openRecordFile(file, ctx.version);
         if (!r.ok) status.textContent = r.error;
         else if (r.replay.kind !== 'save') status.textContent = 'That is a replay. Open it with the Replays button.';
         else close(r.replay);

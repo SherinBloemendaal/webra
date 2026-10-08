@@ -627,7 +627,11 @@ Every game records itself (apps/game/js/replay.js): the engine runs in
 lockstep mode also in single player, so the local player's orders go through
 the outbox and are applied as frames, exactly like online. A replay or save
 file is JSON, validated by `parseReplay` in packages/protocol (src/replay.js)
-before any use:
+before any use. The game passes its own build (`parseReplay(text, { version
+})`): a file made by another build is checked only up to its header (format,
+kind, mode, engine, createdAt, title) and resolves with `foreign: true`, so the
+player is told which version made it instead of seeing a validation error
+about options added since; files of the running build are validated in full:
 
 ```jsonc
 {

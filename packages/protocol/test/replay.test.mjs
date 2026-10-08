@@ -129,3 +129,24 @@ test('replayOptions drops closed slots and renumbers like the engine', () => {
   assert.deepEqual(validateReplay({ ...base(), options: out }).options, out);
   assert.throws(() => replayOptions({ ...skirmish, players: [skirmish.players[0]] }));
 });
+
+test('files of another engine build are judged by their header only when the reader names its build', async () => {
+  const old = base();
+  old.options = { ...OPTIONS };
+  delete old.options.mapStyle; // written before the option existed
+  // Strict without a build to compare: the settings do not follow this build's rules.
+  assert.equal((await check(old)).ok, false);
+  const r = await parseReplay(JSON.stringify(old), { version: '0.6.0+12345678' });
+  assert.deepEqual(r, {
+    ok: true,
+    foreign: true,
+    replay: { format: REPLAY_FORMAT, version: REPLAY_VERSION, kind: 'replay', mode: 'skirmish', engine: '0.3.0+abcdef12', createdAt: old.createdAt, title: old.title },
+  });
+  // The same build: validated in full, so the missing option is an error.
+  const same = await parseReplay(JSON.stringify(old), { version: '0.3.0+abcdef12' });
+  assert.equal(same.ok, false);
+  assert.match(same.error, /mapStyle/);
+  // A broken header is still refused, whatever the build.
+  assert.equal((await parseReplay(JSON.stringify({ ...old, engine: 'not a version!' }), { version: 'x' })).ok, false);
+  assert.equal((await parseReplay(JSON.stringify({ ...old, kind: 'movie' }), { version: '0.6.0+12345678' })).ok, false);
+});

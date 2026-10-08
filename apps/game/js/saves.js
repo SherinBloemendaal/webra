@@ -110,11 +110,14 @@ export class SaveStore {
     return this.backend.add({ title, createdAt, ticks, engine, data: text });
   }
 
-  /** A save, validated like a file. Resolves `{ ok, replay }` or `{ ok: false, error }`. */
-  async load(id) {
+  /**
+   * A save, validated like a file. Resolves `{ ok, replay }` or `{ ok: false, error }`;
+   * with `version`, a save of another build resolves with its header only (`foreign`).
+   */
+  async load(id, version = null) {
     const row = await this.backend.get(id);
     if (!row) return { ok: false, error: 'That save no longer exists' };
-    return parseReplay(row.data);
+    return parseReplay(row.data, { version });
   }
 
   async remove(id) {
