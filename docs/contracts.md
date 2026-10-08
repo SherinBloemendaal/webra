@@ -152,6 +152,29 @@ skipped, returns the count). `Game.state_hash()` (hex string) for desync
 checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
 
+### Production queues (`engine/src/production.rs`)
+
+Orders `start_production {ty, count}` and `cancel_production {ty}` serve every
+queue, structures included (no extra order types):
+
+- Structures queue like units (OpenRA): left click queues one, shift queues
+  five. Only the first item of a queue is built. A finished structure waits
+  for placement and the items behind it do not start until it is placed, so
+  each structure queue has at most one ready structure. `place` only accepts
+  the finished head of the queue.
+- `cancel_production` removes the last queued item of that type and refunds
+  what was paid for it (a finished structure refunds its full cost).
+- OpenRA `CancelUnbuildableItems`: every tick, before production advances,
+  each queued item that can no longer be produced is cancelled and refunded,
+  wherever it is in the queue. That is an item whose prerequisites were lost
+  (a half-built Heavy Tank after the Service Depot died), and every Building
+  and Defense item once the player has no Construction Yard. The rest of the
+  queue carries on; the items can be queued again once the prerequisites (or
+  a deployed MCV) are back. Unit queues keep going from their own factories.
+  `start_production` and `place` are refused for such items.
+- `player_json().buildable[].enabled` is false for structures without a
+  Construction Yard, and their `requires` lists `Construction Yard`.
+
 ## 5. Domains for units
 
 `engine` units move in a domain: `ground` (flow fields on land), `water` (flow

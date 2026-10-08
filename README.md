@@ -168,9 +168,9 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 | Mouse wheel | Zoom |
 | H or Space | Center on your base |
 | Esc | Cancel placement / clear selection |
-| Sidebar left click | Build (Shift + click queues 5) |
-| Sidebar right click | Cancel (refunds what was paid) |
-| Click a finished building in the sidebar | Start placing it |
+| Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
+| Sidebar right click | Cancel the last queued one (refunds what was paid) |
+| Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select).
 
