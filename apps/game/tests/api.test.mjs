@@ -123,6 +123,27 @@ test('render buffers are produced for the view', () => {
   assert.ok(fog.some((v) => v === 255) && fog.some((v) => v === 0), 'visible area and shroud');
 });
 
+test('unit paths: route lines for selected own units only', () => {
+  const game = newGame({ startingUnits: 'light' });
+  const units = ownUnits(game);
+  game.set_selection(Uint32Array.from(units));
+  assert.equal(game.build_paths(0, 1), 0, 'idle units have no route');
+  game.order_move(0, Uint32Array.from(units), 40 * 24, 40 * 24, false);
+  ticks(game, 3);
+  const n = game.build_paths(0, 1);
+  assert.ok(n >= units.length, `segments: ${n}`);
+  const lines = new Float32Array(wasm.memory.buffer, game.path_ptr(), n * 8);
+  assert.ok(lines.every(Number.isFinite));
+  // Routes end on the centre of the goal cell, next to the clicked point.
+  const ends = [];
+  for (let k = 0; k < n; k++) ends.push([lines[k * 8 + 2], lines[k * 8 + 3]]);
+  const near = ([x, y]) => Math.abs(x - 40 * 24) <= 36 && Math.abs(y - 40 * 24) <= 36 && (x - 12) % 24 === 0 && (y - 12) % 24 === 0;
+  assert.ok(ends.some(near), 'a segment ends on the goal');
+  assert.equal(game.build_paths(1, 1), 0, 'the other player sees none of our routes');
+  game.set_selection(new Uint32Array());
+  assert.equal(game.build_paths(0, 1), 0, 'nothing selected');
+});
+
 test('orders: smart move and stop', () => {
   const game = newGame({ startingUnits: 'light' });
   const units = ownUnits(game);

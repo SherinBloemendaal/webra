@@ -6,6 +6,7 @@
 // own units selects it instead. Right click clears the selection.
 
 import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS } from './cursors.js';
+import * as settings from './settings.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
@@ -514,6 +515,9 @@ export class Input {
     } else if (k === 's' && !e.ctrlKey && !e.metaKey) {
       const units = this.selectedOwnUnits();
       if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
+    } else if (k === 'l' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Temporary shortcut until the options menu has a checkbox for it.
+      settings.set('showUnitPaths', !settings.get('showUnitPaths'));
     } else if (k === 'h' || k === ' ') {
       e.preventDefault();
       const [x, y] = this.game.start_position(this.player);

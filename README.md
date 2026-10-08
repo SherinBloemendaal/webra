@@ -158,6 +158,7 @@ Then open <http://localhost:8080> in a browser with WebGPU support: Chrome or Ed
 | Factory selected + left click on the ground | Set its rally point |
 | A + left click | Attack-move |
 | S | Stop |
+| L | Show or hide unit paths: selected units draw their planned route to the destination (green move, orange attack-move, red chase, yellow ore truck). Remembered per browser; a temporary shortcut until the options menu has the setting |
 | Ctrl + 1..9 | Assign control group |
 | 1..9 | Select control group |
 | Numpad 1..9 | Build that sidebar card (Shift: 5, Ctrl: cancel one) |

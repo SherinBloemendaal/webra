@@ -8,6 +8,7 @@ import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
 import { Lobby } from './lobby.js';
+import * as settings from './settings.js';
 
 const PLAYER = 0;
 const MAX_TICKS_PER_FRAME = 8;
@@ -308,12 +309,15 @@ function start(game, { stress, tickMs, player = PLAYER, online = null }) {
     const uiRects = input.uiRects();
     const v = input.viewRect();
     const spriteCount = game.build_render(player, alpha, v.x0, v.y0, v.x1, v.y1);
+    // "Show unit paths": routes of the selected own units (8 floats per segment).
+    const lineCount = settings.get('showUnitPaths') ? game.build_paths(player, alpha) : 0;
     const sprites = new Float32Array(wasm.memory.buffer, game.sprite_ptr(), spriteCount * 8);
+    const lines = lineCount ? new Float32Array(wasm.memory.buffer, game.path_ptr(), lineCount * 8) : null;
     const simRectCount = game.rect_count();
     const rects = new Float32Array(simRectCount * 8 + uiRects.length);
     rects.set(new Float32Array(wasm.memory.buffer, game.rect_ptr(), simRectCount * 8));
     rects.set(uiRects, simRectCount * 8);
-    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8);
+    renderer.draw(input.camera, now / 1000, sprites, spriteCount, rects, rects.length / 8, lines, lineCount);
 
     fpsFrames++;
     if (now - fpsTime >= 500) {

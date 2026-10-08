@@ -3,6 +3,7 @@
 
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
+const LINE_FLOATS = 8;
 const GLOBALS_BYTES = 160;
 
 export const TEAM_COLORS = [
@@ -41,6 +42,7 @@ export class Renderer {
     this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
     this.spriteCapacity = 0;
     this.rectCapacity = 0;
+    this.lineCapacity = 0;
     this.mapW = 0;
     this.mapH = 0;
     device.lost.then((info) => console.error('WebGPU device lost:', info.message));
@@ -50,8 +52,8 @@ export class Renderer {
     const d = this.device;
     const commonRes = await fetch('shaders/common.wgsl');
     const common = await commonRes.text();
-    const [terrainSrc, spriteSrc, fogSrc, rectSrc] = await Promise.all(
-      ['terrain', 'sprite', 'fog', 'rect'].map((n) => loadShader(n, common)),
+    const [terrainSrc, spriteSrc, fogSrc, rectSrc, lineSrc] = await Promise.all(
+      ['terrain', 'sprite', 'fog', 'rect', 'line'].map((n) => loadShader(n, common)),
     );
 
     this.globals = d.createBuffer({ size: GLOBALS_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -104,6 +106,9 @@ export class Renderer {
     this.rectLayout = d.createBindGroupLayout({ entries: [] });
     this.rectPipeline = this.pipeline(rectSrc, this.rectLayout, [instance(RECT_FLOATS * 4)], blend, 'rects');
     this.rectGroup = d.createBindGroup({ layout: this.rectLayout, entries: [] });
+
+    // Lines (unit paths): same instance layout and bindings as rects.
+    this.linePipeline = this.pipeline(lineSrc, this.rectLayout, [instance(LINE_FLOATS * 4)], blend, 'lines');
   }
 
   pipeline(code, layout, buffers, blend, label) {
@@ -200,8 +205,9 @@ export class Renderer {
    * @param camera {x, y, zoom} zoom in CSS pixels per world pixel
    * @param sprites Float32Array of sprite instances
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
+   * @param lines optional Float32Array of line instances (unit paths), drawn under the rects
    */
-  draw(camera, time, sprites, spriteCount, rects, rectCount) {
+  draw(camera, time, sprites, spriteCount, rects, rectCount, lines = null, lineCount = 0) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
@@ -217,6 +223,10 @@ export class Renderer {
     if (rectCount > 0) {
       this.ensureBuffer('rect', rectCount, RECT_FLOATS);
       d.queue.writeBuffer(this.rectBuffer, 0, rects, 0, rectCount * RECT_FLOATS);
+    }
+    if (lineCount > 0) {
+      this.ensureBuffer('line', lineCount, LINE_FLOATS);
+      d.queue.writeBuffer(this.lineBuffer, 0, lines, 0, lineCount * LINE_FLOATS);
     }
 
     const enc = d.createCommandEncoder();
@@ -239,6 +249,13 @@ export class Renderer {
     pass.setPipeline(this.fogPipeline);
     pass.setBindGroup(1, this.fogGroup);
     pass.draw(3);
+
+    if (lineCount > 0) {
+      pass.setPipeline(this.linePipeline);
+      pass.setBindGroup(1, this.rectGroup);
+      pass.setVertexBuffer(0, this.lineBuffer);
+      pass.draw(6, lineCount);
+    }
 
     if (rectCount > 0) {
       pass.setPipeline(this.rectPipeline);
