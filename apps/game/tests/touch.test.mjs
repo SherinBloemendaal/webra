@@ -260,12 +260,18 @@ test('layout: render pixel ratio follows the device up to the cap; low quality g
   assert.equal(renderPixelRatio(3, Number.NaN), 2, 'bad cap: the old default');
 });
 
-test('layout: HUD text, full and compact', () => {
-  const s = { seconds: 125.9, fps: 59.6, simMs: 0.4321 };
-  assert.equal(hudText(s), '2:05  |  60 fps  |  sim 0.43 ms/tick');
-  assert.equal(hudText({ ...s, paused: true }, true), '2:05 (paused)  60 fps');
-  assert.equal(hudText({ ...s, stress: true, units: 5000, flowFields: 7 }), '2:05  |  60 fps  |  sim 0.43 ms/tick  |  5000 units  |  7 flow fields');
-  assert.equal(hudText({ ...s, stress: true, units: 5000, flowFields: 7 }, true), '2:05  60 fps  5000 units');
+test('layout: HUD text, full and compact, without the sidebar clock', () => {
+  const s = { fps: 59.6, simMs: 0.4321 };
+  // A normal game: the clock is in the sidebar, frame stats in the debug menu.
+  assert.equal(hudText(s), '');
+  assert.equal(hudText(s, true), '');
+  assert.equal(hudText({ ...s, paused: true }), 'Paused');
+  assert.equal(hudText({ ...s, paused: true }, true), 'Paused');
+  // Stress tests keep their performance line.
+  assert.equal(hudText({ ...s, stress: true, units: 5000, flowFields: 7 }), '60 fps  |  sim 0.43 ms/tick  |  5000 units  |  7 flow fields');
+  assert.equal(hudText({ ...s, stress: true, units: 5000, flowFields: 7 }, true), '60 fps  5000 units');
+  assert.equal(hudText({ ...s, paused: true, stress: true, units: 1, flowFields: 0 }, true), 'Paused  60 fps  1 units');
+  assert.ok(!/\d+:\d\d/.test(hudText({ ...s, paused: true, stress: true })), 'no game clock in the HUD');
 });
 
 test('layout: the drawer collapses for placement on phones and restores the player choice', () => {

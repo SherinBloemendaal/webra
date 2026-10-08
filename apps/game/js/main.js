@@ -534,9 +534,8 @@ function selectionInfo(game, ids) {
 }
 
 function updateHud(game, state, fps, simMs, stress, paused, compact) {
-  const seconds = state.tick / Game.ticks_per_second();
   const units = stress ? game.actor_count() : 0;
-  const text = hudText({ seconds, paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
+  const text = hudText({ paused, fps, simMs, stress, units, flowFields: state.flowFields }, compact);
   if ($('hud').textContent !== text) $('hud').textContent = text;
 }
 
