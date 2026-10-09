@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.8.0](https://github.com/SherinBloemendaal/webra/compare/v0.7.0...v0.8.0) (2026-10-09)
+
+
+### Features
+
+* **engine:** add move_hint query for plain moves past visible enemies ([e84a51a](https://github.com/SherinBloemendaal/webra/commit/e84a51a57d0c4a93ea3139250a2869ac7ec8aa56))
+* **engine:** control group numbers on selection boxes and rally point lines ([ecd6b1d](https://github.com/SherinBloemendaal/webra/commit/ecd6b1d664df41e07ca5b5a605a76323e831515e))
+* **engine:** record end-game statistics and refuse orders of defeated players ([c2d48cf](https://github.com/SherinBloemendaal/webra/commit/c2d48cf708cecec4c3daf7be05333cc5c44a8336))
+* **engine:** repair, power down and beacon orders like OpenRA's Red Alert ([4c23bf2](https://github.com/SherinBloemendaal/webra/commit/4c23bf2fa957978ecec89813d83b881234a5c399))
+* **engine:** report transforms and refused deploys as sound events ([5316351](https://github.com/SherinBloemendaal/webra/commit/53163517e364f058d3091f00f2326cf82b363342))
+* **engine:** spread AI attacks fairly over free-for-all neighbours ([78a1db9](https://github.com/SherinBloemendaal/webra/commit/78a1db9f08ea948b22b88a8d13235cc8048e83ad))
+* **game:** a music player like OpenRA's, in the game menu and the Sound dialog ([25bae0d](https://github.com/SherinBloemendaal/webra/commit/25bae0db77cca9812399dbb0143b4756f86117fb))
+* **game:** add help tips, game modes and a World group to the lobbies ([f6faffe](https://github.com/SherinBloemendaal/webra/commit/f6faffe77b1368280d7b58dcbcb89aeec6e6bf11))
+* **game:** add the defeat and victory dialogs, end-game statistics and restart ([3f02ca5](https://github.com/SherinBloemendaal/webra/commit/3f02ca5b48833dab88c6f507c80fe751fcfa617a))
+* **game:** add UI scale, game scale and an Audio section to Settings ([4c42c62](https://github.com/SherinBloemendaal/webra/commit/4c42c620232a15f50822afa5da059a4c3b9a4d4d))
+* **game:** capture the mouse with Pointer Lock, like OpenRA's locked cursor ([28d2b53](https://github.com/SherinBloemendaal/webra/commit/28d2b53a92ecce7ca65549c50b0da894d78b5947))
+* **game:** cash tick sounds on the credits counter, as in OpenRA ([3bdc0f5](https://github.com/SherinBloemendaal/webra/commit/3bdc0f5657dde55df0b477203d1af46d4cb7dda8))
+* **game:** install the music from the freeware Red Alert CDs ([291956c](https://github.com/SherinBloemendaal/webra/commit/291956c849f0580e43aa35fbe728f7d356d7d2c0))
+* **game:** layered placement sounds and the MCV deploy sounds, as in OpenRA ([ef5b7c6](https://github.com/SherinBloemendaal/webra/commit/ef5b7c60dc68e26d2dd0a065fcce5501e61171a2))
+* **game:** offer to sign in again when the game files are refused ([831e981](https://github.com/SherinBloemendaal/webra/commit/831e9810500c1954a6fdf1500312b6e40b2c5209))
+* **game:** OpenRA's Red Alert sidebar buttons and hotkeys ([ade4c16](https://github.com/SherinBloemendaal/webra/commit/ade4c16258ce6ad1e4a81067659ac6dba91780c9))
+* **game:** Red Alert style tooltips on every icon button ([98a210f](https://github.com/SherinBloemendaal/webra/commit/98a210f2d975ea6761a6d4310ce1436acbc1961b))
+* **game:** report the local player's defeat in online games ([64d170e](https://github.com/SherinBloemendaal/webra/commit/64d170ea68ca5158006fd1bea7405bccff05fa8c))
+* **game:** show a one-time attack-move tip ([6dad50c](https://github.com/SherinBloemendaal/webra/commit/6dad50c31ef243aa50555c9cb8834453a730d652))
+* **game:** show health bars on damaged units and buildings by default ([104b692](https://github.com/SherinBloemendaal/webra/commit/104b692c53e0a95c0dc7e84869fe0da6e26bdcf4))
+* **game:** themed toggle, segmented, checkbox and slider controls ([cc42010](https://github.com/SherinBloemendaal/webra/commit/cc420103dbf57fc0ac9f17f0dcb720a83572c2da))
+* **protocol:** accept game.attackMoveTipSeen in settings documents ([42a4aa4](https://github.com/SherinBloemendaal/webra/commit/42a4aa456de3fefe4ab46d520847c9910b505d41))
+* **protocol:** accept the mouse capture settings in the settings document ([8821d29](https://github.com/SherinBloemendaal/webra/commit/8821d290a552fe356cf6372fef433e4805b98ca1))
+* **protocol:** accept UI scale, game scale and music settings ([5d898bd](https://github.com/SherinBloemendaal/webra/commit/5d898bd0889ee7c1e0b74a813bd4c1c35dd7e2b7))
+* **protocol:** add game mode bundles and saved mode validation ([e5c7684](https://github.com/SherinBloemendaal/webra/commit/e5c76842e37b9d42dc6fb49c76cb3bc1821e96e7))
+* **protocol:** add the gameRequiresAccount site setting ([58ea81c](https://github.com/SherinBloemendaal/webra/commit/58ea81ca115b263c7e3690bc4b68d7be2b447c0d))
+* **protocol:** sidebar button orders, team chat and relationship colours ([985382f](https://github.com/SherinBloemendaal/webra/commit/985382f0b54d2a88bed125634080f579718c7ed4))
+* **repo:** vendor OpenRA's Red Alert hotkey definitions with a generator ([91adff8](https://github.com/SherinBloemendaal/webra/commit/91adff8a5f1025042318b94b9749d5fb15df5ab0))
+* **server:** deliver team chat to the sender's team only ([68b7c58](https://github.com/SherinBloemendaal/webra/commit/68b7c586ecc08806d18fa13936ad6d742d648e37))
+* **server:** drop the orders of seats that report their defeat ([dc332a1](https://github.com/SherinBloemendaal/webra/commit/dc332a10500dcfb6e68a69e16ce06912cc7ed5cf))
+* **server:** relay the Red Alert music by range from the freeware CDs ([7293ac0](https://github.com/SherinBloemendaal/webra/commit/7293ac00ce663d3cf1be74d0930c26acd3f4bbe3))
+* **server:** serve the game only to accounts that may play ([9fa7f28](https://github.com/SherinBloemendaal/webra/commit/9fa7f284c65925db92da24ebc9839e60c396947d))
+* **website:** send players through sign-in to the game ([88756f9](https://github.com/SherinBloemendaal/webra/commit/88756f9d50b784a117767164c594928c41232d3b))
+* **website:** use the shared themed controls on the account and admin pages ([70d51a5](https://github.com/SherinBloemendaal/webra/commit/70d51a516bd885ac967aa202a1a9b7c9b4602504))
+
+
+### Bug Fixes
+
+* **engine:** drive the War Factory door like OpenRA's production door ([504ae17](https://github.com/SherinBloemendaal/webra/commit/504ae17c9366136bd38fbd340b7fd58ab08b42a0))
+* **engine:** mirror 6 and 8 player rings top to bottom and equalise ore ([36d0d3e](https://github.com/SherinBloemendaal/webra/commit/36d0d3e4159f21cdaee71afb08860fdfd11a736a))
+* **engine:** pose structure layers like the structure and open the factory door ([6a3ea9f](https://github.com/SherinBloemendaal/webra/commit/6a3ea9f7d54f5d6e10bb5b77f990b4de5d78cd2f))
+* **engine:** resolve shots of a tick together and match OpenRA targeting ([c08fc8d](https://github.com/SherinBloemendaal/webra/commit/c08fc8d1b03aa5a184f2a2755278becfdc7841d9))
+* **game:** cap wanted file sizes and retry a relay 502 once per click ([8e893dd](https://github.com/SherinBloemendaal/webra/commit/8e893dd27287d69bd84dafd396b932fc16340a86))
+* **game:** draw original structures, coasts, rocks and water like OpenRA ([46a2cbb](https://github.com/SherinBloemendaal/webra/commit/46a2cbbc7fc80bd01fdebc956a7e28a2333c6cf1))
+* **game:** show the War Factory door frame the engine names instead of looping it ([b051bea](https://github.com/SherinBloemendaal/webra/commit/b051bea79cf7d9f9aff6bcdccb165a5bc0049785))
+* **game:** tooltips switch at once along a bar, also under mouse capture ([d8f4aeb](https://github.com/SherinBloemendaal/webra/commit/d8f4aebb30d2c7162b2a5702a369a11fb56811f0))
+* **server:** accept only the canonical spelling of a play pass MAC ([290f12b](https://github.com/SherinBloemendaal/webra/commit/290f12b1b679447b242e254fb0768222c8909b48))
+* **server:** gate every spelling of a game path ([4462db6](https://github.com/SherinBloemendaal/webra/commit/4462db6ac759eb8cf73f4209073cf7ddf102d397))
+* **server:** match archive redirects by decoded path and refund failed music bytes ([2229566](https://github.com/SherinBloemendaal/webra/commit/2229566310e740c66edae04edf3087b35891a83d))
+* **website:** stop printing "null" for account sections that are left out ([19b53a7](https://github.com/SherinBloemendaal/webra/commit/19b53a7e321abfc196f060aa42e9bf91a2179844))
+
 ## [0.7.0](https://github.com/SherinBloemendaal/webra/compare/v0.6.0...v0.7.0) (2026-10-09)
 
 
