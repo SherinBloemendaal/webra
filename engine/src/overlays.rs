@@ -4,7 +4,8 @@
 //! actors), and the animated layer of buildings (apps/game/js/art/anim.js).
 //!
 //! It also draws the control group number of selected actors (OpenRA
-//! WithSpriteControlGroupDecoration) and the rally point of selected
+//! WithSpriteControlGroupDecoration, moved to the box's bottom right corner)
+//! and the rally point of selected
 //! production structures (OpenRA RallyPointIndicator).
 //!
 //! Everything here is presentation only: it reads the world and fills the
@@ -221,19 +222,28 @@ pub const GROUP_GLYPH_H: usize = 5;
 /// The digit's colour and the dark plate behind it (one pixel around the glyph).
 pub const GROUP_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub const GROUP_PLATE: [f32; 4] = [0.0, 0.0, 0.0, 0.75];
-/// Top-left of the plate from the box's top-left corner. OpenRA's Red Alert
-/// draws the group at the box's TopLeft (WithSpriteControlGroupDecoration,
-/// Margin -2,0, sequence offset 9,5): just inside the corner, right of the
-/// bracket's vertical arm and below its horizontal one, clear of the health
-/// bar above the box.
+/// Gap between the plate and the box's bottom and right edges. WebRA draws
+/// the group in the box's bottom right corner (OpenRA's Red Alert uses the
+/// top left): just inside the corner, left of the bracket's vertical arm and
+/// above its horizontal one, clear of the health bar above the box and of
+/// the cargo, ore and ammo pips below it.
 pub const GROUP_INSET: (f32, f32) = (BRACKET_THICKNESS, BRACKET_THICKNESS);
+/// Width and height of the dark plate (the glyph plus one pixel around it).
+pub const GROUP_PLATE_SIZE: (f32, f32) = (GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0);
 
-/// Rects of control group `group`'s number in the top left corner of the box
-/// (l, t): a dark plate, then one rect per horizontal run of each glyph row.
-pub fn push_group_number(l: f32, t: f32, group: u8, out: &mut Vec<f32>) {
+/// Top-left of the group number's plate for the box (l, t, w, h): in the
+/// bottom right corner, `GROUP_INSET` inside the bracket arms.
+pub fn group_plate_origin(l: f32, t: f32, w: f32, h: f32) -> (f32, f32) {
+    (l + w - GROUP_INSET.0 - GROUP_PLATE_SIZE.0, t + h - GROUP_INSET.1 - GROUP_PLATE_SIZE.1)
+}
+
+/// Rects of control group `group`'s number in the bottom right corner of
+/// the box (l, t, w, h): a dark plate, then one rect per horizontal run of
+/// each glyph row.
+pub fn push_group_number(l: f32, t: f32, w: f32, h: f32, group: u8, out: &mut Vec<f32>) {
     let Some(glyph) = GROUP_GLYPHS.get(group as usize) else { return };
-    let (x, y) = (l + GROUP_INSET.0, t + GROUP_INSET.1);
-    push_rect(out, x, y, GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0, GROUP_PLATE);
+    let (x, y) = group_plate_origin(l, t, w, h);
+    push_rect(out, x, y, GROUP_PLATE_SIZE.0, GROUP_PLATE_SIZE.1, GROUP_PLATE);
     for (row, bits) in glyph.iter().enumerate() {
         let mut col = 0;
         while col < GROUP_GLYPH_W {

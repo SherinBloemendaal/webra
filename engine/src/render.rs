@@ -410,7 +410,7 @@ impl World {
             // The control group number, selected actors only (OpenRA's
             // control group decoration RequiresSelection; overlays.rs).
             if let Some(g) = self.render_opts.control_group(r) {
-                push_group_number(l, t, g, &mut rel);
+                push_group_number(l, t, w, h, g, &mut rel);
             }
             push_anchored_rects(sink, rects, &anchor, NO_CULL, &rel);
             // Rally point (OpenRA RallyPointIndicator): a marker at both ends of

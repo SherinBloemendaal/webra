@@ -261,19 +261,29 @@ fn lit_pixels(glyph: &[[f32; 4]], x: f32, y: f32) -> [u8; GROUP_GLYPH_H] {
 }
 
 #[test]
-fn group_numbers_draw_every_digit_as_its_glyph_inside_the_top_left_corner() {
+fn group_numbers_draw_every_digit_as_its_glyph_inside_the_bottom_right_corner() {
+    let (l, t, bw, bh) = (10.0, 20.0, 30.0, 24.0);
     for g in 0..=9u8 {
         let mut out = Vec::new();
-        push_group_number(10.0, 20.0, g, &mut out);
+        push_group_number(l, t, bw, bh, g, &mut out);
         let (plates, glyph) = group_rects(&out);
         assert_eq!(plates.len(), 1);
         let p = plates[0];
-        assert_eq!((p[0], p[1]), (10.0 + GROUP_INSET.0, 20.0 + GROUP_INSET.1), "inside the box, clear of the bracket arms");
-        assert_eq!((p[2], p[3]), (GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0));
+        assert_eq!((p[2], p[3]), GROUP_PLATE_SIZE);
+        assert_eq!((p[0], p[1]), group_plate_origin(l, t, bw, bh));
+        // Flush with the bracket's bottom right arms, inside the box.
+        assert_eq!(p[0] + p[2], l + bw - BRACKET_THICKNESS, "left of the vertical arm");
+        assert_eq!(p[1] + p[3], t + bh - BRACKET_THICKNESS, "above the horizontal arm");
+        assert!(p[0] > l + bw / 2.0 && p[1] > t + bh / 2.0, "in the bottom right quarter");
         assert_eq!(lit_pixels(&glyph, p[0], p[1]), GROUP_GLYPHS[g as usize], "digit {g}");
         for r in &glyph {
             assert!(r[0] > p[0] && r[0] + r[2] < p[0] + p[2] && r[1] > p[1] && r[1] + r[3] < p[1] + p[3], "on the plate");
         }
+    }
+    // The smallest boxes (units and mines) still hold the plate below the top bracket arm.
+    for side in [unit_box_size(0), MINE_BOX] {
+        let (_, y) = group_plate_origin(0.0, 0.0, side, side);
+        assert!(y >= BRACKET_THICKNESS, "a {side} pixel box keeps the plate inside");
     }
     // Every digit differs from the others.
     for (a, ga) in GROUP_GLYPHS.iter().enumerate() {
@@ -282,7 +292,7 @@ fn group_numbers_draw_every_digit_as_its_glyph_inside_the_top_left_corner() {
         }
     }
     let mut none = Vec::new();
-    push_group_number(0.0, 0.0, 10, &mut none);
+    push_group_number(0.0, 0.0, 24.0, 24.0, 10, &mut none);
     assert!(none.is_empty(), "only the ten group keys");
 }
 
@@ -301,19 +311,21 @@ fn control_group_numbers_show_on_selected_grouped_units_and_buildings_only() {
 
     // OpenRA's group decoration RequiresSelection: none while unselected.
     assert!(group_rects(&render(&w, &[]).1).0.is_empty());
-    // Selected: one number per grouped actor, at its box's top left corner.
+    // Selected: one number per grouped actor, at its box's bottom right corner.
     let (_, r) = render(&w, &[rt, rr, rp]);
     let (plates, glyph) = group_rects(&r);
     assert_eq!(plates.len(), 2, "the tank and the power plant, not the ungrouped rifleman");
     for (i, g) in [(tank, 3usize), (pp, 0)] {
         let (x, y, bw, bh) = w.selection_box(i, 1.0);
         let (l, t) = (x - bw / 2.0, y - bh / 2.0);
-        let p = *plates.iter().find(|p| p[0] == l + GROUP_INSET.0 && p[1] == t + GROUP_INSET.1).expect("plate at the corner");
+        let (px_, py_) = group_plate_origin(l, t, bw, bh);
+        let p = *plates.iter().find(|p| p[0] == px_ && p[1] == py_).expect("plate at the corner");
         let mine: Vec<[f32; 4]> =
             glyph.iter().copied().filter(|q| q[0] > p[0] && q[0] < p[0] + p[2] && q[1] > p[1] && q[1] < p[1] + p[3]).collect();
         assert_eq!(lit_pixels(&mine, p[0], p[1]), GROUP_GLYPHS[g]);
-        // Below the health bar, inside the box.
-        assert!(p[1] > bar_top(t) + BAR_HEIGHT && p[0] + p[2] <= l + bw && p[1] + p[3] <= t + bh);
+        // Below the health bar, inside the box, above whatever hangs below it.
+        assert!(p[1] > bar_top(t) + BAR_HEIGHT && p[0] >= l && p[0] + p[2] <= l + bw - BRACKET_THICKNESS);
+        assert!(p[1] + p[3] <= t + bh - BRACKET_THICKNESS);
     }
     // Moving to another group, and an actor listed twice keeps its last group.
     w.render_opts.set_control_groups(&[rt, rt, rr, NONE], &[3, 7, 12, 1]);
@@ -324,6 +336,30 @@ fn control_group_numbers_show_on_selected_grouped_units_and_buildings_only() {
     let again = unit(&mut w, "2TNK", 0, 20, 20);
     let (_, r) = render(&w, &[rt, w.make_ref(again)]);
     assert!(group_rects(&r).0.is_empty(), "the stale ref matches no live actor");
+}
+
+#[test]
+fn control_group_numbers_stay_clear_of_bars_brackets_and_pips() {
+    let mut w = world();
+    // A harvester (ore bar), an APC (cargo pips), a Hind (ammo pips), a rifleman
+    // (the smallest unit box) and a wall-sized structure.
+    let ids: Vec<usize> =
+        ["HARV", "APC", "HIND", "E1"].iter().enumerate().map(|(k, id)| unit(&mut w, id, 0, 10 + 6 * k as i32, 20)).collect();
+    let pp = w.spawn_building(ty(&w, "POWR"), 0, 40, 40).expect("room for a power plant");
+    w.update_vision();
+    let refs: Vec<u32> = ids.iter().chain([&pp]).map(|&i| w.make_ref(i)).collect();
+    let groups: Vec<u8> = (1..=refs.len() as u8).collect();
+    w.render_opts.set_control_groups(&refs, &groups);
+    let (_, r) = render(&w, &refs);
+    let (plates, _) = group_rects(&r);
+    assert_eq!(plates.len(), refs.len());
+    let overlaps = |a: &[f32], b: &[f32; 4]| a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+    for p in &plates {
+        for q in rects(&r) {
+            let is_group = q[4..8] == GROUP_COLOR || (q[4..8] == GROUP_PLATE && (q[2], q[3]) == GROUP_PLATE_SIZE);
+            assert!(is_group || !overlaps(q, p), "plate {p:?} overlaps {q:?}");
+        }
+    }
 }
 
 #[test]
