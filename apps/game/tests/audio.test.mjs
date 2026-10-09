@@ -391,6 +391,7 @@ test('actor sounds and notifications of the rules play to the right player', () 
       [EV.DAMAGE_HEAVY, T['1TNK'], 500, 300, 0, 0],
       [EV.CLOAK_CHANGED, T.STNK, 500, 300, 1, 1],
       [EV.PARA_DROP, T.BADR, 500, 300, 0, 0],
+      [EV.PILOT_EJECTED, T.MIG, 500, 300, 0, 0],
       [EV.REARMED, T.MNLY, 500, 300, 1, 0],
     ),
     VIEW,
@@ -401,6 +402,7 @@ test('actor sounds and notifications of the rules play to the right player', () 
   assert.equal(of('damaged').length, 1);
   assert.deepEqual(of('cloak')[0].sound.originals, ['appear1.aud']);
   assert.deepEqual(of('chute')[0].sound.originals, ['chute1.aud']);
+  assert.equal(of('chute').length, 2, "the Badger's drop and the MiG pilot's EjectOnDeath.ChuteSound");
   assert.equal(of('rearm').length, 0, "an enemy's rearm is PlayToPlayer");
   d.onEvents(
     ev(

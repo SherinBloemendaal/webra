@@ -429,6 +429,12 @@ export const chuteSound = cached((actorId) => {
   return f ? fileSound(f, 'chute') : null;
 });
 
+/** OpenRA EjectOnDeath.ChuteSound of an aircraft whose pilot bails out, or null. */
+export const ejectChuteSound = cached((actorId) => {
+  const f = actorSounds(actorId).ejectChute;
+  return f ? fileSound(f, 'chute') : null;
+});
+
 /** OpenRA Parachutable Ground/WaterImpactSound of a parachuted actor dying on landing, or null. */
 export const paraImpactSound = cached((actorId, water) => {
   const p = actorSounds(actorId).paraImpact;

@@ -40,6 +40,7 @@ import {
   damagedSound,
   crushSound,
   chuteSound,
+  ejectChuteSound,
   paraImpactSound,
   cloakSound,
   rearmSound,
@@ -85,6 +86,7 @@ export const EV = {
   INFILTRATED: 34,
   TIME_LIMIT_WARNING: 35,
   CRATE_COLLECTED: 36,
+  PILOT_EJECTED: 37,
 };
 export const STRIDE = 6;
 /** `owner` of events every player hears (sound_events.rs ALL_PLAYERS). */
@@ -441,6 +443,11 @@ export class Director {
         }
         case EV.PARA_DROP: {
           const sound = chuteSound(this.actor(a).id);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.PILOT_EJECTED: {
+          const sound = ejectChuteSound(this.actor(a).id);
           if (sound && heard) this.queue(sound, x, y);
           break;
         }
