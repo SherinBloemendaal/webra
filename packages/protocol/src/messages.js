@@ -139,6 +139,12 @@ const ORDER_SCHEMA = {
   scatter: { ids: idList },
   waypoint: { ids: idList, x: i32, y: i32, attack_move: bool },
   set_stance: { ids: idList, stance: (v, w) => oneOf(v, STANCES, w) },
+  // engine/src/repair.rs and beacons.rs: the sidebar's Repair and Power down
+  // buttons (start or stop repairing a structure, switch one off or on) and
+  // map beacons for allies.
+  repair_building: { building: u32 },
+  power_down: { building: u32 },
+  place_beacon: { x: i32, y: i32 },
   // engine/src/debug.rs: debug menu cheats, only valid in games with the
   // `cheats` option (the server refuses them otherwise, see CHEAT_ORDER_KINDS).
   dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },
@@ -266,8 +272,11 @@ const CLIENT = {
     return { t: C2S.READY, ready: bool(m.ready, 'ready'), mapHash };
   },
   [C2S.CHAT](m) {
-    object(m, ['t', 'text'], 'chat');
-    return { t: C2S.CHAT, text: text(m.text, 1, CHAT_MAX, 'text') };
+    // `team`: only for the sender's team (OpenRA team chat); spectators chat among themselves.
+    object(m, ['t', 'text', 'team'], 'chat');
+    const out = { t: C2S.CHAT, text: text(m.text, 1, CHAT_MAX, 'text') };
+    if (has(m, 'team') && bool(m.team, 'team')) out.team = true;
+    return out;
   },
   [C2S.START](m) {
     object(m, ['t'], 'start');
@@ -396,13 +405,15 @@ const SERVER = {
     };
   },
   [S2C.CHAT](m) {
-    object(m, ['t', 'from', 'name', 'text'], 'chat');
-    return {
+    object(m, ['t', 'from', 'name', 'text', 'team'], 'chat');
+    const out = {
       t: S2C.CHAT,
       from: m.from === null ? null : validClientId(m.from, 'from'),
       name: m.from === null ? text(m.name, 1, NAME_MAX, 'name') : validName(m.name),
       text: text(m.text, 1, CHAT_MAX, 'text'),
     };
+    if (has(m, 'team') && bool(m.team, 'team')) out.team = true;
+    return out;
   },
   [S2C.START](m) {
     object(m, ['t', 'seed', 'options', 'map', 'players', 'delay'], 'start');
@@ -564,7 +575,7 @@ export const client = {
   options: (options) => ({ t: C2S.OPTIONS, options }),
   map: (map) => ({ t: C2S.MAP, map }),
   ready: (ready, mapHash) => ({ t: C2S.READY, ready, mapHash }),
-  chat: (textValue) => ({ t: C2S.CHAT, text: textValue }),
+  chat: (textValue, team = false) => (team ? { t: C2S.CHAT, text: textValue, team: true } : { t: C2S.CHAT, text: textValue }),
   start: () => ({ t: C2S.START }),
   orders: (tick, orders) => ({ t: C2S.ORDERS, tick, orders }),
   hash: (tick, hash) => ({ t: C2S.HASH, tick, hash }),

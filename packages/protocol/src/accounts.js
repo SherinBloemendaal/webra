@@ -359,6 +359,7 @@ const SETTINGS_SECTIONS = {
     pixelRatioCap: num(0.5, 3),
     lowQuality: boolean,
     healthBars: choice(['off', 'damaged', 'all']),
+    playerStanceColors: boolean,
     graphics: choice(['webra', 'original']),
     hotkeys,
   },

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   C2S,
+  client,
   DEFAULT_OPTIONS,
   encodeClient,
   encodeServer,
@@ -135,6 +136,13 @@ test('chat is limited to 200 characters', () => {
   ok({ t: 'chat', text: 'x'.repeat(200) });
   bad({ t: 'chat', text: 'x'.repeat(201) });
   bad({ t: 'chat', text: '   ' });
+  // Team chat (OpenRA OpenTeamChat): a flag, left out for all chat.
+  assert.deepEqual(ok({ t: 'chat', text: 'go', team: true }), { t: 'chat', text: 'go', team: true });
+  assert.deepEqual(ok({ t: 'chat', text: 'go', team: false }), { t: 'chat', text: 'go' });
+  bad({ t: 'chat', text: 'go', team: 'yes' }, /true or false/);
+  bad({ t: 'chat', text: 'go', to: 3 }, /unknown field/);
+  assert.equal(encodeClient(client.chat('gg', true)), '{"t":"chat","text":"gg","team":true}');
+  assert.equal(encodeClient(client.chat('gg')), '{"t":"chat","text":"gg"}');
 });
 
 test('orders and hash', () => {
@@ -162,6 +170,10 @@ test('orders and hash', () => {
     { o: 'scatter', player: 1, ids: [4, 5, 6] },
     { o: 'waypoint', player: 1, ids: [4], x: 100, y: 200, attack_move: true },
     ...STANCES.map((stance) => ({ o: 'set_stance', player: 1, ids: [4], stance })),
+    // Sidebar buttons (engine/src/repair.rs, beacons.rs).
+    { o: 'repair_building', player: 1, building: 4 },
+    { o: 'power_down', player: 1, building: 0xffffffff },
+    { o: 'place_beacon', player: 1, x: -24, y: 2 ** 31 - 1 },
   ]) {
     assert.deepEqual(ok({ t: 'orders', tick: 1, orders: [o] }).orders[0], o);
   }
@@ -190,6 +202,13 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'attack_ground', player: 0, ids: [1], x: 2 ** 31, y: 0 }] }, /integer/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: Array(2001).fill(1) }] }, /at most/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'scatter', player: 0, ids: [1], x: 0 }] }, /unknown field/);
+  // Sidebar buttons.
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_building', player: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_building', player: 0, building: -1 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'power_down', player: 0, building: 1, ids: [1] }] }, /unknown field/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'power_down', player: 0, building: 1.5 }] });
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0, y: 2 ** 31 }] }, /integer/);
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');
   assert.deepEqual(ok({ t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' }), { t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' });
@@ -232,6 +251,7 @@ test('server messages round trip through encodeServer / parseServerMessage', () 
     },
     { t: S2C.CHAT, from: 1, name: 'Host', text: 'gl hf' },
     { t: S2C.CHAT, from: null, name: 'Server', text: 'Host left' },
+    { t: S2C.CHAT, from: 2, name: 'Guest', text: 'rush left', team: true },
     {
       t: S2C.START,
       seed: OPTIONS.seed,
