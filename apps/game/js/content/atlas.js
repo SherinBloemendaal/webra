@@ -399,13 +399,14 @@ function slotArt(image, mapping, opts) {
  * @param {string} tileset OpenRA tileset id (TILESET_OF_BIOME)
  */
 export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
-  const out = { slots: new Map(), layers: new Set(), unitOverlays: [], levels: [], specials: [], explosions: [], actors: [], missing: [], problems: [] };
+  const out = { slots: new Map(), layers: new Set(), unitOverlays: [], levels: [], smoke: null, specials: [], explosions: [], actors: [], missing: [], problems: [] };
   const palBytes = getFile(ACTOR_PALETTE);
   if (!palBytes) {
     out.problems.push(`${ACTOR_PALETTE} is not installed`);
     out.missing = actors.map((a) => a.id);
     return out;
   }
+  out.actorCount = actors.length;
   let lookup;
   try {
     lookup = paletteLookup(decodePalette(palBytes), { remap: true, shadow: ACTOR_SHADOW });
@@ -501,6 +502,7 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     if (r.art) {
       out.slots.set(slot, r.art);
       out.specials.push(key);
+      if (key === SMOKE_KEY) out.smoke = smokeFrames(spec, files, tileset);
     }
   }
   // Muzzle flashes (ACTOR_ART muzzle, OpenRA WithMuzzleOverlay): once per shot.
@@ -523,6 +525,24 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     }
   });
   return out;
+}
+
+/** The damage smoke's special (start and loop frames in a row, the engine names the frame). */
+const SMOKE_KEY = 'fx.0';
+
+/** [milliseconds per frame, start frames, loop frames] of the original damage smoke, or null. */
+function smokeFrames(spec, files, tileset) {
+  const lengths = spec.sequences.map((name) => {
+    const def = SEQUENCES[spec.image]?.[name];
+    const { sprite } = def ? files.get(sequenceFile(def, tileset)) : {};
+    try {
+      return sprite ? resolveSequence(def, sprite.frames.length) : null;
+    } catch {
+      return null;
+    }
+  });
+  if (lengths.length !== 2 || lengths.some((r) => !r)) return null;
+  return [Math.round(1000 / lengths[1].fps), lengths[0].length, lengths[1].length];
 }
 
 /** A special sprite's pose table from its SPECIAL_ART entry (see the table for the modes). */
@@ -599,7 +619,7 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
 }
 
 /** Kinds of the records of originalSlotInfo `info` (engine/src/overlays.rs ORIGINAL_INFO_*). */
-export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1 });
+export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2 });
 
 /**
  * What the engine needs to know about the original art in use
@@ -609,8 +629,10 @@ export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1 });
  * projectiles with their own facings), and `info`, flat records [kind,
  * actor type, a, b]: an overlay drawn over a unit without a turret
  * (ORIGINAL_INFO.OVERLAY, forward and side offset in world units) for
- * those whose second slot is original, and a structure whose original
- * body shows the storage level (ORIGINAL_INFO.LEVEL, the stage count).
+ * those whose second slot is original, a structure whose original
+ * body shows the storage level (ORIGINAL_INFO.LEVEL, the stage count) and
+ * the original damage smoke (ORIGINAL_INFO.SMOKE: milliseconds per frame,
+ * start frames, loop frames).
  * `original` is originalSlots' result (or null).
  */
 export function originalSlotInfo(source, original = null) {
@@ -622,5 +644,7 @@ export function originalSlotInfo(source, original = null) {
   for (const [t, stages] of original?.levels ?? []) {
     if (source.get(2 * t) === 'original') info.push(ORIGINAL_INFO.LEVEL, t, stages, 0);
   }
+  const smokeSlot = original ? specialSlot(SMOKE_KEY, (original.actorCount ?? 0)) : -1;
+  if (original?.smoke && source.get(smokeSlot) === 'original') info.push(ORIGINAL_INFO.SMOKE, ...original.smoke);
   return { slots: Uint32Array.from(slots), info: Int32Array.from(info) };
 }

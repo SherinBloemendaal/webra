@@ -1193,7 +1193,8 @@ a turret (the Radar Jammer's and Mobile Gap Generator's dishes; a forward,
 b side offset in world units, drawn from slot `2t + 1` with the idle
 pose), kind 1 a structure whose body shows the storage level (OpenRA
 WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
-capacity of its owner, mode 3). Presentation only: the state hash is the
+capacity of its owner, mode 3), kind 2 the original damage smoke
+(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage
@@ -1213,10 +1214,15 @@ ground, open water, ship, air; delay), the muzzle flashes of every actor
 their weapon's explosions (one per valid warhead, picked out of its list by
 a hash of the impact instead of OpenRA's random); WebRA draws its own
 picture of each explosion, grown and faded, or with the original graphics
-OpenRA's sequence once from the make pose. Muzzle flashes follow every shot,
-barrel by barrel, at OpenRA's barrel offset; the damage smoke starts when a
-unit is hit below its damage state (OpenRA's start sequence, then the loop
-once). With the original graphics the Tesla zap is OpenRA's
+OpenRA's sequence once from the make pose. Muzzle flashes follow every shot
+at OpenRA's barrel offset, one per barrel (barrels take turns as OpenRA's
+Armament cycles them, and every barrel that fired lately shows its own flash
+at once, also across armaments); the damage smoke starts when a unit is hit
+below its damage state: OpenRA's start sequence, then the loop LoopCount
+times (`Next(1, 3)`: once or twice, picked by a hash of the actor and the
+tick instead of OpenRA's shared random). With the original graphics the
+client gives the smoke's frame time and its start and loop frame counts
+(`info` kind 2) and the engine names the frame (mode 3). With the original graphics the Tesla zap is OpenRA's
 TeslaZapRenderable: two dim and one bright wandering bolt in 8 pixel steps
 showing litning.shp's direction frames, for TeslaZap.Duration (2 ticks).
 

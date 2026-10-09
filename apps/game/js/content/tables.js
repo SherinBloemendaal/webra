@@ -230,7 +230,7 @@ export const SPECIAL_ART = {
   "veterancy.3": null,
   "decorations.0": {"image":"select","mode":"loop","sequences":["repair"]},
   "decorations.1": {"image":"powerdown","mode":"loop","sequences":["disabled"]},
-  "fx.0": {"image":"smoke_m","mode":"effect","sequences":["start","loop"]},
+  "fx.0": {"image":"smoke_m","mode":"index","sequences":["start","loop"]},
   "fx.1": {"image":"litning","mode":"index","sequences":["bright"]},
   "fx.2": {"image":"litning","mode":"index","sequences":["dim"]},
 };

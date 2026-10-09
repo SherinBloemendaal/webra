@@ -39,10 +39,13 @@ pub const EXPLOSION_LIFE: i32 = 48;
 /// within it; WebRA's flash shows for `WEBRA_MUZZLE_TICKS`).
 pub const MUZZLE_LIFE: u32 = 24;
 pub const WEBRA_MUZZLE_TICKS: u32 = 3;
-/// Ticks the damage smoke is drawn (OpenRA: the start sequence, then the
-/// loop once; LoopCount is 1 to 3 at random, WebRA plays it once).
-pub const SMOKE_LIFE: u32 = 120;
-pub const WEBRA_SMOKE_TICKS: u32 = 40;
+/// Ticks WebRA's own damage smoke takes per loop (OpenRA plays its start
+/// sequence, then the loop LoopCount times; with the original graphics the
+/// client gives those frame counts, `RenderOptions::smoke_frames`).
+pub const WEBRA_SMOKE_TICKS: u32 = 20;
+/// Most muzzles (armaments with a muzzle sequence) and barrels in all of an actor's muzzles drawn.
+pub const MAX_MUZZLES: usize = 4;
+pub const MAX_BARRELS: usize = 8;
 /// Ticks a working animation played once (charge, launch, placing, recoil,
 /// closing doors, leaving the refinery) is reported after it started: the
 /// sequence plays once within it and then shows the idle frames.
@@ -100,6 +103,9 @@ pub struct MuzzleInfo {
 pub struct ActorRender {
     pub muzzles: Vec<MuzzleInfo>,
     pub smoke: Option<SmokeFrom>,
+    /// WithDamageOverlay.LoopCount: the loop plays `low` up to `high - 1` times
+    /// (OpenRA Util.RandomInRange: MersenneTwister.Next(low, high) leaves `high` out).
+    pub smoke_loops: (u32, u32),
     pub active: Option<ActiveKind>,
     pub recoil: bool,
     pub reload_body: bool,
@@ -182,8 +188,28 @@ impl RenderData {
                             .collect()
                     })
                     .unwrap_or_default();
+                // At most MAX_MUZZLES muzzles and MAX_BARRELS barrels in all (ActorFx keeps one shot per barrel).
+                let mut muzzles: Vec<MuzzleInfo> = muzzles;
+                muzzles.truncate(MAX_MUZZLES);
+                let mut room = MAX_BARRELS;
+                for m in muzzles.iter_mut() {
+                    m.offsets.truncate(room.max(1));
+                    room = room.saturating_sub(m.offsets.len());
+                }
+                muzzles.retain(|m| !m.offsets.is_empty());
                 ActorRender {
                     muzzles,
+                    smoke_loops: {
+                        let r: Vec<u32> = e["smoke_loops"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|v| v.as_u64()).map(|v| v.min(8) as u32).collect())
+                            .unwrap_or_default();
+                        match r.as_slice() {
+                            [n] => ((*n).max(1), (*n).max(1) + 1),
+                            [lo, hi, ..] => ((*lo).max(1), (*hi).max((*lo).max(1) + 1)),
+                            _ => (1, 2),
+                        }
+                    },
                     smoke: match e["damage_smoke"].as_str() {
                         Some("critical") => Some(SmokeFrom::Critical),
                         Some(_) => Some(SmokeFrom::Heavy),
@@ -210,12 +236,16 @@ impl RenderData {
 /// When things happened to an actor, for drawing only (ticks plus one, 0 never).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ActorFx {
-    /// Last shot, with the muzzle (index into `ActorRender::muzzles`) and barrel it came from.
+    /// Last shot of any weapon (turret recoil).
     pub fired: u32,
-    pub muzzle: u8,
-    pub barrel: u8,
-    /// Damage smoke started.
+    /// Last shot of every barrel, the barrels of all muzzles in a row
+    /// (OpenRA WithMuzzleOverlay keeps one animation per barrel).
+    pub barrels: [u32; MAX_BARRELS],
+    /// The barrel each muzzle fires from next (OpenRA Armament cycles its LocalOffsets).
+    pub next_barrel: [u8; MAX_MUZZLES],
+    /// Damage smoke started, and how often its loop plays this time.
     pub smoke: u32,
+    pub smoke_loops: u8,
     /// A working animation started (charge, launch, placing, doors opening, docking).
     pub active: u32,
     /// A unit was serviced on this structure (resupply animation).
@@ -267,14 +297,22 @@ impl World {
     pub(crate) fn note_fire(&mut self, i: usize, w: usize) {
         let now = self.tick + 1;
         let info = &self.rules.render.actors[self.actors[i].ty as usize];
-        let muzzle = info.muzzles.iter().position(|m| m.weapon == w);
         let charge = info.active == Some(ActiveKind::Charge);
-        let barrels = muzzle.map_or(1, |m| info.muzzles[m].offsets.len().max(1));
+        // The muzzle of this weapon and where its barrels sit in the row of all barrels.
+        let mut first = 0;
+        let mut muzzle = None;
+        for (m, info) in info.muzzles.iter().enumerate() {
+            if info.weapon == w {
+                muzzle = Some((m, first, info.offsets.len()));
+                break;
+            }
+            first += info.offsets.len();
+        }
         let fx = &mut self.actors[i].fx;
-        if let Some(m) = muzzle {
-            // The first shot comes from the first barrel, then they take turns.
-            fx.barrel = if fx.fired > 0 && fx.muzzle == m as u8 { ((fx.barrel as usize + 1) % barrels) as u8 } else { 0 };
-            fx.muzzle = m as u8;
+        if let Some((m, first, count)) = muzzle {
+            let b = (fx.next_barrel[m] as usize) % count.max(1);
+            fx.barrels[first + b] = now;
+            fx.next_barrel[m] = ((b + 1) % count.max(1)) as u8;
         }
         fx.fired = now;
         if charge {
@@ -292,10 +330,40 @@ impl World {
             SmokeFrom::Critical => hp * 4 < max,
         };
         let tick = self.tick;
-        let fx = &mut self.actors[i].fx;
-        if bad && age_of(fx.smoke, tick).is_none_or(|a| a >= SMOKE_LIFE) {
-            fx.smoke = tick + 1;
+        if !bad || self.smoke_frame(i).is_some() {
+            return;
         }
+        // OpenRA picks LoopCount with the shared random (Next(low, high), high
+        // left out); a hash of the actor and the tick picks it here.
+        let (lo, hi) = self.fx_info(i).smoke_loops;
+        let a = &self.actors[i];
+        let loops = lo + fx_hash(a.x, a.y, tick.wrapping_add(i as u32)) % (hi - lo).max(1);
+        let fx = &mut self.actors[i].fx;
+        fx.smoke = tick + 1;
+        fx.smoke_loops = loops.min(u8::MAX as u32) as u8;
+    }
+
+    /// Where actor `i`'s damage smoke is now: Some(frame) while it plays.
+    /// With the original graphics the frame of the start and loop frames in
+    /// a row (the start once, then the loop `smoke_loops` times, at the
+    /// sequence's rate: `RenderOptions::smoke_frames`); with WebRA's art the
+    /// ticks since it started, `WEBRA_SMOKE_TICKS` per loop. Presentation
+    /// only: what is drawn decides how long it plays.
+    pub(crate) fn smoke_frame(&self, i: usize) -> Option<u32> {
+        let a = &self.actors[i];
+        let age = age_of(a.fx.smoke, self.tick)?;
+        let loops = (a.fx.smoke_loops as u32).max(1);
+        let slot = (SpriteIds::new(self.rules.actors.len()).fx_base + FX_SMOKE) as u32;
+        if self.render_opts.is_original(slot) {
+            let (tick_ms, start, looped) = self.render_opts.smoke_frames?;
+            let f = age * (1000 / crate::world::TICKS_PER_SECOND) / tick_ms.max(1);
+            if f < start {
+                return Some(f);
+            }
+            let r = f - start;
+            return (looped > 0 && r < loops * looped).then(|| start + r % looped);
+        }
+        (age < WEBRA_SMOKE_TICKS * loops).then_some(age)
     }
 
     /// Structure `b` repaired or rearmed a unit this tick (resupply animation).
@@ -483,48 +551,53 @@ impl World {
 
     // ---- Drawing -------------------------------------------------------------------
 
-    /// The muzzle flash of actor `i` drawn at `at` (its interpolated
-    /// position): OpenRA's barrel offset turned with the turret (or body),
-    /// the sequence played once from the shot.
+    /// The muzzle flashes of actor `i` drawn at `at` (its interpolated
+    /// position): every barrel that fired lately, at OpenRA's barrel offset
+    /// turned with the turret (or body), its sequence played once from its
+    /// shot (OpenRA WithMuzzleOverlay: one animation per barrel).
     pub(crate) fn push_muzzle(&self, i: usize, at: SpriteRec, lift: f32, sink: &mut Sink, out: &mut Vec<f32>) {
         let a = &self.actors[i];
         let info = self.fx_info(i);
-        let Some(m) = info.muzzles.get(a.fx.muzzle as usize) else { return };
-        let Some(age) = age_of(a.fx.fired, self.tick) else { return };
+        if info.muzzles.is_empty() || a.fx.fired == 0 {
+            return;
+        }
         let ids = SpriteIds::new(self.rules.actors.len());
         let slot = ids.muzzle_base as u32 + a.ty as u32;
         let original = self.render_opts.is_original(slot);
-        if age >= if original { MUZZLE_LIFE } else { WEBRA_MUZZLE_TICKS } {
-            return;
-        }
-        let barrel = m.offsets[(a.fx.barrel as usize).min(m.offsets.len() - 1)];
-        let aim = if m.turret { a.turret } else { a.facing };
-        // The barrel turns with the turret, the turret sits on the body (OpenRA Armament.MuzzleOffset).
-        let b = classic_offset(barrel[0], barrel[1], aim);
-        let t = if m.turret { classic_offset(m.turret_offset[0], m.turret_offset[1], a.facing) } else { [0.0, 0.0] };
-        let up = px(barrel[2] + if m.turret { m.turret_offset[2] } else { 0 });
-        let (dx, dy) = (b[0] + t[0], b[1] + t[1] - up - lift);
-        let r = at.facing(aim, 0);
-        if original {
-            sink.sprite(out, r.look(posed(slot, Pose::Make, age), a.owner as f32, 1.0, 1.0, 0.0).offset(dx, dy));
-        } else {
-            let fade = 1.0 - age as f32 / WEBRA_MUZZLE_TICKS as f32;
-            sink.sprite(out, r.look(slot as f32, a.owner as f32, 1.0, fade, 0.0).offset(dx, dy));
+        let life = if original { MUZZLE_LIFE } else { WEBRA_MUZZLE_TICKS };
+        let mut k = 0;
+        for m in &info.muzzles {
+            for barrel in &m.offsets {
+                let stamp = a.fx.barrels[k];
+                k += 1;
+                let Some(age) = age_of(stamp, self.tick).filter(|&g| g < life) else { continue };
+                let aim = if m.turret { a.turret } else { a.facing };
+                // The barrel turns with the turret, the turret sits on the body (OpenRA Armament.MuzzleOffset).
+                let b = classic_offset(barrel[0], barrel[1], aim);
+                let t = if m.turret { classic_offset(m.turret_offset[0], m.turret_offset[1], a.facing) } else { [0.0, 0.0] };
+                let up = px(barrel[2] + if m.turret { m.turret_offset[2] } else { 0 });
+                let (dx, dy) = (b[0] + t[0], b[1] + t[1] - up - lift);
+                let r = at.facing(aim, 0);
+                if original {
+                    sink.sprite(out, r.look(posed(slot, Pose::Make, age), a.owner as f32, 1.0, 1.0, 0.0).offset(dx, dy));
+                } else {
+                    let fade = 1.0 - age as f32 / WEBRA_MUZZLE_TICKS as f32;
+                    sink.sprite(out, r.look(slot as f32, a.owner as f32, 1.0, fade, 0.0).offset(dx, dy));
+                }
+            }
         }
     }
 
     /// The damage smoke over actor `i` (OpenRA WithDamageOverlay: smoke_m start, then its loop).
     pub(crate) fn push_damage_smoke(&self, i: usize, at: SpriteRec, lift: f32, sink: &mut Sink, out: &mut Vec<f32>) {
-        let a = &self.actors[i];
-        let Some(age) = age_of(a.fx.smoke, self.tick) else { return };
+        let Some(frame) = self.smoke_frame(i) else { return };
         let ids = SpriteIds::new(self.rules.actors.len());
         let slot = (ids.fx_base + FX_SMOKE) as u32;
         if self.render_opts.is_original(slot) {
-            if age < SMOKE_LIFE {
-                sink.sprite(out, at.look(posed(slot, Pose::Make, age), 0.0, 1.0, 1.0, 0.0).offset(0.0, -lift));
-            }
-        } else if age < WEBRA_SMOKE_TICKS {
-            let k = age as f32 / WEBRA_SMOKE_TICKS as f32;
+            sink.sprite(out, at.look(posed(slot, Pose::Idle, frame), 0.0, 1.0, 1.0, 0.0).offset(0.0, -lift));
+        } else {
+            // WebRA's puff rises and fades once per loop.
+            let k = (frame % WEBRA_SMOKE_TICKS) as f32 / WEBRA_SMOKE_TICKS as f32;
             let r = at.look(slot as f32, 0.0, 0.7 + 0.5 * k, 0.8 * (1.0 - k), 0.0);
             sink.sprite(out, r.offset(0.0, -lift - 4.0 - 8.0 * k));
         }

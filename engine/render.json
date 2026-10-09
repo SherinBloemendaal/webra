@@ -20,6 +20,10 @@
      ],
      "weapon": "25mm"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "2TNK": {
@@ -42,6 +46,10 @@
      ],
      "weapon": "90mm"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "3TNK": {
@@ -69,6 +77,10 @@
      ],
      "weapon": "105mm"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "4TNK": {
@@ -118,6 +130,10 @@
      ],
      "weapon": "MammothTusk"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "AFLD": {
@@ -172,6 +188,10 @@
      ],
      "weapon": "M60mg"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "ARTY": {
@@ -194,6 +214,10 @@
      ],
      "weapon": "155mm"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "CA": {
@@ -243,16 +267,32 @@
      ],
      "weapon": "8Inch"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "CTNK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "DD": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "DTRK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "FACT": {
    "active": "placed"
@@ -297,6 +337,10 @@
      ],
      "weapon": "FLAK-23-AG"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "GUN": {
@@ -323,7 +367,11 @@
   },
   "HARV": {
    "damage_smoke": "heavy",
-   "docking": true
+   "docking": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "HIND": {
    "muzzles": [
@@ -374,17 +422,33 @@
      ],
      "weapon": "M60mg"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "LST": {
    "damage_smoke": "heavy",
-   "landing_craft": true
+   "landing_craft": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "MCV": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "MGG": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "MH60": {
    "muzzles": [
@@ -413,16 +477,28 @@
    ]
   },
   "MNLY": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "MRJ": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "MSLO": {
    "active": "launch"
   },
   "MSUB": {
-   "damage_smoke": "critical"
+   "damage_smoke": "critical",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "PT": {
    "damage_smoke": "heavy",
@@ -461,10 +537,18 @@
      ],
      "weapon": "DepthCharge"
     }
+   ],
+   "smoke_loops": [
+    1,
+    3
    ]
   },
   "QTNK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "SAM": {
    "muzzles": [
@@ -488,23 +572,43 @@
    ]
   },
   "SS": {
-   "damage_smoke": "critical"
+   "damage_smoke": "critical",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "STNK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "TRUK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "TSLA": {
    "active": "charge"
   },
   "TTNK": {
-   "damage_smoke": "heavy"
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "V2RL": {
    "damage_smoke": "heavy",
-   "reload_body": true
+   "reload_body": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
   },
   "YAK": {
    "muzzles": [

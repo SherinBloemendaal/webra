@@ -41,7 +41,7 @@ import { decodeSprite } from './shp.js';
  * Ticks the engine draws an effect (engine/src/fx.rs): an original sequence
  * played once must end within them.
  */
-export const FX_LIMITS = Object.freeze({ explosion: 48, muzzle: 24, smoke: 120, activeOnce: 100 });
+export const FX_LIMITS = Object.freeze({ explosion: 48, muzzle: 24, activeOnce: 100 });
 
 /** Who adds a part the engine does not draw yet. */
 const INFANTRY_WORKER = 'drawn by the infantry work (deaths, idle and stand animations)';
@@ -268,7 +268,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     }
     const defs = specialDefs(spec);
     let problem;
-    if (spec.mode === 'effect') problem = check(art, POSE.MAKE, defs, { offset: [0, 0], mode: MODE.ONCE, limit: key === 'fx.0' ? FX_LIMITS.smoke : FX_LIMITS.explosion });
+    if (spec.mode === 'effect') problem = check(art, POSE.MAKE, defs, { offset: [0, 0], mode: MODE.ONCE, limit: FX_LIMITS.explosion });
     else if (spec.mode === 'lead') problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: MODE.LEAD, lead: defs[0] ? resolvedLength(defs[0]) : 0 });
     else problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: spec.mode === 'index' ? MODE.INDEX : MODE.LOOP });
     row({ ...base, webra, where, status: problem ? 'wrong' : 'ok', note: problem ?? '' });

@@ -235,10 +235,11 @@ SPECIAL_ART = {
     # disabled frame, OpenRA's "powerdown" image).
     'decorations.0': ['select', 'repair', 'loop'],
     'decorations.1': ['powerdown', 'disabled', 'loop'],
-    # Effects of the engine (fx.rs): damage smoke (WithDamageOverlay: start,
-    # then the loop once), the bright and dim Tesla zap frames (TeslaZap:
-    # the frame per step direction, MODE.INDEX).
-    'fx.0': ['smoke_m', ['start', 'loop'], 'effect'],
+    # Effects of the engine (fx.rs): damage smoke (WithDamageOverlay: the
+    # start, then the loop LoopCount times; the engine names the frame of the
+    # start and loop frames in a row, MODE.INDEX), the bright and dim Tesla
+    # zap frames (TeslaZap: the frame per step direction, MODE.INDEX).
+    'fx.0': ['smoke_m', ['start', 'loop'], 'index'],
     'fx.1': ['litning', 'bright', 'index'],
     'fx.2': ['litning', 'dim', 'index'],
 }
@@ -928,6 +929,8 @@ def render_data(rules):
         smoke = trait(tree, 'WithDamageOverlay')
         if smoke is not None:
             entry['damage_smoke'] = smoke.get('MinimumDamageState', ['Heavy'])[0].lower()
+            # WithDamageOverlay.LoopCount: how often the loop plays (a range, chosen per start).
+            entry['smoke_loops'] = [int(x) for x in tokens(smoke.get('LoopCount', ['1, 3'])[0])]
         # Working animations the engine reports as the active pose (fx.rs).
         for name, kind in [
             ('WithResupplyAnimation', 'resupply'),

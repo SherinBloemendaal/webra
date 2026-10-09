@@ -216,8 +216,8 @@ test('special slots: the audit, the atlas and the engine agree on where each spe
   const fx = readFileSync(fileURLToPath(new URL('../../../engine/src/fx.rs', import.meta.url)), 'utf8');
   const constant = (name) => Number(fx.match(new RegExp(`pub const ${name}: \\w+ = (\\d+);`))[1]);
   assert.deepEqual(
-    [constant('EXPLOSION_LIFE'), constant('MUZZLE_LIFE'), constant('SMOKE_LIFE'), constant('ACTIVE_ONCE_LIFE')],
-    [FX_LIMITS.explosion, FX_LIMITS.muzzle, FX_LIMITS.smoke, FX_LIMITS.activeOnce],
+    [constant('EXPLOSION_LIFE'), constant('MUZZLE_LIFE'), constant('ACTIVE_ONCE_LIFE')],
+    [FX_LIMITS.explosion, FX_LIMITS.muzzle, FX_LIMITS.activeOnce],
   );
 });
 
@@ -238,6 +238,11 @@ test('original slots: rotors, effects and levels as pose tables; what the engine
   // A helicopter without a second rotor falls back to its only one.
   const heli = out.slots.get(2 * t('HELI') + 1);
   assert.equal(heli.poses[POSE.AUX_MOVE], heli.poses[POSE.MOVE]);
+  // The damage smoke names its frame: the start frames, then the loop frames.
+  const smoke = out.slots.get(specialSlot('fx.0', ACTORS.length));
+  assert.equal(smoke.poses[POSE.IDLE].mode, 3);
+  assert.equal(out.smoke[0], 40);
+  assert.equal(smoke.poses[POSE.IDLE].length, out.smoke[1] + out.smoke[2]);
   // Effects play once at the make pose and show nothing otherwise.
   const boom = out.slots.get(specialSlot('small_explosion', ACTORS.length));
   assert.equal(boom.poses[POSE.MAKE].mode, 1);
@@ -261,6 +266,8 @@ test('original slots: rotors, effects and levels as pose tables; what the engine
       [ORIGINAL_INFO.OVERLAY, t('MRJ'), -256, 0],
       [ORIGINAL_INFO.OVERLAY, t('MGG'), -299, 0],
       [ORIGINAL_INFO.LEVEL, t('SILO'), silo.poses[POSE.IDLE].length, 0],
+      // The damage smoke: 40 ms frames, then the start and loop frame counts.
+      [ORIGINAL_INFO.SMOKE, ...out.smoke],
     ].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
   );
   // A pack's second slot wins over the original: no overlay record for it then.

@@ -3,7 +3,9 @@
 //! craft doors, paratroopers and OpenRA's Tesla zap. Nothing here may
 //! change the simulation.
 
-use crate::fx::{age_of, ActiveKind, IMPACT_AIR, IMPACT_GROUND, IMPACT_SHIP, IMPACT_WATER, MUZZLE_LIFE, SMOKE_LIFE, WEBRA_MUZZLE_TICKS};
+use crate::fx::{
+    age_of, ActiveKind, IMPACT_AIR, IMPACT_GROUND, IMPACT_SHIP, IMPACT_WATER, MUZZLE_LIFE, WEBRA_MUZZLE_TICKS, WEBRA_SMOKE_TICKS,
+};
 use crate::map::Terrain;
 use crate::render::{posed, Pose, SpriteIds, View, POSE_CODES, POSE_STRIDE, SPRITE_FLOATS};
 use crate::world::{cell_center, Effect, EffectKind, GameOptions, HarvState, PlayerSetup, World, NONE};
@@ -148,56 +150,84 @@ fn deaths_show_the_death_weapon_explosions_instead_of_a_generic_one() {
 }
 
 #[test]
-fn muzzle_flashes_follow_shots_barrel_by_barrel() {
+fn muzzle_flashes_follow_shots_barrel_by_barrel_several_at_once() {
     let mut w = world();
     let ids = SpriteIds::new(w.rules.actors.len());
     let mammoth = ty(&w, "4TNK");
     let t = w.spawn_unit(mammoth, 0, cell_center(20), cell_center(20), 0);
     let slot = ids.muzzle_base as u32 + mammoth as u32;
     assert!(in_slot(&sprites(&w), slot).is_empty(), "no flash before a shot");
-    let gun = weapon(&w, "120mm");
+    let (gun, tusk) = (weapon(&w, "120mm"), weapon(&w, "MammothTusk"));
     w.note_fire(t, gun);
-    assert_eq!(w.actors[t].fx.barrel, 0);
     let first = in_slot(&sprites(&w), slot);
     assert_eq!(first.len(), 1, "WebRA's flash right after the shot");
+    // The second barrel fires the next shot; both flashes show at once (one per barrel).
     w.note_fire(t, gun);
-    assert_eq!(w.actors[t].fx.barrel, 1, "the next barrel");
-    let second = in_slot(&sprites(&w), slot);
-    assert_ne!((first[0][0], first[0][1]), (second[0][0], second[0][1]), "the other barrel is elsewhere");
-    // WebRA's flash goes after a few ticks; an original one plays its sequence once.
+    let both = in_slot(&sprites(&w), slot);
+    assert_eq!(both.len(), 2, "two barrels flashing");
+    assert_ne!((both[0][0], both[0][1]), (both[1][0], both[1][1]), "at their own barrels");
+    // The tusks are another armament: their flashes join in.
+    w.note_fire(t, tusk);
+    assert_eq!(in_slot(&sprites(&w), slot).len(), 3);
+    // The barrels take turns: the third cannon shot is the first barrel again.
+    w.tick += 1;
+    w.note_fire(t, gun);
+    assert_eq!(w.actors[t].fx.barrels[0], w.tick + 1);
+    // WebRA's flashes go after a few ticks; original ones play their sequence once.
     w.tick += WEBRA_MUZZLE_TICKS;
     assert!(in_slot(&sprites(&w), slot).is_empty());
     w.render_opts.set_original_art(&[slot], &[]);
     let orig = in_slot(&sprites(&w), slot);
-    assert_eq!(orig.len(), 1);
-    assert_eq!(unpack(orig[0][3]), (slot, Pose::Make as u32, WEBRA_MUZZLE_TICKS));
+    assert_eq!(orig.len(), 3, "every barrel that fired within the original flash time (the first cannon barrel fired twice)");
+    assert!(orig.iter().all(|s| unpack(s[3]).1 == Pose::Make as u32));
     w.tick += MUZZLE_LIFE;
     assert!(in_slot(&sprites(&w), slot).is_empty());
 }
 
 #[test]
-fn damage_smoke_starts_when_badly_hit_and_ends() {
+fn damage_smoke_starts_when_badly_hit_loops_one_or_two_times_and_ends() {
     let mut w = world();
     let ids = SpriteIds::new(w.rules.actors.len());
     let slot = ids.fx_base as u32;
     let tank = w.spawn_unit(ty(&w, "2TNK"), 0, cell_center(20), cell_center(20), 0);
+    assert_eq!(w.rules.render.actors[w.actors[tank].ty as usize].smoke_loops, (1, 3), "OpenRA LoopCount 1, 3");
     let max = w.rules.actors[w.actors[tank].ty as usize].hp;
     w.damage(tank, max / 4);
     assert_eq!(w.actors[tank].fx.smoke, 0, "lightly damaged: no smoke");
     w.damage(tank, max / 2);
     let started = w.actors[tank].fx.smoke;
     assert!(started > 0, "below half health it smokes (WithDamageOverlay Heavy)");
+    let loops = w.actors[tank].fx.smoke_loops as u32;
+    assert!((1..=2).contains(&loops), "Next(1, 3): one or two loops");
     assert_eq!(in_slot(&sprites(&w), slot).len(), 1);
     // More hits while smoking do not restart it.
     w.tick += 5;
     w.damage(tank, 1);
     assert_eq!(w.actors[tank].fx.smoke, started);
-    w.tick += SMOKE_LIFE;
-    assert!(in_slot(&sprites(&w), slot).is_empty(), "it ends");
-    w.render_opts.set_original_art(&[slot], &[]);
+    w.tick = started - 1 + WEBRA_SMOKE_TICKS * loops;
+    assert!(in_slot(&sprites(&w), slot).is_empty(), "it ends after its loops");
+    // The loop count is a hash of the start: both counts happen.
+    let mut seen = [false; 3];
+    for k in 0..40 {
+        w.actors[tank].fx.smoke = 0;
+        w.tick += 1 + k;
+        w.damage(tank, 1);
+        seen[w.actors[tank].fx.smoke_loops as usize] = true;
+    }
+    assert!(seen[1] && seen[2], "{seen:?}");
+    // Original art: the start frames once, then the loop frames `loops` times (40 ms frames: one per tick).
+    w.render_opts.set_original_art(&[slot], &[crate::overlays::ORIGINAL_INFO_SMOKE, 40, 49, 42]);
+    w.actors[tank].fx.smoke = 0;
     w.damage(tank, 1);
-    let orig = in_slot(&sprites(&w), slot);
-    assert_eq!(unpack(orig[0][3]).1, Pose::Make as u32, "the original smoke plays once from the make pose");
+    let (start, loops) = (w.actors[tank].fx.smoke - 1, w.actors[tank].fx.smoke_loops as u32);
+    let frame_at = |w: &mut World, t: u32| {
+        w.tick = start + t;
+        in_slot(&sprites(w), slot).first().map(|s| unpack(s[3]))
+    };
+    assert_eq!(frame_at(&mut w, 10), Some((slot, Pose::Idle as u32, 10)));
+    assert_eq!(frame_at(&mut w, 49), Some((slot, Pose::Idle as u32, 49)), "the loop's first frame");
+    assert_eq!(frame_at(&mut w, 49 + 42 * loops - 1), Some((slot, Pose::Idle as u32, 49 + 41)), "the last loop's last frame");
+    assert_eq!(frame_at(&mut w, 49 + 42 * loops), None, "done");
 }
 
 #[test]
