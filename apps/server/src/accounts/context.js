@@ -120,8 +120,10 @@ export class RequestContext {
 
   /** Staff routes: the role and an active account (pending or deactivated staff have no powers). */
   async requireRole(role) {
-    const user = await this.requireUser({ active: true });
+    const user = await this.requireUser();
     if (ROLE_RANK[user.role] < ROLE_RANK[role]) throw new HttpError(403, 'forbidden', 'You do not have permission for this.');
+    const status = effectiveStatus(user);
+    if (status !== 'active') throw inactiveError(status);
     return user;
   }
 
