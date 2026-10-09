@@ -21,6 +21,7 @@ import {
   STARTING_CASH,
   STARTING_UNITS,
   TEAM_MAX,
+  TECH_BUILDINGS,
   TECH_LEVELS,
   WEATHER_MODES,
 } from './constants.js';
@@ -32,6 +33,7 @@ export const LOBBY_OPTION_KEYS = [
   'mapStyle',
   'biome',
   'weather',
+  'techBuildings',
   'startingCash',
   'startingUnits',
   'techLevel',
@@ -48,6 +50,7 @@ export function validateLobbyOptions(v, what = 'options') {
     mapStyle: oneOf(v.mapStyle, MAP_STYLES, `${what}.mapStyle`),
     biome: oneOf(v.biome, BIOMES, `${what}.biome`),
     weather: oneOf(v.weather, WEATHER_MODES, `${what}.weather`),
+    techBuildings: oneOf(v.techBuildings, TECH_BUILDINGS, `${what}.techBuildings`),
     startingCash: oneOf(v.startingCash, STARTING_CASH, `${what}.startingCash`),
     startingUnits: oneOf(v.startingUnits, STARTING_UNITS, `${what}.startingUnits`),
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),

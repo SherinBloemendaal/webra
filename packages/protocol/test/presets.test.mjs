@@ -18,8 +18,11 @@ import {
 
 const bundle = (over = {}) => ({ ...presetOptions(DEFAULT_OPTIONS), ...over });
 
-test('a mode sets every lobby option but the seed and the map size', () => {
-  assert.deepEqual([...PRESET_KEYS].sort(), LOBBY_OPTION_KEYS.filter((k) => k !== 'seed' && k !== 'mapSize').sort());
+test('a mode sets every lobby option but the seed, the map size and the tech buildings', () => {
+  // techBuildings came after saved modes existed: a bundle that had to name it
+  // would refuse every mode saved before.
+  const left = new Set(['seed', 'mapSize', 'techBuildings']);
+  assert.deepEqual([...PRESET_KEYS].sort(), LOBBY_OPTION_KEYS.filter((k) => !left.has(k)).sort());
 });
 
 test('built-in modes: unique ids and names, complete bundles the server accepts', () => {

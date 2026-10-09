@@ -112,6 +112,13 @@ export const MAP_STYLES = ['random', 'land', 'rivers', 'lakes', 'islands'];
 export const BIOMES = ['random', 'temperate', 'snow', 'desert'];
 /** What weather does: visuals and modest gameplay effects, visuals only, or nothing. */
 export const WEATHER_MODES = ['full', 'cosmetic', 'off'];
+/**
+ * Tech buildings of a generated map (engine/src/mapgen/settlements.rs,
+ * OpenRA's map generator option "Buildings"): none, standard (a derrick per
+ * base and a hospital in the middle), extra (plus command posts and
+ * communications centers between neighbours), oil derricks only, oil rush.
+ */
+export const TECH_BUILDINGS = ['none', 'standard', 'extra', 'oilonly', 'oilrush'];
 
 export const DEFAULT_OPTIONS = Object.freeze({
   seed: 1,
@@ -119,6 +126,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
   mapStyle: 'random',
   biome: 'random',
   weather: 'full',
+  techBuildings: 'standard',
   startingCash: 5000,
   startingUnits: 'mcv',
   techLevel: 'unrestricted',
