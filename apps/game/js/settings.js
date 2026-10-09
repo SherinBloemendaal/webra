@@ -11,7 +11,7 @@
 // account; storage can be missing or throw (private windows, blocked site
 // data, Node), and the game then runs on defaults for the session.
 
-import { defaultRegistry, GROUPS } from './registry.js';
+import { createRegistry, defaultRegistry, GROUPS } from './registry.js';
 
 /** Setting name -> [registry group, registry key]. */
 export const KEYS = Object.freeze({
@@ -38,10 +38,12 @@ export const SCHEMA = Object.freeze(Object.fromEntries(Object.entries(KEYS).map(
 const REVERSE = new Map(Object.entries(KEYS).map(([name, [group, key]]) => [`${group}.${key}`, name]));
 
 /**
- * A settings store over a registry (js/registry.js createRegistry). The
- * module exports one over the page's registry; tests create their own.
+ * A settings store over a registry (js/registry.js createRegistry), or null
+ * for one kept in memory only. The module exports one over the page's
+ * registry; tests create their own.
  */
-export function createSettings(registry = defaultRegistry()) {
+export function createSettings(source = defaultRegistry()) {
+  const registry = source ?? createRegistry({ storage: null });
   const where = (name) => {
     if (!Object.hasOwn(KEYS, name)) throw new Error(`Unknown setting "${name}"`);
     return KEYS[name];
