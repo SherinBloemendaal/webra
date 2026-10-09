@@ -295,7 +295,8 @@ test('the frame table matches the Frame struct of the sprite shader', () => {
 
 // ---- Cameos ---------------------------------------------------------------------------
 
-const cameoActors = actors.filter((a) => a.kind !== 'mine');
+// Mines, crates and husks are never built: no cameo.
+const cameoActors = actors.filter((a) => !['mine', 'crate', 'husk'].includes(a.kind));
 
 /** One recorded cameo: [drawn, log]. */
 function recordCameo(id, kind, size = 64, opts = {}) {

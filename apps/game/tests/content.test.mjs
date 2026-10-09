@@ -462,7 +462,11 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
       .filter((l) => l && !l.startsWith('#')),
   );
   const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp']);
-  for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f), `${f} is made by OpenRA`);
+  // Red Alert's own crate overlays (SCRATE and WCRATE in its source) share
+  // their names with OpenRA's crate files; only their first frame is used.
+  const crates = new Set(['scrate.shp', 'wcrate.shp']);
+  for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f) || crates.has(f), `${f} is made by OpenRA`);
+  for (const image of ['scrate', 'wcrate']) assert.deepEqual([SEQUENCES[image].land.start, SEQUENCES[image].land.length], [0, 1], image);
   // The War Factory: its roof and door from weap2.shp (four frames, then four damaged), a layer over the body.
   assert.equal(ACTOR_ART.WEAP.overlay, 'door');
   assert.deepEqual(ACTOR_ART.WEAP.second, { idle: 'build-top', damaged: 'damaged-build-top' });

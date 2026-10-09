@@ -23,6 +23,8 @@ export const KEYS = Object.freeze({
   playerStanceColors: ['game', 'playerStanceColors'],
   pixelRatioCap: ['game', 'pixelRatioCap'],
   lowQuality: ['game', 'lowQuality'],
+  // Camera shake and flashes (js/battlefx.js): 'auto', 'on' or 'off'.
+  reduceMotion: ['game', 'reduceMotion'],
   // 'auto' or a factor (js/scale.js): the size of the chrome, and of units and terrain.
   uiScale: ['game', 'uiScale'],
   gameScale: ['game', 'gameScale'],

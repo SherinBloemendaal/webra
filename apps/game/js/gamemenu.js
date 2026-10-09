@@ -43,6 +43,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'scaleAuto',
   'pixelRatioCap',
   'lowQuality',
+  'reduceMotion',
   'fullscreen',
   'edgeScrollSpeed',
   'keyScrollSpeed',
@@ -130,6 +131,7 @@ export const MENU_SETTINGS = Object.freeze([
   'gameScale',
   'pixelRatioCap',
   'lowQuality',
+  'reduceMotion',
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
@@ -470,6 +472,9 @@ export class GameMenu {
     list.append(el('h2', null, 'Display'), el('p', 'hint game-menu-explain', DISPLAY_HELP));
     list.append(this.uiScaleRow(), this.gameScaleRow());
     list.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
+    // Camera shake and the nuke's flash (js/battlefx.js).
+    const motion = choice('reduceMotion', 'Reduce motion', SCHEMA.reduceMotion.labels);
+    list.append(withHelp(motion, 'reduceMotion', motion.querySelector('[role="radiogroup"]')));
     const fs = this.opts.fullscreen;
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());

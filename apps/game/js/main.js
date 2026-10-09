@@ -41,6 +41,7 @@ import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
+import { BattleFx, motionReduced } from './battlefx.js';
 import { AttackMoveTip, TipView } from './hints.js';
 import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
@@ -756,7 +757,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
   // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
   const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
-  renderer.setMapSize(game.map_width(), game.map_height());
+  const mapW = game.map_width();
+  const mapH = game.map_height();
+  renderer.setMapSize(mapW, mapH);
   // Terrain art of the map's biome (js/art/terrain.js), or tile terrain from
   // installed content (js/content/terrain.js); the cell layer is built from
   // the first terrain upload below (terrain types never change).
@@ -903,6 +906,19 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     });
   }
   audio?.onAnnounce((key) => notices.announce(key));
+  // Floating cash, camera shake, the nuke flash, game lines and the time limit
+  // clock of the lobby options and big warheads (js/battlefx.js, presentation only).
+  const cssColor = (c) => `rgb(${(c ?? [1, 1, 1]).slice(0, 3).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(', ')})`;
+  const battle = new BattleFx({
+    field: $('field'),
+    rules,
+    pxPerWorld: rules.pxPerCell / Game.world_units_per_cell(),
+    allied: (owner) => !!viewer || allies(player, owner),
+    colorOf: (owner) => cssColor(TEAM_COLORS[owner]),
+    nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
+    line: (text) => notices.push(text),
+    reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
+  });
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -1364,6 +1380,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
     pings.onEvents(events, now);
+    battle.onEvents(events, BattleFx.ticksAt(now / 1000), (x, y) => {
+      // In sight now: the frame's fog (255 visible) of the cell.
+      const cx = Math.floor(x / rules.pxPerCell);
+      const cy = Math.floor(y / rules.pxPerCell);
+      const fog = f.fog();
+      return !!viewer || (cx >= 0 && cy >= 0 && cx < mapW && cy < mapH && fog[cy * mapW + cx] === 255);
+    });
     audio?.frame(v, () => f.fog(), events);
 
     // UI rects may call into wasm (placement preview, main thread mode), which
@@ -1384,7 +1407,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
-    renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
+    const fxTick = BattleFx.ticksAt(now / 1000);
+    const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
+    const drawCamera = shakeX || shakeY ? { ...input.camera, x: input.camera.x + shakeX, y: input.camera.y + shakeY } : input.camera;
+    renderer.draw(drawCamera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
       screenshotPending = false;
@@ -1424,6 +1452,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (f.weather) weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText);
       touch.update();
       if (state) debug.update(state);
+      // The time limit clock (js/battlefx.js), for players and spectators alike.
+      if (state) battle.timeLimit(state);
       if (state && !stress) {
         winner = state.winner ?? null;
         const event = flow.update(state, { ended: !!replay?.ended });

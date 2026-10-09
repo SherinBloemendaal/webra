@@ -116,7 +116,8 @@ export const COMPOSITES = Object.freeze({
     for (const id of ids) {
       const st = game.deploy_state(player, id);
       const ab = game.ability_deploy_state(player, id);
-      if (st === 1 || ab === 1 || ab === 3) return 1;
+      // 3: a production structure the deploy command makes primary (engine primary.rs).
+      if (st === 1 || st === 3 || ab === 1 || ab === 3) return 1;
       if (st === 2 || ab === 2) best = 2;
     }
     return best;

@@ -70,6 +70,9 @@ export const WEAPON_SYNTH = {
   UnitExplodeSubmarine: [null, 'splash'],
   UnitExplodePlane: [null, 'explosion_large'],
   ArtilleryExplode: [null, 'explosion_large'],
+  // Crate explosions (engine/src/crates.rs: misc.yaml ExplodeCrateAction).
+  CrateNapalm: [null, 'burn'],
+  CrateExplosion: [null, 'explosion_large'],
 };
 
 /** Memoize a sound lookup: battles ask for the same few sounds thousands of times. */
@@ -99,7 +102,7 @@ export const impactSound = cached((weapon, water) => {
 // ---- Actors ----------------------------------------------------------------------
 
 /** Kind codes of audio events (engine/src/sound_events.rs kind_code). */
-export const KINDS = ['building', 'infantry', 'vehicle', 'ship', 'aircraft', 'mine'];
+export const KINDS = ['building', 'infantry', 'vehicle', 'ship', 'aircraft', 'mine', 'husk', 'crate'];
 
 /** Infantry death screams (sounds.mix). */
 const INFANTRY_DIE = ['dedman1', 'dedman2', 'dedman3', 'dedman4', 'dedman5', 'dedman6', 'dedman7', 'dedman8', 'dedman10'];
@@ -107,7 +110,7 @@ const INFANTRY_DIE = ['dedman1', 'dedman2', 'dedman3', 'dedman4', 'dedman5', 'de
 /** Death sound of an actor (id from rules, kind name). */
 export const deathSound = cached((actorId, kind) => {
   if (kind === 'infantry') return { synth: 'infantry_die', originals: INFANTRY_DIE.map(fileName) };
-  if (kind === 'mine') return { synth: null, originals: [] };
+  if (kind === 'mine' || kind === 'husk' || kind === 'crate') return { synth: null, originals: [] };
   const synth = kind === 'building' ? 'explosion_building' : kind === 'ship' ? 'explosion_ship' : 'explosion_large';
   return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName) };
 });
@@ -224,7 +227,34 @@ export const EVA = {
   nukeLaunched: { text: 'Nuclear missile launched', chime: 'eva_alarm', originals: ['alaunch1'], cooldown: 5 },
   missionAccomplished: { text: 'Mission accomplished', chime: 'eva_good', originals: ['misnwon1'], cooldown: 5 },
   missionFailed: { text: 'Mission failed', chime: 'eva_loss', originals: ['misnlst1'], cooldown: 5 },
+  // OpenRA PrimaryBuilding SelectionNotification (engine/src/primary.rs).
+  primaryBuilding: { text: 'Primary building selected', chime: 'eva_info', originals: ['pribldg1'], cooldown: 1 },
+  // OpenRA TimeLimitManager TimeLimitWarnings (world.yaml; engine/src/gamerules.rs).
+  timeLimit40: { text: '40 minutes remaining', chime: 'eva_warn', originals: ['40minr'], cooldown: 5 },
+  timeLimit30: { text: '30 minutes remaining', chime: 'eva_warn', originals: ['30minr'], cooldown: 5 },
+  timeLimit20: { text: '20 minutes remaining', chime: 'eva_warn', originals: ['20minr'], cooldown: 5 },
+  timeLimit10: { text: '10 minutes remaining', chime: 'eva_warn', originals: ['10minr'], cooldown: 5 },
+  timeLimit5: { text: '5 minutes remaining', chime: 'eva_warn', originals: ['5minr'], cooldown: 5 },
+  timeLimit4: { text: '4 minutes remaining', chime: 'eva_warn', originals: ['4minr'], cooldown: 5 },
+  timeLimit3: { text: '3 minutes remaining', chime: 'eva_warn', originals: ['3minr'], cooldown: 5 },
+  timeLimit2: { text: '2 minutes remaining', chime: 'eva_warn', originals: ['2minr'], cooldown: 5 },
+  timeLimit1: { text: '1 minute remaining', chime: 'eva_alarm', originals: ['1minr'], cooldown: 5 },
 };
+
+/** EVA key of a TimeLimitManager warning (the notification name the engine's rules give), or null. */
+export function timeLimitLine(notification) {
+  const m = /^(?:Warning)?(Fourty|Thirty|Twenty|Ten|Five|Four|Three|Two|One)Minutes?Remaining$/.exec(notification ?? '');
+  if (!m) return null;
+  const minutes = { Fourty: 40, Thirty: 30, Twenty: 20, Ten: 10, Five: 5, Four: 4, Three: 3, Two: 2, One: 1 }[m[1]];
+  return `timeLimit${minutes}`;
+}
+
+/**
+ * The sound of a crate action (OpenRA CrateAction.Sound, engine rules
+ * `crateActions`), played where the crate was; WebRA's own sound when the
+ * original is not installed.
+ */
+export const crateSound = cached((file) => ({ synth: 'power_up', originals: [fileName(file)] }));
 
 for (const e of Object.values(EVA)) e.originals = e.originals.map(fileName);
 

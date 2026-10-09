@@ -12,7 +12,8 @@ test('announcer lines read like Red Alert: "Unit ready."', () => {
   assert.equal(announcementText('constructionComplete'), 'Construction complete.');
   assert.equal(announcementText('insufficientFunds'), 'Insufficient funds.');
   assert.equal(announcementText('nope'), null);
-  for (const key of Object.keys(EVA)) assert.match(announcementText(key), /^[A-Z].*\.$/, key);
+  // OpenRA's time limit lines start with the minutes: "5 minutes remaining."
+  for (const key of Object.keys(EVA)) assert.match(announcementText(key), /^[A-Z0-9].*\.$/, key);
 });
 
 test('a repeated line counts up instead of stacking', () => {

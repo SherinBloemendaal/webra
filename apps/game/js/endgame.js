@@ -74,7 +74,8 @@ export class EndGameFlow {
    */
   update(state, { ended = false } = {}) {
     if (!state) return null;
-    const over = state.winner !== null && state.winner !== undefined;
+    // A winner, or the end without one (`gameOver`: the time limit can end a game where everyone lost).
+    const over = (state.winner !== null && state.winner !== undefined) || !!state.gameOver;
     this.over = this.over || over;
     this.won = !!state.won;
     this.ended = this.ended || ended;

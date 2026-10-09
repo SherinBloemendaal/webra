@@ -34,6 +34,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
+import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
@@ -494,7 +495,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations, leftovers), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -545,6 +546,15 @@ export function spriteList(actors) {
       list.push([a.width * 24, a.height * 24, draw]);
       const anim = buildingAnim(key);
       list.push(BUILDING_TURRET[key] ?? (anim ? layerSprite(anim, 0) : null));
+    } else if (a.kind === 'crate') {
+      // Crates (art/leftovers.js): the land image, then the water image.
+      const d = CRATE_DRAW[key] ?? CRATE_DRAW.CRATE;
+      list.push(d.body, d.turret);
+    } else if (a.kind === 'husk') {
+      // Husks: the vehicle's hull, charred (art/leftovers.js); no turret.
+      const base = UNIT_DRAW[spriteKey(huskBase(a.id))] ?? fallbackUnit({ ...a, kind: 'vehicle' });
+      if (!base) throw new Error(`no sprite for husk ${a.id} (looked up as ${huskBase(a.id)})`);
+      list.push(huskOf(base.body), null);
     } else {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
@@ -560,6 +570,7 @@ export function spriteList(actors) {
     slots(ABILITY_SPECIALS),
     slots(VETERANCY_SPECIALS),
     slots(DECORATION_SPECIALS),
+    slots(LEFTOVER_SPECIALS),
   );
 }
 

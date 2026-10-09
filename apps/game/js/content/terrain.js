@@ -29,14 +29,14 @@
 // and from EXTRA_TILE_BASE on (cell R + 256 G); ore and gem overlays sit at
 // fixed tiles in between.
 
-import { RESOURCES, TERRAIN, TREES } from './tables.js';
+import { RESOURCES, SMUDGES, TERRAIN, TREES } from './tables.js';
 import { decodeSprite } from './shp.js';
 import { TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { resolveSequence, sequenceFile } from './sequences.js';
 
 export const ATLAS_COLS = 16;
 export const ORIGINAL_TILE = 24;
-/** Tiles for the map itself: 0 .. TERRAIN_TILES - 1, then EXTRA_TILE_BASE .. MAX_TILE_INDEX. */
+/** Tiles for the map itself: 0 .. TERRAIN_TILES - 1, then EXTRA_TILE_BASE .. SMUDGE_TILE_BASE - 1. */
 export const TERRAIN_TILES = 192;
 export const ORE_TILE_BASE = 192;
 export const ORE_LEVELS = 12;
@@ -47,6 +47,16 @@ export const GEM_VARIANTS = 4;
 export const EXTRA_TILE_BASE = 256;
 /** Largest tile index a cell can name (shaders/terrain.wgsl reads R + 256 G). */
 export const MAX_TILE_INDEX = 1023;
+/**
+ * Scorch marks and craters (engine/src/smudges.rs) at fixed tiles at the end
+ * of the atlas: (type * SMUDGE_VARIANTS + variant) * SMUDGE_DEPTHS + depth,
+ * type 0 scorch, 1 crater (shaders/terrain.wgsl). Map tiles stay below.
+ */
+export const SMUDGE_TILE_BASE = 960;
+export const SMUDGE_VARIANTS = 6;
+export const SMUDGE_DEPTHS = 5;
+/** The atlas has the smudge tiles. */
+export const ART_SMUDGES = 16;
 /** Globals.art.x bits (shaders/common.wgsl). */
 export const ART_TILES = 1;
 export const ART_ORE = 2;
@@ -538,7 +548,7 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
   const place = (key, rgba) => {
     if (index.has(key)) return index.get(key);
     const k = nextIndex();
-    if (k > MAX_TILE_INDEX) return null;
+    if (k >= SMUDGE_TILE_BASE) return null;
     order.push(key);
     index.set(key, k);
     tiles.push([k, rgba]);
@@ -580,7 +590,29 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
     cells[i * 4 + 3] = 255;
   }
   report.tiles = index.size;
-  const highest = Math.max(GEM_TILE_BASE + GEM_LEVELS * GEM_VARIANTS - 1, ...tiles.map(([k]) => k));
+  // Smudge tiles: a frame per depth (the last one repeats), every variant of both types or none.
+  const smudgeTiles = [];
+  for (const [type, list] of [SMUDGES.scorch ?? [], SMUDGES.crater ?? []].entries()) {
+    for (let v = 0; v < SMUDGE_VARIANTS; v++) {
+      const def = list[v];
+      const s = def ? sprite(sequenceFile(def, tileset)) : null;
+      let r = null;
+      try {
+        r = s ? resolveSequence(def, s.frames.length) : null;
+      } catch {
+        r = null;
+      }
+      if (!r || !r.fileFrames.length) continue;
+      for (let d = 0; d < SMUDGE_DEPTHS; d++) {
+        const f = s.frames[r.fileFrames[Math.min(d, r.fileFrames.length - 1)]];
+        if (!f || !f.width) continue;
+        smudgeTiles.push([SMUDGE_TILE_BASE + (type * SMUDGE_VARIANTS + v) * SMUDGE_DEPTHS + d, indexedTile(f.data, f.width, f.height, lookup, ORIGINAL_TILE)]);
+      }
+    }
+  }
+  const smudges = smudgeTiles.length === 2 * SMUDGE_VARIANTS * SMUDGE_DEPTHS;
+  report.smudges = smudges;
+  const highest = Math.max(GEM_TILE_BASE + GEM_LEVELS * GEM_VARIANTS - 1, ...tiles.map(([k]) => k), smudges ? SMUDGE_TILE_BASE + smudgeTiles.length - 1 : 0);
   const atlas = blankAtlas(ORIGINAL_TILE, Math.ceil((highest + 1) / ATLAS_COLS), !!rotation);
   for (const [k, rgba] of tiles) putTile(atlas, k, rgba);
   let flags = ART_TILES;
@@ -618,6 +650,10 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
   };
   if (overlays(RESOURCES.ore, ORE_TILE_BASE, ORE_LEVELS, ORE_VARIANTS)) flags |= ART_ORE;
   if (overlays(RESOURCES.gems, GEM_TILE_BASE, GEM_LEVELS, GEM_VARIANTS)) flags |= ART_GEMS;
+  if (smudges) {
+    for (const [k, rgba] of smudgeTiles) putTile(atlas, k, rgba);
+    flags |= ART_SMUDGES;
+  }
   return { atlas: { ...atlas, flags, filter: 'nearest' }, cells, report };
 }
 

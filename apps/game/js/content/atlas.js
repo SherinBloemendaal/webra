@@ -22,7 +22,8 @@
 //   those poses show frame `age` of the door sequence (MODE.INDEX) instead of
 //   looping it.
 
-import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES, TERRAIN } from './tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, LEFTOVER_ART, SEQUENCES, TERRAIN } from './tables.js';
+import { LEFTOVER_SPECIAL_OFFSET } from '../art/leftovers.js';
 import { decodeSprite, trimFrame } from './shp.js';
 import { ACTOR_SHADOW, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { MODE, POSE, POSE_COUNT, resolveSequence, sequenceFile } from './sequences.js';
@@ -207,8 +208,7 @@ export function poseTable(have, { wall = false, door = false } = {}) {
  * sequence name (content/tables.js ACTOR_ART). Returns `{ art, problems }`
  * with `art` null when the idle pose cannot be made.
  */
-function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under = null, door = false }) {
-  const seqs = SEQUENCES[image] ?? {};
+function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under = null, door = false, seqs = SEQUENCES[image] ?? {} }) {
   const images = [];
   const imageIndex = new Map();
   const problems = [];
@@ -342,6 +342,15 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     if (second && entry.overlay) out.layers.add(2 * t + 1);
     out.actors.push(a.id);
   });
+  // Leftover specials (fire, smoke, the PRIMARY tag, crate animations) after
+  // the actor slots and the other art modules' specials (js/art/leftovers.js).
+  const base = actors.length * 2 + LEFTOVER_SPECIAL_OFFSET;
+  LEFTOVER_ART.forEach((def, n) => {
+    if (!def) return;
+    const r = slotArt(`leftover${n}`, { idle: 'idle' }, { files, tileset, lookup, offset: [0, 0], wall: false, seqs: { idle: def } });
+    out.problems.push(...r.problems);
+    if (r.art) out.slots.set(base + n, r.art);
+  });
   return out;
 }
 
@@ -389,13 +398,20 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       }
     }
   }
-  // Specials (projectiles, effects, decorations) after the actor slots: packs only.
+  // Specials (projectiles, effects, decorations) after the actor slots: packs
+  // first, then the original leftover specials (originalSlots).
   for (const p of packs) {
     for (const [k, art] of p.slots) {
       if (k >= actorCount * 2 && !slots.has(k)) {
         slots.set(k, art);
         source.set(k, p.name ?? 'pack');
       }
+    }
+  }
+  for (const [k, art] of original?.slots ?? []) {
+    if (k >= actorCount * 2 && !slots.has(k) && art) {
+      slots.set(k, art);
+      source.set(k, 'original');
     }
   }
   return { slots, source, layers };

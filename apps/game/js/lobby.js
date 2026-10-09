@@ -18,6 +18,8 @@ import {
   STARTING_UNITS,
   TECH_LEVELS,
   GAME_SPEEDS,
+  TIME_LIMITS,
+  HANDICAPS,
   MAP_STYLES,
   BIOMES,
   WEATHER_MODES,
@@ -69,13 +71,19 @@ const SELECT_OPTIONS = [
   { key: 'startingUnits', label: 'Starting units', choices: STARTING_UNITS },
   { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
   { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
+  { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
 ];
 
 const TOGGLE_OPTIONS = [
+  { key: 'crates', label: 'Crates' },
+  { key: 'shortGame', label: 'Short game' },
   { key: 'fog', label: 'Fog of war' },
   { key: 'explored', label: 'Explored map' },
+  { key: 'allyBuildRadius', label: 'Ally build radius' },
   { key: 'buildRadius', label: 'Build radius' },
+  { key: 'separateTeamSpawns', label: 'Separate team spawns' },
   { key: 'redeployableMcv', label: 'Redeployable MCVs' },
+  { key: 'bounty', label: 'Kill bounties' },
   { key: 'oreRegrowth', label: 'Ore regrowth' },
   { key: 'cheats', label: 'Debug menu' },
 ];
@@ -96,6 +104,7 @@ export const HELP_KEYS = [
   'color',
   'faction',
   'team',
+  'handicap',
 ];
 
 let uid = 0;
@@ -799,6 +808,11 @@ export class Lobby {
         this.columnTips[key] = infoTip(key, { label });
         c.append(this.columnTips[key].root);
       }
+      // The team column also holds the handicap (OpenRA's lobby column).
+      if (key === 'team') {
+        this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
+        c.append(' / Handicap', this.columnTips.handicap.root);
+      }
       this.slotHead.append(c);
     }
 
@@ -928,9 +942,20 @@ export class Lobby {
     team.addEventListener('change', () => {
       this.state.players[slot].team = Number(team.value);
       this.renderProblem();
+      // Separate team spawns move team mates together on the preview.
+      this.schedulePreview();
     });
-    teamCell.append(team);
-    rec.team = team;
+    // Handicap (OpenRA): less firepower and armour, slower production.
+    const handicap = buildSelect(HANDICAPS, 'lobby-select lobby-handicap');
+    handicap.value = String(player.handicap ?? 0);
+    handicap.disabled = closed;
+    handicap.setAttribute('aria-label', `Player ${slot + 1} handicap`);
+    describedBy(handicap, this.columnTips.handicap);
+    handicap.addEventListener('change', () => {
+      this.state.players[slot].handicap = Number(handicap.value);
+    });
+    teamCell.append(team, handicap);
+    Object.assign(rec, { team, handicap });
 
     // Remove.
     const removeCell = cell('lobby-cell-remove', '');
@@ -1002,6 +1027,7 @@ export class Lobby {
         this.state[opt.key] = box.checked;
         this.optionEdited();
         this.renderCheats();
+        if (opt.key === 'separateTeamSpawns') this.schedulePreview();
       });
       this.optionToggles[opt.key] = box;
       label.append(box, el('span', null, opt.label));

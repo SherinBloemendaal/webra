@@ -7,7 +7,7 @@
 // No Web Audio here: the director talks to a `sink` and reads a clock, so the
 // rules are unit tested in Node (tests/audio.test.mjs).
 
-import { fireSound, impactSound, deathSound, placeSound, sellSound, transformSounds, deployBlocked, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
+import { fireSound, impactSound, deathSound, placeSound, sellSound, transformSounds, deployBlocked, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS, crateSound, timeLimitLine } from './catalog.js';
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const EV = {
@@ -27,6 +27,14 @@ export const EV = {
   UNIT_DAMAGED: 14,
   TRANSFORMED: 15,
   DEPLOY_BLOCKED: 16,
+  // Lobby options and battlefield effects (crates.rs, gamerules.rs, smudges.rs, primary.rs).
+  CRATE_COLLECTED: 40,
+  BOUNTY: 41,
+  TIME_LIMIT: 42,
+  PLAYER_LOST: 43,
+  SCREEN_SHAKE: 44,
+  FLASH: 45,
+  PRIMARY_BUILDING: 46,
 };
 export const STRIDE = 6;
 
@@ -272,6 +280,21 @@ export class Director {
           break;
         case EV.BEACON_PLACED:
           if (this.allied(owner)) this.sink.effect(BUTTON_SOUNDS.beacon, { gain: 0.8, pan: 0 });
+          break;
+        // Crates (engine/src/crates.rs): the action's sound where the crate was, its line for the collector.
+        case EV.CRATE_COLLECTED: {
+          const act = this.actor(b).crateActions?.[a];
+          if (act?.sound && (own || visible(x, y))) this.queue(crateSound(act.sound), x, y);
+          break;
+        }
+        // Time limit warnings (engine/src/gamerules.rs): everyone hears them; b is the rules' warning.
+        case EV.TIME_LIMIT: {
+          const key = a > 0 ? timeLimitLine(this.rules.timeLimit?.notifications?.[b]) : null;
+          if (key) this.announce(key);
+          break;
+        }
+        case EV.PRIMARY_BUILDING:
+          if (own) this.announce('primaryBuilding');
           break;
         case EV.POWER_ACTIVATED: {
           const sound = powerSound(a);

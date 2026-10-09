@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
 import { DECORATION_SPECIALS } from '../js/art/decorations.js';
+import { LEFTOVER_SPECIALS, LEFTOVER_SPECIAL_OFFSET } from '../js/art/leftovers.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from '../js/art/veterancy.js';
 import { veterancyText } from '../js/sidebar.js';
 
@@ -30,6 +31,13 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  // OpenRA's other lobby options (protocol 6).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
   cheats: false,
 };
 
@@ -97,10 +105,13 @@ test('prone poses and rank decorations sit in the sprite slots the engine draws'
   const list = spriteList(actors);
   // engine/src/render.rs SpriteIds: 12 built-in specials, then 8 slots per art module; veterancy is the fifth.
   const base = actors.length * 2 + 12 + 4 * SPECIAL_SLOTS;
-  // The repair and power down marks (art/decorations.js) are the sixth and last.
-  assert.equal(list.length, base + 2 * SPECIAL_SLOTS);
+  // The repair and power down marks (art/decorations.js) are the sixth, the
+  // leftovers (art/leftovers.js: husk fire, PRIMARY tag, crate animations) the seventh and last.
+  assert.equal(list.length, base + 3 * SPECIAL_SLOTS);
   VETERANCY_SPECIALS.forEach((s, k) => assert.equal(list[base + k], s));
   DECORATION_SPECIALS.forEach((s, k) => assert.equal(list[base + SPECIAL_SLOTS + k], s));
+  LEFTOVER_SPECIALS.forEach((s, k) => assert.equal(list[base + 2 * SPECIAL_SLOTS + k], s));
+  assert.equal(base + 2 * SPECIAL_SLOTS, actors.length * 2 + LEFTOVER_SPECIAL_OFFSET, 'render.rs SpriteIds::leftovers_base');
   for (const [k, a] of actors.entries()) {
     if (a.kind !== 'infantry') continue;
     const key = a.id.replace(/R1$/, '');

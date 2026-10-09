@@ -66,6 +66,13 @@ test('orders the engine emits pass protocol validation and round-trip into apply
     buildRadius: true,
     redeployableMcv: true,
     oreRegrowth: true,
+    // OpenRA's other lobby options (protocol 6).
+    crates: true,
+    shortGame: true,
+    bounty: false,
+    separateTeamSpawns: true,
+    allyBuildRadius: true,
+    timeLimit: 0,
   };
   const game = Game.from_options(JSON.stringify(options));
   game.set_lockstep(true);

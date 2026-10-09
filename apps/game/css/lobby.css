@@ -704,6 +704,12 @@
 }
 
 /* Closed slots: nobody plays there, so their settings fade out. */
+/* Team and handicap share a column (OpenRA's lobby). */
+#menu .lobby-cell-team {
+  display: grid;
+  gap: 4px;
+}
+
 #menu .lobby-slot-closed .lobby-cell-color,
 #menu .lobby-slot-closed .lobby-cell-faction,
 #menu .lobby-slot-closed .lobby-cell-team {

@@ -58,6 +58,14 @@ TILESETS = {
 # Actors are drawn with the "player" palette, which is temperat.pal on every tileset.
 ACTOR_PALETTE = 'temperat.pal'
 
+# Smudge images (world.yaml SmudgeLayer@SCORCH and @CRATER): one sequence per
+# variant, a frame per depth (engine/src/smudges.rs).
+SMUDGE_IMAGES = {'scorch': 'scorches', 'crater': 'craters'}
+# The leftover specials (engine/src/husks.rs LEFTOVER_*, same order): husk and
+# scorch fire, crater smoke, the PRIMARY tag and the crate pickup animations.
+LEFTOVER_ART = [('fire', '1'), ('smoke_m', 'idle'), ('pips', 'tag-primary'), ('crate-effects', 'levelup'), ('crate-effects', 'heal'),
+                ('crate-effects', 'hide-map'), ('crate-effects', 'reveal-map'), ('crate-effects', 'invuln')]
+
 TREES = ['t01', 't02', 't03', 't05', 't06', 't07', 't08', 't10', 't11', 't12', 't13', 't14', 't15', 't16', 't17']
 
 # OpenRA RotationPaletteEffect (mods/ra/rules/palettes.yaml): the terrain
@@ -116,11 +124,29 @@ ORIGINAL_FILES = {
     'afldidle.shp': 'afld.shp',
     'tran2.shp': 'tran.shp',
     'msloicon2.shp': 'msloicon.shp',
+    # Husks of the ore truck and the MCV: Red Alert has none, OpenRA draws
+    # them; the vehicles' own frames (32 facings first in both) stand in, and
+    # the engine darkens them like OpenRA's husks (engine/src/husks.rs).
+    'hhusk.shp': 'harv.shp',
+    'hhusk2.shp': 'harv.shp',
+    'mcvhusk.shp': 'mcv.shp',
+    # Smudges OpenRA made a snow version of: the temperate original.
+    'cr4.sno': 'cr4.tem',
+    'cr5.sno': 'cr5.tem',
+    'sc4.sno': 'sc4.tem',
 }
 # Sequences whose OpenRA file has another layout than the original one.
 ORIGINAL_SEQUENCES = {
     # weap3.shp has ten door frames; the original weap2.shp has four, then four damaged ones.
     ('weap', 'build-top'): {'file': 'weap2.shp', 'start': 0, 'length': 4},
+    # Crates: OpenRA's scrate.shp and wcrate.shp hold idle, land and water
+    # frames; Red Alert's overlays (SCRATE, WCRATE, WWCRATE in its source) are
+    # a crate on land each and the crate in water.
+    ('scrate', 'idle'): {'file': 'scrate.shp', 'start': 0, 'length': 1},
+    ('scrate', 'land'): {'file': 'scrate.shp', 'start': 0, 'length': 1},
+    ('scrate', 'water'): {'file': 'wwcrate.shp', 'start': 0, 'length': -1},
+    ('wcrate', 'idle'): {'file': 'wcrate.shp', 'start': 0, 'length': 1},
+    ('wcrate', 'land'): {'file': 'wcrate.shp', 'start': 0, 'length': 1},
 }
 # OpenRA's files with no original counterpart: sequences using them are left
 # out (fake structures show the real cameo, OpenRA's own units keep WebRA art,
@@ -128,6 +154,8 @@ ORIGINAL_SEQUENCES = {
 NO_ORIGINAL = {
     'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
     'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp',
+    # Crate pickup animations OpenRA drew (crate-effects levelup and heal): WebRA art.
+    'levelup.shp', 'invun.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
@@ -352,6 +380,13 @@ def actor_art(actors, seqs):
                 got = use(image, bib.get('Sequence', ['bib'])[0])
                 if got:
                     entry['bib'] = got
+        elif kind == 'crate':
+            # The crate on land (body) and in water (second slot), OpenRA WithCrateBody.
+            entry['body'] = poses(image, {'idle': 'land'})
+            entry['second'] = poses(image, {'idle': 'water'})
+        elif kind == 'husk':
+            entry['body'] = poses(image, {'idle': 'idle'})
+            entry['second'] = {}
         elif kind == 'infantry':
             entry['body'] = poses(image, {'idle': 'stand', 'move': 'run', 'attack': 'shoot'})
             entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-shoot'})
@@ -447,6 +482,11 @@ def main():
         if name in res:
             resources['gems'].append(normalize('resources', name, res))
     terrain = terrain_tables()
+    smudges = {}
+    for kind, image in SMUDGE_IMAGES.items():
+        names = [n for n in seqs[image] if n != 'Defaults']
+        smudges[kind] = [normalize(image, n, seqs[image]) for n in names]
+    leftovers = [normalize(image, name, seqs[image]) if image in seqs and name in seqs[image] else None for image, name in LEFTOVER_ART]
 
     files = {ACTOR_PALETTE}
     for info in terrain.values():
@@ -466,6 +506,9 @@ def main():
         add_seq(rec)
     for rec in resources['ore'] + resources['gems']:
         add_seq(rec)
+    for rec in [r for v in smudges.values() for r in v] + leftovers:
+        if rec:
+            add_seq(rec)
     files.discard('')
 
     def js(v):
@@ -523,6 +566,12 @@ def main():
         '',
         '/** Ore and gem overlays (misc.yaml resources): one sequence per variant, a frame per density. */',
         f'export const RESOURCES = {js(resources)};',
+        '',
+        '/** Scorch marks and craters (misc.yaml scorches, craters): a sequence per variant, a frame per depth; null: no original. */',
+        f'export const SMUDGES = {js(smudges)};',
+        '',
+        '/** Leftover specials (engine husks.rs LEFTOVER_* order): fire, smoke, PRIMARY tag, crate animations; null: WebRA art. */',
+        f'export const LEFTOVER_ART = {js(leftovers)};',
         '',
         '/** Every file name the tables refer to: what the installer keeps from the player\'s files. */',
         f'export const GRAPHICS_FILES = {js(sorted(files))};',

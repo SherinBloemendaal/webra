@@ -278,6 +278,11 @@
   overflow-wrap: anywhere;
 }
 
+.online-cell .online-select + .online-select {
+  /* The handicap under the team (OpenRA's lobby column). */
+  margin-top: 4px;
+}
+
 .online-cell .online-select {
   width: 100%;
 }

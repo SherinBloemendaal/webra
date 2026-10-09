@@ -35,6 +35,8 @@ import {
   STARTING_UNITS,
   TEAM_MAX,
   TECH_LEVELS,
+  TIME_LIMITS,
+  HANDICAPS,
   MAP_STYLES,
   BIOMES,
   WEATHER_MODES,
@@ -100,12 +102,18 @@ const SELECT_OPTIONS = [
   ['startingUnits', 'Starting units', STARTING_UNITS.map((v) => [v, LABELS.startingUnits[v]])],
   ['techLevel', 'Tech level', TECH_LEVELS.map((v) => [v, LABELS.techLevel[v]])],
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
+  ['timeLimit', 'Time limit', TIME_LIMITS.map((v) => [v, v === 0 ? 'No limit' : `${v} minutes`])],
 ];
 const TOGGLES = [
+  ['crates', 'Crates'],
+  ['shortGame', 'Short game'],
   ['fog', 'Fog of war'],
   ['explored', 'Explored map'],
+  ['allyBuildRadius', 'Ally build radius'],
   ['buildRadius', 'Build radius'],
+  ['separateTeamSpawns', 'Separate team spawns'],
   ['redeployableMcv', 'Redeployable MCVs'],
+  ['bounty', 'Kill bounties'],
   ['oreRegrowth', 'Ore regrowth'],
   ['cheats', 'Debug menu (cheats)'],
 ];
@@ -122,6 +130,7 @@ export const ONLINE_HELP_KEYS = [
   'faction',
   'colorOnline',
   'team',
+  'handicap',
   'spectators',
 ];
 
@@ -795,6 +804,11 @@ export class OnlineUI {
         this.columnTips[key] = infoTip(key, { label });
         c.append(this.columnTips[key].root);
       }
+      // The team column also holds the handicap (OpenRA's lobby column).
+      if (key === 'team') {
+        this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
+        c.append(' / Handicap', this.columnTips.handicap.root);
+      }
       this.slotHead.append(c);
     }
     this.spectatorTip = infoTip('spectators', { label: 'Spectators' });
@@ -959,9 +973,18 @@ export class OnlineUI {
         team.disabled = !editable;
         team.setAttribute('aria-label', `Player ${i + 1} team`);
         describedBy(team, this.columnTips.team);
-        const cells = [faction, color, team].map((c) => {
+        // OpenRA handicap: each player sets its own, the host an AI's.
+        const handicap = select(
+          HANDICAPS.map((h) => [h, `${h}%`]),
+          slot.handicap ?? 0,
+          (v) => this.send({ t: 'slot', slot: i, handicap: Number(v) }),
+        );
+        handicap.disabled = !editable;
+        handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
+        describedBy(handicap, this.columnTips.handicap);
+        const cells = [faction, color, [team, handicap]].map((c) => {
           const cell = el('div', 'online-cell');
-          cell.append(c);
+          cell.append(...[c].flat());
           return cell;
         });
         row.append(who, ...cells);
