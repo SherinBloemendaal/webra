@@ -345,6 +345,7 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/sessions/:id/ws` | WebSocket upgrade into the session's Durable Object |
 | `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash }`; shares a map file with this session only (see "Lobby maps") |
 | `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
+| `POST` | `/api/sessions/:id/resume` | host only, `X-WebRA-Member`: an online save file -> `{ id }`; the lobby resumes that saved game (see "Online saves") |
 | `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps only) |
 | `GET` | `/api/maps/:id` | the map JSON (published maps only) |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited); publishes it to the community list |
@@ -419,6 +420,7 @@ Client to server:
 | `kick` | `client` (host only: remove a spectator; players are removed through `slot`) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed; ready with the hash counts as installed) |
 | `rematch` | `accept: bool` (host: propose, then withdraw with `false`; players: accept or decline) | in game |
+| `save` | `accept: bool` (any player: propose, accept, decline; the proposer withdraws with `false`) | in game |
 | `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
 | `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
@@ -431,8 +433,10 @@ options, map, hostId, spectators: [{client, name, account?, mapState?}], maxSpec
 (human slots and spectators carry `account: true` when the name comes from a
 signed-in account, and `mapState` while the lobby has a map; `map` is null or
 `{ id, hash, name, modded, players, author, width, height, bytes, shared }`,
-looked up by the server, also in `start`), `rematch {state, by, accepted,
-waiting, msLeft?, reason?}` (see "Rematch"), `chat
+looked up by the server, also in `start`; `resume?` while the lobby resumes
+a save: `{ id, title, createdAt, ticks, waiting: [names] }`), `rematch {state, by, accepted,
+waiting, msLeft?, reason?}` (see "Rematch"), `save {state, ...}` and
+`start.resume?: { ticks, hash }` (see "Online saves"), `chat
 {from, text, team?}` (with `team: true` the line went to the sender's team
 only: the players of its non-zero team, the sender alone without a team, the
 spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
@@ -447,8 +451,9 @@ at `hello`. Version 5 added accounts: the optional hello `name`, the welcome
 bound to their account, and the error codes `account_required`,
 `account_inactive`, `banned` and `ip_banned` (sent in answer to `hello`, or
 when a ban drops a connected member with left reason `removed`). Version 6
-added lobby maps (the map details, `mapState`, `mapstate`, `kick`) and the
-rematch (`rematch` both ways, rejoining the lobby).
+added lobby maps (the map details, `mapState`, `mapstate`, `kick`), the
+rematch (`rematch` both ways, rejoining the lobby) and online saves (`save`
+both ways, `start.resume`, `lobby.resume`, online save files).
 
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
@@ -572,6 +577,70 @@ At the deadline connected members stay and the others lose their places.
 Other places open at once. A client that missed `rematch { state: 'lobby' }`
 (its connection was away) reconnects into the lobby and reloads the same way.
 The host starts the next game as usual.
+
+### Online saves
+
+Any player still in the game proposes saving it with `save { accept: true }`;
+everyone gets `save { state: 'open', by, accepted, waiting, msLeft }`. Every
+player still in the game (also a defeated one) must accept within 60 s
+(`SAVE_VOTE_MS`) and be connected; every human seat must still be in the game
+and signed in with an account (players are matched by account when the save
+is resumed). One decline, the proposer withdrawing or leaving, or the time
+running out ends it: `save { state: 'cancelled', reason }` (`declined`,
+`withdrawn`, `left`, `expired`, `desync`, `accounts`, `too_long`, `failed`),
+then 10 s before the next proposal. Spectators do not take part.
+
+Agreed: the server picks the save point, the first multiple of 25 at or
+after its next frame plus the order delay (no client ran it yet), and sends
+`save { state: 'agreed', tick }`. The game goes on; it does not pause (the
+save point is a tick in the past for everyone by the time the save is
+written, so nothing has to stand still). Every player reports its state hash
+at that tick anyway (`hash`). When all of them match, the server stores a
+record in D1 (`online_saves`, `online_save_members`): the save point
+(`ticks = tick + 1`), the agreed state hash, the SHA-256 of the order frames
+before the save point (computed from its order log in their validated form,
+`framesDigest`), the SHA-256 of the game options (`optionsDigest`), the map
+hash, the game version, the session name and the account of every seat. It
+answers `save { state: 'saved', id, ticks, hash }`, and every player's client
+writes the save file (section 7, `online.id` = the record) from its own
+recording into the browser's saves. Different hashes: `cancelled` with
+`desync`; no hash within 60 s (`SAVE_HASH_MS`): `expired`. The server keeps no
+orders, options or map of a save. Records are deleted after 90 days, beyond
+20 per account (the oldest go first) and when an account that played in
+them is purged.
+
+Resume: in the online browser, "Resume a saved game" lists the browser's
+online saves; the player creates a session as host (private by default, at
+least as many places as the save has players; the other players join with
+the invite link) and the client sends the file with
+`POST /api/sessions/:id/resume` and its member header. The Worker needs a
+signed-in account, 10 resumes per hour per network and at most 32 MiB; it
+validates the file (`parseReplay`), finds the record by `online.id` (404 when
+the server no longer keeps it), and requires the same save point, final state
+hash, game version, map hash, options digest and frames digest (409
+otherwise), orders within the order log limit (16 MiB) and the requester's
+account among the save's players (403). The map, when there is one, is
+checked like an upload and shared with the session (it stays unlisted). The
+session object checks the member key and the host role and that the session
+runs the save's game version, keeps the orders in its storage and turns the
+lobby into the saved game: the slots are the saved players with their
+resolved factions, colours and teams; each human slot is reserved for the
+account that played it, and only that account can take it (others may watch);
+the options and the map stay as saved. Lobby messages carry `resume` with the
+names the lobby still waits for; the host can start once every saved player
+is back, ready (which means agreeing to continue) and has the map.
+
+The start message carries the saved options exactly and `resume: { ticks,
+hash }`. Every member gets it with the saved orders as `log` messages and
+`sync { tick: ticks, check: { tick: ticks - 1, hash } }`: clients fast-forward
+like a rejoin and compare their state hash at the save point. A player whose
+hash differs does not continue; the others send `resume`. When every player
+caught up (or the catch-up time ran out for some, who may rejoin like after a
+lost connection), the relay starts at `ticks`: `back` with that tick for
+every player, then the empty frames `ticks .. ticks + delay - 1`, and the game
+goes on in lockstep. Orders and hashes before that are refused with
+`bad_state`. The resumed game records itself completely (it replays from tick
+0), so it can be saved again.
 
 ### Spectators
 
@@ -996,7 +1065,7 @@ about options added since; files of the running build are validated in full:
 ```jsonc
 {
   "format": "webra-replay", "version": 1,
-  "kind": "replay",                 // or "save" (skirmish only)
+  "kind": "replay",                 // or "save" (skirmish, or online with `online`)
   "mode": "skirmish",               // or "online"
   "engine": "0.3.0+abcdef12",       // Game version(): files only load in the same build
   "createdAt": 1760000000000,
@@ -1007,7 +1076,8 @@ about options added since; files of the running build are validated in full:
   "player": 0,                      // the recording player, null for a spectator
   "ticks": 1200,                    // ticks recorded
   "frames": [[12, [[0, [{ "o": "move", ... }]]]]],  // non-empty frames, tick < ticks, increasing
-  "hashes": [[250, "0123456789abcdef"]]            // state hash after N ticks, every 250 ticks
+  "hashes": [[250, "0123456789abcdef"]],           // state hash after N ticks, every 250 ticks
+  "online": { "id": "0123456789abcdef" }           // online saves only: the server's record (section 4)
 }
 ```
 
@@ -1024,12 +1094,16 @@ about options added since; files of the running build are validated in full:
 - Restart (`js/restart.js`): single player games and loaded saves restart
   from tick 0 with the same options and map through a page reload (the
   settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
-  viewer restarts playback in place. Online games have no restart.
+  viewer restarts playback in place. Online games have a rematch instead
+  (section 4).
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
   goes on from the save. Saves go to the browser (IndexedDB database
   `webra`, store `saves`, at most 50) or to a file.
+- An online save (mode `online`, with `online.id`) ends right after a hash
+  tick (`ticks - 1` is a multiple of 25) and is never loaded alone: it is
+  resumed online with its players (section 4, "Online saves").
 
 ## 8. Simulation worker (`apps/game/js/sim`)
 

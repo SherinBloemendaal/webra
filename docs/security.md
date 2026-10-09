@@ -615,6 +615,40 @@ game go back to its lobby for a rematch.
   place. Places of players who did not accept open at once (their keys are
   forgotten). The order log is deleted from storage.
 
+## Online saves (2026-10-09)
+
+Players can save a running online game and resume it later with the same
+players (docs/contracts.md section 4, "Online saves").
+
+- **What the server keeps.** Only what a resume is checked against: the save
+  point, the state hash every player reported there, SHA-256 digests of the
+  order frames and of the options, the map hash, the game version, the
+  session name and the account id of each seat (`online_saves`,
+  `online_save_members` in D1). The save file itself (options, map and every
+  order) stays in the players' browsers. Records are deleted after 90 days,
+  beyond 20 per account, and with an account that played in them when it is
+  purged (a save cannot be resumed without all of its players); the data
+  export lists them.
+- **Agreement.** Every player still in the game must accept and be connected,
+  and every human seat must be a signed-in account; spectators do not vote.
+  The record is written only when every player's state hash at the save
+  point matches, so a client cannot get a state of its own stored. The
+  frames digest comes from the server's own order log, not from any client.
+- **Resume checks.** Only a signed-in account that played in the save can
+  load it, as the host of the session (member key, constant time and bound to
+  the account, as for the map endpoints), within 10 resumes per hour per
+  network and 32 MiB. The file is validated strictly (`parseReplay`) and must
+  match the record exactly (save point, state hash, game version, map hash,
+  options digest, frames digest), so a player cannot resume with edited
+  orders, options or map. Its orders must fit the order log limit. Only the
+  accounts that played a seat can take it again; anybody else may only watch
+  (within the spectator places, with the session's password rules), as in any
+  game. The map is checked like an upload and shared with the session only.
+- **Fair restart.** Every client fast-forwards through the same orders and
+  compares its state hash with the saved one before it may continue; the
+  relay starts only when every player caught up, so nobody gets a head start.
+  Orders and hashes sent before that are refused.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

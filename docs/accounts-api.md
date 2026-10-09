@@ -771,8 +771,10 @@ Serialized size at most 32 KiB.
   their secrets), IP history (raw addresses with first and last seen), bans,
   the settings document, pending email tokens (purpose and dates only),
   uploaded maps (ids, names, hashes, `published`: in the community list or
-  only shared with online sessions, and when a session last used them), and
-  audit log entries that target the account.
+  only shared with online sessions, and when a session last used them),
+  saved online games it played in (`onlineSaves`: record id, time, session
+  name, ticks, game version and its seat), and audit log entries that target
+  the account.
 - `DELETE /api/account` `{ "confirm": "<username>" }` (recent
   re-authentication) -> `204`: the account becomes `deleted`, every session
   is revoked and the cookie cleared. It is purged 30 days later (an admin can
@@ -886,6 +888,10 @@ that is not banned, from an address that is not banned:
   works for the account it was issued to (`403 forbidden` otherwise; docs/
   contracts.md section 4, "Lobby maps"). The sharer's account id is stored
   with the map, which stays unlisted (not public).
+- `POST /api/sessions/:id/resume` (the host resumes a saved online game): a
+  signed-in account is always needed, also with the setting off (`403
+  account_required`), and it must have played in the save (`403 forbidden`).
+  Saving an online game needs every player signed in.
 - `GET /api/sessions/:id/ws`: the upgrade always succeeds for a well-formed
   request from the site's origin; the server answers the first `hello` with
   `error` and closes when the connection may not play: codes
@@ -1019,8 +1025,9 @@ on plain users).
   the status it had (`active` when unknown).
 - `POST /api/admin/users/:id/purge` `{ "confirm": "<username>" }` (admin,
   only for `deleted` accounts) -> `204`: removes the account and everything
-  stored about it now (maps it only shared with online sessions included;
-  maps it published stay, without the uploader). Audit entries about it keep
+  stored about it now (maps it only shared with online sessions and the
+  records of saved online games it played in included; maps it published
+  stay, without the uploader). Audit entries about it keep
   the action, actor and time; their before and after values are replaced by
   `{ "purged": true }`.
   Soft-deleted accounts are purged automatically after 30 days.
