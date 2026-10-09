@@ -628,8 +628,9 @@ function shelfPack(boxes, width, startY = 0) {
  * engine draws it for fogged buildings and those without power
  * (engine/src/overlays.rs, Game.set_building_overlays). For a layer that is
  * a pose table (`opts.layers`, js/content/atlas.js) it is the layer's slot
- * with the STILL pose (`slot + POSE_STRIDE * POSE.STILL`, at least
- * POSE_STRIDE): the engine then gives the layer the structure's pose.
+ * with the STILL pose and the door frames as its age (`packSprite(slot,
+ * POSE.STILL, frames)`, at least POSE_STRIDE): the engine then draws the
+ * layer with the door frame (engine/src/doors.rs).
  *
  * `opts.slots` (js/content/atlas.js) replaces sprite slots with other art:
  * a slot mapped to null is empty, a slot mapped to a sequence slot
@@ -667,9 +668,11 @@ export function buildAtlas(actors, opts = {}) {
       list.push(layerSprite(p.anim, f));
     }
   }
-  // Layers drawn over structures with the structure's pose (original War Factory roof and door).
+  // Layers drawn over structures by the engine (original War Factory roof and
+  // door): the still pose, its age the door frames (the idle pose's length).
   for (const k of opts.layers ?? []) {
-    if (k % 2 === 1 && slots.get(k)) overlays[(k - 1) / 2] = packSprite(k, POSE.STILL);
+    const art = slots.get(k);
+    if (k % 2 === 1 && art) overlays[(k - 1) / 2] = packSprite(k, POSE.STILL, art.poses[POSE.IDLE].length);
   }
   // Sequence slots: images placed once, entries after the WebRA frames.
   const images = [];

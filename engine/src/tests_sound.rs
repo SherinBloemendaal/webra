@@ -169,3 +169,62 @@ fn the_log_is_capped_and_keeps_room_for_announcements() {
     w.sound.push(K::Fire, 0, 0, 0, 0, 0);
     assert!(w.sound.is_empty(), "disabled log stays empty");
 }
+
+fn mcv_world() -> (World, usize) {
+    use crate::world::{GameOptions, PlayerSetup, StartingUnits};
+    let options = GameOptions { starting_units: StartingUnits::Mcv, ..GameOptions::default() };
+    let players = [PlayerSetup::new("allies", None), PlayerSetup::new("soviet", None)];
+    let w = World::with_options(7, 80, &players, options);
+    let mcv_t = ty(&w, "MCV");
+    let mcv = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == mcv_t).unwrap();
+    (w, mcv)
+}
+
+#[test]
+fn deploying_and_packing_up_report_the_transform() {
+    let (mut w, mcv) = mcv_world();
+    w.sound.set_enabled(true);
+    let (mcv_t, fact_t) = (ty(&w, "MCV") as i32, ty(&w, "FACT") as i32);
+    let (x, y) = (w.actors[mcv].x, w.actors[mcv].y);
+    let r = w.make_ref(mcv);
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    run(&mut w, 1);
+    let ev = events(&mut w);
+    let t: Vec<_> = ev.iter().filter(|e| e[0] == K::Transformed as i32).collect();
+    assert_eq!(t.len(), 1, "one transform event");
+    assert_eq!(*t[0], [K::Transformed as i32, mcv_t, x, y, 0, fact_t], "MCV into yard, where the MCV stood");
+    assert!(!has(&ev, K::BuildingPlaced), "a deploy is not a placement");
+
+    let fact = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == fact_t as u16).unwrap();
+    let (fx, fy) = (w.actors[fact].x, w.actors[fact].y);
+    let r = w.make_ref(fact);
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    run(&mut w, 1);
+    let ev = events(&mut w);
+    let t = ev.iter().find(|e| e[0] == K::Transformed as i32).expect("packed up");
+    assert_eq!(*t, [K::Transformed as i32, fact_t, fx, fy, 0, mcv_t], "yard into MCV, where the yard stood");
+    assert!(!has(&ev, K::Sold), "packing up is not selling");
+}
+
+#[test]
+fn a_blocked_deploy_is_reported_and_a_plain_unit_stays_silent() {
+    let (mut w, mcv) = mcv_world();
+    let (into, cx, cy) = w.deploy_target(mcv).unwrap();
+    let cell = w.rules.actors[into as usize].building.as_ref().unwrap().cells().last().unwrap();
+    assert!(w.spawn_building(ty(&w, "SBAG"), 1, cx + cell.0, cy + cell.1).is_some());
+    w.sound.set_enabled(true);
+    let r = w.make_ref(mcv);
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    run(&mut w, 1);
+    let ev = events(&mut w);
+    let b = ev.iter().find(|e| e[0] == K::DeployBlocked as i32).expect("blocked");
+    assert_eq!((b[1], b[4]), (ty(&w, "MCV") as i32, 0));
+    assert!(!has(&ev, K::Transformed));
+
+    // A unit that cannot transform at all has nothing to report.
+    let (sx, sy) = w.players[0].start;
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(sx + 6), cell_center(sy + 8), 256);
+    assert!(!w.deploy(tank));
+    let ev = events(&mut w);
+    assert!(!has(&ev, K::DeployBlocked) && !has(&ev, K::Transformed));
+}

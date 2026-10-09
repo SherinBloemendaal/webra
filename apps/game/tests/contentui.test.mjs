@@ -257,6 +257,14 @@ test('result and summary text: partial installs say what is missing', () => {
   assert.match(summaryText(noPalette), /palette from temperat\.mix is missing/);
   const graphicsOnly = { total: 30, byCategory: { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 30 }, bytes: { sounds: 0, graphics: 100 }, theaters: ['TEMPERAT'], palette: true };
   assert.match(summaryText(graphicsOnly), /Sounds: none/);
+  // Music per category: the quick install package has none, and the summary says where it comes from.
+  assert.match(summaryText(soundsOnly), /Music: none\. The OpenRA quick install package \(ra-quickinstall\.zip\) has no music/);
+  assert.match(summaryText(soundsOnly), /scores\.mix \(or main\.mix or redalert\.mix/);
+  assert.doesNotMatch(summaryText(graphicsOnly), /scores\.mix, all in ra-quickinstall/, 'scores.mix is not in the quick install package');
+  const withMusic = { ...soundsOnly, total: 25, byCategory: { ...soundsOnly.byCategory, music: 20 } };
+  assert.match(summaryText(withMusic), /Music: 20 tracks\./);
+  assert.doesNotMatch(summaryText(withMusic), /has no music/);
+  assert.match(summaryText({ total: 0 }), /Nothing installed yet\..*Music: none\./);
 });
 
 test('classifyFiles: packs by name or manifest, content, and the rest', async () => {

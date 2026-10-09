@@ -1,6 +1,6 @@
 // Generates apps/game/js/audio/catalog-data.js from the OpenRA rules dump in
 // data/ (weapons.json, actors.json): which original sound file names
-// (Report, ImpactSounds, BuildSounds, ...) belong to each weapon and actor.
+// (Report, ImpactSounds, BuildSounds, TransformSounds, ...) belong to each weapon and actor.
 // Only file NAMES are extracted; no audio is involved. The installer
 // (apps/game/js/audio/install.js) looks these names up in the player's own
 // Red Alert files.
@@ -48,6 +48,19 @@ for (const a of actors) {
   if (build.length) entry.build = build;
   const sell = names(t.Sellable?.SellSounds ?? t.Building?.UndeploySounds);
   if (sell.length) entry.sell = sell;
+  // OpenRA Transforms (MCV deploy, Construction Yard pack up): TransformSounds
+  // play as it transforms, together with a structure's Building.UndeploySounds
+  // (Building.cs BeforeTransform); a refused deploy plays NoTransformSounds and
+  // the NoTransformNotification speech line.
+  if (t.Transforms) {
+    const transform = names(t.Transforms.TransformSounds);
+    if (transform.length) entry.transform = transform;
+    const undeploy = names(t.Building?.UndeploySounds);
+    if (undeploy.length) entry.undeploy = undeploy;
+    const blocked = names(t.Transforms.NoTransformSounds);
+    if (blocked.length) entry.noTransform = blocked;
+    if (t.Transforms.NoTransformNotification) entry.noTransformNotification = t.Transforms.NoTransformNotification;
+  }
   const death = new Set(names(t.SoundOnDamageTransition?.DestroyedSounds));
   const dw = t.FireWarheadsOnDeath?.Weapon;
   for (const n of weaponSounds[dw]?.impact ?? []) death.add(n);

@@ -31,11 +31,13 @@ import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
+import { mountMusicPanel } from './audio/musicplayer.js';
 import { CURSORS } from './cursors.js';
 import { hotkeys } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
+import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
@@ -223,7 +225,9 @@ async function setupRecords(lobby, gpuError) {
 function setupAudio() {
   try {
     audio = new AudioSystem();
-    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open() });
+    // The music player opens from the Sound dialog (start screen and in games) and the game menu.
+    const musicPanel = mountMusicPanel($('music-panel'), audio, { onContent: () => contentPanel?.open() });
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open($('audio-button')) });
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
@@ -863,6 +867,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
+      onCashTick: (direction) => audio?.cashTick(direction),
     },
     { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );
@@ -1017,6 +1022,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     active: () => isFullscreen(),
     toggle: () => toggleFullscreen(),
   };
+  // Mouse capture (js/mouselock.js): the Pointer Lock API keeps the mouse in
+  // the game (multi-monitor setups) and the game draws a cursor of its own.
+  // Esc the browser kept while letting go acts like the game's Esc when the
+  // player wants Esc to open the menu too. None without Pointer Lock or a mouse.
+  const mouseCapture = pointerLockAvailable()
+    ? new MouseCapture({
+        root: $('app'),
+        settings,
+        hotkeys,
+        isFullscreen,
+        onHint: (text) => showToast(text),
+        onEscape: () => {
+          if (!input.suspended && !input.cancelMode()) menu.open();
+        },
+      })
+    : null;
   const menu = new GameMenu($('game-menu'), {
     online: !!online || !!replay,
     replay: !!replay,
@@ -1024,8 +1045,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     hotkeys,
     settings,
     fullscreen,
+    mouseCapture: { available: () => !!mouseCapture },
     onChange: (open, isPaused) => {
       input.setSuspended(open);
+      // The menu needs the OS cursor (sliders, lists): the mouse is let go.
+      if (open) mouseCapture?.setBlocked(true);
       if (open) touch.reset();
       menuPaused = isPaused;
       updatePaused();
@@ -1045,6 +1069,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onExit: exit,
   });
   $('menu-button').hidden = false;
+  // A click on Menu opens the menu, which lets go of the mouse: it does not capture it first.
+  $('menu-button').dataset.noCapture = '';
   $('menu-button').addEventListener('click', () => menu.toggle());
   // OpenRA DisableUserInterface / DisableAllUserInterface: only the battlefield
   // (and without the cursor), pressed again: everything back.
@@ -1091,6 +1117,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         const r = await fullscreen.toggle();
         if (!r.ok) showToast(r.message);
       },
+      toggleMouseCapture: mouseCapture ? () => mouseCapture.toggle() : undefined,
       // OpenRA CycleStatusBars: Standard, Damaged, Always show.
       cycleStatusBars: () => {
         const i = HEALTH_BAR_CYCLE.indexOf(settings.get('healthBars'));
@@ -1131,8 +1158,10 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   );
   // Fullscreen changes the canvas size; the renderer and input follow it each
   // frame, the toast says when the browser refused.
-  onFullscreenChange(() => {
+  onFullscreenChange((fs) => {
     if (menu.isOpen) menu.render();
+    // Entering fullscreen captures the mouse (Settings: in fullscreen or always), leaving it lets go.
+    mouseCapture?.fullscreenChanged(fs);
   });
   // A single-player game opens the menu (and so pauses) when its tab is hidden.
   // Online, the lockstep driver keeps up from network events meanwhile (it
@@ -1231,6 +1260,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const catching = busy();
     const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
     if (suspend !== input.suspended) input.setSuspended(suspend);
+    // Menus, the end of the game, statistics and modal dialogs (saves, online) get the OS cursor.
+    mouseCapture?.setBlocked(suspend || !!document.querySelector('dialog[open]'));
     input.update(dt / 1000);
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.

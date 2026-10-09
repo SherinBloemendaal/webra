@@ -18,6 +18,7 @@
 import { GRAPHICS_SETTING } from './index.js';
 import { segmented, toggle } from '../ui/controls.js';
 import { packSummary, PackError } from './packs.js';
+import { MUSIC_SOURCE_HINT } from '../audio/catalog.js';
 import {
   downloadQuickInstall,
   dismissNotice,
@@ -78,19 +79,25 @@ export function canPickFolder(doc = globalThis.document) {
   }
 }
 
+/** Whether music is installed, and where it comes from when it is not (catalog.js MUSIC_SOURCE_HINT). */
+export function musicText(tracks) {
+  return tracks ? `Music: ${plural(tracks, 'track', 'tracks')}.` : `Music: none. ${MUSIC_SOURCE_HINT}`;
+}
+
 /** The installed summary as text (content/install.js contentSummary). */
 export function summaryText(s) {
-  if (!s.total) return 'Nothing installed yet. WebRA uses its own art and synthesized sounds.';
+  if (!s.total) return `Nothing installed yet. WebRA uses its own art and synthesized sounds. ${musicText(0)}`;
   const b = s.byCategory;
   const parts = [];
-  const sounds = b.effects + b.voices + b.announcer + b.music;
+  const sounds = b.effects + b.voices + b.announcer;
   if (sounds) {
     parts.push(
-      `Sounds: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'unit voice', 'unit voices')}, ${plural(b.announcer, 'announcer line', 'announcer lines')}, ${plural(b.music, 'music track', 'music tracks')} (${formatBytes(s.bytes.sounds)}).`,
+      `Sounds: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'unit voice', 'unit voices')}, ${plural(b.announcer, 'announcer line', 'announcer lines')} (${formatBytes(s.bytes.sounds)}).`,
     );
   } else {
-    parts.push('Sounds: none (they come from sounds.mix, allies.mix, russian.mix, speech.mix and scores.mix, all in ra-quickinstall.zip).');
+    parts.push('Sounds: none (they come from sounds.mix, allies.mix, russian.mix and speech.mix, all in ra-quickinstall.zip).');
   }
+  parts.push(musicText(b.music));
   if (b.graphics) {
     const theaters = s.theaters.length ? s.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') : 'none';
     parts.push(`Graphics: ${plural(b.graphics, 'file', 'files')} (${formatBytes(s.bytes.graphics)}); terrain for ${theaters}.`);

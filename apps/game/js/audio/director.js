@@ -7,7 +7,7 @@
 // No Web Audio here: the director talks to a `sink` and reads a clock, so the
 // rules are unit tested in Node (tests/audio.test.mjs).
 
-import { fireSound, impactSound, deathSound, placeSound, sellSound, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
+import { fireSound, impactSound, deathSound, placeSound, sellSound, transformSounds, deployBlocked, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const EV = {
@@ -25,6 +25,8 @@ export const EV = {
   POWER_TOGGLED: 12,
   BEACON_PLACED: 13,
   UNIT_DAMAGED: 14,
+  TRANSFORMED: 15,
+  DEPLOY_BLOCKED: 16,
 };
 export const STRIDE = 6;
 
@@ -238,8 +240,19 @@ export class Director {
         case EV.CONSTRUCTION_READY:
           if (own) this.announce('constructionComplete');
           break;
+        // OpenRA plays these with PlayToPlayer: only the owner hears them, at the actor's position.
         case EV.BUILDING_PLACED:
-          if (own || visible(x, y)) this.queue(placeSound(this.actor(a).id), x, y);
+          if (own) this.queue(placeSound(this.actor(a).id), x, y);
+          break;
+        case EV.TRANSFORMED:
+          if (own) for (const sound of transformSounds(this.actor(a).id)) this.queue(sound, x, y);
+          break;
+        case EV.DEPLOY_BLOCKED:
+          if (own) {
+            const blocked = deployBlocked(this.actor(a).id);
+            if (blocked.sound) this.sink.effect(blocked.sound, { gain: 1, pan: 0 });
+            if (blocked.announce) this.announce(blocked.announce);
+          }
           break;
         case EV.SOLD:
           if (own) {
