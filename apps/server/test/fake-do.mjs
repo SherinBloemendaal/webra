@@ -10,6 +10,10 @@ const STUBS = {
   '#engine-wasm': 'export default null;',
 };
 
+// The Worker tests (accounts-harness.mjs) set WEBRA_TEST_REAL_ENGINE so map
+// uploads run the real engine; the session tests do not need it.
+if (globalThis.WEBRA_TEST_REAL_ENGINE) delete STUBS['#engine-wasm'];
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (Object.hasOwn(STUBS, specifier)) {
@@ -19,7 +23,8 @@ registerHooks({
   },
 });
 
-const { Session } = await import('../src/session.js');
+const { Session, readAuthHeader } = await import('../src/session.js');
+export { readAuthHeader };
 
 export class FakeStorage {
   constructor() {
@@ -105,7 +110,7 @@ const db = {
 };
 
 /** A session Durable Object with its fake runtime. */
-export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0' } = {}) {
+export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0', DB = db } = {}) {
   const sockets = [];
   const ctx = {
     storage: new FakeStorage(),
@@ -113,7 +118,7 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
     acceptWebSocket: (ws) => sockets.push(ws),
     blockConcurrencyWhile: (fn) => fn(),
   };
-  const session = new Session(ctx, { DB: db });
+  const session = new Session(ctx, { DB });
   await new Promise((r) => setTimeout(r, 0));
   const { hostKey } = await session.init({ id: 'a'.repeat(64), name: 'Test', password, isPublic: false, maxPlayers, version });
   let ip = 1;
@@ -123,10 +128,11 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
     hostKey,
     version,
     /** A new socket, as after the WebSocket upgrade. */
-    connect(name = 'socket', addr = `10.0.0.${ip++}`) {
+    /** `auth`: the Worker's verdict ({ account, refuse }) as Session.fetch reads it from X-WebRA-Auth. */
+    connect(name = 'socket', addr = `10.0.0.${ip++}`, auth = { account: null, refuse: null }) {
       const ws = new FakeSocket(name);
       ctx.acceptWebSocket(ws);
-      ws.serializeAttachment({ client: null, ip: addr, since: Date.now(), busy: false });
+      ws.serializeAttachment({ client: null, ip: addr, since: Date.now(), busy: false, account: auth.account, refuse: auth.refuse });
       return ws;
     },
     send: (ws, msg) => session.webSocketMessage(ws, typeof msg === 'string' ? msg : JSON.stringify(msg)),

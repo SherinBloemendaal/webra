@@ -15,6 +15,14 @@
 // from a future tick on, with the stall budget it left with. The game never
 // pauses for a missing player. Spectators get frames and can never send
 // orders or hashes (a client that tries is removed).
+//
+// Accounts (docs/accounts-api.md, section 7): the Worker authenticates the
+// WebSocket upgrade by the session cookie and passes the verdict in the
+// X-WebRA-Auth header (set by the Worker, never by the client). A signed-in
+// member plays under its username, holds at most one place per session and
+// can rejoin only as the same account. A refused connection gets the reason
+// in answer to `hello`. Members are recorded in D1 `game_presence`, so a ban
+// can drop them (`evict`).
 
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -51,6 +59,8 @@ import { OrderLog } from './orderlog.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
 import { cheatsAllowed, ordersFitRules } from './validate.js';
+import { inRange, ipRecord } from './accounts/ip.js';
+import { AUTH_HEADER } from './accounts/play.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 
 /** Unused sessions (nobody ever joined) are deleted after this long. */
@@ -91,6 +101,32 @@ const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
 
 const CLOSE_NORMAL = 1000;
 const CLOSE_POLICY = 1008;
+const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/;
+
+/** The Worker's verdict from the upgrade request: { account, refuse } (malformed reads as refused). */
+export function readAuthHeader(request) {
+  const refused = { account: null, refuse: { code: ERRORS.FORBIDDEN, message: 'Could not check your account. Reload the page.' } };
+  const raw = request.headers.get(AUTH_HEADER);
+  if (raw === null) return refused;
+  let v;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return refused;
+  }
+  if (v === null || typeof v !== 'object') return refused;
+  let account = null;
+  if (v.account !== null) {
+    if (typeof v.account !== 'object' || !ACCOUNT_ID_RE.test(v.account?.id) || typeof v.account.username !== 'string') return refused;
+    account = { id: v.account.id, username: v.account.username };
+  }
+  let refuse = null;
+  if (v.refuse !== null) {
+    if (typeof v.refuse !== 'object' || typeof v.refuse?.code !== 'string' || typeof v.refuse.message !== 'string') return refused;
+    refuse = { code: v.refuse.code, message: v.refuse.message };
+  }
+  return { account, refuse };
+}
 
 export class Session extends DurableObject {
   constructor(ctx, env) {
@@ -158,11 +194,14 @@ export class Session extends DurableObject {
     const pair = new WebSocketPair();
     const [clientSide, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
+    const auth = readAuthHeader(request);
     server.serializeAttachment({
       client: null,
       ip: request.headers.get('CF-Connecting-IP') || 'unknown',
       since: Date.now(),
       busy: false,
+      account: auth.account,
+      refuse: auth.refuse,
     });
     await this.ensureAlarm(Date.now() + HELLO_TIMEOUT_MS);
     return new Response(null, { status: 101, webSocket: clientSide });
@@ -233,7 +272,11 @@ export class Session extends DurableObject {
     if (msg.version !== meta.version) {
       return this.reject(ws, ERRORS.VERSION, 'This session runs a different game version.', true);
     }
+    if (att.refuse) return this.reject(ws, att.refuse.code, att.refuse.message, true);
     if (msg.rejoin) return this.rejoin(ws, att, msg);
+    // Signed in: the username, whatever the client sent. Anonymous: its chosen name.
+    const name = att.account ? att.account.username : msg.name;
+    if (name === undefined) return this.reject(ws, ERRORS.INVALID, 'Choose a name.', true);
     const spectate = msg.spectate === true;
     const phaseProblem = () => {
       if (this.room.phase === 'lobby') return null;
@@ -278,7 +321,7 @@ export class Session extends DurableObject {
     const hostConnected = this.room.hostId !== null && this.socketOf(this.room.hostId) !== null;
     let joined;
     try {
-      joined = this.room.join(msg.name, { host: isHost && !hostConnected, spectate });
+      joined = this.room.join(name, { host: isHost && !hostConnected, spectate, account: att.account?.id ?? null });
     } catch (err) {
       if (err instanceof RoomError) return this.reject(ws, err.code, err.message, true);
       throw err;
@@ -289,8 +332,9 @@ export class Session extends DurableObject {
     ws.serializeAttachment(att);
     meta.everJoined = true;
     await this.ctx.storage.put({ meta, room: this.room.toJSON() });
+    await this.notePresence(joined.client, att);
 
-    this.send(ws, { t: S2C.WELCOME, you: joined.client, hostId: this.room.hostId, session: this.sessionInfo(), role: joined.role, key });
+    this.send(ws, { t: S2C.WELCOME, you: joined.client, name, hostId: this.room.hostId, session: this.sessionInfo(), role: joined.role, key });
     if (this.room.phase === 'lobby') {
       this.broadcastLobby();
       await this.syncDirectory();
@@ -362,7 +406,8 @@ export class Session extends DurableObject {
     } finally {
       att.busy = false;
     }
-    if (!valid || stored === null) {
+    // The key only works for the account (or the anonymous member) it was issued to.
+    if (!valid || stored === null || this.room.accountOf(client) !== (att.account?.id ?? null)) {
       this.noteFailure(att.ip, now);
       return this.reject(ws, ERRORS.FORBIDDEN, 'Invalid rejoin key.', true);
     }
@@ -410,7 +455,8 @@ export class Session extends DurableObject {
     att.role = seat >= 0 ? 'player' : 'spectator';
     ws.serializeAttachment(att);
     await this.saveRoom();
-    this.send(ws, { t: S2C.WELCOME, you: client, hostId: this.room.hostId, session: this.sessionInfo(), role: att.role });
+    await this.notePresence(client, att);
+    this.send(ws, { t: S2C.WELCOME, you: client, name: this.clientName(client) ?? 'Player', hostId: this.room.hostId, session: this.sessionInfo(), role: att.role });
     await this.catchUp(ws, client, att.role);
   }
 
@@ -679,6 +725,7 @@ export class Session extends DurableObject {
     if (room.phase === 'lobby') {
       room.leave(client);
       await this.saveRoom();
+      await this.forgetPresence(client);
       if (name) this.broadcast({ t: S2C.LEFT, player: null, client, name, reason });
       if (room.memberCount() === 0) {
         await this.destroy();
@@ -692,6 +739,7 @@ export class Session extends DurableObject {
       room.leave(client);
       if (final) room.forgetKey(client);
       await this.saveRoom();
+      if (final) await this.forgetPresence(client);
       if (name) this.broadcast({ t: S2C.LEFT, player: null, client, name, reason });
       return;
     }
@@ -712,8 +760,10 @@ export class Session extends DurableObject {
       if (rejoinable) room.suspendSeat(seat, null, now, RECONNECT_GRACE_MS);
       else tell = room.endSeat(seat);
     }
-    if (room.seatState(seat) === 'gone') room.forgetKey(client);
+    const gone = room.seatState(seat) === 'gone';
+    if (gone) room.forgetKey(client);
     await this.saveRoom();
+    if (gone) await this.forgetPresence(client);
     // A lost connection that cannot be rejoined (the order log is full) is reported as final.
     if (tell && name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: final || rejoinable ? reason : 'expired' });
     this.emitFrames(frames);
@@ -821,6 +871,7 @@ export class Session extends DurableObject {
     if (id) {
       try {
         await removeSession(this.env.DB, id);
+        await this.env.DB.prepare('DELETE FROM game_presence WHERE session_id = ?1').bind(id).run();
       } catch (err) {
         console.error('directory delete failed', err?.message);
       }
@@ -828,6 +879,77 @@ export class Session extends DurableObject {
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
     for (const ws of this.ctx.getWebSockets()) this.close(ws, CLOSE_NORMAL, 'session closed');
+  }
+
+  // ---- Accounts and bans ---------------------------------------------------------------------------
+
+  /** Record a member in D1 game_presence (account and address), so bans can find it. */
+  async notePresence(client, att) {
+    if (!this.meta) return;
+    const rec = ipRecord(att.ip);
+    try {
+      await this.env.DB.prepare(
+        `INSERT INTO game_presence (session_id, client, user_id, ip_v, ip_hex, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(session_id, client) DO UPDATE SET user_id = excluded.user_id, ip_v = excluded.ip_v, ip_hex = excluded.ip_hex, updated_at = excluded.updated_at`,
+      )
+        .bind(this.meta.id, client, att.account?.id ?? null, rec?.v ?? null, rec?.hex ?? null, Date.now())
+        .run();
+    } catch (err) {
+      console.error('presence update failed', err?.message);
+    }
+  }
+
+  async forgetPresence(client) {
+    if (!this.meta) return;
+    try {
+      await this.env.DB.prepare('DELETE FROM game_presence WHERE session_id = ?1 AND client = ?2').bind(this.meta.id, client).run();
+    } catch (err) {
+      console.error('presence delete failed', err?.message);
+    }
+  }
+
+  /**
+   * RPC from the Worker after a ban: drop every connection of the banned
+   * accounts (`userIds`) or from the banned range (`range`: { v, start, end }),
+   * for good (reason `removed`: no rejoin). Away seats of banned accounts end
+   * too. Returns how many members were dropped.
+   */
+  async evict({ userIds = [], range = null } = {}) {
+    if (!this.meta || !this.room) return 0;
+    const ids = new Set(userIds);
+    let dropped = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = this.attachment(ws);
+      if (att.gone) continue;
+      const byAccount = att.account !== null && att.account !== undefined && ids.has(att.account.id);
+      const byIp = range !== null && inRange(att.ip, range);
+      if (!byAccount && !byIp) continue;
+      const code = byAccount ? ERRORS.BANNED : ERRORS.IP_BANNED;
+      this.send(ws, { t: S2C.ERROR, code, message: 'You were removed from this game: the account or network is banned.' });
+      if (att.client !== null) {
+        dropped++;
+        await this.disconnect(ws, 'removed');
+      }
+      this.close(ws, CLOSE_POLICY, code);
+      if (!this.room) return dropped;
+    }
+    if (this.room.phase === 'game') {
+      for (const [id, account] of Object.entries(this.room.accounts)) {
+        if (!ids.has(account)) continue;
+        const client = Number(id);
+        if (this.socketOf(client)) continue;
+        const seat = this.room.seatOf(client);
+        if (seat >= 0 && this.room.seatState(seat) !== 'gone') {
+          dropped++;
+          await this.memberLost(client, 'removed');
+          if (!this.room) return dropped;
+        } else {
+          this.room.forgetKey(client);
+        }
+      }
+      await this.saveRoom();
+    }
+    return dropped;
   }
 
   // ---- Directory ---------------------------------------------------------------------------------

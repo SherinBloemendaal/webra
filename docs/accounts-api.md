@@ -501,7 +501,8 @@ fragment: `#discord=ok` or `#discord=error&code=<code>`, codes:
 unlinked Discord account), `already_linked` (that Discord account belongs to
 another WebRA account), `email_taken`, `registration_closed`,
 `method_disabled`, `banned`, `ip_banned`, `account_inactive` (a deleted
-account), `unavailable` (Discord unreachable or misconfigured). On success a
+account), `rate_limited` (signup limit), `unavailable` (Discord unreachable
+or misconfigured). On success a
 session cookie is set for `login` and `signup`; `link` and `reauth` rotate
 the existing one. A Discord email that Discord reports verified counts as a
 verified email when it equals the account's email (link and login).
