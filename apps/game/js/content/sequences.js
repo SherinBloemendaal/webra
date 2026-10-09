@@ -45,8 +45,15 @@ export const POSE = Object.freeze({
   /** A second overlay of the slot (the Chinook's rear rotor): on the ground, and in the air. */
   AUX_IDLE: 9,
   AUX_MOVE: 10,
+  /** Working (engine/src/fx.rs): resupplying, charging, launching, placing, recoiling, unloading, reloading. */
+  ACTIVE: 11,
+  DAMAGED_ACTIVE: 12,
+  /** A paratrooper falling under its parachute. */
+  PARACHUTE: 13,
+  /** Done working: the landing craft closing, the harvester leaving the refinery. */
+  ACTIVE_END: 14,
 });
-export const POSE_COUNT = 11;
+export const POSE_COUNT = 15;
 /** Sprite ids carry the pose: id = slot + POSE_STRIDE * (pose + POSE_CODES * age). */
 export const POSE_STRIDE = 4096;
 export const POSE_CODES = 16;
@@ -65,6 +72,8 @@ export const MODE = Object.freeze({
   STILL: 2,
   /** The frame the engine names in the age field (wall connections). */
   INDEX: 3,
+  /** The first `lead` frames once from the age, then the others looping on the render clock. */
+  LEAD: 4,
 });
 
 /** Split a sprite id into slot, pose and age (the shader does the same with u32 math). */
@@ -165,6 +174,15 @@ export function loopFrame(time, enabled, fps, count, phase) {
 /** Frame of a ONCE pose at an age in ticks; `count` or more means it has finished. */
 export function onceFrame(age, fps) {
   return Math.floor((age * fps) / TICKS_PER_SECOND);
+}
+
+/** Frame of a LEAD pose (shaders/sprite.wgsl MODE_LEAD): the lead-in by age, then the loop on the render clock. */
+export function leadFrame(age, time, enabled, fps, count, lead, phase) {
+  const l = Math.min(lead, count);
+  const f = onceFrame(age, fps);
+  if (f < l) return f;
+  if (count > l) return l + loopFrame(time, enabled, fps, count - l, phase);
+  return count - 1;
 }
 
 // ---- Sequences -------------------------------------------------------------------

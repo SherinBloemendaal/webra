@@ -8,10 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACTOR_ART, ACTOR_PALETTE, RESOURCES, SEQUENCES, SPECIAL_ART, TERRAIN, TREES } from '../js/content/tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, RESOURCES, SEQUENCES, SPECIAL_ART, TERRAIN, TREES } from '../js/content/tables.js';
 import { RENDER_FACTS } from '../js/content/render-facts.js';
-import { auditOriginalArt, formatAudit, ROLES, SPECIAL_GAPS } from '../js/content/audit.js';
-import { originalSlots, combineSlots, originalSlotInfo, specialSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
+import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS } from '../js/content/audit.js';
+import { originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
 import { resolveSequence, POSE, POSE_COUNT } from '../js/content/sequences.js';
 import { decodePalette, paletteLookup, ACTOR_SHADOW } from '../js/content/palette.js';
 import { SPECIALS } from '../js/content/packs.js';
@@ -22,6 +22,7 @@ import { HELI_SPECIALS } from '../js/art/helis.js';
 import { ABILITY_SPECIALS } from '../js/art/abilities.js';
 import { VETERANCY_SPECIALS } from '../js/art/veterancy.js';
 import { DECORATION_SPECIALS } from '../js/art/decorations.js';
+import { EFFECT_SPECIALS } from '../js/art/effects.js';
 import { buildShp, buildPal } from './content-fixtures.mjs';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -46,6 +47,7 @@ function neededFrames() {
     }
   }
   for (const t of Object.values(TERRAIN)) for (const f of t.images) want(f, 1);
+  for (const c of Object.values(CURSOR_ART)) want(c.file, c.start + c.length);
   return need;
 }
 
@@ -119,12 +121,19 @@ test('art audit: complete, every rules actor and every OpenRA render sequence ha
   // Every special slot is listed.
   const specials = rows.filter((r) => r.actor === '(special)').map((r) => r.role);
   assert.deepEqual(specials.sort(), Object.keys(SPECIAL_ART).sort());
+  // Every explosion and every cursor kind is listed.
+  assert.deepEqual(rows.filter((r) => r.actor === '(explosion)').map((r) => r.role), EXPLOSIONS);
+  assert.ok(rows.filter((r) => r.actor === '(cursor)').length >= 30);
   // Only OpenRA's own art and specials Red Alert has nothing for keep WebRA art.
   for (const r of rows.filter((x) => x.status === 'webra-only')) {
     if (r.actor === '(special)') assert.equal(SPECIAL_ART[r.role], null, r.role);
-    else assert.equal(RENDER_FACTS[r.actor].parts.find((p) => `${p[1]}.${p[2]}` === r.openra)[3], false, `${r.actor} ${r.openra}`);
+    else if (r.actor === '(explosion)') assert.equal(EXPLOSION_ART[r.role], null, r.role);
+    else if (r.actor === '(cursor)') assert.equal(CURSOR_ART[r.openra], undefined, r.role);
+    else if (!/OpenRA's own art/.test(r.note)) assert.equal(RENDER_FACTS[r.actor].parts.find((p) => `${p[1]}.${p[2]}` === r.openra)[3], false, `${r.actor} ${r.openra}`);
   }
-  for (const key of Object.keys(SPECIAL_GAPS)) assert.equal(SPECIAL_ART[key], null, key);
+  // What is left for other work: infantry deaths, idles and stand variants, husks; n/a: vehicles by parachute.
+  for (const r of rows.filter((x) => x.status === 'gap')) assert.ok(['death', 'idle-anim', 'stand', 'prone-stand', 'husk'].includes(r.role), `${r.actor} ${r.role}: ${r.note}`);
+  for (const r of rows.filter((x) => x.status === 'n/a')) assert.equal(r.role, 'parachute', `${r.actor} ${r.role}`);
 });
 
 test('art audit: helicopters, spinners, the silo and specials come from the original art', () => {
@@ -141,6 +150,22 @@ test('art audit: helicopters, spinners, the silo and specials come from the orig
   for (const [id, seq] of [['MRJ', 'mrj.spinner'], ['MGG', 'mgg.spinner'], ['TTNK', 'ttnk.spinner'], ['SILO', 'silo.stages'], ['SILO', 'silo.damaged-stages'], ['MINV', 'minv.idle'], ['JEEP', 'jeep.turret']]) {
     assert.equal(status(id, seq), 'ok', `${id} ${seq}`);
   }
+  // Working animations, recoil, doors, docking, reloading, falling, muzzle flashes, smoke.
+  for (const [id, seq] of [
+    ['FIX', 'fix.active'], ['HPAD', 'hpad.damaged-active'], ['AFLD', 'afld.active'], ['TSLA', 'tsla.active'], ['MSLO', 'mslo.active'],
+    ['FACT', 'fact.build'], ['GUN', 'gun.recoil'], ['LST', 'lst.open'], ['LST', 'lst.unload'], ['LST', 'lst.close'],
+    ['HARV', 'harv.dock'], ['HARV', 'harv.dock-loop'], ['V2RL', 'v2rl.empty-idle'], ['E1', 'e1.parachute'], ['E1', 'parach.open'],
+    ['2TNK', '2tnk.muzzle'], ['HIND', 'hind.muzzle'], ['SAM', 'sam.muzzle'], ['2TNK', 'smoke_m.start'], ['CA', 'smoke_m.loop'],
+  ]) {
+    assert.equal(status(id, seq), 'ok', `${id} ${seq}`);
+  }
+  for (const name of ['piff', 'small_explosion', 'self_destruct', 'building', 'napalm', 'large_splash', 'small_explosion_air']) {
+    assert.equal(rows.find((r) => r.actor === '(explosion)' && r.role === name).status, 'ok', name);
+  }
+  for (const kind of ['select', 'move', 'attack', 'sell', 'repairMode', 'deploy', 'nuke', 'guard', 'scrollNW', 'blocked']) {
+    assert.equal(rows.find((r) => r.actor === '(cursor)' && r.role === kind).status, 'ok', kind);
+  }
+  for (const key of ['fx.0', 'fx.1', 'fx.2', 'planes.0']) assert.equal(rows.find((r) => r.actor === '(special)' && r.role === key).status, 'ok', key);
   // OpenRA's own units have no Red Alert art at all.
   for (const id of ['MH60', 'FTRK']) assert.equal(status(id, `${id.toLowerCase()}.idle`), 'webra-only');
   for (const key of ['bullet', 'small_explosion', 'large_explosion', 'piff', 'rally', 'missile', 'nuke', 'naval.0', 'naval.2', 'planes.0', 'helis.2', 'decorations.0']) {
@@ -163,11 +188,15 @@ test('art audit: a wrong mapping, missing files and shifted frames are caught', 
 // ---- Slots, specials and what the engine is told -------------------------------------
 
 test('special slots: the audit, the atlas and the engine agree on where each special sprite is', () => {
-  const lists = [NAVAL_SPECIALS, PLANE_SPECIALS, HELI_SPECIALS, ABILITY_SPECIALS, VETERANCY_SPECIALS, DECORATION_SPECIALS];
+  const lists = [NAVAL_SPECIALS, PLANE_SPECIALS, HELI_SPECIALS, ABILITY_SPECIALS, VETERANCY_SPECIALS, DECORATION_SPECIALS, EFFECT_SPECIALS];
   assert.equal(SPECIAL_SLOTS, MODULE_SPECIAL_SLOTS);
   assert.equal(SPECIAL_MODULES.length, lists.length);
   const list = spriteList(ACTORS);
-  assert.equal(list.length, ACTORS.length * 2 + SPECIALS.length + SPECIAL_MODULES.length * SPECIAL_SLOTS);
+  assert.equal(list.length, ACTORS.length * 2 + SPECIALS.length + SPECIAL_MODULES.length * SPECIAL_SLOTS + ACTORS.length + EXPLOSIONS.length);
+  // Muzzle flashes per actor, then the explosions, after the specials (engine/src/render.rs muzzle_base, explosion_base).
+  assert.equal(muzzleSlot(0, ACTORS.length), ACTORS.length * 2 + SPECIALS.length + SPECIAL_MODULES.length * SPECIAL_SLOTS);
+  assert.equal(explosionSlot(0, ACTORS.length), muzzleSlot(ACTORS.length, ACTORS.length));
+  assert.ok(list[explosionSlot(EXPLOSIONS.indexOf('piff'), ACTORS.length)], 'WebRA draws every explosion');
   for (const key of Object.keys(SPECIAL_ART)) {
     const slot = specialSlot(key, ACTORS.length);
     assert.ok(slot >= ACTORS.length * 2 && slot < list.length, key);
@@ -182,6 +211,14 @@ test('special slots: the audit, the atlas and the engine agree on where each spe
   const render = readFileSync(fileURLToPath(new URL('../../../engine/src/render.rs', import.meta.url)), 'utf8');
   const bases = SPECIAL_MODULES.map((m) => Number(render.match(new RegExp(`${m}_base: b \\+ (\\d+)\\.0`))[1]));
   assert.deepEqual(bases, SPECIAL_MODULES.map((_, i) => SPECIALS.length + i * SPECIAL_SLOTS));
+  assert.equal(Number(render.match(/muzzle_base: b \+ (\d+)\.0/)[1]), SPECIALS.length + SPECIAL_MODULES.length * SPECIAL_SLOTS);
+  // The engine draws effects as long as the audit allows their original sequences.
+  const fx = readFileSync(fileURLToPath(new URL('../../../engine/src/fx.rs', import.meta.url)), 'utf8');
+  const constant = (name) => Number(fx.match(new RegExp(`pub const ${name}: \\w+ = (\\d+);`))[1]);
+  assert.deepEqual(
+    [constant('EXPLOSION_LIFE'), constant('MUZZLE_LIFE'), constant('SMOKE_LIFE'), constant('ACTIVE_ONCE_LIFE')],
+    [FX_LIMITS.explosion, FX_LIMITS.muzzle, FX_LIMITS.smoke, FX_LIMITS.activeOnce],
+  );
 });
 
 test('original slots: rotors, effects and levels as pose tables; what the engine is told', () => {

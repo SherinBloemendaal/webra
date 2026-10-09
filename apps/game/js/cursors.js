@@ -253,18 +253,117 @@ export const CURSORS = {
   ),
 };
 
+/**
+ * The OpenRA cursor name of each cursor kind (mods/ra/cursors.yaml): with
+ * the original graphics installed a kind shows that cursor from Red Alert's
+ * mouse.shp (content/cursors.js, setCursorArt); kinds whose OpenRA cursor
+ * Red Alert has no art for keep WebRA's.
+ */
+export const CURSOR_NAMES = {
+  select: 'default',
+  // OpenRA shows the default cursor while placing; the footprint shows the cells.
+  place: 'default',
+  ...Object.fromEntries(
+    SCROLL_DIRS.flatMap(([dir], i) => {
+      const name = `scroll-${['t', 'tr', 'r', 'br', 'b', 'bl', 'l', 'tl'][i]}`;
+      return [
+        [`scroll${dir}`, name],
+        [`scroll${dir}Blocked`, `${name}-blocked`],
+      ];
+    }),
+  ),
+  move: 'move',
+  attack: 'attack',
+  attackMove: 'attackmove',
+  harvest: 'harvest',
+  dock: 'enter',
+  repair: 'enter',
+  rally: 'ability',
+  sell: 'sell',
+  sellBlocked: 'sell-blocked',
+  repairMode: 'repair',
+  repairBlocked: 'repair-blocked',
+  powerDown: 'powerdown',
+  powerDownBlocked: 'powerdown-blocked',
+  beacon: 'ability',
+  deploy: 'deploy',
+  load: 'enter',
+  deliver: 'enter',
+  mine: 'ability',
+  teleport: 'chrono-target',
+  ironCurtain: 'ability',
+  nuke: 'nuke',
+  blocked: 'generic-blocked',
+};
+
+/** OpenRA cursor names of the command bar's armed modes (js/commandbar.js COMMAND_CURSORS). */
+export const COMMAND_CURSOR_NAMES = { attackGround: 'attack', guard: 'guard', waypoint: 'move' };
+
+/** Cursor tables whose values setCursorArt replaces: [table, kind -> OpenRA name, built-in values]. */
+const TABLES = [];
+
+/**
+ * Let setCursorArt replace the cursors of `table` (kind -> CSS value) by
+ * their OpenRA cursor names in `names` (kind -> name), like CURSORS.
+ */
+export function registerCursors(table, names) {
+  TABLES.push([table, names, { ...table }]);
+}
+registerCursors(CURSORS, CURSOR_NAMES);
+
+/** Animated cursors in use: [table, kind, frames, fps]. */
+let animated = [];
+
+/**
+ * Cursors from other art (content/cursors.js originalCursors): `art` maps
+ * OpenRA cursor names to { frames: [CSS value], fps }; every kind whose
+ * name it has shows those frames, every other kind its built-in cursor.
+ * `null` restores the built-in cursors everywhere.
+ */
+export function setCursorArt(art) {
+  animated = [];
+  for (const [table, names, builtIn] of TABLES) {
+    for (const kind of Object.keys(builtIn)) {
+      const c = art?.get(names[kind]);
+      table[kind] = c?.frames.length ? c.frames[0] : builtIn[kind];
+      if (c && c.frames.length > 1) animated.push([table, kind, c.frames, c.fps]);
+    }
+  }
+}
+
+/** Step animated cursors to `timeMs` (OpenRA's cursors animate); returns whether any changed. */
+export function tickCursors(timeMs) {
+  let changed = false;
+  for (const [table, kind, frames, fps] of animated) {
+    const value = frames[Math.floor((Math.max(0, timeMs) / 1000) * fps) % frames.length];
+    if (table[kind] !== value) {
+      table[kind] = value;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** An array or object whose entries read `CURSORS` when used (so replaced cursors show everywhere). */
+function live(target, keys) {
+  for (const [k, kind] of Object.entries(keys)) {
+    Object.defineProperty(target, k, { get: () => (Array.isArray(kind) ? kind.map((c) => CURSORS[c]) : CURSORS[kind]), enumerable: true });
+  }
+  return target;
+}
+
 /** Cursor for a smart action code from Game.cursor_action (0 none ... 7 deliver cash). */
-export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair, CURSORS.load, CURSORS.deliver];
+export const ACTION_CURSORS = live(new Array(8), ['select', 'move', 'attack', 'harvest', 'dock', 'repair', 'load', 'deliver']);
 
 /** Smart action codes, matching SmartAction in engine/src/world.rs. */
 export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5, LOAD: 6, DELIVER_CASH: 7 };
 
 /** Targeting cursor per support power kind (OpenRA trait name). */
-export const POWER_CURSORS = {
-  ChronoshiftPower: CURSORS.teleport,
-  GrantExternalConditionPower: CURSORS.ironCurtain,
-  NukePower: CURSORS.nuke,
-};
+export const POWER_CURSORS = live({}, {
+  ChronoshiftPower: 'teleport',
+  GrantExternalConditionPower: 'ironCurtain',
+  NukePower: 'nuke',
+});
 
 /** Edge scroll cursor for a scroll direction (dx, dy in -1..1), or null when not scrolling. */
 export function scrollCursor(dx, dy, blocked = false) {
@@ -273,9 +372,9 @@ export function scrollCursor(dx, dy, blocked = false) {
 }
 
 /** Cursor of a sidebar mode (js/input.js `mode`) over a spot where it can act or not. */
-export const MODE_CURSORS = {
-  sell: [CURSORS.sell, CURSORS.sellBlocked],
-  repair: [CURSORS.repairMode, CURSORS.repairBlocked],
-  powerDown: [CURSORS.powerDown, CURSORS.powerDownBlocked],
-  beacon: [CURSORS.beacon, CURSORS.beacon],
-};
+export const MODE_CURSORS = live({}, {
+  sell: ['sell', 'sellBlocked'],
+  repair: ['repairMode', 'repairBlocked'],
+  powerDown: ['powerDown', 'powerDownBlocked'],
+  beacon: ['beacon', 'beacon'],
+});

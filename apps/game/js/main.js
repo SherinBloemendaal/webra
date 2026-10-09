@@ -32,7 +32,7 @@ import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { mountMusicPanel } from './audio/musicplayer.js';
-import { CURSORS } from './cursors.js';
+import { CURSORS, setCursorArt, tickCursors } from './cursors.js';
 import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
@@ -316,6 +316,8 @@ function setupContent() {
     });
     const sync = () => {
       setCameoArt(content.cameos());
+      // Red Alert's own mouse cursors when the original graphics are in use (cursors.js).
+      setCursorArt(content.cursors());
       audio?.setPackSounds(content.packSounds()).catch((err) => console.warn('Texture pack sounds are unavailable:', err));
     };
     content.onChange(sync);
@@ -1303,6 +1305,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Menus, the end of the game, statistics and modal dialogs (saves, online) get the OS cursor.
     mouseCapture?.setBlocked(suspend || !!document.querySelector('dialog[open]'));
     input.update(dt / 1000);
+    // Animated original cursors step like OpenRA's (cursors.js); the input shows the new frame.
+    if (tickCursors(now)) input.updateCursor();
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.
     const v = input.viewRect();

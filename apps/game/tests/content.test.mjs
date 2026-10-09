@@ -265,7 +265,7 @@ test('the sequences table covers the engine actors and names only files it lists
     assert.ok(seqs, `${id}: image ${entry.image}`);
     for (const part of ['body', 'second']) {
       for (const [pose, name] of Object.entries(entry[part] ?? {})) {
-        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock', 'aux-idle', 'aux-move'].includes(pose), `${id} pose ${pose}`);
+        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock', 'aux-idle', 'aux-move', 'active', 'damaged-active', 'parachute', 'active-end'].includes(pose), `${id} pose ${pose}`);
         const def = seqs[name];
         assert.ok(def, `${id}.${part}.${pose} -> ${name}`);
         assert.ok(files.has(def.file) || def.tilesets, `${def.file} is installed`);
@@ -279,7 +279,7 @@ test('the sequences table covers the engine actors and names only files it lists
   assert.ok(files.has(ACTOR_PALETTE));
   for (const t of Object.values(TERRAIN)) assert.ok(files.has(t.palette));
   // Infantry walk, fire and lie down; harvesters harvest and dock; structures are made and damaged.
-  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), ['attack', 'idle', 'move']);
+  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), ['attack', 'idle', 'move', 'parachute']);
   assert.deepEqual(Object.keys(ACTOR_ART.E1.second).sort(), ['attack', 'idle', 'move']);
   assert.ok(ACTOR_ART.HARV.body.harvest && ACTOR_ART.HARV.body.dock);
   assert.ok(ACTOR_ART.POWR.body.make && ACTOR_ART.POWR.body.damaged);
@@ -1134,6 +1134,26 @@ test('pack sprites: rows turn clockwise, frames become OpenRA order; team mask; 
   assert.equal(slots.get(2 * t + 1), null, 'the turret is hidden');
   const missile = slots.get(ACTORS.length * 2 + 8);
   assert.equal(missile.poses[0].rotate, true, 'specials turn like WebRA art');
+});
+
+test('lead poses: the lead-in once by age, then the rest looping on the render clock (shader MODE_LEAD)', async () => {
+  const { leadFrame } = await import('../js/content/sequences.js');
+  // 4 lead-in frames and 6 looping ones at 25 per second (one per tick).
+  assert.deepEqual([0, 1, 3].map((age) => leadFrame(age, 0, 1, 25, 10, 4, 0)), [0, 1, 3]);
+  assert.ok(leadFrame(5, 0, 1, 25, 10, 4, 0) >= 4, 'past the lead-in: the loop');
+  assert.equal(leadFrame(127, 0.2, 1, 25, 10, 4, 0), 4 + (5 % 6), 'the loop runs on the clock, not the capped age');
+  assert.equal(leadFrame(9, 0, 1, 25, 4, 4, 0), 3, 'nothing after the lead-in: its last frame');
+  assert.match(SPRITE_WGSL, /mode == MODE_LEAD/);
+});
+
+test('pack sprites: at_mine and ap_mine replace the bodies of the mine actors', () => {
+  const sheet = sheetRgba(4, 4, 1, 1);
+  const images = new Map([['mine.png', sheet]]);
+  const manifest = { sprites: ['at_mine', 'ap_mine'].map((special) => ({ special, image: 'mine.png', frameSize: [4, 4], facings: 1, frames: 1, fps: 1, offset: [0, 0], scale: 1, rotate: false })) };
+  const { slots } = packSlots(manifest, images, ACTORS);
+  const t = (id) => ACTORS.findIndex((a) => a.id === id);
+  assert.ok(slots.get(2 * t('MINV')) && slots.get(2 * t('MINP')));
+  assert.ok(!slots.has(ACTORS.length * 2 + 5) && !slots.has(ACTORS.length * 2 + 6), 'the reserved special slots stay empty');
 });
 
 test('sound priority: pack, then installed original, then synthesized', () => {
