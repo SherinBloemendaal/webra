@@ -251,6 +251,63 @@ pub fn push_group_number(l: f32, t: f32, group: u8, out: &mut Vec<f32>) {
     }
 }
 
+/// Glyph pixels of a cash tick in world pixels (OpenRA draws FloatingText in
+/// the TinyBold font, about ten pixels high at a 24 pixel cell).
+pub const CASH_TEXT_SCALE: f32 = 2.0;
+/// The dark copy under a cash tick's glyphs, offset down and right.
+pub const CASH_TEXT_SHADOW: [f32; 4] = [0.0, 0.0, 0.0, 0.8];
+
+/// A cash tick character as 3x5 glyph rows like `GROUP_GLYPHS`: digits, '+',
+/// '-' and '$'.
+fn cash_glyph(c: char) -> Option<[u8; GROUP_GLYPH_H]> {
+    match c {
+        '0'..='9' => Some(GROUP_GLYPHS[c as usize - '0' as usize]),
+        '+' => Some([0b000, 0b010, 0b111, 0b010, 0b000]),
+        '-' => Some([0b000, 0b000, 0b111, 0b000, 0b000]),
+        '$' => Some([0b011, 0b110, 0b010, 0b011, 0b110]),
+        _ => None,
+    }
+}
+
+/// OpenRA FloatingText.FormatCashTick: "+$15", "-$20".
+pub fn cash_tick_text(amount: i32) -> String {
+    format!("{}${}", if amount < 0 { '-' } else { '+' }, amount.unsigned_abs())
+}
+
+/// Rects of a cash tick centred on (0, 0) in team colour `team`, each glyph
+/// run over a dark copy one glyph pixel down and right. Returns the width.
+pub fn push_cash_text(amount: i32, team: u8, out: &mut Vec<f32>) -> f32 {
+    let text = cash_tick_text(amount);
+    let k = CASH_TEXT_SCALE;
+    let pitch = (GROUP_GLYPH_W + 1) as f32 * k;
+    let width = text.chars().count() as f32 * pitch - k;
+    let (left, top) = (-width / 2.0, -(GROUP_GLYPH_H as f32) * k / 2.0);
+    let colour = team_color(team, 1.15, 1.0);
+    for (layer, (offset, c)) in [(k * 0.5, CASH_TEXT_SHADOW), (0.0, colour)].into_iter().enumerate() {
+        let _ = layer;
+        for (n, ch) in text.chars().enumerate() {
+            let Some(glyph) = cash_glyph(ch) else { continue };
+            let x0 = left + n as f32 * pitch + offset;
+            for (row, bits) in glyph.iter().enumerate() {
+                let lit = |col: usize| bits & (1 << (GROUP_GLYPH_W - 1 - col)) != 0;
+                let mut col = 0;
+                while col < GROUP_GLYPH_W {
+                    if !lit(col) {
+                        col += 1;
+                        continue;
+                    }
+                    let start = col;
+                    while col < GROUP_GLYPH_W && lit(col) {
+                        col += 1;
+                    }
+                    push_rect(out, x0 + start as f32 * k, top + offset + row as f32 * k, (col - start) as f32 * k, k, c);
+                }
+            }
+        }
+    }
+    width
+}
+
 /// Half the side of the square OpenRA marks each end of a rally line with
 /// (TargetLineRenderable.DrawTargetMarker, size 1).
 pub const RALLY_MARKER: f32 = 1.0;
@@ -347,6 +404,24 @@ impl World {
             && a.in_world()
             && !a.air.parachute
             && (a.owner == player || (self.is_visible_to(i, player) && !self.is_cloaked_from(i, player)))
+    }
+
+    /// Cash ticks (neutral.rs `show_cash_tick`, OpenRA FloatingText): rising
+    /// from their actor between the previous and the current tick, hidden
+    /// where `player` sees neither fog-free ground nor shroud-free ground.
+    pub(crate) fn render_floating_texts(&self, player: u8, sink: &mut Sink, rects: &mut Vec<f32>) {
+        let mut rel: Vec<f32> = Vec::new();
+        for t in &self.neutral.floating {
+            if !self.render_sees_cell(player, self.cell_index(t.x, t.y)) {
+                continue;
+            }
+            let (x, y) = (px(t.x), px(t.y));
+            let rise = crate::neutral::FLOATING_TEXT_RISE;
+            let anchor = Anchor { from: [x, y - px((t.z - rise).max(0))], to: [x, y - px(t.z)] };
+            rel.clear();
+            let width = push_cash_text(t.amount, t.owner, &mut rel);
+            push_anchored_rects(sink, rects, &anchor, width, &rel);
+        }
     }
 
     /// Health bars of actors that are not selected, each drawn once: what the

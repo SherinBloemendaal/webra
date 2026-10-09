@@ -206,6 +206,13 @@ impl Game {
     /// random, temperate, snow, desert (random ones are picked from the seed,
     /// as in a game).
     pub fn generated_map_styled(seed: u32, size: i32, players: u32, style: &str, biome: &str) -> Result<String, JsError> {
+        Game::generated_map_with(seed, size, players, style, biome, "standard")
+    }
+
+    /// `generated_map_styled` with the lobby option `techBuildings` (none,
+    /// standard, extra, oilonly, oilrush): the tech buildings the map gets.
+    pub fn generated_map_with(seed: u32, size: i32, players: u32, style: &str, biome: &str, tech: &str) -> Result<String, JsError> {
+        let tech = parse_tech_buildings(tech)?;
         let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
         let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
         let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style);
@@ -214,8 +221,9 @@ impl Game {
         let description = format!("Generated map: {}, {}", resolved.name(), biome.name());
         let mut data = mapdata::MapData::from_map(&m, &name, "WebRA", &description);
         data.biome = biome;
-        // The ore mines a game on this map gets (mapgen/sites.rs).
-        data.actors = mapgen::sites::world_actors(&m);
+        // The ore mines, tech buildings and villages a game on this map gets
+        // (mapgen/sites.rs, settlements.rs).
+        data.actors = mapgen::sites::world_actors(&m, &rules::Rules::load(), biome, tech, seed as u64);
         Ok(data.canonical_json())
     }
 
@@ -1514,8 +1522,14 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
         weather: weather::WeatherMode::from_name(&name("weather", "full")?)
             .ok_or_else(|| JsError::new("options.weather must be full, cosmetic or off"))?,
         cheats: flag("cheats", false),
+        tech_buildings: parse_tech_buildings(&name("techBuildings", "standard")?)?,
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
+}
+
+fn parse_tech_buildings(s: &str) -> Result<mapgen::settlements::TechBuildings, JsError> {
+    mapgen::settlements::TechBuildings::from_name(s)
+        .ok_or_else(|| JsError::new("tech buildings must be none, standard, extra, oilonly or oilrush"))
 }
 
 fn parse_style(s: &str) -> Result<mapgen::MapStyle, JsError> {

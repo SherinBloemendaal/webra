@@ -353,7 +353,28 @@ pub struct NeutralState {
     pub player: Option<u8>,
     /// Crushers' passability (wall crushing; derived from the world, not hashed).
     pub crush_blocked: Vec<CrushBlocked>,
+    /// Cash ticks rising over the battlefield (presentation, not hashed).
+    pub floating: Vec<FloatingText>,
 }
+
+/// OpenRA FloatingText of a cash tick ("+$100" in the owner's colour, from
+/// CashTrickler and GivesCashOnCapture ShowTicks): it rises from the actor's
+/// centre for `FLOATING_TEXT_TICKS` and is hidden under fog and shroud.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FloatingText {
+    pub x: i32,
+    pub y: i32,
+    /// Height above (x, y) in world units, `FLOATING_TEXT_RISE` more every tick.
+    pub z: i32,
+    pub owner: u8,
+    pub amount: i32,
+    pub ttl: i32,
+}
+
+/// OpenRA CashTrickler / GivesCashOnCapture DisplayDuration (ticks).
+pub const FLOATING_TEXT_TICKS: i32 = 30;
+/// OpenRA FloatingText.Velocity: 86 world units up per tick.
+pub const FLOATING_TEXT_RISE: i32 = 86;
 
 impl NeutralState {
     pub(crate) fn mix(&self, mix: &mut impl FnMut(i64)) {
@@ -467,9 +488,11 @@ impl World {
             let occupied = b != NONE && self.occupies(b as usize, ci);
             self.pass.set_blocked(ci, occupied || !t.passable());
             self.pass_water.set_blocked(ci, occupied || !t.ship_passable());
+            self.pass_landing.set_blocked(ci, occupied || !t.landing_passable());
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
     }
 
     /// Whether structure `b` blocks cell `ci` (an Occupied footprint cell).
@@ -657,8 +680,9 @@ impl World {
         }
         let cash = self.world_traits(i).cash_on_capture;
         if cash > 0 && (new_owner as usize) < self.players.len() {
-            // OpenRA PlayerResources.ChangeCash.
+            // OpenRA PlayerResources.ChangeCash, shown as a cash tick (ShowTicks).
             self.players[new_owner as usize].cash += cash;
+            self.show_cash_tick(i, cash);
         }
         self.pass.touch();
     }
@@ -705,6 +729,7 @@ impl World {
     /// husks and stumps appear, the hospital heals, oil derricks pay, mines
     /// grow ore, panics end and bridges are repaired or demolished span by span.
     pub(crate) fn tick_neutral(&mut self) {
+        self.tick_floating_texts();
         self.spawn_pending();
         let seeding = self.options.ore_regrowth;
         for i in 0..self.actors.len() {
@@ -802,8 +827,31 @@ impl World {
             s.trickle_ticks = c.interval;
             // OpenRA PlayerResources.ChangeCash: cash never drops below zero.
             let p = &mut self.players[owner];
-            p.cash += c.amount.max(-p.cash);
+            let paid = c.amount.max(-p.cash);
+            p.cash += paid;
+            self.show_cash_tick(i, paid);
         }
+    }
+
+    /// A cash tick over actor `i` in its owner's colour (OpenRA FloatingText
+    /// with FormatCashTick: "+$15", "-$20"); nothing for 0. Presentation only:
+    /// other cash effects (thieves, supply trucks) can show theirs the same way.
+    pub fn show_cash_tick(&mut self, i: usize, amount: i32) {
+        if amount == 0 {
+            return;
+        }
+        let a = &self.actors[i];
+        let (x, y, owner) = (a.x, a.y, a.owner);
+        self.neutral.floating.push(FloatingText { x, y, z: 0, owner, amount, ttl: FLOATING_TEXT_TICKS });
+    }
+
+    /// Cash ticks rise and run out.
+    fn tick_floating_texts(&mut self) {
+        for t in self.neutral.floating.iter_mut() {
+            t.ttl -= 1;
+            t.z += FLOATING_TEXT_RISE;
+        }
+        self.neutral.floating.retain(|t| t.ttl > 0);
     }
 
     /// OpenRA SeedsResource (ore and gem mines): every `interval` ticks a
@@ -870,6 +918,12 @@ impl World {
     /// Whether actor `i` panics (ScaredyCat).
     pub fn is_panicking(&self, i: usize) -> bool {
         self.actors[i].world.panic_tick > 0
+    }
+
+    /// Whether infantry `i` is drawn in its panic pose (OpenRA ScaredyCat
+    /// PanicSequencePrefix: "panic-stand", "panic-run"), its second sprite slot.
+    pub(crate) fn draws_panic(&self, i: usize) -> bool {
+        self.actors[i].kind == Kind::Infantry && self.is_panicking(i)
     }
 
     /// OpenRA ScaredyCat.Panic: drop what it does and run.
@@ -973,7 +1027,7 @@ impl World {
     /// A random neighbouring cell actor `i` can enter (Mobile.GetAdjacentCell).
     fn adjacent_open_cell(&mut self, i: usize) -> Option<(i32, i32)> {
         let (cx, cy) = self.cell_of(self.actors[i].x, self.actors[i].y);
-        let pass = self.pass_for(self.domain_of(i));
+        let pass = self.pass_of(i);
         let open: Vec<(i32, i32)> = crate::flowfield::DIRS
             .iter()
             .map(|&(dx, dy)| (cx + dx, cy + dy))
@@ -1149,10 +1203,15 @@ impl World {
             let crush = crate::flowfield::Crush { player: crusher - 1, blocked: &self.neutral.crush_blocked[k].blocked };
             return Some(self.flow.field_crushing(&self.map, &self.pass, &self.rules.locomotors, goal, loco as u8, crush));
         }
-        let pass = match self.rules.locomotors[loco].domain {
-            crate::rules::Domain::Air => return None,
-            crate::rules::Domain::Water => &self.pass_water,
-            crate::rules::Domain::Ground => &self.pass,
+        if self.rules.locomotors[loco].domain == crate::rules::Domain::Air {
+            return None;
+        }
+        let pass = if self.lands(i) {
+            &self.pass_landing
+        } else if self.rules.locomotors[loco].domain == crate::rules::Domain::Water {
+            &self.pass_water
+        } else {
+            &self.pass
         };
         Some(self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco as u8))
     }
@@ -1161,7 +1220,7 @@ impl World {
     /// (crushers: also through walls of their class), ties toward `from`.
     pub(crate) fn nearest_reachable(&self, i: usize, goal: (i32, i32), from: (i32, i32)) -> Option<u32> {
         let d = self.domain_of(i);
-        let pass = self.pass_for(d);
+        let pass = self.pass_of(i);
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         let mask = if d == crate::rules::Domain::Ground { self.crush_mask(i) } else { 0 };
         if mask == 0 {

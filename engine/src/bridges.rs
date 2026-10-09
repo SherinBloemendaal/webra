@@ -559,9 +559,11 @@ impl World {
             let occupied = bld != NONE && self.occupies(bld as usize, ci);
             self.pass.set_blocked(ci, occupied || !terrain.passable());
             self.pass_water.set_blocked(ci, occupied || !terrain.ship_passable());
+            self.pass_landing.set_blocked(ci, occupied || !terrain.landing_passable());
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
         self.terrain_dirty = true;
     }
 

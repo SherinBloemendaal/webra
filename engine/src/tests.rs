@@ -1129,6 +1129,7 @@ fn lake_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     w.players[0].explored.iter_mut().for_each(|e| *e = 1);
     w
 }

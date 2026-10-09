@@ -466,7 +466,7 @@ impl World {
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.
-            None if self.pass_for(self.domain_of(i)).blocked[self.cell_index(self.actors[i].x, self.actors[i].y)] => i32::MAX,
+            None if self.pass_of(i).blocked[self.cell_index(self.actors[i].x, self.actors[i].y)] => i32::MAX,
             None => return true,
         };
         let a = &mut self.actors[i];
@@ -1165,7 +1165,7 @@ impl World {
             }
             let ci = self.map.idx(tx, ty);
             let domain = self.domain_of(i);
-            let open = domain == Domain::Air || !self.pass_for(domain).blocked[ci];
+            let open = domain == Domain::Air || !self.pass_of(i).blocked[ci];
             if !open || self.players[player as usize].explored[ci] == 0 || self.gen_shrouded(player, ci) {
                 continue;
             }

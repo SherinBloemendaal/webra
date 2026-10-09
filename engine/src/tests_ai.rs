@@ -37,6 +37,7 @@ fn arena(size: i32, players: &[Seat]) -> World {
     let mut w = World::empty(rules, map, 3);
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for (p, &(faction, ai, team, start)) in players.iter().enumerate() {
         let f = w.rules.faction_index(faction).unwrap();
         w.add_player(f, ai.is_some(), start);
@@ -61,6 +62,7 @@ fn flood(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
 }
 
 /// Every structure of the build order (and a tech center) around the yard, so

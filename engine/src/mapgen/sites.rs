@@ -9,8 +9,11 @@
 //! gems. The generator's maps are mirror (and some translation) symmetric, so
 //! the sites are too: every base gets the same mines.
 
+use super::settlements::TechBuildings;
 use crate::map::Map;
 use crate::mapdata::MapActor;
+use crate::rules::Rules;
+use crate::weather::Biome;
 
 /// Cells around a site the resource sum counts (Chebyshev distance).
 const SUM_RADIUS: i32 = 3;
@@ -65,10 +68,14 @@ pub fn mine_sites(m: &Map) -> Vec<(i32, i32, bool)> {
     out
 }
 
-/// The neutral actors of a generated map, as map file actors (owner -1).
-pub fn world_actors(m: &Map) -> Vec<MapActor> {
-    mine_sites(m)
+/// The neutral actors of a generated map, as map file actors (owner -1):
+/// the ore mines, then the tech buildings and villages (settlements.rs).
+pub fn world_actors(m: &Map, rules: &Rules, biome: Biome, tech: TechBuildings, seed: u64) -> Vec<MapActor> {
+    let mut actors: Vec<MapActor> = mine_sites(m)
         .into_iter()
         .map(|(x, y, gems)| MapActor { ty: if gems { "GMINE" } else { "MINE" }.into(), owner: -1, x, y, facing: 0 })
-        .collect()
+        .collect();
+    let more = super::settlements::settlements(m, rules, biome, tech, seed, &actors);
+    actors.extend(more);
+    actors
 }

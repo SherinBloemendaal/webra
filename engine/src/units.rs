@@ -230,9 +230,8 @@ impl World {
             return true;
         }
         let Some(dir) = self.flow_dir(i, goal) else { return true };
-        let domain = self.domain_of(i);
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        let pass = self.pass_for(domain);
+        let pass = self.pass_of(i);
         // Standing on a structure: step off it first (move_toward).
         if dir != DIR_NONE || pass.blocked[ci] {
             return true;
@@ -270,7 +269,7 @@ impl World {
             Some(r) => r,
             None => {
                 let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-                if !self.pass_for(self.domain_of(i)).blocked[ci] {
+                if !self.pass_of(i).blocked[ci] {
                     return true;
                 }
                 // On a blocked cell (a structure went up around the unit):
@@ -361,7 +360,7 @@ impl World {
             let dists: Vec<u16> = neighbours.iter().map(|n| n.map_or(crate::flowfield::DIST_NONE, |j| field.dist[j])).collect();
             (field.dirs[ci], dists)
         };
-        let pass = if domain == crate::rules::Domain::Water { &self.pass_water } else { &self.pass };
+        let pass = self.pass_of(i);
         let (wx, wy) = if dir == DIR_GOAL {
             (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
         } else if dir == DIR_NONE {
@@ -533,7 +532,7 @@ impl World {
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
             let d = self.domain_of(i);
-            if to == from || d == crate::rules::Domain::Air || self.may_enter(i, d, (x, y), (tx, ty)) {
+            if to == from || d == crate::rules::Domain::Air || self.may_enter(i, (x, y), (tx, ty)) {
                 let a = &mut self.actors[i];
                 a.x = tx;
                 a.y = ty;
@@ -554,8 +553,8 @@ impl World {
     /// flow fields and connectivity labels use (`flowfield::step`), so units
     /// never slip into a pocket their fields cannot lead them out of. A unit
     /// on a blocked cell (a structure went up around it) may leave any way.
-    fn may_enter(&self, i: usize, d: crate::rules::Domain, a: (i32, i32), b: (i32, i32)) -> bool {
-        let pass = self.pass_for(d);
+    fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
+        let pass = self.pass_of(i);
         // Walls the unit crushes are open to it, as in its flow field (neutral.rs).
         let blocked = |ci: usize| pass.blocked[ci] && !(pass.crush[ci] != 0 && self.crushes_wall_at(i, ci));
         let (fx, fy) = self.cell_of(a.0, a.1);

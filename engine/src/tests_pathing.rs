@@ -33,9 +33,11 @@ fn set_rock(w: &mut World, cells: impl IntoIterator<Item = (i32, i32)>) {
         w.map.terrain[i] = Terrain::Rock;
         w.pass.set_blocked(i, true);
         w.pass_water.set_blocked(i, true);
+        w.pass_landing.set_blocked(i, true);
     }
     w.pass.refresh(&w.map);
     w.pass_water.refresh(&w.map);
+    w.pass_landing.refresh(&w.map);
 }
 
 /// `n` units of the given types (cycled) in a block of `cols` columns, one

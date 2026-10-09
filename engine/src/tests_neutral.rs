@@ -182,14 +182,18 @@ fn civilians_wander_and_panic_when_hit() {
         moved |= (w.actors[civ].x, w.actors[civ].y) != start;
     }
     assert!(moved, "idle civilians wander (Wanders)");
-    // A hit makes it panic: it runs (twice as fast) until the panic is over.
+    assert!(!w.draws_panic(civ));
+    // A hit makes it panic: it runs (twice as fast) until the panic is over,
+    // drawn with its panic sequences (the second sprite slot).
     w.damage(civ, 100);
     assert!(w.is_panicking(civ));
+    assert!(w.draws_panic(civ), "panic-stand / panic-run");
     assert_eq!(w.world_speed_modifier(civ), 200);
     run(&mut w, 30);
     assert!(w.actors[civ].activity == Activity::Move || w.is_panicking(civ));
     run(&mut w, 250);
     assert!(!w.is_panicking(civ), "PanicDuration 250 ticks");
+    assert!(!w.draws_panic(civ));
     assert_eq!(w.world_speed_modifier(civ), 100);
 }
 
@@ -266,10 +270,19 @@ fn oil_derricks_pay_their_owner_and_go_back_to_neutral_when_the_owner_loses() {
     let cash = w.players[1].cash;
     w.on_captured(oil, 1);
     assert_eq!(w.players[1].cash, cash + 100, "GivesCashOnCapture 100");
+    // Shown as a cash tick in the new owner's colour (FloatingText "+$100"),
+    // rising for 30 ticks.
+    let tick = |w: &World| w.neutral.floating.iter().map(|t| (t.owner, t.amount)).collect::<Vec<_>>();
+    assert_eq!(tick(&w), vec![(1, 100)]);
+    run(&mut w, 10);
+    assert_eq!(w.neutral.floating[0].z, 10 * crate::neutral::FLOATING_TEXT_RISE);
+    run(&mut w, 20);
+    assert!(w.neutral.floating.is_empty(), "DisplayDuration 30");
     // CashTrickler: 100 every Interval (375) ticks, paid when the countdown
     // drops below zero (so every 376 ticks).
-    run(&mut w, 376);
+    run(&mut w, 346);
     assert_eq!(w.players[1].cash, cash + 200);
+    assert_eq!(tick(&w), vec![(1, 100)], "every payment shows");
     run(&mut w, 375);
     assert_eq!(w.players[1].cash, cash + 200);
     run(&mut w, 1);
@@ -287,6 +300,48 @@ fn oil_derricks_pay_their_owner_and_go_back_to_neutral_when_the_owner_loses() {
     let neutral_cash = w.players[n as usize].cash;
     run(&mut w, 800);
     assert_eq!(w.players[n as usize].cash, neutral_cash);
+}
+
+#[test]
+fn cash_ticks_read_like_openra_and_stay_hidden_under_the_fog() {
+    use crate::overlays::{cash_tick_text, push_cash_text};
+    assert_eq!(cash_tick_text(100), "+$100");
+    assert_eq!(cash_tick_text(-20), "-$20");
+    let mut rects = Vec::new();
+    let width = push_cash_text(15, 2, &mut rects);
+    assert!(!rects.is_empty() && rects.len() % 8 == 0);
+    for q in rects.chunks(8) {
+        assert!(q[0] >= -width / 2.0 - 0.01 && q[0] + q[2] <= width / 2.0 + 2.0, "inside the text: {q:?}");
+    }
+    // In the owner's colour (team colours are negative red channels), over a dark shadow.
+    assert!(rects.chunks(8).any(|q| q[4] == -3.0));
+    assert!(rects.chunks(8).any(|q| q[4] == 0.0 && q[7] > 0.5));
+    // Drawn for a player who sees the derrick, not for one under the shroud.
+    let mut w = world(vec![actor("OILB", 30, 30)]);
+    let oil = find(&w, "OILB")[0];
+    w.on_captured(oil, 0);
+    let count = |w: &World, player: u8| {
+        let mut sprites = Vec::new();
+        let mut rects = Vec::new();
+        let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+        w.build_render(player, 1.0, &view, &[], &mut sprites, &mut rects);
+        rects.len()
+    };
+    run(&mut w, 10);
+    assert!(w.render_sees_cell(0, w.cell_index(w.actors[oil].x, w.actors[oil].y)));
+    let seen = count(&w, 0);
+    w.neutral.floating.clear();
+    assert!(seen > count(&w, 0), "the cash tick adds rects");
+    w.on_captured(oil, 1);
+    for e in w.players[0].explored.iter_mut() {
+        *e = 0;
+    }
+    for v in w.players[0].visible.iter_mut() {
+        *v = 0;
+    }
+    let hidden = count(&w, 0);
+    w.neutral.floating.clear();
+    assert_eq!(hidden, count(&w, 0), "hidden under the shroud");
 }
 
 #[test]
@@ -540,6 +595,114 @@ fn ore_mines_grow_ore_around_them_with_regrowth_on() {
             assert!(on.map.terrain[i].holds_ore() && on.building_at[i] == NONE);
         }
     }
+}
+
+/// Footprint size of a structure type.
+fn size_of(rules: &crate::rules::Rules, ty: &str) -> (i32, i32) {
+    let b = rules.actors[rules.actor_index(ty).expect("known type")].building.as_ref().expect("a structure");
+    (b.width, b.height)
+}
+
+#[test]
+fn generated_maps_place_tech_buildings_and_villages_by_the_map_symmetry() {
+    use crate::mapgen::settlements::TechBuildings;
+    use crate::weather::Biome;
+    let rules = crate::rules::Rules::load();
+    let tech_ids = ["HOSP", "OILB", "FCOM", "MISS", "BIO"];
+    let mut derrick_maps = 0;
+    let mut maps = 0;
+    let mut village_maps = 0;
+    let (mut hospitals, mut between) = (0, 0);
+    for players in 2usize..=8 {
+        let size = if players <= 4 { 96 } else { 128 };
+        for seed in 1u64..=4 {
+            let m = Map::generate_styled(size, size, seed, 12, players, crate::mapgen::MapStyle::Random);
+            let flip_y = players == 4 || (players >= 5 && players % 2 == 0);
+            for (tech, biome) in [
+                (TechBuildings::Standard, Biome::Temperate),
+                (TechBuildings::Extra, Biome::Desert),
+                (TechBuildings::OilRush, Biome::Snow),
+                (TechBuildings::None, Biome::Temperate),
+            ] {
+                let what = format!("{players}p seed {seed} {tech:?}");
+                let actors = crate::mapgen::sites::world_actors(&m, &rules, biome, tech, seed);
+                maps += 1;
+                // Closed under the map's mirrors: every structure has its images.
+                for a in actors.iter().filter(|a| a.ty != "MINE" && a.ty != "GMINE") {
+                    let (fw, fh) = size_of(&rules, &a.ty);
+                    let mut images = vec![(m.width - a.x - fw, a.y)];
+                    // Derricks of a base's own sit in its pocket, which faces south
+                    // in every row: they follow the bases, not the top to bottom mirror.
+                    let own = a.ty == "OILB" && m.spawns.iter().any(|&(sx, sy)| (a.x - sx).abs() <= 11 && (a.y - sy).abs() <= 11);
+                    if flip_y && !own {
+                        images.push((a.x, m.height - a.y - fh));
+                    }
+                    for (ix, iy) in images {
+                        assert!(
+                            actors.iter().any(|b| b.ty == a.ty && (b.x, b.y) == (ix, iy)),
+                            "{what}: {} at {},{} has no image at {ix},{iy}",
+                            a.ty,
+                            a.x,
+                            a.y
+                        );
+                    }
+                    // Villages are of the biome.
+                    let world = &rules.actors[rules.actor_index(&a.ty).unwrap()].world;
+                    if let Some(biomes) = &world.biomes {
+                        assert!(biomes.iter().any(|b| b == biome.name()), "{what}: {} on {}", a.ty, biome.name());
+                    }
+                }
+                // Every base has the same number of derricks of its own.
+                let own: Vec<usize> = m
+                    .spawns
+                    .iter()
+                    .map(|&(sx, sy)| actors.iter().filter(|a| a.ty == "OILB" && (a.x - sx).abs() <= 11 && (a.y - sy).abs() <= 11).count())
+                    .collect();
+                assert!(own.iter().all(|&n| n == own[0]), "{what}: derricks per base {own:?}");
+                if tech == TechBuildings::None {
+                    assert!(!actors.iter().any(|a| tech_ids.contains(&a.ty.as_str())), "{what}: no tech buildings");
+                } else if own[0] > 0 {
+                    derrick_maps += 1;
+                }
+                if actors
+                    .iter()
+                    .any(|a| rules.actors[rules.actor_index(&a.ty).unwrap()].world.category.as_deref() == Some("Civilian building"))
+                {
+                    village_maps += 1;
+                }
+                if tech == TechBuildings::Standard && actors.iter().any(|a| a.ty == "HOSP") {
+                    hospitals += 1;
+                }
+                if tech == TechBuildings::Extra && actors.iter().any(|a| a.ty == "FCOM" || a.ty == "MISS") {
+                    between += 1;
+                }
+                if tech == TechBuildings::OilRush && own[0] > 0 {
+                    assert!(own[0] == 2 || own[0] == 1, "{what}: up to two derricks a base");
+                }
+                // The file validates, and the bases still reach each other past the buildings.
+                let mut d = MapData::from_map(&m, "Gen", "Test", "");
+                d.actors = actors.clone();
+                let v = d.validate();
+                assert!(v.ok, "{what}: {:?}", v.errors);
+                if seed == 1 && biome == Biome::Temperate {
+                    let setups: Vec<PlayerSetup> =
+                        (0..players).map(|k| PlayerSetup::new(if k % 2 == 0 { "england" } else { "russia" }, None)).collect();
+                    let mut w = World::from_map(&d, seed, &setups, GameOptions::default()).expect("world");
+                    w.pass.refresh(&w.map);
+                    let comp = |&(x, y): &(i32, i32)| w.pass.component[w.map.idx(x + 1, y + 5)];
+                    let first = comp(&m.spawns[0]);
+                    for s in &m.spawns {
+                        assert_eq!(comp(s), first, "{what}: base at {s:?} cut off");
+                    }
+                }
+            }
+        }
+    }
+    assert!(derrick_maps * 10 >= (maps / 4 * 3) * 9, "most maps give every base a derrick: {derrick_maps} of {}", maps / 4 * 3);
+    assert!(village_maps * 2 >= maps, "most maps have villages: {village_maps} of {maps}");
+    // 28 maps per option: the middle and the spots between bases mostly have room.
+    assert!(hospitals >= 21, "a hospital in the middle: {hospitals} of 28");
+    assert!(between >= 21, "buildings between neighbours: {between} of 28");
 }
 
 fn w_cell(w: &World, x: i32, y: i32) -> usize {

@@ -428,6 +428,9 @@ pub struct GameOptions {
     pub weather: crate::weather::WeatherMode,
     /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
     pub cheats: bool,
+    /// Tech buildings of a generated map (OpenRA's map generator option
+    /// "Buildings", mapgen/settlements.rs). Map files bring their own.
+    pub tech_buildings: crate::mapgen::settlements::TechBuildings,
 }
 
 impl Default for GameOptions {
@@ -445,6 +448,7 @@ impl Default for GameOptions {
             biome: Some(crate::weather::Biome::Temperate),
             weather: crate::weather::WeatherMode::Full,
             cheats: false,
+            tech_buildings: crate::mapgen::settlements::TechBuildings::Standard,
         }
     }
 }
@@ -811,6 +815,8 @@ pub struct World {
     pub pass: Passability,
     /// Passability for ships.
     pub pass_water: Passability,
+    /// Passability for landing craft (the Transport): ships' water and beaches.
+    pub pass_landing: Passability,
     pub flow: FlowCache,
     pub actors: Vec<Actor>,
     free: Vec<u32>,
@@ -883,8 +889,8 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        // Ore mines in the fields (mapgen/sites.rs).
-        let actors = crate::mapgen::sites::world_actors(&map);
+        // Ore mines in the fields, tech buildings and villages (mapgen/sites.rs, settlements.rs).
+        let actors = crate::mapgen::sites::world_actors(&map, &rules, biome, options.tech_buildings, seed);
         World::setup(rules, map, seed, players, options, &actors, biome)
     }
 
@@ -1010,11 +1016,13 @@ impl World {
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
         let pass = Passability::new(&map);
         let pass_water = Passability::water(&map);
+        let pass_landing = Passability::landing(&map);
         let cells = map.cells();
         World {
             rules,
             pass,
             pass_water,
+            pass_landing,
             flow: FlowCache::new(),
             actors: Vec::new(),
             free: Vec::new(),
@@ -1214,12 +1222,14 @@ impl World {
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);
                 self.pass_water.set_blocked(ci, true);
+                self.pass_landing.set_blocked(ci, true);
                 // Walls tanks may drive over (neutral.rs).
                 self.pass.set_crush(ci, crush);
             }
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -1293,6 +1303,7 @@ impl World {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
                         self.pass_water.set_blocked(ci, !self.map.terrain[ci].ship_passable());
+                        self.pass_landing.set_blocked(ci, !self.map.terrain[ci].landing_passable());
                         self.pass.set_crush(ci, 0);
                     }
                 }
@@ -1310,6 +1321,7 @@ impl World {
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
     }
 
     // ---- Domains (ground, water, air) -----------------------------------------
@@ -1326,6 +1338,31 @@ impl World {
             crate::rules::Domain::Water => &self.pass_water,
             _ => &self.pass,
         }
+    }
+
+    /// Whether unit `i` is a landing craft: a ship whose locomotor also
+    /// drives on beaches (OpenRA `lcraft`, TerrainSpeeds Beach: the Transport).
+    pub fn lands(&self, i: usize) -> bool {
+        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| {
+            let l = &self.rules.locomotors[u.locomotor];
+            l.domain == crate::rules::Domain::Water && l.speeds.get(crate::map::SPEED_BEACH).is_some_and(|&s| s > 0)
+        })
+    }
+
+    /// Passability for unit `i`: its domain's, or for landing craft water and beaches.
+    pub fn pass_of(&self, i: usize) -> &Passability {
+        if self.lands(i) {
+            &self.pass_landing
+        } else {
+            self.pass_for(self.domain_of(i))
+        }
+    }
+
+    /// Rebuild every passability from the map (after replacing it wholesale; tests, harnesses).
+    pub fn reset_passability(&mut self) {
+        self.pass = Passability::new(&self.map);
+        self.pass_water = Passability::water(&self.map);
+        self.pass_landing = Passability::landing(&self.map);
     }
 
     /// Goal cell for moving actor `i` toward cell (gx, gy): the nearest cell it
@@ -1703,7 +1740,7 @@ impl World {
             let comp = if d == crate::rules::Domain::Air {
                 0
             } else {
-                self.pass_for(d).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
+                self.pass_of(i).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
             };
             let crush = self.crush_mask(i);
             let goal = match goals.iter().find(|(k, _)| *k == (d, comp, crush)) {

@@ -271,7 +271,7 @@ impl World {
         if domain == Domain::Air {
             return None;
         }
-        let pass = self.pass_for(domain);
+        let pass = self.pass_of(i);
         let dirs = self.flow.peek(a.goal, unit.locomotor as u8, self.flow_crusher(i), pass.version)?;
         let (x0, y0) = (cx0.max(0), cy0.max(0));
         let (x1, y1) = (cx1.min(self.map.width - 1), cy1.min(self.map.height - 1));

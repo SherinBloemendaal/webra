@@ -24,7 +24,8 @@ pub fn px(wu: i32) -> f32 {
 }
 
 /// Sprite ids: actor `t` has body `2t` and turret `2t + 1`; specials follow.
-/// Infantry have no turret: their `2t + 1` is the prone pose (veterancy.rs).
+/// Infantry have no turret: their `2t + 1` is the prone pose (veterancy.rs),
+/// or for civilians the panic pose (neutral.rs).
 /// Must match the SPECIALS order in apps/game/js/sprites.js.
 pub struct SpriteIds {
     pub bullet: f32,
@@ -283,8 +284,9 @@ impl World {
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            // Prone infantry lie flat (TakeCover, veterancy.rs).
-            let body = if self.draws_prone(i) { a.ty * 2 + 1 } else { a.ty * 2 };
+            // Prone infantry lie flat (TakeCover, veterancy.rs); panicking
+            // civilians run with their arms up (ScaredyCat, neutral.rs).
+            let body = if self.draws_prone(i) || self.draws_panic(i) { a.ty * 2 + 1 } else { a.ty * 2 };
             sink.sprite(
                 sprites,
                 at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
@@ -377,6 +379,8 @@ impl World {
 
         // Health bars of the selection's targets and of hovered, damaged or all actors (overlays.rs).
         self.render_status_bars(player, sink, selected, rects);
+        // Cash ticks over oil derricks and captured buildings (overlays.rs).
+        self.render_floating_texts(player, sink, rects);
         // Selection: brackets, health bars, control group numbers and rally points.
         let mut rel: Vec<f32> = Vec::new();
         for &r in selected {

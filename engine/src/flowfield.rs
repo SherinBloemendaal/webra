@@ -101,6 +101,11 @@ impl Passability {
         Passability::with(map, |t| t.ship_passable())
     }
 
+    /// Passability for landing craft: water, fords and beaches.
+    pub fn landing(map: &Map) -> Self {
+        Passability::with(map, |t| t.landing_passable())
+    }
+
     fn with(map: &Map, open: impl Fn(crate::map::Terrain) -> bool) -> Self {
         let blocked = map.terrain.iter().map(|&t| !open(t)).collect();
         let n = map.cells();

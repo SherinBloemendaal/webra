@@ -89,10 +89,14 @@ impl Terrain {
     pub fn buildable(self) -> bool {
         matches!(self, Terrain::Clear | Terrain::Road)
     }
-    /// Open to ships: water and fords. (OpenRA's landing craft also beach;
-    /// WebRA's Transport unloads from the water instead.)
+    /// Open to ships: water and fords.
     pub fn ship_passable(self) -> bool {
         matches!(self, Terrain::Water | Terrain::Ford)
+    }
+    /// Open to landing craft (OpenRA locomotor `lcraft`: Water and Beach):
+    /// what ships sail on, and beaches they run up on to unload.
+    pub fn landing_passable(self) -> bool {
+        self.ship_passable() || self == Terrain::Beach
     }
     /// Ore (and anything harvested) lies on clear ground and roads (OpenRA
     /// ResourceLayer AllowedTerrainTypes `Clear, Road`) and on rough ground.

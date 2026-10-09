@@ -31,6 +31,7 @@ fn arena(players: &[(&str, u8, (i32, i32))]) -> World {
     let mut w = World::empty(rules, map, 3);
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for (p, &(faction, team, start)) in players.iter().enumerate() {
         let f = w.rules.faction_index(faction).unwrap();
         w.add_player(f, false, start);
