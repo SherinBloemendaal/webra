@@ -96,31 +96,202 @@
   }
 }
 
-/* The first start offer (js/content/panel.js mountContentPrompt). */
-.content-prompt {
+/* Install steps (dialog and start screen notice). */
+.content-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: var(--ui-fs-m);
+}
+
+.content-steps > li::marker {
+  color: var(--ui-accent-hi);
+  font-weight: 700;
+}
+
+.content-steps strong {
+  color: var(--ui-text);
+}
+
+.content-mirrors {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--ui-fs-m);
+}
+
+.content-mirrors a {
+  color: var(--ui-accent-hi);
+  overflow-wrap: anywhere;
+}
+
+/* The drop zone: a big target that is also the file picker button. */
+.menu-card button.content-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 96px;
+  justify-content: center;
+  margin-top: 6px;
+  background: var(--ui-metal-0);
+  border: 2px dashed var(--ui-line);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.menu-card button.content-dropzone:hover:not(:disabled),
+.menu-card button.content-dropzone.over {
+  border-color: var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-metal-0));
+  filter: none;
+}
+
+.menu-card button.content-dropzone:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.content-dropzone-title {
+  font: 700 var(--ui-fs-l) / 1.3 var(--ui-font);
+}
+
+.content-dropzone-sub {
+  color: var(--ui-muted);
+  font: var(--ui-fs-m) / 1.3 var(--ui-font);
+}
+
+/* Live progress of a download or install. */
+.content-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.content-bar {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--ui-accent);
+}
+
+/* What the last install did, with the switch to use it. */
+.content-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-ok);
+  border-radius: var(--ui-radius);
+  background: var(--ui-metal-0);
+}
+
+.content-result.content-result-error {
+  border-left-color: var(--ui-warn);
+}
+
+.content-result h3 {
+  margin: 0;
+}
+
+.content-result .audio-note {
+  margin: 0;
+}
+
+.content-auto {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-accent-lo);
+  border-radius: var(--ui-radius);
+}
+
+.content-auto .audio-note {
+  margin: 0;
+}
+
+.content-other summary {
+  cursor: pointer;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-m);
+}
+
+.content-other summary:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* The start screen notice (js/content/panel.js mountContentNotice). */
+.content-notice {
   position: fixed;
   right: 12px;
   bottom: 12px;
   z-index: 65;
-  width: min(420px, calc(100% - 24px));
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.content-prompt h2 {
+.content-notice-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.content-notice h2 {
   margin: 0;
 }
 
-.content-mirrors {
+.menu-card button.content-notice-close {
+  width: auto;
   margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
+  padding: 4px 10px;
+  font-size: var(--ui-fs-s);
+}
+
+.menu-card .content-steps button:not(.content-dropzone) {
+  width: auto;
+  margin-top: 6px;
+  padding: 8px 12px;
+}
+
+.content-notice-legal {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+/* Only on the start screen. */
+#app:not([hidden]) ~ .content-notice {
+  display: none;
+}
+
+/* Phones: the notice becomes a sheet at the bottom; buttons get 44 px targets. */
+@media (pointer: coarse), (max-width: 600px) {
+  .content-notice {
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: 70dvh;
+  }
+
+  .menu-card .content-steps button:not(.content-dropzone),
+  .menu-card button.content-notice-close {
+    min-height: 44px;
+  }
 }
 
 /* Files dragged over the page (Red Alert files, texture packs). */
 body.content-drop::after {
-  content: 'Drop Red Alert files or a texture pack to install them';
+  content: 'Drop ra-quickinstall.zip, Red Alert files or a texture pack to install them';
   position: fixed;
   inset: 12px;
   z-index: 80;

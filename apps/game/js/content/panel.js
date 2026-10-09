@@ -1,29 +1,37 @@
-// The "Original content" dialog (lobby button and game menu): the graphics
-// choice, original sounds on or off, installing the original Red Alert
-// content from the player's own files in one flow (sounds and graphics),
-// and the texture pack manager.
+// Original Red Alert content: the "Original content" dialog (lobby button,
+// game menu, Sound dialog) and the start screen notice.
+//
+// The dialog: the graphics and sounds choice; installing the original
+// content (sounds and graphics in one flow) in three steps (download
+// ra-quickinstall.zip from a mirror, drop or pick it, done) with live
+// progress and a summary; the one-click download through WebRA's server
+// for accounts allowed to use it (content/download.js canAutoInstall);
+// other ways (own Red Alert files, a folder); the texture pack manager.
+//
+// The notice: a dismissible card on the start screen (dismissal is a synced
+// setting) with the same steps, shown until something is installed.
+//
+// Text from files and the server only ever goes in through textContent.
 
 import { GRAPHICS_SETTING } from './index.js';
 import { packSummary, PackError } from './packs.js';
-import { downloadQuickInstall, declinePrompt, DOWNLOAD_NOTICE, QUICKINSTALL_BYTES } from './download.js';
+import {
+  downloadQuickInstall,
+  dismissNotice,
+  DOWNLOAD_NOTICE,
+  LEGAL_NOTICE,
+  QUICKINSTALL_BYTES,
+  QUICKINSTALL_MIRRORS,
+} from './download.js';
+
+export { QUICKINSTALL_MIRRORS };
 
 const ACCEPT_CONTENT = '.zip,.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03,.shp,.pal,.tem,.sno,.des';
 const ACCEPT_PACK = '.webrapack,.zip';
 /** Largest pack file read for the preview (content/packs.js PACK_LIMITS.maxArchiveBytes). */
 const MAX_PACK_FILE = 64 * 1024 * 1024;
-/**
- * OpenRA's quick install mirrors (OpenRA mods/ra/installer): EA's freeware
- * files as one ZIP, hosted by third parties. Plain links only: the player
- * downloads the file and picks or drops it here. The game never fetches
- * them (the mirrors send no CORS headers, and the game's CSP and COEP
- * forbid it), and WebRA's server never proxies them.
- */
-export const QUICKINSTALL_MIRRORS = Object.freeze([
-  'https://openra.baxxster.no/openra/ra-quickinstall.zip',
-  'https://republic.community/hosted/files/command-and-conquer/openra/ra-quickinstall.zip',
-  'https://openra.0x47.net/ra-quickinstall.zip',
-  'https://openra.ppmsite.com/ra-quickinstall.zip',
-]);
+/** Red Alert files the installer takes besides ZIPs. */
+const CONTENT_FILE = /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i;
 
 const THEATER_NAMES = { TEMPERAT: 'temperate', SNOW: 'snow', DESERT: 'desert (from Tiberian Dawn)' };
 
@@ -48,9 +56,27 @@ export function formatBytes(n) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** Whether this device is mainly touch (no drag and drop of files: the file picker instead). */
+export function isTouchDevice(win = globalThis.window) {
+  try {
+    return !!win?.matchMedia?.('(pointer: coarse)').matches && !win.matchMedia('(pointer: fine)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the browser can pick whole folders (desktop Chrome, Edge, Firefox, Safari; not phones). */
+export function canPickFolder(doc = globalThis.document) {
+  try {
+    return 'webkitdirectory' in doc.createElement('input') && !isTouchDevice();
+  } catch {
+    return false;
+  }
+}
+
 /** The installed summary as text (content/install.js contentSummary). */
 export function summaryText(s) {
-  if (!s.total) return 'Nothing installed. WebRA uses its own art and synthesized sounds.';
+  if (!s.total) return 'Nothing installed yet. WebRA uses its own art and synthesized sounds.';
   const b = s.byCategory;
   const parts = [];
   const sounds = b.effects + b.voices + b.announcer + b.music;
@@ -58,12 +84,76 @@ export function summaryText(s) {
     parts.push(
       `Sounds: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'unit voice', 'unit voices')}, ${plural(b.announcer, 'announcer line', 'announcer lines')}, ${plural(b.music, 'music track', 'music tracks')} (${formatBytes(s.bytes.sounds)}).`,
     );
+  } else {
+    parts.push('Sounds: none (they come from sounds.mix, allies.mix, russian.mix, speech.mix and scores.mix, all in ra-quickinstall.zip).');
   }
   if (b.graphics) {
     const theaters = s.theaters.length ? s.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') : 'none';
     parts.push(`Graphics: ${plural(b.graphics, 'file', 'files')} (${formatBytes(s.bytes.graphics)}); terrain for ${theaters}.`);
+    if (s.palette === false) parts.push('The graphics cannot be used yet: the palette from temperat.mix is missing. Install ra-quickinstall.zip or main.mix to complete them.');
+  } else {
+    parts.push('Graphics: none (they come from conquer.mix, hires.mix and the theater archives, all in ra-quickinstall.zip).');
   }
   return `Installed on this device. ${parts.join(' ')}`;
+}
+
+/** The outcome of one install as short lines for the result card (content/install.js report). */
+export function installResultLines(r) {
+  const lines = [];
+  if (!r.added) lines.push('No Red Alert sounds or graphics were found in these files. Use ra-quickinstall.zip from one of the mirrors.');
+  else {
+    const b = r.byCategory;
+    const sounds = b.effects + b.voices + b.announcer + b.music;
+    lines.push(`Installed ${plural(r.added, 'file', 'files')} (${formatBytes(r.bytes)}).`);
+    if (sounds) lines.push(`Sounds: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'voice', 'voices')}, ${plural(b.announcer, 'announcer line', 'announcer lines')}, ${plural(b.music, 'music track', 'music tracks')}.`);
+    if (b.graphics) {
+      const theaters = r.theaters?.length ? r.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') : 'none';
+      lines.push(`Graphics: ${plural(b.graphics, 'file', 'files')}; terrain for ${theaters}.`);
+    }
+    if (r.switched) lines.push('The game now uses the original graphics. You can switch back below or under Use.');
+  }
+  if (r.errors?.length) lines.push(`Skipped: ${r.errors.slice(0, 3).join('; ')}${r.errors.length > 3 ? '; ...' : ''}`);
+  return lines;
+}
+
+/** Split dropped or picked files: texture packs, Red Alert content, and the rest. */
+export async function classifyFiles(files, isPack = isPackZip) {
+  const packs = [];
+  const content = [];
+  const other = [];
+  for (const f of files) {
+    const name = f.name ?? '';
+    if (/\.webrapack$/i.test(name)) packs.push(f);
+    else if (/\.zip$/i.test(name)) {
+      // A ZIP with a manifest.json is a pack; any other ZIP goes to the installer.
+      if (await isPack(new Uint8Array(await f.arrayBuffer()))) packs.push(f);
+      else content.push(f);
+    } else if (CONTENT_FILE.test(name)) content.push(f);
+    else other.push(f);
+  }
+  return { packs, content, other };
+}
+
+/** The mirror links of ra-quickinstall.zip (plain links, opened in a new tab). */
+function mirrorList() {
+  return el(
+    'ul',
+    { class: 'content-mirrors' },
+    ...QUICKINSTALL_MIRRORS.map((url) =>
+      el('li', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', download: 'ra-quickinstall.zip', text: new URL(url).hostname })),
+    ),
+  );
+}
+
+/** Step 1, the same in the dialog and the notice. */
+function stepDownload() {
+  return el(
+    'li',
+    {},
+    el('strong', { text: 'Download ra-quickinstall.zip' }),
+    el('span', { text: ` (${formatBytes(QUICKINSTALL_BYTES)}, the same file on every mirror) from one of these mirrors:` }),
+    mirrorList(),
+  );
 }
 
 /**
@@ -71,13 +161,16 @@ export function summaryText(s) {
  * @param {HTMLElement} root
  * @param {import('./index.js').ContentSystem} content
  * @param {import('../audio/index.js').AudioSystem | null} audio
- * @param {{ actorNames?: Map<string, string> }} [opts]
+ * @param {{ actorNames?: Map<string, string>, autoInstall?: boolean, fetchImpl?: typeof fetch }} [opts]
+ *   autoInstall: offer the one-click download (content/download.js canAutoInstall)
  */
 export function mountContentSettings(root, content, audio, opts = {}) {
   root.classList.add('audio-settings', 'content-settings');
   const settings = content.settings;
+  const touch = isTouchDevice();
+  let running = false;
 
-  // ---- Graphics and sounds choice ---------------------------------------------------
+  // ---- Use ------------------------------------------------------------------------------
   const radio = (value, label) => {
     const input = el('input', { type: 'radio', name: 'content-graphics', id: `content-graphics-${value}`, value });
     input.addEventListener('change', () => input.checked && settings.set(GRAPHICS_SETTING, value));
@@ -90,30 +183,100 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   sounds.disabled = !audio;
   sounds.addEventListener('change', () => audio?.prefs.set({ original: sounds.checked }));
 
-  // ---- Install ----------------------------------------------------------------------
+  // ---- Install --------------------------------------------------------------------------
   const status = el('p', { class: 'audio-status', role: 'status', 'aria-live': 'polite' });
-  const progress = el('p', { class: 'audio-progress', 'aria-live': 'polite' });
-  const files = el('input', { type: 'file', multiple: true, accept: ACCEPT_CONTENT, hidden: true });
-  const folder = el('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true });
-  const pickFiles = el('button', { type: 'button', class: 'primary', text: 'Choose files...' });
+  const files = el('input', { type: 'file', multiple: true, accept: ACCEPT_CONTENT, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
+  const folder = el('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true, 'aria-hidden': 'true', tabindex: '-1' });
+  const pickFiles = el('button', { type: 'button', text: 'Choose Red Alert files...' });
   const pickFolder = el('button', { type: 'button', text: 'Choose folder...' });
+  pickFolder.hidden = !canPickFolder();
   const remove = el('button', { type: 'button', class: 'danger', text: 'Remove installed content' });
   pickFiles.addEventListener('click', () => files.click());
   pickFolder.addEventListener('click', () => folder.click());
 
-  // ---- Packs ------------------------------------------------------------------------
-  const packFile = el('input', { type: 'file', accept: ACCEPT_PACK, hidden: true });
+  const dropzone = el(
+    'button',
+    { type: 'button', class: 'content-dropzone', 'aria-describedby': 'content-drop-help' },
+    el('span', { class: 'content-dropzone-title', text: touch ? 'Choose ra-quickinstall.zip' : 'Drop ra-quickinstall.zip here' }),
+    el('span', { class: 'content-dropzone-sub', id: 'content-drop-help', text: touch ? 'Tap to pick the file you downloaded.' : 'or click to choose the file you downloaded.' }),
+  );
+  dropzone.addEventListener('click', () => files.click());
+  const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  dropzone.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dropzone.classList.add('over');
+  });
+  dropzone.addEventListener('dragover', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+  dropzone.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    // Handled here: the page's own drop handler (main.js) must not install the files again.
+    e.stopPropagation();
+    dropzone.classList.remove('over');
+    globalThis.document?.body?.classList.remove('content-drop');
+    handleFiles([...(e.dataTransfer.files ?? [])]);
+  });
+
+  // Live progress: a bar (with a value while downloading) and a line of text.
+  const bar = el('progress', { class: 'content-bar', max: '1', 'aria-label': 'Install progress' });
+  const progressText = el('p', { class: 'audio-progress', role: 'status', 'aria-live': 'polite' });
+  const progressBox = el('div', { class: 'content-progress', hidden: true }, bar, progressText);
+  const showProgress = (text, fraction = null) => {
+    progressBox.hidden = false;
+    progressText.textContent = text;
+    if (fraction === null) bar.removeAttribute('value');
+    else bar.value = Math.max(0, Math.min(1, fraction));
+  };
+  const hideProgress = () => {
+    progressBox.hidden = true;
+  };
+
+  // The result of the last install: what came in, and the switch to use it.
+  const resultTitle = el('h3', { id: 'content-result-title', text: 'Installed' });
+  const resultLines = el('div', { class: 'content-result-lines' });
+  const useAll = el('input', { type: 'checkbox', id: 'content-use-all' });
+  useAll.addEventListener('change', () => {
+    settings.set(GRAPHICS_SETTING, useAll.checked && content.hasOriginalGraphics ? 'original' : 'webra');
+    audio?.prefs.set({ original: useAll.checked });
+  });
+  const useAllRow = el('div', { class: 'audio-row audio-check' }, useAll, el('label', { for: 'content-use-all', text: 'Use the original graphics and sounds' }));
+  const result = el('div', { class: 'content-result', role: 'region', 'aria-labelledby': 'content-result-title', hidden: true }, resultTitle, resultLines, useAllRow);
+  const showResult = (title, lines, ok) => {
+    resultTitle.textContent = title;
+    resultLines.replaceChildren(...lines.map((t) => el('p', { class: 'audio-note', text: t })));
+    result.classList.toggle('content-result-error', !ok);
+    useAllRow.hidden = !ok;
+    result.hidden = false;
+  };
+
+  // The one-click download, only for accounts allowed to use it.
+  const download = el('button', { type: 'button', class: 'primary', text: `Download and install (${formatBytes(QUICKINSTALL_BYTES)})` });
+  const autoBox = el(
+    'div',
+    { class: 'content-auto', hidden: !opts.autoInstall },
+    el('p', { class: 'audio-note', text: 'Your account may use the one-click install:' }),
+    el('div', { class: 'audio-buttons' }, download),
+    el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
+  );
+
+  // ---- Packs ----------------------------------------------------------------------------
+  const packFile = el('input', { type: 'file', accept: ACCEPT_PACK, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
   const pickPack = el('button', { type: 'button', text: 'Install texture pack...' });
   pickPack.addEventListener('click', () => packFile.click());
   const packList = el('ul', { class: 'content-packs' });
   const preview = el('div', { class: 'content-preview', hidden: true });
   const packStatus = el('p', { class: 'audio-progress', 'aria-live': 'polite' });
 
-  const download = el('button', { type: 'button', class: 'primary', text: `Download original Red Alert content (${formatBytes(QUICKINSTALL_BYTES)})` });
-  const downloadStatus = el('p', { class: 'audio-progress', 'aria-live': 'polite' });
-
   const busy = (on) => {
-    for (const b of [pickFiles, pickFolder, remove, pickPack, download]) b.disabled = on;
+    running = on;
+    for (const b of [pickFiles, pickFolder, remove, pickPack, download, dropzone]) b.disabled = on;
+    root.setAttribute('aria-busy', String(on));
   };
 
   const sync = async () => {
@@ -125,6 +288,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       ? 'Original graphics: units, structures, infantry animations, cameos and terrain from your files. Effects keep WebRA art. The choice applies at once, also in a running game.'
       : 'Install the original content below to use the original graphics.';
     sounds.checked = !!audio?.prefs.get().original;
+    useAll.checked = content.graphics === 'original' && !!audio?.prefs.get().original;
     try {
       const s = await content.summary();
       status.textContent = summaryText(s);
@@ -137,56 +301,65 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   };
 
   const install = async (list) => {
-    if (!list.length) return;
+    if (!list.length) return null;
+    if (running) {
+      showProgress('An install is already running. Wait until it finishes.');
+      return null;
+    }
     busy(true);
-    progress.textContent = 'Reading your files in this browser...';
+    result.hidden = true;
+    showProgress('Reading your files in this browser...');
+    let report = null;
     try {
-      const r = await content.install(list, { onProgress: (t) => (progress.textContent = t) });
-      const parts = [r.added ? `Installed ${plural(r.added, 'file', 'files')} (${formatBytes(r.bytes)}).` : 'No Red Alert sounds or graphics found in these files.'];
-      if (r.archives.length) parts.push(`Read ${r.archives.join(', ')}.`);
-      if (r.errors.length) parts.push(`Skipped: ${r.errors.slice(0, 3).join('; ')}${r.errors.length > 3 ? '; ...' : ''}`);
-      progress.textContent = parts.join(' ');
+      report = await content.install(list, { onProgress: (t) => showProgress(`${t}...`) });
       await audio?.reloadInstalled();
+      hideProgress();
+      showResult(report.added ? 'Installed' : 'Nothing installed', installResultLines(report), report.added > 0);
     } catch (err) {
-      progress.textContent = `Install failed: ${err.message ?? err}`;
+      hideProgress();
+      showResult('Install failed', [err.message ?? String(err), 'Nothing on this device changed. You can try again.'], false);
     } finally {
       busy(false);
       files.value = '';
       folder.value = '';
-      sync();
+      await sync();
     }
+    return report;
   };
+
   const fetchAndInstall = async () => {
+    if (running) return null;
     busy(true);
-    downloadStatus.textContent = 'Starting the download...';
+    result.hidden = true;
+    showProgress('Starting the download...', 0);
     let file;
     try {
       file = await downloadQuickInstall({
-        onProgress: (n, total) => (downloadStatus.textContent = `Downloading: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`),
+        fetchImpl: opts.fetchImpl,
+        onProgress: (n, total) => showProgress(`Downloading: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total),
       });
     } catch (err) {
-      downloadStatus.textContent = `Download failed: ${err.message ?? err}. You can download the file from a mirror yourself and choose it below.`;
+      hideProgress();
+      showResult('Download failed', [`${err.message ?? err}.`, 'You can download the file from a mirror yourself (step 1) and drop it here.'], false);
       busy(false);
-      return;
+      return null;
     }
-    downloadStatus.textContent = 'Downloaded. Installing...';
     busy(false);
-    await install([file]);
-    downloadStatus.textContent = '';
+    return install([file]);
   };
   download.addEventListener('click', fetchAndInstall);
 
-  files.addEventListener('change', () => install([...files.files]));
+  files.addEventListener('change', () => handleFiles([...files.files]));
   folder.addEventListener('change', () => install([...folder.files]));
   remove.addEventListener('click', async () => {
+    if (running) return;
     busy(true);
     try {
       await content.removeOriginal();
-      if (content.graphics === 'original') settings.set(GRAPHICS_SETTING, 'webra');
-      progress.textContent = 'Removed. WebRA uses its own art and synthesized sounds again.';
       await audio?.reloadInstalled();
+      showResult('Removed', ['WebRA uses its own art and synthesized sounds again.'], false);
     } catch (err) {
-      progress.textContent = `Could not remove: ${err.message ?? err}`;
+      showResult('Could not remove', [err.message ?? String(err)], false);
     } finally {
       busy(false);
       sync();
@@ -297,14 +470,30 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   };
 
   content.onChange(() => sync());
-  audio?.prefs.subscribe((v) => (sounds.checked = !!v.original));
+  audio?.prefs.subscribe((v) => {
+    sounds.checked = !!v.original;
+    useAll.checked = content.graphics === 'original' && !!v.original;
+  });
+
+  /**
+   * Files dropped or picked: texture packs get the install preview, Red
+   * Alert files (ra-quickinstall.zip, .mix, loose files) the install.
+   * Returns false when nothing in `list` is content. `classified` skips
+   * reading the files again (classifyFiles).
+   */
+  async function handleFiles(list, classified = null) {
+    const { packs, content: rest } = classified ?? (await classifyFiles(list));
+    if (!packs.length && !rest.length) {
+      showResult('Not Red Alert content', ['Choose ra-quickinstall.zip, Red Alert .mix files or a texture pack (.webrapack).'], false);
+      return false;
+    }
+    if (rest.length) await install(rest);
+    for (const p of packs) await inspectPackFile(p);
+    return true;
+  }
 
   root.replaceChildren(
-    el(
-      'p',
-      { class: 'audio-local' },
-      'WebRA ships only its own art and sounds. Red Alert belongs to Electronic Arts, who released it as freeware in 2008: if you have a copy, WebRA can use its original graphics, sounds and music, as OpenRA does. Your files are read in this browser and stored on this device only. Nothing is uploaded, and WebRA never hosts or distributes them.',
-    ),
+    el('p', { class: 'audio-local', text: LEGAL_NOTICE }),
     el(
       'section',
       { class: 'audio-content', 'aria-labelledby': 'content-use-title' },
@@ -315,34 +504,32 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     ),
     el(
       'section',
-      { class: 'audio-content', 'aria-labelledby': 'content-get-title' },
-      el('h2', { id: 'content-get-title', text: 'Get the files' }),
-      el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
-      el('div', { class: 'audio-buttons' }, download),
-      downloadStatus,
-      el('p', {
-        class: 'audio-note',
-        text: 'Or use your own Red Alert files, or download ra-quickinstall.zip yourself, the package OpenRA installs from: Electronic Arts\' 2008 freeware release, hosted by third parties. Get it from one of these mirrors, then choose it below or drop it on the game:',
-      }),
-      el(
-        'ul',
-        { class: 'content-mirrors' },
-        ...QUICKINSTALL_MIRRORS.map((url) => el('li', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: new URL(url).hostname }))),
-      ),
-    ),
-    el(
-      'section',
       { class: 'audio-content', 'aria-labelledby': 'content-install-title' },
-      el('h2', { id: 'content-install-title', text: 'Install from your copy of Red Alert' }),
-      el('p', {
-        class: 'audio-note',
-        text: 'Choose ra-quickinstall.zip, or main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix), or loose files. desert.mix from Tiberian Dawn adds desert terrain. Sounds and graphics are installed in one go.',
-      }),
+      el('h2', { id: 'content-install-title', text: 'Install the original content' }),
       status,
-      el('div', { class: 'audio-buttons' }, pickFiles, pickFolder, remove),
+      autoBox,
+      el(
+        'ol',
+        { class: 'content-steps' },
+        stepDownload(),
+        el('li', {}, el('strong', { text: touch ? 'Choose the ZIP' : 'Drop the ZIP here' }), el('span', { text: touch ? ' from your downloads:' : ', or click to choose it:' }), dropzone),
+        el('li', {}, el('strong', { text: 'Done.' }), el('span', { text: ' The game switches to the original graphics and sounds at once, also in a running game. You can switch back under Use.' })),
+      ),
+      progressBox,
+      result,
+      el(
+        'details',
+        { class: 'content-other' },
+        el('summary', { text: 'Other ways: your own copy of Red Alert' }),
+        el('p', {
+          class: 'audio-note',
+          text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix), or loose files. desert.mix from Tiberian Dawn adds desert terrain. Sounds and graphics are installed in one go.',
+        }),
+        el('div', { class: 'audio-buttons' }, pickFiles, pickFolder),
+      ),
+      el('div', { class: 'audio-buttons' }, remove),
       files,
       folder,
-      progress,
     ),
     el(
       'section',
@@ -350,7 +537,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       el('h2', { id: 'content-packs-title', text: 'Texture packs' }),
       el('p', {
         class: 'audio-note',
-        text: 'Packs (.webrapack or .zip) replace sprites, cameos, terrain and sounds. A pack wins over the original content, which wins over WebRA art; the first pack in the list wins over the ones below it.',
+        text: 'Packs (.webrapack or .zip) replace sprites, cameos, terrain and sounds. A pack wins over the original content, which wins over WebRA art; the first pack in the list wins over the ones below it. Their order and choice follow your account.',
       }),
       packList,
       el('div', { class: 'audio-buttons' }, pickPack),
@@ -360,7 +547,20 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     ),
   );
   sync();
-  return { refresh: sync, install, inspectPackFile, download: fetchAndInstall };
+  return {
+    refresh: sync,
+    install,
+    handleFiles,
+    inspectPackFile,
+    download: fetchAndInstall,
+    get busy() {
+      return running;
+    },
+    /** Offer the one-click download or not (the account's flags changed). */
+    setAutoInstall(on) {
+      autoBox.hidden = !on;
+    },
+  };
 }
 
 /**
@@ -380,6 +580,7 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
   const view = mountContentSettings(body, content, audio, opts);
   let opener = null;
   const open = (on) => {
+    if (on === !panel.hidden) return;
     panel.hidden = !on;
     button?.setAttribute('aria-expanded', String(on));
     if (on) {
@@ -387,7 +588,7 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
       view.refresh();
       close.focus();
     } else {
-      (opener instanceof HTMLElement ? opener : button)?.focus();
+      (opener instanceof HTMLElement && opener.isConnected ? opener : button)?.focus();
     }
   };
   if (button) {
@@ -405,31 +606,23 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
   });
   return {
     open: () => open(true),
-    /** Open the dialog and download the original content (the first start prompt's button). */
+    /** Open the dialog and run the one-click download. */
     download() {
       open(true);
       return view.download();
     },
+    setAutoInstall: (on) => view.setAutoInstall(on),
     /**
-     * Files dropped on the game or the lobby: texture packs get the install
-     * preview, Red Alert files (ra-quickinstall.zip, .mix, loose files) the
-     * normal install. Returns false when nothing in `files` is content.
+     * Files dropped on the game or the lobby, or picked in the notice: the
+     * dialog opens with the install's progress and result. Returns false
+     * (and leaves the dialog closed) when nothing in `files` is content.
      */
     async drop(files) {
       const list = [...files];
-      const packs = list.filter((f) => /\.webrapack$/i.test(f.name));
-      const zips = list.filter((f) => /\.zip$/i.test(f.name));
-      const rest = list.filter((f) => /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i.test(f.name));
-      // A ZIP with a manifest.json is a pack; any other ZIP goes to the installer.
-      for (const z of zips) {
-        const head = new Uint8Array(await z.arrayBuffer());
-        if (await isPackZip(head)) packs.push(z);
-        else rest.push(z);
-      }
-      if (!packs.length && !rest.length) return false;
+      const classified = await classifyFiles(list);
+      if (!classified.packs.length && !classified.content.length) return false;
       open(true);
-      if (rest.length) await view.install(rest);
-      for (const p of packs) await view.inspectPackFile(p);
+      await view.handleFiles(list, classified);
       return true;
     },
   };
@@ -447,36 +640,67 @@ async function isPackZip(bytes) {
 }
 
 /**
- * The first start offer (once per browser until declined), like OpenRA's
- * content installer: a small card, never a silent download. The game works
- * fully without content.
+ * The start screen notice: what the original content is and how to install
+ * it, in three steps. Dismissing it is remembered (a synced setting); it
+ * also goes once content is installed. Not a dialog: the lobby stays usable.
+ * @param {HTMLElement} host
+ * @param {{ registry: object, onFiles(files: File[]): void, onOpen(): void, onDownload(): void, autoInstall?: boolean }} o
  */
-export function mountContentPrompt(host, { onDownload, onOpen }) {
-  const card = el('div', { class: 'menu-card content-prompt', role: 'dialog', 'aria-labelledby': 'content-prompt-title' });
-  const yes = el('button', { type: 'button', class: 'primary', text: `Download (${formatBytes(QUICKINSTALL_BYTES)})` });
-  const more = el('button', { type: 'button', text: 'Other ways...' });
-  const later = el('button', { type: 'button', text: 'Not now' });
-  const never = el('button', { type: 'button', text: "Don't ask again" });
-  const closeCard = () => card.remove();
-  yes.addEventListener('click', () => {
-    closeCard();
-    onDownload();
+export function mountContentNotice(host, { registry, onFiles, onOpen, onDownload, autoInstall = false }) {
+  const touch = isTouchDevice();
+  const file = el('input', { type: 'file', accept: '.zip,.mix', multiple: true, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
+  const pick = el('button', { type: 'button', class: 'primary', text: 'Choose ra-quickinstall.zip...' });
+  pick.addEventListener('click', () => file.click());
+  file.addEventListener('change', () => {
+    const list = [...file.files];
+    file.value = '';
+    if (list.length) onFiles(list);
   });
-  more.addEventListener('click', () => {
-    closeCard();
-    onOpen();
-  });
-  later.addEventListener('click', closeCard);
-  never.addEventListener('click', () => {
-    declinePrompt();
-    closeCard();
-  });
-  card.append(
-    el('h2', { id: 'content-prompt-title', text: 'Original Red Alert graphics and sounds' }),
-    el('p', { class: 'audio-note', text: 'WebRA plays with its own art and sounds. You can also use the original ones.' }),
-    el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
-    el('div', { class: 'audio-buttons' }, yes, more, later, never),
+  const dismiss = el('button', { type: 'button', class: 'content-notice-close', 'aria-label': 'Dismiss the original content notice', title: 'Dismiss', text: 'Dismiss' });
+  const more = el('button', { type: 'button', text: 'More options...' });
+  more.addEventListener('click', () => onOpen());
+  const auto = el('button', { type: 'button', class: 'primary', text: `Download and install (${formatBytes(QUICKINSTALL_BYTES)})` });
+  auto.addEventListener('click', () => onDownload());
+  const autoRow = el('div', { class: 'content-auto', hidden: !autoInstall }, el('p', { class: 'audio-note', text: 'Your account may use the one-click install:' }), el('div', { class: 'audio-buttons' }, auto));
+  const card = el(
+    'section',
+    { class: 'menu-card content-notice', role: 'region', 'aria-labelledby': 'content-notice-title' },
+    el('div', { class: 'content-notice-head' }, el('h2', { id: 'content-notice-title', text: 'Play with the original Red Alert art and sounds' }), dismiss),
+    el('p', {
+      class: 'audio-note',
+      text: 'WebRA plays with its own art and sounds. Electronic Arts released Red Alert as freeware in 2008: add its original graphics, sounds and music in three steps.',
+    }),
+    autoRow,
+    el(
+      'ol',
+      { class: 'content-steps' },
+      stepDownload(),
+      el(
+        'li',
+        {},
+        el('strong', { text: touch ? 'Choose the ZIP' : 'Drag the ZIP onto this page' }),
+        el('span', { text: touch ? ' from your downloads: ' : ', or choose it: ' }),
+        pick,
+      ),
+      el('li', {}, el('strong', { text: 'Done.' }), el('span', { text: ' You see the progress and what was installed, and can switch back any time.' })),
+    ),
+    el('p', { class: 'content-notice-legal', text: LEGAL_NOTICE }),
+    el('div', { class: 'audio-buttons' }, more),
+    file,
   );
+  const close = () => card.remove();
+  dismiss.addEventListener('click', () => {
+    dismissNotice(registry);
+    close();
+  });
   host.append(card);
-  return { close: closeCard };
+  return {
+    close,
+    get open() {
+      return card.isConnected;
+    },
+    setAutoInstall(on) {
+      autoRow.hidden = !on;
+    },
+  };
 }

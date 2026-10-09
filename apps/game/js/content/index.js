@@ -9,9 +9,14 @@
 // chosen, or "Use original sounds" for sounds) > WebRA's own art and sounds.
 //
 // main.js uses it synchronously at game start (`art`, `terrain`): files and
-// pack images are loaded and decoded ahead (`load`), so building the atlas
-// needs no waiting. A change (install, remove, setting, pack order) calls
-// the `onChange` listeners, and a running game rebuilds its art.
+// pack images are loaded and decoded ahead (`load`, which a game start
+// awaits), so building the atlas needs no waiting. A change (install,
+// remove, setting, pack order) calls the `onChange` listeners, and a running
+// game rebuilds its art and cameos.
+//
+// The pack order and which packs are on are settings (registry content.packs,
+// synced with the account): the installed packs of this device follow them;
+// packs the settings do not list keep their stored order and choice.
 
 import { openContentStore, storeError } from './store.js';
 import { installContent, contentSummary } from './install.js';
@@ -20,9 +25,40 @@ import { originalTerrain, packTerrain } from './terrain.js';
 import { cameoSource, originalCameoPixels } from './cameos.js';
 import { ACTOR_ART, ACTOR_PALETTE } from './tables.js';
 import { decodePackImages, packCameos, packId, packSlots, readPack, validateManifest, PackError } from './packs.js';
+import { defaultRegistry } from '../registry.js';
 
 /** Settings key of the graphics choice (js/settings.js). */
 export const GRAPHICS_SETTING = 'graphics';
+
+/**
+ * Stored pack records in the player's order, each with whether it is on:
+ * packs the settings list (`packs`, [{ id, enabled }], first wins) in that
+ * order and with that choice, then the others by their stored order and
+ * their stored choice (installed before the settings knew them).
+ * @param {{ id: string, order: number, enabled?: boolean }[]} records
+ * @param {{ id: string, enabled: boolean }[]} prefs
+ * @returns {{ record: object, enabled: boolean }[]}
+ */
+export function orderPacks(records, prefs = []) {
+  const rank = new Map(prefs.map((p, i) => [p.id, i]));
+  return [...records]
+    .sort((a, b) => {
+      const ra = rank.get(a.id) ?? Infinity;
+      const rb = rank.get(b.id) ?? Infinity;
+      return ra !== rb ? ra - rb : (a.order ?? 0) - (b.order ?? 0);
+    })
+    .map((record) => ({ record, enabled: rank.has(record.id) ? prefs[rank.get(record.id)].enabled : record.enabled !== false }));
+}
+
+/**
+ * The pack settings after a change on this device: the installed packs
+ * (`installed`, [{ id, enabled }] in their new order) first, then packs of
+ * other devices from the old list, in their order.
+ */
+export function mergePackPrefs(prefs, installed) {
+  const here = new Set(installed.map((p) => p.id));
+  return [...installed.map((p) => ({ id: p.id, enabled: !!p.enabled })), ...prefs.filter((p) => !here.has(p.id))];
+}
 
 export class ContentSystem {
   /**
@@ -31,9 +67,11 @@ export class ContentSystem {
    * @param {() => Promise<object>} [o.open] the content store
    * @param {(bytes: Uint8Array) => Promise<{ width: number, height: number, rgba: Uint8ClampedArray }>} [o.decodeImage]
    * @param {{ actors: Set<string>, sounds: Set<string> }} [o.known] what the game has, for pack warnings
+   * @param {object} [o.registry] the settings registry (js/registry.js), for the pack order
    */
-  constructor({ settings, open = openContentStore, decodeImage, known = {} }) {
+  constructor({ settings, registry = settings.registry ?? defaultRegistry(), open = openContentStore, decodeImage, known = {} }) {
     this.settings = settings;
+    this.registry = registry;
     this.open = open;
     this.decodeImage = decodeImage;
     this.known = known;
@@ -44,7 +82,28 @@ export class ContentSystem {
     this.listeners = new Set();
     this.loaded = null;
     this.loadError = null;
+    /** The last reload in the queue: reloads run one after another, so the newest state always wins. */
+    this.queue = Promise.resolve();
     settings.subscribe?.(GRAPHICS_SETTING, () => this.changed());
+    // The pack order or choice changed on another device (account sync) or tab.
+    registry.subscribe?.('content', (_values, changes, origin) => {
+      if (origin !== 'local' && changes.some((c) => c.key === 'packs')) this.reload();
+    });
+  }
+
+  /** The pack order and choices of the settings: [{ id, enabled }]. */
+  packPrefs() {
+    return this.registry.get('content', 'packs');
+  }
+
+  /** Write the installed packs' order and choices (`list`: [{ id, enabled }]) to the settings. */
+  savePackPrefs(list) {
+    this.registry.set('content', 'packs', mergePackPrefs(this.packPrefs(), list));
+  }
+
+  /** Installed packs in the player's order: [{ record, enabled }]. */
+  async orderedPacks(store) {
+    return orderPacks(await store.packs(), this.packPrefs());
   }
 
   store() {
@@ -76,19 +135,30 @@ export class ContentSystem {
     return this.loaded;
   }
 
-  async reload() {
+  /**
+   * Read the store again (after an install, a removal or a pack change).
+   * Reloads run in order, never at the same time: a slow earlier one cannot
+   * overwrite what a later one read. Never rejects (loadError says why).
+   */
+  reload() {
+    const run = this.queue.then(() => this.readStore());
+    this.queue = run;
+    this.loaded = run;
+    return run;
+  }
+
+  async readStore() {
     try {
       const store = await this.store();
       const records = await store.getAll((name) => /\.(shp|pal|tem|sno|des|int)$/i.test(name));
       this.files = new Map(records.map((r) => [r.name, new Uint8Array(r.bytes)]));
       const packs = [];
-      for (const record of await store.packs()) packs.push(await this.preparePack(record));
+      for (const { record, enabled } of await this.orderedPacks(store)) packs.push(await this.preparePack({ ...record, enabled }));
       this.packs = packs;
       this.loadError = null;
     } catch (err) {
       this.loadError = err.message ?? String(err);
     }
-    this.loaded = Promise.resolve();
     this.changed();
   }
 
@@ -206,21 +276,32 @@ export class ContentSystem {
 
   // ---- Installing and managing ----------------------------------------------------------
 
+  /**
+   * Install the original content from picked files (content/install.js).
+   * The first install of original graphics also switches the graphics to
+   * them (`switched` in the report): the player sees the result at once,
+   * and can switch back in the dialog.
+   */
   async install(files, opts) {
     const store = await this.store();
+    const had = this.hasOriginalGraphics;
     const report = await installContent(files, store, opts);
     await this.reload();
-    return report;
+    const switched = !had && this.hasOriginalGraphics && this.graphics !== 'original';
+    if (switched) this.settings.set(GRAPHICS_SETTING, 'original');
+    if (report.added) requestPersistence();
+    return { ...report, switched };
   }
 
   async summary() {
     return contentSummary(await this.store());
   }
 
-  /** Remove the installed original content (sounds and graphics). Packs stay. */
+  /** Remove the installed original content (sounds and graphics), back to WebRA art. Packs stay. */
   async removeOriginal() {
     await (await this.store()).clear();
     await this.reload();
+    if (this.settings.get(GRAPHICS_SETTING) === 'original') this.settings.set(GRAPHICS_SETTING, 'webra');
   }
 
   /** Read a pack file for the install preview (throws PackError). */
@@ -231,11 +312,13 @@ export class ContentSystem {
     return { ...pack, images, id: packId(pack.manifest) };
   }
 
-  /** Store an inspected pack, enabled, last in the order (a reinstall keeps its place). */
+  /** Store an inspected pack, enabled, last in the order (a reinstall keeps its place and choice). */
   async installPack(pack) {
     const store = await this.store();
-    const existing = (await store.packs()).find((p) => p.id === pack.id);
-    const order = existing?.order ?? Math.max(0, ...(await store.packs()).map((p) => p.order + 1));
+    const before = await this.orderedPacks(store);
+    const existing = before.find((p) => p.record.id === pack.id);
+    const order = existing?.record.order ?? Math.max(0, ...before.map((p) => p.record.order + 1));
+    const enabled = existing ? existing.enabled : true;
     const files = {};
     for (const [p, b] of pack.files) files[p] = b.slice().buffer;
     const m = pack.manifest;
@@ -246,39 +329,57 @@ export class ContentSystem {
       version: m.version,
       license: m.license,
       description: m.description,
-      manifest: m,
+      // The manifest as written (validated again on every load: the checked form adds defaults the check refuses).
+      manifest: pack.source ?? m,
       files,
       size: pack.size,
-      enabled: existing?.enabled ?? true,
+      enabled,
       order,
       installedAt: Date.now(),
     });
+    const list = before.map((p) => ({ id: p.record.id, enabled: p.enabled }));
+    if (!existing) list.push({ id: pack.id, enabled });
+    this.savePackPrefs(list);
     await this.reload();
   }
 
   async setPackEnabled(id, enabled) {
     const store = await this.store();
-    const rec = (await store.packs()).find((p) => p.id === id);
-    if (!rec) return;
-    await store.putPack({ ...rec, enabled: !!enabled });
+    const packs = await this.orderedPacks(store);
+    const entry = packs.find((p) => p.record.id === id);
+    if (!entry) return;
+    await store.putPack({ ...entry.record, enabled: !!enabled });
+    this.savePackPrefs(packs.map((p) => ({ id: p.record.id, enabled: p.record.id === id ? !!enabled : p.enabled })));
     await this.reload();
   }
 
   /** Move a pack one place up (-1, higher priority) or down (+1). */
   async movePack(id, dir) {
     const store = await this.store();
-    const list = await store.packs();
-    const i = list.findIndex((p) => p.id === id);
+    const packs = await this.orderedPacks(store);
+    const i = packs.findIndex((p) => p.record.id === id);
     const j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    [list[i], list[j]] = [list[j], list[i]];
-    for (let k = 0; k < list.length; k++) if (list[k].order !== k) await store.putPack({ ...list[k], order: k });
+    if (i < 0 || j < 0 || j >= packs.length) return;
+    [packs[i], packs[j]] = [packs[j], packs[i]];
+    // The stored order follows too, for when the settings do not list a pack.
+    for (let k = 0; k < packs.length; k++) if (packs[k].record.order !== k) await store.putPack({ ...packs[k].record, order: k });
+    this.savePackPrefs(packs.map((p) => ({ id: p.record.id, enabled: p.enabled })));
     await this.reload();
   }
 
   async removePack(id) {
     await (await this.store()).deletePack(id);
+    this.registry.set('content', 'packs', this.packPrefs().filter((p) => p.id !== id));
     await this.reload();
+  }
+}
+
+/** Ask the browser to keep installed content when it clears storage under pressure (best effort). */
+function requestPersistence(storage = globalThis.navigator?.storage) {
+  try {
+    storage?.persist?.().catch?.(() => {});
+  } catch {
+    // Not offered: content may be evicted under storage pressure, and can be installed again.
   }
 }
 

@@ -28,11 +28,37 @@ const done = (req) =>
     req.onerror = () => reject(req.error);
   });
 
+/** A storage problem in words a player can act on (full storage, blocked storage). */
+export class StorageError extends Error {
+  constructor(message, cause) {
+    super(message);
+    this.name = 'StorageError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * The player-facing error for a failed write: browsers report a full disk or
+ * quota as QuotaExceededError (Safari and old Firefox under other names).
+ */
+export function storageProblem(err) {
+  const name = err?.name ?? '';
+  const text = `${name} ${err?.message ?? ''}`;
+  if (/quota|NS_ERROR_DOM_QUOTA_REACHED|QuotaExceeded|disk.*full|not enough space/i.test(text)) {
+    return new StorageError(
+      'This browser has no room left for the files. Free up disk space or remove texture packs you do not use, then try again. Nothing was installed.',
+      err,
+    );
+  }
+  if (err instanceof StorageError) return err;
+  return new StorageError(`The browser could not save the files (${err?.message || name || 'unknown error'}). Nothing was installed.`, err);
+}
+
 const finished = (tx) =>
   new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('transaction aborted'));
+    tx.onerror = () => reject(storageProblem(tx.error));
+    tx.onabort = () => reject(storageProblem(tx.error ?? new Error('transaction aborted')));
   });
 
 const metaOf = (r) => ({ name: r.name, size: r.size ?? r.bytes?.byteLength ?? 0, kind: r.kind ?? kindOf(r.name) });
@@ -65,14 +91,25 @@ export class IdbStore {
     return new IdbStore(await done(req));
   }
 
+  /** Store files in one transaction: all of them or, on any problem, none (StorageError). */
   async putAll(records) {
-    const tx = this.db.transaction([FILES, META], 'readwrite');
-    const files = tx.objectStore(FILES);
-    const meta = tx.objectStore(META);
-    for (const r of records) {
-      const rec = { ...r, kind: r.kind ?? kindOf(r.name) };
-      files.put(rec);
-      meta.put(metaOf(rec));
+    let tx;
+    try {
+      tx = this.db.transaction([FILES, META], 'readwrite');
+      const files = tx.objectStore(FILES);
+      const meta = tx.objectStore(META);
+      for (const r of records) {
+        const rec = { ...r, kind: r.kind ?? kindOf(r.name) };
+        files.put(rec);
+        meta.put(metaOf(rec));
+      }
+    } catch (err) {
+      try {
+        tx?.abort();
+      } catch {
+        // already finished
+      }
+      throw storageProblem(err);
     }
     await finished(tx);
   }
@@ -127,8 +164,13 @@ export class IdbStore {
   }
 
   async putPack(pack) {
-    const tx = this.db.transaction(PACKS, 'readwrite');
-    tx.objectStore(PACKS).put(pack);
+    let tx;
+    try {
+      tx = this.db.transaction(PACKS, 'readwrite');
+      tx.objectStore(PACKS).put(pack);
+    } catch (err) {
+      throw storageProblem(err);
+    }
     await finished(tx);
   }
 

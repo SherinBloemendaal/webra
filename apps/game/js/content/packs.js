@@ -162,7 +162,8 @@ export function validateManifest(raw, known = {}) {
         } else {
           if (!SPECIALS.includes(s.special)) return err(`${where}: "special" must be one of ${SPECIALS.join(', ')}`);
           out.special = s.special;
-          if (s.part !== undefined || s.pose !== undefined) err(`${where}: specials have no part or pose`);
+          // The defaults are accepted: packs stored before 0.7 kept the checked manifest, which has them.
+          if ((s.part !== undefined && s.part !== 'body') || (s.pose !== undefined && s.pose !== 'idle')) err(`${where}: specials have no part or pose`);
         }
         const key = `${out.actor ?? '*' + out.special}|${out.part}|${out.pose}`;
         if (seen.has(key)) err(`${where}: ${key.replaceAll('|', ' ')} is given twice`);
@@ -401,7 +402,8 @@ export async function readPack(bytes, known = {}) {
     }
   }
   if (problems.length) throw new PackError(problems.join('; '));
-  return { manifest, files, warnings, size };
+  // `source` is the manifest as written: stored with the pack, it is checked again on every load.
+  return { manifest, source: raw, files, warnings, size };
 }
 
 /** A stable id for a pack: its name and author, lower case. */

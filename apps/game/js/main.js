@@ -39,8 +39,9 @@ import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
-import { mountContentPanel, mountContentPrompt } from './content/panel.js';
-import { shouldPrompt } from './content/download.js';
+import { mountContentPanel, mountContentNotice } from './content/panel.js';
+import { shouldShowNotice } from './content/download.js';
+import { defaultRegistry } from './registry.js';
 import { setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
 import { allOriginalNames } from './audio/catalog.js';
@@ -77,6 +78,8 @@ let releaseNotes = null;
 let content = null;
 /** The Original content dialog (js/content/panel.js), also opened from the game menu and the Sound dialog. */
 let contentPanel = null;
+/** The start screen notice about the original content (js/content/panel.js), while shown. */
+let contentNotice = null;
 
 async function boot() {
   let gpuError = null;
@@ -200,13 +203,26 @@ function setupContent() {
       audio?.setPackSounds(content.packSounds()).catch((err) => console.warn('Texture pack sounds are unavailable:', err));
     };
     content.onChange(sync);
+    // The notice goes once something is installed (here or from another tab's dialog).
+    content.onChange(() => {
+      if (!contentNotice?.open) return;
+      content
+        .summary()
+        .then((s) => s.total > 0 && contentNotice.close())
+        .catch(() => {});
+    });
     content
       .load()
       .then(async () => {
-        // First start: offer the original content once (until declined), like OpenRA's content installer.
+        // Start screen: how to get the original content, until installed or dismissed.
         const installed = (await content.summary()).total > 0;
-        if ($('app').hidden && shouldPrompt({ installed })) {
-          mountContentPrompt(document.body, { onDownload: () => contentPanel.download(), onOpen: () => contentPanel.open() });
+        if ($('app').hidden && shouldShowNotice({ installed, registry: defaultRegistry() })) {
+          contentNotice = mountContentNotice(document.body, {
+            registry: defaultRegistry(),
+            onFiles: (files) => dropContent(files),
+            onOpen: () => contentPanel.open(),
+            onDownload: () => contentPanel.download(),
+          });
         }
       })
       .catch((err) => console.warn('Installed content is unavailable:', err));
@@ -244,12 +260,17 @@ function setupContentDrop() {
     show(false);
     e.preventDefault();
     const files = [...(e.dataTransfer.files ?? [])];
-    try {
-      if (!(await contentPanel?.drop(files))) showToast('Drop ra-quickinstall.zip, Red Alert .mix files or a texture pack here.');
-    } catch (err) {
-      showToast(`Could not read the dropped files: ${err.message ?? err}`);
-    }
+    await dropContent(files);
   });
+}
+
+/** Install dropped or picked files through the Original content dialog (progress and result show there). */
+async function dropContent(files) {
+  try {
+    if (!(await contentPanel?.drop(files))) showToast('Drop ra-quickinstall.zip, Red Alert .mix files or a texture pack here.');
+  } catch (err) {
+    showToast(`Could not read the files: ${err.message ?? err}`);
+  }
 }
 
 /**
@@ -403,6 +424,8 @@ async function launch(spec, lobby, failText) {
   starting = true;
   let host = null;
   try {
+    // Installed graphics are read before the first frame, so a game never starts with WebRA art for a moment.
+    await content?.load();
     host = await newSimHost();
     const info = await host.start(spec);
     return { host, info };
@@ -620,6 +643,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   content?.onChange(() => {
     applyArt();
     applyTerrain();
+    // Sidebar cameos were painted once: paint them again from the new content (cameo.js setCameoArt ran first).
+    sidebar?.repaintIcons();
   });
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

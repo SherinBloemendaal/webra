@@ -205,10 +205,11 @@ body {
   color: var(--ui-accent-hi);
 }
 
+/* Outside #app, so it also shows over the lobby (a file dropped there). */
 #toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  top: 40px;
+  top: max(40px, env(safe-area-inset-top));
   transform: translateX(-50%);
   max-width: min(520px, 90%);
   padding: 6px 12px;
@@ -222,7 +223,7 @@ body {
   color: var(--ui-text);
   font: var(--ui-fs-m) var(--ui-font);
   pointer-events: none;
-  z-index: 30;
+  z-index: 90;
 }
 
 .hud-button {

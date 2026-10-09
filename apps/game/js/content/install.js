@@ -9,7 +9,7 @@
 import { MixArchive, MixError, blobSource } from '../audio/mix.js';
 import { looksLikeAud, decodeAud } from '../audio/aud.js';
 import { allOriginalNames, ARCHIVES as SOUND_ARCHIVES, EVA, MUSIC_FILES } from '../audio/catalog.js';
-import { GRAPHICS_FILES, TERRAIN } from './tables.js';
+import { ACTOR_PALETTE, GRAPHICS_FILES, TERRAIN } from './tables.js';
 import { decodeSprite } from './shp.js';
 import { decodePalette } from './palette.js';
 import { kindOf } from './store.js';
@@ -231,7 +231,11 @@ export async function installContent(files, store, { onProgress = () => {}, publ
   };
 }
 
-/** What is installed: counts and bytes per category, and the theaters graphics cover. */
+/**
+ * What is installed: counts and bytes per category, the theaters graphics
+ * cover, and whether the actor palette is there (without it the original
+ * graphics cannot be used).
+ */
 export async function contentSummary(store) {
   const meta = await store.meta();
   const byCategory = { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0 };
@@ -240,5 +244,6 @@ export async function contentSummary(store) {
     byCategory[categoryOf(m.name)]++;
     bytes[m.kind === 'graphics' ? 'graphics' : 'sounds'] += m.size ?? 0;
   }
-  return { total: meta.length, byCategory, bytes, theaters: theatersIn(meta.map((m) => m.name)) };
+  const names = meta.map((m) => m.name);
+  return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), palette: names.includes(ACTOR_PALETTE) };
 }

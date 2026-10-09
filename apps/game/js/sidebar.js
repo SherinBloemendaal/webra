@@ -291,6 +291,7 @@ export class Sidebar {
       id,
       actor,
       btn,
+      canvas,
       clock,
       eta,
       etaText: '',
@@ -311,6 +312,11 @@ export class Sidebar {
     this.cards.set(id, c);
     this.updateLabel(c);
     return c;
+  }
+
+  /** Paint every card's picture again (installed content or the graphics choice changed). */
+  repaintIcons() {
+    for (const c of this.cards.values()) this.paintIcon(c.canvas, c.actor);
   }
 
   paintIcon(canvas, actor) {

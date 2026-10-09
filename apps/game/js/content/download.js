@@ -1,14 +1,34 @@
-// One-click install: OpenRA's ra-quickinstall.zip (Electronic Arts' Red
-// Alert files, freeware since 2008) fetched through WebRA's server, which
-// streams it from OpenRA's community mirrors without keeping a copy
-// (apps/server/src/content.js). The download only starts when the player
-// clicks; the bytes are then installed like a ZIP the player picked
-// (content/install.js) and stay on this device.
+// Getting the original content: OpenRA's ra-quickinstall.zip (Electronic
+// Arts' Red Alert files, freeware since 2008).
+//
+// Everyone: the player downloads the ZIP from one of OpenRA's community
+// mirrors (QUICKINSTALL_MIRRORS, plain links) and drops or picks it in the
+// game (content/panel.js), which installs it like any picked file
+// (content/install.js).
+//
+// Selected accounts (the account flag content_autoinstall, and admins): a
+// one-click download through WebRA's server, which streams the ZIP from the
+// mirrors without keeping a copy (apps/server/src/content.js). It only
+// starts when the player clicks; the bytes stay on this device.
 
 export const QUICKINSTALL_URL = '/api/content/ra-quickinstall';
 export const QUICKINSTALL_BYTES = 13_502_031;
-/** localStorage key: the player does not want the first start prompt again. */
-export const PROMPT_KEY = 'webra.content.prompt.v1';
+/** Settings registry place of "the start screen notice was dismissed" (js/registry.js). */
+export const NOTICE_SETTING = Object.freeze(['extra', 'contentNoticeDismissed']);
+
+/**
+ * OpenRA's quick install mirrors (OpenRA mods/ra/installer): EA's freeware
+ * files as one ZIP of QUICKINSTALL_BYTES, hosted by third parties. Plain
+ * links only: the player downloads the file and picks or drops it in the
+ * game. The game never fetches them (the mirrors send no CORS headers, and
+ * the game's CSP and COEP forbid it).
+ */
+export const QUICKINSTALL_MIRRORS = Object.freeze([
+  'https://openra.baxxster.no/openra/ra-quickinstall.zip',
+  'https://republic.community/hosted/files/command-and-conquer/openra/ra-quickinstall.zip',
+  'https://openra.0x47.net/ra-quickinstall.zip',
+  'https://openra.ppmsite.com/ra-quickinstall.zip',
+]);
 
 /**
  * Download the package with progress. Returns a File named
@@ -23,6 +43,7 @@ export async function downloadQuickInstall({ onProgress = () => {}, fetchImpl = 
     throw new Error(`the download could not start (${err.message ?? err})`);
   }
   if (res.status === 429) throw new Error('too many downloads from this network; try again in an hour or install the files yourself');
+  if (res.status === 401 || res.status === 403) throw new Error('the one-click download is only for selected accounts; install the files yourself with the steps below');
   if (!res.ok || !res.body) {
     let message = `the server answered ${res.status}`;
     try {
@@ -50,24 +71,50 @@ export async function downloadQuickInstall({ onProgress = () => {}, fetchImpl = 
   return new File([out], 'ra-quickinstall.zip', { type: 'application/zip' });
 }
 
-/** Whether to offer the download at start: nothing installed yet and not declined in this browser. */
-export function shouldPrompt({ installed, storage = globalThis.localStorage }) {
+/**
+ * Whether the start screen shows the original content notice: nothing
+ * installed yet and not dismissed (the choice is a synced setting).
+ * @param {{ installed: boolean, registry: { get(group: string, key: string): any } | null }} o
+ */
+export function shouldShowNotice({ installed, registry }) {
   if (installed) return false;
   try {
-    return storage?.getItem(PROMPT_KEY) !== 'no';
+    return registry?.get(...NOTICE_SETTING) !== true;
   } catch {
     return false;
   }
 }
 
-export function declinePrompt(storage = globalThis.localStorage) {
+/** Remember that the player dismissed the notice. */
+export function dismissNotice(registry) {
   try {
-    storage?.setItem(PROMPT_KEY, 'no');
+    registry?.set(...NOTICE_SETTING, true);
   } catch {
-    // blocked storage: the prompt comes back next time
+    // Without a registry the notice comes back next time.
   }
+}
+
+/**
+ * Whether this player may use the one-click download: the server's verdict
+ * `canUseContentRelay` of the signed-in account (docs/accounts-api.md 5.1:
+ * active, the flag content_autoinstall or admin, the relay switched on), or
+ * without it the flag or the admin role. The server checks again on the
+ * download; this only decides what the game offers.
+ * @param {{ role?: string, flags?: string[], canUseContentRelay?: boolean } | null} account
+ */
+export function canAutoInstall(account) {
+  if (!account) return false;
+  if (typeof account.canUseContentRelay === 'boolean') return account.canUseContentRelay;
+  if (account.role === 'admin') return true;
+  const flags = account.flags;
+  if (Array.isArray(flags)) return flags.includes('content_autoinstall');
+  return !!(flags && flags.content_autoinstall === true);
 }
 
 /** The notice shown with every download button. */
 export const DOWNLOAD_NOTICE =
   "These are Electronic Arts' Red Alert files, which EA released as freeware in 2008. WebRA fetches OpenRA's ra-quickinstall.zip from OpenRA's community mirrors through webra.sherin.dev (passed through, never kept on the server) and stores it only on this device.";
+
+/** The notice for the manual steps: what the files are and where they stay. */
+export const LEGAL_NOTICE =
+  "Red Alert belongs to Electronic Arts, who released it as freeware in 2008. WebRA does not host or distribute it: the mirrors are run by OpenRA's community. Your files are read in this browser and stored on this device only; nothing is uploaded.";

@@ -27,10 +27,13 @@ import { ACTOR_ART, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES
 import { originalSlots, combineSlots, poseTable } from '../js/content/atlas.js';
 import { chooseTiles, tileChoices, originalTerrain, packTerrain, ART_TILES, ART_ORE, ORE_TILE_BASE, GEM_TILE_BASE, ORE_LEVELS, ORE_VARIANTS, GEM_LEVELS, GEM_VARIANTS } from '../js/content/terrain.js';
 import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS } from '../js/content/install.js';
-import { MemoryStore } from '../js/content/store.js';
+import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
+import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
+import { createSettings } from '../js/settings.js';
 import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
-import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldPrompt, declinePrompt } from '../js/content/download.js';
+import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall } from '../js/content/download.js';
+import { createRegistry } from '../js/registry.js';
 import { buildAtlas, FRAME_FLOATS } from '../js/sprites.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { buildMix, imaAud, sineSamples } from './audio-fixtures.mjs';
@@ -604,7 +607,7 @@ test('install: OpenRA ra-quickinstall.zip (synthetic) unpacks its MIX files with
   assert.match(r2.errors[0], /other\.zip/);
 });
 
-test('one-click download: progress, exact size, server errors; the prompt remembers "don\'t ask again"', async () => {
+test('one-click download: progress, exact size, server errors; the notice remembers its dismissal; who may use it', async () => {
   const chunks = (n) =>
     new ReadableStream({
       start(c) {
@@ -635,12 +638,27 @@ test('one-click download: progress, exact size, server errors; the prompt rememb
     downloadQuickInstall({ fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'mirrors down' } }), { status: 502 }) }),
     /mirrors down/,
   );
-  const storage = new Map();
-  const st = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) };
-  assert.equal(shouldPrompt({ installed: false, storage: st }), true);
-  assert.equal(shouldPrompt({ installed: true, storage: st }), false);
-  declinePrompt(st);
-  assert.equal(shouldPrompt({ installed: false, storage: st }), false);
+  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 403 }) }), /selected accounts/);
+  const storage = new Map([['webra.content.prompt.v1', 'yes']]);
+  const st = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) };
+  const registry = createRegistry({ storage: st });
+  assert.equal(shouldShowNotice({ installed: false, registry }), true);
+  assert.equal(shouldShowNotice({ installed: true, registry }), false);
+  dismissNotice(registry);
+  assert.equal(shouldShowNotice({ installed: false, registry }), false);
+  assert.equal(shouldShowNotice({ installed: false, registry: createRegistry({ storage: st }) }), false, 'remembered');
+  // The old "don't ask again" migrates.
+  const old = new Map([['webra.content.prompt.v1', 'no']]);
+  const reg2 = createRegistry({ storage: { getItem: (k) => old.get(k) ?? null, setItem: (k, v) => old.set(k, v), removeItem: (k) => old.delete(k) } });
+  assert.equal(shouldShowNotice({ installed: false, registry: reg2 }), false);
+  // Only selected accounts and admins get the one-click download.
+  assert.equal(canAutoInstall(null), false);
+  assert.equal(canAutoInstall({ role: 'user', flags: [] }), false);
+  assert.equal(canAutoInstall({ role: 'user', flags: ['content_autoinstall'] }), true);
+  assert.equal(canAutoInstall({ role: 'moderator', flags: [] }), false);
+  assert.equal(canAutoInstall({ role: 'admin', flags: [] }), true);
+  assert.equal(canAutoInstall({ role: 'admin', flags: [], canUseContentRelay: false }), false, 'the server verdict wins (relay off)');
+  assert.equal(canAutoInstall({ role: 'user', flags: [], canUseContentRelay: true }), true);
 });
 
 // ---- Texture packs ------------------------------------------------------------------------------
@@ -857,4 +875,141 @@ test('no content setting changes the simulation: state hashes match with poses, 
     b.build_render_records(0);
     assert.equal(a.state_hash(), b.state_hash(), `tick ${t}`);
   }
+});
+
+// ---- The content system: state after installs, packs and settings ------------------------------
+
+function contentSystem(store = new MemoryStore()) {
+  const registry = createRegistry({ storage: null });
+  const settings = createSettings(registry);
+  const content = new ContentSystem({ settings, registry, open: async () => store, decodeImage: decodeTestPng, known: KNOWN });
+  return { content, settings, registry, store };
+}
+
+function quickinstallZip() {
+  const { conquer, temperat, sounds } = contentMix();
+  return new File([buildZip([{ name: 'conquer.mix', data: conquer }, { name: 'temperat.mix', data: temperat }, { name: 'sounds.mix', data: sounds }])], 'ra-quickinstall.zip');
+}
+
+test('content system: the first graphics install switches to them at once; removal switches back', async () => {
+  const { content, settings } = contentSystem();
+  await content.load();
+  let changes = 0;
+  content.onChange(() => changes++);
+  assert.equal(content.hasOriginalGraphics, false);
+  const r = await content.install([quickinstallZip()]);
+  assert.equal(r.switched, true);
+  assert.equal(settings.get('graphics'), 'original');
+  assert.equal(content.originalActive, true, 'no reload needed');
+  assert.ok(changes >= 1, 'listeners (the running game, cameos) heard about it');
+  // A reinstall does not override a choice the player made since.
+  settings.set('graphics', 'webra');
+  const again = await content.install([quickinstallZip()]);
+  assert.equal(again.switched, false);
+  assert.equal(settings.get('graphics'), 'webra');
+  settings.set('graphics', 'original');
+  await content.removeOriginal();
+  assert.equal(content.hasOriginalGraphics, false);
+  assert.equal(settings.get('graphics'), 'webra');
+  // Sounds only: nothing to switch.
+  const { sounds } = contentMix();
+  const r3 = await content.install([new File([sounds], 'sounds.mix')]);
+  assert.equal(r3.switched, false);
+  assert.equal(r3.byCategory.effects, 1);
+  const summary = await content.summary();
+  assert.equal(summary.palette, false);
+});
+
+test('content system: reloads run in order, so a slow earlier read never overwrites a newer one', async () => {
+  const store = new MemoryStore();
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const getAll = store.getAll.bind(store);
+  let calls = 0;
+  store.getAll = async (filter) => {
+    calls++;
+    const first = calls === 1;
+    const out = await getAll(filter);
+    if (first) await gate; // the first read hangs with the old (empty) state
+    return out;
+  };
+  const { content } = contentSystem(store);
+  const first = content.load();
+  const { conquer, temperat } = contentMix();
+  const done = content.install([new File([conquer], 'conquer.mix'), new File([temperat], 'temperat.mix')]);
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  await Promise.all([first, done]);
+  assert.equal(content.hasOriginalGraphics, true, 'the install\'s reload came last');
+  assert.equal(content.load(), content.loaded, 'load() hands out the latest reload');
+});
+
+test('content system: storage problems become clear messages; nothing half installed', async () => {
+  const quota = storageProblem(Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' }));
+  assert.ok(quota instanceof StorageError);
+  assert.match(quota.message, /no room left/);
+  assert.match(quota.message, /Nothing was installed/);
+  assert.match(storageProblem(Object.assign(new Error(''), { name: 'NS_ERROR_DOM_QUOTA_REACHED' })).message, /no room left/);
+  assert.match(storageProblem(new Error('aborted')).message, /could not save the files \(aborted\)/);
+  const store = new MemoryStore();
+  store.putAll = async () => {
+    throw storageProblem(Object.assign(new Error('full'), { name: 'QuotaExceededError' }));
+  };
+  const { content, settings } = contentSystem(store);
+  await assert.rejects(content.install([quickinstallZip()]), /no room left/);
+  assert.equal((await content.summary()).total, 0);
+  assert.equal(settings.get('graphics'), 'webra');
+});
+
+test('pack order: the settings order and choices win; unknown packs keep their stored order', () => {
+  const records = [
+    { id: 'a', order: 0, enabled: true },
+    { id: 'b', order: 1, enabled: false },
+    { id: 'c', order: 2, enabled: true },
+  ];
+  assert.deepEqual(
+    orderPacks(records, []).map((p) => [p.record.id, p.enabled]),
+    [['a', true], ['b', false], ['c', true]],
+  );
+  assert.deepEqual(
+    orderPacks(records, [{ id: 'c', enabled: false }, { id: 'x', enabled: true }, { id: 'b', enabled: true }]).map((p) => [p.record.id, p.enabled]),
+    [['c', false], ['b', true], ['a', true]],
+  );
+  // Packs of other devices stay in the list after this device's packs.
+  assert.deepEqual(mergePackPrefs([{ id: 'x', enabled: true }, { id: 'a', enabled: true }], [{ id: 'b', enabled: true }, { id: 'a', enabled: false }]), [
+    { id: 'b', enabled: true },
+    { id: 'a', enabled: false },
+    { id: 'x', enabled: true },
+  ]);
+});
+
+test('content system: pack install, order and choice go to the synced settings and come back from them', async () => {
+  const { content, registry } = contentSystem();
+  await content.load();
+  const one = await content.inspectPack(examplePack());
+  await content.installPack(one);
+  const two = await content.inspectPack(examplePack(exampleManifest({ name: 'Second Pack' })));
+  await content.installPack(two);
+  assert.deepEqual(registry.get('content', 'packs'), [
+    { id: one.id, enabled: true },
+    { id: two.id, enabled: true },
+  ]);
+  await content.movePack(two.id, -1);
+  await content.setPackEnabled(one.id, false);
+  assert.deepEqual(registry.get('content', 'packs'), [
+    { id: two.id, enabled: true },
+    { id: one.id, enabled: false },
+  ]);
+  assert.deepEqual(content.packs.map((p) => [p.record.id, p.enabled]), [[two.id, true], [one.id, false]]);
+  // Another device changed the order: the content follows without a page reload.
+  registry.applyDocument({ content: { packs: [{ id: 'elsewhere|x', enabled: true }, { id: one.id, enabled: true }, { id: two.id, enabled: false }] } });
+  await content.loaded;
+  assert.deepEqual(content.packs.map((p) => [p.record.id, p.enabled]), [[one.id, true], [two.id, false]]);
+  // Packs stored by older builds kept the checked manifest (with defaults): they still load.
+  assert.deepEqual(validateManifest(one.manifest, KNOWN).errors, []);
+  // A reinstall keeps place and choice; removing drops the pack from the settings, others stay.
+  await content.installPack(two);
+  assert.deepEqual(content.packs.map((p) => [p.record.id, p.enabled]), [[one.id, true], [two.id, false]]);
+  await content.removePack(one.id);
+  assert.deepEqual(registry.get('content', 'packs').map((p) => p.id), [two.id, 'elsewhere|x']);
 });

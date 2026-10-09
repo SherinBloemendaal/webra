@@ -40,7 +40,6 @@
           <button id="sidebar-toggle" class="hud-button" type="button" aria-controls="sidebar" hidden>Map</button>
           <button id="menu-button" class="hud-button" type="button" title="Game menu (Esc)" hidden>Menu</button>
         </div>
-        <div id="toast" role="status" hidden></div>
       </main>
       <aside id="sidebar"></aside>
     </div>
@@ -57,6 +56,9 @@
     <section id="game-menu" class="overlay" hidden></section>
 
     <div id="version" title="WebRA version"></div>
+
+    <!-- Short messages, over the lobby and the game (js/main.js showToast) -->
+    <div id="toast" role="status" hidden></div>
 
     <!-- Sound settings and original content install (js/audio/panel.js) -->
     <button id="audio-button" type="button" title="Sound settings and original Red Alert content" aria-haspopup="dialog" aria-expanded="false" hidden>Sound</button>
