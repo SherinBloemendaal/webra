@@ -185,7 +185,7 @@ export class AudioSystem {
    * @param {object} o
    * @param {object} o.game wasm Game
    * @param {object} o.rules parsed Game.rules_json()
-   * @param {number} o.player local player
+   * @param {number} o.player local player, or NO_PLAYER (spectators and replays: nothing is their own)
    * @param {number} o.worldUnitsPerCell Game.world_units_per_cell()
    */
   attachGame({ game, rules, player, worldUnitsPerCell, allied }) {

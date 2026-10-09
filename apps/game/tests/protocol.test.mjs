@@ -89,13 +89,16 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   game.repair_building(0, units[0]);
   game.power_down(0, units[0]);
   game.place_beacon(0, 240, 360);
+  // The sell button and rally points (also sent to the other players in lockstep).
+  game.sell(0, units[0]);
+  game.set_rally(0, units[0], 120, 144);
   const orders = JSON.parse(game.take_orders());
-  assert.ok(orders.length >= 17);
+  assert.ok(orders.length >= 19);
   assert.deepEqual(
-    orders.slice(-12).map((o) => o.o),
-    ['attack_ground', 'guard', 'scatter', 'waypoint', 'waypoint', 'set_stance', 'set_stance', 'set_stance', 'set_stance', 'repair_building', 'power_down', 'place_beacon'],
+    orders.slice(-14).map((o) => o.o),
+    ['attack_ground', 'guard', 'scatter', 'waypoint', 'waypoint', 'set_stance', 'set_stance', 'set_stance', 'set_stance', 'repair_building', 'power_down', 'place_beacon', 'sell', 'rally'],
   );
-  assert.deepEqual(orders.at(-1), { o: 'place_beacon', player: 0, x: 10240, y: 15360 }, 'world units');
+  assert.deepEqual(orders.at(-3), { o: 'place_beacon', player: 0, x: 10240, y: 15360 }, 'world units');
   const valid = validOrders(orders);
   assert.deepEqual(valid, orders);
   const r = parseClientMessage(JSON.stringify({ t: 'orders', tick: 3, orders }));
