@@ -151,6 +151,8 @@ pub struct TakeCoverInfo {
 pub struct Abilities {
     pub cargo: Option<CargoInfo>,
     pub minelayer: Option<MinelayerInfo>,
+    /// OpenRA `EjectOnDeath` (aircraft): a pilot may bail out when it is destroyed.
+    pub eject_on_death: Option<EjectOnDeathInfo>,
     pub jams_missiles: Option<RangeInfo>,
     pub creates_shroud: Option<RangeInfo>,
     pub cloak: Option<CloakInfo>,
@@ -214,6 +216,19 @@ pub struct CargoInfo {
     pub after_unload_delay: i32,
     pub eject_on_sell: bool,
     pub eject_on_death: bool,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct EjectOnDeathInfo {
+    /// Actor id of the pilot (PilotActor, an infantry type).
+    pub pilot: String,
+    /// Percent chance per death (SuccessRate).
+    pub success_rate: i32,
+    /// Ejects while the actor is in the air (EjectInAir) / at ground level (EjectOnGround).
+    pub in_air: bool,
+    pub on_ground: bool,
+    /// The pilot also comes out over cells it cannot stand on (AllowUnsuitableCell).
+    pub allow_unsuitable_cell: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1197,6 +1212,10 @@ impl Rules {
             for id in &c.initial {
                 self.actor_id_ref(&n("cargo.initial"), id, &units)?;
             }
+        }
+        if let Some(e) = &ab.eject_on_death {
+            self.actor_id_ref(&n("eject_on_death.pilot"), &e.pilot, &[Kind::Infantry])?;
+            within(&n("eject_on_death.success_rate"), e.success_rate, 0, 100)?;
         }
         if let Some(m) = &ab.minelayer {
             self.actor_id_ref(&n("minelayer.mine"), &m.mine, &[Kind::Mine])?;

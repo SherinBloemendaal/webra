@@ -672,6 +672,50 @@ impl World {
         }
     }
 
+    // ---- Pilots ------------------------------------------------------------------------
+
+    /// OpenRA EjectOnDeath, when actor `i` is destroyed: unless its owner has
+    /// lost or it is off the map, with SuccessRate percent (the simulation's
+    /// random numbers) its PilotActor comes out where it is. In the air
+    /// (EjectInAir) the pilot comes down by parachute and dies if it lands
+    /// where it cannot stand (water, structures; Parachutable
+    /// KilledOnImpassableTerrain); at ground level (EjectOnGround) it stands
+    /// there. Without AllowUnsuitableCell no pilot comes out over a cell it
+    /// cannot enter. A plane that already started to fall ejected (or not)
+    /// when it was hit, not again where it crashes.
+    pub(crate) fn eject_pilot(&mut self, i: usize) {
+        let a = &self.actors[i];
+        let Some(e) = self.rules.actors[a.ty as usize].abilities.eject_on_death.as_ref() else { return };
+        if a.air.phase == Phase::Crashing || self.players.get(a.owner as usize).is_none_or(|p| p.defeated) {
+            return;
+        }
+        let (x, y, altitude, owner, facing, ty) = (a.x, a.y, a.altitude, a.owner, a.facing, a.ty);
+        let (cx, cy) = self.cell_of(x, y);
+        if !self.map.contains(cx, cy) {
+            return;
+        }
+        let (rate, in_air_ok, on_ground_ok, anywhere) = (e.success_rate, e.in_air, e.on_ground, e.allow_unsuitable_cell);
+        let Some(pilot) = self.rules.actor_index(&e.pilot) else { return };
+        if self.rng.range(0, 100) >= rate {
+            return;
+        }
+        let in_air = altitude > 0;
+        if (in_air && !in_air_ok) || (!in_air && !on_ground_ok) {
+            return;
+        }
+        if !anywhere && self.pass.blocked[self.map.idx(cx, cy)] {
+            return;
+        }
+        let p = self.spawn_unit(pilot as u16, owner, x, y, facing);
+        if in_air {
+            let pa = &mut self.actors[p];
+            pa.altitude = altitude;
+            pa.air.parachute = true;
+            // EjectOnDeath.ChuteSound, where the aircraft was.
+            self.sound.push(SoundEventKind::PilotEjected, ty as i32, x, y, owner, 0);
+        }
+    }
+
     // ---- Paratroopers ----------------------------------------------------------------
 
     /// Infantry under a parachute: sink at `FallRate`, then land. Landing on a

@@ -134,6 +134,9 @@ pub enum SoundEventKind {
     /// `owner` collected a crate (OpenRA CrateAction Sound and Notification,
     /// at the crate); a = `crate_action_code` of the action, b = crate actor type.
     CrateCollected = 36,
+    /// A pilot bailed out of a destroyed aircraft (OpenRA EjectOnDeath.ChuteSound,
+    /// at the aircraft); a = the aircraft's type.
+    PilotEjected = 37,
 }
 
 /// `owner` of events every player hears (time limit warnings).

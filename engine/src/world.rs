@@ -1224,6 +1224,8 @@ impl World {
         if !self.actors[i].alive {
             return;
         }
+        // OpenRA EjectOnDeath: the pilot may bail out (plane.rs).
+        self.eject_pilot(i);
         // Airborne planes fall first and die where they hit the ground (plane.rs).
         if self.begin_crash(i) {
             // Remember who shot it down; the kill counts at impact (observer.rs).

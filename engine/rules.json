@@ -8183,6 +8183,13 @@
      "eject_on_sell": true,
      "eject_on_death": false
     },
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 6144
     }
@@ -8314,6 +8321,13 @@
     "hold_fire"
    ],
    "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 8192
     }
@@ -8446,6 +8460,13 @@
     "hold_fire"
    ],
    "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 8192
     }
@@ -8579,6 +8600,13 @@
     "hold_fire"
    ],
    "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 10240
     }
@@ -8710,6 +8738,13 @@
     "hold_fire"
    ],
    "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 9216
     }
@@ -8834,6 +8869,13 @@
     "hold_fire"
    ],
    "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    },
     "gap_sight": {
      "range": 11264
     }
@@ -9185,7 +9227,15 @@
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
-   "abilities": {},
+   "abilities": {
+    "eject_on_death": {
+     "pilot": "E1",
+     "success_rate": 50,
+     "in_air": true,
+     "on_ground": false,
+     "allow_unsuitable_cell": true
+    }
+   },
    "experience": null,
    "gives_experience": {
     "experience": -1,

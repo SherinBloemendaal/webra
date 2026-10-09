@@ -537,6 +537,16 @@ def main():
                                'reload_delay': int(pool.get('ReloadDelay', 50)),
                                'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        if 'EjectOnDeath' in t:
+            ej = t['EjectOnDeath'] if isinstance(t['EjectOnDeath'], dict) else {}
+            # OpenRA EjectOnDeathInfo defaults: PilotActor E1, SuccessRate 50,
+            # EjectInAir false, EjectOnGround false, AllowUnsuitableCell false.
+            truth = lambda k, d: str(ej.get(k, d)).lower() == 'true'
+            ab['eject_on_death'] = {'pilot': ids_lower[str(ej.get('PilotActor', 'E1')).lower()],
+                                    'success_rate': int(ej.get('SuccessRate', 50)),
+                                    'in_air': truth('EjectInAir', 'false'),
+                                    'on_ground': truth('EjectOnGround', 'false'),
+                                    'allow_unsuitable_cell': truth('AllowUnsuitableCell', 'false')}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
         if 'AcceptsDeliveredCash' in t:
