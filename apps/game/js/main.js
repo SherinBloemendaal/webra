@@ -47,6 +47,8 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { attachHudTooltips } from './hudtips.js';
+import { hideTooltip } from './ui/tooltip.js';
 import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
@@ -906,6 +908,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     ticksPerSecond: Game.ticks_per_second(),
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
+    hotkeys,
   });
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
   commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
@@ -1067,9 +1070,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     mouseCapture: { available: () => !!mouseCapture },
     onChange: (open, isPaused) => {
       input.setSuspended(open);
-      // The menu needs the OS cursor (sliders, lists): the mouse is let go.
-      if (open) mouseCapture?.setBlocked(true);
-      if (open) touch.reset();
+      if (open) {
+        // The menu needs the OS cursor (sliders, lists): the mouse is let go.
+        mouseCapture?.setBlocked(true);
+        touch.reset();
+        // A tooltip of the HUD would stay over the menu.
+        hideTooltip();
+      }
       menuPaused = isPaused;
       updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
@@ -1091,6 +1098,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A click on Menu opens the menu, which lets go of the mouse: it does not capture it first.
   $('menu-button').dataset.noCapture = '';
   $('menu-button').addEventListener('click', () => menu.toggle());
+  // Tooltips of the HUD buttons, with their current keys (js/hudtips.js); the page reloads to leave the game.
+  attachHudTooltips({
+    hotkeys,
+    menuButton: $('menu-button'),
+    debugButton: debug.button,
+    cheats: debug.cheats,
+    toggle: $('sidebar-toggle'),
+    isMenuOpen: () => menu.isOpen,
+    isCollapsed: () => layout.collapsed,
+  });
   // OpenRA DisableUserInterface / DisableAllUserInterface: only the battlefield
   // (and without the cursor), pressed again: everything back.
   let interfaceHidden = false;

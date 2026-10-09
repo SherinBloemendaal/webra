@@ -10,7 +10,7 @@
 
 use crate::instances::{Anchor, Sink, SpriteRec, NO_CULL};
 use crate::math::{angle_diff, CELL};
-use crate::overlays::{push_brackets, push_health_bar};
+use crate::overlays::{push_brackets, push_group_number, push_health_bar, team_color, RALLY_MARKER};
 use crate::rules::Kind;
 use crate::world::{Activity, EffectKind, World};
 
@@ -370,7 +370,7 @@ impl World {
 
         // Health bars of the selection's targets and of hovered, damaged or all actors (overlays.rs).
         self.render_status_bars(player, sink, selected, rects);
-        // Selection: brackets, health bars and rally flags.
+        // Selection: brackets, health bars, control group numbers and rally points.
         let mut rel: Vec<f32> = Vec::new();
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
@@ -407,10 +407,22 @@ impl World {
                 rel.extend_from_slice(&[l + w * ore, t + h + 2.0, w * gems, 2.0, 0.9, 0.2, 0.3, 1.0]);
             }
             self.push_heli_ammo_pips(i, l, t + h, w, &mut rel);
+            // The control group number, selected actors only (OpenRA's
+            // control group decoration RequiresSelection; overlays.rs).
+            if let Some(g) = self.render_opts.control_group(r) {
+                push_group_number(l, t, g, &mut rel);
+            }
             push_anchored_rects(sink, rects, &anchor, NO_CULL, &rel);
-            if a.kind == Kind::Building && self.render_owns(a.owner, player) {
-                if let Some((rx, ry)) = a.rally {
-                    sink.sprite(sprites, SpriteRec::at(px(rx), px(ry), NO_CULL).look(ids.rally, a.owner as f32, 1.0, 1.0, 0.0));
+            // Rally point (OpenRA RallyPointIndicator): a marker at both ends of
+            // the line (drawn by `build_rally_lines`) and the flag at the point.
+            if self.shows_rally_to(i, player) {
+                if let Some((from, to)) = self.rally_line(i) {
+                    let c = team_color(a.owner, 1.0, 1.0);
+                    let m = RALLY_MARKER;
+                    for (x, y) in [from, to] {
+                        push_fixed_rect(sink, rects, &[x - m, y - m, 2.0 * m, 2.0 * m, c[0], c[1], c[2], c[3]]);
+                    }
+                    sink.sprite(sprites, SpriteRec::at(to.0, to.1, NO_CULL).look(ids.rally, a.owner as f32, 1.0, 1.0, 0.0));
                 }
             }
             if a.kind != Kind::Building && self.render_owns(a.owner, player) && a.activity == Activity::Move && a.goal != crate::world::NONE

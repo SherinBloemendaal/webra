@@ -3,13 +3,18 @@
 //! the actor under the mouse and, by the player's choice, damaged or all
 //! actors), and the animated layer of buildings (apps/game/js/art/anim.js).
 //!
+//! It also draws the control group number of selected actors (OpenRA
+//! WithSpriteControlGroupDecoration) and the rally point of selected
+//! production structures (OpenRA RallyPointIndicator).
+//!
 //! Everything here is presentation only: it reads the world and fills the
 //! render buffers, the simulation never reads `RenderOptions`.
 
 use crate::instances::{Anchor, Sink, SpriteRec};
+use crate::paths::LINE_FLOATS;
 use crate::render::{posed, push_anchored_rects, px, Pose, POSE_STRIDE};
 use crate::rules::Kind;
-use crate::world::{World, NONE};
+use crate::world::{cell_center, World, NONE};
 
 /// Which actors show a health bar besides the selection and the hovered actor
 /// (OpenRA's status bar setting: Standard, Show Damaged, Always Show).
@@ -54,11 +59,45 @@ pub struct RenderOptions {
     /// doing, for art with pre-rendered animations (original graphics,
     /// texture packs). Off by default: sprite ids are then the plain slots.
     pub poses: bool,
+    /// The local player's control groups (apps/game/js/controlgroups.js):
+    /// `(actor ref, group 0..=9)` sorted by ref, one entry per actor. Local
+    /// UI state, set by the client and never part of the simulation.
+    pub control_groups: Vec<(u32, u8)>,
 }
 
 impl Default for RenderOptions {
     fn default() -> RenderOptions {
-        RenderOptions { hover: NONE, health_bars: HealthBars::Damaged, building_overlays: Vec::new(), poses: false }
+        RenderOptions {
+            hover: NONE,
+            health_bars: HealthBars::Damaged,
+            building_overlays: Vec::new(),
+            poses: false,
+            control_groups: Vec::new(),
+        }
+    }
+}
+
+impl RenderOptions {
+    /// Store the control groups: `refs[k]` is in group `groups[k]`. Pairs
+    /// with a group above 9 are dropped, and an actor listed twice keeps
+    /// its last group (an actor is in one group at a time, like OpenRA).
+    pub fn set_control_groups(&mut self, refs: &[u32], groups: &[u8]) {
+        let mut list: Vec<(u32, u8)> = refs.iter().copied().zip(groups.iter().copied()).filter(|&(r, g)| r != NONE && g <= 9).collect();
+        // Stable sort, then keep the last entry of each ref.
+        list.sort_by_key(|&(r, _)| r);
+        let mut out: Vec<(u32, u8)> = Vec::with_capacity(list.len());
+        for (r, g) in list {
+            match out.last_mut() {
+                Some(last) if last.0 == r => last.1 = g,
+                _ => out.push((r, g)),
+            }
+        }
+        self.control_groups = out;
+    }
+
+    /// The control group of actor ref `r`, if it is in one.
+    pub fn control_group(&self, r: u32) -> Option<u8> {
+        self.control_groups.binary_search_by_key(&r, |&(k, _)| k).ok().map(|k| self.control_groups[k].1)
     }
 }
 
@@ -162,6 +201,60 @@ pub fn health_bar_rect_count(w: f32) -> usize {
     1 + segment_count(w)
 }
 
+/// Control group digits 0..=9 as 3x5 pixel glyphs, one row per entry, bit 2
+/// the left column: small white numbers like the "groups" frames of Red
+/// Alert's pips.shp that OpenRA draws (mods/ra/sequences/misc.yaml).
+pub const GROUP_GLYPHS: [[u8; GROUP_GLYPH_H]; 10] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111],
+    [0b010, 0b110, 0b010, 0b010, 0b111],
+    [0b111, 0b001, 0b111, 0b100, 0b111],
+    [0b111, 0b001, 0b011, 0b001, 0b111],
+    [0b101, 0b101, 0b111, 0b001, 0b001],
+    [0b111, 0b100, 0b111, 0b001, 0b111],
+    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b111, 0b001, 0b010, 0b010, 0b010],
+    [0b111, 0b101, 0b111, 0b101, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b111],
+];
+pub const GROUP_GLYPH_W: usize = 3;
+pub const GROUP_GLYPH_H: usize = 5;
+/// The digit's colour and the dark plate behind it (one pixel around the glyph).
+pub const GROUP_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+pub const GROUP_PLATE: [f32; 4] = [0.0, 0.0, 0.0, 0.75];
+/// Top-left of the plate from the box's top-left corner. OpenRA's Red Alert
+/// draws the group at the box's TopLeft (WithSpriteControlGroupDecoration,
+/// Margin -2,0, sequence offset 9,5): just inside the corner, right of the
+/// bracket's vertical arm and below its horizontal one, clear of the health
+/// bar above the box.
+pub const GROUP_INSET: (f32, f32) = (BRACKET_THICKNESS, BRACKET_THICKNESS);
+
+/// Rects of control group `group`'s number in the top left corner of the box
+/// (l, t): a dark plate, then one rect per horizontal run of each glyph row.
+pub fn push_group_number(l: f32, t: f32, group: u8, out: &mut Vec<f32>) {
+    let Some(glyph) = GROUP_GLYPHS.get(group as usize) else { return };
+    let (x, y) = (l + GROUP_INSET.0, t + GROUP_INSET.1);
+    push_rect(out, x, y, GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0, GROUP_PLATE);
+    for (row, bits) in glyph.iter().enumerate() {
+        let mut col = 0;
+        while col < GROUP_GLYPH_W {
+            let lit = |c: usize| bits & (1 << (GROUP_GLYPH_W - 1 - c)) != 0;
+            if !lit(col) {
+                col += 1;
+                continue;
+            }
+            let start = col;
+            while col < GROUP_GLYPH_W && lit(col) {
+                col += 1;
+            }
+            push_rect(out, x + 1.0 + start as f32, y + 1.0 + row as f32, (col - start) as f32, 1.0, GROUP_COLOR);
+        }
+    }
+}
+
+/// Half the side of the square OpenRA marks each end of a rally line with
+/// (TargetLineRenderable.DrawTargetMarker, size 1).
+pub const RALLY_MARKER: f32 = 1.0;
+
 impl World {
     /// Centre and size (world pixels) of actor `i`'s selection box at
     /// `alpha`, raised by its altitude like the sprite (what the render
@@ -196,6 +289,56 @@ impl World {
         let a = &self.actors[i];
         let max = self.rules.actors[a.ty as usize].hp.max(1);
         (a.hp as f32 / max as f32).clamp(0.0, 1.0)
+    }
+
+    /// Whether `player` sees the rally point of structure `i` while it is
+    /// selected: OpenRA's RallyPointIndicator shows it for the owner and
+    /// allies (not for spectators, who have no player).
+    pub(crate) fn shows_rally_to(&self, i: usize, player: u8) -> bool {
+        let a = &self.actors[i];
+        (player as usize) < self.players.len()
+            && !self.render_all
+            && !self.render_combined
+            && a.kind == Kind::Building
+            && a.rally.is_some()
+            && a.in_world()
+            && self.are_allies(a.owner, player)
+    }
+
+    /// Where structure `i`'s rally line starts and ends (world pixels): from
+    /// the exit nearest the rally point (OpenRA NearestExitOrDefault; WebRA's
+    /// units appear on the exit cell, so the line starts at its centre) or
+    /// the structure's centre when it has no exits (helipads, airfields), to
+    /// the rally point. None without a rally point.
+    pub(crate) fn rally_line(&self, i: usize) -> Option<((f32, f32), (f32, f32))> {
+        let a = &self.actors[i];
+        let (rx, ry) = a.rally?;
+        let b = self.rules.actors[a.ty as usize].building.as_ref()?;
+        let from = b
+            .exits
+            .iter()
+            .map(|&(ex, ey)| (cell_center(a.cx + ex), cell_center(a.cy + ey)))
+            .min_by_key(|&(x, y)| crate::math::dist_sq(x, y, rx, ry))
+            .unwrap_or((a.x, a.y));
+        Some(((px(from.0), px(from.1)), (px(rx), px(ry))))
+    }
+
+    /// Rally lines of the selected structures `player` may see them of
+    /// (`shows_rally_to`): one solid segment each in the owner's colour, as
+    /// OpenRA's TargetLineRenderable (rally.wgsl takes the team colour like
+    /// the rect shader). The flag and the end markers are sprites and rects
+    /// of the render buffers (render.rs).
+    pub fn build_rally_lines(&self, player: u8, selected: &[u32], lines: &mut Vec<f32>) {
+        for &r in selected {
+            let Some(i) = self.resolve(r) else { continue };
+            if !self.shows_rally_to(i, player) {
+                continue;
+            }
+            let Some((from, to)) = self.rally_line(i) else { continue };
+            let c = team_color(self.actors[i].owner, 1.0, 1.0);
+            lines.extend_from_slice(&[from.0, from.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
+        }
+        debug_assert_eq!(lines.len() % LINE_FLOATS, 0);
     }
 
     fn shows_overlay_to(&self, i: usize, player: u8) -> bool {

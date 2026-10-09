@@ -114,6 +114,11 @@ export class Layout {
     return isCompact(this.mode);
   }
 
+  /** Whether the sidebar drawer shows collapsed now (the toggle reads Build; its tooltip, js/hudtips.js). */
+  get collapsed() {
+    return this.drawer.shownCollapsed(this.compact);
+  }
+
   update() {
     const mode = layoutMode(this.win.innerWidth, this.win.innerHeight);
     const changed = mode !== this.mode;
@@ -129,7 +134,6 @@ export class Layout {
     this.toggleButton.hidden = !this.compact;
     this.toggleButton.setAttribute('aria-expanded', String(!collapsed));
     this.toggleButton.textContent = collapsed ? 'Build' : 'Map';
-    this.toggleButton.title = collapsed ? 'Show the build sidebar' : 'Hide the build sidebar';
   }
 
   /** Building placement started or ended (collapses the drawer on phones meanwhile). */

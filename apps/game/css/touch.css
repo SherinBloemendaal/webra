@@ -149,12 +149,6 @@ body.touch #app[data-layout='portrait'] #sidebar .sb-grid {
   grid-template-columns: repeat(auto-fill, minmax(max(48px, calc(64 * var(--ui-px))), 1fr));
 }
 
-/* Hover tooltips stick on touch screens; the cameos show what is missing
-   instead (.sb-req in sidebar.css). */
-body.touch #sidebar .sb-tip {
-  display: none;
-}
-
 body.touch .menu-card button,
 body.touch .menu-card select,
 body.touch .menu-card input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']) {

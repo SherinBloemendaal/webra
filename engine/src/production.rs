@@ -217,6 +217,49 @@ impl World {
             .collect()
     }
 
+    /// Ticks to build `ty` with `producers` buildings that make it, before the
+    /// low power slowdown: more factories of a kind build faster (OpenRA
+    /// ClassicProductionQueue BuildTimeSpeedReduction).
+    pub(crate) fn build_time_with(&self, ty: u16, producers: usize) -> i32 {
+        let reductions = &self.rules.player.speed_reduction;
+        let red = reductions[(producers.max(1) - 1).min(reductions.len() - 1)];
+        (self.rules.actors[ty as usize].build_ticks * red / 100).max(1)
+    }
+
+    /// `player`'s live structures that produce anything.
+    pub(crate) fn factories(&self, player: u8) -> Vec<usize> {
+        (0..self.actors.len())
+            .filter(|&i| {
+                let a = &self.actors[i];
+                a.alive
+                    && a.owner == player
+                    && a.kind == Kind::Building
+                    && !self.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.is_empty()
+            })
+            .collect()
+    }
+
+    /// How many of `factories` can make `ty` (structures: one at most, the
+    /// queue's Construction Yard counts once like in the queue).
+    pub(crate) fn producer_count_in(&self, factories: &[usize], ty: u16) -> usize {
+        let info = &self.rules.actors[ty as usize];
+        let makes = |&&i: &&usize| {
+            let b = self.rules.actors[self.actors[i].ty as usize].building.as_ref().unwrap();
+            b.produces.contains(&info.queue) && (info.queue.is_structure() || b.production_types.contains(&info.build_at))
+        };
+        let n = factories.iter().filter(makes).count();
+        if info.queue.is_structure() {
+            n.min(1)
+        } else {
+            n
+        }
+    }
+
+    /// How many buildings `player` has that can make `ty`.
+    pub(crate) fn producer_count(&self, player: u8, ty: u16) -> usize {
+        self.producer_count_in(&self.factories(player), ty)
+    }
+
     pub fn has_producer(&self, player: u8, q: QueueType) -> bool {
         self.actors.iter().any(|a| {
             a.alive
@@ -304,17 +347,14 @@ impl World {
                 continue;
             }
             let first_ty = self.players[player as usize].queues[qi].items[0].ty;
-            let producers =
-                if q.is_structure() { usize::from(self.has_producer(player, q)) } else { self.producers_of(player, first_ty).len() };
+            let producers = self.producer_count(player, first_ty);
             // No factory (or it was destroyed): the queue waits. (Structure
             // queues without a Construction Yard were emptied above.)
             if producers == 0 {
                 continue;
             }
-            let info = &self.rules.actors[first_ty as usize];
-            let cost = info.cost;
-            let build_ticks = info.build_ticks;
-            let reductions = self.rules.player.speed_reduction.clone();
+            let cost = self.rules.actors[first_ty as usize].cost;
+            let build_total = self.build_time_with(first_ty, producers);
             let low_power_mod = self.rules.player.low_power_modifier;
             let low_power = self.players[player as usize].low_power();
             // Debug menu "instant build" (debug.rs): done on this tick, still paid in full.
@@ -327,8 +367,7 @@ impl World {
             } else {
                 if item.total == 0 {
                     // More factories of the same kind build faster (BuildTimeSpeedReduction).
-                    let red = reductions[(producers - 1).min(reductions.len() - 1)];
-                    item.total = (build_ticks * red / 100).max(1);
+                    item.total = build_total;
                     item.remaining = item.total;
                 }
                 if fast_build {

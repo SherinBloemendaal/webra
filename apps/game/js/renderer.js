@@ -298,7 +298,7 @@ export class Renderer {
    * @param sprites Float32Array of sprite instances
    * @param rects Float32Array of rect instances (sim rects followed by UI rects)
    * @param anim {time, enabled} render clock of sprite animations (js/anim.js); still frames by default
-   * @param lines optional Float32Array of line instances (unit paths), drawn over the fog and under the rects
+   * @param lines optional Float32Array of line instances (rally lines, unit paths), drawn over the fog and under the rects
    * @param gpu optional `{ records, alpha, view }`: draw the simulation's sprites and rects from tick-rate
    *   records with the GPU instance pass (`sprites` is then ignored and `rects` holds the UI rects only,
    *   drawn after the simulation's); `view` is the visible world rectangle [x0, y0, x1, y1]

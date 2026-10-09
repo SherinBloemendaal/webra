@@ -104,6 +104,7 @@ function fakeGame(over = {}) {
     place_beacon: rec('place_beacon'),
     order_smart: rec('order_smart'),
     order_stop: rec('order_stop'),
+    set_control_groups: rec('set_control_groups'),
     ...over,
   };
 }
@@ -436,6 +437,36 @@ test('control groups through the hotkeys: create, select, add to, combine, jump,
   input.setSelection([2]);
   hotkeys.run('removeFromControlGroup');
   assert.deepEqual(input.groups.members('1'), [1, 50, 3]);
+});
+
+test('control groups reach the engine for the selection box numbers, and dead members drop out', async () => {
+  let dead = new Set();
+  const game = fakeGame({
+    actor_json: (id) => (dead.has(id) ? 'null' : JSON.stringify({ id, type: 'e1', owner: 0, building: id === 50, carrier: NONE })),
+  });
+  const { input, hotkeys } = await makeInput({ game });
+  const press = (digit, mods = {}) =>
+    hotkeys.handle({ code: `Digit${digit}`, key: digit, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {}, ...mods });
+  const sent = () => game.calls.filter((c) => c[0] === 'set_control_groups');
+  const last = () => sent().at(-1)?.slice(1);
+  input.setSelection([1, 50]);
+  press('3', { ctrlKey: true });
+  assert.deepEqual(last(), [[1, 50], [3, 3]], 'a unit and a structure in group 3');
+  input.setSelection([2]);
+  press('0', { ctrlKey: true });
+  assert.deepEqual(last(), [[1, 50, 2], [3, 3, 0]]);
+  const n = sent().length;
+  press('3');
+  input.refreshSelection();
+  assert.equal(sent().length, n, 'selecting a group changes nothing to send');
+  input.setSelection([1]);
+  press('0', { ctrlKey: true, shiftKey: true });
+  assert.deepEqual(last(), [[50, 2, 1], [3, 0, 0]], 'adding to group 0 takes the unit out of group 3');
+  hotkeys.run('removeFromControlGroup');
+  assert.deepEqual(last(), [[50, 2], [3, 0]]);
+  dead = new Set([50]);
+  input.refreshSelection();
+  assert.deepEqual(last(), [[2], [0]], 'a destroyed structure loses its number');
 });
 
 test('the arrow keys scroll while held (OpenRA MapScroll hotkeys)', async () => {

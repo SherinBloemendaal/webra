@@ -159,7 +159,7 @@ test('ui scale: --ui-scale follows the setting, the window and its pixel ratio, 
 
 const CSS = (name) => readFileSync(fileURLToPath(new URL(`../css/${name}`, import.meta.url)), 'utf8');
 /** The stylesheets of the game screen, its menu and dialogs: their sizes follow the UI scale. */
-const SCALED_SHEETS = ['theme.css', 'style.css', 'sidebar.css', 'minimap.css', 'powers.css', 'audio.css', 'content.css', 'debug.css', 'releasenotes.css', 'touch.css', 'commandbar.css'];
+const SCALED_SHEETS = ['theme.css', 'style.css', 'sidebar.css', 'minimap.css', 'powers.css', 'audio.css', 'content.css', 'debug.css', 'releasenotes.css', 'touch.css', 'commandbar.css', 'tooltip.css'];
 /** Properties that keep fixed pixels: hairlines, shadows, decorations, motion. */
 const FIXED = /^(border|outline|box-shadow|text-shadow|transform|transition|animation|background|filter|backdrop-filter|mask|-webkit-|scrollbar|--ui-(bevel|rivet|scan|brushed|grid|hazard|shadow|fs-|radius))/;
 
@@ -182,7 +182,7 @@ test('ui scale css: the chrome is sized in --ui-px, scaled for the game screen, 
   assert.match(scoped[1], /--ui-px:\s*calc\(1px \* var\(--ui-scale\)\)/);
   for (const token of ['--ui-fs-xs', '--ui-fs-s', '--ui-fs-m', '--ui-fs-l']) assert.match(scoped[1], new RegExp(`${token}: calc\\(\\d+ \\* var\\(--ui-px\\)\\)`));
   assert.match(scoped[1], /font-size: calc\(14 \* var\(--ui-px\)\)/, 'inherited text scales too');
-  for (const id of ['#app', '#game-menu', '#gameover', '#toast', '#audio-panel', '#content-panel', '#release-notes']) assert.ok(scoped[0].includes(id), id);
+  for (const id of ['#app', '#game-menu', '#ui-tooltip', '#gameover', '#toast', '#audio-panel', '#content-panel', '#release-notes']) assert.ok(scoped[0].includes(id), id);
   assert.ok(!scoped[0].includes('#menu,') && !scoped[0].includes('#menu {'), 'the lobby keeps its size');
   // Touch screens keep 44 px targets at any UI scale.
   const touch = CSS('touch.css');

@@ -90,6 +90,7 @@
    over the scaled --ui-px, and text that only inherits a size gets one too. */
 #app,
 #game-menu,
+#ui-tooltip,
 #gameover,
 #toast,
 #audio-button,
