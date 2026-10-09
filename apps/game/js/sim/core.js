@@ -111,6 +111,7 @@ export class SimCore {
           delay: spec.delay,
           tickMs: this.tickMs,
           spectator: !!spec.spectator,
+          player: spec.spectator ? null : (spec.player ?? null),
           rejoining: !!spec.rejoining,
           recorder: this.recorder,
           onCaughtUp: () => this.emit('caughtUp', null),
