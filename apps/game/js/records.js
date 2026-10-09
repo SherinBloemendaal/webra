@@ -124,14 +124,21 @@ async function loadDialog(store, ctx) {
         const info = el('div', 'records-info');
         info.append(el('strong', null, s.title), el('span', 'records-muted', `${formatTicks(s.ticks)} played, saved ${new Date(s.createdAt).toLocaleString()}`));
         if (s.engine !== ctx.version) info.append(el('span', 'records-warning', `Made with WebRA ${s.engine}`));
+        // Online saves continue online with their players (Play online, Resume a saved game).
+        if (s.mode === 'online') info.append(el('span', 'records-muted', 'Online game: resume it from Play online.'));
         const load = button('Load', 'records-primary', async () => {
           const r = await store.load(s.id, ctx.version);
           if (!r.ok) {
             status.textContent = `This save cannot be loaded: ${r.error}.`;
             return;
           }
+          if (r.replay.mode === 'online') {
+            status.textContent = 'This is a saved online game: resume it with its players from Play online.';
+            return;
+          }
           close(r.replay);
         });
+        load.disabled = s.mode === 'online';
         const del = button('Delete', null, async () => {
           await store.remove(s.id);
           render();
@@ -148,6 +155,7 @@ async function loadDialog(store, ctx) {
         const r = await openRecordFile(file, ctx.version);
         if (!r.ok) status.textContent = r.error;
         else if (r.replay.kind !== 'save') status.textContent = 'That is a replay. Open it with the Replays button.';
+        else if (r.replay.mode === 'online') status.textContent = 'This is a saved online game: resume it with its players from Play online.';
         else close(r.replay);
       }),
       button('Cancel', null, () => close(null)),

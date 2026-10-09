@@ -242,6 +242,13 @@ export class SimCore {
         const text = kind === 'save' ? this.recorder.encode('save', ticks, this.game.state_hash()) : this.recorder.encode('replay', ticks);
         return { text, ticks, full: this.recorder.full };
       }
+      // An online save at the agreed save point (`save` message `saved`).
+      case 'encodeOnlineSave': {
+        const [ticks, hash, id] = args;
+        if (!this.recorder) throw new Error('This game is not recorded.');
+        if (this.game.tick_count() < ticks) throw new Error('The game has not reached the save point yet.');
+        return this.recorder.encodeOnlineSave(ticks, hash, id);
+      }
       // Debug menu: one tick while paused (local games only).
       case 'debugStep':
         if (this.driver || this.replay || this.busy()) return false;

@@ -11,6 +11,9 @@ import {
   parseClientMessage,
   parseServerMessage,
   PROTOCOL_VERSION,
+  MAP_STATES,
+  MEMBER_HEADER,
+  MEMBER_RE,
   ProtocolError,
   CHEAT_ORDER_KINDS,
   DEV_FLAGS,
@@ -241,14 +244,17 @@ test('server messages round trip through encodeServer / parseServerMessage', () 
       t: S2C.LOBBY,
       hostId: 1,
       slots: [
-        { type: 'human', client: 1, name: 'Host', account: true, faction: 'germany', color: 0, team: 0, ready: false },
+        { type: 'human', client: 1, name: 'Host', account: true, faction: 'germany', color: 0, team: 0, ready: false, mapState: 'installed' },
         { type: 'ai', difficulty: 'easy', faction: 'random', color: 1, team: 2 },
         { type: 'open' },
         { type: 'closed' },
       ],
       options: { ...DEFAULT_OPTIONS },
-      map: { id: '0123456789abcdef', hash: 'b'.repeat(64), name: 'Twin', modded: false, players: 4 },
-      spectators: [{ client: 5, name: 'Watcher' }, { client: 6, name: 'Signed In', account: true }],
+      map: { id: '0123456789abcdef', hash: 'b'.repeat(64), name: 'Twin', modded: false, players: 4, author: 'Mapper', width: 64, height: 48, bytes: 4321, shared: true },
+      spectators: [
+        { client: 5, name: 'Watcher', mapState: 'declined' },
+        { client: 6, name: 'Signed In', account: true, mapState: 'missing' },
+      ],
       maxSpectators: 2,
     },
     { t: S2C.CHAT, from: 1, name: 'Host', text: 'gl hf' },
@@ -343,8 +349,9 @@ test('game options: concrete factions, unique colours, slots in order', () => {
 test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0', name: 'Tanya' };
   // Version 4 added the map style, biome and weather lobby options on top;
-  // version 5 accounts (optional hello name, welcome name, account marks).
-  assert.equal(PROTOCOL_VERSION, 5);
+  // version 5 accounts (optional hello name, welcome name, account marks);
+  // version 6 map sharing (map details, map states) and rematches.
+  assert.equal(PROTOCOL_VERSION, 6);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);
@@ -417,4 +424,165 @@ test('protocol 5: accounts in hello, welcome and the lobby', () => {
   for (const code of ['account_required', 'account_inactive', 'banned', 'ip_banned']) {
     assert.equal(p({ t: 'error', code, message: 'no' }).ok, true);
   }
+});
+
+// ---- Protocol 6: map sharing and rematches -----------------------------------------------------
+
+const MAP_INFO = { id: '0123456789abcdef', hash: 'c'.repeat(64), name: 'Lake', modded: false, players: 2, author: 'Me', width: 64, height: 64, bytes: 900, shared: true };
+const LOBBY6 = (patch = {}) => ({
+  t: 'lobby',
+  hostId: 1,
+  slots: [
+    { type: 'human', client: 1, name: 'Host', faction: 'random', color: 0, team: 0, ready: false, mapState: 'installed' },
+    { type: 'human', client: 2, name: 'Guest', faction: 'random', color: 1, team: 0, ready: false, mapState: 'missing' },
+  ],
+  options: { ...DEFAULT_OPTIONS },
+  map: MAP_INFO,
+  spectators: [{ client: 3, name: 'Eye', mapState: 'declined' }],
+  maxSpectators: 2,
+  ...patch,
+});
+
+test('protocol 6: lobby maps carry their details and every member a map state', () => {
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  assert.ok(p(LOBBY6()).ok, p(LOBBY6()).message);
+  assert.deepEqual(p(LOBBY6()).msg.map, MAP_INFO);
+  // A map's details are all required, with sane bounds.
+  for (const k of ['author', 'width', 'height', 'bytes', 'shared', 'players']) {
+    const map = { ...MAP_INFO };
+    delete map[k];
+    assert.equal(p(LOBBY6({ map })).ok, false, `without ${k}`);
+  }
+  assert.equal(p(LOBBY6({ map: { ...MAP_INFO, bytes: 2 * 1024 * 1024 } })).ok, false, 'larger than a map file can be');
+  assert.equal(p(LOBBY6({ map: { ...MAP_INFO, width: 8 } })).ok, false);
+  assert.equal(p(LOBBY6({ map: { ...MAP_INFO, author: 'a‮b' } })).ok, false, 'no bidi tricks in the author');
+  assert.equal(p(LOBBY6({ map: { ...MAP_INFO, url: 'https://evil.example/map' } })).ok, false, 'no other fields (no URLs)');
+  // Map states: on every member with a map, on none without one, never on AI slots.
+  const noState = LOBBY6();
+  delete noState.spectators[0].mapState;
+  assert.equal(p(noState).ok, false, 'a member without a state while there is a map');
+  const generated = LOBBY6({ map: null });
+  assert.equal(p(generated).ok, false, 'states without a map');
+  for (const sl of generated.slots) delete sl.mapState;
+  for (const sp of generated.spectators) delete sp.mapState;
+  assert.ok(p(generated).ok, p(generated).message);
+  const ai = LOBBY6();
+  ai.slots[1] = { type: 'ai', difficulty: 'easy', faction: 'random', color: 1, team: 0, mapState: 'installed' };
+  assert.equal(p(ai).ok, false);
+  const odd = LOBBY6();
+  odd.slots[1].mapState = 'downloading';
+  assert.equal(p(odd).ok, false);
+  // The start message describes its map the same way.
+  const start = {
+    t: 'start',
+    seed: OPTIONS.seed,
+    options: OPTIONS,
+    map: MAP_INFO,
+    delay: 3,
+    players: [
+      { player: 0, slot: 0, client: 1, name: 'Host', type: 'human' },
+      { player: 1, slot: 2, client: null, name: 'Computer', type: 'ai' },
+    ],
+  };
+  assert.ok(p(start).ok, p(start).message);
+  assert.equal(p({ ...start, map: { id: MAP_INFO.id, hash: MAP_INFO.hash, name: 'Lake', modded: false, players: 2 } }).ok, false, 'protocol 5 map refs are refused');
+});
+
+test('protocol 6: the host names community maps with the request fields only', () => {
+  const ref = { id: MAP_INFO.id, hash: MAP_INFO.hash, name: 'Lake', modded: false };
+  assert.deepEqual(ok({ t: 'map', map: ref }), { t: 'map', map: ref });
+  bad({ t: 'map', map: { ...ref, shared: true } }, /unknown field/);
+  bad({ t: 'map', map: { ...ref, author: 'x' } }, /unknown field/);
+});
+
+test('protocol 6: mapstate, kick and rematch client messages are strict', () => {
+  const hash = 'd'.repeat(64);
+  assert.deepEqual(ok({ t: 'mapstate', hash, state: 'installed' }), { t: 'mapstate', hash, state: 'installed' });
+  assert.deepEqual(ok({ t: 'mapstate', hash, state: 'declined' }), { t: 'mapstate', hash, state: 'declined' });
+  bad({ t: 'mapstate', hash, state: 'missing' }, /unsupported/);
+  bad({ t: 'mapstate', hash: 'D'.repeat(64), state: 'installed' }, /hash/);
+  bad({ t: 'mapstate', state: 'installed' }, /hash/);
+  bad({ t: 'mapstate', hash, state: 'installed', url: '/x' }, /unknown field/);
+  assert.deepEqual(ok({ t: 'kick', client: 4 }), { t: 'kick', client: 4 });
+  bad({ t: 'kick', client: 0 });
+  bad({ t: 'kick', client: '4' });
+  assert.deepEqual(ok({ t: 'rematch', accept: true }), { t: 'rematch', accept: true });
+  assert.deepEqual(ok({ t: 'rematch', accept: false }), { t: 'rematch', accept: false });
+  bad({ t: 'rematch' }, /accept/);
+  bad({ t: 'rematch', accept: 'yes' }, /accept/);
+  bad({ t: 'rematch', accept: true, options: {} }, /unknown field/);
+});
+
+test('protocol 6: rematch server messages are strict', () => {
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  const open = { t: 'rematch', state: 'open', by: 1, accepted: [1], waiting: [2, 3], msLeft: 90_000 };
+  assert.deepEqual(p(open).msg, open);
+  const cancelled = { t: 'rematch', state: 'cancelled', by: null, accepted: [], waiting: [], reason: 'declined' };
+  assert.deepEqual(p(cancelled).msg, cancelled);
+  const lobby = { t: 'rematch', state: 'lobby', by: 1, accepted: [1, 2], waiting: [] };
+  assert.deepEqual(p(lobby).msg, lobby);
+  assert.equal(p({ ...open, msLeft: undefined }).ok, false, 'an open proposal says how long it runs');
+  assert.equal(p({ ...lobby, msLeft: 5 }).ok, false);
+  assert.equal(p({ ...cancelled, reason: 'bored' }).ok, false);
+  assert.equal(p({ ...open, reason: 'declined' }).ok, false);
+  assert.equal(p({ ...open, accepted: [1, 1] }).ok, false);
+  assert.equal(p({ ...open, waiting: [1] }).ok, false, 'accepted and waiting at once');
+  assert.equal(p({ ...open, accepted: [1, 2, 3, 4, 5, 6, 7, 8, 9] }).ok, false);
+  assert.equal(p({ ...open, state: 'maybe' }).ok, false);
+});
+
+test('protocol 6: the member credential header format', () => {
+  assert.equal(MEMBER_HEADER, 'X-WebRA-Member');
+  assert.ok(MEMBER_RE.test(`12.${'A'.repeat(43)}`));
+  for (const v of [`0.${'A'.repeat(43)}`, `12.${'A'.repeat(42)}`, `12:${'A'.repeat(43)}`, `-1.${'A'.repeat(43)}`, `12.${'A'.repeat(43)} `, `12345678901.${'A'.repeat(43)}`]) {
+    assert.equal(MEMBER_RE.test(v), false, v);
+  }
+  assert.deepEqual(MAP_STATES, ['installed', 'missing', 'declined']);
+});
+
+test('protocol 6: save messages, resumed starts and resume lobbies are strict', () => {
+  assert.deepEqual(ok({ t: 'save', accept: true }), { t: 'save', accept: true });
+  bad({ t: 'save' }, /accept/);
+  bad({ t: 'save', accept: true, tick: 50 }, /unknown field/);
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  const open = { t: 'save', state: 'open', by: 2, accepted: [2], waiting: [1], msLeft: 30000 };
+  assert.deepEqual(p(open).msg, open);
+  assert.equal(p({ ...open, tick: 50 }).ok, false);
+  assert.deepEqual(p({ t: 'save', state: 'agreed', tick: 75 }).msg, { t: 'save', state: 'agreed', tick: 75 });
+  assert.equal(p({ t: 'save', state: 'agreed', tick: 74 }).ok, false, 'a hash tick');
+  const saved = { t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 76, hash: 'abcd' };
+  assert.deepEqual(p(saved).msg, saved);
+  assert.equal(p({ ...saved, ticks: 75 }).ok, false);
+  assert.equal(p({ ...saved, id: 'x' }).ok, false);
+  assert.deepEqual(p({ t: 'save', state: 'cancelled', reason: 'desync' }).msg, { t: 'save', state: 'cancelled', reason: 'desync' });
+  assert.equal(p({ t: 'save', state: 'cancelled', reason: 'bored' }).ok, false);
+  // A resumed start says where the game goes on.
+  const start = {
+    t: 'start',
+    seed: OPTIONS.seed,
+    options: OPTIONS,
+    map: null,
+    delay: 3,
+    players: [
+      { player: 0, slot: 0, client: 1, name: 'Host', type: 'human' },
+      { player: 1, slot: 2, client: null, name: 'Computer', type: 'ai' },
+    ],
+  };
+  assert.deepEqual(p({ ...start, resume: { ticks: 501, hash: 'ab' } }).msg.resume, { ticks: 501, hash: 'ab' });
+  assert.equal(p({ ...start, resume: { ticks: 500, hash: 'ab' } }).ok, false);
+  assert.equal(p({ ...start, resume: { ticks: 501 } }).ok, false);
+  // A lobby that resumes a save.
+  const lobby = {
+    t: 'lobby',
+    hostId: 1,
+    slots: [{ type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false }, { type: 'open' }],
+    options: { ...DEFAULT_OPTIONS },
+    map: null,
+    spectators: [],
+    maxSpectators: 2,
+    resume: { id: '0123456789abcdef', title: 'Friday', createdAt: 5, ticks: 501, waiting: ['Guest'] },
+  };
+  assert.deepEqual(p(lobby).msg.resume, lobby.resume);
+  assert.equal(p({ ...lobby, resume: { ...lobby.resume, waiting: ['a‮b'] } }).ok, false);
+  assert.equal(p({ ...lobby, resume: { ...lobby.resume, frames: [] } }).ok, false);
 });
