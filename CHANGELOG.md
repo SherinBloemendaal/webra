@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0](https://github.com/SherinBloemendaal/webra/compare/v0.6.0...v0.7.0) (2026-10-09)
+
+
+### Features
+
+* **engine:** report sprite poses for pre-rendered art ([be2a333](https://github.com/SherinBloemendaal/webra/commit/be2a333a695082ca7db7f1eabd43ad96b5fe1573))
+* **game:** add a versioned texture pack format ([0a6834e](https://github.com/SherinBloemendaal/webra/commit/0a6834eacf750cc0615261436736c56761c46414))
+* **game:** answer every selection the player makes, like OpenRA ([74659a1](https://github.com/SherinBloemendaal/webra/commit/74659a1809c7ed45e4c1a13f5b0886a584f6572c))
+* **game:** decode original Red Alert graphics with OpenRA's sequences ([2881815](https://github.com/SherinBloemendaal/webra/commit/288181599c75e5e2f4ea51a19745d8f318a08b8d))
+* **game:** draw pre-rendered facings, poses and tile terrain ([b229fa9](https://github.com/SherinBloemendaal/webra/commit/b229fa9b7cdd65f96ef6c5372247a150155c8882))
+* **game:** install original graphics and sounds in one flow ([d6f28bd](https://github.com/SherinBloemendaal/webra/commit/d6f28bd824910b0842489cefd4a4a206b44bde70))
+* **game:** keep every user setting in one settings registry ([285a1d1](https://github.com/SherinBloemendaal/webra/commit/285a1d136cd7714c4e567a67435bbafab5e54ba1))
+* **game:** sign in, sync settings and play online with an account ([0098b88](https://github.com/SherinBloemendaal/webra/commit/0098b88638a999f0881035426375e777813841c6))
+* **game:** use the protocol's account validators and match the final API ([b58747b](https://github.com/SherinBloemendaal/webra/commit/b58747bd7d9d7e6f6576f26370381bb2339b0823))
+* **protocol:** add account validators and protocol 5 for signed-in play ([8c75f3c](https://github.com/SherinBloemendaal/webra/commit/8c75f3cb7ea1c057dd7e5d377d78e0275f4506b7))
+* **repo:** add a tool that makes an existing account an admin ([0a02f58](https://github.com/SherinBloemendaal/webra/commit/0a02f58f931961ab57f0f8524c7dbc07c5ffac70))
+* **server:** add accounts, sessions, passkeys, Discord sign-in and the admin API ([aac255f](https://github.com/SherinBloemendaal/webra/commit/aac255fca0412a1a545d10eff4cc599963f27eda))
+* **server:** relay OpenRA's quick install package for one-click installs ([2b18e19](https://github.com/SherinBloemendaal/webra/commit/2b18e19596a99c4f41c0d5aa911e8378c967945a))
+* **website:** add a privacy notice and link it from every footer ([afacdc8](https://github.com/SherinBloemendaal/webra/commit/afacdc879258a38d053734433615825f07de90a1))
+* **website:** add the account page and the admin dashboard ([4b381f3](https://github.com/SherinBloemendaal/webra/commit/4b381f3e6e2aedfe1003bd1dfbc7752746b03b12))
+
+
+### Bug Fixes
+
+* **game:** keep createSettings(null) as a memory-only settings store ([0a76768](https://github.com/SherinBloemendaal/webra/commit/0a7676815448aaf5a2be3b2c94def6f94044fcb9))
+* **game:** make installing the original content clear and reliable ([7875334](https://github.com/SherinBloemendaal/webra/commit/7875334a302b6dfc76ae52025d78e2e8d108fdba))
+* **game:** send the CSRF header with every API write ([cd3a7df](https://github.com/SherinBloemendaal/webra/commit/cd3a7dfb22c8ad29cacc20b60f610a9fac33f66c))
+* **game:** send the CSRF header with session and map requests ([9c5c6ce](https://github.com/SherinBloemendaal/webra/commit/9c5c6ce15190b4dd4f9a86cafb55cd9fc74fddcc))
+* **protocol:** refuse prototype keys in settings documents ([fb8fa7c](https://github.com/SherinBloemendaal/webra/commit/fb8fa7c53dd6a7e2a8ce973dd4515d3ef4348176))
+* **server:** answer forbidden before account_inactive on staff routes ([a636737](https://github.com/SherinBloemendaal/webra/commit/a636737e32d06aa128e0d529f59f153c0078134e))
+* **server:** close the accounts security review findings ([fe7ed6a](https://github.com/SherinBloemendaal/webra/commit/fe7ed6aecfd39969c4e1f735ebea72d6f662ca07))
+* **website:** match the account pages to the reviewed API ([fa577df](https://github.com/SherinBloemendaal/webra/commit/fa577dfb3dd47c7276562065b89efd4e213abbd8))
+
 ## [0.6.0](https://github.com/SherinBloemendaal/webra/compare/v0.5.0...v0.6.0) (2026-10-08)
 
 
