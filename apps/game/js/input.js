@@ -69,7 +69,8 @@ export class Input {
     this.player = player;
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
-    // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) }
+    // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
+    // tips (js/hints.js): { onPlainMove(units, worldPoint) }
     this.hooks = hooks;
     this.hotkeys = hotkeys;
     this.settings = settings;
@@ -567,6 +568,8 @@ export class Input {
     if (intent.kind === 'order') {
       this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
       this.flashOrder(b, intent.action);
+      // A plain move: the attack-move tip may apply (js/hints.js).
+      if (intent.action === ACTION.MOVE) this.hooks.onPlainMove?.(intent.units, b);
     } else if (intent.kind === 'deploy') {
       this.game.deploy(this.player, Uint32Array.from([intent.id]));
     } else if (intent.kind === 'blocked') {

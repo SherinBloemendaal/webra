@@ -67,6 +67,8 @@ export const QUERY_DEFAULTS = Object.freeze({
   command_state: () => JSON.stringify({ units: 0, armed: 0, attackGround: 0, guard: 0, scatter: 0, queued: 0, stances: {} }),
   can_guard: () => false,
   can_attack_ground: () => false,
+  // Whether a plain move passes visible enemies (the attack-move tip, js/hints.js).
+  move_hint: () => false,
   sell_value: () => 0,
   deploy_state: () => 0,
   ability_deploy_state: () => 0,

@@ -73,7 +73,7 @@ const PACK_ID = /^[^\u0000-\u001f\u007f]{1,160}$/;
 export const GROUPS = deepFreeze({
   game: {
     label: 'Game',
-    description: 'Scrolling, graphics, health bars and hotkeys.',
+    description: 'Scrolling, graphics, health bars, hotkeys and tips.',
     scope: 'game',
     settings: {
       edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3, step: 0.25, label: 'Edge scroll speed', help: '0 turns edge scrolling off.' },
@@ -115,6 +115,12 @@ export const GROUPS = deepFreeze({
         help: 'Original graphics need the original content installed on the device.',
       },
       hotkeys: { type: 'keymap', default: {}, maxEntries: 200, maxKeys: 4, label: 'Changed hotkeys', help: 'An empty list leaves the action without a key.' },
+      attackMoveTipSeen: {
+        type: 'boolean',
+        default: false,
+        label: 'Attack-move tip shown',
+        help: 'The tip shows once, the first time armed units are sent on a plain move past enemies (js/hints.js).',
+      },
     },
   },
   audio: {

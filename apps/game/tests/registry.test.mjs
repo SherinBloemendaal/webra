@@ -50,6 +50,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
   // The groups and keys are the account's settings document sections.
   assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'extra']);
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
+    'attackMoveTipSeen',
     'edgeScrollSpeed',
     'gameScale',
     'graphics',
@@ -217,7 +218,7 @@ test('registry: every old key migrates once, and the old keys are removed after 
   const r = createRegistry({ storage });
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
-  assert.deepEqual(v.game, { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: true, uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', graphics: 'original', hotkeys: { stop: ['Z'] } }, 'settings the old key did not have get their default');
+  assert.deepEqual(v.game, { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: true, uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', graphics: 'original', hotkeys: { stop: ['Z'] }, attackMoveTipSeen: false }, 'settings the old key did not have get their default');
   assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, musicOn: true, musicShuffle: true, musicRepeat: 'all' });
   assert.equal(v.debug.stats, true);
   assert.equal(v.debug.cpuInstances, true);

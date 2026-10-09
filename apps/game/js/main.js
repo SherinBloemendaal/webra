@@ -25,13 +25,14 @@ import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { CURSORS } from './cursors.js';
-import { hotkeys } from './hotkeys.js';
+import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
+import { AttackMoveTip, TipView } from './hints.js';
 import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
@@ -734,6 +735,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let powerBar = null;
   let commandBar = null;
   let touch = null;
+  // One-time attack-move tip (js/hints.js); spectators give no orders.
+  let attackMoveTip = null;
   const placementEnded = () => {
     sidebar?.setPlacing(null);
     layout.setPlacing(false);
@@ -756,6 +759,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
     cancelCommand: () => commandBar?.cancel() ?? false,
     queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
+    onPlainMove: (units, at) => {
+      attackMoveTip?.plainMove(units, at).catch((err) => console.warn('attack-move tip:', err));
+    },
     onPlaced: placementEnded,
     onCancelPlace: placementEnded,
     onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
@@ -797,6 +803,19 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
   // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
   const notices = new NotificationView($('field'));
+  if (!viewer) {
+    const tipView = new TipView($('field'));
+    attackMoveTip = new AttackMoveTip({
+      registry: defaultRegistry(),
+      ask: input.ask,
+      player,
+      keyLabel: () => {
+        const key = hotkeys.bindingsFor('attackMove')[0];
+        return key ? formatCombo(key) : null;
+      },
+      show: (text) => tipView.show(text),
+    });
+  }
   audio?.onAnnounce((key) => notices.announce(key));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
