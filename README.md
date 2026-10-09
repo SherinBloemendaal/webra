@@ -321,7 +321,7 @@ Touch and pen input works next to the mouse and keyboard; the touch action bar a
 | Two-finger drag | Pan the camera |
 | Pinch | Zoom |
 | Long press | Units selected: force attack the unit or building under the finger (your own too), or attack-move to the ground. Otherwise: cancel the current mode or clear the selection (the right click) |
-| **Add** | Stands in for Shift: taps and boxes add to (or remove from) the selection, attack move and sell mode stay active, sidebar cards queue 5 |
+| **Add** | Stands in for Shift: taps and boxes add to (or remove from) the selection, attack move stays active, sidebar cards queue 5 (the sidebar modes, such as sell and repair, stay on anyway) |
 | **A-Move**, **Force** | Attack move or force attack with the next tap |
 | **Stop**, **Deploy**, **All**, **Cancel** | Stop; deploy, unload or use an ability; select everything on screen (twice: the whole map); cancel the mode or clear the selection |
 | Placing a building | Tap or drag anywhere to move the footprint, then **Place** (or **Cancel**) |
