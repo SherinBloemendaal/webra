@@ -78,7 +78,10 @@ test('the sidebar counter animates with the UI ticks and reports its tick sounds
   try {
     const { Sidebar } = await import('../js/sidebar.js');
     const ticks = [];
+    // A fake clock in whole milliseconds: frame times are exact, never real timing.
+    let now = 1000;
     const fake = {
+      now: () => now,
       credits: null,
       creditsFrame: 0,
       creditsEl: doc.createElement('span'),
@@ -95,12 +98,11 @@ test('the sidebar counter animates with the UI ticks and reports its tick sounds
     assert.equal(frames.length, 0);
     update(500);
     assert.equal(frames.length, 1, 'counting starts');
-    const t0 = fake.creditsLast;
-    frames.shift()(t0 + CASH_TICK_MS);
+    assert.equal(fake.creditsLast, now, 'counting starts on the injected clock');
+    frames.shift()((now += CASH_TICK_MS));
     assert.equal(fake.creditsEl.textContent, String(1000 - DISPLAY_DELTA_PER_TICK));
     assert.ok(fake.creditsEl.classList.contains('down'));
     assert.deepEqual(ticks, ['down']);
-    let now = t0 + CASH_TICK_MS;
     while (frames.length) frames.shift()((now += CASH_TICK_MS));
     assert.equal(fake.creditsEl.textContent, '500');
     assert.equal(fake.creditsEl.classList.contains('down'), false);

@@ -73,8 +73,9 @@ export class Sidebar {
    *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed;
    *   onProductionClick: a cameo click did something, with the queue's speech for it
    *   ('queued', 'blocked', 'limited', 'resumed', 'onHold', 'cancelled', or null)
-   * @param {{ticksPerSecond?: number, hotkeys?: import('./hotkeys.js').HotkeyRegistry}} [options]
-   *   game ticks per second, for the clocks; the hotkey registry, for the keys in tooltips
+   * @param {{ticksPerSecond?: number, hotkeys?: import('./hotkeys.js').HotkeyRegistry, now?: () => number}} [options]
+   *   game ticks per second, for the clocks; the hotkey registry, for the keys in tooltips;
+   *   the clock of animation frames in milliseconds (performance.now)
    */
   constructor(root, game, rules, playerId, callbacks = {}, options = {}) {
     this.root = root;
@@ -106,6 +107,8 @@ export class Sidebar {
     this.credits = null;
     this.creditsFrame = 0;
     this.creditsLast = 0;
+    // The clock of animation frames (requestAnimationFrame times); tests pass their own.
+    this.now = options.now ?? (() => performance.now());
     this.creditsRest = 0;
 
     this.build();
@@ -714,7 +717,7 @@ export class Sidebar {
     if (!this.creditsFrame && !this.credits.settled) {
       // The counter rested for at least a poll (several UI ticks): a "down" sound may play at once.
       this.credits.downQuiet = 0;
-      this.creditsLast = performance.now();
+      this.creditsLast = this.now();
       this.creditsRest = 0;
       this.creditsFrame = requestAnimationFrame((t) => this.tickCredits(t));
     }
