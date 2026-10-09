@@ -13,6 +13,8 @@ struct RawRules {
     actors: Vec<RawActor>,
     weapons: Vec<RawWeapon>,
     locomotors: Vec<RawLocomotor>,
+    /// World actor rules of the lobby options (rules_options.rs).
+    world: crate::rules_options::RawWorldRules,
 }
 
 #[derive(Deserialize, Clone)]
@@ -62,6 +64,9 @@ struct RawActor {
     take_cover: Option<RawTakeCover>,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
+    /// Lobby options and leftovers (rules_options.rs).
+    #[serde(flatten)]
+    options: crate::rules_options::RawActorOptions,
 }
 
 #[derive(Deserialize, Clone)]
@@ -111,6 +116,8 @@ pub struct GivesExperienceInfo {
     pub experience: i32,
     /// ActorExperienceModifier: percentage of the value the killing actor gains.
     pub actor_modifier: i32,
+    /// PlayerExperienceModifier: percentage of the value the killing player gains (gamerules.rs).
+    pub player_modifier: i32,
 }
 
 #[derive(Deserialize)]
@@ -392,6 +399,8 @@ pub struct RepairableInfo {
     pub interval: i32,
     pub step: i32,
     pub bonuses: Vec<i32>,
+    /// PlayerExperience an allied repairer gains when the repair completes (gamerules.rs).
+    pub player_experience: i32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -472,6 +481,7 @@ struct RawWeapon {
     valid: u32,
     invalid: u32,
     warheads: Vec<RawWarhead>,
+    effects: Vec<crate::rules_options::RawWarheadEffect>,
 }
 
 #[derive(Deserialize)]
@@ -516,6 +526,8 @@ pub const TARGET_SUBMARINE: u32 = 128;
 /// Bare land (OpenRA target type `Ground`): force-fire on the ground. No actor
 /// carries it; a water cell is a `TARGET_WATER` ground target.
 pub const TARGET_GROUND: u32 = 256;
+/// Husks (OpenRA target type `Husk`, plus GroundActor; see `class_accepts`).
+pub const TARGET_HUSK: u32 = 512;
 
 /// OpenRA `UnitStance` of an actor with `AutoTarget`, from least to most
 /// aggressive (the order matters: `stance >= Stance::Defend` and so on).
@@ -554,6 +566,11 @@ pub enum Kind {
     Aircraft,
     /// Mines laid by a Minelayer: immobile, cloaked, not units.
     Mine,
+    /// A vehicle's wreck (husks.rs): blocks its cell and burns down; only
+    /// force-fire targets it. Not a unit.
+    Husk,
+    /// A crate (crates.rs): picked up by driving over it. Not a unit, never a target.
+    Crate,
 }
 
 impl Kind {
@@ -565,6 +582,8 @@ impl Kind {
             Kind::Ship => TARGET_WATER,
             Kind::Aircraft => TARGET_AIR,
             Kind::Mine => TARGET_MINE,
+            Kind::Husk => TARGET_HUSK,
+            Kind::Crate => 0,
         }
     }
 }
@@ -573,7 +592,12 @@ impl Kind {
 /// Mines carry the OpenRA target types `GroundActor, Mine`; the generator
 /// folds GroundActor into infantry|vehicle|structure, so a mask with all three
 /// accepts mines.
-fn class_accepts(valid: u32, invalid: u32, c: u32) -> bool {
+pub(crate) fn class_accepts(valid: u32, invalid: u32, c: u32) -> bool {
+    // Husks are `GroundActor, Husk` in OpenRA (no Vehicle): the same rule.
+    if c & TARGET_HUSK != 0 {
+        let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
+        return (valid & TARGET_HUSK != 0 || valid & ground == ground) && invalid & TARGET_HUSK == 0;
+    }
     if c & TARGET_MINE != 0 {
         let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
         return (valid & TARGET_MINE != 0 || valid & ground == ground) && invalid & TARGET_MINE == 0;
@@ -741,6 +765,8 @@ pub struct ActorInfo {
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
     pub transforms_into: Option<usize>,
+    /// Lobby options and leftovers (rules_options.rs).
+    pub options: crate::rules_options::ActorOptions,
 }
 
 impl ActorInfo {
@@ -849,6 +875,8 @@ pub struct WeaponInfo {
     pub valid: u32,
     pub invalid: u32,
     pub warheads: Vec<Warhead>,
+    /// Warheads that change no health (smudges.rs), in YAML order.
+    pub effects: Vec<crate::rules_options::WarheadEffect>,
 }
 
 impl WeaponInfo {
@@ -891,6 +919,10 @@ pub struct Rules {
     pub locomotors: Vec<Locomotor>,
     /// Per locomotor: `Crushes: mine` (sets off mines it drives over).
     pub locomotor_crushes_mines: Vec<bool>,
+    /// Per locomotor: `Crushes: crate` (picks up crates, crates.rs).
+    pub locomotor_crushes_crates: Vec<bool>,
+    /// World actor rules of the lobby options (rules_options.rs).
+    pub world: crate::rules_options::WorldRules,
     pub tokens: Vec<String>,
     /// Damage type names that some actor's TakeCover refers to; bit `k` of a
     /// warhead's or TakeCover's damage type mask is `damage_types[k]`.
@@ -940,6 +972,7 @@ impl Rules {
         for a in &self.actors {
             self.validate_actor(a)?;
         }
+        self.validate_options()?;
         for w in &self.weapons {
             let n = |f: &str| format!("weapons.{}.{f}", w.name);
             within(&n("range"), w.range, 0, 64 * CELLS)?;
@@ -978,7 +1011,8 @@ impl Rules {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
-        within(&n("hp"), a.hp, 1, 100_000_000)?;
+        // Crates have no health (OpenRA ^Crate has no Health trait).
+        within(&n("hp"), a.hp, if a.kind == Kind::Crate { 0 } else { 1 }, 100_000_000)?;
         within(&n("sight"), a.sight, 0, MAX_VISION)?;
         count(&n("prerequisites"), a.prerequisites.len(), 32)?;
         if let Some(t) = a.turret_turn_speed {
@@ -1336,7 +1370,7 @@ impl Rules {
     /// Resolve the raw JSON shapes (footprint rows, offsets, actor ids) into
     /// lookup structures. Overrides can reshape any array, so every shape is
     /// checked here and reported as an error, never assumed.
-    fn from_raw(raw: RawRules) -> Result<Rules, String> {
+    fn from_raw(mut raw: RawRules) -> Result<Rules, String> {
         let mut tokens: Vec<String> = vec![TOKEN_DISABLED.to_string()];
         for t in TECH_LEVELS {
             tokens.push(format!("techlevel.{t}"));
@@ -1379,6 +1413,8 @@ impl Rules {
                 "ship" => Kind::Ship,
                 "aircraft" => Kind::Aircraft,
                 "mine" => Kind::Mine,
+                "husk" => Kind::Husk,
+                "crate" => Kind::Crate,
                 _ => return Err(n("kind: unknown kind")),
             };
             let mut prerequisites = Vec::new();
@@ -1475,6 +1511,7 @@ impl Rules {
                 triggers: tc.damage_triggers.iter().fold(0, |m, t| m | type_bit(t)),
                 modifiers: tc.damage_modifiers.iter().map(|m| (type_bit(&m.ty), m.percent)).collect(),
             });
+            let options = crate::rules_options::resolve_actor(&a.id, a.options, &ids, &raw.factions, &mut intern)?;
             actors.push(ActorInfo {
                 id: a.id,
                 name: a.name,
@@ -1507,6 +1544,7 @@ impl Rules {
                 building,
                 unit: a.unit,
                 transforms_into,
+                options,
             });
         }
         for w in &raw.weapons {
@@ -1514,10 +1552,15 @@ impl Rules {
                 return Err(format!("weapons.{}.warheads.damage_types may have at most {MAX_DAMAGE_TYPES} entries", truncate(&w.name)));
             }
         }
+        let mut weapon_effects = Vec::new();
+        for w in raw.weapons.iter_mut() {
+            weapon_effects.push(crate::rules_options::resolve_effects(&w.name, std::mem::take(&mut w.effects))?);
+        }
         let weapons = raw
             .weapons
             .into_iter()
-            .map(|w| WeaponInfo {
+            .zip(weapon_effects)
+            .map(|(w, effects)| WeaponInfo {
                 name: w.name,
                 range: w.range,
                 min_range: w.min_range,
@@ -1555,9 +1598,12 @@ impl Rules {
                         damage_types: h.damage_types.iter().fold(0, |m, t| m | type_bit(t)),
                     })
                     .collect(),
+                effects,
             })
             .collect();
         let locomotor_crushes_mines = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "mine")).collect();
+        let locomotor_crushes_crates = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "crate")).collect();
+        let world = crate::rules_options::resolve_world(raw.world, &ids, &raw.factions)?;
         let locomotors = raw
             .locomotors
             .into_iter()
@@ -1579,6 +1625,8 @@ impl Rules {
             weapons,
             locomotors,
             locomotor_crushes_mines,
+            locomotor_crushes_crates,
+            world,
             tokens,
             damage_types,
             obtainable: Vec::new(),

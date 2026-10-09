@@ -50,8 +50,10 @@ fn flat_world() -> World {
 }
 
 fn ai_world(seed: u64) -> World {
-    let players: Vec<PlayerSetup> =
-        ["allies", "soviet"].iter().map(|f| PlayerSetup { faction: (*f).into(), ai: Some(AiDifficulty::Hard), team: 0 }).collect();
+    let players: Vec<PlayerSetup> = ["allies", "soviet"]
+        .iter()
+        .map(|f| PlayerSetup { faction: (*f).into(), ai: Some(AiDifficulty::Hard), team: 0, handicap: 0 })
+        .collect();
     World::with_options(seed, 64, &players, GameOptions::default())
 }
 
@@ -240,7 +242,7 @@ fn defeat_and_game_end_are_recorded_with_a_final_sample() {
 #[test]
 fn defeated_players_cannot_give_orders() {
     // A player whose last units are submarines is defeated (they do not keep
-    // it in the game) but still owns them: those must never move again.
+    // it in the game), and they go down with it (OpenRA OwnerLostAction Kill).
     let mut w = flat_world();
     for i in 0..w.actors.len() {
         if w.actors[i].alive && w.actors[i].owner == 1 {
@@ -251,7 +253,7 @@ fn defeated_players_cannot_give_orders() {
     assert_eq!(w.actors[sub].kind, Kind::Ship);
     run(&mut w, 30);
     assert!(w.players[1].defeated, "submarines alone do not keep a player in the game");
-    assert!(w.actors[sub].alive);
+    assert!(!w.actors[sub].alive, "destroyed with its defeated owner");
     // And a defeated player that still has a tank (flag set directly): no order of it applies.
     let tank = unit(&mut w, "2TNK", 1, 20, 20);
     let start = (w.actors[tank].x, w.actors[tank].y);

@@ -129,7 +129,11 @@ impl World {
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
     pub(crate) fn targetable(&self, t: usize, player: u8) -> bool {
         // Falling wrecks and the spy plane cannot be targeted (plane.rs); cloaked actors neither (abilities.rs).
-        self.is_visible_to(t, player) && !self.untargetable_aircraft(t) && !self.is_cloaked_from(t, player)
+        // Crates never; husks only with force-fire (`live_target`, husks.rs).
+        !matches!(self.actors[t].kind, Kind::Crate | Kind::Husk)
+            && self.is_visible_to(t, player)
+            && !self.untargetable_aircraft(t)
+            && !self.is_cloaked_from(t, player)
     }
 
     // ---- Fire targets -------------------------------------------------------------
@@ -279,8 +283,12 @@ impl World {
         // Forced attacks (force-fire) may target anyone, own actors included,
         // but never the attacker itself.
         let forced = self.actors[i].forced;
-        self.resolve(self.actors[i].target)
-            .filter(|&t| t != i && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner))
+        self.resolve(self.actors[i].target).filter(|&t| {
+            t != i
+                && ((forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner)
+                    // Husks: force-fire only (husks.rs).
+                    || forced && self.actors[t].kind == Kind::Husk && self.is_visible_to(t, owner))
+        })
     }
 
     // ---- Units ---------------------------------------------------------------
@@ -550,7 +558,7 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine | Kind::Husk | Kind::Crate => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
@@ -578,10 +586,14 @@ impl World {
         match wi.projectile {
             // Hitscan shots and Tesla bolts land at once, but their damage
             // waits until every actor has acted this tick (see `land_shot`).
-            ProjKind::Instant => self.land_shot(w, tx, ty, owner, shot, true),
+            ProjKind::Instant => {
+                let alt = self.fire_target_altitude(ft);
+                self.land_shot(w, tx, ty, alt, owner, shot, true);
+            }
             ProjKind::Tesla => {
                 self.effects.push(Effect { x: sx, y: sy, tx, ty, kind: EffectKind::TeslaBolt, ttl: 6, max: 6 });
-                self.land_shot(w, tx, ty, owner, shot, true);
+                let alt = self.fire_target_altitude(ft);
+                self.land_shot(w, tx, ty, alt, owner, shot, true);
             }
             ProjKind::Bullet | ProjKind::Missile => {
                 // Shots at the ground fly to the point; missiles home on actors only.
@@ -626,7 +638,7 @@ impl World {
             due
         };
         for p in due {
-            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.owner, p.shot);
+            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.altitude, p.owner, p.shot);
         }
         let mut k = 0;
         while k < self.projectiles.len() {
@@ -645,8 +657,10 @@ impl World {
             let speed = wi.speed.max(1);
             if d <= speed {
                 let (w, owner, shot) = (p.weapon as usize, p.owner, p.shot);
+                // A shot at an aircraft bursts in the air (no smudges below, smudges.rs).
+                let alt = self.resolve(p.target).map_or(0, |t| self.actors[t].altitude);
                 self.projectiles.swap_remove(k);
-                self.impact_shot(w, tx, ty, owner, shot);
+                self.land_shot(w, tx, ty, alt, owner, shot, false);
                 continue;
             }
             let p = &mut self.projectiles[k];
@@ -669,7 +683,15 @@ impl World {
     /// A weapon lands at a point: each warhead applies now or after its delay.
     /// `shot` credits kills to the shooter and carries its firepower.
     pub(crate) fn impact_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot) {
-        self.land_shot(w, x, y, owner, shot, false);
+        self.land_shot(w, x, y, 0, owner, shot, false);
+    }
+
+    /// Height of what a shot was fired at (an aircraft in the air, or 0).
+    fn fire_target_altitude(&self, ft: FireTarget) -> i32 {
+        match ft {
+            FireTarget::Actor(t) => self.actors[t].altitude,
+            FireTarget::Ground(..) => 0,
+        }
     }
 
     /// `impact_shot`; with `end_of_tick`, warheads without a delay apply
@@ -677,7 +699,10 @@ impl World {
     /// acted this tick. Shots fired in the same tick then resolve together:
     /// the actor processed first does not kill its target before the target
     /// fires back, so mirrored fights do not depend on processing order.
-    fn land_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot, end_of_tick: bool) {
+    /// `altitude`: the height it burst at (the warheads that change no
+    /// health skip their smudges and resource changes above the ground).
+    #[allow(clippy::too_many_arguments)]
+    fn land_shot(&mut self, w: usize, x: i32, y: i32, altitude: i32, owner: u8, shot: Shot, end_of_tick: bool) {
         let max_damage = self.rules.weapons[w].max_damage();
         let (kind, ttl) = if max_damage >= 20000 {
             (EffectKind::NukeExplosion, 40)
@@ -691,20 +716,52 @@ impl World {
         self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(splash.is_some()));
         let (kind, ttl) = splash.unwrap_or((kind, ttl));
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
-        for h in 0..self.rules.weapons[w].warheads.len() {
-            let delay = self.rules.weapons[w].warheads[h].delay;
+        // Damage warheads, then the ones that change no health (smudges.rs),
+        // numbered after them.
+        for h in 0..self.warhead_count(w) {
+            let delay = self.warhead_delay(w, h);
             if delay > 0 || end_of_tick {
-                self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
+                self.pending.push(PendingImpact {
+                    tick: self.tick + delay as u32,
+                    weapon: w as u16,
+                    warhead: h as u8,
+                    x,
+                    y,
+                    altitude,
+                    owner,
+                    shot,
+                });
             } else {
-                self.apply_warhead(w, h, x, y, owner, shot);
+                self.apply_warhead(w, h, x, y, altitude, owner, shot);
             }
+        }
+    }
+
+    /// Damage warheads plus the ones that change no health of weapon `w`.
+    pub(crate) fn warhead_count(&self, w: usize) -> usize {
+        let wi = &self.rules.weapons[w];
+        wi.warheads.len() + wi.effects.len()
+    }
+
+    /// Delay of warhead `h` (damage warheads first, then the effects).
+    pub(crate) fn warhead_delay(&self, w: usize, h: usize) -> i32 {
+        let wi = &self.rules.weapons[w];
+        match wi.warheads.get(h) {
+            Some(d) => d.delay,
+            None => wi.effects.get(h - wi.warheads.len()).map_or(0, |e| e.delay),
         }
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
     /// Kills are credited to `owner` for the observer stats (observer.rs) and
     /// to `shot.source` for veterancy (veterancy.rs).
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, owner: u8, shot: Shot) {
+    #[allow(clippy::too_many_arguments)]
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, altitude: i32, owner: u8, shot: Shot) {
+        let damage_warheads = self.rules.weapons[w].warheads.len();
+        if h >= damage_warheads {
+            self.apply_effect(w, h - damage_warheads, x, y, altitude);
+            return;
+        }
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -737,12 +794,20 @@ impl World {
                         }
                     }
                 }
-                // Mines (abilities.rs) are GroundActor targets too.
+                // Mines (abilities.rs) are GroundActor targets too, and husks (husks.rs).
                 if let Some(m) = self.mine_at(ci) {
                     if wh.affects(Kind::Mine) {
                         let d = self.hit_distance(m, x, y);
                         if d <= radius {
                             hits.push((m, d));
+                        }
+                    }
+                }
+                if let Some(h) = self.husk_at(ci) {
+                    if wh.affects(Kind::Husk) {
+                        let d = self.hit_distance(h, x, y);
+                        if d <= radius {
+                            hits.push((h, d));
                         }
                     }
                 }
@@ -840,16 +905,23 @@ impl World {
         let a = &self.actors[i];
         // FireWarheadsOnDeath: the dying actor's firepower, nobody to credit (DamageSource Self).
         let shot = Shot { source: NONE, firepower: self.firepower_modifier(i) };
-        if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
+        let info = &self.rules.actors[a.ty as usize];
+        // An ore truck only explodes with ore on board (FireWarheadsOnDeath
+        // RequiresCondition: !no-ore): OreExplosion spills it (smudges.rs).
+        if info.options.death_needs_resources && a.bales == 0 {
+            return;
+        }
+        if let Some(w) = info.death_weapon {
             // One tick later, so chain reactions ripple outward instead of recursing.
-            for h in 0..self.rules.weapons[w].warheads.len() {
-                let delay = self.rules.weapons[w].warheads[h].delay.max(1);
+            for h in 0..self.warhead_count(w) {
+                let delay = self.warhead_delay(w, h).max(1);
                 self.pending.push(PendingImpact {
                     tick: self.tick + delay as u32,
                     weapon: w as u16,
                     warhead: h as u8,
                     x: a.x,
                     y: a.y,
+                    altitude: 0,
                     owner: a.owner,
                     shot,
                 });

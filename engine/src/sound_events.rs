@@ -68,6 +68,27 @@ pub enum SoundEventKind {
     /// A deploy order could not transform the actor where it stands (OpenRA
     /// Transforms NoTransformNotification); a = actor type.
     DeployBlocked = 16,
+    // Lobby options and battlefield effects (crates.rs, gamerules.rs,
+    // smudges.rs, primary.rs) start at 40, apart from the announcer kinds.
+    /// A unit of `owner` picked up a crate at (x, y) (crates.rs); a = index
+    /// of the crate action in the crate's rules, b = the crate's actor type.
+    CrateCollected = 40,
+    /// Kill bounty (gamerules.rs): `owner` got paid for a kill at (x, y);
+    /// a = the bounty shown (with passengers'). The client shows it to that
+    /// player's allies only, like OpenRA's floating text.
+    Bounty = 41,
+    /// Time limit (gamerules.rs): a = minutes left and b = the index in the
+    /// rules' warnings, or a = 0 and b = -1 when time ran out.
+    TimeLimit = 42,
+    /// `owner` lost (OpenRA "player is defeated" line).
+    PlayerLost = 43,
+    /// Camera shake at (x, y) (OpenRA ShakeScreen warhead, ShakeOnDeath);
+    /// a = duration in ticks, b = intensity, owner = multiplier x + 16 * multiplier y.
+    ScreenShake = 44,
+    /// OpenRA FlashEffect warhead: a = duration in ticks, b = flash type (1: nuke).
+    Flash = 45,
+    /// `owner` made a structure its primary one (primary.rs); a = actor type.
+    PrimaryBuilding = 46,
 }
 
 impl SoundEventKind {
@@ -85,6 +106,8 @@ pub fn kind_code(kind: Kind) -> i32 {
         Kind::Ship => 3,
         Kind::Aircraft => 4,
         Kind::Mine => 5,
+        Kind::Husk => 6,
+        Kind::Crate => 7,
     }
 }
 

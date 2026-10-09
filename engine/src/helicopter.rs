@@ -972,14 +972,15 @@ impl World {
             let c = self.crashes.remove(k);
             self.effects.push(Effect { x: c.x, y: c.y, tx: c.x, ty: c.y, kind: EffectKind::LargeExplosion, ttl: 18, max: 18 });
             if let Some(w) = self.rules.actors[c.ty as usize].death_weapon {
-                for h in 0..self.rules.weapons[w].warheads.len() {
-                    let delay = self.rules.weapons[w].warheads[h].delay.max(1);
+                for h in 0..self.warhead_count(w) {
+                    let delay = self.warhead_delay(w, h).max(1);
                     self.pending.push(PendingImpact {
                         tick: self.tick + delay as u32,
                         weapon: w as u16,
                         warhead: h as u8,
                         x: c.x,
                         y: c.y,
+                        altitude: 0,
                         owner: c.owner,
                         shot: crate::veterancy::Shot::NONE,
                     });

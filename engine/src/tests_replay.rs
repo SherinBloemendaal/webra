@@ -237,7 +237,7 @@ fn snapshots_continue_like_the_original_and_restore_rewinds() {
 fn stats_world() -> World {
     let players: Vec<PlayerSetup> = [("allies", 1u8), ("soviet", 2), ("england", 1)]
         .iter()
-        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t })
+        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t, handicap: 0 })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
     for i in 0..w.map.cells() {
@@ -345,7 +345,15 @@ fn observer_stats_count_kills_losses_and_income() {
     assert_eq!(p0["funds"], w.players[0].funds());
     let tank_cost = i64::from(w.rules.actors[ty(&w, "2TNK") as usize].cost);
     let alive_tanks = tanks.iter().filter(|&&t| w.actors[t].alive).count() as i64;
-    assert_eq!(p0["armyValue"], alive_tanks * tank_cost, "tanks only: no structures, no used-up truck");
+    // The sold power plant's crew walked out (sell.rs): riflemen.
+    let crew: i64 = w
+        .actors
+        .iter()
+        .filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Infantry)
+        .map(|a| i64::from(w.rules.actors[a.ty as usize].cost))
+        .sum();
+    assert!(crew > 0, "a crew left the sold plant");
+    assert_eq!(p0["armyValue"], alive_tanks * tank_cost + crew, "tanks and the crew: no structures, no used-up truck");
     for key in ["powerGenerated", "powerUsed", "defeated", "won"] {
         assert!(p0.get(key).is_some(), "{key} present");
     }

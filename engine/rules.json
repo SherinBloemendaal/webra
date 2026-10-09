@@ -89,9 +89,40 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1",
+     "E6"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -169,7 +200,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 2000,
@@ -218,9 +250,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -280,7 +342,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 300,
@@ -330,9 +393,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -392,7 +485,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -442,9 +536,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -516,7 +640,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 300,
@@ -566,9 +691,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -612,7 +753,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 150,
@@ -663,9 +805,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -752,7 +924,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -803,9 +976,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -890,7 +1093,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -941,9 +1145,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -1037,7 +1257,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 200,
@@ -1087,9 +1308,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1170,7 +1421,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 2000,
@@ -1220,9 +1472,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -1287,7 +1569,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 1200,
@@ -1340,9 +1623,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1402,7 +1715,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 1500,
@@ -1452,9 +1766,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -1530,7 +1874,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -1662,9 +2007,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1737,7 +2112,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -1868,9 +2244,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 2,
@@ -1943,7 +2349,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 500,
@@ -2001,9 +2408,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -2095,7 +2518,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 1000,
@@ -2153,9 +2577,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": true,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -2261,7 +2701,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 800,
@@ -2329,9 +2770,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -2398,7 +2887,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 1500,
@@ -2450,9 +2940,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -2519,7 +3057,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 1500,
@@ -2572,9 +3111,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -2618,7 +3205,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 800,
@@ -2715,9 +3303,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2777,7 +3413,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 1500,
@@ -2848,9 +3485,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -2895,7 +3580,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 2000,
@@ -2966,9 +3652,57 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "TECN",
+     "TECN2",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "E6",
+     "C10",
+     "C10",
+     "C10",
+     "C10"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -3012,7 +3746,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 2500,
@@ -3062,6 +3797,18 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3139,6 +3886,18 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3215,6 +3974,18 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3323,9 +4094,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3369,7 +4156,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 400,
@@ -3465,9 +4253,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3511,7 +4315,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 550,
@@ -3578,9 +4383,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3624,7 +4459,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 800,
@@ -3691,9 +4527,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3751,7 +4617,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 600,
@@ -3813,9 +4680,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3873,7 +4770,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 1200,
@@ -3933,9 +4831,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 1,
     "height": 1,
@@ -3979,7 +4907,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 800,
@@ -4039,9 +4968,39 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -4085,7 +5044,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": true,
     "value": 700,
@@ -4135,9 +5095,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -4183,7 +5159,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 30,
@@ -4233,9 +5210,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -4281,7 +5274,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 50,
@@ -4331,9 +5325,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -4378,7 +5388,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 100,
@@ -4428,9 +5439,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -4476,7 +5503,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 200,
@@ -4526,9 +5554,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -4574,7 +5618,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 180,
@@ -4624,9 +5669,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -4672,7 +5733,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 120,
@@ -4722,9 +5784,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 3,
@@ -4770,7 +5848,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 50,
@@ -4820,9 +5899,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 3,
@@ -4868,7 +5963,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 150,
@@ -4918,9 +6014,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 2,
@@ -4965,7 +6077,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 150,
@@ -5015,9 +6128,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 2,
     "height": 1,
@@ -5061,7 +6190,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 250,
@@ -5111,9 +6241,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "building": {
     "width": 3,
     "height": 4,
@@ -5160,7 +6306,8 @@
       260,
       280,
       300
-     ]
+     ],
+     "player_experience": 5
     },
     "power_down": false,
     "value": 200,
@@ -5260,7 +6407,8 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": {
     "duration": 50,
@@ -5275,6 +6423,18 @@
      }
     ]
    },
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -5378,7 +6538,8 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": {
     "duration": 50,
@@ -5393,6 +6554,18 @@
      }
     ]
    },
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -5453,9 +6626,25 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "HARV.EmptyHusk",
+   "full_husk": [
+    "HARV.FullHusk",
+    50
+   ],
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": true,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -5529,9 +6718,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": true,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "MCV.Husk",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 60,
     "turn_speed": 20,
@@ -5591,9 +6793,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "MONEYCRATE",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -5712,9 +6927,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 164,
     "turn_speed": 40,
@@ -5828,9 +7056,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5938,9 +7179,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -6047,9 +7301,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -6157,9 +7424,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "2TNK.Husk",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6267,9 +7547,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "3TNK.Husk",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -6384,9 +7677,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "4TNK.Husk",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -6489,9 +7795,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6594,9 +7913,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -6718,9 +8050,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -6785,9 +8130,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 68,
     "turn_speed": 20,
@@ -6849,9 +8207,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": "MGG.Husk",
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6955,9 +8326,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -7019,9 +8403,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 67,
     "turn_speed": 20,
@@ -7128,9 +8525,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 86,
     "turn_speed": 20,
@@ -7265,9 +8675,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -7335,9 +8758,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 46,
     "turn_speed": 20,
@@ -7442,9 +8878,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 115,
     "turn_speed": 512,
@@ -7560,9 +9009,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 142,
     "turn_speed": 28,
@@ -7687,9 +9149,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 78,
     "turn_speed": 20,
@@ -7807,9 +9282,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 92,
     "turn_speed": 28,
@@ -7923,9 +9411,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -8052,9 +9553,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -8157,9 +9671,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -8287,9 +9814,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -8418,9 +9958,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -8550,9 +10103,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -8680,9 +10246,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -8803,9 +10382,22 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -8934,7 +10526,8 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": {
     "duration": 50,
@@ -8949,6 +10542,18 @@
      }
     ]
    },
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -9051,7 +10656,8 @@
    },
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": {
     "duration": 50,
@@ -9066,6 +10672,18 @@
      }
     ]
    },
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -9109,9 +10727,22 @@
    "experience": null,
    "gives_experience": {
     "experience": -1,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 373,
     "turn_speed": 28,
@@ -9186,9 +10817,22 @@
    "experience": null,
    "gives_experience": {
     "experience": 1000,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -9254,9 +10898,22 @@
    "experience": null,
    "gives_experience": {
     "experience": 1000,
-    "actor_modifier": 10000
+    "actor_modifier": 10000,
+    "player_modifier": 1
    },
    "take_cover": null,
+   "must_be_destroyed": false,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -9335,7 +10992,19 @@
    },
    "experience": null,
    "gives_experience": null,
-   "take_cover": null
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null
   },
   {
    "id": "MINP",
@@ -9383,7 +11052,1295 @@
    },
    "experience": null,
    "gives_experience": null,
-   "take_cover": null
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null
+  },
+  {
+   "id": "CRATE",
+   "name": "Crate",
+   "description": "",
+   "kind": "crate",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {},
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": {
+    "duration": 4500,
+    "terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Beach",
+     "Water"
+    ],
+    "crush_class": "crate",
+    "actions": [
+     {
+      "key": "GiveCashCrateAction",
+      "kind": "give_cash",
+      "shares": 50,
+      "amount": 1000
+     },
+     {
+      "key": "LevelUpCrateAction",
+      "kind": "level_up",
+      "shares": 40,
+      "levels": 1,
+      "range": 3,
+      "max_extra": 4
+     },
+     {
+      "key": "ExplodeCrateAction@fire",
+      "kind": "explode",
+      "shares": 5,
+      "weapon": 51
+     },
+     {
+      "key": "ExplodeCrateAction@boom",
+      "kind": "explode",
+      "shares": 5,
+      "weapon": 52
+     },
+     {
+      "key": "HideMapCrateAction",
+      "kind": "hide_map",
+      "shares": 5,
+      "sequence": "hide-map"
+     },
+     {
+      "key": "HealActorsCrateAction",
+      "kind": "heal_actors",
+      "shares": 2,
+      "sequence": "heal",
+      "sound": "heal2.aud"
+     },
+     {
+      "key": "RevealMapCrateAction",
+      "kind": "reveal_map",
+      "shares": 1,
+      "sequence": "reveal-map"
+     },
+     {
+      "key": "DuplicateUnitCrateAction",
+      "kind": "duplicate_unit",
+      "shares": 10,
+      "targets": 151,
+      "min_amount": 1,
+      "max_amount": 5,
+      "max_duplicate_value": 1500,
+      "max_radius": 4
+     },
+     {
+      "key": "GiveBaseBuilderCrateAction",
+      "kind": "give_base_builder",
+      "shares": 0,
+      "units": [
+       "MCV"
+      ],
+      "no_base_shares": 100
+     },
+     {
+      "key": "GiveUnitCrateAction@jeep",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "JEEP"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@1tnk",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "1TNK"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@apc",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "APC"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@ftrk",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "FTRK"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@arty",
+      "kind": "give_unit",
+      "shares": 5,
+      "prerequisites": [
+       "techlevel.medium",
+       "dome"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "ARTY"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@v2rl",
+      "kind": "give_unit",
+      "shares": 5,
+      "prerequisites": [
+       "techlevel.medium",
+       "dome"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "V2RL"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@2tnk",
+      "kind": "give_unit",
+      "shares": 4,
+      "prerequisites": [
+       "techlevel.medium",
+       "fix"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "2TNK"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@3tnk",
+      "kind": "give_unit",
+      "shares": 4,
+      "prerequisites": [
+       "techlevel.medium",
+       "fix"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "3TNK"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@squadlight",
+      "kind": "give_unit",
+      "shares": 10,
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany",
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "E1",
+       "E1",
+       "E1",
+       "E3",
+       "E3"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@squadheavyallies",
+      "kind": "give_unit",
+      "shares": 7,
+      "time_delay": 4500,
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "E1",
+       "E1",
+       "E1",
+       "E1",
+       "E3",
+       "E3",
+       "E3",
+       "E6",
+       "MEDI"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@squadheavysoviet",
+      "kind": "give_unit",
+      "shares": 7,
+      "time_delay": 4500,
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "E1",
+       "E1",
+       "E4",
+       "E4",
+       "E3",
+       "E3",
+       "E3",
+       "E6"
+      ]
+     },
+     {
+      "key": "GrantExternalConditionCrateAction@invuln",
+      "kind": "grant_external_condition",
+      "shares": 5,
+      "sequence": "invuln",
+      "sound": "ironcur9.aud",
+      "levels": 1,
+      "range": 3,
+      "max_extra": 4,
+      "condition": "invulnerability",
+      "duration": 600
+     },
+     {
+      "key": "GiveUnitCrateAction@lst",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany",
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "LST"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@pt",
+      "kind": "give_unit",
+      "shares": 6,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "PT"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@ss",
+      "kind": "give_unit",
+      "shares": 4,
+      "prerequisites": [
+       "techlevel.low"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "SS"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@dd",
+      "kind": "give_unit",
+      "shares": 4,
+      "prerequisites": [
+       "techlevel.medium",
+       "dome"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "DD"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@ss2",
+      "kind": "give_unit",
+      "shares": 4,
+      "prerequisites": [
+       "techlevel.medium",
+       "dome"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "SS"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@ca",
+      "kind": "give_unit",
+      "shares": 3,
+      "prerequisites": [
+       "techlevel.high",
+       "atek"
+      ],
+      "factions": [
+       "allies",
+       "england",
+       "france",
+       "germany"
+      ],
+      "units": [
+       "CA"
+      ]
+     },
+     {
+      "key": "GiveUnitCrateAction@msub",
+      "kind": "give_unit",
+      "shares": 3,
+      "prerequisites": [
+       "techlevel.high",
+       "stek"
+      ],
+      "factions": [
+       "soviet",
+       "russia",
+       "ukraine"
+      ],
+      "units": [
+       "MSUB"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "MONEYCRATE",
+   "name": "Money Crate",
+   "description": "",
+   "kind": "crate",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {},
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": {
+    "duration": 4500,
+    "terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Beach",
+     "Water"
+    ],
+    "crush_class": "crate",
+    "actions": [
+     {
+      "key": "GiveCashCrateAction",
+      "kind": "give_cash",
+      "shares": 1,
+      "amount": 500
+     }
+    ]
+   }
+  },
+  {
+   "id": "HEALCRATE",
+   "name": "Heal Crate",
+   "description": "",
+   "kind": "crate",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {},
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": {
+    "duration": 4500,
+    "terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Beach",
+     "Water"
+    ],
+    "crush_class": "crate",
+    "actions": [
+     {
+      "key": "HealActorsCrateAction",
+      "kind": "heal_actors",
+      "shares": 1,
+      "sequence": "heal",
+      "sound": "heal2.aud"
+     }
+    ]
+   }
+  },
+  {
+   "id": "WCRATE",
+   "name": "Wooden Crate",
+   "description": "",
+   "kind": "crate",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {},
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": {
+    "duration": 4500,
+    "terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Beach",
+     "Water"
+    ],
+    "crush_class": "crate",
+    "actions": []
+   }
+  },
+  {
+   "id": "SCRATE",
+   "name": "Steel Crate",
+   "description": "",
+   "kind": "crate",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {},
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": null,
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": {
+    "duration": 4500,
+    "terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Beach",
+     "Water"
+    ],
+    "crush_class": "crate",
+    "actions": []
+   }
+  },
+  {
+   "id": "2TNK.Husk",
+   "name": "Husk (Medium Tank)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 384,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "2TNK",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "2TNK",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "3TNK.Husk",
+   "name": "Husk (Heavy Tank)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 384,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "3TNK",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "3TNK",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "4TNK.Husk",
+   "name": "Husk (Mammoth Tank)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate",
+     "heavywall"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 512,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "4TNK",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "4TNK",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "HARV.EmptyHusk",
+   "name": "Husk (Ore Truck)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 384,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "HARV",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "HARV",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "HARV.FullHusk",
+   "name": "Husk (Ore Truck)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 384,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "HARV",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "HARV",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "MCV.Husk",
+   "name": "Husk (Mobile Construction Vehicle)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "wall",
+     "infantry",
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 512,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "MCV",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "MCV",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
+  },
+  {
+   "id": "MGG.Husk",
+   "name": "Husk (Mobile Gap Generator)",
+   "description": "",
+   "kind": "husk",
+   "queue": "Vehicle",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Vehicle",
+   "hp": 28000,
+   "armor": 3,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "chronoshiftable": {
+     "explode_instead": false,
+     "not_deployed": false
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "change_owner",
+   "gives_bounty": null,
+   "handicaps": false,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": null,
+   "primary_building": false,
+   "shake_on_death": null,
+   "death_needs_resources": false,
+   "husk": {
+    "allowed_terrain": [
+     "Clear",
+     "Rough",
+     "Road",
+     "Ore",
+     "Gems",
+     "Beach"
+    ],
+    "crushes": [
+     "mine",
+     "crate"
+    ],
+    "burn_step": -200,
+    "burn_delay": 8,
+    "burn_start_if_below": 101,
+    "force_fire_only": true,
+    "radius": 384,
+    "capturable": {
+     "types": [
+      "husk"
+     ],
+     "transform_into": "MGG",
+     "force_health_percent": 15
+    },
+    "infiltrate": {
+     "types": [
+      "Husk"
+     ],
+     "transform_into": "MGG",
+     "force_health_percent": 15
+    }
+   },
+   "crate": null
   }
  ],
  "weapons": [
@@ -9552,6 +12509,166 @@
       "FireDeath",
       "Incendiary"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "destroy_resource",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      1,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      1,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 5,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      2,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 5,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      2,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 10,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      3,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 10,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      3,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 15,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      4,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 15,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      4,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 20,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      5,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 20,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      5,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "shake",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "duration": 20,
+     "intensity": 5,
+     "multiplier": [
+      1,
+      1
+     ]
+    },
+    {
+     "kind": "flash",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "duration": 20,
+     "flash_type": "Nuke"
     }
    ]
   },
@@ -9727,7 +12844,8 @@
       "BulletDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "TurretGun",
@@ -9770,6 +12888,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -9816,6 +12950,22 @@
       "Incendiary"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 4,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -9860,7 +13010,8 @@
       "ElectricityDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "ZSU-23",
@@ -9904,7 +13055,8 @@
       "DefaultDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "Nike",
@@ -9947,6 +13099,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -9992,7 +13160,8 @@
       "DefaultDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "RedEye",
@@ -10035,6 +13204,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -10080,6 +13265,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10122,6 +13323,21 @@
       "Prone50Percent",
       "TriggerProne",
       "SmallExplosionDeath"
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "create_resource",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      1,
+      1
+     ],
+     "resource_types": [
+      "Ore"
      ]
     }
    ]
@@ -10168,6 +13384,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10212,7 +13444,8 @@
       "DefaultDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "FLAK-23-AA",
@@ -10256,7 +13489,8 @@
       "DefaultDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "FLAK-23-AG",
@@ -10300,7 +13534,8 @@
       "DefaultDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "25mm",
@@ -10344,7 +13579,8 @@
       "ExplosionDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "90mm",
@@ -10387,6 +13623,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -10432,6 +13684,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10476,6 +13744,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10519,6 +13803,22 @@
       "TriggerProne",
       "SmallExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -10568,6 +13868,22 @@
       "Incendiary"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10616,6 +13932,22 @@
       "Incendiary"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10659,6 +13991,22 @@
       "TriggerProne",
       "SmallExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -10704,6 +14052,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -10747,6 +14111,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 263,
+     "invalid": 4,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -10792,7 +14172,8 @@
       "ElectricityDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "DemoTruckTargeting",
@@ -10832,7 +14213,8 @@
      "invalid": 0,
      "damage_types": []
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "MiniNuke",
@@ -10970,6 +14352,82 @@
       "Incendiary"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "destroy_resource",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      1,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 5,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      2,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 10,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      3,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "destroy_resource",
+     "delay": 15,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      4,
+      0
+     ],
+     "amount": 0,
+     "resource_types": []
+    },
+    {
+     "kind": "smudge",
+     "delay": 15,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      4,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    },
+    {
+     "kind": "flash",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "duration": 20,
+     "flash_type": "Nuke"
+    }
    ]
   },
   {
@@ -11013,6 +14471,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11058,6 +14532,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11098,6 +14588,24 @@
      "invalid": 1,
      "damage_types": []
     }
+   ],
+   "effects": [
+    {
+     "kind": "shake",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "duration": 10,
+     "intensity": 3,
+     "multiplier": [
+      1,
+      0
+     ]
+    }
    ]
   },
   {
@@ -11137,6 +14645,22 @@
      "valid": 23,
      "invalid": 1,
      "damage_types": []
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 272,
+     "invalid": 0,
+     "size": [
+      7,
+      6
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11182,7 +14706,8 @@
       "ExplosionDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "2Inch",
@@ -11226,6 +14751,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11267,6 +14808,22 @@
      "damage_types": [
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11312,7 +14869,8 @@
       "ExplosionDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "UnitExplodeSubmarine",
@@ -11356,7 +14914,8 @@
       "ExplosionDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "Stinger",
@@ -11399,6 +14958,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11443,6 +15018,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11491,6 +15082,22 @@
       "SmallExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11537,6 +15144,22 @@
       "TriggerProne",
       "SmallExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11585,6 +15208,22 @@
       "SmallExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11632,6 +15271,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11676,7 +15331,8 @@
       "BulletDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "HellfireAA",
@@ -11719,6 +15375,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11764,6 +15436,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11808,7 +15496,8 @@
       "BulletDeath"
      ]
     }
-   ]
+   ],
+   "effects": []
   },
   {
    "name": "UnitExplodePlane",
@@ -11855,6 +15544,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11898,6 +15603,22 @@
       "TriggerProne",
       "ExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   },
@@ -11943,6 +15664,22 @@
       "ExplosionDeath"
      ]
     }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 257,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
+    }
    ]
   },
   {
@@ -11986,6 +15723,149 @@
       "TriggerProne",
       "SmallExplosionDeath"
      ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 263,
+     "invalid": 4,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    }
+   ]
+  },
+  {
+   "name": "CrateNapalm",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 279,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 6000,
+     "spread": 170,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      100,
+      60,
+      25,
+      50
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Scorch"
+     ],
+     "chance": 100
+    }
+   ]
+  },
+  {
+   "name": "CrateExplosion",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 287,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "damage": 5000,
+     "spread": 426,
+     "falloff": [
+      1000,
+      368,
+      135,
+      50,
+      18,
+      7,
+      0
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
+    }
+   ],
+   "effects": [
+    {
+     "kind": "smudge",
+     "delay": 0,
+     "valid": 259,
+     "invalid": 0,
+     "size": [
+      0,
+      0
+     ],
+     "smudge_types": [
+      "Crater"
+     ],
+     "chance": 100
     }
    ]
   }
@@ -12120,5 +16000,177 @@
    ],
    "crushes": []
   }
- ]
+ ],
+ "world": {
+  "crates": {
+   "minimum": 1,
+   "maximum": 3,
+   "spawn_interval": 3000,
+   "initial_delay": 1500,
+   "water_chance": 20,
+   "quantized_facings": 16,
+   "cordon": 5120,
+   "delivery_aircraft": "BADR",
+   "actors": [
+    "CRATE"
+   ],
+   "shares": [
+    10
+   ],
+   "valid_ground": [
+    "Clear",
+    "Rough",
+    "Road",
+    "Ore",
+    "Beach"
+   ],
+   "valid_water": [
+    "Water"
+   ]
+  },
+  "starting_units": [
+   {
+    "class": "none",
+    "factions": [
+     "allies",
+     "england",
+     "france",
+     "germany",
+     "soviet",
+     "russia",
+     "ukraine"
+    ],
+    "base_actor": "MCV",
+    "support_actors": [],
+    "inner_radius": 2,
+    "outer_radius": 4,
+    "base_facing": 512
+   },
+   {
+    "class": "light",
+    "factions": [
+     "allies",
+     "england",
+     "france",
+     "germany"
+    ],
+    "base_actor": "MCV",
+    "support_actors": [
+     "E1",
+     "E1",
+     "E1",
+     "E3",
+     "E3",
+     "JEEP",
+     "1TNK"
+    ],
+    "inner_radius": 3,
+    "outer_radius": 5,
+    "base_facing": 512
+   },
+   {
+    "class": "light",
+    "factions": [
+     "soviet",
+     "russia",
+     "ukraine"
+    ],
+    "base_actor": "MCV",
+    "support_actors": [
+     "E1",
+     "E1",
+     "E1",
+     "E3",
+     "E3",
+     "APC",
+     "FTRK"
+    ],
+    "inner_radius": 3,
+    "outer_radius": 5,
+    "base_facing": 512
+   },
+   {
+    "class": "heavy",
+    "factions": [
+     "allies",
+     "england",
+     "france",
+     "germany"
+    ],
+    "base_actor": "MCV",
+    "support_actors": [
+     "E1",
+     "E1",
+     "E1",
+     "E3",
+     "E3",
+     "JEEP",
+     "1TNK",
+     "2TNK",
+     "2TNK",
+     "2TNK"
+    ],
+    "inner_radius": 3,
+    "outer_radius": 5,
+    "base_facing": 512
+   },
+   {
+    "class": "heavy",
+    "factions": [
+     "soviet",
+     "russia",
+     "ukraine"
+    ],
+    "base_actor": "MCV",
+    "support_actors": [
+     "E1",
+     "E1",
+     "E1",
+     "E3",
+     "E3",
+     "APC",
+     "FTRK",
+     "3TNK",
+     "3TNK"
+    ],
+    "inner_radius": 3,
+    "outer_radius": 5,
+    "base_facing": 512
+   }
+  ],
+  "time_limit": {
+   "options": [
+    0,
+    10,
+    20,
+    30,
+    40,
+    60,
+    90
+   ],
+   "default": 0,
+   "warnings": [
+    40,
+    30,
+    20,
+    10,
+    5,
+    4,
+    3,
+    2,
+    1
+   ],
+   "notifications": [
+    "FourtyMinutesRemaining",
+    "ThirtyMinutesRemaining",
+    "TwentyMinutesRemaining",
+    "TenMinutesRemaining",
+    "WarningFiveMinutesRemaining",
+    "WarningFourMinutesRemaining",
+    "WarningThreeMinutesRemaining",
+    "WarningTwoMinutesRemaining",
+    "WarningOneMinuteRemaining"
+   ]
+  }
+ }
 }

@@ -224,7 +224,7 @@ impl World {
             Kind::Aircraft => s.aircraft_built += 1,
             Kind::Ship => s.ships_built += 1,
             Kind::Infantry | Kind::Vehicle => s.units_built += 1,
-            Kind::Mine => return,
+            Kind::Mine | Kind::Husk | Kind::Crate => return,
         }
         s.built_value += cost;
         *self.detail_mut(player).built.entry(ty).or_insert(0) += 1;
@@ -367,7 +367,7 @@ impl World {
         let shot_down = self.observer.shot_down.remove(&r);
         let a = &self.actors[i];
         let class = match a.kind {
-            Kind::Mine => return,
+            Kind::Mine | Kind::Husk | Kind::Crate => return,
             Kind::Building => StatClass::Building,
             _ => StatClass::Unit,
         };

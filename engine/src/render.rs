@@ -49,6 +49,9 @@ pub struct SpriteIds {
     pub veterancy_base: f32,
     /// Repair wrench and power off icon (repair.rs).
     pub decorations_base: f32,
+    /// Husk fire, smoke, the PRIMARY tag and the crate pickup animations
+    /// (husks.rs `LEFTOVER_SPECIALS`, apps/game/js/art/leftovers.js).
+    pub leftovers_base: f32,
 }
 
 impl SpriteIds {
@@ -73,6 +76,7 @@ impl SpriteIds {
             abilities_base: b + 36.0,
             veterancy_base: b + 44.0,
             decorations_base: b + 52.0,
+            leftovers_base: b + 60.0,
         }
     }
 }
@@ -235,14 +239,17 @@ impl World {
         }
 
         sprites.extend_from_slice(&building_turrets);
+        // Husks and crates lie under the units (husks.rs).
+        self.render_leftovers(player, sink, &ids, sprites);
 
         // Units: bodies, then turrets on top; aircraft after everything on the
         // ground, raised by their altitude, with a dark shadow underneath.
         let mut turrets: Vec<f32> = Vec::new();
         let mut aircraft: Vec<f32> = Vec::new();
         for (i, a) in self.actors.iter().enumerate() {
-            // Passengers are inside their transport; mines are drawn by render_abilities.
-            if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine || !a.in_world() {
+            // Passengers are inside their transport; mines are drawn by
+            // render_abilities, husks and crates by render_leftovers.
+            if !a.alive || !a.is_unit() || !a.in_world() {
                 continue;
             }
             let (from, to) = ([px(a.px), px(a.py)], [px(a.x), px(a.y)]);
@@ -307,6 +314,8 @@ impl World {
         self.render_veterancy(player, sink, ids.veterancy_base, sprites);
         // Repair wrenches and power off icons on structures (repair.rs).
         self.render_building_decorations(player, sink, ids.decorations_base, sprites);
+        // The PRIMARY tag over a selected primary structure (primary.rs).
+        self.render_primary(player, sink, selected, &ids, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));
@@ -362,6 +371,8 @@ impl World {
                 EffectKind::ChronoShimmer => (ids.chrono, 0.6 + t * 0.8, fade),
                 EffectKind::Dust => (ids.large_explosion, 1.0 + t * 1.2, fade * 0.35),
                 EffectKind::Naval(n) => (ids.naval_base + n as f32, 0.7 + t * 0.6, fade),
+                // Smudge smoke and crate pickup animations (husks.rs LEFTOVER_*).
+                EffectKind::Leftover(n) => (ids.leftovers_base + n as f32, 1.0, fade.min(1.0) * 0.9 + 0.1),
                 EffectKind::TeslaBolt => unreachable!(),
             };
             let ((sprite, scale0, a0), (_, scale1, a1)) = (look(t0, fade0), look(t1, fade1));

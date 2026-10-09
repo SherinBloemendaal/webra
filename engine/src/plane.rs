@@ -69,6 +69,8 @@ pub enum Mission {
     SpyPlane,
     Paradrop,
     Bombing,
+    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over the target cell.
+    CrateDrop,
 }
 
 /// Per-actor aircraft state (planes; the ammo and base fields suit helicopters too).
@@ -785,6 +787,11 @@ impl World {
                     let a = &mut self.actors[i];
                     a.air.spent += 1;
                     a.reload[slot] = reload;
+                }
+            }
+            Mission::CrateDrop => {
+                if !a.air.cargo.is_empty() && self.cell_of(x, y) == self.cell_of(tx, ty) {
+                    self.drop_crate(i);
                 }
             }
             Mission::None => {}

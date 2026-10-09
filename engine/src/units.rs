@@ -47,6 +47,10 @@ impl World {
                 self.tick_defense(i);
                 continue;
             }
+            // Husks and crates tick on their own (husks.rs, crates.rs).
+            if matches!(self.actors[i].kind, Kind::Husk | Kind::Crate) {
+                continue;
+            }
             // Paratroopers sink on their parachute until they land (plane.rs).
             if self.actors[i].air.parachute {
                 self.tick_parachute(i);
@@ -69,6 +73,10 @@ impl World {
             }
             if self.actors[i].alive {
                 self.tick_abilities(i);
+            }
+            // Driving onto a crate picks it up (crates.rs).
+            if self.actors[i].alive {
+                self.pick_up_crate(i);
             }
             if self.actors[i].alive {
                 self.tick_self_heal(i);

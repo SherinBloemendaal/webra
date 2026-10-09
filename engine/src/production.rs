@@ -220,10 +220,11 @@ impl World {
     /// Ticks to build `ty` with `producers` buildings that make it, before the
     /// low power slowdown: more factories of a kind build faster (OpenRA
     /// ClassicProductionQueue BuildTimeSpeedReduction).
-    pub(crate) fn build_time_with(&self, ty: u16, producers: usize) -> i32 {
+    pub(crate) fn build_time_with(&self, player: u8, ty: u16, producers: usize) -> i32 {
         let reductions = &self.rules.player.speed_reduction;
         let red = reductions[(producers.max(1) - 1).min(reductions.len() - 1)];
-        (self.rules.actors[ty as usize].build_ticks * red / 100).max(1)
+        // The owner's handicap slows production (gamerules.rs).
+        self.handicap_build_time(player, ty, self.rules.actors[ty as usize].build_ticks * red / 100).max(1)
     }
 
     /// `player`'s live structures that produce anything.
@@ -354,7 +355,7 @@ impl World {
                 continue;
             }
             let cost = self.rules.actors[first_ty as usize].cost;
-            let build_total = self.build_time_with(first_ty, producers);
+            let build_total = self.build_time_with(player, first_ty, producers);
             let low_power_mod = self.rules.player.low_power_modifier;
             let low_power = self.players[player as usize].low_power();
             // Debug menu "instant build" (debug.rs): done on this tick, still paid in full.
@@ -410,7 +411,9 @@ impl World {
     }
 
     fn spawn_produced(&mut self, player: u8, ty: u16) -> bool {
-        let Some(&b) = self.producers_of(player, ty).first() else { return false };
+        // The primary structure first (primary.rs, OpenRA ClassicProductionQueue).
+        let producers = self.producers_of(player, ty);
+        let Some(&b) = producers.iter().find(|&&b| self.actors[b].primary).or(producers.first()) else { return false };
         let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
         let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
         let exits = binfo.exits.clone();
@@ -484,6 +487,9 @@ impl World {
             && !self.map.has_resource(i)
             && self.building_at[i] == NONE
             && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
+            // Husks and crates take the cell too (husks.rs, crates.rs).
+            && self.husk_at(i).is_none()
+            && self.crate_at(i).is_none()
             && self.players[player as usize].explored[i] != 0
             // A mine the player can see (own, allied or detected) blocks the cell;
             // hidden enemy mines must not, or placement would reveal them.
@@ -530,7 +536,9 @@ impl World {
         let mut adjacent = false;
         let mut provider = !(self.options.build_radius && b.requires_base_provider);
         for a in &self.actors {
-            if !a.alive || a.owner != player || a.kind != Kind::Building {
+            // The "Ally build radius" option: allied structures count too (OpenRA MapBuildRadius).
+            let ally = self.options.ally_build_radius && a.owner != player && self.are_allies(a.owner, player);
+            if !a.alive || (a.owner != player && !ally) || a.kind != Kind::Building {
                 continue;
             }
             let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
@@ -641,6 +649,8 @@ impl World {
         self.note_sold(owner, refund);
         self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
+        // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
+        self.spawn_sell_survivors(b);
         self.remove(b);
         true
     }
