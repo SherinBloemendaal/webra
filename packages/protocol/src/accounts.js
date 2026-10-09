@@ -380,6 +380,9 @@ const SETTINGS_SECTIONS = {
     playerStanceColors: boolean,
     graphics: choice(['webra', 'original']),
     hotkeys,
+    mouseCapture: choice(['off', 'fullscreen', 'always']),
+    mouseCaptureSpeed: num(0.25, 3),
+    mouseCaptureEscMenu: boolean,
   },
   audio: {
     enabled: boolean,
