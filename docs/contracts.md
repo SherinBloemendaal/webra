@@ -70,7 +70,17 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   top-left cell of its template; its footprint is all `-` (lies over the
   cells without claiming them), and the engine places its huts itself.
   Generated maps get an ore mine (gem mine on gems) at the heart of every
-  field, mirrored like the bases.
+  field, mirrored like the bases, and tech buildings and villages (section 3,
+  `techBuildings`).
+- Presentation of the neutral world: panicking civilians (ScaredyCat) draw
+  their second sprite slot, where soldiers have the prone pose (original
+  art: `panic-stand`, `panic-run`); cash ticks (OpenRA FloatingText,
+  `World::show_cash_tick`: "+$100" in the owner's colour, rising 86 world
+  units a tick for 30 ticks, hidden under fog and shroud) are rects in the
+  frame's rect buffer, from GivesCashOnCapture and CashTrickler; other cash
+  effects can use the same call. Landing craft (the Transport, locomotor
+  `lcraft`) use their own passability (`World::pass_landing`: water, fords
+  and beaches), so they run up on beach cells to unload and other ships do not.
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -215,7 +225,7 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
 human|ai|closed, name, faction, color, team, difficulty}], startingCash,
 startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, cheats, mapStyle, biome, weather, map`.
+redeployableMcv, oreRegrowth, cheats, mapStyle, biome, weather, techBuildings, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -224,7 +234,20 @@ sky. A map file brings its own biome and ignores both. `weather` is `full`
 as under clear skies, including the biome effects) or `off` (clear skies).
 The protocol requires all three (protocol version 4); the engine treats
 missing keys as `random`, `temperate` and `full` (older callers, tools) and
-refuses unknown values. `cheats` is the "Debug menu"
+refuses unknown values. `techBuildings` (OpenRA's map generator option
+"Buildings", `engine/src/mapgen/settlements.rs`) is `none`, `standard`
+(default: an oil derrick in the back of every base area and a hospital in
+the middle), `extra` (also forward command posts and communications centers
+between neighbouring bases), `oilonly` (a derrick per base and one in the
+middle) or `oilrush` (two per base, in the middle and between neighbours).
+Everything is placed by the generator's symmetry (every image or none), so
+every base gets the same buildings; generated maps also get villages of
+civilian buildings of their biome, each building with a free ring around it
+so no passage closes. A map file brings its own actors and ignores it; the
+engine treats a missing key as `standard`.
+`Game.generated_map_with(seed, size, players, style, biome, techBuildings)`
+exports such a map file (`generated_map_styled` is the same with
+`standard`). `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
@@ -235,7 +258,8 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
 Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
-are named bundles of every lobby option except `seed` and `mapSize`:
+are named bundles of every lobby option except `seed`, `mapSize` and
+`techBuildings`:
 Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
 Sandbox (skirmish only), plus the player's saved modes (settings
 `lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those

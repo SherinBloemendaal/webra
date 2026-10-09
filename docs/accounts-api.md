@@ -755,7 +755,8 @@ Serialized size at most 32 KiB.
   `{ name, options }`. `name` is 1 to 32 characters of display text
   (normalized: single spaces, no control or bidi characters), unique
   ignoring case and not the name of a built-in mode. `options` holds exactly
-  the mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
+  the mode keys (every lobby option but `seed`, `mapSize` and
+  `techBuildings`: `mapStyle`,
   `biome`, `weather`, `startingCash`, `startingUnits`, `techLevel`,
   `gameSpeed`, `fog`, `explored`, `buildRadius`, `redeployableMcv`,
   `oreRegrowth`, `cheats`), each with a value the lobby options accept
