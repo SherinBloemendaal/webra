@@ -1066,7 +1066,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
@@ -1197,7 +1197,9 @@ carry a pose in the sprite id:
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
 (structure placed during the game, `age` = ticks since then, up to 127), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
-remembered structure under fog), 8 damaged and still. Walls report idle or
+remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
+aux move (a second overlay in the same slot: the Chinook's rear rotor on the
+ground and in the air). Walls report idle or
 damaged with `age` = their connection mask (OpenRA WithWallSpriteBody: 1
 north, 2 east, 4 south, 8 west, same type only). Building turrets report
 damaged too. Poses are read from the world and never written: the state
@@ -1243,6 +1245,38 @@ that unit is on its exit cell and not yet idle there, then one frame per
 tick back to 0. Under fog the value itself (the layer's still pose) is
 drawn.
 
+Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
+render setting; `js/content/atlas.js` `originalSlotInfo`) are drawn the way
+OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
+slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
+10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
+ships and spinners on units with OpenRA's classic perspective
+(`BodyOrientation.LocalToWorld`: the north-south part of an offset along
+the body times sin 40 degrees, `render.rs` `classic_offset`); heights of
+turrets and overlays are drawn into their frames. Explosions and splashes
+with original art play once (pose 4, `age` = ticks since the effect
+started, the idle pose is empty) at their own size, without WebRA's
+growth and fade, and WebRA's dust cloud is left out; original missiles
+and torpedoes pick their facing frame instead of being turned; WebRA's
+submerged ripple is not drawn over an original hull. `info` holds
+records `[kind, actor type, a, b]`: kind 0 an overlay over a unit without
+a turret (the Radar Jammer's and Mobile Gap Generator's dishes; a forward,
+b side offset in world units, drawn from slot `2t + 1` with the idle
+pose), kind 1 a structure whose body shows the storage level (OpenRA
+WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
+capacity of its owner, mode 3). Presentation only: the state hash is the
+same either way.
+
+The original art audit (`js/content/audit.js`, run on a player's own files
+with `node tools/art-audit.mjs <files or directories>`) lists for every
+actor and special sprite each sequence OpenRA's render traits draw
+(`js/content/render-facts.js`, generated with `tables.js`) and whether
+WebRA shows it (ok), falls back to its own art, maps a wrong one, has no
+way to show it yet (gap, with what is missing) or Red Alert has no art for
+it (webra-only). `apps/game/tests/art-audit.test.mjs` runs it on synthetic
+files whose frames spell their own file and frame number, so a missing
+mapping or a frame out of OpenRA's order fails CI.
+
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.
@@ -1258,7 +1292,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

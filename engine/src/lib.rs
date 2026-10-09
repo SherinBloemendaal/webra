@@ -68,6 +68,8 @@ mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
+mod tests_original_art;
+#[cfg(test)]
 mod tests_overlays;
 #[cfg(test)]
 mod tests_pathing;
@@ -675,6 +677,17 @@ impl Game {
     /// reads it, so the state hash is the same either way.
     pub fn set_sprite_poses(&mut self, on: bool) {
         self.world.render_opts.poses = on;
+    }
+
+    /// The sprite slots drawn from the original graphics and what they need
+    /// (apps/game/js/content/atlas.js originalSlotInfo, docs/contracts.md
+    /// section 8): those slots are drawn the OpenRA way (rotor sequences,
+    /// effects that animate themselves, projectiles with their own facings);
+    /// `info` holds `[kind, actor type, a, b]` records (overlays over units,
+    /// storage level stages; overlays.rs `RenderOptions::set_original_art`).
+    /// Presentation only: the state hash is the same either way.
+    pub fn set_original_slots(&mut self, slots: Vec<u32>, info: Vec<i32>) {
+        self.world.render_opts.set_original_art(&slots, &info);
     }
 
     /// The local player's control groups, for the numbers on their selection

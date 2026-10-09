@@ -323,7 +323,7 @@ Camera, control groups, chat, music and spectators:
 | Alt + Shift + Q, Alt + Shift + W, Ctrl + E, Ctrl + R | Record camera bookmark 1..4 (OpenRA: Ctrl + Q/W/E/R) |
 | Shift + = | Hide the interface (again: show it); Alt + Shift + = also hides the cursor |
 | 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
-| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time; selected units and structures show their group number in the top left corner of their selection box, like OpenRA) |
+| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time; selected units and structures show their group number in the bottom right corner of their selection box) |
 | Ctrl + Shift + 1..9, 0 | Add the selection to a control group |
 | Shift + 1..9, 0 | Add a control group to the selection |
 | Alt + 1..9, 0 | Jump to a control group |

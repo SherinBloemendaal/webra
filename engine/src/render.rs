@@ -79,6 +79,22 @@ impl SpriteIds {
 
 const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
 
+/// Sine of OpenRA's BodyOrientation.CameraPitch (40 degrees, 113 angle
+/// units, WAngle.Sin 654 of 1024): with UseClassicPerspectiveFudge (on in Red Alert) the north-south
+/// part of an offset along the body is shortened by it on screen, the way
+/// the pre-rendered sprites are foreshortened.
+pub const CLASSIC_PITCH_SIN: f32 = 654.0 / 1024.0;
+
+/// Screen offset (world pixels) of a part `fwd` world units ahead of and
+/// `side` to the right of a body facing `facing` (WebRA angle units), the
+/// way OpenRA places turrets and overlays on pre-rendered art
+/// (BodyOrientation.LocalToWorld with the classic perspective fudge).
+pub fn classic_offset(fwd: i32, side: i32, facing: i32) -> [f32; 2] {
+    let (s, c) = (facing as f32 * std::f32::consts::TAU / 1024.0).sin_cos();
+    let (f, r) = (px(fwd), px(side));
+    [s * f + c * r, CLASSIC_PITCH_SIN * (-c * f + s * r)]
+}
+
 /// Opacity of the black layer over a disabled structure (OpenRA
 /// WithColoredOverlay@IDISABLE colour 000000B4: 180 of 255).
 pub const DISABLED_SHADE: f32 = 180.0 / 255.0;
@@ -104,6 +120,9 @@ pub enum Pose {
     /// The first frame only: no power, or remembered under the fog.
     Still = 7,
     DamagedStill = 8,
+    /// A second overlay of the slot (the Chinook's rear rotor) on the ground and in the air.
+    AuxIdle = 9,
+    AuxMove = 10,
 }
 
 /// Sprite ids with poses: `slot + POSE_STRIDE * (pose + POSE_CODES * age)`.
@@ -293,6 +312,11 @@ impl World {
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut turrets, r);
+            } else if let Some((fwd, side)) = self.render_opts.unit_overlay(a.ty) {
+                // An original overlay over the body (OpenRA WithIdleOverlay@SPINNER) at its offset.
+                let turn = angle_diff(a.pfacing, a.facing);
+                let r = at.facing(a.pfacing, turn).look(posed(a.ty as u32 * 2 + 1, Pose::Idle, 0), a.owner as f32, 1.0, body_alpha, flash);
+                sink.sprite(&mut turrets, r.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
             }
         }
         // Shot-down helicopters falling (helicopter.rs).
@@ -322,7 +346,8 @@ impl World {
                     _ => (ids.bullet, false),
                 };
                 let r = SpriteRec::at(x, y, 16.0).facing(pr.facing, 0).look(sprite, pr.owner as f32, 1.0, 1.0, 0.0);
-                if turned {
+                // Original projectiles pick their own facing frame (missiles and torpedoes have 32).
+                if turned && !self.render_opts.is_original(sprite as u32) {
                     sink.sprite(sprites, r.angle_affine(1.0, -QUARTER_TURN));
                 } else {
                     sink.sprite(sprites, r);
@@ -365,6 +390,17 @@ impl World {
                 EffectKind::TeslaBolt => unreachable!(),
             };
             let ((sprite, scale0, a0), (_, scale1, a1)) = (look(t0, fade0), look(t1, fade1));
+            if self.render_opts.is_original(sprite as u32) {
+                if e.kind == EffectKind::Dust {
+                    // WebRA's dust cloud borrows the explosion sprite; OpenRA has no dust.
+                    continue;
+                }
+                // An original explosion animates itself (OpenRA plays it once):
+                // the make pose with the ticks since the effect started.
+                let age = (e.max - e.ttl).max(0) as u32;
+                sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(posed(sprite as u32, Pose::Make, age), 0.0, 1.0, 1.0, 0.0));
+                continue;
+            }
             sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(sprite, 0.0, scale0, a0, 0.0).fade_to(scale1, a1));
         }
 
@@ -410,7 +446,7 @@ impl World {
             // The control group number, selected actors only (OpenRA's
             // control group decoration RequiresSelection; overlays.rs).
             if let Some(g) = self.render_opts.control_group(r) {
-                push_group_number(l, t, g, &mut rel);
+                push_group_number(l, t, w, h, g, &mut rel);
             }
             push_anchored_rects(sink, rects, &anchor, NO_CULL, &rel);
             // Rally point (OpenRA RallyPointIndicator): a marker at both ends of
@@ -491,8 +527,11 @@ impl World {
         let hull = at.facing(a.pfacing, turn);
         if a.submerged {
             sink.sprite(sprites, hull.look(body, team, 1.0, 0.3, 0.0));
+            // WebRA's ripple is not drawn over an original hull (OpenRA shows the submerged hull only).
             let ripple = ids.naval_base + crate::naval::NAVAL_RIPPLE as f32;
-            sink.sprite(sprites, hull.look(ripple, team, 1.0, 0.7, 0.0));
+            if !self.render_opts.is_original(body as u32) {
+                sink.sprite(sprites, hull.look(ripple, team, 1.0, 0.7, 0.0));
+            }
             return;
         }
         sink.sprite(sprites, hull.look(body, team, 1.0, 1.0, flash));
@@ -502,7 +541,13 @@ impl World {
         }
         let turret = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(body + 1.0, team, 1.0, 1.0, flash);
         let offsets: &[(i32, i32)] = if info.turret_offsets.is_empty() { &[(0, 0)] } else { &info.turret_offsets };
+        let original = self.render_opts.is_original(body as u32 + 1);
         for &(fwd, side) in offsets {
+            if original {
+                // OpenRA's placement on the pre-rendered hull (classic perspective).
+                sink.sprite(turrets, turret.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
+                continue;
+            }
             // Forward is (sin, -cos) of the hull angle, right is (cos, sin).
             sink.sprite(turrets, turret.extended().arm(px(fwd), px(side), a.pfacing, turn));
         }
@@ -543,6 +588,13 @@ impl World {
         let age = self.tick.saturating_sub(a.born);
         if a.born > 0 && age < MAX_POSE_AGE {
             return (Pose::Make, age);
+        }
+        if let Some(stages) = self.render_opts.level_stages(a.ty) {
+            // OpenRA WithResourceLevelSpriteBody: the stage of the owner's storage
+            // level, (stages - 1) * resources / capacity, named in the age.
+            let p = &self.players[a.owner as usize];
+            let stage = if p.storage > 0 { (stages as i64 - 1) * p.resources.max(0) as i64 / p.storage as i64 } else { 0 };
+            return (if damaged { Pose::Damaged } else { Pose::Idle }, stage.clamp(0, stages as i64 - 1) as u32);
         }
         if self.is_powered_down(i) {
             return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);

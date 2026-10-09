@@ -682,7 +682,8 @@ impl World {
         let (kind, ttl) = if max_damage >= 20000 {
             (EffectKind::NukeExplosion, 40)
         } else if max_damage >= 3000 {
-            (EffectKind::SmallExplosion, 12)
+            // Long enough for OpenRA's small_explosion (veh-hit3.shp, 14 frames at one per tick).
+            (EffectKind::SmallExplosion, 14)
         } else {
             (EffectKind::Piff, 6)
         };
