@@ -923,6 +923,17 @@ pub struct World {
     pub game_over: bool,
 }
 
+/// Where a world's map came from (`World::setup`).
+enum MapSource<'a> {
+    /// Generated: its spawns are listed by column, top first, for fair team
+    /// splits (gamerules.rs `assign_spawns`).
+    Generated,
+    /// A prepared map without actors (`World::on_map`).
+    Prepared,
+    /// A map file with its pre-placed actors.
+    File(&'a [crate::mapdata::MapActor]),
+}
+
 impl World {
     /// Quick setup used by tests and tools: a deployed base each, default options.
     pub fn new(seed: u64, map_size: i32, factions: &[(&str, bool)]) -> World {
@@ -934,7 +945,7 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        World::setup(rules, map, seed, players, options, &[], biome, true)
+        World::setup(rules, map, seed, players, options, MapSource::Generated, biome)
     }
 
     /// World on a prepared map with the default rules: players start at the
@@ -943,7 +954,7 @@ impl World {
     /// temperate, so no snow or heat waves change a scenario.
     pub fn on_map(seed: u64, map: Map, players: &[PlayerSetup], options: GameOptions) -> World {
         let biome = options.biome.unwrap_or(crate::weather::Biome::Temperate);
-        World::setup(Rules::load(), map, seed, players, options, &[], biome, false)
+        World::setup(Rules::load(), map, seed, players, options, MapSource::Prepared, biome)
     }
 
     /// World from a map file; rules overrides (modded maps) apply.
@@ -957,7 +968,7 @@ impl World {
         }
         let rules = Rules::load_with(data.rules())?;
         let map = data.to_map()?;
-        Ok(World::setup(rules, map, seed, players, options, &data.actors, data.biome, false))
+        Ok(World::setup(rules, map, seed, players, options, MapSource::File(&data.actors), data.biome))
     }
 
     fn setup(
@@ -966,11 +977,14 @@ impl World {
         seed: u64,
         players: &[PlayerSetup],
         options: GameOptions,
-        actors: &[crate::mapdata::MapActor],
+        source: MapSource,
         biome: crate::weather::Biome,
-        // A generated map: its spawns are listed for fair team splits (gamerules.rs `assign_spawns`).
-        generated: bool,
     ) -> World {
+        let (actors, generated) = match source {
+            MapSource::Generated => (&[][..], true),
+            MapSource::Prepared => (&[][..], false),
+            MapSource::File(actors) => (actors, false),
+        };
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
         w.env = crate::weather::Environment::new(biome, options.weather, seed);
