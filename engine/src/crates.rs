@@ -17,7 +17,7 @@
 //! (rules_options.rs): a squad of soldiers comes without the medic until
 //! the medic exists. Everything here is simulation state and uses the shared
 //! RNG; sounds and the pickup animation are sound events
-//! (`SoundEventKind::CrateCollected`, the client looks the action up).
+//! (`SoundEventKind::CrateCollected` with the action class code).
 
 use crate::map::Terrain;
 use crate::math::{dist_sq, facing_vec, CELL};
@@ -338,7 +338,8 @@ impl World {
                 }
                 self.activate_crate(&info.actions[k], collector, x, y);
                 let owner = self.actors[collector].owner;
-                self.sound.push(SoundEventKind::CrateCollected, k as i32, x, y, owner, ty as i32);
+                let code = crate::sound_events::crate_action_code(&info.actions[k].key);
+                self.sound.push(SoundEventKind::CrateCollected, code, x, y, owner, ty as i32);
                 return;
             }
             n -= s;

@@ -253,6 +253,43 @@ export const RECIPES = {
   chrono: (sr, r) => normalize(shimmer(sr, r, 1.4), 0.6),
   iron_curtain: (sr) => normalize(hum(sr, 1.3), 0.6),
   nuke_launch: (sr, r) => normalize(whoosh(sr, r, { seconds: 2.2, from: 120, to: 900, gain: 1, rumble: 1 }), 0.8),
+  // Sonar pulse (SpawnActorPower DeploySound sonpulse): a falling ping with an echo.
+  sonar_pulse: (sr) => normalize(sequence(sr, [[0, sweep(sr, 1500, 900, 0.5, 0.2)], [0.35, sweep(sr, 1500, 900, 0.4, 0.2), 0.35]], 0.9), 0.45),
+
+  // Actor sounds of the rules (OpenRA mods/ra rules; the originals are named in catalog-data.js)
+  // Crushable.CrushSound and Parachutable.GroundImpactSound (squishy2): a short wet thud.
+  crush: (sr, r) => normalize(sequence(sr, [[0, boom(sr, r, { seconds: 0.18, cutoff: 500, tau: 0.03, sub: 120, subEnd: 60, subTau: 0.04 })], [0.02, squelch(sr, r, 0.08, 0.6), 0.5]], 0.22), 0.45),
+  // ParaDrop.ChuteSound (chute1): a canopy snapping open, then a soft flutter.
+  chute: (sr, r) => normalize(sequence(sr, [[0, shot(sr, r, { seconds: 0.08, crack: 900, tau: 0.015, body: 160, bodyGain: 0.3 })], [0.06, roar(sr, r, 0.45, 0.35)]], 0.55), 0.35),
+  // Cloak CloakSound / UncloakSound (subshow1, appear1): a rising or falling shimmer.
+  cloak: (sr) => normalize(sweep(sr, 500, 1700, 0.45, 0.2), 0.35),
+  uncloak: (sr) => normalize(sweep(sr, 1700, 500, 0.45, 0.2), 0.35),
+  // AmmoPool.RearmSound (minelay1): a mechanical clunk and click.
+  rearm: (sr, r) => normalize(sequence(sr, [[0, boom(sr, r, { seconds: 0.15, cutoff: 900, tau: 0.03, sub: 160, subEnd: 90, subTau: 0.04 })], [0.12, tone(sr, 1800, 0.04, { tau: 0.01, shape: 'square' }), 0.4]], 0.2), 0.4),
+  // SoundOnDamageTransition.DamagedSounds (kaboom1, sandbag2, crmble2): a structure cracking.
+  damaged: (sr, r) => normalize(boom(sr, r, { seconds: 0.7, cutoff: 1500, tau: 0.14, sub: 100, subEnd: 45, subTau: 0.12, crackle: 0.04 }), 0.65),
+  // CrateAction.Sound (heal2, ironcur9 for crates): a bright pick-up arpeggio.
+  crate: (sr) => chime(sr, [784, 988, 1319], 0.06, 0.35, 0.1),
+
+  // Sound notifications (OpenRA notifications.yaml Sounds)
+  // ClickSound (ramenu1): every interface button.
+  ui_click: (sr, r) => normalize(sequence(sr, [[0, tone(sr, 2400, 0.018, { tau: 0.004, shape: 'square' })], [0.004, squelch(sr, r, 0.012, 0.4)]], 0.03), 0.25),
+  // RadarUp (radaron2) and RadarDown (radardn1): a rising or falling electronic sweep.
+  radar_up: (sr) => normalize(sequence(sr, [[0, sweep(sr, 300, 1400, 0.6, 0.25)], [0.45, tone(sr, 1400, 0.15, { tau: 0.05, shape: 'square' }), 0.4]], 0.65), 0.4),
+  radar_down: (sr) => normalize(sweep(sr, 1400, 200, 0.7, 0.3), 0.4),
+  // LevelUp (hydrod1): a promotion fanfare.
+  level_up: (sr) => chime(sr, [523, 784, 1047], 0.08, 0.4, 0.2),
+  // ChatLine (rabeep1): a short beep for a chat line.
+  chat_line: (sr) => normalize(tone(sr, 1250, 0.07, { tau: 0.03, shape: 'square' }), 0.3),
+  // PlayerJoined (bleep11), PlayerLeft (bleep12), LobbyOptionChanged (bleep17).
+  player_joined: (sr) => normalize(sequence(sr, [[0, tone(sr, 700, 0.06, { tau: 0.02, shape: 'square' })], [0.07, tone(sr, 1050, 0.08, { tau: 0.03, shape: 'square' })]], 0.17), 0.3),
+  player_left: (sr) => normalize(sequence(sr, [[0, tone(sr, 1050, 0.06, { tau: 0.02, shape: 'square' })], [0.07, tone(sr, 700, 0.08, { tau: 0.03, shape: 'square' })]], 0.17), 0.3),
+  lobby_option: (sr) => normalize(tone(sr, 880, 0.08, { tau: 0.03, shape: 'square' }), 0.28),
+  // AlertBuzzer (buzzy1), AlertBleep (bleep6), AngryBleep (bleep5), BaseSetup (bleep9): mission script cues.
+  alert_buzzer: (sr) => normalize(tone(sr, 140, 0.5, { tau: 0.4, shape: 'square' }), 0.4),
+  alert_bleep: (sr) => normalize(sequence(sr, [[0, tone(sr, 1600, 0.07, { tau: 0.03 })], [0.1, tone(sr, 1600, 0.07, { tau: 0.03 })]], 0.2), 0.35),
+  angry_bleep: (sr) => normalize(sequence(sr, [[0, tone(sr, 420, 0.08, { tau: 0.04, shape: 'square' })], [0.09, tone(sr, 380, 0.12, { tau: 0.05, shape: 'square' })]], 0.24), 0.35),
+  base_setup: (sr) => chime(sr, [440, 660, 880], 0.07, 0.35, 0.1, 'square'),
 
   // Radio (unit replies; the speech, when enabled, plays between open and close)
   radio_ack: (sr, r) =>

@@ -1,6 +1,5 @@
 // OpenRA's other lobby options and what battles leave in the client: the
-// battlefield effects (js/battlefx.js), the announcer lines and sounds of the
-// new engine events (js/audio), the art of crates, husks and leftover
+// battlefield effects (js/battlefx.js) and their event kinds, the art of crates, husks and leftover
 // specials (js/art/leftovers.js, js/content) and the engine API through wasm.
 // Run after `npm run build:wasm`.
 import { test } from 'node:test';
@@ -9,12 +8,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { ShakeState, FlashState, FloatingTexts, FLOAT_TICKS, formatClock, motionReduced, cashText, BattleFx, FX } from '../js/battlefx.js';
-import { Director, EV } from '../js/audio/director.js';
-import { EVA, timeLimitLine, crateSound } from '../js/audio/catalog.js';
+import { EV } from '../js/audio/director.js';
 import { spriteList } from '../js/sprites.js';
 import { CRATE_DRAW, LEFTOVER_SPECIALS, LEFTOVER_SPECIAL_OFFSET, huskBase } from '../js/art/leftovers.js';
-import { ACTOR_ART, SEQUENCES, SMUDGES, LEFTOVER_ART } from '../js/content/tables.js';
-import { originalSlots } from '../js/content/atlas.js';
+import { ACTOR_ART, SEQUENCES, SMUDGES, SPECIAL_ART } from '../js/content/tables.js';
+import { originalSlots, specialSlot } from '../js/content/atlas.js';
 import { originalTerrain, SMUDGE_TILE_BASE, SMUDGE_VARIANTS, SMUDGE_DEPTHS, ART_SMUDGES, ATLAS_COLS, ORIGINAL_TILE } from '../js/content/terrain.js';
 import { buildShp, buildPal, buildTmpRa, testFrame } from './content-fixtures.mjs';
 import { TERRAIN } from '../js/content/tables.js';
@@ -114,10 +112,10 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
     const ev = (...e) => e;
     fx.onEvents(
       [
-        ...ev(FX.CRATE_COLLECTED, 0, 1024, 1024, 0, 0),
+        ...ev(FX.CRATE_COLLECTED, 1, 1024, 1024, 0, 0),
         ...ev(FX.BOUNTY, 150, 2048, 0, 1, 0), // an enemy's bounty: not shown
         ...ev(FX.BOUNTY, 90, 2048, 0, 0, 0),
-        ...ev(FX.TIME_LIMIT, 0, 0, 0, 0, -1),
+        ...ev(FX.TIME_LIMIT_EXPIRED, 0, 0, 0, 255, 0),
         ...ev(FX.PLAYER_LOST, 0, 0, 0, 1, 0),
         ...ev(FX.SCREEN_SHAKE, 20, 0, 0, 1 + 16, 5),
         ...ev(FX.FLASH, 20, 0, 0, 0, 1),
@@ -142,29 +140,13 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
 
 // ---- Announcer and sounds ---------------------------------------------------------------
 
-test('time limit, primary building and crate events reach the announcer and the speakers', () => {
-  assert.equal(timeLimitLine('FourtyMinutesRemaining'), 'timeLimit40');
-  assert.equal(timeLimitLine('WarningOneMinuteRemaining'), 'timeLimit1');
-  assert.equal(timeLimitLine('Nope'), null);
-  assert.deepEqual(EVA.timeLimit5.originals, ['5minr.aud']);
-  assert.deepEqual(EVA.primaryBuilding.originals, ['pribldg1.aud']);
-  assert.deepEqual(crateSound('heal2.aud').originals, ['heal2.aud']);
-  const announced = [];
-  const effects = [];
-  const d = new Director({
-    rules: { actors: [{ id: 'HEALCRATE', kind: 'crate', crateActions: [{ kind: 'HealActors', sound: 'heal2.aud' }] }, { id: 'WEAP', kind: 'building' }], weapons: [], timeLimit: { warnings: [5], notifications: ['WarningFiveMinutesRemaining'] } },
-    player: 0,
-    side: 'allies',
-    pxPerWorld: 24 / 1024,
-    lookup: () => null,
-    sink: { effect: (s) => effects.push(s), voice() {}, announce: (k) => announced.push(k) },
-    now: () => 0,
-  });
-  const view = { x0: 0, y0: 0, x1: 1000, y1: 1000 };
-  d.onEvents([EV.TIME_LIMIT, 5, 0, 0, 0, 0, EV.PRIMARY_BUILDING, 1, 0, 0, 0, 0, EV.CRATE_COLLECTED, 0, 1024, 1024, 0, 0], view);
-  assert.deepEqual(announced, ['timeLimit5', 'primaryBuilding']);
-  assert.equal(effects.length, 1);
-  assert.deepEqual(effects[0].originals, ['heal2.aud']);
+test('battlefield effect kinds follow the engine and stay apart from the announcer kinds', () => {
+  assert.equal(FX.CRATE_COLLECTED, EV.CRATE_COLLECTED, 'one crate event for floats and sounds');
+  const announcer = new Set(Object.values(EV));
+  for (const [name, kind] of Object.entries(FX)) {
+    if (name !== 'CRATE_COLLECTED') assert.ok(!announcer.has(kind), `${name} ${kind} is not an announcer kind`);
+  }
+  assert.ok(Math.min(...Object.values(FX).filter((k) => k !== FX.CRATE_COLLECTED)) > Math.max(...announcer));
 });
 
 // ---- Art ---------------------------------------------------------------------------------
@@ -244,9 +226,14 @@ test('original art: crates on land and water, husks, smudges and the leftover sp
   assert.equal(SEQUENCES.hhusk.idle.file, 'harv.shp', 'Red Alert has no ore truck husk: the truck stands in');
   assert.equal(SMUDGES.scorch.length, SMUDGE_VARIANTS);
   assert.equal(SMUDGES.crater.length, SMUDGE_VARIANTS);
-  assert.equal(LEFTOVER_ART.length, LEFTOVER_SPECIALS.length);
-  assert.equal(LEFTOVER_ART[0].file, 'fire1.shp');
-  assert.equal(LEFTOVER_ART[3], null, 'OpenRA drew the level up animation: WebRA art');
+  // The leftover specials are the art module "leftovers" of SPECIAL_ART.
+  LEFTOVER_SPECIALS.forEach((_, k) => {
+    assert.ok(`leftovers.${k}` in SPECIAL_ART, `leftovers.${k}`);
+    assert.equal(specialSlot(`leftovers.${k}`, 5), 10 + LEFTOVER_SPECIAL_OFFSET + k);
+  });
+  assert.deepEqual(SPECIAL_ART['leftovers.0'], { image: 'fire', sequence: '1', mode: 'loop' });
+  assert.equal(SEQUENCES.fire['1'].file, 'fire1.shp');
+  assert.equal(SPECIAL_ART['leftovers.3'], null, 'OpenRA drew the level up animation: WebRA art');
   // Installed files: the specials come out after the actors.
   const files = new Map([['temperat.pal', buildPal()], ['fire1.shp', buildShp(12, 14, [testFrame(12, 14, 3), testFrame(12, 14, 4)])]]);
   const actors = [{ id: 'CRATE', kind: 'crate' }];

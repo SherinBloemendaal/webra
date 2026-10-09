@@ -435,6 +435,8 @@ function setupOnline(lobby, gpuError) {
         colors: TEAM_COLORS,
         colorNames: COLOR_NAMES,
         account: account ? { session: account, signIn: (reason) => openSignIn(account, { reason }) } : undefined,
+        // OpenRA's lobby and chat sounds (ChatLine, PlayerJoined, PlayerLeft, LobbyOptionChanged).
+        sounds: audio ? { chatLine: () => audio.chatLine(), lobby: (event) => audio.lobby(event) } : undefined,
         onBack: () => {
           root.hidden = true;
           $('menu').hidden = false;
@@ -639,6 +641,7 @@ async function loadSave(replay, lobby) {
     roster: viewerPlayers(replay.options.players),
     // Restart plays the saved game again from its start, with its settings.
     restart: restartOf({ ...replay.options, map: replay.map ?? null }),
+    fromSave: true,
   });
 }
 
@@ -689,7 +692,7 @@ function recorderOf({ host, info }) {
 // view switcher and stats. `roster` names and colours the players of any
 // game (statistics, the observer panel after a defeat); `restart` is the
 // js/restart.js record of a single player game (null: no restart).
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null }) {
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false }) {
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
@@ -706,9 +709,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
   const allies = (a, b) => a === b || (!slots[a]?.neutral && !slots[b]?.neutral && !!slots[a]?.team && slots[a]?.team === slots[b]?.team);
-  audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell(), allied: (owner) => !viewer && allies(player, owner) });
+  // Spectators and replays (viewer) hear no player's notifications, as in OpenRA (no LocalPlayer).
+  audio?.attachGame({ game, rules, player: viewer ? -1 : player, worldUnitsPerCell: Game.world_units_per_cell(), allied: (owner) => !viewer && allies(player, owner) });
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
+  // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
+  if (!stress && !fromSave) audio?.startGame();
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
   const watched = audio ? audio.watch(game) : game;
@@ -731,9 +737,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const applyArt = () => {
     const art = content?.art(rules.actors, biome) ?? null;
     let atlas = null;
+    let original = null;
     if (art?.slots.size) {
       try {
         atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
+        original = art.original;
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
@@ -741,6 +749,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     }
     atlas ??= buildAtlas(rules.actors);
     renderer.setAtlas(atlas);
+    // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
+    game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
     // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
     game.set_building_overlays(atlas.overlays);
     // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
@@ -831,7 +841,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
-      if (key) audio?.selectTarget();
+      if (key) audio?.selectTarget(key);
     },
     onSelectionChanged: (ids, info) => {
       audio?.selection(ids, info);
@@ -879,13 +889,26 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
       onCashTick: (direction) => audio?.cashTick(direction),
+      onProductionClick: (id, outcome) => audio?.productionClick(id, outcome),
     },
     { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );
   applyRelationshipColors();
   // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
   // test leaves the slot empty, which shows "Radar offline".
-  const minimap = stress ? null : new Minimap($('radar'), { game: ui, fog: (p) => game.fog_bytes(p), player, input, colors: TEAM_COLORS, biome: sky.biome, pings });
+  const minimap = stress
+    ? null
+    : new Minimap($('radar'), {
+        game: ui,
+        fog: (p) => game.fog_bytes(p),
+        player,
+        input,
+        colors: TEAM_COLORS,
+        biome: sky.biome,
+        pings,
+        // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own).
+        onRadar: viewer ? null : (online) => audio?.radar(online),
+      });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
@@ -923,6 +946,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
     onSelect: (power) => input.startPowerTargeting(power),
+    onInsufficientPower: (power) => audio?.insufficientPower(power),
     onTargetLost: () => input.cancelPower(),
     hotkeys,
   });
@@ -1022,10 +1046,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // up), so there the menu opens over the running game. The debug menu can
   // also pause a local game without the menu (`paused` is declared above).
   let leaving = false;
-  const leave = () => {
+  // OpenRA IngameMenuLogic.OnQuit: "Battle control terminated" is heard before the game closes.
+  const leave = async () => {
     leaving = true;
     online?.onQuit();
     replay?.dispose();
+    await audio?.leave();
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
@@ -1048,13 +1074,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
           location.reload();
         }
       : null;
-  const exit = () => {
+  const exit = async () => {
     leaving = true;
     online?.onQuit();
+    await audio?.leave();
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
-  const recordActions = records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress }) : [];
+  const recordActions = records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress, onSaved: () => audio?.gameSaved() }) : [];
   const fullscreen = {
     available: () => fullscreenAvailable(),
     active: () => isFullscreen(),
@@ -1343,7 +1370,10 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const fresh = f.id !== drawn;
     if (fresh) {
       drawn = f.id;
+      const wasLoading = !!status.loading;
       status = f.status;
+      // OpenRA StartGameNotification LoadedNotification: the saved game is ready.
+      if (wasLoading && !status.loading && !status.loadError) audio?.gameLoaded();
       simMs = f.simMs;
       online?.driver.update(status.online);
       replay?.update(status.replay);

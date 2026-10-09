@@ -746,6 +746,8 @@ def main():
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
+            # Buildable.BuildLimit: owned plus queued at most (production.rs; 0 = none).
+            'build_limit': int(t['Buildable'].get('BuildLimit', 0) or 0) if isinstance(t.get('Buildable'), dict) else 0,
             'prerequisites': a['prerequisites'],
             'build_at': (t['Buildable'].get('BuildAtProductionType') if isinstance(t.get('Buildable'), dict) else None) or a['queue'],
             'hp': a['hp'],
@@ -838,6 +840,16 @@ def main():
                                'reload_delay': int(pool.get('ReloadDelay', 50)),
                                'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        if 'EjectOnDeath' in t:
+            ej = t['EjectOnDeath'] if isinstance(t['EjectOnDeath'], dict) else {}
+            # OpenRA EjectOnDeathInfo defaults: PilotActor E1, SuccessRate 50,
+            # EjectInAir false, EjectOnGround false, AllowUnsuitableCell false.
+            truth = lambda k, d: str(ej.get(k, d)).lower() == 'true'
+            ab['eject_on_death'] = {'pilot': ids_lower[str(ej.get('PilotActor', 'E1')).lower()],
+                                    'success_rate': int(ej.get('SuccessRate', 50)),
+                                    'in_air': truth('EjectInAir', 'false'),
+                                    'on_ground': truth('EjectOnGround', 'false'),
+                                    'allow_unsuitable_cell': truth('AllowUnsuitableCell', 'false')}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
         if 'AcceptsDeliveredCash' in t:

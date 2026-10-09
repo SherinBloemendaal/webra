@@ -1,13 +1,15 @@
 // What the battlefield shows of the lobby options and the bigger warheads,
-// from the engine's events (engine/src/sound_events.rs, kinds 40 to 46):
+// from the engine's events (engine/src/sound_events.rs: CrateCollected and
+// the kinds 38 to 42):
 //
 // - floating cash ("+$1000") where a crate paid out or a kill earned a
 //   bounty, in the player's colour, like OpenRA's FloatingText (crates for
 //   everyone who sees the spot, bounties for the killer and its allies);
 // - camera shake (OpenRA ScreenShaker: ShakeScreen warheads, ShakeOnDeath)
 //   and the nuke's white flash (FlashEffect warhead);
-// - message lines: time limit warnings come with the announcer (audio
-//   catalog), the end of the time limit and a player's defeat are text only;
+// - message lines: time limit warnings come with the announcer
+//   (js/audio/director.js), the end of the time limit and a player's defeat
+//   are text only;
 // - the time limit countdown at the top of the battlefield.
 //
 // Presentation only: nothing here goes back to the simulation. The
@@ -17,13 +19,15 @@
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const FX = Object.freeze({
-  CRATE_COLLECTED: 40,
-  BOUNTY: 41,
-  TIME_LIMIT: 42,
-  PLAYER_LOST: 43,
-  SCREEN_SHAKE: 44,
-  FLASH: 45,
+  CRATE_COLLECTED: 36,
+  BOUNTY: 38,
+  TIME_LIMIT_EXPIRED: 39,
+  PLAYER_LOST: 40,
+  SCREEN_SHAKE: 41,
+  FLASH: 42,
 });
+/** sound_events.rs crate_action_code of GiveCashCrateAction. */
+const GIVE_CASH = 1;
 const STRIDE = 6;
 /** Simulation ticks per second at normal speed: the shaker and flash count in them. */
 const TICKS_PER_SECOND = 25;
@@ -192,16 +196,17 @@ export class BattleFx {
       const b = events[i + 5];
       switch (kind) {
         case FX.CRATE_COLLECTED: {
-          const act = this.rules.actors[b]?.crateActions?.[a];
-          if (act?.kind === 'GiveCash' && visible(x * k, y * k)) this.texts.add(tick, cashText(act.amount), x * k, y * k, this.colorOf(owner));
+          // a: the action's class (OpenRA crates give cash with one GiveCashCrateAction each).
+          const act = a === GIVE_CASH ? this.rules.actors[b]?.crateActions?.find((c) => c.kind === 'GiveCash') : null;
+          if (act && visible(x * k, y * k)) this.texts.add(tick, cashText(act.amount), x * k, y * k, this.colorOf(owner));
           break;
         }
         case FX.BOUNTY:
           if (this.allied(owner)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
           break;
-        case FX.TIME_LIMIT:
-          // Warnings speak and write through the announcer (audio catalog); the end is a line only.
-          if (b === -1) this.line('Time limit has expired.');
+        case FX.TIME_LIMIT_EXPIRED:
+          // Warnings speak and write through the announcer (js/audio/director.js); the end is a line only.
+          this.line('Time limit has expired.');
           break;
         case FX.PLAYER_LOST:
           this.line(`${this.nameOf(owner)} is defeated.`);

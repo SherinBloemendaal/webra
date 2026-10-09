@@ -16,6 +16,7 @@
 use crate::map::{Resource, Terrain};
 use crate::math::{dist, dist_sq, facing_of, facing_vec, CELL};
 use crate::rules::{Domain, Kind, Projectile as ProjKind, SupportPowerInfo, WarheadKind};
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, Effect, EffectKind, World, NONE};
 
 /// Largest minefield one order may cover, in cells (bounds the work per order).
@@ -195,6 +196,7 @@ impl World {
             let Some(c) = info.abilities.cloak.as_ref() else { continue };
             let paused = c.off_when_critical && self.actors[i].hp * 100 <= info.hp * CRITICAL_PERCENT;
             let a = &mut self.actors[i];
+            let was = a.ab.cloaked;
             if paused {
                 a.ab.cloaked = false;
             } else {
@@ -202,6 +204,9 @@ impl World {
                     a.cloak_timer -= 1;
                 }
                 a.ab.cloaked = a.cloak_timer <= 0;
+            }
+            if a.ab.cloaked != was {
+                self.note_cloak(i);
             }
             let mask = if self.actors[i].ab.cloaked {
                 let types = self.rules.actors[self.actors[i].ty as usize].abilities.cloak.as_ref().unwrap().types.clone();
@@ -244,8 +249,25 @@ impl World {
         let delay = c.cloak_delay;
         let a = &mut self.actors[i];
         a.cloak_timer = a.cloak_timer.max(delay);
+        let was = a.ab.cloaked;
         a.ab.cloaked = false;
         a.detected_by = 0;
+        if was {
+            self.note_cloak(i);
+        }
+    }
+
+    /// CloakChanged for actor `i`, which just cloaked or uncloaked (land
+    /// units: `ab.cloaked`, submarines: `submerged`). Like OpenRA's Cloak, an
+    /// actor that starts out cloaked makes no sound.
+    pub(crate) fn note_cloak(&mut self, i: usize) {
+        let a = &self.actors[i];
+        if self.tick <= a.born + 1 {
+            return;
+        }
+        let on = if a.kind == Kind::Ship { a.submerged } else { a.ab.cloaked };
+        let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+        self.sound.push(SoundEventKind::CloakChanged, ty, x, y, owner, i32::from(on));
     }
 
     /// Called right after actor `i` fired a weapon.
@@ -667,6 +689,9 @@ impl World {
         if a.ab.timer >= delay {
             a.ab.timer = 0;
             a.ab.ammo += 1;
+            // Rearmable: AmmoPool.RearmSound for each magazine, to the owner.
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::Rearmed, ty, x, y, owner, 0);
         }
     }
 

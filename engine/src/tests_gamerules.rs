@@ -251,14 +251,13 @@ fn time_limit_warns_and_the_most_experienced_side_wins() {
     w.sound.set_enabled(true);
     let limit = 10 * 60 * 25;
     assert_eq!(w.time_limit_ticks(), Some(limit as i64));
-    // Five minutes left: a warning with its index in the rules.
+    // Five minutes left: a warning of the rules' minutes, to everyone.
     w.tick = (limit - 5 * 60 * 25 - 1) as u32;
     w.step();
-    let warn = events(&mut w, SoundEventKind::TimeLimit);
+    let warn = events(&mut w, SoundEventKind::TimeLimitWarning);
     assert_eq!(warn.len(), 1);
-    assert_eq!(warn[0][1], 5);
-    let k = warn[0][5] as usize;
-    assert_eq!(w.rules.world.time_limit.warnings[k], 5);
+    assert_eq!((warn[0][1], warn[0][4]), (5, crate::sound_events::ALL_PLAYERS as i32));
+    let k = w.rules.world.time_limit.warnings.iter().position(|&m| m == 5).unwrap();
     assert_eq!(w.rules.world.time_limit.notifications[k], "WarningFiveMinutesRemaining");
     // Time runs out: free for all, the most experienced player wins.
     w.players[1].experience = 50;
@@ -268,8 +267,8 @@ fn time_limit_warns_and_the_most_experienced_side_wins() {
     assert!(w.game_over);
     assert_eq!(w.winner, Some(1));
     assert!(w.players[0].defeated && w.players[2].defeated && !w.players[1].defeated);
-    let expired = events(&mut w, SoundEventKind::TimeLimit);
-    assert!(expired.iter().any(|e| e[1] == 0 && e[5] == -1), "time is up");
+    let expired = events(&mut w, SoundEventKind::TimeLimitExpired);
+    assert_eq!(expired.len(), 1, "time is up");
 }
 
 #[test]

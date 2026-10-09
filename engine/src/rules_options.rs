@@ -111,13 +111,6 @@ pub enum CrateActionKind {
     GrantExternalCondition,
 }
 
-impl CrateActionKind {
-    /// Number of the action in sound events (`SoundEventKind::CrateCollected`).
-    pub fn code(self) -> i32 {
-        self as i32
-    }
-}
-
 #[derive(Deserialize, Clone, Debug)]
 pub(crate) struct RawCrateAction {
     key: String,

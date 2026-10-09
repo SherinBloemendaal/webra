@@ -131,7 +131,8 @@ fn driving_onto_a_crate_collects_it() {
     assert_eq!(w.crates.count, 0);
     let got = events(&mut w, SoundEventKind::CrateCollected);
     assert_eq!(got.len(), 1);
-    assert_eq!((got[0][1], got[0][4], got[0][5]), (0, 0, money as i32), "action 0 of the money crate, for player 0");
+    let cash_code = crate::sound_events::crate_action_code("GiveCashCrateAction");
+    assert_eq!((got[0][1], got[0][4], got[0][5]), (cash_code, 0, money as i32), "the money crate's cash, for player 0");
     // A plane flies over a crate without taking it; infantry walk onto it.
     let heal = ty(&w, "HEALCRATE") as usize;
     let c = w.place_crate(heal, neutral, 20, 30, 0);
@@ -381,7 +382,7 @@ fn deploying_a_factory_makes_it_primary_and_units_leave_it() {
     w.queue_order(Order::Deploy { player: 0, ids: vec![w.make_ref(b)] });
     run(&mut w, 1);
     assert!(w.actors[b].primary && !w.actors[a].primary);
-    assert_eq!(events(&mut w, SoundEventKind::PrimaryBuilding).len(), 1);
+    assert_eq!(events(&mut w, SoundEventKind::PrimaryBuildingSelected).len(), 1);
     let e1 = ty(&w, "E1");
     w.start_production(0, e1, 1);
     let before: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive).collect();

@@ -320,7 +320,7 @@ impl World {
         }
         let left = limit - self.tick as i64;
         if left == 0 {
-            self.sound.push(SoundEventKind::TimeLimit, 0, 0, 0, 0, -1);
+            self.sound.push(SoundEventKind::TimeLimitExpired, 0, 0, 0, crate::sound_events::ALL_PLAYERS, 0);
             self.time_limit_expired();
             return;
         }
@@ -328,7 +328,7 @@ impl World {
         for k in 0..self.rules.world.time_limit.warnings.len() {
             let m = self.rules.world.time_limit.warnings[k] as i64;
             if left == m * 60 * tps {
-                self.sound.push(SoundEventKind::TimeLimit, m as i32, 0, 0, 0, k as i32);
+                self.sound.push(SoundEventKind::TimeLimitWarning, m as i32, 0, 0, crate::sound_events::ALL_PLAYERS, 0);
             }
         }
     }

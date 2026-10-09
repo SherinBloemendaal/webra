@@ -11,6 +11,7 @@ import {
   POSE,
   POSE_STRIDE,
   POSE_CODES,
+  POSE_COUNT,
   MODE,
   CLASSIC_RANGES,
   indexFacing,
@@ -257,7 +258,6 @@ test('the sequences table covers the engine actors and names only files it lists
   // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert art: they keep WebRA's.
   const openraOnly = new Set(['FTRK', 'MH60']);
   for (const a of BASE.actors) {
-    if (a.kind === 'mine') continue;
     assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
@@ -265,7 +265,7 @@ test('the sequences table covers the engine actors and names only files it lists
     assert.ok(seqs, `${id}: image ${entry.image}`);
     for (const part of ['body', 'second']) {
       for (const [pose, name] of Object.entries(entry[part] ?? {})) {
-        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock'].includes(pose), `${id} pose ${pose}`);
+        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock', 'aux-idle', 'aux-move'].includes(pose), `${id} pose ${pose}`);
         const def = seqs[name];
         assert.ok(def, `${id}.${part}.${pose} -> ${name}`);
         assert.ok(files.has(def.file) || def.tilesets, `${def.file} is installed`);
@@ -426,7 +426,7 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
     const t = ACTORS.findIndex((a) => a.id === 'E1');
     const head = entry(2 * t);
     const base = head[12];
-    assert.ok(head[13] === 9, 'nine poses');
+    assert.ok(head[13] === POSE_COUNT, 'a descriptor per pose');
     // The shader's lookup: descriptor of the pose, then first + facing * length + frame.
     const desc = entry(base + POSE.MOVE);
     const [first, length, fps, mode, facings] = desc.slice(8, 13);
@@ -477,7 +477,12 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
   assert.equal(SEQUENCES.tent.idle.file, 'tent.shp');
   assert.equal(SEQUENCES.tent.idle.tilesets, undefined);
   assert.equal(SEQUENCES.sam.turret.file, 'sam.shp');
-  assert.equal(SEQUENCES.silo.idle.file, 'silo.shp');
+  // The storage silo: silo2.shp has nine fill stages and nine damaged ones, the original silo.shp five and five.
+  assert.deepEqual(ACTOR_ART.SILO.body, { idle: 'stages', damaged: 'damaged-stages', make: 'make' });
+  assert.deepEqual([SEQUENCES.silo.stages.file, SEQUENCES.silo.stages.start, SEQUENCES.silo.stages.length], ['silo.shp', 0, 5]);
+  assert.deepEqual([SEQUENCES.silo['damaged-stages'].start, SEQUENCES.silo['damaged-stages'].length], [5, 5]);
+  // The Hind turns OpenRA's large rotor into the original helicopter rotor (same frames).
+  assert.equal(SEQUENCES.hind.rotor.file, 'lrotor.shp');
   assert.equal(SEQUENCES.tran.idle.file, 'tran.shp');
   // Bibs: the big ones (bib1-3) per theater; the small ones are OpenRA's and left out.
   assert.equal(ACTOR_ART.WEAP.bib, 'bib');

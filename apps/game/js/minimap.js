@@ -196,9 +196,11 @@ export class Minimap {
    * @param {number[][]} o.colors team colours (TEAM_COLORS, may be reordered in place)
    * @param {string} [o.biome] the map's biome (terrain colours)
    * @param {import('./radarpings.js').RadarPings} [o.pings] radar pings drawn over the picture
+   * @param {(online: boolean) => void} [o.onRadar] the radar came online or went offline (OpenRA RadarUp / RadarDown)
    */
-  constructor(parent, { game, fog, player, input, colors, biome = 'temperate', pings = null }) {
+  constructor(parent, { game, fog, player, input, colors, biome = 'temperate', pings = null, onRadar = null }) {
     this.pings = pings;
+    this.onRadar = onRadar;
     this.pingsDrawn = false;
     this.game = game;
     this.fog = fog;
@@ -399,6 +401,7 @@ export class Minimap {
       this.online = online;
       this.since = now - (online ? reveal : 1 - reveal) * TRANSITION_MS;
       if (!online) this.dragging = null;
+      this.onRadar?.(online);
     }
     this.state = state;
     this.setLabel(radarLabel(state));

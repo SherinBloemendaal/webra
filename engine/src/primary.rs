@@ -8,7 +8,7 @@
 //! structures that produce any of its production types. New units leave
 //! the primary structure (production.rs `spawn_produced`), else the first
 //! that can make them. The client hears it as the "Primary building
-//! selected" notification (`SoundEventKind::PrimaryBuilding`) and draws the
+//! selected" notification (`SoundEventKind::PrimaryBuildingSelected`) and draws the
 //! PRIMARY tag over the selected structure.
 //!
 //! WebRA's rally order has no force flag, so a forced rally point does not
@@ -58,7 +58,7 @@ impl World {
             }
         }
         let a = &self.actors[i];
-        self.sound.push(SoundEventKind::PrimaryBuilding, a.ty as i32, a.x, a.y, owner, 0);
+        self.sound.push(SoundEventKind::PrimaryBuildingSelected, a.ty as i32, a.x, a.y, owner, 0);
     }
 
     /// OpenRA WithDecoration@primary: the PRIMARY tag at the top of a

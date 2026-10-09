@@ -155,6 +155,8 @@ test('orders and hash', () => {
     { o: 'attack', player: 1, ids: [3], target: 9 },
     { o: 'stop', player: 1, ids: [3] },
     { o: 'cancel_production', player: 1, ty: 0 },
+    { o: 'pause_production', player: 1, ty: 3, paused: true },
+    { o: 'pause_production', player: 1, ty: 3, paused: false },
     { o: 'place', player: 1, ty: 2, cx: 5, cy: 6 },
     { o: 'rally', player: 1, building: 4, x: 1, y: 1 },
     { o: 'sell', player: 1, building: 4 },

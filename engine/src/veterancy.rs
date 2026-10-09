@@ -167,6 +167,10 @@ impl World {
         self.actors[i].xp = xp;
         while (self.actors[i].rank as usize) < levels && xp >= self.level_experience(i, self.actors[i].rank as usize + 1) {
             self.actors[i].rank += 1;
+            // GainsExperience LevelUpNotification, per level, to the owner.
+            let a = &self.actors[i];
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(crate::sound_events::SoundEventKind::LevelUp, ty, x, y, owner, 0);
         }
         // Observer stats (observer.rs).
         let ranks = u32::from(self.actors[i].rank.saturating_sub(before.1));
