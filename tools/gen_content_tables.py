@@ -13,17 +13,25 @@ Input (OpenRA mods/ra, GPL-3.0, copied into data/source, see data/CATALOG.md):
   that borrow another actor's art).
 - data/source/tilesets/*.yaml: the terrain type of every tile of every
   template, used to pick templates for WebRA's terrain types.
+- data/source/bits.txt: the files OpenRA makes and ships itself (mods/ra/bits).
+  A player's own copy of Red Alert never has them, so every sequence that uses
+  one is mapped to the original file it stands in for (ORIGINAL_FILES,
+  ORIGINAL_SEQUENCES), kept when the original has the same frame layout
+  (SAME_LAYOUT), or left out. A bits file nobody decided about is an error.
 - engine/rules.json: the actors WebRA has (id, kind, turret, harvester).
 
 Output:
 - SEQUENCES[image][sequence] = normalized sequence fields (see SequenceDef in
   apps/game/js/content/sequences.js).
 - ACTOR_ART[actor id] = { image, body: {pose: sequence}, second: {pose:
-  sequence} | null, wall?, cameo }: which sequence each pose of the engine's
-  body slot (2t) and second slot (2t + 1: turret, or prone for infantry) uses.
-- TERRAIN[tileset] = { palette, images: [file], tiles: [[image, tile, class,
-  n, e, s, w, pure]] }: single tiles of the RA templates with their terrain
-  class and the classes of their neighbours inside the template.
+  sequence} | null, wall?, overlay?, bib?, cameo }: which sequence each pose of
+  the engine's body slot (2t) and second slot (2t + 1: turret, prone for
+  infantry, or the layer drawn over a structure: `overlay` names its kind,
+  "door" for OpenRA WithProductionDoorOverlay) uses; `bib` is the
+  WithBuildingBib sequence drawn under the structure.
+- TERRAIN[tileset] = { palette, rotation, images: [file], templates: [[image,
+  width, height, role, cells]] }: the templates the tile terrain uses, by role
+  (TERRAIN_ROLES), with the cells of the template that have a tile.
 - TREES: tree images (decorations) composited onto tree cells.
 - RESOURCES: ore and gem overlay sequences (misc.yaml "resources").
 - GRAPHICS_FILES: every file name the tables can use (what the installer keeps).
@@ -50,21 +58,83 @@ TILESETS = {
 # Actors are drawn with the "player" palette, which is temperat.pal on every tileset.
 ACTOR_PALETTE = 'temperat.pal'
 
-# Template categories whose single tiles make sense on their own.
-TILE_CATEGORIES = {'Terrain', 'Debris', 'Cliffs', 'Water Cliffs', 'Beach'}
-# Terrain class per OpenRA terrain type: L land, R rough land, K rock, W water.
-CLASS = {
-    'Clear': 'L',
-    'Beach': 'L',
-    'Road': 'L',
-    'Ore': 'L',
-    'Gems': 'L',
-    'Rough': 'R',
-    'Rock': 'K',
-    'Water': 'W',
-    'River': 'W',
-}
 TREES = ['t01', 't02', 't03', 't05', 't06', 't07', 't08', 't10', 't11', 't12', 't13', 't14', 't15', 't16', 't17']
+
+# OpenRA RotationPaletteEffect (mods/ra/rules/palettes.yaml): the terrain
+# palette indices that cycle to animate water, per tileset.
+WATER_ROTATION = {'TEMPERAT': [96, 7], 'SNOW': [96, 7], 'DESERT': [32, 7]}
+
+# What the tile terrain (apps/game/js/content/terrain.js) draws WebRA's
+# terrain classes with, per tileset: template image names by role. clear:
+# plain ground variants; water: open water; shore: beaches (the runtime
+# matches their tiles to the coastline by their pixels); rough: loose stones
+# on open ground; rock: boulders on open ground (impassable); water-rock:
+# rocks standing in water. Templates made by OpenRA (bits.txt) are left out.
+TERRAIN_ROLES = {
+    'TEMPERAT': {
+        'clear': ['clear1'],
+        'water': ['w1', 'w2'],
+        'shore': 'Beach',
+        'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
+        'rock': ['b1', 'b2', 'b3'],
+        'water-rock': ['sh55', 'sh56'],
+    },
+    'SNOW': {
+        'clear': ['clear1'],
+        'water': ['w1', 'w2'],
+        'shore': 'Beach',
+        'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
+        'rock': ['b1', 'b2', 'b3'],
+        'water-rock': ['sh55', 'sh56'],
+    },
+    'DESERT': {
+        'clear': ['clear1'],
+        'water': ['sh17', 'sh18'],
+        'shore': 'Beach',
+        'rough': ['p01', 'p02', 'p03', 'p07'],
+        'rock': ['p04'],
+        'water-rock': [],
+    },
+}
+
+# OpenRA's own files (bits.txt) -> the original Red Alert file with the same
+# frame layout that a player's copy has (OpenRA added shadows, remap or
+# theater variants to these).
+ORIGINAL_FILES = {
+    'tent.tem': 'tent.shp',
+    'tent.sno': 'tent.shp',
+    'tent.des': 'tent.shp',
+    'tentmake.tem': 'tentmake.shp',
+    'tentmake.sno': 'tentmake.shp',
+    'tentmake.des': 'tentmake.shp',
+    'hbox.des': 'hbox.tem',
+    'hboxmake.des': 'hboxmake.tem',
+    'mslo.des': 'mslo.tem',
+    'mslomake.des': 'mslomake.tem',
+    'sam2.shp': 'sam.shp',
+    'silo2.shp': 'silo.shp',
+    'afldidle.shp': 'afld.shp',
+    'tran2.shp': 'tran.shp',
+    'msloicon2.shp': 'msloicon.shp',
+}
+# Sequences whose OpenRA file has another layout than the original one.
+ORIGINAL_SEQUENCES = {
+    # weap3.shp has ten door frames; the original weap2.shp has four, then four damaged ones.
+    ('weap', 'build-top'): {'file': 'weap2.shp', 'start': 0, 'length': 4},
+}
+# OpenRA's files with no original counterpart: sequences using them are left
+# out (fake structures show the real cameo, OpenRA's own units keep WebRA art,
+# small bibs and the refinery top are not drawn).
+NO_ORIGINAL = {
+    'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
+    'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp',
+} | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
+# OpenRA's files that replace an original of the same name and frame layout
+# (shadows or touch-ups): the player's original works with the same sequence.
+SAME_LAYOUT = {
+    'fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp',
+    'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp',
+}
 
 sys.path.insert(0, SRC)
 import parse  # noqa: E402 (data/source/parse.py: MiniYaml parser and inheritance)
@@ -74,6 +144,25 @@ KNOWN_FIELDS = {
     'Filename', 'TilesetFilenames', 'Start', 'Length', 'Stride', 'Facings', 'Tick', 'ZOffset', 'ShadowStart', 'Frames',
     'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint',
 }
+
+
+def load_bits():
+    with open(os.path.join(SRC, 'bits.txt')) as f:
+        return {line.strip().lower() for line in f if line.strip() and not line.startswith('#')}
+
+
+BITS = load_bits()
+
+
+def original_file(fn, where):
+    """The file a player's copy has for `fn` (None: there is none)."""
+    if fn not in BITS or fn in SAME_LAYOUT:
+        return fn
+    if fn in ORIGINAL_FILES:
+        return ORIGINAL_FILES[fn]
+    if fn in NO_ORIGINAL:
+        return None
+    raise SystemExit(f'{where}: {fn} is made by OpenRA (data/source/bits.txt); map it to an original file or list it in NO_ORIGINAL')
 
 
 def wdist(text):
@@ -157,6 +246,31 @@ def normalize(image, name, tree):
             out['offset'] = parts[:2]
     if out['facings'] == 0 or abs(out['facings']) & (abs(out['facings']) - 1):
         raise SystemExit(f'{image}.{name}: Facings must be a power of two')
+    return to_original(image, name, out)
+
+
+def to_original(image, name, out):
+    """The sequence on the original files (see ORIGINAL_FILES), or None when they cannot draw it."""
+    if (image, name) in ORIGINAL_SEQUENCES:
+        out.update(ORIGINAL_SEQUENCES[(image, name)])
+        out.pop('tilesets', None)
+        return out
+    fn = original_file(out['file'], f'{image}.{name}')
+    if fn is None:
+        return None
+    out['file'] = fn
+    if 'tilesets' in out:
+        tilesets = {}
+        for tid, tfn in out['tilesets'].items():
+            o = original_file(tfn, f'{image}.{name}')
+            if o is None:
+                return None
+            if o != fn:
+                tilesets[tid] = o
+        if tilesets:
+            out['tilesets'] = tilesets
+        else:
+            del out['tilesets']
     return out
 
 
@@ -172,6 +286,22 @@ def actor_images():
     return out
 
 
+def rules_of(aid):
+    """The resolved OpenRA rules of an actor id (case-insensitive), or {}."""
+    for name, tree in parse.rules.items():
+        if name.upper() == aid.upper():
+            return tree
+    return {}
+
+
+def trait(tree, name):
+    """The children of a trait (first instance), or None."""
+    for k, (_v, ch) in tree.items():
+        if k == name or k.startswith(name + '@'):
+            return ch
+    return None
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
@@ -181,6 +311,8 @@ def actor_art(actors, seqs):
         if image not in seqs or name not in seqs[image]:
             return None
         rec = normalize(image, name, seqs[image])
+        if rec is None:
+            return None
         used.setdefault(image, {})[name] = rec
         return name
 
@@ -207,6 +339,19 @@ def actor_art(actors, seqs):
             if wall:
                 entry['wall'] = True
             entry['second'] = poses(image, {'idle': 'turret', 'damaged': 'damaged-turret'}) if a['turret'] else {}
+            tree = rules_of(aid)
+            door = trait(tree, 'WithProductionDoorOverlay')
+            if door is not None and not a['turret']:
+                seq = door.get('Sequence', ['build-top'])[0]
+                second = poses(image, {'idle': seq, 'damaged': 'damaged-' + seq})
+                if 'idle' in second:
+                    entry['second'] = second
+                    entry['overlay'] = 'door'
+            bib = trait(tree, 'WithBuildingBib')
+            if bib is not None and bib.get('HasMinibib', ['False'])[0].lower() != 'true':
+                got = use(image, bib.get('Sequence', ['bib'])[0])
+                if got:
+                    entry['bib'] = got
         elif kind == 'infantry':
             entry['body'] = poses(image, {'idle': 'stand', 'move': 'run', 'attack': 'shoot'})
             entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-shoot'})
@@ -227,51 +372,45 @@ def actor_art(actors, seqs):
 
 
 def terrain_tables():
+    """Templates per tileset by role (TERRAIN_ROLES); OpenRA's own templates (bits.txt) left out."""
     out = {}
     for tid, info in TILESETS.items():
         with open(os.path.join(SRC, 'tilesets', info['file'] + '.yaml')) as f:
             root = parse.parse_miniyaml(f.read())
+        roles = TERRAIN_ROLES[tid]
+        by_name = {}
+        beach = []
+        for _key, (_v, ch) in root['Templates'][1].items():
+            img = ch['Images'][0].split(',')[0].strip().lower()
+            if img in BITS:
+                continue
+            w, h = (int(x) for x in ch['Size'][0].split(','))
+            cells = sorted(int(k) for k in ch.get('Tiles', ['', {}])[1])
+            if not cells:
+                continue
+            tpl = (img, w, h, cells)
+            by_name.setdefault(img.rsplit('.', 1)[0], tpl)
+            if 'Beach' in {c.strip() for c in ch.get('Categories', [''])[0].split(',')}:
+                beach.append(tpl)
         images = []
         index = {}
-        tiles = []
-        for _key, (_v, ch) in root['Templates'][1].items():
-            cats = {c.strip() for c in ch.get('Categories', [''])[0].split(',')}
-            if not cats & TILE_CATEGORIES:
-                continue
-            img = ch['Images'][0].split(',')[0].strip().lower()
-            w, h = (int(x) for x in ch['Size'][0].split(','))
-            types = {int(k): v for k, (v, _) in ch.get('Tiles', ['', {}])[1].items()}
-            pick_any = ch.get('PickAny', ['False'])[0].lower() == 'true'
-            if not types:
-                continue
-            classes = {i: CLASS.get(t) for i, t in types.items()}
-            if pick_any:
-                # Variants of one cell (clear1.tem): every tile stands alone.
-                cells = [(i, classes[i], '????') for i in sorted(classes) if classes[i]]
-                pure = True
+        templates = []
+        for role, names in roles.items():
+            if names == 'Beach':
+                chosen = beach
             else:
-                cells = []
-                uniform = len(set(classes.values())) == 1 and None not in classes.values() and len(classes) == w * h
-                pure = uniform and bool(cats & {'Terrain', 'Debris'})
-                for i, cls in sorted(classes.items()):
-                    if not cls:
-                        continue
-                    x, y = i % w, i // w
-                    sig = ''
-                    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < w and 0 <= ny < h and classes.get(ny * w + nx):
-                            n = classes[ny * w + nx]
-                            sig += 'L' if n == 'R' else n
-                        else:
-                            sig += '?'
-                    cells.append((i, cls, sig))
-            if img not in index:
-                index[img] = len(images)
-                images.append(img)
-            for i, cls, sig in cells:
-                tiles.append([index[img], i, cls, sig, 1 if pure else 0])
-        out[tid] = {'palette': info['palette'], 'images': images, 'tiles': tiles}
+                chosen = []
+                for n in names:
+                    if n not in by_name:
+                        raise SystemExit(f'TERRAIN_ROLES {tid} {role}: no template {n} (or it is made by OpenRA)')
+                    chosen.append(by_name[n])
+            for img, w, h, cells in chosen:
+                if img not in index:
+                    index[img] = len(images)
+                    images.append(img)
+                templates.append([index[img], w, h, role, cells])
+        rot = WATER_ROTATION[tid]
+        out[tid] = {'palette': info['palette'], 'rotation': rot, 'images': images, 'templates': templates}
     return out
 
 
@@ -360,10 +499,11 @@ def main():
         '};',
         '',
         '/**',
-        ' * Single tiles of the RA templates per tileset: [image index, tile index,',
-        ' * class, neighbours (north, east, south, west), pure]. Classes: L land,',
-        ' * R rough, K rock, W water; neighbours "?" lie outside the template.',
-        ' * Pure tiles come from a template of one class (plain ground, water, debris).',
+        ' * Terrain templates per tileset (tools/gen_content_tables.py TERRAIN_ROLES):',
+        ' * [image index, width, height, role, tile indexes the template has]. Roles:',
+        ' * clear, water, shore, rough, rock, water-rock. `rotation` is the first',
+        ' * terrain palette index and count that cycle to animate water (OpenRA',
+        ' * RotationPaletteEffect).',
         ' */',
         'export const TERRAIN = {',
     ]
@@ -371,8 +511,9 @@ def main():
         info = terrain[tid]
         lines.append(f'  {tid}: {{')
         lines.append(f"    palette: {json.dumps(info['palette'])},")
+        lines.append(f"    rotation: {js(info['rotation'])},")
         lines.append(f"    images: {js(info['images'])},")
-        lines.append(f"    tiles: {js(info['tiles'])},")
+        lines.append(f"    templates: {js(info['templates'])},")
         lines.append('  },')
     lines += [
         '};',

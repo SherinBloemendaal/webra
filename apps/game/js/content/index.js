@@ -208,8 +208,9 @@ export class ContentSystem {
   }
 
   /**
-   * Sprite art for a game: `{ slots, filter, poses, report }` for
-   * js/sprites.js buildAtlas (`poses` turns on Game.set_sprite_poses).
+   * Sprite art for a game: `{ slots, layers, filter, poses, report }` for
+   * js/sprites.js buildAtlas (`poses` turns on Game.set_sprite_poses,
+   * `layers` are second slots drawn over structures).
    * Empty slots (WebRA art only) when nothing is installed or chosen.
    */
   art(actors, biome = 'temperate') {
@@ -229,9 +230,9 @@ export class ContentSystem {
         report.packs.push(p.manifest.name);
       }
     }
-    const { slots, source } = combineSlots(actors.length, { packs, original });
+    const { slots, source, layers } = combineSlots(actors.length, { packs, original });
     const pixelArt = slots.size > 0;
-    return { slots, source, filter: pixelArt ? 'nearest' : 'linear', poses: pixelArt, report };
+    return { slots, source, layers, filter: pixelArt ? 'nearest' : 'linear', poses: pixelArt, report };
   }
 
   /** Cameo pictures for js/cameo.js setCameoArt, or null for WebRA's own. */

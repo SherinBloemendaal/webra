@@ -964,7 +964,22 @@ sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
-levels) and gem overlay tiles at 240 (bit 4, 4 x 4).
+levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours
+(bit 8: a pixel with alpha 248 + k shows the k-th of the 7 colours in the
+atlas's last pixel row, turned 6.25 times a second on the render clock like
+OpenRA's RotationPaletteEffect). With tile terrain a cell names its tile as
+R + 256 G (map tiles 0..191 and 256..1023).
+
+Layers over structures (`Game.set_building_overlays`, one value per actor
+type): a value below 4096 is the still frame of WebRA's animated layer
+(slot `2t + 1` animates, the still frame is drawn without power or under
+fog). A value of 4096 or more marks a layer that is a pose table (the
+original War Factory roof and door, OpenRA WithProductionDoorOverlay): with
+poses on, the engine draws slot `2t + 1` with the structure's pose (idle,
+damaged, still), leaves it out while the structure is built (make), and
+gives it the make pose with `age` = ticks since the youngest unit of the
+owner within two cells of an exit appeared (the door opens and closes once).
+Under fog the value itself (the layer's still pose) is drawn.
 
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
