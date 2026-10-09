@@ -11,9 +11,12 @@
 // password-protected lobby with two signed-in humans, an AI and a spectator,
 // start, the lockstep relay, hash checks, desync reporting, a spectator
 // refused for sending orders, a player reconnecting with its rejoin key
-// (order log, sync, resume), leaving, and the stall drop.
+// (order log, sync, resume), leaving, and the stall drop. The play gate:
+// anonymous and pending visitors get no game files, an active account gets
+// them with a play pass, signing out clears it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
@@ -118,6 +121,189 @@ class Client {
   }
 }
 
+/** One raw request (the path is sent exactly as given) without cookies: { status, location, body }. */
+function rawRequest(method, path, headers = {}) {
+  const base = new URL(BASE);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: base.hostname, port: base.port, method, path, headers: { Host: base.host, ...headers } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, location: res.headers.location ?? null, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/**
+ * Spellings of game paths (percent-encoded letters and slashes, double
+ * encoding, double slashes, dot segments, case, trailing dots and
+ * semicolons, backslashes, overlong UTF-8) with every method and a Range
+ * header: none may return a game file without the gate. Static Assets
+ * answers non-canonical spellings with a redirect to the canonical path
+ * (which the gate refuses, checked by following it); the rest are refused
+ * by the gate or are 404 / 405.
+ */
+async function pathVariants() {
+  const VARIANTS = [
+    '/%70lay/', '/%70lay/index.html', '/%70lay/js/main.js', '/%70lay/pkg/webra_sim_bg.wasm', '/pl%61y/js/main.js', '/%50LAY/js/main.js',
+    '/%2570lay/js/main.js', '/play%2Findex.html', '/play%2fjs%2fmain.js', '/%2fplay/js/main.js', '/%2Fplay%2Fjs%2Fmain.js',
+    '//play/', '//play/js/main.js', '///play//js//main.js', '/PLAY/', '/Play/js/main.js', '/pLaY/pkg/webra_sim_bg.wasm',
+    '/play/./js/main.js', '/./play/js/main.js', '/x/../play/js/main.js', '/lib/../play/js/main.js', '/lib/%2e%2e/play/js/main.js',
+    '/lib/%2E%2E%2Fplay/js/main.js', '/play/..%2fplay/js/main.js', '/api/..%2fplay/js/main.js', '/play.', '/play./js/main.js',
+    '/play;x/js/main.js', '/play%3Bx/js/main.js', '/play%20/js/main.js', '/play\\js\\main.js', '/play%5Cjs%5Cmain.js',
+    '/play/js/main.js;', '/play/js/main.js.', '/play/js/main.js/', '/%C0%AFplay/js/main.js', '/play%C0%AFjs/main.js',
+    '/play/js/main.js%00', '/play/pkg/webra_sim_bg.wasm',
+  ];
+  const WASM_MAGIC = Buffer.from([0x00, 0x61, 0x73, 0x6d]);
+  const gameLike = (body) => body.includes(WASM_MAGIC) || /\bimport\b|<canvas|webra_sim/.test(body.toString('latin1'));
+  const counts = {};
+  for (const path of VARIANTS) {
+    for (const method of ['GET', 'HEAD', 'OPTIONS', 'POST']) {
+      for (const headers of [{}, { Range: 'bytes=0-3' }, { 'Sec-Fetch-Mode': 'navigate', Accept: 'text/html' }]) {
+        const r = await rawRequest(method, path, headers);
+        const what = `${method} ${path} ${JSON.stringify(headers)}`;
+        counts[r.status] = (counts[r.status] ?? 0) + 1;
+        assert.ok(![200, 206, 304].includes(r.status), `${what}: ${r.status} without the gate`);
+        assert.ok(!gameLike(r.body), `${what}: game content in a ${r.status}`);
+        if (r.status >= 300 && r.status < 400) {
+          const target = new URL(r.location, BASE);
+          assert.equal(target.origin, ORIGIN, `${what}: redirect stays on this site`);
+          // The gate's own redirect to sign in (a page load): nothing to follow.
+          if (target.pathname === '/account/') {
+            assert.match(target.search, /^\?returnTo=%2Fplay/, `${what}: sign in, then back to the game`);
+            continue;
+          }
+          // Follow the redirect (twice at most), still without cookies: refused or sent to sign in.
+          let next = await rawRequest(method === 'HEAD' ? 'HEAD' : 'GET', target.pathname + target.search, headers);
+          if (next.status >= 300 && next.status < 400 && !/^\/account\//.test(next.location ?? '')) {
+            const t2 = new URL(next.location, BASE);
+            next = await rawRequest('GET', t2.pathname + t2.search, headers);
+          }
+          assert.ok([302, 401, 403, 404, 405].includes(next.status), `${what} -> ${r.location}: ${next.status}`);
+          if (next.status === 302) assert.match(next.location ?? '', /^\/account\/\?returnTo=%2Fplay/, `${what}: the redirect is the sign-in`);
+          assert.ok(!gameLike(next.body), `${what} -> ${r.location}: game content`);
+        }
+      }
+    }
+  }
+  console.log(`  path variants: ${VARIANTS.length} spellings x 4 methods x 3 header sets, statuses ${JSON.stringify(counts)}`);
+}
+
+/** The play gate (src/playgate.js): who gets /play, the pass, sign-out. */
+async function playGate(ADMIN, HOST) {
+  const site = await api('/api/site');
+  assert.equal(site.body.gameRequiresAccount, true, 'the game needs an account by default');
+  const NAV = { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', Accept: 'text/html' };
+  const SUB = { 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', Accept: '*/*' };
+  const WASM = '/play/pkg/webra_sim_bg.wasm';
+  // Node's fetch replaces Sec-Fetch-* with its own values (forbidden request
+  // headers): requests are sent with node:http, as a browser would send them.
+  const get = (path, headers, cookie = null) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(BASE + path, { headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const h = new Headers();
+          for (const [k, v] of Object.entries(res.headers)) for (const one of [].concat(v)) h.append(k, one);
+          resolve(new Response(res.statusCode === 304 || res.statusCode === 204 ? null : Buffer.concat(chunks), { status: res.statusCode, headers: h }));
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  const passOf = (res) => res.headers.getSetCookie().find((c) => /^webra_play=/.test(c)) ?? null;
+  const securityHeaders = (res, what) => {
+    assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'self'/, `${what}: CSP`);
+    assert.equal(res.headers.get('cross-origin-opener-policy'), 'same-origin', `${what}: COOP`);
+    assert.equal(res.headers.get('cross-origin-embedder-policy'), 'require-corp', `${what}: COEP`);
+    assert.equal(res.headers.get('cross-origin-resource-policy'), 'same-origin', `${what}: CORP`);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff', `${what}: nosniff`);
+  };
+
+  // Anonymous: page loads go to sign in, files are refused without content.
+  for (const [path, target] of [
+    ['/play/', '/play/'],
+    ['/play', '/play'],
+    ['/play/editor/', '/play/editor/'],
+    ['/play/?join=abc', '/play/?join=abc'],
+  ]) {
+    const r = await get(path, NAV);
+    assert.equal(r.status, 302, path);
+    assert.equal(r.headers.get('location'), `/account/?returnTo=${encodeURIComponent(target)}`, path);
+    securityHeaders(r, `redirect ${path}`);
+  }
+  for (const path of [WASM, '/play/js/main.js', '/play/js/sim/worker.js', '/play/protocol/accounts.js', '/play/index.html']) {
+    const r = await get(path, SUB);
+    assert.equal(r.status, 401, path);
+    const body = await r.json();
+    assert.equal(body.error.code, 'unauthenticated', path);
+    assert.equal(r.headers.get('cache-control'), 'no-store', path);
+    securityHeaders(r, `refusal ${path}`);
+  }
+  await pathVariants();
+
+  // The account page's modules stay public (/lib/), the gated copies do not.
+  const lib = await get('/lib/js/account/api.js', SUB);
+  assert.equal(lib.status, 200, 'the account client is public under /lib/');
+  assert.match(lib.headers.get('content-type') ?? '', /javascript/);
+  assert.equal((await get('/lib/js/main.js', SUB)).status, 404, 'nothing of the game itself under /lib/');
+
+  // A pending account: refused.
+  const PENDING = `Pending${RUN}`;
+  await signupAccount(PENDING);
+  const pending = await get(WASM, SUB, cookies.get(PENDING));
+  assert.equal(pending.status, 403);
+  assert.equal((await pending.json()).error.code, 'account_inactive');
+  assert.equal((await get('/play/', NAV, cookies.get(PENDING))).status, 302);
+
+  // An active account: the page and the engine, private, with a pass that then serves without the D1 check.
+  const host = cookies.get(HOST);
+  const page = await get('/play/', NAV, host);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type') ?? '', /text\/html/);
+  assert.match(page.headers.get('cache-control') ?? '', /^private\b/);
+  assert.match(page.headers.get('vary') ?? '', /Cookie/i);
+  securityHeaders(page, 'game page');
+  const passCookie = passOf(page);
+  assert.ok(passCookie, 'a play pass is set');
+  assert.match(passCookie, /HttpOnly/);
+  assert.match(passCookie, /SameSite=Lax/);
+  assert.match(passCookie, /Max-Age=600/);
+  const pass = passCookie.split(';')[0];
+  const wasm = await get(WASM, SUB, `${host}; ${pass}`);
+  assert.equal(wasm.status, 200);
+  const bytes = new Uint8Array(await wasm.arrayBuffer());
+  assert.deepEqual([...bytes.slice(0, 4)], [0x00, 0x61, 0x73, 0x6d], 'the engine itself');
+  assert.equal(passOf(wasm), null, 'no new pass while the old one is valid');
+  assert.match(wasm.headers.get('cache-control') ?? '', /^private\b/);
+  securityHeaders(wasm, 'engine');
+  const worker = await get('/play/js/sim/worker.js', SUB, `${host}; ${pass}`);
+  assert.equal(worker.status, 200);
+  await worker.arrayBuffer();
+  // The admin passes too.
+  assert.equal((await get(WASM, SUB, cookies.get(ADMIN))).status, 200);
+
+  // Signing out clears the pass; the old pass alone opens nothing.
+  // (The pending account from above, approved: signups are rate limited per address.)
+  const LEAVER = PENDING;
+  const leaver = (await api('/api/auth/me', {}, LEAVER)).body.user;
+  assert.equal((await api(`/api/admin/users/${leaver.id}/approve`, { method: 'POST', body: '{}' }, ADMIN)).status, 200);
+  const before = await get('/play/', NAV, cookies.get(LEAVER));
+  assert.equal(before.status, 200);
+  await before.arrayBuffer();
+  const leaverPass = passOf(before).split(';')[0];
+  const out = await fetch(`${BASE}/api/auth/logout`, { method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-CSRF': '1', Cookie: `${cookies.get(LEAVER)}; ${leaverPass}` } });
+  assert.equal(out.status, 204);
+  assert.match(passOf(out) ?? '', /^webra_play=;.*Max-Age=0/, 'sign-out clears the pass');
+  assert.equal((await get(WASM, SUB, leaverPass)).status, 401, 'a pass without its session opens nothing');
+  // A client that keeps both cookies after signing out (a browser clears them) keeps the
+  // files only for the rest of the pass lifetime: the documented bound (docs/security.md).
+  assert.equal((await get(WASM, SUB, `${cookies.get(LEAVER)}; ${leaverPass}`)).status, 200, 'within the pass lifetime');
+  assert.equal((await get('/play/js/main.js', SUB, cookies.get(LEAVER))).status, 401, 'without the pass, the signed-out session opens nothing');
+}
+
 async function main() {
   // ---- Accounts ------------------------------------------------------------------
   const v = await api('/api/version');
@@ -158,6 +344,8 @@ async function main() {
     assert.equal(r.status, 200);
     assert.equal(r.body.user.canPlayOnline, true);
   }
+  await playGate(ADMIN, HOST);
+
   const stats = await api('/api/admin/stats', {}, ADMIN);
   assert.equal(stats.status, 200);
   assert.equal(stats.body.services.email, false);

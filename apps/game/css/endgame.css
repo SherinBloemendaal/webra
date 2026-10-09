@@ -1,0 +1,362 @@
+/* Defeat, victory and the end of the game (js/endgame.js) and the end-game
+   statistics screen (js/stats.js). Colours come from css/theme.css; player
+   colours arrive as --player-color (set through the CSSOM, never inline). */
+
+/* ---- The end-game dialog --------------------------------------------------- */
+
+.endgame-card {
+  width: min(460px, 100%);
+}
+
+.endgame-card[data-kind='defeat'] {
+  border-top-color: var(--ui-bad);
+}
+
+.endgame-card[data-kind='victory'] {
+  border-top-color: var(--ui-ok);
+}
+
+.endgame-card .tagline {
+  margin-bottom: 14px;
+}
+
+/* ---- Statistics screen ---------------------------------------------------- */
+
+#stats-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: safe center;
+  overflow: auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: var(--ui-scan), rgba(0, 0, 0, 0.7);
+}
+
+#stats-screen[hidden] {
+  display: none;
+}
+
+.menu-card.stats-card {
+  width: min(1040px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stats-card h1 {
+  font-size: 28px;
+}
+
+.stats-head {
+  flex: none;
+}
+
+.stats-ranking {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: rank;
+}
+
+.stats-rank {
+  counter-increment: rank;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-left: 4px solid var(--player-color, var(--ui-accent));
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  font-size: var(--ui-fs-m);
+}
+
+.stats-rank::before {
+  content: counter(rank) '.';
+  color: var(--ui-muted);
+  font-family: var(--ui-font-mono);
+}
+
+.stats-rank-score {
+  font: 700 var(--ui-fs-m) var(--ui-font-mono);
+  color: var(--ui-money);
+}
+
+.stats-rank-out .stats-rank-name {
+  color: var(--ui-muted);
+}
+
+.stats-badge {
+  padding: 0 5px;
+  background: var(--ui-ok);
+  color: #06120a;
+  border-radius: var(--ui-radius);
+  font: 700 var(--ui-fs-xs) / 1.6 var(--ui-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stats-tabs {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 14px 0 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.menu-card button.stats-tab {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: var(--ui-fs-s);
+  border-bottom-width: 0;
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+}
+
+.menu-card button.stats-tab[aria-selected='true'] {
+  background: var(--ui-accent-lo);
+  color: var(--ui-text);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
+
+.stats-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 0 4px;
+}
+
+/* Wide tables scroll sideways inside the card (phones), never the page. */
+.stats-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-m);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--ui-muted);
+  padding-bottom: 4px;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ui-line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.stats-table thead th {
+  color: var(--ui-muted);
+  font-weight: 600;
+  font-size: var(--ui-fs-s);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stats-table .num {
+  text-align: right;
+}
+
+.stats-table tr.stats-out td {
+  color: var(--ui-muted);
+}
+
+.stats-player {
+  border-left: 4px solid var(--player-color, transparent);
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.stats-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.stats-list {
+  padding: 8px 10px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+.menu-card .stats-list h2 {
+  margin: 0 0 6px;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-s);
+}
+
+.stats-types {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ui-fs-m);
+}
+
+.stats-types li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--ui-line);
+}
+
+.stats-types .num {
+  font-family: var(--ui-font-mono);
+  color: var(--ui-muted);
+}
+
+.menu-card label.stats-graph-pick {
+  justify-content: flex-start;
+  margin: 0 0 8px;
+}
+
+.stats-graph {
+  margin: 0;
+}
+
+.stats-canvas-wrap {
+  position: relative;
+}
+
+.stats-canvas {
+  display: block;
+  width: 100%;
+  height: clamp(180px, 42vh, 320px);
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  touch-action: pan-y;
+}
+
+.stats-tip {
+  position: absolute;
+  top: 8px;
+  left: var(--tip-x, 0);
+  transform: translateX(10px);
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(6, 8, 11, 0.92);
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  font: var(--ui-fs-s) / 1.4 var(--ui-font-mono);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.stats-tip-left {
+  transform: translateX(calc(-100% - 10px));
+}
+
+.stats-tip[hidden] {
+  display: none;
+}
+
+.stats-tip-row {
+  border-left: 3px solid var(--player-color, transparent);
+  padding-left: 5px;
+}
+
+.stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ui-fs-m);
+}
+
+.stats-legend-item::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--player-color, #fff);
+}
+
+.stats-graph-table {
+  margin-top: 10px;
+}
+
+.stats-graph-table summary {
+  cursor: pointer;
+  color: var(--ui-muted);
+}
+
+.stats-graph-table .stats-scroll {
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.stats-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.menu-card .stats-actions button {
+  width: auto;
+  margin: 0;
+}
+
+.observer-stats-button {
+  border-left-color: var(--ui-accent, #d9b23a);
+}
+
+@media (max-width: 560px) {
+  .menu-card.stats-card {
+    padding: 16px 12px 14px;
+  }
+
+  .stats-card h1 {
+    font-size: 22px;
+  }
+
+  .menu-card button.stats-tab {
+    padding: 5px 8px;
+  }
+
+  .stats-table th,
+  .stats-table td {
+    padding: 3px 6px;
+  }
+
+  .stats-actions {
+    justify-content: stretch;
+  }
+
+  .menu-card .stats-actions button {
+    flex: 1 1 auto;
+  }
+}

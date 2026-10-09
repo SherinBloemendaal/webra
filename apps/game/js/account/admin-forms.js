@@ -5,6 +5,7 @@
 // account accepts. DOM only through createElement and textContent.
 
 import { GROUPS, checkValue, specOf } from '../registry.js';
+import { switchInput } from '../ui/controls.js';
 
 /** How a setting is edited: the control kind and its attributes. */
 export function controlFor(spec) {
@@ -13,6 +14,12 @@ export function controlFor(spec) {
       return { kind: 'number', attrs: { type: 'number', min: String(spec.min), max: String(spec.max), step: String(spec.step ?? 'any'), inputmode: 'decimal' } };
     case 'integer':
       return { kind: 'number', attrs: { type: 'number', min: String(spec.min), max: String(spec.max), step: '1', inputmode: 'numeric' } };
+    case 'scale':
+      return {
+        kind: 'text',
+        attrs: { type: 'text', spellcheck: 'false', autocapitalize: 'off' },
+        hint: `"auto", or a number from ${spec.min} to ${spec.max} (1 = 100%).`,
+      };
     case 'boolean':
       return { kind: 'checkbox', attrs: { type: 'checkbox' } };
     case 'choice':
@@ -25,6 +32,8 @@ export function controlFor(spec) {
       return { kind: 'textarea', rows: 3, hint: 'One pack per line, highest priority first: on or off, then the pack id ("on desert tiles|someone").' };
     case 'json':
       return { kind: 'textarea', rows: 5, hint: 'A JSON object.' };
+    case 'presets':
+      return { kind: 'textarea', rows: 5, hint: 'A JSON list of saved game modes: [{ "name": ..., "options": { every mode option } }].' };
     default:
       return { kind: 'text', attrs: { type: 'text' } };
   }
@@ -42,6 +51,7 @@ export function formatValue(spec, value) {
     case 'packs':
       return (value ?? []).map((p) => `${p.enabled ? 'on' : 'off'} ${p.id}`).join('\n');
     case 'json':
+    case 'presets':
       return value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
     default:
       return value === null || value === undefined ? '' : String(value);
@@ -59,6 +69,12 @@ export function parseValue(spec, input) {
     case 'integer': {
       if (String(input).trim() === '') return { error: 'needs a number' };
       value = Number(input);
+      break;
+    }
+    case 'scale': {
+      const text = String(input).trim();
+      if (text === '') return { error: 'needs "auto" or a number' };
+      value = text.toLowerCase() === 'auto' ? 'auto' : Number(text);
       break;
     }
     case 'boolean':
@@ -93,9 +109,10 @@ export function parseValue(spec, input) {
       }
       break;
     }
-    case 'json': {
+    case 'json':
+    case 'presets': {
       const text = String(input).trim();
-      if (!text) value = spec.nullable ? null : {};
+      if (!text) value = spec.type === 'presets' ? [] : spec.nullable ? null : {};
       else {
         try {
           value = JSON.parse(text);
@@ -151,10 +168,11 @@ export function buildSettingsForm(doc, { onInput = () => {}, groups = Object.key
       } else if (c.kind === 'textarea') {
         input = mk('textarea', { id, rows: String(c.rows), spellcheck: 'false' });
         input.value = formatValue(spec, current);
+      } else if (c.kind === 'checkbox') {
+        input = switchInput({ id, checked: formatValue(spec, current) });
       } else {
         input = mk('input', { id, ...c.attrs });
-        if (c.kind === 'checkbox') input.checked = formatValue(spec, current);
-        else input.value = formatValue(spec, current);
+        input.value = formatValue(spec, current);
       }
       if (readOnly) input.setAttribute('disabled', '');
       const error = mk('p', { class: 'form-status form-status-error', id: `${id}-error`, hidden: '' });

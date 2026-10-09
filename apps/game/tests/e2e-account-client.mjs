@@ -14,6 +14,7 @@ import { SettingsSync } from '../js/account/sync.js';
 import { createRegistry, checkDocument } from '../js/registry.js';
 import { apiQuery, auditParams, auditFilter, UsersTable } from '../js/account/admin-state.js';
 import { buildSettingsForm } from '../js/account/admin-forms.js';
+import { probePlayAccess } from '../js/account/gate.js';
 import { installDom, uninstallDom } from './dom-fixtures.mjs';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
@@ -82,10 +83,18 @@ await admin.api.users(apiQuery(new UsersTable({ status: 'pending_approval', role
 const detail = await admin.api.user(p.id);
 assert.ok(Array.isArray(detail.ips) && Array.isArray(detail.sessions) && detail.settings);
 step('stats, users with search, sort, filters, user detail');
+/** The game's probe of the play gate (js/account/gate.js) with this browser's cookies. */
+const probe = (b) => probePlayAccess({ fetchImpl: (_url, init) => b.raw('/play/', init) });
 if (p.status === 'pending_approval' || p.status === 'pending_email') {
+  assert.equal(p.canPlay, !site.gameRequiresAccount, 'pending: the game waits while it needs an account');
+  if (site.gameRequiresAccount) assert.equal(await probe(player), 'forbidden');
   await admin.api.approveUser(p.id);
   step('approved');
 }
+assert.equal((await player.api.me()).user.canPlay, true);
+assert.equal(await probe(player), 'ok');
+assert.equal(await probe(browser()), site.gameRequiresAccount ? 'signin' : 'ok');
+step('play gate: canPlay and the game probe follow the account');
 await admin.api.updateUser(p.id, { flags: ['content_autoinstall'], displayName: 'Client Tester 2' });
 assert.equal((await player.api.account()).user.canUseContentRelay, site.contentRelay);
 step('flag set: canUseContentRelay follows');
@@ -157,6 +166,13 @@ await admin.api.patchSite(adminSite.version, { motd: `e2e ${RUN}` });
 await rejects(admin.api.patchSite(adminSite.version, { motd: '' }), 'version_conflict');
 const after = await admin.api.adminSite();
 await admin.api.patchSite(after.version, { motd: adminSite.settings.motd });
+// The play gate switch: off opens the game to everyone at once (this server cleared its cache), on closes it again.
+const gate = await admin.api.adminSite();
+await admin.api.patchSite(gate.version, { gameRequiresAccount: false });
+assert.equal((await browser().api.site()).gameRequiresAccount, false);
+assert.equal(await probe(browser()), 'ok');
+await admin.api.patchSite((await admin.api.adminSite()).version, { gameRequiresAccount: gate.settings.gameRequiresAccount });
+assert.equal(await probe(browser()), gate.settings.gameRequiresAccount ? 'signin' : 'ok');
 const audit = await admin.api.audit(auditParams(auditFilter({ action: 'site.update', since: new Date().toISOString().slice(0, 10), until: new Date().toISOString().slice(0, 10) })));
 assert.ok(audit.entries.length >= 2);
 await admin.api.audit(auditParams(auditFilter({ actor: me.id, target: 'site' })));

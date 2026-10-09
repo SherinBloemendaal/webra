@@ -215,3 +215,25 @@ fn animated_building_layers_follow_the_overlay_table_and_stop_on_low_power() {
     w.spawn_building(powr, 0, 40, 40).unwrap();
     assert_eq!(count(&w, (powr * 2 + 1) as f32), 0);
 }
+
+#[test]
+fn damaged_units_buildings_and_walls_show_health_bars_by_default() {
+    let mut w = world();
+    assert_eq!(w.render_opts.health_bars, HealthBars::Damaged, "the default shows every damaged actor");
+    let powr = ty(&w, "POWR");
+    let plant = w.spawn_building(powr, 0, 30, 30).expect("room for a power plant");
+    let sbag = ty(&w, "SBAG");
+    let wall = w.spawn_building(sbag, 0, 36, 30).expect("room for a sandbag");
+    let tank = unit(&mut w, "2TNK", 0, 40, 30);
+    w.update_vision();
+    assert!(bar_frames(&render(&w, &[]).1).is_empty(), "nothing is damaged yet");
+    for i in [plant, wall, tank] {
+        w.actors[i].hp -= 1;
+    }
+    assert_eq!(bar_frames(&render(&w, &[]).1).len(), 3, "a damaged building, wall piece and unit each get a bar");
+    // "All" adds the undamaged actors, but never undamaged wall pieces.
+    w.actors[wall].hp += 1;
+    w.render_opts.health_bars = HealthBars::All;
+    let (x, _, s, _) = w.selection_box(wall, 1.0);
+    assert!(bar_frames(&render(&w, &[]).1).iter().all(|b| b[0] != x - s / 2.0 - 1.0), "no bar on a whole wall piece");
+}

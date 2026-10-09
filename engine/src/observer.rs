@@ -3,12 +3,15 @@
 //! in replays.
 //!
 //! The statistics are deterministic (updated by the simulation) but are not
-//! part of `World::state_hash`. The spectator view is render only: the
+//! part of `World::state_hash`. Besides the running counters the engine keeps
+//! a time series per player (`StatsHistory`, one sample every
+//! `STATS_SAMPLE_TICKS`), so every peer and every replay of a game shows the
+//! same graphs on the end-game statistics screen (`Game::observer_report`). The spectator view is render only: the
 //! `World::render_all` flag is set by `Game::build_render` for the duration
 //! of that call and never while the simulation runs.
 
-use crate::rules::Kind;
-use crate::world::World;
+use crate::rules::{Kind, QUEUE_COUNT};
+use crate::world::{World, TICKS_PER_SECOND};
 use crate::Game;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -17,6 +20,9 @@ use wasm_bindgen::prelude::*;
 /// Player index meaning "observer" for `Game::build_render` and `Game::fog_ptr`:
 /// the whole map, every actor live.
 pub const OBSERVER: u8 = 255;
+
+/// Ticks between two samples of the statistics history (5 s of game time).
+pub const STATS_SAMPLE_TICKS: u32 = 5 * TICKS_PER_SECOND;
 
 /// Counters of one player.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -31,6 +37,90 @@ pub struct PlayerStats {
     pub buildings_lost: u32,
     /// Income from harvesting and supply trucks.
     pub earned: i64,
+    /// Ore and gems stored at refineries (part of `earned`).
+    pub harvested_ore: i64,
+    pub harvested_gems: i64,
+    /// Money spent: production (cancelled items refunded) and repairs.
+    pub spent: i64,
+    /// Of `spent`: repairs at service depots and with the repair button (repair.rs).
+    pub repair_spent: i64,
+    /// Money back from selling structures.
+    pub sold: i64,
+    /// Value (cost) of the enemy actors this player destroyed, and of its own actors lost.
+    pub assets_destroyed: i64,
+    pub assets_lost: i64,
+    /// Hit points of damage dealt to non-allied actors, and taken by own actors.
+    pub damage_dealt: i64,
+    pub damage_taken: i64,
+    /// Produced and placed: infantry and vehicles, structures, aircraft, ships.
+    pub units_built: u32,
+    pub buildings_built: u32,
+    pub aircraft_built: u32,
+    pub ships_built: u32,
+    /// Total cost of everything produced.
+    pub built_value: i64,
+    /// Experience gained by own actors (veterancy.rs) and rank promotions.
+    pub experience: i64,
+    pub promotions: u32,
+    /// Support powers fired.
+    pub powers_used: u32,
+    /// Orders given through the order log (players' actions; AI decisions are not orders here).
+    pub orders: u32,
+    /// Ticks each production queue spent building (paid progress), per `QueueType`.
+    pub production_ticks: [u32; QUEUE_COUNT],
+}
+
+impl PlayerStats {
+    /// Score of the end-game screen: the value destroyed plus half the value built.
+    pub fn score(&self) -> i64 {
+        self.assets_destroyed + self.built_value / 2
+    }
+}
+
+/// Per actor type counters of one player (actor type index -> count).
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct PlayerDetail {
+    pub built: BTreeMap<u16, u32>,
+    /// Enemy actors this player destroyed, by their type.
+    pub killed: BTreeMap<u16, u32>,
+    /// Own actors lost, by type.
+    pub lost: BTreeMap<u16, u32>,
+    /// Support powers fired, by power key.
+    pub powers: BTreeMap<String, u32>,
+}
+
+/// One point of a player's statistics history (saturated to i32).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct StatsSample {
+    pub funds: i32,
+    pub earned: i32,
+    pub spent: i32,
+    pub army: i32,
+    pub kills: i32,
+    pub deaths: i32,
+    pub destroyed: i32,
+    pub lost: i32,
+    pub harvested: i32,
+    pub power_gen: i32,
+    pub power_use: i32,
+    pub orders: i32,
+    pub damage_dealt: i32,
+}
+
+/// The statistics time series: the same ticks for every player.
+#[derive(Clone, Debug)]
+pub struct StatsHistory {
+    /// Ticks between samples (also sampled at tick 1 and when the game ends).
+    pub interval: u32,
+    pub ticks: Vec<u32>,
+    /// Per player slot, aligned with `ticks`.
+    pub samples: Vec<Vec<StatsSample>>,
+}
+
+impl Default for StatsHistory {
+    fn default() -> Self {
+        StatsHistory { interval: STATS_SAMPLE_TICKS, ticks: Vec::new(), samples: Vec::new() }
+    }
 }
 
 /// World-level observer state (part of `World`).
@@ -38,6 +128,14 @@ pub struct PlayerStats {
 pub struct ObserverStats {
     /// Per player slot; grown on demand.
     pub players: Vec<PlayerStats>,
+    /// Per player slot, per actor type; grown on demand.
+    pub details: Vec<PlayerDetail>,
+    /// Time series for the graphs.
+    pub history: StatsHistory,
+    /// Tick each player was defeated at (per player slot).
+    pub defeated_at: Vec<Option<u32>>,
+    /// Tick the game ended at (a winner was decided).
+    pub end_tick: Option<u32>,
     /// Owner of the weapon whose damage is being applied right now; kills
     /// in that window are credited to it. None outside weapon damage
     /// (crashes, cheats, abilities that destroy their own unit).
@@ -45,6 +143,16 @@ pub struct ObserverStats {
     /// Attacker of airborne planes that were shot down and are still falling,
     /// by actor reference; the kill counts when the wreck hits the ground.
     shot_down: BTreeMap<u32, Option<u8>>,
+}
+
+fn sat(v: i64) -> i32 {
+    v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn count_map(m: &BTreeMap<u16, u32>, w: &World) -> serde_json::Value {
+    let out: serde_json::Map<String, serde_json::Value> =
+        m.iter().filter_map(|(&t, &n)| w.rules.actors.get(t as usize).map(|a| (a.id.clone(), json!(n)))).collect();
+    serde_json::Value::Object(out)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,6 +173,173 @@ impl World {
             self.observer.players.resize(p + 1, PlayerStats::default());
         }
         &mut self.observer.players[p]
+    }
+
+    fn detail_mut(&mut self, player: u8) -> &mut PlayerDetail {
+        let p = player as usize;
+        if self.observer.details.len() <= p {
+            self.observer.details.resize(p + 1, PlayerDetail::default());
+        }
+        &mut self.observer.details[p]
+    }
+
+    /// Per type counters of `player` (empty when nothing happened to it yet).
+    pub fn player_detail(&self, player: u8) -> PlayerDetail {
+        self.observer.details.get(player as usize).cloned().unwrap_or_default()
+    }
+
+    /// Production paid `amount` for one tick of progress in queue `qi`.
+    pub(crate) fn note_production(&mut self, player: u8, qi: usize, amount: i32) {
+        let s = self.stats_mut(player);
+        s.spent += i64::from(amount.max(0));
+        if let Some(t) = s.production_ticks.get_mut(qi) {
+            *t += 1;
+        }
+    }
+
+    /// A queued item was cancelled (or became unbuildable) and `paid` refunded.
+    pub(crate) fn note_production_refund(&mut self, player: u8, paid: i32) {
+        self.stats_mut(player).spent -= i64::from(paid.max(0));
+    }
+
+    /// A repair step cost `price`.
+    pub(crate) fn note_repair(&mut self, player: u8, price: i32) {
+        let s = self.stats_mut(player);
+        s.spent += i64::from(price.max(0));
+        s.repair_spent += i64::from(price.max(0));
+    }
+
+    /// Selling a structure gave `refund` back.
+    pub(crate) fn note_sold(&mut self, player: u8, refund: i32) {
+        self.stats_mut(player).sold += i64::from(refund.max(0));
+    }
+
+    /// A unit left its factory or a structure was placed.
+    pub(crate) fn note_built(&mut self, player: u8, ty: u16) {
+        let Some(info) = self.rules.actors.get(ty as usize) else { return };
+        let (kind, cost) = (info.kind, i64::from(info.cost));
+        let s = self.stats_mut(player);
+        match kind {
+            Kind::Building => s.buildings_built += 1,
+            Kind::Aircraft => s.aircraft_built += 1,
+            Kind::Ship => s.ships_built += 1,
+            Kind::Infantry | Kind::Vehicle => s.units_built += 1,
+            Kind::Mine => return,
+        }
+        s.built_value += cost;
+        *self.detail_mut(player).built.entry(ty).or_insert(0) += 1;
+    }
+
+    /// `amount` hit points of damage to actor `i` (its owner takes it; the
+    /// current damage source deals it unless allied).
+    pub(crate) fn note_damage(&mut self, i: usize, amount: i32) {
+        if amount <= 0 {
+            return;
+        }
+        let owner = self.actors[i].owner;
+        self.stats_mut(owner).damage_taken += i64::from(amount);
+        if let Some(k) = self.observer.source {
+            if (k as usize) < self.players.len() && !self.are_allies(k, owner) {
+                self.stats_mut(k).damage_dealt += i64::from(amount);
+            }
+        }
+    }
+
+    /// Actor `i` gained `xp` experience and `ranks` levels.
+    pub(crate) fn note_experience(&mut self, i: usize, xp: i64, ranks: u32) {
+        let owner = self.actors[i].owner;
+        let s = self.stats_mut(owner);
+        s.experience += xp.max(0);
+        s.promotions += ranks;
+    }
+
+    /// A support power was fired.
+    pub(crate) fn note_power(&mut self, player: u8, key: &str) {
+        self.stats_mut(player).powers_used += 1;
+        *self.detail_mut(player).powers.entry(key.to_string()).or_insert(0) += 1;
+    }
+
+    /// An order from the order log was accepted for `player`.
+    pub(crate) fn note_order(&mut self, player: u8) {
+        self.stats_mut(player).orders += 1;
+    }
+
+    /// `check_victory`: `player` was defeated now.
+    pub(crate) fn note_defeated(&mut self, player: u8) {
+        let p = player as usize;
+        if self.observer.defeated_at.len() <= p {
+            self.observer.defeated_at.resize(p + 1, None);
+        }
+        if self.observer.defeated_at[p].is_none() {
+            self.observer.defeated_at[p] = Some(self.tick);
+        }
+    }
+
+    /// `check_victory`: the game was decided now.
+    pub(crate) fn note_game_end(&mut self) {
+        if self.observer.end_tick.is_none() {
+            self.observer.end_tick = Some(self.tick);
+        }
+    }
+
+    /// Tick `player` was defeated at, if it was.
+    pub fn defeated_at(&self, player: u8) -> Option<u32> {
+        self.observer.defeated_at.get(player as usize).copied().flatten()
+    }
+
+    /// End of `World::step`: a history sample on tick 1, every `interval`
+    /// ticks and on the tick the game ended. Reads the world only.
+    pub(crate) fn sample_stats(&mut self) {
+        if self.stress {
+            return;
+        }
+        let interval = self.observer.history.interval.max(1);
+        let tick = self.tick;
+        if !(tick == 1 || tick.is_multiple_of(interval) || self.observer.end_tick == Some(tick)) {
+            return;
+        }
+        if self.observer.history.ticks.last() == Some(&tick) {
+            return;
+        }
+        let n = self.players.len();
+        let mut army = vec![0i64; n];
+        for i in 0..self.actors.len() {
+            let a = &self.actors[i];
+            if a.alive && (a.owner as usize) < n && a.is_unit() && a.hp > 0 && !self.is_harvester(i) && !self.is_support_aircraft(i) {
+                army[a.owner as usize] += i64::from(self.rules.actors[a.ty as usize].cost);
+            }
+        }
+        let samples: Vec<StatsSample> = (0..n)
+            .map(|p| {
+                let s = self.player_stats(p as u8);
+                let pl = &self.players[p];
+                StatsSample {
+                    funds: pl.funds(),
+                    earned: sat(s.earned),
+                    spent: sat(s.spent),
+                    army: sat(army[p]),
+                    kills: sat(i64::from(s.units_killed) + i64::from(s.buildings_killed)),
+                    deaths: sat(i64::from(s.units_lost) + i64::from(s.buildings_lost)),
+                    destroyed: sat(s.assets_destroyed),
+                    lost: sat(s.assets_lost),
+                    harvested: sat(s.harvested_ore + s.harvested_gems),
+                    power_gen: pl.power_gen,
+                    power_use: pl.power_use,
+                    orders: sat(i64::from(s.orders)),
+                    damage_dealt: sat(s.damage_dealt),
+                }
+            })
+            .collect();
+        let h = &mut self.observer.history;
+        if h.samples.len() < n {
+            // Players joined the history late (never in a running game): pad with zeros.
+            let len = h.ticks.len();
+            h.samples.resize(n, vec![StatsSample::default(); len]);
+        }
+        h.ticks.push(tick);
+        for (p, s) in samples.into_iter().enumerate() {
+            h.samples[p].push(s);
+        }
     }
 
     /// Run `f` with kills credited to `owner` (weapon damage, crushing).
@@ -97,12 +372,16 @@ impl World {
             _ => StatClass::Unit,
         };
         let owner = a.owner;
+        let ty = a.ty;
+        let value = i64::from(self.rules.actors[ty as usize].cost);
         let killer = shot_down.unwrap_or(self.observer.source);
         let lost = self.stats_mut(owner);
         match class {
             StatClass::Unit => lost.units_lost += 1,
             StatClass::Building => lost.buildings_lost += 1,
         }
+        lost.assets_lost += value;
+        *self.detail_mut(owner).lost.entry(ty).or_insert(0) += 1;
         let Some(k) = killer else { return };
         if (k as usize) >= self.players.len() || self.are_allies(k, owner) {
             return;
@@ -112,15 +391,25 @@ impl World {
             StatClass::Unit => kills.units_killed += 1,
             StatClass::Building => kills.buildings_killed += 1,
         }
+        kills.assets_destroyed += value;
+        *self.detail_mut(k).killed.entry(ty).or_insert(0) += 1;
     }
 
     /// Harvester unloading at a refinery: `give_resources`, counting what was
     /// actually stored as earned.
-    pub(crate) fn give_harvested(&mut self, player: u8, amount: i32) {
+    pub(crate) fn give_harvested(&mut self, player: u8, amount: i32, gem: bool) {
         let before = self.players[player as usize].resources;
         self.give_resources(player, amount);
         let gained = self.players[player as usize].resources - before;
         self.note_earned(player, gained);
+        if gained > 0 {
+            let s = self.stats_mut(player);
+            if gem {
+                s.harvested_gems += i64::from(gained);
+            } else {
+                s.harvested_ore += i64::from(gained);
+            }
+        }
     }
 
     /// Income for the observer stats (harvesting, supply truck cash).
@@ -142,33 +431,122 @@ impl World {
             .sum()
     }
 
+    /// Observer statistics of one player (the counters, no per type tables).
+    fn player_stats_json(&self, p: usize) -> serde_json::Value {
+        let pl = &self.players[p];
+        let s = self.player_stats(p as u8);
+        json!({
+            "player": p,
+            "faction": self.rules.factions[pl.faction],
+            "team": pl.team,
+            "isAi": pl.is_ai,
+            "cash": pl.cash,
+            "funds": pl.funds(),
+            "earned": s.earned,
+            "harvestedOre": s.harvested_ore,
+            "harvestedGems": s.harvested_gems,
+            "spent": s.spent,
+            "repairSpent": s.repair_spent,
+            "sold": s.sold,
+            "armyValue": self.army_value(p as u8),
+            "unitsKilled": s.units_killed,
+            "unitsLost": s.units_lost,
+            "buildingsKilled": s.buildings_killed,
+            "buildingsLost": s.buildings_lost,
+            "assetsDestroyed": s.assets_destroyed,
+            "assetsLost": s.assets_lost,
+            "damageDealt": s.damage_dealt,
+            "damageTaken": s.damage_taken,
+            "unitsBuilt": s.units_built,
+            "buildingsBuilt": s.buildings_built,
+            "aircraftBuilt": s.aircraft_built,
+            "shipsBuilt": s.ships_built,
+            "builtValue": s.built_value,
+            "experience": s.experience,
+            "promotions": s.promotions,
+            "powersUsed": s.powers_used,
+            "orders": s.orders,
+            "score": s.score(),
+            "powerGenerated": pl.power_gen,
+            "powerUsed": pl.power_use,
+            "defeated": pl.defeated,
+            "defeatedAt": self.defeated_at(p as u8),
+            "won": self.has_won(p as u8),
+        })
+    }
+
     /// Observer statistics of every non-neutral player, in player order.
     pub fn observer_stats_json(&self) -> serde_json::Value {
-        let out: Vec<_> = (0..self.players.len())
-            .filter(|&p| !self.players[p].neutral)
-            .map(|p| {
-                let pl = &self.players[p];
+        let out: Vec<_> = (0..self.players.len()).filter(|&p| !self.players[p].neutral).map(|p| self.player_stats_json(p)).collect();
+        serde_json::Value::Array(out)
+    }
+
+    /// The end-game statistics: every counter, the per type tables, the
+    /// current army and structures, and the history (see `Game::observer_report`).
+    pub fn observer_report_json(&self) -> serde_json::Value {
+        let playing: Vec<usize> = (0..self.players.len()).filter(|&p| !self.players[p].neutral).collect();
+        let players: Vec<_> = playing
+            .iter()
+            .map(|&p| {
+                let mut v = self.player_stats_json(p);
                 let s = self.player_stats(p as u8);
+                let d = self.player_detail(p as u8);
+                let mut units = BTreeMap::new();
+                let mut structures = BTreeMap::new();
+                for a in &self.actors {
+                    if !a.alive || a.owner as usize != p || a.hp <= 0 {
+                        continue;
+                    }
+                    match a.kind {
+                        Kind::Building => *structures.entry(a.ty).or_insert(0u32) += 1,
+                        Kind::Mine => {}
+                        _ => *units.entry(a.ty).or_insert(0u32) += 1,
+                    }
+                }
+                let o = v.as_object_mut().expect("object");
+                o.insert("productionTicks".into(), json!(s.production_ticks));
+                o.insert("built".into(), count_map(&d.built, self));
+                o.insert("killed".into(), count_map(&d.killed, self));
+                o.insert("lost".into(), count_map(&d.lost, self));
+                o.insert("units".into(), count_map(&units, self));
+                o.insert("structures".into(), count_map(&structures, self));
+                o.insert("powers".into(), json!(d.powers));
+                v
+            })
+            .collect();
+        let h = &self.observer.history;
+        let series: Vec<_> = playing
+            .iter()
+            .map(|&p| {
+                let empty = Vec::new();
+                let list = h.samples.get(p).unwrap_or(&empty);
+                let col = |f: fn(&StatsSample) -> i32| list.iter().map(f).collect::<Vec<i32>>();
                 json!({
                     "player": p,
-                    "faction": self.rules.factions[pl.faction],
-                    "team": pl.team,
-                    "cash": pl.cash,
-                    "funds": pl.funds(),
-                    "earned": s.earned,
-                    "armyValue": self.army_value(p as u8),
-                    "unitsKilled": s.units_killed,
-                    "unitsLost": s.units_lost,
-                    "buildingsKilled": s.buildings_killed,
-                    "buildingsLost": s.buildings_lost,
-                    "powerGenerated": pl.power_gen,
-                    "powerUsed": pl.power_use,
-                    "defeated": pl.defeated,
-                    "won": self.has_won(p as u8),
+                    "funds": col(|s| s.funds),
+                    "earned": col(|s| s.earned),
+                    "spent": col(|s| s.spent),
+                    "armyValue": col(|s| s.army),
+                    "kills": col(|s| s.kills),
+                    "deaths": col(|s| s.deaths),
+                    "assetsDestroyed": col(|s| s.destroyed),
+                    "assetsLost": col(|s| s.lost),
+                    "harvested": col(|s| s.harvested),
+                    "powerGenerated": col(|s| s.power_gen),
+                    "powerUsed": col(|s| s.power_use),
+                    "orders": col(|s| s.orders),
+                    "damageDealt": col(|s| s.damage_dealt),
                 })
             })
             .collect();
-        serde_json::Value::Array(out)
+        json!({
+            "tick": self.tick,
+            "ticksPerSecond": TICKS_PER_SECOND,
+            "winner": self.winner,
+            "endTick": self.observer.end_tick,
+            "players": players,
+            "history": { "interval": h.interval, "ticks": h.ticks, "players": series },
+        })
     }
 
     // ---- Spectator view (render only) ------------------------------------------------
@@ -215,6 +593,25 @@ impl Game {
     /// powerGenerated, powerUsed, defeated, won }`.
     pub fn observer_stats(&self) -> String {
         self.world.observer_stats_json().to_string()
+    }
+
+    /// The end-game statistics as JSON (deterministic: the same on every
+    /// peer and in replays; not part of the state hash): `{ tick,
+    /// ticksPerSecond, winner, endTick, players: [observer_stats fields plus
+    /// productionTicks (per queue), built, killed, lost, units, structures
+    /// (actor id -> count) and powers (power key -> times fired)], history: {
+    /// interval, ticks, players: [{ player, funds, earned, spent, armyValue,
+    /// kills, deaths, assetsDestroyed, assetsLost, harvested, powerGenerated,
+    /// powerUsed, orders, damageDealt }] } }`; every history array is aligned
+    /// with `history.ticks`.
+    pub fn observer_report(&self) -> String {
+        self.world.observer_report_json().to_string()
+    }
+
+    /// Whether `player` is out of the game (false for unknown players). Its
+    /// orders are refused from then on.
+    pub fn player_defeated(&self, player: u8) -> bool {
+        self.world.players.get(player as usize).is_some_and(|p| p.defeated)
     }
 
     /// In-memory deep copy of the game for replay seeking: the same world,

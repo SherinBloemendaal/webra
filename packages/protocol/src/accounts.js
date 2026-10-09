@@ -8,6 +8,7 @@
 
 import { COLOR_COUNT, FACTIONS, NAME_MAX, VERSION_RE } from './constants.js';
 import { isPlainObject, ProtocolError, text } from './check.js';
+import { validateSavedPresets } from './presets.js';
 
 // ---- Value sets ------------------------------------------------------------------
 
@@ -261,8 +262,23 @@ const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const HOTKEY_ACTION_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const HOTKEY_COMBO_RE = /^[\x21-\x7e]{1,40}$/;
 
+/**
+ * Scale settings (game.uiScale, game.gameScale): "auto" or a factor in
+ * these limits (1 = 100%). The game client's settings registry takes its
+ * limits from here, so the client and the server always agree.
+ */
+export const UI_SCALE_LIMITS = Object.freeze({ min: 0.5, max: 2, step: 0.05 });
+export const GAME_SCALE_LIMITS = Object.freeze({ min: 0.5, max: 3, step: 0.05 });
+/** audio.musicRepeat: repeat the playlist, repeat one track, or stop after the last track. */
+export const MUSIC_REPEAT_MODES = Object.freeze(['all', 'one', 'off']);
+
 const num = (min, max) => (v, f) => {
   if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) bad(f, `Must be a number from ${min} to ${max}.`);
+  return v;
+};
+const scale = ({ min, max }) => (v, f) => {
+  if (v === 'auto') return v;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) bad(f, `Must be "auto" or a number from ${min} to ${max}.`);
   return v;
 };
 const boolean = (v, f) => {
@@ -358,6 +374,8 @@ const SETTINGS_SECTIONS = {
     showUnitPaths: boolean,
     pixelRatioCap: num(0.5, 3),
     lowQuality: boolean,
+    uiScale: scale(UI_SCALE_LIMITS),
+    gameScale: scale(GAME_SCALE_LIMITS),
     healthBars: choice(['off', 'damaged', 'all']),
     playerStanceColors: boolean,
     graphics: choice(['webra', 'original']),
@@ -371,6 +389,9 @@ const SETTINGS_SECTIONS = {
     music: num(0, 1),
     speech: boolean,
     original: boolean,
+    musicOn: boolean,
+    musicShuffle: boolean,
+    musicRepeat: choice(MUSIC_REPEAT_MODES),
   },
   content: { packs },
   debug: Object.fromEntries(['cells', 'footprints', 'flow', 'combat', 'tags', 'health', 'stats', 'graph', 'cpuInstances'].map((k) => [k, boolean])),
@@ -382,6 +403,14 @@ const SETTINGS_SECTIONS = {
       return v;
     },
     lastOptions: freeObject(SETTINGS_LAST_OPTIONS_MAX_BYTES),
+    presets: (v, f) => {
+      try {
+        return validateSavedPresets(v, 'presets');
+      } catch (err) {
+        if (err instanceof ProtocolError) bad(`${f}${err.path ?? ''}`, `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`);
+        throw err;
+      }
+    },
   },
   releaseNotes: {
     lastSeenVersion: (v, f) => {
@@ -427,6 +456,7 @@ export const DEFAULT_SITE_SETTINGS = Object.freeze({
   registration: Object.freeze({ open: true, approvalRequired: true, emailVerification: true }),
   login: Object.freeze({ password: true, email: true, discord: true, passkey: true }),
   onlineRequiresAccount: true,
+  gameRequiresAccount: true,
   contentRelay: true,
   motd: '',
 });
@@ -435,6 +465,7 @@ const SITE_SHAPE = {
   registration: { open: boolean, approvalRequired: boolean, emailVerification: boolean },
   login: { password: boolean, email: boolean, discord: boolean, passkey: boolean },
   onlineRequiresAccount: boolean,
+  gameRequiresAccount: boolean,
   contentRelay: boolean,
   motd: (v, f) => {
     if (typeof v !== 'string') bad(f, 'Must be text.');

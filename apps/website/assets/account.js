@@ -6,10 +6,15 @@
 // Links from emails land here with the token in the fragment
 // (#verify=<token>, #reset=<token>); Discord comes back with #discord=ok or
 // #discord=error&code=<code>. The fragment is removed at once.
+//
+// The play gate (docs/security.md) sends signed-out players here with
+// ?returnTo=<game path>: after signing in or up (password, passkey, Discord,
+// a reset link) an account that may play goes straight back there.
 
-import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
-import { AccountSession, accountState, signInMethods } from '/play/js/account/session.js';
-import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/play/js/account/passkey.js';
+import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { checkInput } from '/lib/js/ui/controls.js';
+import { AccountSession, accountState, signInMethods } from '/lib/js/account/session.js';
+import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/lib/js/account/passkey.js';
 import {
   ACCOUNT_PASSWORD_MAX,
   ACCOUNT_PASSWORD_MIN,
@@ -20,10 +25,42 @@ import {
   validEmail,
   validNewPassword,
   validUsername,
-} from '/play/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
+} from '/lib/protocol/accounts.js';
+import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
+export const DEFAULT_RETURN = '/play/';
+/** Same rule as the server (apps/server/src/http.js RETURN_PATH_RE): one leading slash, URL characters, at most 200. */
+const RETURN_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]{0,199}$/;
+const BASE = 'https://webra.invalid';
+
+/**
+ * Where to go after signing in: the `returnTo` query parameter when it is a
+ * path on this site (never another origin, never the API), /play/ when it
+ * is anything else, and null without one (stay on the account page).
+ */
+export function returnTarget(search) {
+  let raw;
+  try {
+    raw = new URLSearchParams(String(search ?? '')).get('returnTo');
+  } catch {
+    return null;
+  }
+  if (raw === null) return null;
+  if (!RETURN_RE.test(raw) || raw.startsWith('/api/')) return DEFAULT_RETURN;
+  try {
+    return new URL(raw, BASE).origin === BASE ? raw : DEFAULT_RETURN;
+  } catch {
+    return DEFAULT_RETURN;
+  }
+}
+
+/** The Discord return path (4.6): this page, carrying the target along when it fits the server's 200 characters. */
+export function discordReturn(target) {
+  if (!target) return '/account/';
+  const withTarget = `/account/?returnTo=${encodeURIComponent(target)}`;
+  return withTarget.length <= 200 ? withTarget : `/account/?returnTo=${encodeURIComponent(DEFAULT_RETURN)}`;
+}
 
 /** The message of a protocol check that fails, or null. */
 function check(fn) {
@@ -79,6 +116,13 @@ export async function mountAccountPage(root, deps = {}) {
 
   const fragment = parseFragment(loc.hash);
   if (fragment.kind) hist.replaceState(null, '', loc.pathname + loc.search);
+  const target = returnTarget(loc.search);
+  /** After a sign-in: back to the game when this account may play there. Returns whether it left. */
+  const goOn = () => {
+    if (!target || !session.user?.canPlay) return false;
+    navigate(target);
+    return true;
+  };
 
   await session.refresh();
   if (session.error && !session.site) {
@@ -99,6 +143,7 @@ export async function mountAccountPage(root, deps = {}) {
     }
   }
   if (fragment.kind === 'discord') {
+    if (fragment.ok && session.user && goOn()) return { session, render: () => {} };
     if (fragment.ok) notice.show('Discord: done.', 'ok');
     else notice.show(DISCORD_ERRORS[fragment.code] ?? 'Discord sign-in did not work. Try again.', 'error');
   }
@@ -128,6 +173,7 @@ export async function mountAccountPage(root, deps = {}) {
         const r = await api.resetPassword(fragment.token, password.input.value);
         fragment.used = true;
         await session.setUser(r.user);
+        if (goOn()) return;
         notice.show('Your password is set and you are signed in.', 'ok');
         render();
       }, (err) => (err.code === 'bad_credentials' ? 'This reset link is not valid any more. Ask for a new one.' : errorText(err)));
@@ -163,8 +209,11 @@ export async function mountAccountPage(root, deps = {}) {
     });
     list.append(...buttons);
     panel.setAttribute('aria-labelledby', `tab-${tab}`);
-    if (session.site?.motd) view.replaceChildren(el('p', { class: 'notice', text: session.site.motd }));
-    else view.replaceChildren();
+    view.replaceChildren();
+    if (target && session.site?.gameRequiresAccount !== false) {
+      view.append(el('p', { class: 'notice', role: 'status' }, el('strong', { text: 'Sign in to play. ' }), el('span', { text: 'The game needs a WebRA account. Sign in, or create one; new accounts may need an admin to approve them first.' })));
+    }
+    if (session.site?.motd) view.append(el('p', { class: 'notice', text: session.site.motd }));
     if (tab === 'signin') panel.append(signInForm(methods));
     else if (tab === 'signup') panel.append(signUpForm(methods));
     else panel.append(forgotForm());
@@ -176,7 +225,7 @@ export async function mountAccountPage(root, deps = {}) {
     b.addEventListener('click', () =>
       busy(b, status, async () => {
         if (privacy && !privacy.checked) throw new Error('Accept the privacy notice first.');
-        const { url } = await api.discordStart({ mode, returnTo: '/account/', ...(mode === 'signup' ? { acceptPrivacy: true } : {}) });
+        const { url } = await api.discordStart({ mode, returnTo: mode === 'login' || mode === 'signup' ? discordReturn(target) : '/account/', ...(mode === 'signup' ? { acceptPrivacy: true } : {}) });
         navigate(url);
       }, errorText),
     );
@@ -197,6 +246,7 @@ export async function mountAccountPage(root, deps = {}) {
         await busy(submit, status, async () => {
           const r = await api.login({ login: login.input.value.trim(), password: password.input.value });
           await session.setUser(r.user);
+          if (goOn()) return;
           notice.clear();
           render();
         }, (err) => {
@@ -215,6 +265,7 @@ export async function mountAccountPage(root, deps = {}) {
             const { challengeId, credential } = await getPasskey(await api.passkeyOptions());
             const r = await api.passkeyLogin(challengeId, credential);
             await session.setUser(r.user);
+            if (goOn()) return;
             render();
           } catch (err) {
             if (!isCancel(err)) throw err;
@@ -244,12 +295,13 @@ export async function mountAccountPage(root, deps = {}) {
     });
     // Addresses are only taken once they can be confirmed: no email field while this server sends no email.
     email.row.hidden = !methods.email;
-    const usePasskey = methods.passkey && methods.password ? checkbox('Use a passkey instead of a password') : null;
+    const usePasskey = methods.passkey && methods.password ? switchRow('Use a passkey instead of a password') : null;
     const password = field('Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(policy.passwordMin), maxlength: String(policy.passwordMax) }), {
       help: `At least ${policy.passwordMin} characters. A long phrase is best.`,
     });
     const privacyUrl = site?.privacyUrl ?? '/privacy.html';
-    const privacy = el('input', { type: 'checkbox', id: 'signup-privacy', required: true });
+    const privacy = checkInput({ id: 'signup-privacy' });
+    privacy.required = true;
     const privacyRow = el(
       'div',
       { class: 'check' },
@@ -308,6 +360,7 @@ export async function mountAccountPage(root, deps = {}) {
         } else input.password = password.input.value;
         const r = await api.signup(input);
         await session.setUser(r.user);
+        if (goOn()) return;
         notice.show('Your account is created.', 'ok');
         render();
       }, (err) => {
@@ -413,7 +466,7 @@ export async function mountAccountPage(root, deps = {}) {
       }
       notice.show(errorText(err), 'error');
     }
-    const state = accountState(user);
+    const state = accountState(user, session.site);
     const parts = [];
     if (session.site?.motd) parts.push(el('p', { class: 'notice', text: session.site.motd }));
     const signOut = el('button', { type: 'button', class: 'btn', text: 'Sign out' });
@@ -426,7 +479,7 @@ export async function mountAccountPage(root, deps = {}) {
       'div',
       { class: 'panel account-head' },
       el('div', { class: 'account-who' }, el('strong', { class: 'account-username', text: user.username }), user.displayName && user.displayName !== user.username ? el('span', { class: 'account-display', text: user.displayName }) : null, roleBadge(user.role)),
-      el('div', { class: 'form-actions' }, el('a', { class: 'btn btn-primary', href: '/play/', text: 'Play' }), signOut),
+      el('div', { class: 'form-actions' }, user.canPlay ? el('a', { class: 'btn btn-primary btn-play', href: target ?? DEFAULT_RETURN, text: 'Play' }) : null, signOut),
     );
     parts.push(head);
     if (state.kind !== 'active') {

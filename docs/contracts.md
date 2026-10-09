@@ -209,6 +209,19 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
+are named bundles of every lobby option except `seed` and `mapSize`:
+Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
+Sandbox (skirmish only), plus the player's saved modes (settings
+`lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those
+options; changing any of them reads as Custom. They are a lobby
+convenience only: online the host sends plain `options` (protocol
+unchanged), and every peer works out the mode name from the options, so
+guests see the built-in mode a setup matches (a host's saved mode reads as
+Custom to them). The lobby help texts (`apps/game/js/help.js`) quote the
+numbers of this section and are checked against the engine by
+`apps/game/tests/help.test.mjs`.
+
 Generated maps come in a style (`engine/src/mapgen/`): **land** (open
 plains, or highlands with long cliffs broken by passes), **rivers** (river
 valleys from a confluence pool to the map edges, fords every 11 to 15 cells,
@@ -323,7 +336,10 @@ Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
 (accounts API, section 1.1). With the site setting `onlineRequiresAccount`
 (on by default), `POST /api/sessions`, `POST /api/maps` and joining over the
 WebSocket need a signed-in, active, unbanned account (accounts API, section
-7); the session cookie travels with the WebSocket upgrade.
+7.2); the session cookie travels with the WebSocket upgrade. With
+`gameRequiresAccount` (on by default) the game files themselves need one too
+(section 6 and accounts API, section 7.1); `UserSelf.canPlay` and
+`GET /api/site` `gameRequiresAccount` tell clients in advance.
 
 `/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
 one-click install of the original content. It needs a signed-in, active
@@ -359,6 +375,7 @@ Client to server:
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
 | `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
+| `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
 | `orders` | `tick, orders: [...]` | in game, every tick (may be empty) |
 | `hash` | `tick, hash` | in game, every 25 ticks |
@@ -454,6 +471,18 @@ host role. Spectators are not in `start.players`, receive every frame and
 chat, never count for stalls or hash majorities, and the server removes a
 spectator that sends `orders` or `hash` (`left` reason `removed`).
 
+### Defeated players
+
+The engine refuses every order of a defeated player (it may still own
+submarines, walls or mines), on every peer and in replays; `apply_frame`
+skips them. A defeated player may keep watching: its client switches to the
+observer view, keeps running lockstep (empty `orders` every tick, `hash`
+as before, the same stall rules) and sends `defeated` once (again after a
+reconnect). The server keeps the seat but drops its orders from then on,
+also ones already waiting for a frame and after a rejoin. A seat cannot
+undo it; a spectator sending `defeated` gets `bad_state`. Online games never
+pause for the end-game dialog.
+
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
 an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 (`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
@@ -472,11 +501,28 @@ generator shroud only where it hides a cell from all, cloaked and submerged
 units shown and no owner-only decorations (render only: slot 0's vision is
 swapped for the union during the call and restored). `Game.army_counts(player)`
 lists `[actor type index, count, ...]` of the units that count for the army
-value (the observer's army panel). `Game.observer_stats()` returns `[{
-player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
-buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
-for the non-neutral players (kills credited to the owner of the weapon that
-dealt the killing damage; not part of the state hash). `Game.snapshot()` and
+value (the observer panel's army statistics). `Game.observer_stats()` returns `[{
+player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
+spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
+buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
+unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
+promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
+defeatedAt, won }]` for the non-neutral players (kills credited to the owner
+of the weapon that dealt the killing damage; `orders` counts the orders of
+the order log, AI decisions are not orders; `score` is the value destroyed
+plus half the value built; not part of the state hash).
+`Game.observer_report()` adds per player `productionTicks` (per queue),
+`built`, `killed`, `lost`, `units`, `structures` (actor id -> count) and
+`powers` (power key -> times fired), plus `{ tick, ticksPerSecond, winner,
+endTick, history: { interval, ticks, players: [{ player, funds, earned,
+spent, armyValue, kills, deaths, assetsDestroyed, assetsLost, harvested,
+powerGenerated, powerUsed, orders, damageDealt }] } }`: a sample on tick 1,
+every 125 ticks (5 s) and on the tick the game ended, the same on every peer
+and in a replay. `Game.player_defeated(p)` is a cheap check for the lockstep
+driver. The client's end-game dialog (`js/endgame.js`) and statistics screen
+(`js/stats.js`, tabs Basic, Economy, Production, Combat, Army, Support powers,
+Graphs) read these; the screen asks for the report (`ask.observer_report`)
+when it opens and every two seconds while it is open. `Game.snapshot()` and
 `game.restore(snapshot)` copy the whole world in memory (replay seeking; not
 serialized).
 
@@ -713,11 +759,23 @@ One Worker named `webra` on the `WebRA` Cloudflare account serves
 everything on `webra.sherin.dev`:
 
 - `/` and `/assets/*`: `apps/website` build output
-- `/play/*`: `apps/game` (with `pkg/` from wasm-pack and `protocol/`)
+- `/play` and `/play/*`: `apps/game` (with `pkg/` from wasm-pack and
+  `protocol/`), served by the Worker's play gate (`apps/server/src/playgate.js`)
+  only to accounts that may play while the site setting `gameRequiresAccount`
+  is on (accounts API, section 7.1): page loads without access go to
+  `/account/?returnTo=<path>`, other requests get 401 or 403
+- `/lib/*`: the game modules and stylesheets the website's account and admin
+  pages load, copied from `apps/game` with the same layout
+  (`tools/shared-modules.mjs` lists them from the website's `/lib/` imports
+  and links); public. No website page, script or stylesheet loads from
+  `/play` (the build fails otherwise)
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
+`wrangler.jsonc` runs the Worker first for `/api/*`, `/play` and `/play/*`;
+every other path is answered by Workers Static Assets with `_headers`.
+
 Build: `npm run build` assembles `dist/` (website at the root, game under
-`play/`) and writes `dist/version.json` and `dist/release-notes.json`. The
+`play/`, the website's shared modules under `lib/`) and writes `dist/version.json` and `dist/release-notes.json`. The
 release notes are CHANGELOG.md (written by release-please) as data, parsed by
 `tools/release-notes.mjs`: the newest 30 releases, newest first, each with
 `version`, `date`, `compareUrl` and `sections` of entries `{ scope, text,
@@ -773,6 +831,10 @@ about options added since; files of the running build are validated in full:
   The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
   (backwards from in-memory snapshots, `Game.snapshot`), and switches between
   the whole map and each player's view with the observer stats.
+- Restart (`js/restart.js`): single player games and loaded saves restart
+  from tick 0 with the same options and map through a page reload (the
+  settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
+  viewer restarts playback in place. Online games have no restart.
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
@@ -964,7 +1026,22 @@ sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
-levels) and gem overlay tiles at 240 (bit 4, 4 x 4).
+levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours
+(bit 8: a pixel with alpha 248 + k shows the k-th of the 7 colours in the
+atlas's last pixel row, turned 6.25 times a second on the render clock like
+OpenRA's RotationPaletteEffect). With tile terrain a cell names its tile as
+R + 256 G (map tiles 0..191 and 256..1023).
+
+Layers over structures (`Game.set_building_overlays`, one value per actor
+type): a value below 4096 is the still frame of WebRA's animated layer
+(slot `2t + 1` animates, the still frame is drawn without power or under
+fog). A value of 4096 or more marks a layer that is a pose table (the
+original War Factory roof and door, OpenRA WithProductionDoorOverlay): with
+poses on, the engine draws slot `2t + 1` with the structure's pose (idle,
+damaged, still), leaves it out while the structure is built (make), and
+gives it the make pose with `age` = ticks since the youngest unit of the
+owner within two cells of an exit appeared (the door opens and closes once).
+Under fog the value itself (the layer's still pose) is drawn.
 
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
@@ -986,7 +1063,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `beacons`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre) | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).

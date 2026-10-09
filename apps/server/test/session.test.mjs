@@ -225,6 +225,23 @@ test('spectators: lobby places, frames, no orders, no stalls, late joining', asy
   assert.deepEqual(s.session.lockstep.agreed, { tick: 25, hash: 'aa' });
 });
 
+test('a defeated player keeps watching; its orders are dropped, spectators cannot report a defeat', async () => {
+  const { s, host, guest, watchers, hSeat, gSeat } = await started({ spectators: 1 });
+  const seats = [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }];
+  await play(s, seats, 0, 10);
+  await s.send(guest, { t: 'defeated' });
+  assert.equal(guest.take('error').length, 0);
+  assert.ok(!guest.closed, 'it stays connected and keeps receiving frames');
+  await play(s, seats, 10, 20, (c) => [{ o: 'stop', player: c.seat, ids: [1] }]);
+  assert.equal(host.take('error').length + guest.take('error').length, 0);
+  const frames = watchers[0].ws.take('frame').filter((f) => f.tick >= 13);
+  assert.equal(frames.length, 10);
+  for (const f of frames) assert.deepEqual(f.orders.map(([p]) => p), [hSeat], `tick ${f.tick}: only the host's orders`);
+  await s.send(watchers[0].ws, { t: 'defeated' });
+  assert.equal(watchers[0].ws.take('error')[0].code, 'bad_state');
+  assertValid(guest);
+});
+
 test('a spectator rejoins with its key; players cannot join a running game', async () => {
   const { s, host, guest, watchers, hSeat, gSeat } = await started({ spectators: 1 });
   await play(s, [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }], 0, 4);

@@ -310,7 +310,8 @@ export class CommandBar {
   place() {
     const bar = document.getElementById('touch-bar');
     const h = bar && bar.offsetParent !== null ? bar.offsetHeight : 0;
-    if (h > 0) this.root.style.setProperty('--cb-bottom', `${h + 14}px`);
+    // The gap above the bar follows the UI scale (css/theme.css --ui-px); the bar's height is measured.
+    if (h > 0) this.root.style.setProperty('--cb-bottom', `calc(${h}px + 14 * var(--ui-px))`);
     else this.root.style.removeProperty('--cb-bottom');
   }
 

@@ -43,6 +43,10 @@ import {
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { onlineRefusal } from './account/ui.js';
+import { switchInput } from './ui/controls.js';
+import { infoTip, describedBy } from './infotip.js';
+import { ModePicker } from './modepicker.js';
+import { presetOptions } from './modes.js';
 import { hotkeys } from './hotkeys.js';
 import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from './chatkeys.js';
 
@@ -84,12 +88,18 @@ const LABELS = {
   biome: { random: 'Random', temperate: 'Temperate', snow: 'Snow', desert: 'Desert' },
   weather: { full: 'On', cosmetic: 'Cosmetic only', off: 'Off' },
 };
+// Option rows: key (also the help text key in js/help.js), label, choices.
+// The World group holds the climate of the battlefield.
+const WORLD_OPTIONS = [
+  ['mapStyle', 'Map style', MAP_STYLES.map((v) => [v, LABELS.mapStyle[v]])],
+  ['biome', 'Biome', BIOMES.map((v) => [v, LABELS.biome[v]])],
+  ['weather', 'Weather', WEATHER_MODES.map((v) => [v, LABELS.weather[v]])],
+];
 const SELECT_OPTIONS = [
   ['startingCash', 'Starting cash', STARTING_CASH.map((v) => [v, `$${v.toLocaleString('en-US')}`])],
   ['startingUnits', 'Starting units', STARTING_UNITS.map((v) => [v, LABELS.startingUnits[v]])],
   ['techLevel', 'Tech level', TECH_LEVELS.map((v) => [v, LABELS.techLevel[v]])],
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
-  ['weather', 'Weather', WEATHER_MODES.map((v) => [v, LABELS.weather[v]])],
 ];
 const TOGGLES = [
   ['fog', 'Fog of war'],
@@ -98,6 +108,21 @@ const TOGGLES = [
   ['redeployableMcv', 'Redeployable MCVs'],
   ['oreRegrowth', 'Ore regrowth'],
   ['cheats', 'Debug menu (cheats)'],
+];
+/** Every option of the online lobby with a "?" (tests check each one has help). */
+export const ONLINE_HELP_KEYS = [
+  'modeOnline',
+  'onlineMap',
+  'mapSize',
+  'seed',
+  ...WORLD_OPTIONS.map(([k]) => k),
+  ...SELECT_OPTIONS.map(([k]) => k),
+  ...TOGGLES.map(([k]) => k),
+  'playerOnline',
+  'faction',
+  'colorOnline',
+  'team',
+  'spectators',
 ];
 
 // ---- DOM helpers -------------------------------------------------------------
@@ -139,9 +164,21 @@ function select(choices, value, onChange, grouped = false) {
   return s;
 }
 
-function field(label, control) {
-  const row = el('label', 'online-field');
-  row.append(el('span', 'online-field-label', label), control);
+let uid = 0;
+
+/**
+ * A label + control row; with `helpKey`, the option's "?" help (js/help.js).
+ * `target` is what the label names (the control, or a compound control's input).
+ */
+function field(label, control, helpKey = null, target = control) {
+  const row = el('div', 'online-field');
+  const head = el('span', 'online-field-head');
+  const name = el('label', 'online-field-label', label);
+  if (!target.id) target.id = `online-ctl-${++uid}`;
+  name.htmlFor = target.id;
+  head.append(name);
+  if (helpKey) head.append(infoTip(helpKey, { label, describes: target }).root);
+  row.append(head, control);
   return row;
 }
 
@@ -501,9 +538,7 @@ export class OnlineUI {
       const title = el('input', 'online-input');
       title.maxLength = SESSION_NAME_MAX;
       title.value = `${name}'s game`;
-      const pub = el('input');
-      pub.type = 'checkbox';
-      pub.checked = true;
+      const pub = switchInput({ checked: true });
       const pass = el('input', 'online-input');
       pass.type = 'password';
       pass.maxLength = PASSWORD_MAX;
@@ -748,6 +783,21 @@ export class OnlineUI {
     this.slotBox.setAttribute('role', 'table');
     this.mapBox = el('section', 'online-panel online-map');
     this.optionBox = el('section', 'online-panel online-options');
+    this.buildOptions();
+    // Built once so an open help tip survives lobby updates.
+    this.slotHead = el('div', 'online-slot online-row-head');
+    this.slotHead.setAttribute('role', 'row');
+    this.columnTips = {};
+    for (const [label, key] of [['Player', 'playerOnline'], ['Faction', 'faction'], ['Color', 'colorOnline'], ['Team', 'team'], ['', null]]) {
+      const c = el('div', 'online-cell', label);
+      c.setAttribute('role', 'columnheader');
+      if (key) {
+        this.columnTips[key] = infoTip(key, { label });
+        c.append(this.columnTips[key].root);
+      }
+      this.slotHead.append(c);
+    }
+    this.spectatorTip = infoTip('spectators', { label: 'Spectators' });
 
     const chat = el('section', 'online-panel online-chat');
     this.chatLog = el('div', 'online-chat-log');
@@ -830,7 +880,9 @@ export class OnlineUI {
     if (!box) return;
     const st = this.state;
     box.textContent = '';
-    box.append(el('h2', 'online-panel-title', `Spectators (${st.spectators.length} / ${st.maxSpectators})`));
+    const title = el('h2', 'online-panel-title', `Spectators (${st.spectators.length} / ${st.maxSpectators})`);
+    title.append(this.spectatorTip.root);
+    box.append(title);
     const list = el('div', 'online-spectators');
     for (const sp of st.spectators) {
       const row = el('span', 'online-spectator', sp.name);
@@ -848,6 +900,7 @@ export class OnlineUI {
         st.maxSpectators,
         (v) => this.send({ t: 'spectators', max: Number(v) }),
       );
+      describedBy(places, this.spectatorTip);
       controls.append(field('Spectator places', places));
     }
     const watching = st.role === 'spectator';
@@ -860,10 +913,7 @@ export class OnlineUI {
   renderSlots() {
     const box = this.slotBox;
     box.textContent = '';
-    const head = el('div', 'online-slot online-row-head');
-    head.setAttribute('role', 'row');
-    for (const h of ['Player', 'Faction', 'Color', 'Team', '']) head.append(el('div', 'online-cell', h));
-    box.append(head);
+    box.append(this.slotHead);
     const host = this.isHost;
     const mine = this.mySlot();
     this.state.slots.forEach((slot, i) => {
@@ -886,11 +936,13 @@ export class OnlineUI {
           );
           diff.disabled = !host;
           diff.setAttribute('aria-label', `Player ${i + 1} difficulty`);
+          describedBy(diff, this.columnTips.playerOnline);
           who.append(diff);
         }
         const faction = select(FACTION_GROUPS, slot.faction, (v) => this.send({ t: 'slot', slot: i, faction: v }), true);
         faction.disabled = !editable;
         faction.setAttribute('aria-label', `Player ${i + 1} faction`);
+        describedBy(faction, this.columnTips.faction);
         const color = select(
           Array.from({ length: COLOR_COUNT }, (_, c) => [c, this.ctx.colorNames[c] || `Color ${c + 1}`]),
           slot.color,
@@ -898,6 +950,7 @@ export class OnlineUI {
         );
         color.disabled = !editable;
         color.setAttribute('aria-label', `Player ${i + 1} color`);
+        describedBy(color, this.columnTips.colorOnline);
         const team = select(
           Array.from({ length: TEAM_MAX + 1 }, (_, t) => [t, t === 0 ? 'None' : `Team ${t}`]),
           slot.team,
@@ -905,6 +958,7 @@ export class OnlineUI {
         );
         team.disabled = !editable;
         team.setAttribute('aria-label', `Player ${i + 1} team`);
+        describedBy(team, this.columnTips.team);
         const cells = [faction, color, team].map((c) => {
           const cell = el('div', 'online-cell');
           cell.append(c);
@@ -927,6 +981,7 @@ export class OnlineUI {
           if (v !== 'human') this.send({ t: 'slot', slot: i, type: v });
         });
         type.setAttribute('aria-label', `Player ${i + 1} slot type`);
+        describedBy(type, this.columnTips.playerOnline);
         action.append(type);
       }
       if (slot.type === 'open') action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
@@ -935,38 +990,78 @@ export class OnlineUI {
     });
   }
 
-  renderOptions() {
+  /** Send the options with `patch` applied (host only; the server checks). */
+  sendOptions(patch) {
+    this.send({ t: 'options', options: { ...this.state.options, ...patch } });
+  }
+
+  /** The Game options panel: built once per lobby, renderOptions shows the current values. */
+  buildOptions() {
     const box = this.optionBox;
-    const o = this.state.options;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Game options'));
-    const host = this.isHost;
-    const set = (key, value) => this.send({ t: 'options', options: { ...this.state.options, [key]: value } });
-    const grid = el('div', 'online-option-grid');
-    for (const [key, label, choices] of SELECT_OPTIONS) {
+    // Game mode: only the host picks; everyone sees which mode the options are.
+    this.modePicker = new ModePicker({
+      context: 'online',
+      registry: defaultRegistry(),
+      selectClass: 'online-select',
+      buttonClass: 'online-btn',
+      inputClass: 'online-input',
+      onApply: (mode) => this.sendOptions(presetOptions(mode.options)),
+    });
+    this.optionControls = {};
+    const edit = (key, value) => {
+      this.modePicker.optionChanged();
+      this.sendOptions({ [key]: value });
+    };
+    const selectRow = ([key, label, choices]) => {
       const numeric = typeof choices[0][0] === 'number';
-      const s = select(choices, o[key], (v) => set(key, numeric ? Number(v) : v));
-      s.disabled = !host;
-      grid.append(field(label, s));
-    }
+      const s = select(choices, choices[0][0], (v) => edit(key, numeric ? Number(v) : v));
+      this.optionControls[key] = s;
+      const row = field(label, s, key);
+      this.optionRows[key] = row;
+      return row;
+    };
+    this.optionRows = {};
+    const world = el('fieldset', 'online-world');
+    world.append(el('legend', 'online-world-title', 'World'), ...WORLD_OPTIONS.map(selectRow));
+    const grid = el('div', 'online-option-grid');
+    grid.append(...SELECT_OPTIONS.map(selectRow));
     const toggles = el('div', 'online-toggles');
     for (const [key, label] of TOGGLES) {
-      const row = el('label', 'online-toggle');
-      const box2 = el('input');
-      box2.type = 'checkbox';
-      box2.checked = o[key];
-      box2.disabled = !host;
-      box2.addEventListener('change', () => set(key, box2.checked));
-      row.append(box2, el('span', null, label));
+      const row = el('div', 'online-toggle-row');
+      const name = el('label', 'online-toggle');
+      const box2 = switchInput();
+      box2.addEventListener('change', () => edit(key, box2.checked));
+      this.optionControls[key] = box2;
+      name.append(box2, el('span', null, label));
+      row.append(name, infoTip(key, { label, describes: box2 }).root);
       toggles.append(row);
     }
-    box.append(grid, toggles);
     // Cheats change the game for everyone: every player sees it before getting ready.
-    if (o.cheats) {
-      const warn = el('p', 'online-cheats', 'CHEATS ENABLED: every player can use the debug menu (instant build, free cash, reveal map).');
-      warn.setAttribute('role', 'status');
-      box.append(warn);
+    this.cheatsWarning = el('p', 'online-cheats', 'CHEATS ENABLED: every player can use the debug menu (instant build, free cash, reveal map).');
+    this.cheatsWarning.setAttribute('role', 'status');
+    this.cheatsWarning.hidden = true;
+    box.append(this.modePicker.root, world, grid, toggles, this.cheatsWarning);
+  }
+
+  renderOptions() {
+    const o = this.state.options;
+    if (!o || !this.optionControls) return;
+    const host = this.isHost;
+    for (const [key] of [...WORLD_OPTIONS, ...SELECT_OPTIONS]) {
+      this.optionControls[key].value = String(o[key]);
+      this.optionControls[key].disabled = !host;
     }
+    for (const [key] of TOGGLES) {
+      this.optionControls[key].checked = o[key];
+      this.optionControls[key].disabled = !host;
+    }
+    // A map file brings its own layout and biome; the weather still applies.
+    this.optionRows.mapStyle.hidden = !!this.state.map;
+    this.optionRows.biome.hidden = !!this.state.map;
+    this.cheatsWarning.hidden = !o.cheats;
+    this.modePicker.render(o, { editable: host });
   }
 
   renderMap() {
@@ -1005,7 +1100,7 @@ export class OnlineUI {
       if (m) this.send({ t: 'map', map: { id: m.id, hash: m.hash, name: m.name, modded: m.modded } });
     });
     const controls = el('div', 'online-option-grid');
-    controls.append(field('Map', source));
+    controls.append(field('Map', source, 'onlineMap'));
     if (!st.map) {
       const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) =>
         this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }),
@@ -1021,11 +1116,7 @@ export class OnlineUI {
         else seed.value = String(st.options.seed);
       });
       seedRow.append(seed, button('New seed', null, () => this.send({ t: 'options', options: { ...st.options, seed: randomSeed() } })));
-      const style = select(MAP_STYLES.map((v) => [v, LABELS.mapStyle[v]]), st.options.mapStyle, (v) =>
-        this.send({ t: 'options', options: { ...st.options, mapStyle: v } }),
-      );
-      const biome = select(BIOMES.map((v) => [v, LABELS.biome[v]]), st.options.biome, (v) => this.send({ t: 'options', options: { ...st.options, biome: v } }));
-      controls.append(field('Map size', size), field('Map style', style), field('Biome', biome), field('Seed', seedRow));
+      controls.append(field('Map size', size, 'mapSize'), field('Seed', seedRow, 'seed', seed));
     }
     const file = el('input');
     file.type = 'file';

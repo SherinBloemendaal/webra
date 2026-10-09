@@ -37,10 +37,29 @@ export async function loadSite(db) {
 }
 
 /**
+ * How long one isolate reuses the settings it read for the play gate
+ * (src/playgate.js), so requests for game files without a valid play pass
+ * do not each read D1. A change made through this isolate applies at once;
+ * other isolates see it within this time.
+ */
+export const SITE_CACHE_MS = 30 * 1000;
+const siteCache = new WeakMap();
+
+/** loadSite through the per-isolate cache above (keyed by the D1 binding). */
+export async function loadSiteCached(db, now = Date.now()) {
+  const hit = siteCache.get(db);
+  if (hit && hit.until > now) return hit.site;
+  const site = await loadSite(db);
+  siteCache.set(db, { site, until: now + SITE_CACHE_MS });
+  return site;
+}
+
+/**
  * Store new settings if the stored version is still `expected`. Returns the
  * new version, or null when someone else saved meanwhile.
  */
 export async function saveSite(db, settings, expected, actorId, now = Date.now()) {
+  siteCache.delete(db);
   const doc = JSON.stringify(settings);
   if (expected === 0) {
     const r = await db
@@ -75,6 +94,7 @@ export function effective(settings, env) {
     approvalRequired: settings.registration.approvalRequired,
     registrationOpen: settings.registration.open,
     onlineRequiresAccount: settings.onlineRequiresAccount,
+    gameRequiresAccount: settings.gameRequiresAccount,
     contentRelay: settings.contentRelay,
   };
 }
@@ -91,6 +111,7 @@ export function publicSite(request, env, settings) {
     login: eff.login,
     services: eff.services,
     onlineRequiresAccount: settings.onlineRequiresAccount,
+    gameRequiresAccount: settings.gameRequiresAccount,
     contentRelay: settings.contentRelay,
     motd: settings.motd,
     passkey: { rpId: rpIdFor(request) },

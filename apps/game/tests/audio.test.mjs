@@ -452,8 +452,19 @@ test('mute and the music commands go through the audio system', () => {
   assert.equal(audio.prefs.get().enabled, false);
   assert.equal(audio.toggleMute(), false);
   const calls = [];
-  audio.jukebox = { userStop: () => calls.push('stop'), togglePause: () => calls.push('pause'), prev: () => calls.push('prev'), next: () => calls.push('next') };
+  audio.jukebox = {
+    userStop: () => calls.push('stop'),
+    togglePause: () => calls.push('pause'),
+    prev: () => calls.push('prev'),
+    next: () => calls.push('next'),
+    // Settings changes sync the music too.
+    start() {},
+    stop() {},
+  };
   for (const c of ['stop', 'pause', 'prev', 'next']) audio.music(c);
+  assert.deepEqual(calls, ['stop'], 'out of a game only stop does something');
+  audio.musicWanted = () => true;
+  for (const c of ['pause', 'prev', 'next']) audio.music(c);
   assert.deepEqual(calls, ['stop', 'pause', 'prev', 'next']);
 });
 

@@ -3,10 +3,10 @@
 
 #content-button {
   position: fixed;
-  left: 8px;
-  bottom: 52px;
+  left: calc(8 * var(--ui-px));
+  bottom: calc(52 * var(--ui-px));
   z-index: 60;
-  padding: 3px 10px;
+  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -38,48 +38,55 @@
   display: grid;
   place-items: center;
   overflow: auto;
-  padding: 16px;
+  padding: calc(16 * var(--ui-px));
   background: var(--ui-scan), rgba(0, 0, 0, 0.62);
 }
 
 .content-card {
-  width: min(600px, 100%);
-}
-
-.content-choice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.menu-card .content-choice label {
-  margin: 0 8px 0 0;
+  width: min(calc(600 * var(--ui-px)), 100%);
 }
 
 .content-packs {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(8 * var(--ui-px));
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* One pack: its on/off switch and name, then the order buttons. */
 .content-pack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(6 * var(--ui-px)) calc(10 * var(--ui-px)) calc(8 * var(--ui-px));
+  background: var(--ui-metal-0);
   border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+.content-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(6 * var(--ui-px));
+}
+
+.content-pack-rank {
+  margin-right: auto;
+  color: var(--ui-muted);
+  font: var(--ui-fs-s) / 1.4 var(--ui-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .content-preview {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: calc(6 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
 }
@@ -91,8 +98,8 @@
 /* Touch screens: the Sound button below grows to 44 px. */
 @media (pointer: coarse), (max-width: 600px) {
   #content-button {
-    bottom: calc(max(24px, env(safe-area-inset-bottom)) + 52px);
-    min-height: 44px;
+    bottom: calc(max(calc(24 * var(--ui-px)), env(safe-area-inset-bottom)) + calc(52 * var(--ui-px)));
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 }
 
@@ -100,9 +107,9 @@
 .content-steps {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
   margin: 0;
-  padding-left: 22px;
+  padding-left: calc(22 * var(--ui-px));
   font-size: var(--ui-fs-m);
 }
 
@@ -116,8 +123,8 @@
 }
 
 .content-mirrors {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  margin: calc(4 * var(--ui-px)) 0 0;
+  padding-left: calc(18 * var(--ui-px));
   font-size: var(--ui-fs-m);
 }
 
@@ -131,10 +138,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-height: 96px;
+  gap: calc(4 * var(--ui-px));
+  min-height: calc(96 * var(--ui-px));
   justify-content: center;
-  margin-top: 6px;
+  margin-top: calc(6 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 2px dashed var(--ui-line);
   box-shadow: none;
@@ -167,12 +174,12 @@
 .content-progress {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(4 * var(--ui-px));
 }
 
 .content-bar {
   width: 100%;
-  height: 10px;
+  height: calc(10 * var(--ui-px));
   accent-color: var(--ui-accent);
 }
 
@@ -180,8 +187,8 @@
 .content-result {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
   border: 1px solid var(--ui-edge);
   border-left: 3px solid var(--ui-ok);
   border-radius: var(--ui-radius);
@@ -203,8 +210,8 @@
 .content-auto {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
   border: 1px solid var(--ui-accent-lo);
   border-radius: var(--ui-radius);
 }
@@ -227,22 +234,22 @@
 /* The start screen notice (js/content/panel.js mountContentNotice). */
 .content-notice {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: calc(12 * var(--ui-px));
+  bottom: calc(12 * var(--ui-px));
   z-index: 65;
-  width: min(440px, calc(100% - 24px));
-  max-height: calc(100dvh - 24px);
+  width: min(calc(440 * var(--ui-px)), calc(100% - calc(24 * var(--ui-px))));
+  max-height: calc(100dvh - calc(24 * var(--ui-px)));
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(8 * var(--ui-px));
 }
 
 .content-notice-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
 }
 
 .content-notice h2 {
@@ -252,14 +259,14 @@
 .menu-card button.content-notice-close {
   width: auto;
   margin: 0;
-  padding: 4px 10px;
+  padding: calc(4 * var(--ui-px)) calc(10 * var(--ui-px));
   font-size: var(--ui-fs-s);
 }
 
 .menu-card .content-steps button:not(.content-dropzone) {
   width: auto;
-  margin-top: 6px;
-  padding: 8px 12px;
+  margin-top: calc(6 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(12 * var(--ui-px));
 }
 
 .content-notice-legal {
@@ -276,16 +283,16 @@
 /* Phones: the notice becomes a sheet at the bottom; buttons get 44 px targets. */
 @media (pointer: coarse), (max-width: 600px) {
   .content-notice {
-    left: 8px;
-    right: 8px;
-    bottom: max(8px, env(safe-area-inset-bottom));
+    left: calc(8 * var(--ui-px));
+    right: calc(8 * var(--ui-px));
+    bottom: max(calc(8 * var(--ui-px)), env(safe-area-inset-bottom));
     width: auto;
     max-height: 70dvh;
   }
 
   .menu-card .content-steps button:not(.content-dropzone),
   .menu-card button.content-notice-close {
-    min-height: 44px;
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 }
 
@@ -293,7 +300,7 @@
 body.content-drop::after {
   content: 'Drop ra-quickinstall.zip, Red Alert files or a texture pack to install them';
   position: fixed;
-  inset: 12px;
+  inset: calc(12 * var(--ui-px));
   z-index: 80;
   display: grid;
   place-items: center;

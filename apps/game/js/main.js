@@ -7,6 +7,11 @@
 // lobby's Load game and Replays buttons (js/records.js) load them again.
 // Spectators and the replay viewer watch with the observer panel
 // (js/observer.js): whole map or one player's view, and player stats.
+// When the local player is defeated or wins, js/endgame.js shows what
+// happened (single player pauses meanwhile); a defeated player can watch on
+// as a spectator. The end-game statistics (js/stats.js) come from the engine
+// and show at the end, for spectators and in replays. Restart (js/restart.js)
+// plays a single player game again with the same settings.
 //
 // The simulation (the wasm Game, its driver, the recorder) runs in a Web
 // Worker when the browser allows it (js/sim): the UI talks to a game handle
@@ -39,12 +44,14 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
 import { AccountSession } from './account/session.js';
 import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
+import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
 import { setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
@@ -52,6 +59,11 @@ import { allOriginalNames } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
+import { askOf } from './sim/methods.js';
+import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
+import { EndGameDialog, EndGameFlow } from './endgame.js';
+import { StatsScreen } from './stats.js';
+import { restartRecord, saveRestart, takeRestart } from './restart.js';
 
 const PLAYER = 0;
 
@@ -86,6 +98,14 @@ let contentPanel = null;
 let contentNotice = null;
 /** The signed-in account (js/account/session.js): online play, settings sync, the one-click content install. */
 let account = null;
+/**
+ * Loads of game files after the start (lazy modules, the simulation worker):
+ * when the server stops serving them mid-session (js/account/gate.js), the
+ * player gets a sign-in prompt; the running game is not touched.
+ */
+const playAccess = new PlayAccess({ onLost: playAccessLost });
+/** The page's UI scale (js/scale.js): follows the setting and the screen, previewed by the game menu. */
+let uiScale = null;
 
 async function boot() {
   let gpuError = null;
@@ -95,6 +115,8 @@ async function boot() {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
   $('version').textContent = wasm ? `v${version()}` : '';
+  // UI scale first, so every screen and dialog opens at its size.
+  uiScale = new UiScale({ settings, win: window, root: document.documentElement });
   setupAudio();
   setupAccount();
   setupContent();
@@ -133,7 +155,10 @@ async function boot() {
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
-  offerLinkedMap(lobby);
+  // Restart (js/restart.js): the game the page was reloaded for, with the same settings.
+  const again = takeRestart(sessionStore());
+  if (again && !gpuError && renderer) startSkirmish(again.options, lobby);
+  else offerLinkedMap(lobby);
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
 }
@@ -154,7 +179,24 @@ async function loadEngine() {
 
 /** Where the next game's simulation runs (js/sim/host.js): a worker if possible. */
 function newSimHost() {
-  return createSimHost({ Game, memory: () => wasm.memory, module: wasmModule });
+  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule }));
+}
+
+/** The game files were refused (js/account/gate.js): sign in again, or see why on the account page. */
+async function playAccessLost(state) {
+  if (state === 'signin' && account) {
+    await openSignIn(account, {
+      reason: 'Your sign-in has ended, so the game cannot load the rest of its files. Sign in again to go on; the game that is running keeps running.',
+      returnTo: location.pathname + location.search,
+    });
+    return;
+  }
+  showToast(state === 'signin' ? 'Your sign-in has ended. Sign in on the account page to go on playing.' : 'Your account cannot load the game right now. The account page says why.');
+}
+
+/** The message for a load that failed: the sign-in prompt already explains a refusal. */
+function loadErrorText(err) {
+  return err instanceof PlayAccessLost ? err.message : (err?.message ?? String(err));
 }
 
 /**
@@ -163,7 +205,7 @@ function newSimHost() {
  */
 async function setupRecords(lobby, gpuError) {
   try {
-    const [replay, ui, protocol] = await Promise.all([import('./replay.js'), import('./records.js'), import('./protocol.js')]);
+    const [replay, ui, protocol] = await playAccess.load(() => Promise.all([import('./replay.js'), import('./records.js'), import('./protocol.js')]));
     records = { ...replay, ...ui, replayOptions: protocol.replayOptions };
   } catch (err) {
     console.warn('Saves and replays are unavailable:', err);
@@ -218,6 +260,24 @@ function setupAccount() {
   } catch (err) {
     console.warn('Accounts are unavailable:', err);
     account = null;
+  }
+}
+
+/** This tab's sessionStorage, or null when the browser blocks it. */
+function sessionStore() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** The restart record of a single player game (js/restart.js), or null when it cannot have one. */
+function restartOf(options) {
+  try {
+    return restartRecord(options);
+  } catch {
+    return null;
   }
 }
 
@@ -332,11 +392,11 @@ async function offerLinkedMap(lobby) {
   const params = new URLSearchParams(location.search);
   if (params.get('editorTest') !== '1' && !params.get('map')) return;
   try {
-    const { loadPendingMap } = await import('./maploader.js');
+    const { loadPendingMap } = await playAccess.load(() => import('./maploader.js'));
     const map = await loadPendingMap(params);
     if (map) lobby.offerMapText(JSON.stringify(map));
   } catch (err) {
-    lobby.reportMapProblem(err?.message ?? err);
+    lobby.reportMapProblem(loadErrorText(err));
   }
 }
 
@@ -359,7 +419,7 @@ function setupOnline(lobby, gpuError) {
     root.hidden = false;
     if (ui) return;
     try {
-      const { mountOnline } = await import('./online.js');
+      const { mountOnline } = await playAccess.load(() => import('./online.js'));
       ui = mountOnline(root, {
         Game,
         version: version(),
@@ -382,6 +442,7 @@ function setupOnline(lobby, gpuError) {
             online: { driver, onQuit, spectator },
             recorder,
             viewer: spectator ? viewerPlayers(options.players) : null,
+            roster: viewerPlayers(options.players),
           });
         },
       });
@@ -426,10 +487,10 @@ function hasRejoinRecord() {
   }
 }
 
-/** Names and colours of the players in a game's options, for the observer panel. */
+/** Names and colours of the players in a game's options, for the observer panel and the statistics. */
 function viewerPlayers(players) {
   return players.map((p, i) => ({
-    name: p.type === 'human' ? p.name : p.name || `Computer (${p.difficulty})`,
+    name: p.type === 'human' ? p.name || `Player ${i + 1}` : p.name || `Computer (${p.difficulty})`,
     color: TEAM_COLORS[i] ?? [1, 1, 1],
   }));
 }
@@ -482,7 +543,7 @@ async function launch(spec, lobby, failText) {
     return { host, info };
   } catch (err) {
     host?.dispose();
-    lobby.showError(`${failText}: ${err.message ?? err}`);
+    lobby.showError(`${failText}: ${loadErrorText(err)}`);
     return null;
   } finally {
     starting = false;
@@ -527,7 +588,7 @@ async function startSkirmish(options, lobby) {
   const run = await launch({ kind: 'skirmish', options: engineOptions, map: canonicalMap, player, recorder: recording, tickMs }, lobby, 'Could not start the game');
   if (!run) return;
   applyColors(playing);
-  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run) });
+  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run), roster: viewerPlayers(playing), restart: restartOf(options) });
 }
 
 /** "England vs 2 opponents" style title for a recorded skirmish. */
@@ -562,7 +623,15 @@ async function loadSave(replay, lobby) {
   const run = await launch({ kind: 'save', replay, tickMs }, lobby, 'Could not load the save');
   if (!run) return;
   applyColors(replay.options.players);
-  start(run.host, { stress: false, tickMs, player: replay.player, recorder: recorderOf(run) });
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player: replay.player,
+    recorder: recorderOf(run),
+    roster: viewerPlayers(replay.options.players),
+    // Restart plays the saved game again from its start, with its settings.
+    restart: restartOf({ ...replay.options, map: replay.map ?? null }),
+  });
 }
 
 /** Open the replay viewer. */
@@ -609,8 +678,10 @@ function recorderOf({ host, info }) {
 // `replay` (ReplayHandle) controls a replay; `recorder` (RecorderHandle) saves
 // and downloads; `viewer` (the players' names and colours) turns the screen
 // into a spectator view: no sidebar, no orders, the observer panel with the
-// view switcher and stats.
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null }) {
+// view switcher and stats. `roster` names and colours the players of any
+// game (statistics, the observer panel after a defeat); `restart` is the
+// js/restart.js record of a single player game (null: no restart).
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null }) {
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
@@ -633,9 +704,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
   const watched = audio ? audio.watch(game) : game;
-  const ui = viewer && records ? records.viewOnly(watched) : watched;
+  // A defeated player who watches on gives no orders either (js/endgame.js).
+  let spectating = false;
+  const watching = () => !!viewer || spectating;
+  const ui = viewer ? viewOnly(watched) : viewOnly(watched, () => spectating);
+  const players = viewer ?? roster ?? [];
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
-  const view = { player: viewer && records ? records.OBSERVER_VIEW : player };
+  const view = { player: viewer ? OBSERVER_VIEW : player };
   // Driver state from the newest frame (loading a save, catching up, seeking).
   let status = { busy: false };
   const busy = () => !!status.busy;
@@ -650,7 +725,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     let atlas = null;
     if (art?.slots.size) {
       try {
-        atlas = buildAtlas(rules.actors, { slots: art.slots, filter: art.filter, maxSize: renderer.maxTextureSize });
+        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
@@ -720,8 +795,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   };
   // Radar pings (js/radarpings.js): attacks, beacons and superweapons of the
   // watched player and their allies; the last one is where Space jumps to.
-  const watchedPlayer = () =>
-    viewer && records && (view.player === records.OBSERVER_VIEW || view.player === records.COMBINED_VIEW) ? null : viewer ? view.player : player;
+  const watchedPlayer = () => (view.player === OBSERVER_VIEW || view.player === COMBINED_VIEW ? null : view.player);
   const pings = new RadarPings({
     visible: (owner) => watchedPlayer() !== null && allies(watchedPlayer(), owner),
     color: (owner) => TEAM_COLORS[owner] ?? [1, 1, 1],
@@ -766,7 +840,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     feedback: (text) => notices?.push(text),
     onMenu: () => menu.open(),
   }, { spectator: !!viewer });
-  input.watchAll = !!viewer && !!records && view.player === records.OBSERVER_VIEW;
+  input.watchAll = !!viewer && view.player === OBSERVER_VIEW;
   // Spectators and replays have no sidebar (and no sidebar drawer on phones).
   if (viewer) $('app').classList.add('viewer');
   sidebar = new Sidebar(
@@ -817,10 +891,15 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     commandBar.root.hidden = true;
   }
   // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
+  // A local game stands still while the menu, the debug menu's pause or an end-game dialog asks for it.
   let paused = false;
-  // Paused by the open game menu (single player); `paused` is the Pause key's and the debug menu's.
   let menuPaused = false;
-  const halted = () => paused || menuPaused;
+  let debugPaused = false;
+  // OpenRA's Pause hotkey stops a local game without the menu (js/gamekeys.js).
+  let keyPaused = false;
+  const updatePaused = () => {
+    paused = menuPaused || debugPaused || keyPaused || flow.paused;
+  };
   const debug = new DebugMenu($('field'), {
     game,
     input,
@@ -834,7 +913,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     instances: () => instanceInfo,
     isPaused: () => paused,
     setPaused: online || replay ? undefined : (on) => {
-      paused = on;
+      debugPaused = on;
+      updatePaused();
     },
     step: () => {
       if (!paused || online || replay || busy()) return false;
@@ -845,25 +925,49 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Observer panel and replay controls (js/observer.js, js/records.js).
   let observer = null;
   let replayBar = null;
-  if (viewer && records) {
-    observer = new records.ObserverPanel($('field'), {
-      players: viewer,
+  // End-game statistics (js/stats.js): at the end, for spectators and replays, from the menu once out.
+  const statsScreen = stress
+    ? null
+    : new StatsScreen($('stats-screen'), {
+        load: async () => {
+          const text = await askOf(game).observer_report();
+          return text ? JSON.parse(text) : null;
+        },
+        players,
+        rules,
+        localPlayer: viewer ? null : player,
+        live: true,
+        actions: [],
+      });
+  const openStats = () => statsScreen?.open();
+  const mountObserver = () => {
+    observer = new ObserverPanel($('field'), {
+      players,
       view: view.player,
       onView: (v) => {
         view.player = v;
         // The whole map and all players' vision together are no player's view.
-        const all = v === records.OBSERVER_VIEW || v === records.COMBINED_VIEW;
-        input.player = all ? 0 : v;
+        const all = v === OBSERVER_VIEW || v === COMBINED_VIEW;
+        input.player = all ? (viewer ? 0 : player) : v;
         input.watchAll = all;
       },
+      onStats: statsScreen ? openStats : null,
     });
-  }
+  };
+  if (viewer) mountObserver();
   if (replay && records) replayBar = new records.ReplayBar($('field'), replay);
   const progress = records ? new records.ProgressOverlay($('field')) : null;
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
   window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
+  // Game scale (game menu, Settings; js/scale.js): the view's base zoom. Auto
+  // follows the window and the render resolution, so those changes pick again.
+  const applyGameScale = () => input.setGameScale(resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: renderer.pixelRatio() }));
+  applyGameScale();
+  for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
+  window.addEventListener('resize', applyGameScale);
+  watchPixelRatio(window, applyGameScale);
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -881,6 +985,26 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     replay?.dispose();
     location.reload();
   };
+  // Restart (js/restart.js): a replay plays again from 0 here; a single player
+  // game reloads the page, which starts it again with the same settings and
+  // fresh audio, notifications, statistics, minimap, sidebar, selection and
+  // camera. Online games have none.
+  const restartGame = replay
+    ? () => {
+        replay.seek(0);
+        if (!replay.playing) replay.togglePlay();
+        flow.reset();
+      }
+    : restart && !online && !stress
+      ? () => {
+          if (!saveRestart(restart, sessionStore())) {
+            showToast('Could not restart: this browser does not let the page keep the settings.');
+            return;
+          }
+          leaving = true;
+          location.reload();
+        }
+      : null;
   const exit = () => {
     leaving = true;
     online?.onQuit();
@@ -904,17 +1028,24 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       input.setSuspended(open);
       if (open) touch.reset();
       menuPaused = isPaused;
+      updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
+    uiScale,
+    renderRatio: () => renderer.pixelRatio(),
+    audio,
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),
+    restart: restartGame ? { replay: !!replay, run: restartGame } : undefined,
+    onStats: statsScreen ? openStats : undefined,
+    // Live statistics of the other players would give a player still in the game away.
+    statsAvailable: () => watching() || flow.over,
     onLeave: leave,
     onExit: exit,
   });
   $('menu-button').hidden = false;
   $('menu-button').addEventListener('click', () => menu.toggle());
-  $('again').addEventListener('click', leave);
   // OpenRA DisableUserInterface / DisableAllUserInterface: only the battlefield
   // (and without the cursor), pressed again: everything back.
   let interfaceHidden = false;
@@ -942,7 +1073,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       // OpenRA Pause: the game stops (and goes on) without the menu; replays
       // play and pause. Online games cannot pause (the lockstep server drops
       // a player who holds the game up).
-      pause: replay ? () => replay.togglePlay() : online ? undefined : () => (paused = !paused),
+      pause: replay
+        ? () => replay.togglePlay()
+        : online
+          ? undefined
+          : () => {
+              keyPaused = !keyPaused;
+              updatePaused();
+            },
       menu: () => menu.toggle(),
       debugMenu: () => debug.toggle(),
       showUnitPaths: () => {
@@ -984,9 +1122,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       pauseMusic: audio ? () => audio.music('pause') : undefined,
       prevMusic: audio ? () => audio.music('prev') : undefined,
       nextMusic: audio ? () => audio.music('next') : undefined,
-      observerCombinedView: observer ? () => observer.setView(records.COMBINED_VIEW) : undefined,
-      observerWorldView: observer ? () => observer.setView(records.OBSERVER_VIEW) : undefined,
-      statistics: observer ? (panel) => observer.showPanel(panel) : undefined,
+      observerCombinedView: () => observer?.setView(COMBINED_VIEW),
+      observerWorldView: () => observer?.setView(OBSERVER_VIEW),
+      statistics: (panel) => observer?.showPanel(panel),
       replaySpeed: replayBar ? (speed) => replayBar.setSpeed(speed) : undefined,
     },
     { spectator: !!viewer },
@@ -1008,12 +1146,61 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     leaving = true;
     showToast(`The game stopped: ${message}`);
   });
-  const replayButton = $('gameover-replay');
   const download = recordActions.find((a) => a.id === 'replay');
-  if (replayButton && download) {
-    replayButton.hidden = false;
-    replayButton.addEventListener('click', async () => showToast(await download.run()));
+  if (statsScreen) {
+    statsScreen.opts.actions = [
+      ...(restartGame ? [{ label: replay ? 'Restart replay' : 'Play again', run: () => (replay ? (statsScreen.close(), restartGame()) : restartGame()) }] : []),
+      { label: online && !replay && !online.spectator ? 'Leave game' : 'Return to lobby', run: leave },
+    ];
   }
+
+  // ---- Defeat, victory and the end of the game (js/endgame.js) ----------------------
+  /** Names of the winning side, from the newest player state. */
+  let winner = null;
+  const winnerText = () => {
+    if (winner === null || winner === undefined) return '';
+    const names = players.filter((_, i) => i === winner || game.are_allies(i, winner)).map((p) => p.name);
+    if (!names.length) return '';
+    return `${names.join(' and ')} ${names.length === 1 ? 'wins' : 'win'}`;
+  };
+  /** Defeated: the observer's screen, the whole map, no orders. */
+  const enterSpectator = () => {
+    spectating = true;
+    for (let i = 0; i < 8 && input.cancelMode(); i++);
+    input.cancelPlacing();
+    placementEnded();
+    input.setSelection([]);
+    powerBar.root.hidden = true;
+    commandBar.root.hidden = true;
+    $('app').classList.add('viewer');
+    view.player = OBSERVER_VIEW;
+    if (!observer) mountObserver();
+    else observer.setView(OBSERVER_VIEW, false);
+  };
+  const flow = new EndGameFlow({
+    online: !!online,
+    viewer: !!viewer,
+    replay: !!replay,
+    onChange: (f) => {
+      updatePaused();
+      if (f.spectating && !spectating) enterSpectator();
+      endDialog.render();
+    },
+  });
+  const endDialog = new EndGameDialog($('gameover'), {
+    flow,
+    actions: {
+      spectate: () => flow.spectate(),
+      continue: () => flow.close(),
+      stats: openStats,
+      restart: () => restartGame?.(),
+      download: async () => showToast(await download.run()),
+      leave,
+      exit,
+    },
+    context: () => ({ winnerText: winnerText(), canRestart: !!restartGame, canDownload: !!download }),
+    blocked: () => !!statsScreen?.isOpen || menu.isOpen,
+  });
   // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
   if (!stress && !replay) {
     window.addEventListener('beforeunload', (e) => {
@@ -1042,7 +1229,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const dt = Math.min(now - last, 250);
     last = now;
     const catching = busy();
-    if ((catching || menu.isOpen) !== input.suspended) input.setSuspended(catching || menu.isOpen);
+    const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
+    if (suspend !== input.suspended) input.setSuspended(suspend);
     input.update(dt / 1000);
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.
@@ -1056,7 +1244,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const t0 = performance.now();
     const f = host.step({
       dt,
-      paused: halted(),
+      paused,
       view: view.player,
       rect: [v.x0, v.y0, v.x1, v.y1],
       audio: true,
@@ -1123,7 +1311,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     rects.set(simRects);
     rects.set(uiRects, simRects.length);
     // Building animations run on wall time but stop with the game (and for reduced motion).
-    animClock.advance(dt, halted());
+    animClock.advance(dt, paused);
     const lines = f.lineCount ? f.lines() : null;
     const gpu = records ? { records, alpha: f.alpha, view: [v.x0, v.y0, v.x1, v.y1] } : null;
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
@@ -1153,7 +1341,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       // Null in a worker until its first answer.
       const json = game.player_json(player);
       const state = json ? JSON.parse(json) : null;
-      if (state && !viewer) {
+      if (state && !watching()) {
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
         commandBar.update();
@@ -1161,19 +1349,21 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         sidebar.setSelection(selectionInfo(game, input.selection));
         sidebar.setDeployState(input.deployState());
       }
-      const stats = viewer ? game.observer_stats() : null;
+      const stats = watching() ? game.observer_stats() : null;
       if (stats && observer) observer.update(JSON.parse(stats), game.tick_count(), observerExtra(observer.needs()));
       replayBar?.update();
-      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, halted(), layout.compact, replay ? 'Replay' : online?.spectator ? 'Spectating' : null);
+      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null);
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).
       if (f.weather) weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText);
       touch.update();
       if (state) debug.update(state);
-      if (state && !over && !stress && !viewer && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
-        over = true;
-        $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
-        $('gameover').hidden = false;
-        audio?.gameOver(!!state.won);
+      if (state && !stress) {
+        winner = state.winner ?? null;
+        const event = flow.update(state, { ended: !!replay?.ended });
+        // The announcer: "Mission failed" on the defeat, "Mission accomplished" on a win (also an ally's, after a defeat).
+        if (event === 'defeat') audio?.gameOver(false);
+        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
+        over = flow.over || flow.phase !== 'playing';
       }
     }
     requestAnimationFrame(frame);

@@ -1436,6 +1436,19 @@ impl World {
         self.orders.push(o);
     }
 
+    /// Queue an order from the order log (a player's action, not an AI
+    /// decision): refused for defeated players, counted for the observer
+    /// stats otherwise. Returns whether it was queued.
+    pub fn queue_player_order(&mut self, o: Order) -> bool {
+        let p = o.player();
+        if self.players.get(p as usize).is_none_or(|pl| pl.defeated) {
+            return false;
+        }
+        self.note_order(p);
+        self.orders.push(o);
+        true
+    }
+
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
         let mut out: Vec<usize> = ids
             .iter()
@@ -1454,6 +1467,11 @@ impl World {
     fn apply_orders(&mut self) {
         let orders = std::mem::take(&mut self.orders);
         for o in orders {
+            // A defeated player is out of the game: whatever it still owns
+            // (submarines, walls, mines) takes no more orders.
+            if self.players.get(o.player() as usize).is_none_or(|p| p.defeated) {
+                continue;
+            }
             if let Some(ids) = o.commanded_ids() {
                 for i in self.owned_units(o.player(), ids) {
                     self.clear_commands(i);
@@ -1903,6 +1921,8 @@ impl World {
         if self.tick.is_multiple_of(TICKS_PER_SECOND) {
             self.check_victory();
         }
+        // Statistics history (observer.rs): reads the world, never changes it.
+        self.sample_stats();
     }
 
     fn check_victory(&mut self) {
@@ -1922,6 +1942,7 @@ impl World {
         for (p, &n) in alive_count.iter().enumerate() {
             if n == 0 && !self.players[p].neutral {
                 self.players[p].defeated = true;
+                self.note_defeated(p as u8);
             }
         }
         // The game ends when every remaining player is on the same side.
@@ -1930,6 +1951,7 @@ impl World {
         let playing = self.players.iter().filter(|p| !p.neutral).count();
         if playing > 1 && !remaining.is_empty() && remaining.iter().all(|&p| self.are_allies(p, remaining[0])) {
             self.winner = Some(remaining[0]);
+            self.note_game_end();
         }
     }
 

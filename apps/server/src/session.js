@@ -667,6 +667,12 @@ export class Session extends DurableObject {
         this.emitFrames(this.lockstep.flush());
         return;
       }
+      case C2S.DEFEATED:
+        // The engine defeated this player: it may keep watching (it still
+        // sends empty orders and hashes), but its orders are dropped from now on.
+        if (seat < 0) throw new RoomError('Spectators have no seat to lose.', ERRORS.STATE);
+        this.lockstep.defeat(seat);
+        return;
       case C2S.SYNCED:
         // A spectator processed the whole catch-up.
         if (!this.catching.delete(ws)) throw new RoomError('Nothing to confirm.', ERRORS.STATE);

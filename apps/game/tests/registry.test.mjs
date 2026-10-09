@@ -49,9 +49,22 @@ test('registry: every setting has a type, a label and a valid default', () => {
   }
   // The groups and keys are the account's settings document sections.
   assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'extra']);
-  assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), ['edgeScrollSpeed', 'graphics', 'healthBars', 'hotkeys', 'keyScrollSpeed', 'lowQuality', 'pixelRatioCap', 'playerStanceColors', 'showUnitPaths']);
+  assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
+    'edgeScrollSpeed',
+    'gameScale',
+    'graphics',
+    'healthBars',
+    'hotkeys',
+    'keyScrollSpeed',
+    'lowQuality',
+    'pixelRatioCap',
+    'playerStanceColors',
+    'showUnitPaths',
+    'uiScale',
+  ]);
+  assert.deepEqual(Object.keys(GROUPS.audio.settings), ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle', 'musicRepeat']);
   assert.deepEqual(Object.keys(GROUPS.debug.settings), [...VIEWS.map((v) => v.key), 'cpuInstances']);
-  assert.deepEqual(Object.keys(GROUPS.lobby.settings), ['name', 'faction', 'color', 'lastOptions']);
+  assert.deepEqual(Object.keys(GROUPS.lobby.settings), ['name', 'faction', 'color', 'lastOptions', 'presets']);
   // settings.js and audio/prefs.js are views on the registry.
   for (const [name, [group, key]] of Object.entries(SETTINGS_KEYS)) assert.equal(SETTINGS_SCHEMA[name], specOf(group, key));
   assert.deepEqual(DEFAULT_PREFS, defaultValues().audio);
@@ -64,7 +77,7 @@ test('registry: lenient normalization clamps, trims and falls back; strict check
   assert.equal(normalizeValue(speed, '2'), 1, 'text is not a number');
   assert.match(checkValue(speed, 9), /between 0 and 3/);
   assert.equal(normalizeValue(specOf('lobby', 'color'), 2.6), 3, 'integers round');
-  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'off');
+  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'damaged');
   // Lobby names follow the protocol's text rules (spaces collapsed, no control characters).
   const name = specOf('lobby', 'name');
   assert.equal(normalizeValue(name, '  Tanya   Adams '), 'Tanya Adams');
@@ -96,6 +109,35 @@ test('registry: lenient normalization clamps, trims and falls back; strict check
   assert.match(checkJson({ a: 'x'.repeat(501) }), /500/);
   assert.match(checkJson({ a: Array(65).fill(0) }), /64/);
   assert.match(checkValue(specOf('lobby', 'lastOptions'), { big: Array(60).fill('x'.repeat(100)) }), /4096 bytes/);
+});
+
+test('registry: scale settings take "auto" or a factor; music settings', () => {
+  for (const key of ['uiScale', 'gameScale']) {
+    const spec = specOf('game', key);
+    assert.equal(spec.type, 'scale');
+    assert.equal(spec.default, 'auto');
+    assert.equal(normalizeValue(spec, 'auto'), 'auto');
+    assert.equal(normalizeValue(spec, 1.25), 1.25);
+    assert.equal(normalizeValue(spec, 99), spec.max, 'clamped');
+    assert.equal(normalizeValue(spec, 0), spec.min, 'clamped');
+    assert.equal(normalizeValue(spec, 'Auto'), 'auto', 'not a number: the default');
+    assert.equal(normalizeValue(spec, '1.5'), 'auto');
+    assert.equal(normalizeValue(spec, null), 'auto');
+    assert.equal(normalizeValue(spec, NaN), 'auto');
+    assert.equal(checkValue(spec, 'auto'), null);
+    assert.equal(checkValue(spec, spec.min), null);
+    assert.match(checkValue(spec, spec.max + 0.5), /"auto" or between/);
+    assert.match(checkValue(spec, 'big'), /"auto" or a number/);
+  }
+  assert.deepEqual([specOf('game', 'uiScale').min, specOf('game', 'uiScale').max], [0.5, 2]);
+  assert.deepEqual([specOf('game', 'gameScale').min, specOf('game', 'gameScale').max], [0.5, 3]);
+  const r = createRegistry({ storage: memoryStorage() });
+  assert.equal(r.set('game', 'uiScale', 0.85), 0.85);
+  assert.equal(r.set('game', 'gameScale', 'auto'), 'auto');
+  assert.equal(r.set('audio', 'musicRepeat', 'one'), 'one');
+  assert.equal(r.set('audio', 'musicRepeat', 'twice'), 'all', 'unknown repeat mode: the default');
+  assert.deepEqual(r.document().audio, { ...defaultValues().audio, musicRepeat: 'all' });
+  assert.equal(r.document().game.uiScale, 0.85);
 });
 
 test('registry: the document is the account settings document; nulls are left out', () => {
@@ -176,8 +218,12 @@ test('registry: every old key migrates once, and the old keys are removed after 
   const r = createRegistry({ storage });
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
-  assert.deepEqual(v.game, { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: true, healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] } });
-  assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false });
+  assert.deepEqual(
+    v.game,
+    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: true, uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] } },
+    'settings the old key did not have get their default',
+  );
+  assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, musicOn: true, musicShuffle: true, musicRepeat: 'all' });
   assert.equal(v.debug.stats, true);
   assert.equal(v.debug.cpuInstances, true);
   assert.equal(v.lobby.lastOptions.seed, 5, 'the newest lobby key wins');
@@ -292,4 +338,56 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
     assert.equal(checkDocument(bad).ok, false);
     assert.throws(() => protocol.validateSettingsDocument({ schema: 1, ...bad }));
   }
+  // The scales and the music settings: the same keys, limits and choices on both sides.
+  assert.deepEqual([specOf('game', 'uiScale').min, specOf('game', 'uiScale').max], [protocol.UI_SCALE_LIMITS.min, protocol.UI_SCALE_LIMITS.max]);
+  assert.deepEqual([specOf('game', 'gameScale').min, specOf('game', 'gameScale').max], [protocol.GAME_SCALE_LIMITS.min, protocol.GAME_SCALE_LIMITS.max]);
+  assert.deepEqual(specOf('audio', 'musicRepeat').options, [...protocol.MUSIC_REPEAT_MODES]);
+  const values = [
+    'auto',
+    'Auto',
+    '1',
+    null,
+    true,
+    0,
+    0.25,
+    0.49,
+    0.5,
+    0.85,
+    1,
+    1.999,
+    2,
+    2.01,
+    2.5,
+    3,
+    3.01,
+    -1,
+    Infinity,
+    NaN,
+    'all',
+    'one',
+    'off',
+    'never',
+    false,
+  ];
+  for (const [group, key] of [
+    ['game', 'uiScale'],
+    ['game', 'gameScale'],
+    ['audio', 'musicOn'],
+    ['audio', 'musicShuffle'],
+    ['audio', 'musicRepeat'],
+  ]) {
+    for (const v of values) {
+      const client = checkValue(specOf(group, key), v) === null;
+      let server = true;
+      try {
+        protocol.validateSettingsDocument({ [group]: { [key]: v } });
+      } catch {
+        server = false;
+      }
+      assert.equal(client, server, `${group}.${key} = ${String(v)}: client ${client}, server ${server}`);
+    }
+  }
+  r.patch('game', { uiScale: 1.35, gameScale: 2.5 });
+  r.patch('audio', { musicOn: false, musicShuffle: false, musicRepeat: 'off' });
+  assert.doesNotThrow(() => protocol.validateSettingsDocument(r.document()));
 });

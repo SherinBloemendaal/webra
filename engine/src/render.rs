@@ -521,7 +521,7 @@ impl World {
     }
 
     /// The pose of a live structure's body sprite, and its age.
-    fn building_pose(&self, i: usize) -> (Pose, u32) {
+    pub(crate) fn building_pose(&self, i: usize) -> (Pose, u32) {
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
         let damaged = self.heavily_damaged(i);

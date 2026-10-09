@@ -22,7 +22,7 @@ WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and 
 
 ## Features
 
-Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [webra.sherin.dev](https://webra.sherin.dev/)).
+Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [webra.sherin.dev](https://webra.sherin.dev/)). Playing needs a WebRA account while the site setting `gameRequiresAccount` is on (the default): sign up on the [account page](https://webra.sherin.dev/account/), and once the account is active (closed beta: an admin approves it) the game opens. The server enforces this for every game file, not only the start page ([security notes](docs/security.md#the-play-gate-2026-10-09)).
 
 ### Game modes
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
@@ -72,13 +72,14 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Touch action bar for what the keyboard does on desktop: Add (Shift), attack move, force attack, stop, deploy, select all, cancel; building placement by dragging the footprint with Place and Cancel buttons; support powers aimed by tap
 - [x] Phone layouts: the build sidebar becomes a collapsible drawer (bottom in portrait, right in landscape), 44 px touch targets, safe-area insets for notches, compact HUD, Menu button for the game menu; the lobby and the website work at phone width
 - [x] Render resolution cap and a low quality setting for mobile GPUs
+- [x] **UI scale** (the sidebar, bars, menus and dialogs) and **game scale** (how big units and terrain appear; the mouse wheel and pinch zoom from there) in Settings, each with **Auto** for the screen (a smaller UI on small and high-density desktop screens, sharp whole-pixel steps for the battlefield); touch targets stay 44 px at any UI scale
 
 ### Sound
 - [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
 - [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
 - [x] Positional sound: volume and stereo pan follow the camera, sounds outside the view or under fog are culled, and a per-frame voice budget keeps battles of thousands of units listenable
 - [x] Original Red Alert sounds, voices and music from your own copy, and texture pack sounds (see [Original content](#original-content))
-- [x] Settings for master, effects, voices and music volume, speech and originals (the **Sound** button)
+- [x] Settings for master, effects, voices and music volume, speech and originals, and music on or off, shuffle, repeat and next track, in the game menu's **Settings** (Audio) and the **Sound** button
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated); team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
@@ -329,7 +330,7 @@ Touch and pen input works next to the mouse and keyboard; the touch action bar a
 | **Build** / **Map** (phones) | Show or hide the build sidebar drawer; it also tucks away while you place a building |
 | **Menu** | Game menu (pause, settings, controls, sound, leave) |
 
-Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over the battlefield only. On phones with a high pixel density, lower **Max resolution** or turn on **Low quality** in Settings when the frame rate drops.
+Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over the battlefield only. On phones with a high pixel density, lower **Max resolution** or turn on **Low quality** in Settings when the frame rate drops. Those change how many pixels the battlefield is drawn with; **UI scale** and **Game scale** change how big the interface and the battlefield appear.
 
 Notes on browsers:
 

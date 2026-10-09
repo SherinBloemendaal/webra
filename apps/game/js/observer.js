@@ -71,8 +71,11 @@ export const PANELS = {
       ['Power', (s) => `${s.powerUsed}/${s.powerGenerated}`],
       ['Kills', (s) => String(s.unitsKilled + s.buildingsKilled)],
       ['Deaths', (s) => String(s.unitsLost + s.buildingsLost)],
-      ['Army', (s) => formatMoney(s.armyValue)],
-      ['Income', (s, x) => `${formatMoney(x.income ?? 0)}/min`],
+      ['Destroyed', (s) => formatMoney(s.assetsDestroyed ?? 0)],
+      ['Lost', (s) => formatMoney(s.assetsLost ?? 0)],
+      // Experience in value points, like the selection panel (100 per credit of the victims).
+      ['Experience', (s) => String(Math.round((s.experience ?? 0) / 100))],
+      ['APM', (s, x) => String(x.apm ?? 0)],
     ],
   },
   economy: {
@@ -81,6 +84,7 @@ export const PANELS = {
       ['Cash', (s) => formatMoney(s.funds)],
       ['Income', (s, x) => `${formatMoney(x.income ?? 0)}/min`],
       ['Earned', (s) => formatMoney(s.earned)],
+      ['Spent', (s) => formatMoney(s.spent ?? 0)],
       ['Harvesters', (s, x) => String(x.harvesters ?? 0)],
     ],
   },
@@ -95,6 +99,8 @@ export const PANELS = {
   combat: {
     label: 'Combat',
     columns: [
+      ['Destroyed', (s) => formatMoney(s.assetsDestroyed ?? 0)],
+      ['Lost', (s) => formatMoney(s.assetsLost ?? 0)],
       ['Units killed', (s) => String(s.unitsKilled)],
       ['Units lost', (s) => String(s.unitsLost)],
       ['Structures killed', (s) => String(s.buildingsKilled)],
@@ -166,9 +172,11 @@ export class History {
 export class ObserverPanel {
   /**
    * @param {HTMLElement} parent
-   * @param {{ players: { name: string, color: number[] }[], view: number, onView(view: number): void, panel?: string }} opts
+   * @param {{ players: { name: string, color: number[] }[], view: number, onView(view: number): void, onStats?(): void, panel?: string }} opts
+   *   `onStats`: a Statistics button that opens the full statistics screen (js/stats.js);
+   *   `panel`: the statistics panel shown first (PANELS)
    */
-  constructor(parent, { players, view = OBSERVER_VIEW, onView, panel = 'basic' }) {
+  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null, panel = 'basic' }) {
     this.players = players;
     this.onView = onView;
     this.view = view;
@@ -205,6 +213,13 @@ export class ObserverPanel {
     head.append(this.select);
     this.table = el('div', 'observer-stats');
     this.table.setAttribute('role', 'table');
+    if (onStats) {
+      const more = el('button', 'observer-toggle observer-stats-button', 'Statistics');
+      more.type = 'button';
+      more.setAttribute('aria-haspopup', 'dialog');
+      more.addEventListener('click', () => onStats());
+      head.append(more);
+    }
     this.graph = el('canvas', 'observer-graph');
     this.graph.width = 480;
     this.graph.height = 160;
@@ -249,6 +264,9 @@ export class ObserverPanel {
       this.army.sample(s.player, tick, s.armyValue);
     }
     const incomes = new Map(stats.map((s) => [s.player, this.income.sample(s.player, tick, s.earned)]));
+    // Actions per minute over the game so far (orders of the order log, engine observer.rs).
+    const minutes = tick / INCOME_WINDOW_TICKS;
+    const apm = (s) => (minutes > 0 ? Math.round((s.orders ?? 0) / minutes) : 0);
     const panel = PANELS[this.panel];
     if (panel.graph) {
       this.drawGraph(panel.graph === 'earned' ? this.earned : this.army);
@@ -265,7 +283,7 @@ export class ObserverPanel {
     for (const s of stats) {
       const p = this.players[s.player];
       if (!p) continue;
-      const x = { income: incomes.get(s.player) ?? 0, ...extra(s.player) };
+      const x = { income: incomes.get(s.player) ?? 0, apm: apm(s), ...extra(s.player) };
       const row = el('div', s.defeated ? 'observer-row observer-defeated' : 'observer-row');
       row.setAttribute('role', 'row');
       row.style.setProperty('--cols', String(cols.length));
@@ -322,10 +340,12 @@ export class ObserverPanel {
 
 /**
  * A view of the game for spectators and replays: the order methods do
- * nothing (selecting and looking around still work).
+ * nothing (selecting and looking around still work). `blocked()` decides per
+ * call, so a player's game turns view-only when it starts watching after
+ * its defeat.
  */
-export function viewOnly(game) {
-  const blocked = new Set([
+export function viewOnly(game, blocked = () => true) {
+  const orders = new Set([
     'order_smart',
     'order_move',
     'order_attack',
@@ -353,9 +373,11 @@ export function viewOnly(game) {
   const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'sell_value', 'repair_cursor', 'can_power_down']);
   return new Proxy(game, {
     get(target, prop) {
-      // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
-      if (blocked.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
-      if (zero.has(prop)) return () => 0;
+      if (blocked()) {
+        // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
+        if (orders.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
+        if (zero.has(prop)) return () => 0;
+      }
       const v = Reflect.get(target, prop, target);
       return typeof v === 'function' ? v.bind(target) : v;
     },

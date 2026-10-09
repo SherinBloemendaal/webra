@@ -262,6 +262,7 @@ impl World {
         if let Some(pos) = queue.items.iter().rposition(|it| it.ty == ty) {
             let item = queue.items.remove(pos);
             self.refund(player, item.paid);
+            self.note_production_refund(player, item.paid);
         }
     }
 
@@ -287,6 +288,7 @@ impl World {
                 }
                 let item = self.players[player as usize].queues[qi].items.remove(i);
                 self.refund(player, item.paid);
+                self.note_production_refund(player, item.paid);
             }
         }
     }
@@ -347,6 +349,7 @@ impl World {
                     self.sound.push_funds(tick, player, first_ty);
                     continue;
                 }
+                self.note_production(player, qi, delta);
                 let item = &mut self.players[player as usize].queues[qi].items[0];
                 item.paid = due;
                 item.remaining -= 1;
@@ -362,6 +365,7 @@ impl World {
             // Finished unit: spawn it at a producer.
             if self.spawn_produced(player, first_ty) {
                 self.players[player as usize].queues[qi].items.remove(0);
+                self.note_built(player, first_ty);
             }
         }
     }
@@ -523,6 +527,7 @@ impl World {
         }
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
         self.players[player as usize].queues[qi].items.remove(0);
+        self.note_built(player, ty);
         let (bx, by) = (self.actors[b].x, self.actors[b].y);
         self.sound.push(SoundEventKind::BuildingPlaced, ty as i32, bx, by, player, 0);
         self.clear_mines_under(b);
@@ -592,6 +597,7 @@ impl World {
         let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
+        self.note_sold(owner, refund);
         self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         self.remove(b);

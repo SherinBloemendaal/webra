@@ -21,7 +21,6 @@
 
 import { GestureRecognizer, pinchCamera } from './gestures.js';
 import { ACTION } from './cursors.js';
-import { MIN_ZOOM, MAX_ZOOM } from './input.js';
 
 const NONE = 0xffffffff;
 const CARD_LONG_PRESS_MS = 500;
@@ -312,7 +311,8 @@ export class TouchControls {
   onPinch({ x, y, dx, dy, scale }) {
     const i = this.input;
     const p = this.local(x, y);
-    Object.assign(i.camera, pinchCamera(i.camera, { x: p.x, y: p.y, dx, dy, scale }, MIN_ZOOM, MAX_ZOOM));
+    const limits = i.zoomLimits();
+    Object.assign(i.camera, pinchCamera(i.camera, { x: p.x, y: p.y, dx, dy, scale }, limits.min, limits.max));
     i.clampCamera();
   }
 

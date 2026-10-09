@@ -58,6 +58,7 @@ export class AudioSystem {
       () => this.changed(),
       () => this.bank.pack,
       () => this.prefs.get().original,
+      () => ({ shuffle: this.prefs.get().musicShuffle, repeat: this.prefs.get().musicRepeat }),
     );
     this.director = null;
     this.game = null;
@@ -65,16 +66,20 @@ export class AudioSystem {
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
-    let original = this.prefs.get().original;
+    let last = this.prefs.get();
     this.prefs.subscribe((p) => {
+      // Volumes apply at once, also to the playing music track (mixer buses).
       this.mixer.apply(p);
       if (!p.speech || !p.enabled) this.speech.cancel();
-      if (p.original !== original) {
+      if (p.original !== last.original) {
         // Installed original tracks join or leave the playlist.
-        original = p.original;
         this.jukebox.stop();
         this.jukebox.refresh().then(() => this.syncMusic(), () => {});
+      } else {
+        if (p.musicShuffle !== last.musicShuffle) this.jukebox.reorder();
+        if (p.musicRepeat !== last.musicRepeat) this.jukebox.repeatChanged();
       }
+      last = p;
       this.syncMusic();
     });
     this.installUnlock(doc);
@@ -359,14 +364,24 @@ export class AudioSystem {
 
   // ---- Music ------------------------------------------------------------------------
 
-  syncMusic() {
+  /** Whether music should play now: in a game, sound and music on, a track to play, audio unlocked. */
+  musicWanted() {
     const p = this.prefs.get();
-    // The playlist holds pack music, plus the installed originals when they are on (music.js);
-    // the music hotkeys may have stopped or paused it.
-    const want =
-      this.inGame && p.enabled && p.music > 0 && this.jukebox.available && this.mixer.ready && !this.jukebox.stoppedByUser && !this.jukebox.paused;
-    if (want && !this.jukebox.handle) this.jukebox.start();
+    // The playlist holds pack music, plus the installed originals when they are on (music.js).
+    return this.inGame && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
+  }
+
+  syncMusic() {
+    // The music hotkeys may have stopped or paused it: it stays so until the player starts it again.
+    const want = this.musicWanted() && !this.jukebox.stoppedByUser && !this.jukebox.paused;
+    // A playlist that ended (repeat off) stays quiet until the player asks for the next track.
+    if (want && !this.jukebox.handle && !this.jukebox.finished) this.jukebox.start();
     else if (!want && this.jukebox.handle) this.jukebox.stop();
+  }
+
+  /** "Next track" (Settings, Sound): skips the playing track, or starts a finished playlist again. */
+  nextTrack() {
+    if (this.musicWanted()) this.jukebox.next();
   }
 
   // ---- Hotkeys (js/gamekeys.js) ----------------------------------------------------
@@ -378,11 +393,12 @@ export class AudioSystem {
     return muted;
   }
 
-  /** OpenRA's music hotkeys: 'stop', 'pause' (or resume), 'prev', 'next'. */
+  /** OpenRA's music hotkeys: 'stop', 'pause' (or resume), 'prev', 'next' (only while music may play). */
   music(command) {
     this.mixer.unlock?.();
     const j = this.jukebox;
     if (command === 'stop') j.userStop();
+    else if (!this.musicWanted()) return;
     else if (command === 'pause') j.togglePause();
     else if (command === 'prev') j.prev();
     else if (command === 'next') j.next();

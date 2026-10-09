@@ -383,6 +383,108 @@ deleted accounts keep their username and email for 30 days, anonymous
 lobby names cannot be account usernames, and the content relay's transfer
 timer ends with the stream.
 
+## The play gate (2026-10-09)
+
+The game is only for accounts while the site setting `gameRequiresAccount`
+is on (the default): the server, not the client, decides who gets the game
+files ([accounts API](accounts-api.md), section 7.1,
+`apps/server/src/playgate.js`).
+
+**What is gated.** Every request for `/play` and `/play/*`: the game page,
+all JavaScript modules (the simulation worker script and the protocol
+modules included), CSS, the wasm engine, shaders, images and the map editor.
+`wrangler.jsonc` runs the Worker first for these paths, so Workers Static
+Assets never answers them on its own; the Worker fetches the file through the
+`ASSETS` binding only after the check. Who passes: an active, unbanned
+account from an address that is not banned; active admins and moderators
+also from a banned address (so a range ban cannot lock staff out of the
+game they moderate). Page loads without access are redirected to
+`/account/?returnTo=<path>`; the target is built from the request's own path
+and only for `/play` paths, so it cannot point anywhere else, and the account
+page checks it again (one leading slash, never `//`, never `/api/`). Other
+requests get `401` or `403` with a JSON error and nothing of the game.
+
+**The play pass.** Checking the session, the account and the IP ban in D1 for
+each of the game's files would cost a D1 read per file and CPU on the Free
+plan. After a successful check the Worker sets a pass cookie
+(`__Host-webra_play`, HttpOnly, Secure, SameSite=Lax, 10 minutes) with the
+account id, the first 16 hex digits of the session id hash, the expiry and a
+version, MACed with HMAC-SHA256 under a key derived with HKDF from the
+existing secret `IP_HASH_SALT` (its own info label, so neither key reveals
+the other, and no new secret is needed). The pass is verified with WebCrypto
+(`crypto.subtle.verify`, constant time) without D1, and only together with
+the session cookie it was issued for: a copied pass without that cookie, or
+next to another account's session, falls back to the D1 check. A pass that
+claims to live longer than 11 minutes is refused, so a bug in issuing cannot
+create long-lived passes. Without the secret in production the gate answers
+`503` (fails closed). The site settings are cached per isolate for 30
+seconds for the gate, so anonymous requests do not read D1 each time either.
+
+**Revocation bound.** While a pass is valid it is trusted without D1: a ban,
+a status change, a session revoked from another device, a password change
+elsewhere and a new IP ban stop game file loads within **10 minutes** at
+most. Signing out, revoking the current session and deleting the account
+clear the pass at once, and every response that clears a stale session
+cookie clears it too. The server does not record revoked passes: a client
+that keeps both cookies after signing out (a browser does not) can load
+game files for the rest of the pass lifetime, the same bound. Online play, map uploads and every account API call
+still check D1 on each request, so the bound only concerns static game
+files. A game already running in a browser keeps running (it is in memory);
+when a later load is refused, the game offers to sign in again
+(`apps/game/js/account/gate.js`).
+
+**Path spellings.** `run_worker_first` matches the raw request path, so
+`/play` and `/play/*` catch the canonical spelling only. Workers Static
+Assets decodes a path before it looks a file up, and answers every
+non-canonical spelling (`/%70lay/js/main.js`, `/play%2Fjs/main.js`,
+`//play/`, `/pl%61y/`, double encoding) with a `307` to the canonical path,
+without a body; that path is gated. Its lookup is case-sensitive (`/PLAY/`
+is a 404), and dot segments are resolved before routing, so `/x/../play/`
+reaches the gate. No pattern list could name every encoding, so the Worker
+does not rely on it: whatever reaches it is matched after decoding
+(repeatedly), backslashes as slashes, empty and dot segments resolved,
+`;params` and trailing dots ignored and case folded
+(`normalizedSegments` in `apps/server/src/playgate.js`), so any spelling of
+a game path that reaches the Worker is gated. The end-to-end smoke test
+sends 39 spellings (percent-encoded letters and slashes, double encoding,
+double slashes, dot segments, case, trailing dots and semicolons,
+backslashes, overlong UTF-8, `/play/..%2f`) with GET, HEAD, OPTIONS and
+POST, with and without `Range` and as page loads, follows every redirect
+without cookies, and checks that none returns a game file. Cloudflare's
+edge URL normalization, when on for the zone, only makes more requests
+canonical before they arrive.
+
+**Caching.** Gated responses are `Cache-Control: private, max-age=0,
+must-revalidate` with `Vary: Cookie`: browsers may keep a copy and revalidate
+it through the gate, shared caches and the Cloudflare edge never store them
+(Worker responses are not cached unless the Worker uses the Cache API, which
+it does not, and nothing in `_headers` sets a public cache policy for
+`/play`). Refusals and redirects are `no-store`.
+
+**Headers.** Workers Static Assets applies `_headers` only to files it serves
+itself, so the Worker sets the same security headers (CSP, COOP, COEP
+`require-corp`, HSTS, nosniff, frame and referrer policies) on every gated
+response, served, redirected or refused, plus
+`Cross-Origin-Resource-Policy: same-origin`. A test keeps the Worker's copy
+(`apps/server/src/static-headers.js`) equal to `apps/website/_headers`.
+
+**What stays public.** The website pages, `/release-notes.json`,
+`/version.json`, the API as documented, and `/lib/`: the modules the account
+and admin pages load (the account client, the settings registry and the map
+editor helpers it uses, the protocol checks, the shared controls
+`js/ui/controls.js` and `css/controls.css`), copied there by the build so a
+signed-out visitor can sign in. `tools/shared-modules.mjs` computes that list
+from the website's script imports, stylesheet imports and page links
+(`<link>`, `<script>`, images) and fails the build when any website page,
+script or stylesheet loads from `/play` in any spelling; nothing that draws
+or runs the game is in it. The one exception is deliberate: the home page
+imports the game's sprite module from `/play/` for its unit gallery, and
+only after `/api/auth/me` says the visitor may play. The home
+page's unit gallery draws with the game's sprite code, so signed-out visitors
+see a note instead of the art. The game is GPL software in a public
+repository: the gate controls who gets this site's running copy, not the
+source code.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

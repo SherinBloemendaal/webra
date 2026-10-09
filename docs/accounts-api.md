@@ -36,7 +36,7 @@ bodies are JSON (UTF-8).
   navigation coming back from discord.com, section 4.6).
 - **WebSocket upgrades** (`/api/sessions/:id/ws`) cannot carry custom headers:
   they need `Origin` equal to the site's origin and are authenticated by the
-  session cookie (section 7).
+  session cookie (section 7.2).
 
 ### 1.2 Responses and errors
 
@@ -201,6 +201,13 @@ live session.
   attributes, `Max-Age=600`, set by `POST /api/auth/discord/start` and
   cleared by the callback. It binds the Discord flow to the browser that
   started it.
+- **Play pass cookie:** `__Host-webra_play` (or `webra_play` on plain HTTP to
+  a local development host), `HttpOnly; Secure; SameSite=Lax; Path=/;
+  Max-Age=600`, set by the play gate (section 7.1) on a game file response
+  after it checked the session in D1. `Path=/` because browsers refuse
+  `__Host-` cookies with any other path; only `/play` requests read it.
+  Signing out, revoking the current session, deleting the account and every
+  response that clears a stale session cookie clear it too.
 
 ### 2.5 Site settings
 
@@ -212,10 +219,15 @@ One versioned document, edited by admins. Defaults in brackets.
   "registration": { "open": true, "approvalRequired": true, "emailVerification": true },
   "login": { "password": true, "email": true, "discord": true, "passkey": true },
   "onlineRequiresAccount": true,
+  "gameRequiresAccount": true,
   "contentRelay": true,
   "motd": ""
 }
 ```
+
+The document is stored as JSON in one row; a key it lacks reads as its
+default, so a new setting needs no migration (`gameRequiresAccount` is on for
+documents saved before it existed).
 
 - `registration.open` [true]: signup allowed (all methods).
 - `registration.approvalRequired` [true]: new accounts wait for approval
@@ -232,6 +244,11 @@ One versioned document, edited by admins. Defaults in brackets.
 - `onlineRequiresAccount` [true]: creating and joining online sessions and
   uploading maps need an active account. False: anonymous play as before
   (signed-in players still play under their username).
+- `gameRequiresAccount` [true]: the game itself (`/play`, `/play/*`) is served
+  only to active, unbanned accounts from unbanned addresses (section 7.1).
+  False: anyone may load the game. A change applies at once on the server that
+  saved it and within 30 seconds everywhere (each server caches the settings
+  for the gate that long).
 - `contentRelay` [true]: the one-click Red Alert content relay is on (it
   always also needs the flag or the admin role).
 - `motd` [""]: message of the day, 0 to 500 characters, plain text with line
@@ -254,6 +271,7 @@ No authentication. What clients need to draw sign-in and signup forms.
   },
   "services": { "email": false, "discord": false },
   "onlineRequiresAccount": true,
+  "gameRequiresAccount": true,
   "contentRelay": true,
   "motd": "",
   "passkey": { "rpId": "webra.sherin.dev" },
@@ -563,6 +581,7 @@ everything here.
     "usernameChangedAt": null,
     "methods": { "password": true, "discord": { "username": "tanya", "linkedAt": 0 } | null, "passkeys": 2 },
     "ban": null,
+    "canPlay": true,
     "canPlayOnline": true,
     "canUseContentRelay": true
   }
@@ -570,9 +589,12 @@ everything here.
 ```
 
 This object is `UserSelf` everywhere in this document. `pendingEmail` is an
-address waiting for its change link. `canPlayOnline` is the server's verdict
-for online play right now (status, site settings); `canUseContentRelay`
-likewise for the relay.
+address waiting for its change link. `canPlay` is the server's verdict for
+loading the game (section 7.1: active, or anyone not banned while
+`gameRequiresAccount` is off; a banned address is refused by the gate
+anyway, and `GET /api/auth/me` answers it with `403 ip_banned`).
+`canPlayOnline` is the server's verdict for online play right now (status,
+site settings); `canUseContentRelay` likewise for the relay.
 
 ### 5.2 Profile
 
@@ -630,9 +652,11 @@ Passkey ids in paths are the credential ids (base64url).
 - `GET /api/account/sessions` ->
   `{ "sessions": [{ "id", "current", "deviceLabel", "userAgent", "createdAt", "lastUsedAt", "expiresAt" }] }`
 - `PATCH /api/account/sessions/:id` `{ "deviceLabel" }` -> `200 { "session" }`
-- `DELETE /api/account/sessions/:id` -> `204` (the current one signs out)
+- `DELETE /api/account/sessions/:id` -> `204` (the current one signs out and
+  its play pass cookie is cleared)
 - `DELETE /api/account/sessions` -> `204`, revokes every session except the
-  current one.
+  current one. Their browsers may still load game files with a play pass they
+  hold, for at most its remaining 10 minutes (section 7.1).
 
 ### 5.8 Settings document
 
@@ -673,6 +697,8 @@ Serialized size at most 32 KiB.
     "showUnitPaths": false,
     "pixelRatioCap": 2,            // number 0.5..3 (resolution cap)
     "lowQuality": false,
+    "uiScale": "auto",             // "auto" | number 0.5..2 (size of the sidebar, bars, menus; UI_SCALE_LIMITS)
+    "gameScale": "auto",           // "auto" | number 0.5..3 (base zoom of the battlefield; GAME_SCALE_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
     "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
@@ -680,7 +706,9 @@ Serialized size at most 32 KiB.
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
-    "speech": true, "original": true
+    "speech": true, "original": true,
+    "musicOn": true, "musicShuffle": true,
+    "musicRepeat": "all"           // "all" | "one" | "off" (MUSIC_REPEAT_MODES)
   },
   "content": {
     "packs": [{ "id": "desert tiles|someone", "enabled": true }]   // order = priority, first wins
@@ -693,7 +721,12 @@ Serialized size at most 32 KiB.
     "name": "Commander",           // 1..20 characters, lobby name text rules
     "faction": "random",           // a lobby faction (FACTIONS)
     "color": 0,                    // 0..7
-    "lastOptions": { }             // the skirmish lobby's stored setup, a JSON object (see below)
+    "lastOptions": { },            // the skirmish lobby's stored setup, a JSON object (see below)
+    "presets": [                   // saved game modes (see below)
+      { "name": "Night ops", "options": { "mapStyle": "land", "biome": "snow", "weather": "full", "startingCash": 5000,
+        "startingUnits": "mcv", "techLevel": "unrestricted", "gameSpeed": "normal", "fog": true, "explored": false,
+        "buildRadius": true, "redeployableMcv": true, "oreRegrowth": true, "cheats": false } }
+    ]
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
@@ -711,6 +744,16 @@ Serialized size at most 32 KiB.
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at
   most 8 KiB serialized.
+- `presets`: the player's saved game modes (`validateSavedPresets` in the
+  protocol package, `src/presets.js`): a list of at most 16 entries
+  `{ name, options }`. `name` is 1 to 32 characters of display text
+  (normalized: single spaces, no control or bidi characters), unique
+  ignoring case and not the name of a built-in mode. `options` holds exactly
+  the mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
+  `biome`, `weather`, `startingCash`, `startingUnits`, `techLevel`,
+  `gameSpeed`, `fog`, `explored`, `buildRadius`, `redeployableMcv`,
+  `oreRegrowth`, `cheats`), each with a value the lobby options accept
+  (docs/contracts.md section 3).
 
 ### 5.9 Data export and deletion
 
@@ -758,6 +801,71 @@ purged. `/privacy.html` documents this.
 
 ## 7. Online play
 
+### 7.1 The play gate (`/play`, `/play/*`)
+
+The Worker runs first for `/play` and `/play/*` (wrangler.jsonc
+`run_worker_first`) and serves every file there (the page, JavaScript modules
+including the simulation worker and the protocol modules, CSS, wasm, shaders,
+the editor) through Workers Static Assets only when the request may play:
+
+- `gameRequiresAccount` off: everyone (no IP ban check, no pass).
+- On: a session of an account that is active and not banned, from an address
+  that is not banned. Admins and moderators with an active account also pass
+  from a banned address. Pending, banned and deleted accounts never pass.
+
+Refusals:
+
+- A page load (`Sec-Fetch-Mode: navigate`; without Fetch Metadata, an
+  `Accept` that includes `text/html`) of `GET` or `HEAD`: `302` to
+  `/account/?returnTo=<path and query>`. The target is built from the request
+  URL, only for `/play` paths, and checked like Discord's `returnTo` (one
+  leading slash, at most 200 characters); anything else becomes `/play/`.
+- Anything else: `401 unauthenticated` (no session), `403 account_inactive`,
+  `banned` or `ip_banned`, as a JSON error without any game content.
+- `503 misconfigured` when `IP_HASH_SALT` is missing outside local
+  development (the pass key is derived from it).
+
+Every gated response, served or refused, carries the static security headers
+of `apps/website/_headers` (CSP, COOP, COEP `require-corp`, HSTS and the
+rest), `Cross-Origin-Resource-Policy: same-origin` and `Vary: Cookie`. Served
+files have `Cache-Control: private, max-age=0, must-revalidate` (browsers
+revalidate with the ETag through the gate; shared caches never store them);
+refusals and redirects `no-store`.
+
+**Play pass.** After a successful D1 check the response sets the play pass
+cookie (section 2.4): `1.<userId>.<sid>.<exp>.<mac>`, where `sid` is the first
+16 hex digits of the session id hash, `exp` unix seconds (10 minutes ahead)
+and `mac` HMAC-SHA256 (base64url) under a key derived with HKDF-SHA256 from
+`IP_HASH_SALT` with the info `webra play pass v1`. Requests with a pass whose
+MAC, version and expiry check out (WebCrypto, constant time) and whose `sid`
+matches the request's session cookie are served without reading D1. A
+missing, expired, invalid or foreign pass falls back to the D1 check, which
+issues a new one; a refused request clears it.
+
+**Revocation bound.** A pass is not re-checked against D1 while it is valid:
+a ban, a status change, a session revoked from another device or an IP ban
+stops game file loads within 10 minutes at most. Signing out, revoking the
+current session and deleting the account clear the pass at once, and a pass
+never works without its own session cookie. The IP ban list is read only on
+the D1 path (one query), so a new IP ban has the same 10 minute bound.
+
+**What stays public:** the website, `/api/*` as documented,
+`/release-notes.json`, `/version.json`, and `/lib/`: the modules and
+stylesheets the account and admin pages load (the account client, the
+settings registry with the map editor helpers it uses, the protocol checks
+and the shared controls; the exact list is computed by
+`tools/shared-modules.mjs` at build time). Nothing that draws or runs the
+game is under `/lib/`.
+
+**Path spellings.** The gate matches the path after percent-decoding,
+backslashes as slashes, dot and empty segments, `;params`, trailing dots and
+case are normalized, so `/%70lay/`, `//play/`, `/PLAY/` or `/x/../play/`
+are gated when they reach the Worker. Static Assets answers non-canonical
+spellings that do not reach it with a redirect to the canonical, gated path
+(docs/security.md, "The play gate").
+
+### 7.2 Online sessions and map uploads
+
 When `onlineRequiresAccount` is on, these need a signed-in, active account
 that is not banned, from an address that is not banned:
 
@@ -789,7 +897,7 @@ Protocol 5 (`PROTOCOL_VERSION`, docs/contracts.md section 4):
 - New error codes: `account_required`, `account_inactive`, `banned`,
   `ip_banned`.
 
-### Content relay
+### 7.3 Content relay
 
 `GET /api/content/ra-quickinstall` additionally needs (before the existing
 checks): a signed-in account (`401 unauthenticated`) that is active (`403

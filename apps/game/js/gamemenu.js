@@ -1,6 +1,13 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
 // Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
-// actions (save the game, download the replay; js/records.js).
+// actions (save the game, download the replay; js/records.js), Restart
+// (single player and replays, after a confirm step) and Statistics (once the
+// local player watches: spectators, replays, after a defeat or at the end).
+// Phones get the same menu from the HUD's Menu button.
+//
+// The Settings page has three parts: Display (UI scale, game scale, render
+// resolution, fullscreen; js/scale.js), Scrolling and health bars, and Audio
+// (the Sound dialog's controls, js/audio/panel.js).
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
 // games cannot pause (docs/contracts.md: the server drops a player who holds
@@ -14,6 +21,21 @@ import { BROWSER_SUBSTITUTES, comboFromEvent, formatCombo, GROUP_ORDER, isMac } 
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
+import { segmented, slider as createSlider, switchInput, toggle as createToggle } from './ui/controls.js';
+import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
+import { mountAudioSettings } from './audio/panel.js';
+import { DEFAULT_PREFS } from './audio/prefs.js';
+import { closeOpenTip, labelWithHelp } from './infotip.js';
+
+/**
+ * Settings of the Settings page with a "?" (tests check each one has help
+ * in js/help.js as `settings.<key>`); the Audio section's are AUDIO_HELP_KEYS
+ * of js/audio/panel.js.
+ */
+export const MENU_HELP_KEYS = Object.freeze(['uiScale', 'gameScale', 'scaleAuto', 'pixelRatioCap', 'lowQuality', 'fullscreen', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'playerStanceColors']);
+
+/** The "?" of setting `key` beside the row's label, describing `control`. */
+const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -73,6 +95,19 @@ export function speedLabel(v) {
   return v === 0 ? 'Off' : `${Number(v.toFixed(2))}x`;
 }
 
+/** Text for a scale setting: "Auto (85%)" or "110%". */
+export function scaleLabel(setting, resolved) {
+  return setting === 'auto' ? `Auto (${percent(resolved)})` : percent(resolved);
+}
+
+/** What the Display section says about the three ways the picture changes. */
+export const DISPLAY_HELP =
+  'UI scale sizes the sidebar, bars, menus and dialogs. Game scale sizes units and terrain; the mouse wheel and pinch zoom from there. ' +
+  'Max resolution and low quality set how many pixels the battlefield is drawn with: sharpness and speed, not size.';
+
+/** Game menu settings that the Defaults button puts back (the Audio section's are added). */
+export const MENU_SETTINGS = Object.freeze(['uiScale', 'gameScale', 'pixelRatioCap', 'lowQuality', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'playerStanceColors']);
+
 function el(tag, className, text) {
   const e = document.createElement(tag);
   if (className) e.className = className;
@@ -102,9 +137,16 @@ export class GameMenu {
    *   settings: { get(k: string): any, set(k: string, v: any): any, reset(k: string): any, subscribe(k: string, fn: Function): Function },
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
    *   onChange(open: boolean, paused: boolean): void,
+   *   uiScale?: import('./scale.js').UiScale,  the page's UI scale (live preview while its slider moves)
+   *   renderRatio?(): number,  the battlefield's render pixel ratio (game scale: Auto and sharp steps)
+   *   win?: Window,  the window the scales are picked for (tests)
+   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
+   *   restart?: { replay?: boolean, run(): void },  Restart (asks first); none online
+   *   onStats?(): void,  the statistics screen (js/stats.js)
+   *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -115,6 +157,8 @@ export class GameMenu {
     this.state = new MenuState({ online: opts.online, onChange: (open, paused) => this.changed(open, paused) });
     this.view = 'main';
     this.capture = null; // action name waiting for a new key
+    this.pageOffs = []; // what the open page follows, stopped when it goes (unmountPage)
+    this.pinnedScale = undefined; // the menu's own UI scale while the UI scale slider moves
     this.card = el('div', 'menu-card game-menu-card');
     this.card.setAttribute('role', 'dialog');
     this.card.setAttribute('aria-modal', 'true');
@@ -151,8 +195,18 @@ export class GameMenu {
   changed(open, paused) {
     this.root.hidden = !open;
     if (open) this.render();
-    else if (this.root.contains(document.activeElement)) document.activeElement.blur();
+    else {
+      this.unmountPage();
+      if (this.root.contains(document.activeElement)) document.activeElement.blur();
+    }
     this.opts.onChange(open, paused);
+  }
+
+  /** Stop what the open page follows (the Audio section, the UI scale). */
+  unmountPage() {
+    for (const off of this.pageOffs ?? []) off();
+    this.pageOffs = [];
+    this.endScalePreview();
   }
 
   show(view) {
@@ -191,6 +245,8 @@ export class GameMenu {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopImmediatePropagation();
+      // An open help tip closes first.
+      if (closeOpenTip()) return;
       if (this.view === 'main') this.close();
       else this.show('main');
       return;
@@ -216,10 +272,12 @@ export class GameMenu {
     const same = this.rendered === this.view;
     const scroll = same ? (c.querySelector('.game-menu-scroll')?.scrollTop ?? 0) : 0;
     this.rendered = this.view;
+    this.unmountPage();
     c.replaceChildren();
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'controls') this.renderControls(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
+    else if (this.view === 'restart') this.renderRestart(c);
     else this.renderMain(c);
     if (this.message) {
       const m = el('p', 'hint game-menu-message', this.message);
@@ -241,8 +299,10 @@ export class GameMenu {
     c.append(el('h1', null, online ? 'Menu' : 'Paused'), el('p', 'tagline', tagline));
     const fs = this.opts.fullscreen;
     const actions = (this.opts.actions ?? []).map((a) => button(a.label, null, () => this.runAction(a)));
+    const stats = this.opts.onStats && (this.opts.statsAvailable?.() ?? true);
     c.append(
       button('Resume', 'primary', () => this.close()),
+      ...(stats ? [button('Statistics', null, () => this.opts.onStats())] : []),
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
@@ -250,6 +310,7 @@ export class GameMenu {
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
+      ...(this.opts.restart ? [button(this.opts.restart.replay ? 'Restart replay' : 'Restart', null, () => this.show('restart'))] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
@@ -292,74 +353,246 @@ export class GameMenu {
     );
   }
 
+  /** Restart: progress is lost, so it asks first. */
+  renderRestart(c) {
+    const replay = !!this.opts.restart?.replay;
+    c.append(
+      el('h1', null, 'Restart'),
+      el(
+        'p',
+        'tagline',
+        replay
+          ? 'Play this replay again from the start?'
+          : 'Restart this game from the beginning with exactly the same settings? Everything played so far is lost (save it first to keep it).',
+      ),
+      button(replay ? 'Restart replay' : 'Restart', 'primary', () => {
+        this.close();
+        this.opts.restart.run();
+      }),
+      button('Back', null, () => this.show('main')),
+    );
+  }
+
   renderSettings(c) {
     const s = this.opts.settings;
     c.append(el('h1', null, 'Settings'));
+    const list = el('div', 'game-menu-scroll');
     const slider = (key, text) => {
       const spec = SCHEMA[key];
-      const row = el('label', 'game-menu-row');
-      const name = el('span', null, text);
-      const input = el('input', 'game-menu-range');
-      input.type = 'range';
-      input.min = String(spec.min);
-      input.max = String(spec.max);
-      input.step = '0.25';
-      input.value = String(s.get(key));
-      const out = el('output', 'game-menu-value', speedLabel(s.get(key)));
-      input.addEventListener('input', () => {
-        const v = s.set(key, Number(input.value));
-        out.textContent = speedLabel(v);
+      const control = createSlider({
+        id: `game-menu-${key}`,
+        label: text,
+        min: spec.min,
+        max: spec.max,
+        step: 0.25,
+        value: s.get(key),
+        format: speedLabel,
+        rowClass: 'game-menu-row',
+        onInput: (v) => {
+          control.output.textContent = speedLabel(s.set(key, v));
+        },
       });
-      row.append(name, input, out);
-      return row;
+      return withHelp(control.row, key, control.input);
     };
     const check = (key, text) => {
-      const row = el('label', 'game-menu-row');
-      const input = el('input', 'game-menu-check');
-      input.type = 'checkbox';
-      input.checked = !!s.get(key);
-      input.addEventListener('change', () => s.set(key, input.checked));
-      row.append(el('span', null, text), input);
-      return row;
+      const t = createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) });
+      return withHelp(t.row, key, t.input);
     };
-    const choice = (key, text, labels) => {
-      const row = el('label', 'game-menu-row');
-      const select = el('select', 'game-menu-select');
-      for (const option of SCHEMA[key].options) {
-        const o = el('option', null, labels[option] ?? option);
-        o.value = option;
-        select.append(o);
-      }
-      select.value = s.get(key);
-      select.addEventListener('change', () => {
-        select.value = s.set(key, select.value);
+    const choice = (key, text, labels, hint) => {
+      const id = `game-menu-${key}`;
+      const group = segmented({
+        name: id,
+        label: text,
+        value: s.get(key),
+        describedBy: hint ? `${id}-hint` : undefined,
+        options: SCHEMA[key].options.map((option) => ({ value: option, label: labels[option] ?? option })),
+        onChange: (v) => group.set(s.set(key, v)),
       });
-      row.append(el('span', null, text), select);
+      const row = el('div', 'ui-row ui-row-choice game-menu-row');
+      row.append(el('span', 'ui-label', text), group.root);
+      if (hint) {
+        const note = el('p', 'ui-hint', hint);
+        note.id = `${id}-hint`;
+        row.append(note);
+      }
       return row;
     };
-    c.append(
-      slider('edgeScrollSpeed', 'Edge scroll speed'),
-      slider('keyScrollSpeed', 'Keyboard scroll speed'),
-      check('showUnitPaths', 'Show unit paths'),
-      choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
-      check('playerStanceColors', 'Relationship colours (you, allies, enemies)'),
-      slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
-      check('lowQuality', 'Low quality (faster on phones)'),
-    );
+
+    // ---- Display ----
+    list.append(el('h2', null, 'Display'), el('p', 'hint game-menu-explain', DISPLAY_HELP));
+    list.append(this.uiScaleRow(), this.gameScaleRow());
+    list.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
     const fs = this.opts.fullscreen;
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());
     fsButton.disabled = !fs.available();
-    fsRow.append(el('span', null, `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
-    c.append(fsRow);
-    if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
+    fsRow.append(el('span', 'ui-label', `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    withHelp(fsRow, 'fullscreen', fsButton);
+    list.append(fsRow);
+    if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
+
+    // ---- Scrolling and units ----
+    list.append(
+      el('h2', null, 'Scrolling and units'),
+      slider('edgeScrollSpeed', 'Edge scroll speed'),
+      slider('keyScrollSpeed', 'Keyboard scroll speed'),
+      check('showUnitPaths', 'Show unit paths'),
+      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
+      check('playerStanceColors', 'Relationship colours'),
+    );
+
+    // ---- Audio (the Sound dialog's controls) ----
+    const audio = this.opts.audio;
+    if (audio) {
+      const box = el('div', 'game-menu-audio');
+      list.append(el('h2', null, 'Audio'), box);
+      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, idPrefix: 'menu-audio', heading: 3, help: true });
+      this.pageOffs.push(() => mount.dispose());
+    } else {
+      list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
+    }
+
     c.append(
+      list,
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'playerStanceColors', 'pixelRatioCap', 'lowQuality']) s.reset(key);
+        for (const key of MENU_SETTINGS) s.reset(key);
+        audio?.prefs.set(DEFAULT_PREFS);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),
     );
+  }
+
+  /** The window and render ratio the scales are picked for. */
+  screen() {
+    return { ...screenOf(this.opts.win ?? globalThis.window), ratio: this.opts.renderRatio?.() ?? 1 };
+  }
+
+  /**
+   * A scale setting row: a slider with its value, an Auto switch and Reset.
+   * `o.resolve(setting)` gives the scale in use, `o.fromSlider(v)` the stored
+   * value for a slider position, `o.preview(v)` / `o.commit(v)` show and store.
+   */
+  scaleRow({ key, text, limits, step, resolve, fromSlider, preview, commit, ticks = [] }) {
+    const s = this.opts.settings;
+    const id = `game-menu-${key}`;
+    const control = createSlider({
+      id,
+      label: text,
+      min: limits.min,
+      max: limits.max,
+      step,
+      value: resolve(s.get(key)),
+      format: percent,
+      rowClass: 'game-menu-row',
+      onInput: (v) => {
+        const value = fromSlider(v);
+        control.output.textContent = percent(value);
+        auto.checked = false;
+        preview(value);
+      },
+    });
+    const { row, input, output } = control;
+    withHelp(row, key, input);
+    const wrap = el('div', 'game-menu-scale');
+    if (ticks.length) {
+      const marks = el('datalist');
+      marks.id = `${id}-ticks`;
+      for (const t of ticks) {
+        const o = el('option');
+        o.value = String(t);
+        marks.append(o);
+      }
+      input.setAttribute('list', marks.id);
+      wrap.append(marks);
+    }
+    input.addEventListener('change', () => commit(fromSlider(Number(input.value))));
+    const tools = el('div', 'game-menu-scale-tools');
+    const autoLabel = el('label', 'game-menu-auto', 'Auto');
+    autoLabel.htmlFor = `${id}-auto`;
+    const auto = switchInput({ id: `${id}-auto`, small: true, onChange: (on) => s.set(key, on ? 'auto' : resolve('auto')) });
+    const reset = button('Reset', 'ui-mini', () => s.reset(key));
+    tools.append(autoLabel, auto, reset);
+    // The Auto switch's help sits after its label, like the rows' help.
+    const autoName = el('span', 'game-menu-name');
+    autoLabel.replaceWith(autoName);
+    autoName.append(autoLabel);
+    labelWithHelp(autoName, 'settings.scaleAuto', auto, autoLabel);
+    const show = (setting) => {
+      const v = resolve(setting);
+      control.set(v);
+      output.textContent = scaleLabel(setting, v);
+      input.setAttribute('aria-valuetext', output.textContent);
+      auto.checked = setting === 'auto';
+      reset.disabled = setting === SCHEMA[key].default;
+    };
+    // Follow the setting (Reset, Auto, another tab, the account) and, on Auto, the screen.
+    const sync = () => show(s.get(key));
+    this.pageOffs.push(s.subscribe(key, sync));
+    sync();
+    wrap.append(row, tools);
+    return { node: wrap, sync };
+  }
+
+  uiScaleRow() {
+    const s = this.opts.settings;
+    const ui = this.opts.uiScale;
+    const row = this.scaleRow({
+      key: 'uiScale',
+      text: 'UI scale',
+      limits: UI_SCALE_LIMITS,
+      step: UI_SCALE_LIMITS.step,
+      resolve: (setting) => (setting === 'auto' ? (ui?.auto ?? 1) : setting),
+      fromSlider: (v) => roundStep(v, UI_SCALE_LIMITS.step),
+      // The page follows the slider at once; the menu keeps its size until the
+      // slider is let go, so the slider does not move under the pointer.
+      preview: (v) => {
+        if (!ui) return;
+        if (this.pinnedScale === undefined) {
+          this.pinnedScale = ui.value;
+          this.root.style.setProperty('--ui-scale', String(ui.value));
+        }
+        ui.preview(v);
+      },
+      commit: (v) => {
+        s.set('uiScale', v);
+        this.endScalePreview();
+      },
+    });
+    // Auto follows the screen; not while the slider moves (the preview is not the setting).
+    if (ui) this.pageOffs.push(ui.onChange(() => this.pinnedScale === undefined && row.sync()));
+    return row.node;
+  }
+
+  /** The UI scale slider was let go (or the page closed): the menu follows the page again. */
+  endScalePreview() {
+    if (this.pinnedScale === undefined) return;
+    this.pinnedScale = undefined;
+    this.root.style.removeProperty('--ui-scale');
+    this.opts.uiScale?.endPreview();
+  }
+
+  gameScaleRow() {
+    const s = this.opts.settings;
+    const ratio = () => this.screen().ratio;
+    const row = this.scaleRow({
+      key: 'gameScale',
+      text: 'Game scale',
+      limits: GAME_SCALE_LIMITS,
+      step: 0.01,
+      ticks: crispGameScales(ratio()),
+      resolve: (setting) => resolveGameScale(setting, this.screen()),
+      // Close to a scale where world pixels cover whole screen pixels: that one (sharpest sprites).
+      fromSlider: (v) => snapGameScale(v, ratio()),
+      // The battlefield behind the menu follows the slider.
+      preview: (v) => s.set('gameScale', v),
+      commit: (v) => s.set('gameScale', v),
+    });
+    const onResize = () => s.get('gameScale') === 'auto' && row.sync();
+    const win = this.opts.win ?? globalThis.window;
+    win?.addEventListener?.('resize', onResize);
+    this.pageOffs.push(() => win?.removeEventListener?.('resize', onResize));
+    return row.node;
   }
 
   renderControls(c) {

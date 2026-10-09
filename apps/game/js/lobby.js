@@ -49,55 +49,52 @@ import {
   withDefaults,
 } from './lobby-state.js';
 import { defaultRegistry } from './registry.js';
+import { infoTip, describedBy } from './infotip.js';
+import { ModePicker } from './modepicker.js';
+import { presetOptions } from './modes.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
+import { switchInput } from './ui/controls.js';
 
-// Game option rows: the key in options, its label, tooltip and choices.
+// Game option rows: the key in options (also its help text in js/help.js),
+// its label and choices. Map style, biome and weather are the World group of
+// the Battlefield panel.
 const SELECT_OPTIONS = [
   {
     key: 'startingCash',
     label: 'Starting cash',
-    title: 'The amount of credits that players start the game with.',
     choices: STARTING_CASH.map((v) => ({ value: v, label: `$${v.toLocaleString('en-US')}` })),
   },
-  {
-    key: 'startingUnits',
-    label: 'Starting units',
-    title: 'The units that players start the game with.',
-    choices: STARTING_UNITS,
-  },
-  {
-    key: 'techLevel',
-    label: 'Tech level',
-    title: 'The units and structures that can be built.',
-    choices: TECH_LEVELS,
-  },
-  {
-    key: 'gameSpeed',
-    label: 'Game speed',
-    title: 'The rate at which game time passes.',
-    choices: GAME_SPEEDS,
-  },
-  {
-    key: 'weather',
-    label: 'Weather',
-    title:
-      'Rain, storms, snowfall, sandstorms and heat waves. On: modest effects on sight, snow makes vehicles slide, heat waves overheat vehicles. Cosmetic only: just the look. Off: clear skies.',
-    choices: WEATHER_MODES,
-  },
+  { key: 'startingUnits', label: 'Starting units', choices: STARTING_UNITS },
+  { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
+  { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
 ];
 
 const TOGGLE_OPTIONS = [
-  { key: 'fog', label: 'Fog of war', title: 'Line of sight is required to view enemy forces.' },
-  { key: 'explored', label: 'Explored map', title: 'The initial map shroud is revealed: no black shroud at game start.' },
-  { key: 'buildRadius', label: 'Build radius', title: 'Limits structure placement to areas around a Construction Yard.' },
-  { key: 'redeployableMcv', label: 'Redeployable MCVs', title: 'Allows undeploying a Construction Yard back into an MCV.' },
-  { key: 'oreRegrowth', label: 'Ore regrowth', title: 'Ore fields slowly grow back after they have been harvested.' },
-  {
-    key: 'cheats',
-    label: 'Debug menu',
-    title: 'Enables the cheats of the debug menu (instant build, free cash, reveal map and more) for every player.',
-  },
+  { key: 'fog', label: 'Fog of war' },
+  { key: 'explored', label: 'Explored map' },
+  { key: 'buildRadius', label: 'Build radius' },
+  { key: 'redeployableMcv', label: 'Redeployable MCVs' },
+  { key: 'oreRegrowth', label: 'Ore regrowth' },
+  { key: 'cheats', label: 'Debug menu' },
+];
+
+/** Every option of the lobby with a "?" (tests check each one has help). */
+export const HELP_KEYS = [
+  'mode',
+  'mapSource',
+  'mapSize',
+  'mapStyle',
+  'biome',
+  'weather',
+  'mapFile',
+  'seed',
+  ...SELECT_OPTIONS.map((o) => o.key),
+  ...TOGGLE_OPTIONS.map((o) => o.key),
+  'player',
+  'color',
+  'faction',
+  'team',
 ];
 
 let uid = 0;
@@ -367,7 +364,10 @@ export class Lobby {
     this.previewFrame = 0;
     this.spawnCache = { key: '', cells: [] };
 
-    this.state = sanitizeState(withDefaults(loadStored(), defaultRegistry().group('lobby'), this.colors.length), this.colors.length);
+    const stored = loadStored();
+    this.state = sanitizeState(withDefaults(stored, defaultRegistry().group('lobby'), this.colors.length), this.colors.length);
+    /** The game mode the player picked last (js/modes.js ids); the options decide whether it still applies. */
+    this.storedMode = typeof stored?.mode === 'string' && stored.mode.length <= 64 ? stored.mode : null;
     /** Installed map file: { json, info, accepted } or null. */
     this.mapFile = this.loadStoredMap();
     /** A modded map waiting for the player to accept its rules. */
@@ -581,11 +581,20 @@ export class Lobby {
     return { section, content };
   }
 
-  /** A label + control row; the whole row carries the tooltip. */
-  field(labelText, control, title) {
-    const row = el('label', 'lobby-field');
-    if (title) row.title = title;
-    row.append(el('span', 'lobby-field-label', labelText), control);
+  /**
+   * A label + control row with the option's "?" help (js/help.js `helpKey`).
+   * `target` is the element the label names (the control itself, or the
+   * main input of a compound control).
+   */
+  field(labelText, control, helpKey, target = control) {
+    const row = el('div', 'lobby-field');
+    const head = el('span', 'lobby-field-head');
+    const label = el('label', 'lobby-field-label', labelText);
+    if (!target.id) target.id = `lobby-ctl-${++uid}`;
+    label.htmlFor = target.id;
+    head.append(label);
+    if (helpKey) head.append(infoTip(helpKey, { label: labelText, describes: target }).root);
+    row.append(head, control);
     return row;
   }
 
@@ -609,6 +618,7 @@ export class Lobby {
       source.append(b);
     }
     if (!this.maps) this.sourceBtns.file.disabled = true;
+    source.append(infoTip('mapSource', { label: 'Map source', describes: Object.values(this.sourceBtns) }).root);
 
     const frame = el('div', 'lobby-preview');
     this.canvas = el('canvas', 'lobby-preview-canvas');
@@ -631,14 +641,22 @@ export class Lobby {
     this.styleSelect = buildSelect(MAP_STYLES, 'lobby-select');
     this.styleSelect.addEventListener('change', () => {
       this.state.mapStyle = this.styleSelect.value;
+      this.optionEdited();
       this.renderCaption();
       this.schedulePreview();
     });
     this.biomeSelect = buildSelect(BIOMES, 'lobby-select');
     this.biomeSelect.addEventListener('change', () => {
       this.state.biome = this.biomeSelect.value;
+      this.optionEdited();
       this.renderCaption();
       this.schedulePreview();
+    });
+    // Weather applies to map files too (they bring their biome, not the weather).
+    this.weatherSelect = buildSelect(WEATHER_MODES, 'lobby-select');
+    this.weatherSelect.addEventListener('change', () => {
+      this.state.weather = this.weatherSelect.value;
+      this.optionEdited();
     });
 
     this.seedInput = el('input', 'lobby-input lobby-seed');
@@ -730,25 +748,15 @@ export class Lobby {
     fileRow.append(this.loadBtn, this.fileInput);
 
     const fields = el('div', 'lobby-fields');
-    this.sizeField = this.field('Map size', this.mapSizeSelect, 'Width and height of the generated map, in cells. More players need more room.');
-    this.fileField = this.field(
-      'Map file',
-      fileRow,
-      'A map file (.webra-map.json), or an OpenRA Red Alert map (.oramap) that is converted on import. Players take its start positions in slot order.',
-    );
-    this.styleField = this.field(
-      'Map style',
-      this.styleSelect,
-      'Land: plains or cliffs and passes. Rivers: river valleys with fords. Lakes: lakes joined by streams. Islands: a sea with islands and straits. Every base gets the same harbour on the water maps.',
-    );
-    this.biomeField = this.field('Biome', this.biomeSelect, 'Temperate, snow (slippery vehicles, ice) or desert (heat waves). Map files bring their own biome.');
-    fields.append(
-      this.sizeField,
-      this.styleField,
-      this.biomeField,
-      this.fileField,
-      this.field('Seed', seedRow, 'The same seed and map size always generate the same map. Share it to replay a battlefield.'),
-    );
+    this.sizeField = this.field('Map size', this.mapSizeSelect, 'mapSize');
+    this.fileField = this.field('Map file', fileRow, 'mapFile', this.loadBtn);
+    this.styleField = this.field('Map style', this.styleSelect, 'mapStyle');
+    this.biomeField = this.field('Biome', this.biomeSelect, 'biome');
+
+    // The climate of the battlefield: layout, biome and weather together.
+    const world = el('fieldset', 'lobby-world');
+    world.append(el('legend', 'lobby-world-title', 'World'), this.styleField, this.biomeField, this.field('Weather', this.weatherSelect, 'weather'));
+    fields.append(this.sizeField, this.fileField, world, this.field('Seed', seedRow, 'seed', this.seedInput));
 
     content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, this.importBox, fields);
     return section;
@@ -765,6 +773,19 @@ export class Lobby {
     this.slotTable = el('div', 'lobby-slots');
     this.slotTable.setAttribute('role', 'table');
     this.slotTable.setAttribute('aria-label', 'Player slots');
+    // Column headers, with the help of each column (built once: rows come and go).
+    this.slotHead = el('div', 'lobby-slot lobby-slot-head');
+    this.slotHead.setAttribute('role', 'row');
+    this.columnTips = {};
+    for (const [label, key] of [['Player', 'player'], ['Color', 'color'], ['Faction', 'faction'], ['Team', 'team'], ['', null]]) {
+      const c = el('div', 'lobby-cell', label);
+      c.setAttribute('role', 'columnheader');
+      if (key) {
+        this.columnTips[key] = infoTip(key, { label });
+        c.append(this.columnTips[key].root);
+      }
+      this.slotHead.append(c);
+    }
 
     this.addBtn = el('button', 'lobby-btn lobby-add', 'Add player');
     this.addBtn.type = 'button';
@@ -788,14 +809,7 @@ export class Lobby {
     this.slotTable.textContent = '';
     this.pickers = [];
     this.slotRows = [];
-    const header = el('div', 'lobby-slot lobby-slot-head');
-    header.setAttribute('role', 'row');
-    for (const h of ['Player', 'Color', 'Faction', 'Team', '']) {
-      const c = el('div', 'lobby-cell', h);
-      c.setAttribute('role', 'columnheader');
-      header.append(c);
-    }
-    this.slotTable.append(header);
+    this.slotTable.append(this.slotHead);
     this.state.players.forEach((p, slot) => this.slotTable.append(this.buildSlot(p, slot)));
     this.state.players.forEach((_, slot) => this.renderSlot(slot));
     const limit = this.spawnLimit();
@@ -833,7 +847,7 @@ export class Lobby {
       name.placeholder = DEFAULT_NAME;
       name.value = player.name;
       name.setAttribute('aria-label', 'Your name');
-      name.title = 'Your name in this game. Pick "You" on another slot to play from that start position.';
+      describedBy(name, this.columnTips.player);
       name.addEventListener('input', () => {
         this.state.players[slot].name = name.value;
       });
@@ -847,7 +861,7 @@ export class Lobby {
       const type = buildSelect(SLOT_TYPES, 'lobby-select lobby-type');
       type.value = slotTypeValue(player);
       type.setAttribute('aria-label', `Player ${slot + 1} type`);
-      type.title = 'An AI opponent or ally, you (moves you to this slot), or closed (nobody plays here).';
+      describedBy(type, this.columnTips.player);
       type.addEventListener('change', () => {
         if (setSlotType(this.state, slot, type.value, this.spawnLimit())) {
           this.afterPlayerCountChange();
@@ -866,18 +880,19 @@ export class Lobby {
     const colorCell = cell('lobby-cell-color', 'Color');
     const picker = new ColorPicker(this, slot);
     picker.button.disabled = closed;
+    describedBy(picker.button, this.columnTips.color);
     this.pickers[slot] = picker;
     colorCell.append(picker.root);
 
     // Faction.
     const factionCell = cell('lobby-cell-faction', 'Faction');
-    factionCell.title = 'Country. Random picks are resolved when the game starts.';
     const flag = el('span', 'lobby-flag');
     flag.setAttribute('aria-hidden', 'true');
     const faction = buildSelect(FACTION_GROUPS, 'lobby-select');
     faction.value = player.faction;
     faction.disabled = closed;
     faction.setAttribute('aria-label', `Player ${slot + 1} faction`);
+    describedBy(faction, this.columnTips.faction);
     faction.addEventListener('change', () => {
       this.state.players[slot].faction = faction.value;
       this.renderSlot(slot);
@@ -894,7 +909,7 @@ export class Lobby {
     team.value = String(player.team);
     team.disabled = closed;
     team.setAttribute('aria-label', `Player ${slot + 1} team`);
-    team.title = 'Players on the same team are allies: shared vision, no friendly fire, they win together. None: free for all.';
+    describedBy(team, this.columnTips.team);
     team.addEventListener('change', () => {
       this.state.players[slot].team = Number(team.value);
       this.renderProblem();
@@ -931,6 +946,20 @@ export class Lobby {
   buildOptionsPanel() {
     const { section, content } = this.panel('Game options', 'lobby-options');
 
+    // Game mode: a bundle of the options below (js/modes.js).
+    this.modePicker = new ModePicker({
+      context: 'skirmish',
+      registry: defaultRegistry(),
+      preferred: this.storedMode,
+      selectClass: 'lobby-select',
+      buttonClass: 'lobby-btn',
+      inputClass: 'lobby-input',
+      onApply: (mode) => {
+        Object.assign(this.state, presetOptions(mode.options));
+        this.renderAll();
+      },
+    });
+
     const selects = el('div', 'lobby-fields lobby-option-grid');
     this.optionSelects = {};
     for (const opt of SELECT_OPTIONS) {
@@ -938,32 +967,44 @@ export class Lobby {
       select.addEventListener('change', () => {
         const numeric = typeof opt.choices[0].value === 'number';
         this.state[opt.key] = numeric ? Number(select.value) : select.value;
+        this.optionEdited();
       });
       this.optionSelects[opt.key] = select;
-      selects.append(this.field(opt.label, select, opt.title));
+      selects.append(this.field(opt.label, select, opt.key));
     }
 
     const toggles = el('div', 'lobby-toggles');
     this.optionToggles = {};
     for (const opt of TOGGLE_OPTIONS) {
-      const row = el('label', 'lobby-toggle');
-      row.title = opt.title;
-      const box = el('input', 'lobby-check');
-      box.type = 'checkbox';
+      const row = el('div', 'lobby-toggle-row');
+      const label = el('label', 'lobby-toggle');
+      const box = switchInput();
       box.addEventListener('change', () => {
         this.state[opt.key] = box.checked;
+        this.optionEdited();
         this.renderCheats();
       });
       this.optionToggles[opt.key] = box;
-      row.append(box, el('span', null, opt.label));
+      label.append(box, el('span', null, opt.label));
+      row.append(label, infoTip(opt.key, { label: opt.label, describes: box }).root);
       toggles.append(row);
     }
     // Cheats change the game: say so plainly while the option is on.
     this.cheatsWarning = el('p', 'lobby-cheats-warning', 'Cheats enabled: the debug menu (` key) can build instantly, give cash and reveal the map.');
     this.cheatsWarning.setAttribute('role', 'status');
 
-    content.append(selects, toggles, this.cheatsWarning);
+    content.append(this.modePicker.root, selects, toggles, this.cheatsWarning);
     return section;
+  }
+
+  /** An option was changed by hand: the mode list follows (a matching mode, or Custom). */
+  optionEdited() {
+    this.modePicker.optionChanged();
+    this.renderMode();
+  }
+
+  renderMode() {
+    this.modePicker.render(this.state);
   }
 
   renderCheats() {
@@ -1026,7 +1067,9 @@ export class Lobby {
     this.renderUnits();
     for (const opt of SELECT_OPTIONS) this.optionSelects[opt.key].value = String(s[opt.key]);
     for (const opt of TOGGLE_OPTIONS) this.optionToggles[opt.key].checked = s[opt.key];
+    this.weatherSelect.value = s.weather;
     this.renderCheats();
+    this.renderMode();
     this.renderMapSizes();
     this.renderMapSource();
     this.renderSlots();
@@ -1262,7 +1305,7 @@ export class Lobby {
   }
 
   persist() {
-    const stored = storedSettings(this.state);
+    const stored = { ...storedSettings(this.state), mode: this.modePicker.preferred ?? null };
     const me = stored.players?.find((p) => p.type === 'human');
     // Name, faction and colour of the player's own slot are also the account-wide defaults.
     defaultRegistry().patch('lobby', { lastOptions: stored, ...(me ? { name: me.name, faction: me.faction, color: me.color } : {}) });

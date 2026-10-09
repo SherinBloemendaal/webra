@@ -312,6 +312,10 @@ const CLIENT = {
     object(m, ['t'], 'synced');
     return { t: C2S.SYNCED };
   },
+  [C2S.DEFEATED](m) {
+    object(m, ['t'], 'defeated');
+    return { t: C2S.DEFEATED };
+  },
 };
 
 // ---- Server to client ---------------------------------------------------------------------
@@ -584,5 +588,6 @@ export const client = {
   spectate: (on) => ({ t: C2S.SPECTATE, on }),
   resume: () => ({ t: C2S.RESUME }),
   synced: () => ({ t: C2S.SYNCED }),
+  defeated: () => ({ t: C2S.DEFEATED }),
 };
 

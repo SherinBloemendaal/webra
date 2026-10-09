@@ -127,8 +127,8 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
   assert.equal(first.res.headers.get('etag'), '"v0"');
   const doc = {
     schema: 1,
-    game: { edgeScrollSpeed: 1.5, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: false, healthBars: 'damaged', graphics: 'original', hotkeys: { attackMove: ['A', 'Ctrl+Shift+F1'], stop: [] } },
-    audio: { enabled: true, master: 0.5, effects: 1, voices: 0, music: 0.3, speech: false, original: true },
+    game: { edgeScrollSpeed: 1.5, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: false, uiScale: 0.85, gameScale: 'auto', healthBars: 'damaged', graphics: 'original', hotkeys: { attackMove: ['A', 'Ctrl+Shift+F1'], stop: [] } },
+    audio: { enabled: true, master: 0.5, effects: 1, voices: 0, music: 0.3, speech: false, original: true, musicOn: true, musicShuffle: false, musicRepeat: 'off' },
     content: { packs: [{ id: 'desert tiles|someone', enabled: true }, { id: 'hd units|other', enabled: false }] },
     debug: { cells: true, stats: true, cpuInstances: false },
     lobby: { name: 'Commander', faction: 'randomsoviet', color: 3, lastOptions: { mapSize: 96, startingCash: 5000, players: [{ slot: 0, type: 'human' }] } },
@@ -156,6 +156,9 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
     assert.equal(r.body.error.field, field);
   };
   await invalid({ audio: { master: 2 } }, 'settings.audio.master');
+  await invalid({ game: { uiScale: 0.25 } }, 'settings.game.uiScale');
+  await invalid({ game: { gameScale: 'big' } }, 'settings.game.gameScale');
+  await invalid({ audio: { musicRepeat: 'twice' } }, 'settings.audio.musicRepeat');
   await invalid({ game: { healthBars: 'some' } }, 'settings.game.healthBars');
   await invalid({ game: { fly: true } }, 'settings.game.fly');
   await invalid({ cheats: {} }, 'settings.cheats');
@@ -170,10 +173,19 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
   await invalid({ extra: { a: { b: { c: { d: 1 } } } } }, 'settings.extra.a.b.c');
   await invalid({ extra: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, 'y'.repeat(300)])) }, 'settings.extra');
   await invalid({ lobby: { lastOptions: { blob: Array.from({ length: 60 }, () => 'z'.repeat(100)) } } }, 'settings.lobby.lastOptions');
+  // Saved game modes: complete, known bundles, unique names, at most 16.
+  const mode = { mapStyle: 'islands', biome: 'snow', weather: 'full', startingCash: 10000, startingUnits: 'light', techLevel: 'high', gameSpeed: 'fast', fog: true, explored: false, buildRadius: true, redeployableMcv: true, oreRegrowth: true, cheats: false };
+  await invalid({ lobby: { presets: [{ name: 'Ice', options: { ...mode, biome: 'lava' } }] } }, 'settings.lobby.presets[0].options.biome');
+  await invalid({ lobby: { presets: [{ name: 'Ice', options: mode }, { name: 'ICE', options: mode }] } }, 'settings.lobby.presets[1].name');
+  await invalid({ lobby: { presets: [{ name: 'Ice', options: { ...mode, seed: 4 } }] } }, 'settings.lobby.presets[0].options');
+  await invalid({ lobby: { presets: Array.from({ length: 17 }, (_, i) => ({ name: `Mode ${i}`, options: mode })) } }, 'settings.lobby.presets');
+  const withModes = await desktop.put('/api/account/settings', { settings: { ...doc, lobby: { ...doc.lobby, presets: [{ name: 'Ice', options: mode }] } } }, { headers: { 'If-Match': '"v2"' } });
+  assert.equal(withModes.status, 200, JSON.stringify(withModes.body));
+  assert.deepEqual((await laptop.get('/api/account/settings')).body.settings.lobby.presets, [{ name: 'Ice', options: mode }]);
   await invalid([], 'settings');
-  const malformed = await desktop.put('/api/account/settings', { settings: {} }, { headers: { 'If-Match': 'v2' } });
+  const malformed = await desktop.put('/api/account/settings', { settings: {} }, { headers: { 'If-Match': 'v3' } });
   assert.equal(malformed.status, 400);
-  const tooBig = await desktop.put('/api/account/settings', { settings: { extra: { s: 'x'.repeat(41 * 1024) } } }, { headers: { 'If-Match': '"v2"' } });
+  const tooBig = await desktop.put('/api/account/settings', { settings: { extra: { s: 'x'.repeat(41 * 1024) } } }, { headers: { 'If-Match': '"v3"' } });
   assert.equal(tooBig.status, 413);
 });
 

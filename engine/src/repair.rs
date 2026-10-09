@@ -119,6 +119,8 @@ impl World {
             let p = self.actors[i].repairers[k];
             if self.spend(p, cost) {
                 paying += 1;
+                // Observer statistics (observer.rs): money spent on repairs.
+                self.note_repair(p, cost);
             } else {
                 // OpenRA TakeCash(cost, notifyLowFunds: true).
                 self.sound.push_funds(tick, p, ty);

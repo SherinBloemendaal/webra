@@ -5,18 +5,43 @@
 import { AccountApi } from './api.js';
 import { SettingsSync } from './sync.js';
 
-/** What a player can do now, from the account status (docs/accounts-api.md 2.2). */
-export function accountState(user) {
-  if (!user) return { kind: 'signed-out', label: 'Not signed in', text: 'Sign in to play online and keep your settings on every device.' };
+/**
+ * What a player can do now, from the account status (docs/accounts-api.md
+ * 2.2). `site` (GET /api/site) tells whether the game itself needs an
+ * account (`gameRequiresAccount`, on unless the site says otherwise).
+ */
+export function accountState(user, site = null) {
+  const gated = site?.gameRequiresAccount !== false;
+  if (!user) {
+    return {
+      kind: 'signed-out',
+      label: 'Not signed in',
+      text: gated ? 'Sign in to play, and keep your settings on every device.' : 'Sign in to play online and keep your settings on every device.',
+    };
+  }
   switch (user.status) {
     case 'active':
       return { kind: 'active', label: 'Signed in', text: '' };
     case 'pending_email':
-      return { kind: 'pending_email', label: 'Verify your email', text: 'Follow the link in the email we sent to activate your account.' };
+      return {
+        kind: 'pending_email',
+        label: 'Verify your email',
+        text: gated ? 'Follow the link in the email we sent to activate your account. The game opens once it is active.' : 'Follow the link in the email we sent to activate your account.',
+      };
     case 'pending_approval':
-      return { kind: 'pending_approval', label: 'Waiting for approval', text: 'WebRA is in a closed beta: an admin will approve your account soon. Until then you can play skirmish and change your settings.' };
+      return {
+        kind: 'pending_approval',
+        label: 'Waiting for approval',
+        text: gated
+          ? 'WebRA is in a closed beta: an admin will approve your account soon. The game opens for you once it is approved.'
+          : 'WebRA is in a closed beta: an admin will approve your account soon. Until then you can play skirmish and change your settings.',
+      };
     case 'banned':
-      return { kind: 'banned', label: 'Banned', text: user.ban?.reason ? `This account is banned. Reason: ${user.ban.reason}` : 'This account is banned.' };
+      return {
+        kind: 'banned',
+        label: 'Banned',
+        text: `${user.ban?.reason ? `This account is banned. Reason: ${user.ban.reason}` : 'This account is banned.'}${gated ? ' You cannot play while the ban lasts.' : ''}`,
+      };
     default:
       return { kind: user.status, label: 'Inactive', text: 'This account cannot be used.' };
   }

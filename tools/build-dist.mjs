@@ -2,6 +2,8 @@
 //   dist/               apps/website (landing site)
 //   dist/play/          apps/game (client, wasm package from wasm-pack)
 //   dist/play/protocol/ packages/protocol/src
+//   dist/lib/           the game modules the website imports (tools/shared-modules.mjs):
+//                       /play is gated by the Worker, the account page is not
 //   dist/version.json   { version, commit, build, builtAt }
 //   dist/release-notes.json  CHANGELOG.md as data (tools/release-notes.mjs)
 // No bundler: files are copied as they are.
@@ -10,6 +12,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { writeReleaseNotes } from './release-notes.mjs';
+import { libModules } from './shared-modules.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -85,6 +88,20 @@ copyTree(website, dist);
 copyTree(game, join(dist, 'play'), new Set(['tests', 'protocol']));
 copyTree(protocol, join(dist, 'play/protocol'));
 
+// The website's account and admin pages import these at /lib/ (same files as
+// under /play/, same layout, so their relative imports resolve the same way).
+let lib;
+try {
+  lib = libModules({ websiteDir: website, gameDir: game });
+} catch (err) {
+  fail(err.message);
+}
+for (const rel of lib) {
+  const to = join(dist, 'lib', rel);
+  mkdirSync(dirname(to), { recursive: true });
+  cpSync(join(game, rel), to, { dereference: true });
+}
+
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const commit = gitCommit();
 // `build` equals the engine's version() string; multiplayer sessions and the
@@ -102,5 +119,5 @@ if (!notes.releases.some((r) => r.version === version)) {
 const total = countFiles(dist);
 console.log(
   `build-dist: dist/ ready (webra ${info.version}, commit ${info.commit.slice(0, 12)}): ` +
-    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}`,
+    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, ${lib.length} modules in lib/, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}`,
 );

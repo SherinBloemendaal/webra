@@ -5,7 +5,7 @@
 #sidebar .mm {
   position: relative;
   flex: none;
-  height: 200px;
+  height: calc(200 * var(--ui-px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,9 +79,9 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 6px;
+  bottom: calc(6 * var(--ui-px));
   text-align: center;
-  font-size: 10px;
+  font-size: calc(10 * var(--ui-px));
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -98,13 +98,13 @@
 
 @media (max-height: 760px) {
   #sidebar .mm {
-    height: 150px;
+    height: calc(150 * var(--ui-px));
   }
 }
 
 /* Phone width: the sidebar runs along the bottom; keep the radar small. */
 @media (max-width: 720px) {
   #sidebar .mm {
-    height: 110px;
+    height: calc(110 * var(--ui-px));
   }
 }
