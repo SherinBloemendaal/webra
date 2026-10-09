@@ -69,7 +69,8 @@
           </li>
           <li>
             Rate limits (for example for map uploads, the content download and sign-in attempts) count requests per network
-            address. The address is stored only as a salted hash, never as such, and counters are deleted after two days.
+            address. The address is stored only as a keyed hash (HMAC with a secret key, so it cannot be turned back into
+            the address), never as such, and counters are deleted after two days.
           </li>
           <li>Maps you upload are public: their name, author field and content are shown to everyone.</li>
         </ul>
@@ -77,13 +78,16 @@
         <h2>Your account</h2>
         <p>When you sign up, WebRA stores:</p>
         <ul>
-          <li>your username, display name, avatar color, email address (optional unless email confirmation is required), role, account state and flags;</li>
+          <li>
+            your username, display name, avatar color, email address (optional unless email confirmation is required; an
+            address you have not confirmed is removed after 7 days), role, account state and flags;
+          </li>
           <li>
             how you sign in: a salted password hash (never the password), your passkeys' public keys and names, and your
             Discord account id and username if you link Discord (WebRA reads your Discord id, username and email, and
             never your messages or servers);
           </li>
-          <li>your sign-in sessions: a hash of the session id, a short device summary such as "Firefox on Linux", a salted hash of the address, and when they were created and last used;</li>
+          <li>your sign-in sessions: a hash of the session id, a short device summary such as "Firefox on Linux", a keyed hash of the address, and when they were created and last used;</li>
           <li>your synchronized game settings (the settings document);</li>
           <li>when the account was created, approved and last used, and the maps you uploaded while signed in.</li>
         </ul>
@@ -107,11 +111,15 @@
           <li>Sign-in sessions: until you sign out, at most 30 days, or 14 days without use.</li>
           <li>Email links: 1 hour (password reset) or 24 hours (confirmation), and they work once.</li>
           <li>IP history: 90 days after an address was last seen.</li>
+          <li>Unconfirmed email addresses: 7 days.</li>
+          <li>Failed sign-in counters: one day.</li>
           <li>Expired IP bans: 90 days after they end.</li>
           <li>The admin audit log (what admins and moderators changed): 365 days.</li>
           <li>
             Deleted accounts: kept for 30 days (so a mistaken deletion can be undone), then purged with everything stored
-            about them. Audit log entries about a purged account keep only that an action happened.
+            about them. During those 30 days the account keeps its username and email address, so nobody else can take
+            them yet, and admins can still see it. Audit log entries about a purged account keep only that an action
+            happened.
           </li>
         </ul>
 

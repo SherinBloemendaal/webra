@@ -68,7 +68,8 @@ export class MockAccountServer {
 
   signIn(user) {
     const id = newId(16);
-    this.sessions.set(id, { id, userId: user.id, createdAt: this.now, lastUsedAt: this.now, expiresAt: this.now + 30 * 864e5, deviceLabel: 'Firefox on Linux', userAgent: 'Firefox on Linux', reauthUntil: this.now + 600_000 });
+    this.sessions.set(id, { id, userId: user.id, createdAt: this.now, lastUsedAt: this.now, expiresAt: this.now + 30 * 864e5, deviceLabel: 'Firefox on Linux', userAgent: 'Firefox on Linux', reauthUntil: 0 });
+    // Like the server: signing in is not a re-authentication.
     this.cookie = id;
     return id;
   }
@@ -264,7 +265,8 @@ export class MockAccountServer {
         return reply(200, { user: this.self(me) });
       }
       if (key === 'POST /api/account/password') {
-        if (!reauthed && body.currentPassword !== me.password) return fail(401, 'bad_credentials', 'Wrong password.');
+        if ('currentPassword' in body) return fail(400, 'invalid', 'Unknown field currentPassword.', { field: 'currentPassword' });
+        if (!reauthed) return needReauth();
         me.password = body.newPassword;
         return reply(200, { user: this.self(me) });
       }

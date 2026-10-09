@@ -240,8 +240,10 @@ export async function mountAccountPage(root, deps = {}) {
     });
     const displayName = field('Display name (optional)', el('input', { type: 'text', autocomplete: 'nickname', maxlength: String(policy.displayNameMax) }));
     const email = field(emailRequired ? 'Email' : 'Email (optional)', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX), required: emailRequired }), {
-      help: emailRequired ? 'We send a link to verify it.' : 'For password resets. You can add it later.',
+      help: emailRequired ? 'We send a link to verify it.' : 'For password resets. We send a link to confirm it. You can add it later.',
     });
+    // Addresses are only taken once they can be confirmed: no email field while this server sends no email.
+    email.row.hidden = !methods.email;
     const usePasskey = methods.passkey && methods.password ? checkbox('Use a passkey instead of a password') : null;
     const password = field('Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(policy.passwordMin), maxlength: String(policy.passwordMax) }), {
       help: `At least ${policy.passwordMin} characters. A long phrase is best.`,
@@ -483,15 +485,18 @@ export async function mountAccountPage(root, deps = {}) {
       : el('p', { class: 'form-help', text: 'No email on this account.' });
     const pending = user.pendingEmail ? el('p', { class: 'form-help', text: `Waiting for you to follow the link sent to ${user.pendingEmail}.` }) : null;
     const email = field('New email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX) }));
-    const save = el('button', { type: 'submit', class: 'btn', text: 'Change email' });
-    const form = el('form', { class: 'form-grid', novalidate: true }, email.row, el('div', { class: 'form-actions' }, save));
+    const save = el('button', { type: 'submit', class: 'btn', text: user.email ? 'Change email' : 'Add email' });
+    // A new address takes effect through its confirmation link, so this needs email sending on the server.
+    const form = methods.email
+      ? el('form', { class: 'form-grid', novalidate: true }, email.row, el('div', { class: 'form-actions' }, save))
+      : el('p', { class: 'form-help', text: 'Email addresses can be added once this server sends email.' });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!email.input.value.trim()) return status.show('Enter the new email.', 'error');
       await busy(save, status, async () => {
         const r = await withReauth(() => api.changeEmail(email.input.value.trim()));
         session.user = r.user;
-        status.show(methods.email ? 'Follow the link we sent to the new address to finish the change.' : 'Email changed.', 'ok');
+        status.show('Follow the link we sent to the new address to finish the change.', 'ok');
         renderAccount();
       }, errorText);
     });
@@ -521,18 +526,16 @@ export async function mountAccountPage(root, deps = {}) {
   function passwordSection(user) {
     const status = statusLine();
     const has = !!user.methods?.password;
-    const currentPw = has ? field('Current password', el('input', { type: 'password', autocomplete: 'current-password' }), { help: 'Not needed if you confirmed your sign-in in the last 10 minutes.' }) : null;
     const next = field(has ? 'New password' : 'Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(ACCOUNT_PASSWORD_MIN), maxlength: String(ACCOUNT_PASSWORD_MAX) }));
     const save = el('button', { type: 'submit', class: 'btn', text: has ? 'Change password' : 'Set a password' });
-    const form = el('form', { class: 'form-grid', novalidate: true }, currentPw?.row, next.row, el('div', { class: 'form-actions' }, save));
+    // The server asks for a fresh confirmation first (withReauth shows the dialog).
+    const form = el('form', { class: 'form-grid', novalidate: true }, next.row, el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const problem = check(() => validNewPassword(next.input.value, { username: user.username, email: user.email }));
       if (problem) return status.show(problem, 'error');
       await busy(save, status, async () => {
-        const input = { newPassword: next.input.value };
-        if (currentPw?.input.value) input.currentPassword = currentPw.input.value;
-        const r = await withReauth(() => api.changePassword(input));
+        const r = await withReauth(() => api.changePassword({ newPassword: next.input.value }));
         session.user = r.user;
         status.show('Password saved. Your other devices are signed out.', 'ok');
         form.reset?.();

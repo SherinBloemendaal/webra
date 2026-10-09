@@ -75,6 +75,9 @@ test('api: sessions, settings with versions (412 brings the current document), e
   assert.equal(stale.code, 'version_conflict');
   assert.equal(stale.detail.current.version, 1);
   assert.equal((await api.settings()).version, 1);
+  // Signing up is not a re-authentication: the export needs a fresh one.
+  assert.equal((await api.exportData().catch((e) => e)).code, 'reauth_required');
+  await api.reauth({ password: 'a long passphrase' });
   const { blob, name } = await api.exportData();
   assert.equal(name, 'webra-account-Tanya.json');
   assert.equal(JSON.parse(await blob.text()).user.username, 'Tanya');

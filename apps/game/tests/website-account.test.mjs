@@ -88,6 +88,22 @@ test('account page: sign up needs the privacy notice; a new account waits for ap
   assert.match(textOf(root), /closed beta/);
 });
 
+test('account page: no email field while the server cannot confirm addresses', async () => {
+  const server = new MockAccountServer();
+  const off = await page(server, '#signup');
+  const emailRow = (root) => {
+    const input = inputByLabel(root, /^Email/);
+    let n = input;
+    while (n && !n.hidden) n = n.parentNode;
+    return n;
+  };
+  assert.ok(emailRow(off.root), 'hidden without email sending');
+  off.root.remove();
+  server.services.email = true;
+  const on = await page(server, '#signup');
+  assert.equal(emailRow(on.root), null, 'shown when email works');
+});
+
 test('account page: closed registration and switched off methods are hidden', async () => {
   const server = new MockAccountServer();
   server.site.registration.open = false;

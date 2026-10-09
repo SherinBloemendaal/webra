@@ -718,7 +718,7 @@ export async function mountAdmin(root, deps = {}) {
   function ipBanDialog(cidr = '', reasonText = '') {
     return openDialog('Ban an address or range', (body, close) => {
       const status = statusLine();
-      const range = field('Address or range', el('input', { type: 'text', value: cidr, spellcheck: 'false', placeholder: '203.0.113.7 or 203.0.113.0/24' }), { help: 'IPv4 from /8, IPv6 from /16. You cannot ban your own address.' });
+      const range = field('Address or range', el('input', { type: 'text', value: cidr, spellcheck: 'false', placeholder: '203.0.113.7, 203.0.113.0/24 or 2001:db8:1:2::/64' }), { help: 'IPv4 from /8, IPv6 from /16. An IPv6 address without a prefix bans its /64 (one network). You cannot ban your own address.' });
       const reason = field('Reason', el('input', { type: 'text', value: reasonText, maxlength: String(BAN_REASON_MAX) }));
       const until = field('Until', el('input', { type: 'datetime-local' }), { help: 'Empty: permanent.' });
       const submit = el('button', { type: 'submit', class: 'btn btn-danger', text: 'Ban' });
