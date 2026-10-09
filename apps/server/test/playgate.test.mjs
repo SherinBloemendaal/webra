@@ -67,6 +67,12 @@ test('pass: signs and verifies; tampering, expiry, a far expiry, another key and
     assert.equal(await verifyPass(key, bad.join('.'), clock.now), null, bad.join('.'));
   }
   for (const junk of ['', 'x', `${value}.x`, value.replace(/\./g, ','), null, undefined, 42]) assert.equal(await verifyPass(key, junk, clock.now), null);
+  // The last base64url character of the 32-byte MAC carries 2 padding bits:
+  // a spelling with them changed decodes to the same MAC but is refused.
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const sibling = value.slice(0, -1) + alphabet[alphabet.indexOf(value.at(-1)) ^ 1];
+  assert.notEqual(sibling, value);
+  assert.equal(await verifyPass(key, sibling, clock.now), null, 'only the canonical MAC spelling');
 
   // Expiry: valid until exp, refused from exp on.
   assert.ok(await verifyPass(key, value, (exp - 1) * 1000));
@@ -376,8 +382,13 @@ test('a forged or foreign pass falls back to the D1 check', async () => {
   const other = await signup(env, 'Other Pending');
   other.jar.set('__Host-webra_play', a.jar.get('__Host-webra_play'));
   await expectRefused(other, WASM, 403, 'account_inactive');
-  // A pass with a broken MAC.
-  const forged = a.jar.get('__Host-webra_play').replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
+  // A pass with a broken MAC. Change a character inside the MAC: the last
+  // base64url character of a 32-byte MAC also carries 2 padding bits that
+  // decoders ignore, so flipping only those would leave the MAC valid.
+  const value = a.jar.get('__Host-webra_play');
+  const at = value.lastIndexOf('.') + 5;
+  const forged = value.slice(0, at) + (value[at] === 'A' ? 'B' : 'A') + value.slice(at + 1);
+  assert.notEqual(forged, value);
   const queries = env.DB.queries;
   a.jar.set('__Host-webra_play', forged);
   const again = await expectServed(a, WASM);
