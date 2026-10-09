@@ -643,7 +643,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     let atlas = null;
     if (art?.slots.size) {
       try {
-        atlas = buildAtlas(rules.actors, { slots: art.slots, filter: art.filter, maxSize: renderer.maxTextureSize });
+        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }

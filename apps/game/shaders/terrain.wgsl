@@ -27,6 +27,15 @@ const GEM_VARIANTS: u32 = 4u;
 const ART_TILES: u32 = 1u;
 const ART_ORE: u32 = 2u;
 const ART_GEMS: u32 = 4u;
+// Original water (js/content/terrain.js): pixels with alpha WATER_ALPHA + k
+// show the k-th of WATER_COLORS rotating colours, read from the atlas's last
+// pixel row, turned WATER_STEPS_PER_SECOND times a second on the render
+// clock like OpenRA's RotationPaletteEffect (0.25 steps a tick, 25 ticks a
+// second).
+const ART_WATER_ROTATION: u32 = 8u;
+const WATER_ALPHA: u32 = 248u;
+const WATER_COLORS: u32 = 7u;
+const WATER_STEPS_PER_SECOND: f32 = 6.25;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
@@ -69,12 +78,30 @@ fn resource_tile(base: u32, levels: u32, variants: u32, density: f32, c: vec2i, 
     return tile_px(base + variant * levels + level, local);
 }
 
+/// The colour of a rotating water pixel (alpha WATER_ALPHA + k) on the render clock.
+fn water_color(k: u32) -> vec3f {
+    var step = 0u;
+    if (g.anim.y > 0.5) {
+        step = u32(floor(max(g.anim.x, 0.0) * WATER_STEPS_PER_SECOND)) % WATER_COLORS;
+    }
+    let dims = vec2i(textureDimensions(atlas));
+    let index = (k + WATER_COLORS - step) % WATER_COLORS;
+    return textureLoad(atlas, vec2i(i32(index), dims.y - 1), 0).rgb;
+}
+
 /// Tile terrain (original graphics, texture packs): the tiles as they are,
-/// water shimmer, and ore and gems from their overlay tiles.
+/// water rotation (original) or shimmer (packs), and ore and gems from their
+/// overlay tiles.
 fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
-    var col = tile_px(tile, local).rgb;
+    let px = tile_px(tile, local);
+    var col = px.rgb;
     let flags = u32(g.art.x + 0.5);
-    if (t == 3u || t == 5u) {
+    if ((flags & ART_WATER_ROTATION) != 0u) {
+        let a = u32(px.a * 255.0 + 0.5);
+        if (a >= WATER_ALPHA && a < WATER_ALPHA + WATER_COLORS) {
+            col = water_color(a - WATER_ALPHA);
+        }
+    } else if (t == 3u || t == 5u) {
         let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
         col = col * (0.97 + 0.04 * wave);
     }
@@ -197,7 +224,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     let cell = textureLoad(cell_tex, c, 0);
     let tile = u32(cell.r * 255.0 + 0.5);
     if ((u32(g.art.x + 0.5) & ART_TILES) != 0u) {
-        return tiled(c, t, local, w, tile);
+        // Tile terrain names up to 1024 tiles: R + 256 G.
+        return tiled(c, t, local, w, tile + 256u * u32(cell.g * 255.0 + 0.5));
     }
     let decal = u32(cell.g * 255.0 + 0.5);
     let shadow = u32(cell.a * 255.0 + 0.5);

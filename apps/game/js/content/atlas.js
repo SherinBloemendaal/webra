@@ -10,16 +10,32 @@
 // original graphics, the second slot does too (OpenRA draws no turret for
 // most turreted structures: the turret is part of the body), so WebRA art is
 // never mixed into an original actor.
+//
+// Structures made of several parts the way OpenRA draws them:
+// - the bib (OpenRA WithBuildingBib: terrain tiles under the bottom two rows
+//   of the footprint) is painted under every frame of the body;
+// - a layer drawn over the body (OpenRA WithProductionDoorOverlay: the War
+//   Factory's roof and door) takes the second slot and is listed in
+//   `layers`: the engine draws it over the structure with the body's pose
+//   (engine/src/overlays.rs), hides it while the structure is being built,
+//   and plays the MAKE pose (the door opening and closing) when a unit has
+//   just been produced.
 
-import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES } from './tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES, TERRAIN } from './tables.js';
 import { decodeSprite, trimFrame } from './shp.js';
-import { ACTOR_SHADOW, decodePalette, paletteLookup } from './palette.js';
+import { ACTOR_SHADOW, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { MODE, POSE, POSE_COUNT, resolveSequence, sequenceFile } from './sequences.js';
 
 /** WebRA biome -> OpenRA tileset id. */
 export const TILESET_OF_BIOME = Object.freeze({ temperate: 'TEMPERAT', snow: 'SNOW', desert: 'DESERT' });
 
 const SHADOW_INDEX = ACTOR_SHADOW[0];
+/** World pixels per cell. */
+const CELL_PX = 24;
+/** Rows of the footprint a bib covers (OpenRA WithBuildingBib without a mini bib). */
+const BIB_ROWS = 2;
+/** Ticks the production door stays fully open between opening and closing. */
+export const DOOR_HOLD_TICKS = 10;
 
 /** A cache of decoded sprite files over `getFile(name) -> Uint8Array | null`. */
 export function spriteFiles(getFile) {
@@ -69,6 +85,98 @@ export function indexedImage(frame, shadow, lookup, offset) {
   return { width: t.width, height: t.height, color, mask: team ? mask : null, offset: [t.offset[0] + offset[0], t.offset[1] + offset[1]], scale: 1 };
 }
 
+/** Left and top edges of an atlas image (its offset is its centre). */
+const edges = (img) => [img.offset[0] - img.width / 2, img.offset[1] - img.height / 2];
+
+/**
+ * An atlas image with `under` painted beneath `top` ("over" compositing).
+ * Both keep their place: the result covers both rectangles, `top`'s pixels
+ * stay where they were (`under` is rounded to whole pixels against it).
+ */
+export function compositeUnder(top, under) {
+  if (!under || !under.width) return top;
+  const [tl, tt] = edges(top);
+  const [ul, ut] = edges(under);
+  const dx = Math.round(ul - tl);
+  const dy = Math.round(ut - tt);
+  const x0 = Math.min(0, dx);
+  const y0 = Math.min(0, dy);
+  const width = Math.max(top.width, dx + under.width) - x0;
+  const height = Math.max(top.height, dy + under.height) - y0;
+  const color = new Uint8ClampedArray(width * height * 4);
+  const mask = top.mask ? new Uint8Array(width * height) : null;
+  for (let y = 0; y < under.height; y++) {
+    color.set(under.color.subarray(y * under.width * 4, (y + 1) * under.width * 4), ((y + dy - y0) * width + dx - x0) * 4);
+  }
+  for (let y = 0; y < top.height; y++) {
+    for (let x = 0; x < top.width; x++) {
+      const s = y * top.width + x;
+      const ta = top.color[s * 4 + 3];
+      if (!ta) continue;
+      const d = (y - y0) * width + x - x0;
+      const ua = color[d * 4 + 3];
+      if (ta === 255 || !ua) {
+        color.set(top.color.subarray(s * 4, s * 4 + 4), d * 4);
+      } else {
+        const t = ta / 255;
+        const u = (ua / 255) * (1 - t);
+        const a = t + u;
+        for (let k = 0; k < 3; k++) color[d * 4 + k] = Math.round((top.color[s * 4 + k] * t + color[d * 4 + k] * u) / a);
+        color[d * 4 + 3] = Math.round(a * 255);
+      }
+      if (mask) mask[d] = top.mask[s];
+    }
+  }
+  return { width, height, color, mask, offset: [tl + x0 + width / 2, tt + y0 + height / 2], scale: top.scale ?? 1 };
+}
+
+/**
+ * The bib of a structure (OpenRA WithBuildingBib) as an atlas image centred
+ * on the footprint: tile i of the bib template lies in footprint column
+ * i % width and row i / width + height - 2, drawn with the theater's
+ * terrain palette. Null when the template is missing or empty.
+ * @param {{ data: Uint8Array, width: number, height: number } | null)[]} tiles the template's tiles
+ */
+export function bibImage(tiles, lookup, width, height) {
+  const rows = Math.min(BIB_ROWS, height);
+  const w = width * CELL_PX;
+  const h = rows * CELL_PX;
+  const color = new Uint8ClampedArray(w * h * 4);
+  let any = false;
+  for (let i = 0; i < width * rows && i < tiles.length; i++) {
+    const t = tiles[i];
+    if (!t || t.width !== CELL_PX || t.height !== CELL_PX) continue;
+    const ox = (i % width) * CELL_PX;
+    const oy = Math.floor(i / width) * CELL_PX;
+    for (let y = 0; y < CELL_PX; y++) {
+      for (let x = 0; x < CELL_PX; x++) {
+        const v = t.data[y * CELL_PX + x];
+        if (v === 0) continue;
+        color.set(lookup.color.subarray(v * 4, v * 4 + 4), ((oy + y) * w + ox + x) * 4);
+        any = true;
+      }
+    }
+  }
+  if (!any) return null;
+  // Centre of the bottom `rows` rows relative to the footprint's centre.
+  const offset = [0, (height - rows) * CELL_PX + h / 2 - (height * CELL_PX) / 2];
+  return { width: w, height: h, color, mask: null, offset, scale: 1 };
+}
+
+/**
+ * The door of a production structure opening and closing (OpenRA
+ * WithProductionDoorOverlay plays its sequence to the last frame when a unit
+ * leaves, then back): the frames of `idle` forward, held open for
+ * DOOR_HOLD_TICKS frames, then backward. Played once (MODE.ONCE) from the
+ * produced unit's age; the closed idle frame follows.
+ */
+export function doorDescriptor(idle) {
+  const n = idle.length;
+  const open = idle.frames.slice(0, n);
+  const frames = [...open, ...new Array(DOOR_HOLD_TICKS).fill(open[n - 1]), ...open.slice().reverse()];
+  return { ...idle, frames, length: frames.length, facings: 1, mode: MODE.ONCE, fps: idle.fps || 25 };
+}
+
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
 function descriptor(resolved, frames, mode, def) {
   return {
@@ -112,7 +220,7 @@ export function poseTable(have, { wall = false } = {}) {
  * sequence name (content/tables.js ACTOR_ART). Returns `{ art, problems }`
  * with `art` null when the idle pose cannot be made.
  */
-function slotArt(image, mapping, { files, tileset, lookup, offset, wall }) {
+function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under = null, door = false }) {
   const seqs = SEQUENCES[image] ?? {};
   const images = [];
   const imageIndex = new Map();
@@ -143,7 +251,8 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall }) {
         const frame = sprite.frames[f];
         const shadow = shadowFrame >= 0 ? sprite.frames[shadowFrame] : null;
         imageIndex.set(key, images.length);
-        images.push(frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 });
+        const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
+        images.push(under ? compositeUnder(img, under) : img);
       }
       return imageIndex.get(key);
     });
@@ -154,13 +263,20 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall }) {
       index: descriptor(resolved, frames, MODE.INDEX, def),
     };
   }
+  if (door && have.idle && have.idle.loop.facings === 1) {
+    // The door cycle: the MAKE pose of the layer (the engine hides the layer while the structure is built).
+    const cycle = doorDescriptor(have.idle.loop);
+    have.make = { once: cycle };
+  }
   const poses = poseTable(have, { wall });
   return { art: poses ? { images, poses } : null, problems };
 }
 
 /**
- * Sprite slots from the original graphics: `{ slots, actors, missing,
- * problems }` where `slots` maps slot index -> pose table or null (empty),
+ * Sprite slots from the original graphics: `{ slots, layers, actors,
+ * missing, problems }` where `slots` maps slot index -> pose table or null
+ * (empty), `layers` holds the second slots drawn over a structure (see the
+ * file comment),
  * `actors` lists the actor ids drawn with original art and `missing` those
  * without (they keep WebRA's art).
  * @param {Array<{ id: string, kind: string, centerOffset?: number[] }>} actors rules_json actors
@@ -168,7 +284,7 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall }) {
  * @param {string} tileset OpenRA tileset id (TILESET_OF_BIOME)
  */
 export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
-  const out = { slots: new Map(), actors: [], missing: [], problems: [] };
+  const out = { slots: new Map(), layers: new Set(), actors: [], missing: [], problems: [] };
   const palBytes = getFile(ACTOR_PALETTE);
   if (!palBytes) {
     out.problems.push(`${ACTOR_PALETTE} is not installed`);
@@ -184,6 +300,33 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     return out;
   }
   const files = spriteFiles(getFile);
+  // Bibs are terrain: the theater's palette with its shadow indices.
+  let terrainLookup = null;
+  const terrainPalette = TERRAIN[tileset]?.palette;
+  const terrainPal = terrainPalette ? getFile(terrainPalette) : null;
+  if (terrainPal) {
+    try {
+      terrainLookup = paletteLookup(decodePalette(terrainPal), { remap: false, shadow: TERRAIN_SHADOW });
+    } catch (err) {
+      out.problems.push(`${terrainPalette}: ${err.message}`);
+    }
+  }
+  const bibs = new Map();
+  const bibOf = (image, seqName, a) => {
+    const key = `${image}|${seqName}|${a.width}x${a.height}`;
+    if (!bibs.has(key)) {
+      let img = null;
+      const def = SEQUENCES[image]?.[seqName];
+      if (def && terrainLookup) {
+        const file = sequenceFile(def, tileset);
+        const { sprite, error } = files.get(file);
+        if (sprite) img = bibImage(sprite.frames, terrainLookup, a.width ?? 1, a.height ?? 1);
+        else out.problems.push(`${image}.${seqName}: ${file} ${error}`);
+      }
+      bibs.set(key, img);
+    }
+    return bibs.get(key);
+  };
   const shared = new Map(); // image + slot kind + offset -> art (aliases share one copy)
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
@@ -192,11 +335,13 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       return;
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];
+    const bib = a.kind === 'building' && entry.bib ? bibOf(entry.image, entry.bib, a) : null;
     const ctx = { files, tileset, lookup, offset, wall: !!entry.wall };
     const make = (part, mapping) => {
-      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}`;
+      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
       if (!shared.has(key)) {
-        const r = slotArt(entry.image, mapping, ctx);
+        const partCtx = { ...ctx, under: part === 'body' ? bib : null, door: part === 'second' && entry.overlay === 'door' };
+        const r = slotArt(entry.image, mapping, partCtx);
         out.problems.push(...r.problems);
         shared.set(key, r.art);
       }
@@ -212,6 +357,7 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     if (!second && a.kind === 'infantry') second = body;
     out.slots.set(2 * t, body);
     out.slots.set(2 * t + 1, second);
+    if (second && entry.overlay) out.layers.add(2 * t + 1);
     out.actors.push(a.id);
   });
   return out;
@@ -222,11 +368,14 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
  * wins; a pack may map a slot to null to hide it), then `original`
  * (originalSlots), then WebRA's own art (slot left out). See the file
  * comment for the second-slot rule.
- * @returns {{ slots: Map<number, object | null>, source: Map<number, string> }}
+ * `layers` lists the second slots that are layers over a structure
+ * (originalSlots `layers`) and came from the original graphics.
+ * @returns {{ slots: Map<number, object | null>, source: Map<number, string>, layers: Set<number> }}
  */
 export function combineSlots(actorCount, { packs = [], original = null } = {}) {
   const slots = new Map();
   const source = new Map();
+  const layers = new Set();
   const fromPacks = (k) => {
     for (const p of packs) if (p.slots.has(k)) return { art: p.slots.get(k), name: p.name ?? 'pack' };
     return null;
@@ -254,6 +403,7 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       if (art || bodyFrom === 'original') {
         slots.set(secondK, art);
         source.set(secondK, 'original');
+        if (art && original.layers?.has(secondK)) layers.add(secondK);
       }
     }
   }
@@ -266,5 +416,5 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       }
     }
   }
-  return { slots, source };
+  return { slots, source, layers };
 }

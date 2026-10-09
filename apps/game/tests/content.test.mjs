@@ -22,10 +22,35 @@ import {
   resolveSequence,
   packSprite,
   unpackSprite,
+  TICKS_PER_SECOND,
 } from '../js/content/sequences.js';
 import { ACTOR_ART, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES } from '../js/content/tables.js';
-import { originalSlots, combineSlots, poseTable } from '../js/content/atlas.js';
-import { chooseTiles, tileChoices, originalTerrain, packTerrain, ART_TILES, ART_ORE, ORE_TILE_BASE, GEM_TILE_BASE, ORE_LEVELS, ORE_VARIANTS, GEM_LEVELS, GEM_VARIANTS } from '../js/content/terrain.js';
+import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage, doorDescriptor, DOOR_HOLD_TICKS } from '../js/content/atlas.js';
+import {
+  originalTerrain,
+  packTerrain,
+  planTerrain,
+  theaterPools,
+  analyzeTile,
+  beachWetness,
+  waterDistance,
+  terrainTileIndex,
+  BEACH_REACH,
+  LAND_CENTRE,
+  ART_TILES,
+  ART_ORE,
+  ART_WATER_ROTATION,
+  WATER_ALPHA,
+  WATER_COLORS,
+  TERRAIN_TILES,
+  EXTRA_TILE_BASE,
+  ORE_TILE_BASE,
+  GEM_TILE_BASE,
+  ORE_LEVELS,
+  ORE_VARIANTS,
+  GEM_LEVELS,
+  GEM_VARIANTS,
+} from '../js/content/terrain.js';
 import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS } from '../js/content/install.js';
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
 import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
@@ -230,9 +255,11 @@ test('sequences: OpenRA frame order for facings, stride, Length *, Frames, Rever
 
 test('the sequences table covers the engine actors and names only files it lists', () => {
   const files = new Set(GRAPHICS_FILES);
+  // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert art: they keep WebRA's.
+  const openraOnly = new Set(['FTRK', 'MH60']);
   for (const a of BASE.actors) {
     if (a.kind === 'mine') continue;
-    assert.ok(ACTOR_ART[a.id], `${a.id} has original art`);
+    assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
     const seqs = SEQUENCES[entry.image];
@@ -427,6 +454,134 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
   }
 });
 
+// ---- Structures of several parts: bib under, layer over -------------------------------------
+
+test('tables: the original files only, never the files OpenRA makes itself (unless the original has the same layout)', () => {
+  const bits = new Set(
+    read('../../../data/source/bits.txt')
+      .split('\n')
+      .filter((l) => l && !l.startsWith('#')),
+  );
+  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp']);
+  for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f), `${f} is made by OpenRA`);
+  // The War Factory: its roof and door from weap2.shp (four frames, then four damaged), a layer over the body.
+  assert.equal(ACTOR_ART.WEAP.overlay, 'door');
+  assert.deepEqual(ACTOR_ART.WEAP.second, { idle: 'build-top', damaged: 'damaged-build-top' });
+  assert.deepEqual([SEQUENCES.weap['build-top'].file, SEQUENCES.weap['build-top'].start, SEQUENCES.weap['build-top'].length], ['weap2.shp', 0, 4]);
+  assert.equal(SEQUENCES.weap['damaged-build-top'].start, 4);
+  assert.equal(ACTOR_ART.WEAF.overlay, 'door', 'the fake War Factory too');
+  // OpenRA's own files mapped to the originals with the same frames.
+  assert.equal(SEQUENCES.tent.idle.file, 'tent.shp');
+  assert.equal(SEQUENCES.tent.idle.tilesets, undefined);
+  assert.equal(SEQUENCES.sam.turret.file, 'sam.shp');
+  assert.equal(SEQUENCES.silo.idle.file, 'silo.shp');
+  assert.equal(SEQUENCES.tran.idle.file, 'tran.shp');
+  // Bibs: the big ones (bib1-3) per theater; the small ones are OpenRA's and left out.
+  assert.equal(ACTOR_ART.WEAP.bib, 'bib');
+  assert.deepEqual(SEQUENCES.weap.bib.tilesets, { DESERT: 'bib2.des', SNOW: 'bib2.sno' });
+  assert.equal(ACTOR_ART.SAM.bib, undefined);
+  // Fakes without an original fake cameo show the real one.
+  assert.equal(ACTOR_ART.TENF.cameo, 'icon');
+  // OpenRA's own units have no original art: WebRA's stays.
+  assert.equal(ACTOR_ART.FTRK, undefined);
+  assert.equal(ACTOR_ART.MH60, undefined);
+});
+
+test('composite: the body over the bib, both in place, shadows blended, team mask kept', () => {
+  const img = (w, h, offset, rgba, mask = null) => ({ width: w, height: h, offset, scale: 1, color: new Uint8ClampedArray(w * h * 4).map((_, i) => rgba[i % 4]), mask });
+  const under = img(4, 2, [0, 1], [10, 20, 30, 255]);
+  const top = img(2, 4, [1, 0], [0, 0, 0, 140], new Uint8Array(8).fill(255));
+  top.color.set([200, 100, 50, 255], 0); // one opaque pixel at the top left
+  const out = compositeUnder(top, under);
+  // Union of x -2..2 and y -2..2.
+  assert.deepEqual([out.width, out.height, ...out.offset], [4, 4, 0, 0]);
+  const at = (x, y) => [...out.color.slice((y * 4 + x) * 4, (y * 4 + x) * 4 + 4)];
+  assert.deepEqual(at(2, 0), [200, 100, 50, 255], 'opaque body pixel wins');
+  assert.deepEqual(at(0, 3), [10, 20, 30, 255], 'bib where the body is not');
+  const blended = at(3, 3); // shadow (alpha 140) over the bib: darker, opaque
+  assert.equal(blended[3], 255);
+  assert.ok(blended[2] < 30 && blended[2] > 0);
+  assert.deepEqual(at(0, 0), [0, 0, 0, 0], 'nothing outside both');
+  assert.equal(out.mask[0 * 4 + 2], 255, 'the body keeps its team mask');
+  assert.equal(out.mask[3 * 4 + 0], 0);
+  assert.equal(compositeUnder(top, null), top);
+});
+
+test('bib: tile i of the template under footprint column i % width, in the bottom two rows', () => {
+  const lookup = paletteLookup(decodePalette(buildPal()), { remap: false });
+  const tiles = Array.from({ length: 6 }, (_, k) => ({ width: 24, height: 24, data: new Uint8Array(576).fill(30 + k) }));
+  tiles[1] = null;
+  const bib = bibImage(tiles, lookup, 3, 3);
+  assert.deepEqual([bib.width, bib.height], [72, 48]);
+  // A 3 x 3 footprint centred at 0: the bottom two rows span y -12..36, centre 12.
+  assert.deepEqual(bib.offset, [0, 12]);
+  const colorOf = (x, y) => [...bib.color.slice((y * 72 + x) * 4, (y * 72 + x) * 4 + 4)];
+  assert.deepEqual(colorOf(60, 30), [...lookup.color.slice(35 * 4, 35 * 4 + 4)], 'tile 5: column 2, second row');
+  assert.equal(colorOf(30, 5)[3], 0, 'an empty template cell stays empty');
+  assert.equal(bibImage([null], lookup, 2, 2), null);
+});
+
+test('door: the layer opens, holds and closes once; hidden while built is the engine part', () => {
+  const idle = { frames: [7, 8, 9, 10], length: 4, facings: 1, fps: 25, mode: MODE.LOOP, classic: false, interpolatedFacings: 0, rotate: false };
+  const d = doorDescriptor(idle);
+  assert.equal(d.mode, MODE.ONCE);
+  assert.deepEqual(d.frames, [7, 8, 9, 10, ...new Array(DOOR_HOLD_TICKS).fill(10), 10, 9, 8, 7]);
+  assert.equal(d.length, d.frames.length);
+  assert.ok(d.length / d.fps * TICKS_PER_SECOND < 127, 'the whole cycle fits in the ages the engine reports');
+});
+
+/** Synthetic War Factory parts: body 72 x 48, roof and door 72 x 48 (4 + 4 damaged), make, bib 3 x 2. */
+function syntheticFactory() {
+  const files = new Map();
+  files.set(ACTOR_PALETTE, buildPal());
+  const shp = (count, w, h, seed) => buildShp(w, h, Array.from({ length: count }, (_, i) => testFrame(w, h, seed + i)));
+  files.set('weap.shp', shp(2, 72, 48, 10));
+  files.set('weap2.shp', shp(8, 72, 48, 40));
+  files.set('weapmake.shp', shp(15, 72, 48, 70));
+  files.set('bib2.tem', buildTmpRa(24, 24, Array.from({ length: 6 }, (_, k) => new Uint8Array(576).fill(20 + k))));
+  return files;
+}
+
+test('original slots: the War Factory body sits on its bib, its roof and door are a layer with the door cycle', () => {
+  const files = syntheticFactory();
+  const out = originalSlots(ACTORS, (n) => files.get(n) ?? null, 'TEMPERAT');
+  const t = ACTORS.findIndex((a) => a.id === 'WEAP');
+  const body = out.slots.get(2 * t);
+  const layer = out.slots.get(2 * t + 1);
+  assert.ok(out.layers.has(2 * t + 1));
+  // Body frames carry the bib: as wide as the footprint, reaching the bottom row.
+  const idle = body.images[body.poses[POSE.IDLE].frames[0]];
+  assert.ok(idle.width >= 72);
+  assert.ok(idle.offset[1] + idle.height / 2 >= 36, `the bib reaches the footprint's bottom edge: ${idle.offset[1] + idle.height / 2}`);
+  // The make animation stands on the bib too.
+  const make = body.images[body.poses[POSE.MAKE].frames[0]];
+  assert.ok(make.offset[1] + make.height / 2 >= 36);
+  // The layer: idle, damaged (weap2.shp frames 4..7), the door cycle as its make pose.
+  assert.equal(layer.poses[POSE.IDLE].length, 4);
+  assert.notEqual(layer.poses[POSE.DAMAGED].frames[0], layer.poses[POSE.IDLE].frames[0]);
+  assert.equal(layer.poses[POSE.MAKE].mode, MODE.ONCE);
+  assert.equal(layer.poses[POSE.MAKE].length, 8 + DOOR_HOLD_TICKS);
+  // Centred like the body (LocalCenterOffset half a cell up), never under the bib.
+  const roof = layer.images[layer.poses[POSE.IDLE].frames[0]];
+  assert.ok(roof.offset[1] < idle.offset[1]);
+  // The fake War Factory shares the art.
+  assert.equal(out.slots.get(2 * ACTORS.findIndex((a) => a.id === 'WEAF') + 1), layer);
+  const combined = combineSlots(ACTORS.length, { original: out });
+  assert.ok(combined.layers.has(2 * t + 1));
+  // The atlas marks it: the layer's still pose, at least POSE_STRIDE (the engine then poses it).
+  globalThis.document = pixelDocument();
+  try {
+    const atlas = buildAtlas(ACTORS, { slots: combined.slots, layers: combined.layers, filter: 'nearest' });
+    assert.equal(atlas.overlays[t], packSprite(2 * t + 1, POSE.STILL));
+    assert.ok(atlas.overlays[t] >= POSE_STRIDE);
+  } finally {
+    delete globalThis.document;
+  }
+  // A pack body over the original layer: the layer stays a layer only while it comes from the original.
+  const pack = { slots: new Map([[2 * t + 1, null]]), name: 'p' };
+  assert.ok(!combineSlots(ACTORS.length, { packs: [pack], original: out }).layers.has(2 * t + 1));
+});
+
 test('priority: pack, then original content, then WebRA, with the second slot rule', () => {
   const art = (name) => ({ name, images: [], poses: [] });
   const original = { slots: new Map([[0, art('o0')], [1, null], [2, art('o2')], [3, art('o3')]]) };
@@ -459,16 +614,49 @@ test('original cameos come from the icon sequence, opaque, without team remap', 
 
 // ---- Terrain ------------------------------------------------------------------------------------
 
-/** Synthetic temperate theater: every template image the table names, tiles coded by template. */
+// Synthetic temperate theater. Indices: ground 20..27, sand 50..53, open
+// water 96..102 (the rotating range), stones 60. Every template the table
+// names exists; the beach templates are sand except sh04, which is drawn
+// like a real beach: grass to sand in its top row, sand to water in the
+// middle row, water in the bottom row.
+const GROUND = (x, y) => 20 + ((x * 3 + y * 5) % 8);
+const SAND = (x, y) => 50 + ((x + y) % 4);
+const WATERPX = (x, y) => 96 + ((x + 2 * y) % 7);
+const tilePx = (fn) => {
+  const t = new Uint8Array(24 * 24);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) t[y * 24 + x] = fn(x, y);
+  return t;
+};
+/** sh04 tile k (3 x 3): wetness by the pixel's distance from the template's water row. */
+function beachTile(k) {
+  const row = Math.floor(k / 3);
+  return tilePx((x, y) => {
+    const fromTop = row * 24 + y; // 0 .. 71; water from 48
+    if (fromTop >= 48) return WATERPX(x, y);
+    if (fromTop >= 40) return WATERPX(x, y);
+    if (fromTop >= 14) return SAND(x, y);
+    return GROUND(x, y);
+  });
+}
+
 function syntheticTheater() {
   const files = new Map();
   const info = TERRAIN.TEMPERAT;
   files.set(info.palette, buildPal());
-  const counts = new Map();
-  for (const [img, tile] of info.tiles) counts.set(img, Math.max(counts.get(img) ?? 0, tile + 1));
-  for (const [img, count] of counts) {
-    const tiles = Array.from({ length: count }, (_, k) => new Uint8Array(24 * 24).fill(16 + ((img * 7 + k) % 200)));
-    files.set(info.images[img], buildTmpRa(24, 24, tiles));
+  for (const [img, width, height, role, cells] of info.templates) {
+    const name = info.images[img];
+    if (files.has(name)) continue;
+    const count = Math.max(...cells) + 1;
+    const tiles = Array.from({ length: count }, (_, k) => {
+      if (!cells.includes(k)) return null;
+      if (role === 'water') return tilePx(WATERPX);
+      if (role === 'clear') return tilePx((x, y) => GROUND(x + k, y));
+      if (role === 'rough' || role === 'rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : GROUND(x, y)));
+      if (role === 'water-rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : WATERPX(x, y)));
+      if (name === 'sh04.tem') return beachTile(k);
+      return tilePx(SAND);
+    });
+    files.set(name, buildTmpRa(24, 24, tiles));
   }
   for (const def of [...RESOURCES.ore, ...RESOURCES.gems]) files.set(def.file, buildShp(24, 24, Array.from({ length: 12 }, (_, i) => testFrame(24, 24, 300 + i, { remap: false }))));
   files.set('t01.tem', buildShp(48, 48, [testFrame(48, 48, 5, { remap: false })]));
@@ -492,24 +680,96 @@ function terrainBytes(w, h) {
   return out;
 }
 
-test('terrain: plain cells take plain tiles; shores face the water', () => {
-  const choices = tileChoices('TEMPERAT');
-  const w = 16;
-  const h = 16;
-  const { picks, trees } = chooseTiles(terrainBytes(w, h), w, h, choices);
-  const sig = new Map(TERRAIN.TEMPERAT.tiles.map(([img, tile, cls, s]) => [`${TERRAIN.TEMPERAT.images[img]}#${tile}`, { cls, s }]));
-  // Middle of the lake: plain water.
-  const lake = picks[6 * w + 7];
-  assert.equal(sig.get(`${lake.image}#${lake.tile}`).cls, 'W');
-  // Land just north of the lake: a tile whose template has water to its south.
-  const shore = picks[3 * w + 7];
-  const s = sig.get(`${shore.image}#${shore.tile}`);
-  assert.equal(s.s[2], 'W', `shore tile ${shore.image} ${shore.tile} faces the water`);
-  assert.ok(trees.some(Boolean));
+/** Terrain bytes from rows of characters: . clear, ~ water, r rough, # rock, T tree, f ford. */
+function terrainFrom(rows) {
+  const h = rows.length;
+  const w = rows[0].length;
+  const code = { '.': 0, r: 1, '#': 2, '~': 3, T: 4, f: 5 };
+  const out = new Uint8Array(w * h * 4);
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    out[(y * w + x) * 4] = code[ch];
+    out[(y * w + x) * 4 + 3] = 255;
+  }));
+  return { terrain: out, w, h };
+}
+
+const theaterPoolsOf = (files) => theaterPools('TEMPERAT', (n) => (files.get(n) ? decodeSprite(files.get(n)) : null));
+
+test('terrain: tiles are read for where their water, sand and ground are', () => {
+  const water = new Uint8Array(256);
+  const ground = new Uint8Array(256);
+  for (let v = 96; v <= 102; v++) water[v] = 1;
+  for (let v = 20; v <= 27; v++) ground[v] = 1;
+  const middle = analyzeTile(beachTile(4), water, ground);
+  // Sand on top, water along the bottom edge.
+  assert.ok(middle.regions[1] > 0.45 && middle.regions[1] < 0.55, `north region is sand: ${middle.regions[1]}`);
+  assert.equal(middle.regions[7], 1);
+  assert.ok(middle.edges[2].every((v) => v === 1), 'south edge is water');
+  assert.ok(middle.edges[0].every((v) => v === 0.5), 'north edge is sand');
+  const top = analyzeTile(beachTile(1), water, ground);
+  assert.equal(top.regions[1], 0, 'grass at the top of the beach');
+  // The beach profile runs from water to grass within two cells.
+  assert.equal(beachWetness(0), 1);
+  assert.ok(beachWetness(0.5) > beachWetness(1) && beachWetness(1) > beachWetness(1.5));
+  assert.equal(beachWetness(BEACH_REACH + 0.1), 0);
+  // Distances reach water two cells away, no further.
+  const wet = (x, y) => x >= 10;
+  assert.equal(waterDistance(9.5, 0.5, wet), 0.5);
+  assert.equal(waterDistance(5, 0.5, wet), Infinity);
+});
+
+test('terrain: water cells keep open water; the beach goes on the land next to them and fits it', () => {
+  const files = syntheticTheater();
+  const pools = theaterPoolsOf(files);
+  const { terrain, w, h } = terrainFrom([
+    '..........',
+    '..........',
+    '..........',
+    '..........',
+    '~~~~~~~~~~',
+    '~~~~~~~~~~',
+  ]);
+  const { picks, coast } = planTerrain(terrain, w, h, pools);
+  for (let x = 0; x < w; x++) {
+    assert.equal(picks[4 * w + x].role, 'water', 'open water in the sea');
+    assert.equal(picks[0 * w + x].role, 'clear', 'plain ground far from the water');
+    // Right by the water: the sand-to-water row of the beach template.
+    const shore = picks[3 * w + x];
+    assert.equal(shore.image, 'sh04.tem', `x ${x}`);
+    assert.ok([3, 4, 5].includes(shore.tile), `sand to water at x ${x}: tile ${shore.tile}`);
+  }
+  assert.ok(coast.cells >= w && coast.fitted >= w);
+  // Same map, same tiles: the choice is a function of the map and the files.
+  assert.deepEqual(planTerrain(terrain, w, h, pools).picks.map((p) => p.key), picks.map((p) => p.key));
+});
+
+test('terrain: no garbage: land never looks like water, rocks and stones stand on their own kind of ground', () => {
+  const files = syntheticTheater();
+  const pools = theaterPoolsOf(files);
+  const { terrain, w, h } = terrainFrom([
+    '~~~~~~~~',
+    '~~~.~~~~',
+    '~~~~~#~~',
+    '~~~~~~#~',
+    '........',
+    '.###.r#.',
+    '........',
+  ]);
+  const { picks } = planTerrain(terrain, w, h, pools);
+  // A one-cell island stays land (its tile is not water in the middle).
+  assert.ok(picks[1 * w + 3].info.regions[4] <= LAND_CENTRE);
+  // Rocks with water on two sides stand in the water; rocks on land on ground.
+  assert.equal(picks[2 * w + 5].role, 'water-rock');
+  assert.equal(picks[5 * w + 6].role, 'rock');
+  // A run of three rock cells takes a whole template when one fits (b3: three tiles in a row).
+  const run = [1, 2, 3].map((x) => picks[5 * w + x]);
+  assert.ok(run.every((t) => t.role === 'rock'));
+  if (run[0].template.tiles.size === 3) assert.deepEqual(run.map((t) => t.tile), [0, 1, 2]);
+  assert.equal(picks[5 * w + 5].role, 'rough');
   for (const p of picks) assert.ok(p, 'every cell has a tile');
 });
 
-test('terrain: the original theater atlas, cells, ore and gem overlays, nearest filtering', () => {
+test('terrain: the original theater atlas, cells, ore and gem overlays, rotating water, nearest filtering', () => {
   const files = syntheticTheater();
   const w = 16;
   const h = 16;
@@ -519,13 +779,37 @@ test('terrain: the original theater atlas, cells, ore and gem overlays, nearest 
   assert.equal(r.atlas.width, 16 * 24);
   assert.equal(r.atlas.flags & ART_TILES, ART_TILES);
   assert.equal(r.atlas.flags & ART_ORE, ART_ORE);
-  assert.ok(r.report.tiles > 3 && r.report.tiles <= 192);
-  for (let i = 0; i < w * h; i++) assert.ok(r.cells[i * 4] < 192);
+  assert.equal(r.atlas.flags & ART_WATER_ROTATION, ART_WATER_ROTATION);
+  assert.ok(r.report.tiles > 3 && r.report.tiles <= TERRAIN_TILES);
+  const tileOf = (i) => r.cells[i * 4] + 256 * r.cells[i * 4 + 1];
+  for (let i = 0; i < w * h; i++) assert.ok(tileOf(i) < ORE_TILE_BASE || tileOf(i) >= EXTRA_TILE_BASE);
   // An ore tile is where the shader looks for it.
   const o = ((Math.floor(ORE_TILE_BASE / 16) * 24 + 5) * r.atlas.width + (ORE_TILE_BASE % 16) * 24 + 5) * 4;
   assert.ok(r.atlas.data[o + 3] > 0);
+  // Water pixels carry their place in the rotation; the last row holds the colours in palette order.
+  const lake = tileOf(6 * w + 7);
+  const px = ((Math.floor(lake / 16) * 24 + 3) * r.atlas.width + (lake % 16) * 24 + 2) * 4;
+  const index = WATERPX(2, 3);
+  assert.equal(r.atlas.data[px + 3], WATER_ALPHA + index - 96);
+  const pal = decodePalette(files.get('temperat.pal'));
+  const row = (r.atlas.height - 1) * r.atlas.width * 4;
+  for (let k = 0; k < WATER_COLORS; k++) assert.deepEqual([...r.atlas.data.slice(row + k * 4, row + k * 4 + 3)], [...pal.slice((96 + k) * 3, (96 + k) * 3 + 3)]);
+  assert.equal(r.atlas.data[px], pal[index * 3], 'the pixel keeps its own colour too');
   // Not installed: null, the WebRA tiles stay.
   assert.equal(originalTerrain(() => null, 'TEMPERAT', terrainBytes(w, h), w, h), null);
+});
+
+test('terrain: tile indexes skip the ore and gem tiles and go past 255 the way the shader reads them', () => {
+  assert.equal(terrainTileIndex(0), 0);
+  assert.equal(terrainTileIndex(TERRAIN_TILES - 1), TERRAIN_TILES - 1);
+  assert.equal(terrainTileIndex(TERRAIN_TILES), EXTRA_TILE_BASE);
+  assert.ok(EXTRA_TILE_BASE >= GEM_TILE_BASE + GEM_LEVELS * GEM_VARIANTS);
+  assert.ok(TERRAIN_WGSL.includes('tile + 256u * u32(cell.g * 255.0 + 0.5)'));
+  for (const [name, v] of [['WATER_ALPHA', WATER_ALPHA], ['WATER_COLORS', WATER_COLORS], ['ART_WATER_ROTATION', ART_WATER_ROTATION]]) {
+    assert.ok(new RegExp(`const ${name}: u32 = ${v}u;`).test(TERRAIN_WGSL), name);
+  }
+  // Every theater's water rotation is one the shader knows.
+  for (const info of Object.values(TERRAIN)) assert.equal(info.rotation[1], WATER_COLORS);
 });
 
 test('terrain: pack tiles per class with fallbacks', () => {
