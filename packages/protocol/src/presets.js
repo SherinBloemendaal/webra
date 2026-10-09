@@ -33,6 +33,9 @@ export const PRESET_KEYS = Object.freeze([
   ...BOOLEAN_OPTIONS,
 ]);
 
+/** Options added after modes could be saved, with the value older saved modes get. */
+const ADDED_LATER = Object.freeze({ reusableEngineers: DEFAULT_OPTIONS.reusableEngineers });
+
 /** Most saved modes per account. */
 export const PRESETS_MAX = 16;
 /** Longest name of a saved mode, in characters. */
@@ -95,6 +98,8 @@ export const BUILTIN_MODES = Object.freeze([
 
 /** Strictly validate a mode bundle: exactly PRESET_KEYS, every value from its value set. */
 export function validatePresetOptions(v, what = 'options') {
+  // Modes saved before an option existed lack its key: they keep its default.
+  if (isPlainObject(v)) v = { ...ADDED_LATER, ...v };
   object(v, PRESET_KEYS, what);
   const out = {
     mapStyle: oneOf(v.mapStyle, MAP_STYLES, `${what}.mapStyle`),

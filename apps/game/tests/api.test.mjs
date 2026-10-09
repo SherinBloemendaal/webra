@@ -25,6 +25,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  reusableEngineers: false,
 };
 
 const newGame = (overrides = {}) => Game.from_options(JSON.stringify({ ...OPTIONS, ...overrides }));
@@ -50,7 +51,8 @@ test('rules list every buildable actor with metadata', () => {
   for (const id of ['FACT', 'MCV', '4TNK', 'TTNK', 'CTNK', 'DTRK', 'TSLA', 'GAP', 'IRON', 'PDOX', 'MSLO', 'SYRD']) {
     assert.ok(ids.includes(id), id);
   }
-  assert.ok(rules.actors.every((a) => a.name && a.cost >= 0 && a.hp > 0));
+  // Proxies (engine/src/infantry.rs) have no body.
+  assert.ok(rules.actors.every((a) => a.name && a.cost >= 0 && (a.hp > 0 || a.kind === 'proxy')));
 });
 
 test('bad options are rejected with a message', () => {

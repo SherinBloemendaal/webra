@@ -156,6 +156,7 @@ export const DEFAULTS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  reusableEngineers: false,
   cheats: false,
 };
 
@@ -305,6 +306,7 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     buildRadius: bool('buildRadius'),
     redeployableMcv: bool('redeployableMcv'),
     oreRegrowth: bool('oreRegrowth'),
+    reusableEngineers: bool('reusableEngineers'),
     cheats: bool('cheats'),
     stressUnits:
       Number.isInteger(s.stressUnits) && s.stressUnits >= UNITS_MIN && s.stressUnits <= UNITS_MAX
@@ -468,6 +470,7 @@ export function buildOptions(state, mapJson = null) {
     buildRadius: s.buildRadius,
     redeployableMcv: s.redeployableMcv,
     oreRegrowth: s.oreRegrowth,
+    reusableEngineers: s.reusableEngineers,
     cheats: s.cheats,
     map: s.mapSource === 'file' ? mapJson : null,
   };

@@ -58,6 +58,7 @@ test('settings stored by the two-slot lobby (v1) carry over', () => {
     buildRadius: false,
     redeployableMcv: false,
     oreRegrowth: false,
+    reusableEngineers: false,
     stressUnits: 500,
   };
   const s = sanitizeState(v1, COLORS, () => 1);
@@ -183,7 +184,7 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, name: 'Commander' });
   assert.deepEqual(o.players[2], { slot: 2, type: 'closed' });
   assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, difficulty: 'hard' });
-  for (const key of ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats']) {
+  for (const key of ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'reusableEngineers', 'cheats']) {
     assert.ok(key in o, key);
   }
   s.mapSource = 'file';

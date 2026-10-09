@@ -77,6 +77,7 @@ const TOGGLE_OPTIONS = [
   { key: 'buildRadius', label: 'Build radius' },
   { key: 'redeployableMcv', label: 'Redeployable MCVs' },
   { key: 'oreRegrowth', label: 'Ore regrowth' },
+  { key: 'reusableEngineers', label: 'Reusable engineers' },
   { key: 'cheats', label: 'Debug menu' },
 ];
 

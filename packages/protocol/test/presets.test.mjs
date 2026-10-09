@@ -113,3 +113,10 @@ test('the settings document takes saved modes and names the bad field', () => {
   assert.ok(JSON.stringify(full).length < 6 * 1024);
   assert.doesNotThrow(() => validateSettingsDocument({ lobby: { presets: full } }));
 });
+
+test('modes saved before the reusable engineers option keep it off', () => {
+  const options = { ...presetOptions(DEFAULT_OPTIONS) };
+  delete options.reusableEngineers;
+  const [p] = validateSavedPresets([{ name: 'Old mode', options }]);
+  assert.equal(p.options.reusableEngineers, false);
+});

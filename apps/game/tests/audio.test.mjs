@@ -676,6 +676,7 @@ test('the engine reports fire, impact and death events to the client', () => {
     buildRadius: true,
     redeployableMcv: true,
     oreRegrowth: true,
+    reusableEngineers: false,
   };
   const game = Game.from_options(JSON.stringify(opts));
   const quiet = Game.from_options(JSON.stringify(opts));

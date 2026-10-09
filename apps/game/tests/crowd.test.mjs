@@ -116,6 +116,7 @@ test('records of a skirmish with selection, hover, all health bars and the obser
     buildRadius: true,
     redeployableMcv: true,
     oreRegrowth: true,
+    reusableEngineers: false,
     cheats: false,
   };
   const game = Game.from_options(JSON.stringify(options));

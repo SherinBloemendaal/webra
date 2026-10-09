@@ -107,6 +107,7 @@ const TOGGLES = [
   ['buildRadius', 'Build radius'],
   ['redeployableMcv', 'Redeployable MCVs'],
   ['oreRegrowth', 'Ore regrowth'],
+  ['reusableEngineers', 'Reusable engineers'],
   ['cheats', 'Debug menu (cheats)'],
 ];
 /** Every option of the online lobby with a "?" (tests check each one has help). */

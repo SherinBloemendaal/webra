@@ -30,6 +30,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  reusableEngineers: false,
   cheats: false,
 };
 

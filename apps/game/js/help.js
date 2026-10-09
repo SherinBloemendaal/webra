@@ -46,6 +46,8 @@ export const HELP = Object.freeze({
   buildRadius: 'Structures must be placed within range of one of your Construction Yards, as well as next to your other structures. Off: next to your structures is enough.',
   redeployableMcv: 'A Construction Yard can pack up into an MCV again and drive to a new spot.',
   oreRegrowth: 'Harvested ore grows back and spreads onto free clear ground. Gems never grow back.',
+  reusableEngineers:
+    'Engineers capture a structure from next to it after a longer wait (15 s instead of 8 s) and stay on the battlefield, instead of going in and being used up.',
   cheats:
     'Every player gets the debug menu (` key or the Debug button): instant building, building anywhere, free cash, unlimited power, a revealed map and more. Good for testing, not for a fair game.',
 

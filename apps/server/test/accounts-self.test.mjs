@@ -174,7 +174,7 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
   await invalid({ extra: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, 'y'.repeat(300)])) }, 'settings.extra');
   await invalid({ lobby: { lastOptions: { blob: Array.from({ length: 60 }, () => 'z'.repeat(100)) } } }, 'settings.lobby.lastOptions');
   // Saved game modes: complete, known bundles, unique names, at most 16.
-  const mode = { mapStyle: 'islands', biome: 'snow', weather: 'full', startingCash: 10000, startingUnits: 'light', techLevel: 'high', gameSpeed: 'fast', fog: true, explored: false, buildRadius: true, redeployableMcv: true, oreRegrowth: true, cheats: false };
+  const mode = { mapStyle: 'islands', biome: 'snow', weather: 'full', startingCash: 10000, startingUnits: 'light', techLevel: 'high', gameSpeed: 'fast', fog: true, explored: false, buildRadius: true, redeployableMcv: true, oreRegrowth: true, reusableEngineers: false, cheats: false };
   await invalid({ lobby: { presets: [{ name: 'Ice', options: { ...mode, biome: 'lava' } }] } }, 'settings.lobby.presets[0].options.biome');
   await invalid({ lobby: { presets: [{ name: 'Ice', options: mode }, { name: 'ICE', options: mode }] } }, 'settings.lobby.presets[1].name');
   await invalid({ lobby: { presets: [{ name: 'Ice', options: { ...mode, seed: 4 } }] } }, 'settings.lobby.presets[0].options');

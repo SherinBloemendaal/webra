@@ -51,6 +51,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  reusableEngineers: false,
 };
 
 /** In-memory relay: client messages go through the protocol and the server's Lockstep. */

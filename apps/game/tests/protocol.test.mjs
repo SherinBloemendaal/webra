@@ -66,6 +66,7 @@ test('orders the engine emits pass protocol validation and round-trip into apply
     buildRadius: true,
     redeployableMcv: true,
     oreRegrowth: true,
+    reusableEngineers: false,
   };
   const game = Game.from_options(JSON.stringify(options));
   game.set_lockstep(true);

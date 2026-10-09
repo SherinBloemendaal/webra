@@ -98,7 +98,7 @@ export const FACTIONS = [...Object.keys(RANDOM_FACTIONS), ...PLAYABLE_FACTIONS];
  * then may players send cheat orders (CHEAT_ORDER_KINDS), and the server
  * refuses them otherwise.
  */
-export const BOOLEAN_OPTIONS = ['fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
+export const BOOLEAN_OPTIONS = ['fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'reusableEngineers', 'cheats'];
 
 /** Cheat flags of the `dev_flag` order (engine/src/debug.rs DevFlag). */
 export const DEV_FLAGS = ['fast_build', 'build_anywhere', 'unlimited_power', 'fast_charge', 'disable_shroud', 'all_tech'];
@@ -128,6 +128,8 @@ export const DEFAULT_OPTIONS = Object.freeze({
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  // OpenRA's "Reusable Engineers" (player.yaml LobbyPrerequisiteCheckbox@REUSABLEENGINEERS, off).
+  reusableEngineers: false,
   cheats: false,
 });
 
