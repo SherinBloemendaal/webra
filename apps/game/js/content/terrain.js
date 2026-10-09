@@ -128,9 +128,9 @@ function solid(v, size = ORIGINAL_TILE) {
 
 /**
  * How wet the ground should look at a distance from the water, in cells: a
- * Red Alert beach runs from the water's edge through about a cell of sand
- * into grass (measured on the temperate beach templates, all theaters
- * follow it): `[distance, wetness]` points, linear in between.
+ * beach runs from the water's edge through about a cell of sand into the
+ * ground, the shape Red Alert's beach templates are drawn in (a hand-tuned
+ * curve): `[distance, wetness]` points, linear in between.
  */
 export const BEACH_PROFILE = Object.freeze([
   [0, 1],
