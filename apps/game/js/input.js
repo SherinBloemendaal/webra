@@ -20,15 +20,15 @@ import { hotkeys as defaultHotkeys } from './hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups, DOUBLE_TAP_MS, groupCommand, groupKeyFromEvent } from './controlgroups.js';
 import { actorInfo, askOf, queryOf } from './sim/methods.js';
+import { DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM, baseZoom, clampZoom, rescaleZoom, zoomLimits } from './scale.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
-export const MIN_ZOOM = 0.5;
-export const MAX_ZOOM = 4;
-const DEFAULT_ZOOM = 1.5;
+// Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
+export { MIN_ZOOM, MAX_ZOOM };
 const BOOKMARKS = 4;
 
 /** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
@@ -73,6 +73,8 @@ export class Input {
     this.hooks = hooks;
     this.hotkeys = hotkeys;
     this.settings = settings;
+    /** Game scale (game menu, Settings; js/scale.js): the base zoom and the zoom limits follow it. */
+    this.gameScale = 1;
     this.camera = { x: 0, y: 0, zoom: DEFAULT_ZOOM };
     this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
     this.selection = [];
@@ -135,10 +137,34 @@ export class Input {
     this.camera.y = Math.min(Math.max(this.camera.y, b.minY), b.maxY);
   }
 
-  /** Zoom to `zoom`, keeping the view centre in place. */
+  /** Zoom to `zoom` (within the game scale's limits), keeping the view centre in place. */
   setZoom(zoom) {
     const c = this.viewCenter();
-    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    this.camera.zoom = clampZoom(zoom, this.gameScale);
+    this.centerOn(c.x, c.y);
+  }
+
+  /** Zoom limits at the current game scale: { min, max } in CSS px per world px. */
+  zoomLimits() {
+    return zoomLimits(this.gameScale);
+  }
+
+  /** The base zoom of the game scale: where the view starts and "Reset zoom" goes. */
+  baseZoom() {
+    return baseZoom(this.gameScale);
+  }
+
+  /**
+   * A new game scale: the view keeps its centre, and the player's own zoom
+   * (wheel, pinch, keys) and camera bookmarks keep their factor of the base zoom.
+   */
+  setGameScale(scale) {
+    if (!Number.isFinite(scale) || scale <= 0 || scale === this.gameScale) return;
+    const from = this.gameScale;
+    const c = this.viewCenter();
+    this.gameScale = scale;
+    this.camera.zoom = rescaleZoom(this.camera.zoom, from, scale);
+    for (const b of this.bookmarks.values()) b.zoom = rescaleZoom(b.zoom, from, scale);
     this.centerOn(c.x, c.y);
   }
 
@@ -596,7 +622,7 @@ export class Input {
     const p = this.local(e);
     const before = this.toWorld(p.x, p.y);
     const factor = Math.exp(-e.deltaY * 0.0015);
-    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
+    this.camera.zoom = clampZoom(this.camera.zoom * factor, this.gameScale);
     this.camera.x = before.x - p.x / this.camera.zoom;
     this.camera.y = before.y - p.y / this.camera.zoom;
     this.clampCamera();
@@ -748,7 +774,7 @@ export class Input {
       reg('toSelection', 'Home', () => this.centerOnUnits(this.selection), 'Jump to selection', 'Camera'),
       reg('zoomIn', ']', () => this.setZoom(this.camera.zoom * 1.25), 'Zoom in', 'Camera', { repeat: true }),
       reg('zoomOut', '[', () => this.setZoom(this.camera.zoom / 1.25), 'Zoom out', 'Camera', { repeat: true }),
-      reg('resetZoom', '.', () => this.setZoom(DEFAULT_ZOOM), 'Reset zoom', 'Camera'),
+      reg('resetZoom', '.', () => this.setZoom(this.baseZoom()), 'Reset zoom', 'Camera'),
       reg('jumpTop', 'Alt+ArrowUp', () => this.jumpToEdge(0, -1), 'Jump to top edge', 'Camera'),
       reg('jumpBottom', 'Alt+ArrowDown', () => this.jumpToEdge(0, 1), 'Jump to bottom edge', 'Camera'),
       reg('jumpLeft', 'Alt+ArrowLeft', () => this.jumpToEdge(-1, 0), 'Jump to left edge', 'Camera'),
@@ -766,7 +792,7 @@ export class Input {
         reg(`bookmarkJump${i}`, `F${i}`, () => {
           const b = this.bookmarks.get(i);
           if (!b) return;
-          this.camera.zoom = b.zoom;
+          this.camera.zoom = clampZoom(b.zoom, this.gameScale);
           this.centerOn(b.x, b.y);
         }, `Jump to camera bookmark ${i}`, 'Camera'),
       );

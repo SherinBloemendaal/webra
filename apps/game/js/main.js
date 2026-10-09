@@ -37,6 +37,7 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
@@ -91,6 +92,8 @@ let account = null;
  * player gets a sign-in prompt; the running game is not touched.
  */
 const playAccess = new PlayAccess({ onLost: playAccessLost });
+/** The page's UI scale (js/scale.js): follows the setting and the screen, previewed by the game menu. */
+let uiScale = null;
 
 async function boot() {
   let gpuError = null;
@@ -100,6 +103,8 @@ async function boot() {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
   $('version').textContent = wasm ? `v${version()}` : '';
+  // UI scale first, so every screen and dialog opens at its size.
+  uiScale = new UiScale({ settings, win: window, root: document.documentElement });
   setupAudio();
   setupAccount();
   setupContent();
@@ -848,6 +853,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
   window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
+  // Game scale (game menu, Settings; js/scale.js): the view's base zoom. Auto
+  // follows the window and the render resolution, so those changes pick again.
+  const applyGameScale = () => input.setGameScale(resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: renderer.pixelRatio() }));
+  applyGameScale();
+  for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
+  window.addEventListener('resize', applyGameScale);
+  watchPixelRatio(window, applyGameScale);
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -890,6 +902,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       paused = isPaused;
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
+    uiScale,
+    renderRatio: () => renderer.pixelRatio(),
+    audio,
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),

@@ -517,7 +517,7 @@ input.ui-slider:disabled {
 
 .menu-card select,
 .menu-card input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color'])) {
-  width: 200px;
+  width: calc(200 * var(--ui-px, 1px));
 }
 
 .ui-select,
