@@ -316,10 +316,14 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   assert.match(textOf(root), /Unavailable: Discord is not configured/);
   const approval = root.querySelectorAll('input[type="checkbox"]').find((c) => /Approval required/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
   check(approval, false);
+  const gameGate = root.querySelectorAll('input[type="checkbox"]').find((c) => /The game needs an account/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
+  assert.equal(gameGate.checked, true, 'on by default');
+  check(gameGate, false);
   root.querySelector('textarea').value = 'Open beta!';
   submit(root.querySelector('form'));
   await settle(30);
   assert.equal(server.site.registration.approvalRequired, false);
+  assert.equal(server.site.gameRequiresAccount, false);
   assert.equal(server.site.motd, 'Open beta!');
   assert.equal(server.requests.find((r) => r.method === 'PATCH' && r.url === '/api/admin/site').headers['if-match'], '"v1"');
   // Audit log with a filter.
