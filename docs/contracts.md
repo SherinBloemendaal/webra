@@ -1039,12 +1039,18 @@ Layers over structures (`Game.set_building_overlays`, one value per actor
 type): a value below 4096 is the still frame of WebRA's animated layer
 (slot `2t + 1` animates, the still frame is drawn without power or under
 fog). A value of 4096 or more marks a layer that is a pose table (the
-original War Factory roof and door, OpenRA WithProductionDoorOverlay): with
-poses on, the engine draws slot `2t + 1` with the structure's pose (idle,
-damaged, still), leaves it out while the structure is built (make), and
-gives it the make pose with `age` = ticks since the youngest unit of the
-owner within two cells of an exit appeared (the door opens and closes once).
-Under fog the value itself (the layer's still pose) is drawn.
+original War Factory roof and door, OpenRA WithProductionDoorOverlay): the
+value is the layer's still pose with `age` = the number of door frames.
+With poses on, the engine leaves slot `2t + 1` out while the structure is
+built (make) and otherwise draws it with the idle or damaged pose (by
+damage state only: the door is never paused) and `age` = the door frame,
+which the layer shows as is (mode 3). The door frame
+(`engine/src/doors.rs`, presentation only, not in the state hash) follows
+OpenRA's `PlayFetchDirection`: 0 (shut) while the factory is idle or
+building; once it produces a unit, one frame per tick up to the last while
+that unit is on its exit cell and not yet idle there, then one frame per
+tick back to 0. Under fog the value itself (the layer's still pose) is
+drawn.
 
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are

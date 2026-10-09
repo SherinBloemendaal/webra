@@ -116,6 +116,14 @@ export function parseAudHeader(bytes) {
   return header;
 }
 
+/** Length in seconds of an AUD file, from its header (no decoding). */
+export function audDuration(bytes) {
+  const h = parseAudHeader(bytes);
+  // Output size is in bytes: two per sample for IMA (16-bit), one for Westwood (8-bit).
+  const samples = h.format === FORMAT_IMA ? h.outputSize >> 1 : h.outputSize;
+  return samples / h.sampleRate;
+}
+
 /**
  * Decode an .aud file to mono float samples in [-1, 1].
  * @returns {{ sampleRate: number, samples: Float32Array }}

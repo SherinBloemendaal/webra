@@ -4,6 +4,10 @@
 // .class, tag, [attr], [attr="value"]). It has no innerHTML on purpose:
 // code that reaches for it fails here.
 //
+// installDom({ windowEvents: true }) also makes the window an event target
+// at the end of the propagation path (document.defaultView) and runs
+// capture listeners first, from the window down, like the browser.
+//
 //   const doc = installDom();             // globalThis.document, window, HTMLElement
 //   const root = doc.createElement('div');
 //   doc.body.append(root);
@@ -45,6 +49,7 @@ export class FakeEvent {
     this.bubbles = init.bubbles ?? true;
     this.defaultPrevented = false;
     this.propagationStopped = false;
+    this.immediateStopped = false;
     Object.assign(this, init);
   }
   preventDefault() {
@@ -52,6 +57,10 @@ export class FakeEvent {
   }
   stopPropagation() {
     this.propagationStopped = true;
+  }
+  stopImmediatePropagation() {
+    this.propagationStopped = true;
+    this.immediateStopped = true;
   }
 }
 
@@ -143,26 +152,47 @@ export class FakeNode {
   }
   addEventListener(type, fn, opts) {
     if (!this.listeners.has(type)) this.listeners.set(type, []);
-    this.listeners.get(type).push({ fn, once: !!opts?.once });
+    this.listeners.get(type).push({ fn, once: !!opts?.once, capture: opts === true || !!opts?.capture });
   }
   removeEventListener(type, fn) {
     const l = this.listeners.get(type);
     if (l) this.listeners.set(type, l.filter((x) => x.fn !== fn));
   }
+  /** Run the listeners of `n` for `event` (`capture`: only capture ones, false: only bubbling ones, null: all). */
+  runListeners(n, event, capture = null) {
+    event.currentTarget = n;
+    for (const l of [...(n.listeners.get(event.type) ?? [])]) {
+      if (capture !== null && l.capture !== capture) continue;
+      if (l.once) n.removeEventListener(event.type, l.fn);
+      l.fn.call(n, event);
+      if (event.immediateStopped) break;
+    }
+  }
   dispatchEvent(event) {
     event.target ??= this;
-    for (let n = this; n; n = n.parentNode ?? (n === n.ownerDocument?.documentElement ? n.ownerDocument : null)) {
-      event.currentTarget = n;
-      for (const l of [...(n.listeners.get(event.type) ?? [])]) {
-        if (l.once) n.removeEventListener(event.type, l.fn);
-        l.fn.call(n, event);
+    const doc = this.ownerDocument;
+    const win = doc?.defaultView ?? null;
+    if (!win) {
+      // Bubbling only, up to the document.
+      for (let n = this; n; n = n.parentNode ?? (n === n.ownerDocument?.documentElement ? n.ownerDocument : null)) {
+        this.runListeners(n, event);
+        if (!event.bubbles || event.propagationStopped) break;
+        if (n === n.ownerDocument) break;
       }
-      if (!event.bubbles || event.propagationStopped) break;
-      if (n === n.ownerDocument) break;
+      return !event.defaultPrevented;
     }
+    // installDom({ windowEvents: true }): capture from the window down, then target and bubbling up to the window.
+    const path = [];
+    for (let n = this; n; n = n === win ? null : (n.parentNode ?? (n === doc.documentElement ? doc : n === doc ? win : null))) path.push(n);
+    for (let i = path.length - 1; i >= 1 && !event.propagationStopped; i--) this.runListeners(path[i], event, true);
+    if (!event.propagationStopped) this.runListeners(path[0], event);
+    for (let i = 1; i < path.length && event.bubbles && !event.propagationStopped; i++) this.runListeners(path[i], event, false);
     return !event.defaultPrevented;
   }
 }
+
+/** The window of installDom({ windowEvents: true }): an event target after the document. */
+class FakeWindow extends FakeNode {}
 
 class FakeText extends FakeNode {
   constructor(doc, text) {
@@ -412,10 +442,12 @@ export class FakeDocument extends FakeNode {
     return this.documentElement.querySelector(`#${id}`);
   }
   querySelector(s) {
-    return this.documentElement.querySelector(s);
+    return this.querySelectorAll(s)[0] ?? null;
   }
   querySelectorAll(s) {
-    return this.documentElement.querySelectorAll(s);
+    // Like the DOM: <html> itself is in the document's results.
+    const root = this.documentElement;
+    return [...(root.matches(s) ? [root] : []), ...root.querySelectorAll(s)];
   }
 }
 
@@ -438,10 +470,10 @@ export function memoryStorage(initial = {}) {
 let saved = null;
 
 /** Put a fresh fake document (and window, HTMLElement, Event) on globalThis. Returns the document. */
-export function installDom({ coarse = false } = {}) {
+export function installDom({ coarse = false, windowEvents = false } = {}) {
   saved ??= { document: globalThis.document, window: globalThis.window, HTMLElement: globalThis.HTMLElement, Event: globalThis.Event };
   const doc = new FakeDocument();
-  const win = {
+  const props = {
     document: doc,
     location: { href: 'https://webra.sherin.dev/play/', origin: 'https://webra.sherin.dev', pathname: '/play/', hash: '', search: '' },
     history: { replaceState() {} },
@@ -451,6 +483,13 @@ export function installDom({ coarse = false } = {}) {
     setTimeout,
     clearTimeout,
   };
+  let win = props;
+  if (windowEvents) {
+    win = Object.assign(new FakeWindow(doc), props);
+    delete win.addEventListener;
+    delete win.removeEventListener;
+    doc.defaultView = win;
+  }
   globalThis.document = doc;
   globalThis.window = win;
   globalThis.HTMLElement = FakeElement;

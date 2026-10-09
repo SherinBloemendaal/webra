@@ -5,8 +5,12 @@
 // local player watches: spectators, replays, after a defeat or at the end).
 // Phones get the same menu from the HUD's Menu button.
 //
-// The Settings page has three parts: Display (UI scale, game scale, render
-// resolution, fullscreen; js/scale.js), Scrolling and health bars, and Audio
+// The Music page is the music player (js/audio/musicplayer.js), like OpenRA's
+// in-game menu Music button.
+//
+// The Settings page has these parts: Display (UI scale, game scale, render
+// resolution, fullscreen; js/scale.js), Scrolling and health bars, Mouse
+// capture (js/mouselock.js, where the browser has Pointer Lock) and Audio
 // (the Sound dialog's controls, js/audio/panel.js).
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
@@ -24,6 +28,7 @@ import { touchControls } from './touch.js';
 import { segmented, slider as createSlider, switchInput, toggle as createToggle } from './ui/controls.js';
 import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
+import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
 import { closeOpenTip, labelWithHelp } from './infotip.js';
 
@@ -32,7 +37,21 @@ import { closeOpenTip, labelWithHelp } from './infotip.js';
  * in js/help.js as `settings.<key>`); the Audio section's are AUDIO_HELP_KEYS
  * of js/audio/panel.js.
  */
-export const MENU_HELP_KEYS = Object.freeze(['uiScale', 'gameScale', 'scaleAuto', 'pixelRatioCap', 'lowQuality', 'fullscreen', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'playerStanceColors']);
+export const MENU_HELP_KEYS = Object.freeze([
+  'uiScale',
+  'gameScale',
+  'scaleAuto',
+  'pixelRatioCap',
+  'lowQuality',
+  'fullscreen',
+  'edgeScrollSpeed',
+  'keyScrollSpeed',
+  'showUnitPaths',
+  'playerStanceColors',
+  'mouseCapture',
+  'mouseCaptureSpeed',
+  'mouseCaptureEscMenu',
+]);
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
 const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
@@ -41,7 +60,7 @@ const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, co
 export function fixedControls(mac = isMac()) {
   const ctrl = mac ? 'Cmd (or Ctrl)' : 'Ctrl';
   return [
-    ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu'],
+    ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu. With the mouse captured, the first Esc releases it'],
     ['Left click', 'Select, or give the order shown by the cursor'],
     ['Left drag', 'Box select'],
     ['Shift + click / drag', 'Add to or remove from the selection'],
@@ -106,7 +125,24 @@ export const DISPLAY_HELP =
   'Max resolution and low quality set how many pixels the battlefield is drawn with: sharpness and speed, not size.';
 
 /** Game menu settings that the Defaults button puts back (the Audio section's are added). */
-export const MENU_SETTINGS = Object.freeze(['uiScale', 'gameScale', 'pixelRatioCap', 'lowQuality', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'playerStanceColors']);
+export const MENU_SETTINGS = Object.freeze([
+  'uiScale',
+  'gameScale',
+  'pixelRatioCap',
+  'lowQuality',
+  'edgeScrollSpeed',
+  'keyScrollSpeed',
+  'showUnitPaths',
+  'healthBars',
+  'playerStanceColors',
+  'mouseCapture',
+  'mouseCaptureSpeed',
+  'mouseCaptureEscMenu',
+]);
+
+/** What the Mouse capture section says. */
+export const MOUSE_CAPTURE_HELP =
+  'Keeps the pointer inside the game, so it cannot slip onto another screen. The game draws its own cursor while the mouse is captured.';
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -136,11 +172,12 @@ export class GameMenu {
    *   hotkeys: import('./hotkeys.js').HotkeyRegistry,
    *   settings: { get(k: string): any, set(k: string, v: any): any, reset(k: string): any, subscribe(k: string, fn: Function): Function },
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
+   *   mouseCapture?: { available(): boolean },  mouse capture (js/mouselock.js); its section shows where available
    *   onChange(open: boolean, paused: boolean): void,
    *   uiScale?: import('./scale.js').UiScale,  the page's UI scale (live preview while its slider moves)
    *   renderRatio?(): number,  the battlefield's render pixel ratio (game scale: Auto and sharp steps)
    *   win?: Window,  the window the scales are picked for (tests)
-   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings
+   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings and the Music page
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
@@ -276,6 +313,7 @@ export class GameMenu {
     c.replaceChildren();
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'controls') this.renderControls(c);
+    else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
     else this.renderMain(c);
@@ -306,6 +344,7 @@ export class GameMenu {
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
+      ...(this.opts.audio ? [button('Music', null, () => this.show('music'))] : []),
       ...(this.opts.onContent ? [button('Original content', null, () => this.opts.onContent())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
@@ -371,6 +410,15 @@ export class GameMenu {
       }),
       button('Back', null, () => this.show('main')),
     );
+  }
+
+  /** The music player (OpenRA's in-game Music panel). */
+  renderMusic(c) {
+    c.append(el('h1', null, 'Music'));
+    const list = el('div', 'game-menu-scroll game-menu-music');
+    const player = mountMusicPlayer(list, this.opts.audio, { idPrefix: 'menu-music', heading: 2, onContent: this.opts.onContent });
+    this.pageOffs.push(() => player.dispose());
+    c.append(list, button('Back', 'primary', () => this.show('main')));
   }
 
   renderSettings(c) {
@@ -441,12 +489,26 @@ export class GameMenu {
       check('playerStanceColors', 'Relationship colours'),
     );
 
+    // ---- Mouse capture (js/mouselock.js; not without Pointer Lock or a mouse) ----
+    if (this.opts.mouseCapture?.available()) {
+      const keys = this.opts.hotkeys.bindingsFor('toggleMouseCapture');
+      const release = keys.length ? `${formatCombo(keys[0])} or Esc` : 'Esc';
+      const mode = choice('mouseCapture', 'Capture the mouse', { off: 'Off', fullscreen: 'In fullscreen', always: 'Always' }, `${release} releases it; a click into the game captures it again.`);
+      list.append(
+        el('h2', null, 'Mouse capture'),
+        el('p', 'hint game-menu-explain', MOUSE_CAPTURE_HELP),
+        withHelp(mode, 'mouseCapture', mode.querySelector('[role="radiogroup"]')),
+        slider('mouseCaptureSpeed', 'Captured mouse speed'),
+        check('mouseCaptureEscMenu', 'Esc also opens the menu'),
+      );
+    }
+
     // ---- Audio (the Sound dialog's controls) ----
     const audio = this.opts.audio;
     if (audio) {
       const box = el('div', 'game-menu-audio');
       list.append(el('h2', null, 'Audio'), box);
-      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, idPrefix: 'menu-audio', heading: 3, help: true });
+      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, onMusicPlayer: () => this.show('music'), idPrefix: 'menu-audio', heading: 3, help: true });
       this.pageOffs.push(() => mount.dispose());
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));

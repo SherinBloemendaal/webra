@@ -447,3 +447,27 @@ body {
 #app.cursor-hidden #view {
   cursor: none !important;
 }
+
+/* Mouse capture (js/mouselock.js): while the pointer is locked the browser
+   hides the OS cursor and the game draws its own at the virtual pointer
+   (its position comes through the CSSOM transform). The art keeps its own
+   32 x 32 size, like the OS cursor, whatever the UI scale. Never in the way
+   of hit testing: elementFromPoint looks through it. */
+.virtual-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.virtual-cursor[hidden] {
+  display: none;
+}
+
+.virtual-cursor img {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}

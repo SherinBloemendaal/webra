@@ -1,7 +1,8 @@
 // The game screen's own hotkeys (js/hotkeys.js): production tabs and slots,
 // support powers, pause, status bars, mute, screenshot, quick save, music,
 // hiding the interface, the observer views and statistics, replay speed and
-// WebRA's extras (debug menu, unit paths, fullscreen, the sidebar's numpad).
+// WebRA's extras (debug menu, unit paths, fullscreen, mouse capture, the
+// sidebar's numpad).
 // js/input.js registers the orders, sidebar modes, selection, camera and
 // control groups; js/commandbar.js the unit commands and stances; js/online.js
 // the chat keys.
@@ -45,6 +46,10 @@ export const GAME_KEYS = Object.freeze([
   // OpenRA has no default key for its path lines; L is free in its set.
   { name: 'showUnitPaths', keys: ['L'], label: 'Show unit paths', group: 'Game Commands', contexts: ['player', 'spectator'] },
   { name: 'fullscreen', keys: ['Alt+Enter'], label: 'Fullscreen', group: 'Game Commands', contexts: ['player', 'spectator', 'menu'] },
+  // Mouse capture (js/mouselock.js): OpenRA has no key for it, and its Alt+E is
+  // bookmark 3, so Alt+M (Option+M on macOS); main.js registers it only where
+  // the browser has Pointer Lock.
+  { name: 'toggleMouseCapture', keys: ['Alt+M'], label: 'Capture or release the mouse', group: 'Game Commands', contexts: ['player', 'spectator'] },
   // Viewport: hide the interface (OpenRA DisableUserInterface, DisableAllUserInterface).
   { name: 'disableUserInterface', openra: 'DisableUserInterface' },
   { name: 'disableAllUserInterface', openra: 'DisableAllUserInterface' },

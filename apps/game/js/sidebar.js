@@ -14,6 +14,7 @@ import { icon } from './ui-icons.js';
 import { formatCombo } from './hotkeys.js';
 import { attachTooltip } from './ui/tooltip.js';
 import { menuKeys } from './hudtips.js';
+import { CashCounter } from './cashcounter.js';
 import {
   BuildEta,
   cancelEndsPlacement,
@@ -38,11 +39,6 @@ const CAMEO_SIZE = 64;
 
 // Power meter: above this share of the generated power the bar turns amber.
 const POWER_TIGHT = 0.85;
-
-// Credits counter: like the 1996 sidebar the display ticks toward the real
-// value instead of jumping. Speed grows with the gap so big swings stay short.
-const CREDIT_MIN_RATE = 40; // credits per second
-const CREDIT_CATCHUP = 4; // fraction of the remaining gap closed per second
 
 /** Create an element with an optional class and text. */
 function el(tag, className, text) {
@@ -100,12 +96,12 @@ export class Sidebar {
     this.state = null;
     this.iconFailures = new Set();
 
-    // Credits animation state.
-    this.creditsShown = 0;
-    this.creditsTarget = 0;
+    // Credits counter (js/cashcounter.js): ticks toward the real value like
+    // OpenRA's, with its cash tick sounds (callbacks.onCashTick).
+    this.credits = null;
     this.creditsFrame = 0;
     this.creditsLast = 0;
-    this.creditsInitialised = false;
+    this.creditsRest = 0;
 
     this.build();
   }
@@ -652,39 +648,39 @@ export class Sidebar {
     setText(this.oreEl, `Ore ${ore} / ${storage}`);
     setVar(this.siloFill, '--silo', (storage > 0 ? Math.min(1, ore / storage) : 0).toFixed(4));
     this.siloEl.classList.toggle('full', storage > 0 && ore >= storage);
-    if (!this.creditsInitialised) {
+    // The credits and silo tooltip (`creditsTip`) reads the state when it opens or refreshes.
+    if (!this.credits) {
       // First update: show the real value immediately.
-      this.creditsInitialised = true;
-      this.creditsShown = target;
-      this.creditsTarget = target;
+      this.credits = new CashCounter(target);
       setText(this.creditsEl, target);
       return;
     }
-    this.creditsTarget = target;
-    if (!this.creditsFrame && Math.round(this.creditsShown) !== target) {
+    this.credits.target = target;
+    if (!this.creditsFrame && !this.credits.settled) {
+      // The counter rested for at least a poll (several UI ticks): a "down" sound may play at once.
+      this.credits.downQuiet = 0;
       this.creditsLast = performance.now();
+      this.creditsRest = 0;
       this.creditsFrame = requestAnimationFrame((t) => this.tickCredits(t));
     }
   }
 
+  /** Animation frame of the credits counter: run the UI ticks due since the last frame. */
   tickCredits(now) {
-    const dt = Math.min(0.1, Math.max(0, (now - this.creditsLast) / 1000));
+    const elapsed = this.creditsRest + Math.max(0, now - this.creditsLast);
     this.creditsLast = now;
-    const gap = this.creditsTarget - this.creditsShown;
-    const step = Math.max(CREDIT_MIN_RATE * dt, Math.abs(gap) * CREDIT_CATCHUP * dt);
-    if (Math.abs(gap) <= step) {
-      this.creditsShown = this.creditsTarget;
-    } else {
-      this.creditsShown += Math.sign(gap) * step;
-    }
-    const shown = Math.round(this.creditsShown);
-    setText(this.creditsEl, shown);
-    this.creditsEl.classList.toggle('up', gap > 0 && shown !== this.creditsTarget);
-    this.creditsEl.classList.toggle('down', gap < 0 && shown !== this.creditsTarget);
-    if (shown === this.creditsTarget) {
-      this.creditsShown = this.creditsTarget;
+    const c = this.credits;
+    const target = c.target;
+    const { up, down, rest } = c.advance(elapsed);
+    this.creditsRest = rest;
+    // OpenRA plays one notification per tick; ticks that fell into one frame play once.
+    if (up) this.callbacks.onCashTick?.('up');
+    if (down) this.callbacks.onCashTick?.('down');
+    setText(this.creditsEl, c.shown);
+    this.creditsEl.classList.toggle('up', c.shown < target);
+    this.creditsEl.classList.toggle('down', c.shown > target);
+    if (c.settled) {
       this.creditsFrame = 0;
-      this.creditsEl.classList.remove('up', 'down');
     } else {
       this.creditsFrame = requestAnimationFrame((t) => this.tickCredits(t));
     }

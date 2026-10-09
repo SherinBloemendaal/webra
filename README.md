@@ -79,7 +79,9 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
 - [x] Positional sound: volume and stereo pan follow the camera, sounds outside the view or under fog are culled, and a per-frame voice budget keeps battles of thousands of units listenable
 - [x] Original Red Alert sounds, voices and music from your own copy, and texture pack sounds (see [Original content](#original-content))
-- [x] Settings for master, effects, voices and music volume, speech and originals, and music on or off, shuffle, repeat and next track, in the game menu's **Settings** (Audio) and the **Sound** button
+- [x] Settings for master, effects, voices and music volume, speech and originals, cash ticks, and music on or off, shuffle, repeat and next track, in the game menu's **Settings** (Audio) and the **Sound** button
+- [x] Structure sounds as in OpenRA: placing a structure plays all of its build sounds together, an MCV deploying and a Construction Yard packing up play their transform and undeploy sounds, a blocked deploy says "Cannot deploy here", and the credits counter ticks up and down
+- [x] **Music player** like OpenRA's: the installed tracks with their lengths, the playing one with its time, play, pause, stop, previous, next, shuffle, repeat and volume, from the game menu's **Music** page and the Sound dialog (start screen too). Music needs `scores.mix` from a Red Alert disc, the Steam or Origin release or C&C Remastered: OpenRA's quick install package has none
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated); team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
@@ -230,7 +232,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 
 ## Controls
 
-Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, health bars, relationship colours, render resolution and low quality, fullscreen) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
+Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, health bars, relationship colours, render resolution and low quality, fullscreen, mouse capture) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
 
 | Input | Action |
 |-------|--------|
@@ -244,7 +246,8 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Radar: left click or drag, right click | Move the camera there; order the selected units there |
 | Mouse wheel | Zoom |
-| Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu |
+| Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu. With the mouse captured, the first Esc only releases it |
+| Click into the game | Capture the mouse (in fullscreen by default; Settings, Mouse capture), see the notes below |
 | Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
 | Sidebar right click | Cancel the last queued one (refunds what was paid) |
 | Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
@@ -268,6 +271,7 @@ Game commands (OpenRA defaults):
 | Keypad Enter | Quick save (single player and skirmish) |
 | (none) | Relationship colours: you green, allies yellow, enemies red (also in Settings) |
 | \` (backquote), L, Alt + Enter | WebRA's own: debug menu, unit paths, fullscreen |
+| Alt + M (Option + M on macOS) | WebRA's own: capture or release the mouse (OpenRA's Alt + E is bookmark 3) |
 
 Units, stances and production:
 
@@ -341,6 +345,7 @@ Notes on browsers:
 - **Keys the browser keeps.** Ctrl + Tab switches tabs, so the next production facility is Shift + Tab; Ctrl + Q and Ctrl + W quit and close the tab, so bookmarks 1 and 2 are recorded with Alt + Shift + Q and Alt + Shift + W; F11 (full screen) and F12 (developer tools) have no game action (production slots 11 and 12, fast and maximum replay speed: bind other keys in Controls). WebRA holds back the other browser shortcuts it uses (Ctrl + P, Ctrl + R, Ctrl + E, F5, Ctrl + number) wherever the browser lets a page do that. In fullscreen, Chromium browsers lock Esc, Tab, the F keys and the digit row to the game (Keyboard Lock API; hold Esc to leave fullscreen). On macOS, Ctrl + number works as well as Cmd + number.
 - **Saved hotkeys.** Hotkeys changed in older versions keep working; the ones that were never changed (and keys an older version took away from an action when another one was rebound) move to OpenRA's defaults.
 - **Fullscreen.** F11 belongs to the browser, so the game uses Alt + Enter (or the button in the menu). Without the Fullscreen API the menu says so.
+- **Mouse capture.** Like desktop OpenRA's locked cursor, the game can keep the mouse from slipping onto another monitor (Pointer Lock API). Settings, Mouse capture: Off, In fullscreen (the default: entering fullscreen or a click into the game while fullscreen captures it) or Always (any click into the game). While captured the game draws its own cursor and the screen edges always scroll; everything else works as with the free pointer (selection boxes, orders, the radar, sidebar, command bar, chat line, tooltips). Alt + M (Option + M on macOS, rebindable) releases it and captures it again; Esc releases it, and only the next Esc opens the menu unless Settings, "Esc also opens the menu" is on. The menu, other dialogs, switching windows and leaving fullscreen release it too; a click into the game captures it again (browsers wait about a second after Esc). Captured mouse speed sets the pointer speed; Chromium passes raw movement without the system's acceleration, which can feel slower. Lists, sliders and pickers release the mouse when clicked, since they need the system pointer. Browsers without Pointer Lock (iOS Safari, phones and tablets without a mouse) do not show the setting, and touch input never goes through it.
 - **Screenshots** are of the battlefield (without the sidebar).
 - **Leaving.** Closing or reloading the tab during a game asks first.
 
