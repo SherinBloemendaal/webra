@@ -714,6 +714,20 @@ warhead (`damage_types`); modded maps can tune them within
 apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
 `2t + 1` is the prone pose.
 
+### Pilots (`engine/src/plane.rs` `eject_pilot`)
+
+OpenRA EjectOnDeath (rules `abilities.eject_on_death {pilot, success_rate,
+in_air, on_ground, allow_unsuitable_cell}`, every RA plane and helicopter
+but the Badger): when such an actor dies, unless its owner is defeated or it
+is off the map, `rng.range(0, 100) < success_rate` (the shared simulation
+random numbers, so it is in the state hash through the pilot) decides
+whether its pilot (E1) comes out at its position. In the air the pilot falls
+by parachute from the aircraft's height and dies where it cannot stand
+(water, structures); at ground level only with `on_ground` (false in RA).
+Without `allow_unsuitable_cell` (true in RA) no pilot comes out over a cell
+infantry cannot enter. A plane that starts to fall decides when it is hit,
+not again where it crashes.
+
 ### Helicopters (`engine/src/helicopter.rs`)
 
 Built at the Helipad (HPAD) and start landed on it. VTOL: take off and land
@@ -904,7 +918,8 @@ placement that added buildable items), 32 PrimaryBuildingSelected, 33
 Captured (owner: new owner, b: old owner), 34 Infiltrated (owner: the
 target's owner, b: `infiltrator_code(type, owner)`), 35 TimeLimitWarning (a:
 minutes left, owner `ALL_PLAYERS`; `SoundEvents::push_time_limit`), 36
-CrateCollected (a: `crate_action_code`, b: the crate's type). Kinds 32 to 36
+CrateCollected (a: `crate_action_code`, b: the crate's type), 37
+PilotEjected (a: the aircraft's type; its EjectOnDeath ChuteSound). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
