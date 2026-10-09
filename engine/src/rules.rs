@@ -40,6 +40,9 @@ struct RawActor {
     cost: i32,
     build_ticks: i32,
     palette_order: i32,
+    /// OpenRA Buildable.BuildLimit (0: no limit).
+    #[serde(default)]
+    build_limit: i32,
     prerequisites: Vec<String>,
     build_at: String,
     hp: i32,
@@ -148,6 +151,8 @@ pub struct TakeCoverInfo {
 pub struct Abilities {
     pub cargo: Option<CargoInfo>,
     pub minelayer: Option<MinelayerInfo>,
+    /// OpenRA `EjectOnDeath` (aircraft): a pilot may bail out when it is destroyed.
+    pub eject_on_death: Option<EjectOnDeathInfo>,
     pub jams_missiles: Option<RangeInfo>,
     pub creates_shroud: Option<RangeInfo>,
     pub cloak: Option<CloakInfo>,
@@ -211,6 +216,19 @@ pub struct CargoInfo {
     pub after_unload_delay: i32,
     pub eject_on_sell: bool,
     pub eject_on_death: bool,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct EjectOnDeathInfo {
+    /// Actor id of the pilot (PilotActor, an infantry type).
+    pub pilot: String,
+    /// Percent chance per death (SuccessRate).
+    pub success_rate: i32,
+    /// Ejects while the actor is in the air (EjectInAir) / at ground level (EjectOnGround).
+    pub in_air: bool,
+    pub on_ground: bool,
+    /// The pilot also comes out over cells it cannot stand on (AllowUnsuitableCell).
+    pub allow_unsuitable_cell: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -707,6 +725,8 @@ pub struct ActorInfo {
     pub cost: i32,
     pub build_ticks: i32,
     pub palette_order: i32,
+    /// OpenRA Buildable.BuildLimit: at most this many owned and queued (0: no limit).
+    pub build_limit: i32,
     pub prerequisites: Vec<Prereq>,
     pub build_at: String,
     pub hp: i32,
@@ -978,6 +998,7 @@ impl Rules {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
+        within(&n("build_limit"), a.build_limit, 0, 1000)?;
         within(&n("hp"), a.hp, 1, 100_000_000)?;
         within(&n("sight"), a.sight, 0, MAX_VISION)?;
         count(&n("prerequisites"), a.prerequisites.len(), 32)?;
@@ -1191,6 +1212,10 @@ impl Rules {
             for id in &c.initial {
                 self.actor_id_ref(&n("cargo.initial"), id, &units)?;
             }
+        }
+        if let Some(e) = &ab.eject_on_death {
+            self.actor_id_ref(&n("eject_on_death.pilot"), &e.pilot, &[Kind::Infantry])?;
+            within(&n("eject_on_death.success_rate"), e.success_rate, 0, 100)?;
         }
         if let Some(m) = &ab.minelayer {
             self.actor_id_ref(&n("minelayer.mine"), &m.mine, &[Kind::Mine])?;
@@ -1484,6 +1509,7 @@ impl Rules {
                 cost: a.cost,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
+                build_limit: a.build_limit,
                 prerequisites,
                 build_at: a.build_at,
                 hp: a.hp,

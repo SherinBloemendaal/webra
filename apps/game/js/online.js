@@ -372,7 +372,9 @@ export class OnlineUI {
    *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
    *   onBack: () => void,
    *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
-   * }} ctx  account: signed-in players play under their username (protocol 5)
+   *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
+   * }} ctx  account: signed-in players play under their username (protocol 5);
+   *   sounds: OpenRA's chat and lobby sounds (js/audio/index.js)
    */
   constructor(root, ctx) {
     this.root = root;
@@ -712,7 +714,7 @@ export class OnlineUI {
     conn
       .on('lobby', (m) => this.onLobby(m))
       .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null, !!m.team))
-      .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true))
+      .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
       .on('start', (m) => this.onStart(m))
@@ -754,6 +756,7 @@ export class OnlineUI {
       lobbySeen: false,
       rejoin,
     };
+    this.lobbyClients = null;
     if (inviteId()) history.replaceState(null, '', location.pathname);
     if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
     if (!rejoin) {
@@ -960,6 +963,7 @@ export class OnlineUI {
       this.loadServerMaps();
     }
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
+    this.lobbySounds(m, mapChanged);
     Object.assign(this.state, {
       slots: m.slots,
       options: m.options,
@@ -973,6 +977,25 @@ export class OnlineUI {
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
     this.renderLobby();
+  }
+
+  /**
+   * OpenRA LobbyLogic's sounds for a lobby update: PlayerJoined when this
+   * player enters the lobby or another one joins, LobbyOptionChanged when
+   * the options or the map change. (Leaving players: the `left` message.)
+   */
+  lobbySounds(m, mapChanged) {
+    const clients = new Set([...m.slots.filter((x) => x.type === 'human').map((x) => x.client), ...m.spectators.map((x) => x.client)]);
+    const before = this.lobbyClients;
+    this.lobbyClients = clients;
+    if (this.inGame) return;
+    if (!before) {
+      this.ctx.sounds?.lobby('joined');
+    } else if ([...clients].some((c) => !before.has(c) && c !== this.state.you)) {
+      this.ctx.sounds?.lobby('joined');
+    } else if (this.state.lobbySeen && (mapChanged || JSON.stringify(m.options) !== JSON.stringify(this.state.options))) {
+      this.ctx.sounds?.lobby('option');
+    }
   }
 
   mySlot() {
@@ -1379,11 +1402,18 @@ export class OnlineUI {
     this.send({ t: 'ready', ready: !me.ready, mapHash: this.state.map ? this.state.map.hash : null });
   }
 
-  chatLine(name, textValue, system = false, team = false) {
+  /**
+   * A chat or system line. In the lobby its sound follows OpenRA's LobbyLogic
+   * (`sound`: 'chat' ChatLine, 'option' LobbyOptionChanged for system lines,
+   * 'left' PlayerLeft); in a game every line plays ChatLine (gameLine).
+   */
+  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option') {
     if (this.inGame) {
       this.gameLine(name ? `${team ? '[Team] ' : ''}${name}: ${textValue}` : textValue);
       return;
     }
+    if (sound === 'chat') this.ctx.sounds?.chatLine();
+    else this.ctx.sounds?.lobby(sound);
     if (!this.chatLog) return;
     const line = el('div', system ? 'online-chat-line online-chat-system' : 'online-chat-line');
     if (name) line.append(el('strong', null, `${name}: `));
@@ -2010,6 +2040,8 @@ export class OnlineUI {
 
   gameLine(textValue, important = false) {
     if (!this.gameLog) return;
+    // OpenRA IngameChatLogic: chat, system and mission lines play ChatLine.
+    this.ctx.sounds?.chatLine();
     const line = el('div', important ? 'online-game-line online-game-important' : 'online-game-line', textValue);
     this.gameLog.append(line);
     while (this.gameLog.childElementCount > 8) this.gameLog.firstElementChild.remove();

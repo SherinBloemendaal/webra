@@ -42,6 +42,7 @@ export const ORDERS = Object.freeze([
   'set_rally',
   'start_production',
   'cancel_production',
+  'pause_production',
   'place_building',
   'dev_flag',
   'dev_give_cash',

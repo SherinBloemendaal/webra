@@ -793,19 +793,29 @@ impl World {
         let tick = self.tick;
         let attacker = self.observer.source;
         let a = &mut self.actors[u];
-        // One "under attack" event per burst of fire on a structure, and one
-        // per burst of another player's fire on a unit (sound_events.rs).
+        // One "under attack" event per burst of another player's fire on a
+        // structure or a unit (sound_events.rs; OpenRA DamageNotifier ignores
+        // damage without an attacker and the owner's own).
         let quiet = a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS;
-        let report = a.kind == Kind::Building && quiet;
-        let report_unit = a.is_unit() && quiet && attacker.is_some_and(|o| o != a.owner);
+        let hostile = attacker.is_some_and(|o| o != a.owner);
+        let report = a.kind == Kind::Building && quiet && hostile;
+        let report_unit = a.is_unit() && quiet && hostile;
         let dealt = dmg.min(a.hp.max(0));
+        let before = a.hp;
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
         if report || report_unit {
             let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
             let kind = if report { SoundEventKind::BuildingDamaged } else { SoundEventKind::UnitDamaged };
-            self.sound.push(kind, ty, x, y, owner, 0);
+            self.sound.push(kind, ty, x, y, owner, attacker.map_or(-1, i32::from));
+        }
+        // OpenRA SoundOnDamageTransition: DamagedSounds when it falls to Heavy (below half health) and lives.
+        let a = &self.actors[u];
+        let max = self.rules.actors[a.ty as usize].hp as i64;
+        if a.hp > 0 && (a.hp as i64) * 100 < max * 50 && (before as i64) * 100 >= max * 50 {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::DamageHeavy, ty, x, y, owner, 0);
         }
         self.note_damage(u, dealt);
         // An AI remembers who hits its structures (ai.rs target choice).

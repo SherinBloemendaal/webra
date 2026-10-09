@@ -15,7 +15,7 @@ import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
 import { labelWithHelp } from '../infotip.js';
 
 /** Controls that get a "?" with `help: true` (texts: js/help.js `audio.<key>`). */
-export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'musicOn', 'musicShuffle', 'musicRepeat']);
+export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'clickSounds', 'musicOn', 'menuMusic', 'musicShuffle', 'musicRepeat']);
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -130,6 +130,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
   });
   const original = check('original', 'Use installed original sounds');
   const cashTicks = check('cashTicks', 'Cash ticks');
+  const clickSounds = check('clickSounds', 'Interface clicks');
 
   const testFx = el('button', { type: 'button', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
@@ -138,6 +139,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
 
   // ---- Music --------------------------------------------------------------------
   const musicOn = check('musicOn', 'Music on');
+  const menuMusic = check('menuMusic', 'Main menu music');
   const shuffle = check('musicShuffle', 'Shuffle');
   // Repeat: an exclusive choice, so a segmented control.
   const repeat = segmented({
@@ -156,7 +158,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
   musicPlayer.addEventListener('click', () => opts.onMusicPlayer?.());
   const musicContent = el('button', { type: 'button', text: 'Original content...' });
   musicContent.addEventListener('click', () => opts.onContent?.());
-  const musicControls = el('div', { class: 'audio-music-controls' }, musicOn.row, shuffle.row, repeatRow);
+  const musicControls = el('div', { class: 'audio-music-controls' }, musicOn.row, menuMusic.row, shuffle.row, repeatRow);
   const syncMusic = () => {
     const p = prefs.get();
     const box = audio.jukebox;
@@ -187,7 +189,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     }
   };
 
-  const checks = [enabled, speech, cashTicks, original, musicOn, shuffle];
+  const checks = [enabled, speech, cashTicks, clickSounds, original, musicOn, menuMusic, shuffle];
   const sync = (p) => {
     for (const c of [...checks, ...sliders]) c.sync(p);
     syncMusic();
@@ -202,7 +204,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
 
   if (opts.help) {
     for (const s of sliders) labelWithHelp(s.row, `audio.${s.key}`, s.input);
-    for (const c of [speech, cashTicks, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
+    for (const c of [speech, cashTicks, clickSounds, original, musicOn, menuMusic, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
     labelWithHelp(repeatRow, 'audio.musicRepeat', repeat.root);
   }
 
@@ -212,6 +214,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     speech.row,
     speechNote,
     cashTicks.row,
+    clickSounds.row,
     el('div', { class: 'audio-buttons' }, testFx, testVoice),
     el(
       'section',

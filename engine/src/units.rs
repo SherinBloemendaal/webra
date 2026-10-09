@@ -4,6 +4,7 @@ use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::map::Resource;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
 use crate::rules::Kind;
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
 
 /// Vehicles stop to turn when the heading is off by more than this (45 degrees).
@@ -831,34 +832,54 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.actors[i].hp >= max_hp {
+            let (width, height) = (binfo.width, binfo.height);
+            self.note_repaired(i, d);
             // Done: leave the pad toward the depot's rally point (or just below it).
-            let (rx, ry) = self.actors[d]
-                .rally
-                .unwrap_or((cell_center(self.actors[d].cx + binfo.width / 2), cell_center(self.actors[d].cy + binfo.height + 1)));
+            let (rx, ry) =
+                self.actors[d].rally.unwrap_or((cell_center(self.actors[d].cx + width / 2), cell_center(self.actors[d].cy + height + 1)));
             self.order_move(&[i], rx, ry, false);
             return;
         }
-        self.repair_step(i, &rep);
+        self.repair_step(i, d, &rep);
     }
 
-    /// One RepairsUnits interval on unit `i`: heal HpPerStep when the owner can pay.
-    pub(crate) fn repair_step(&mut self, i: usize, rep: &crate::rules::RepairInfo) {
+    /// One RepairsUnits interval on unit `i` at structure `by`: heal HpPerStep
+    /// when the owner can pay. `repair_timer` is 0 until the first step.
+    pub(crate) fn repair_step(&mut self, i: usize, by: usize, rep: &crate::rules::RepairInfo) {
         let ty = self.actors[i].ty as usize;
         let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
         let a = &mut self.actors[i];
+        let first = a.repair_timer <= 0;
         a.repair_timer -= 1;
         if a.repair_timer > 0 {
             return;
         }
         a.repair_timer = rep.interval;
-        let step = rep.hp_per_step.min(max_hp - a.hp);
+        let (hp, owner, x, y) = (a.hp, a.owner, a.x, a.y);
+        if first {
+            // OpenRA Resupply: StartRepairingNotification at the first step, before paying.
+            let by_ty = self.actors[by].ty as i32;
+            self.sound.push(SoundEventKind::UnitRepairStarted, ty as i32, x, y, owner, by_ty);
+        }
+        let step = rep.hp_per_step.min(max_hp - hp);
         // OpenRA RepairsUnits: repair costs ValuePercent of the unit's value, pro rata.
         let price = ((cost as i64 * rep.value_percent as i64 * step as i64 + 100 * max_hp as i64 - 1) / (100 * max_hp as i64)) as i32;
-        let owner = a.owner;
         if self.spend(owner, price) {
             self.note_repair(owner, price);
             self.actors[i].hp += step;
             self.uncloak_on(i, "Heal");
+        }
+    }
+
+    /// Unit `i` is fully repaired at structure `by`: FinishRepairingNotification,
+    /// when a repair step happened since the repair order (an undamaged unit
+    /// sent to the depot gets no repair, like OpenRA's Resupply).
+    pub(crate) fn note_repaired(&mut self, i: usize, by: usize) {
+        let a = &self.actors[i];
+        if a.repair_timer > 0 {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            let by_ty = self.actors[by].ty as i32;
+            self.sound.push(SoundEventKind::UnitRepaired, ty, x, y, owner, by_ty);
         }
     }
 
@@ -958,6 +979,10 @@ impl World {
         self.jammed = jammed;
         for (k, crusher) in crushed {
             if self.actors[k].alive {
+                // Crushable.CrushSound, at the crusher (sound_events.rs).
+                let (c, v) = (&self.actors[crusher], &self.actors[k]);
+                let (vty, cx, cy, vowner, cowner) = (v.ty as i32, c.x, c.y, v.owner, c.owner);
+                self.sound.push(SoundEventKind::Crushed, vty, cx, cy, vowner, cowner as i32);
                 let source = self.make_ref(crusher);
                 self.award_kill(k, source);
                 let by = self.actors[crusher].owner;

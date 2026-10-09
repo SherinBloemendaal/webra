@@ -49,6 +49,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Boats**: Gunboat, Destroyer, Cruiser, Transport (LST), Submarine and Missile Submarine; submarines dive and surface, depth charges, naval repair
 - [x] **Helicopters**: Chinook (troop transport), Black Hawk, Longbow and the Hind (disabled in OpenRA, restored here); hovering, landing, ammo and rearming at helipads
 - [x] **Planes and air support powers**: Yak and MiG attack runs with ammo and rearming at airfields; Spy Plane, Paratroopers and Parabombs
+- [x] **Pilots bail out** like OpenRA's EjectOnDeath: a plane or helicopter shot down in the air drops its pilot (a rifleman) by parachute half of the time; over water or a structure the pilot does not survive the landing
 - [x] **Abilities and superweapons**: minefields, cloaking and detection, missile jamming, gap generators, chrono teleport, demolition and MAD tank detonations, cash delivery; Chronosphere, Iron Curtain, Atom Bomb and GPS satellite
 - [x] Transports: infantry ride in APCs, Rangers, Phase Transports, the LST and the Chinook
 - [x] Tech tree with real OpenRA prerequisites for 7 factions; the sidebar shows every item and what is still needed to unlock it
@@ -81,12 +82,15 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Sound
 - [x] Our own sounds, synthesized in the browser with Web Audio (no audio files): weapon fire per weapon class, explosions by size, splashes, radio replies, announcer cues, structure placement and selling
-- [x] Unit replies and announcer lines ("Construction complete", "Unit ready", "Insufficient funds", "Low power", "Our base is under attack", "Unit lost", ...), optionally spoken with the browser's speech synthesis
+- [x] Unit replies and every announcer line OpenRA's Red Alert plays in a skirmish or multiplayer game, when OpenRA plays it and to the player it is for: production (Building, Training, On hold, Cancelled, Unable to build more, Construction complete, Unit ready, New construction options), economy and power (Insufficient funds, Low power, Silos needed), attacks and losses (Base under attack, Unit lost, Airborne unit lost, Naval unit lost), repairs (Repairing, Unit repaired), support powers (charging, ready, Select target, Insufficient power, A-bomb launch detected, Satellite launched, Reinforcements have arrived), captures, infiltration and theft, Battle control online and terminated, Game saved and loaded, the time limit warnings; optionally spoken with the browser's speech synthesis
+- [x] OpenRA's sound notifications: radar up and down, unit promoted, chat and lobby beeps (player joined, left, option changed), interface clicks on every button, power down and beacons, each with its OpenRA volume and interrupt behaviour
+- [x] Actor sounds from the rules: infantry crushed by tanks, parachutes opening (paratroopers and pilots), submarines and the Phase Transport cloaking, structures cracking below half health (walls and brick walls their own way), the Minelayer rearming
 - [x] Positional sound: volume and stereo pan follow the camera, sounds outside the view or under fog are culled, and a per-frame voice budget keeps battles of thousands of units listenable
 - [x] Original Red Alert sounds, voices and music from your own copy, and texture pack sounds (see [Original content](#original-content))
-- [x] Settings for master, effects, voices and music volume, speech and originals, cash ticks, and music on or off, shuffle, repeat and next track, in the game menu's **Settings** (Audio) and the **Sound** button
+- [x] Settings for master, effects, voices and music volume, speech and originals, cash ticks, interface clicks, and music on or off, main menu music, shuffle, repeat and next track, in the game menu's **Settings** (Audio) and the **Sound** button
 - [x] Structure sounds as in OpenRA: placing a structure plays all of its build sounds together, an MCV deploying and a Construction Yard packing up play their transform and undeploy sounds, a blocked deploy says "Cannot deploy here", and the credits counter ticks up and down
-- [x] **Music player** like OpenRA's: the installed tracks with their lengths, the playing one with its time, play, pause, stop, previous, next, shuffle, repeat and volume, from the game menu's **Music** page and the Sound dialog (start screen too). Music needs `scores.mix` from a Red Alert disc, the Steam or Origin release or C&C Remastered: OpenRA's quick install package has none
+- [x] **Music player** like OpenRA's: the installed tracks with their lengths, the playing one with its time, play, pause, stop, previous, next, shuffle, repeat and volume, from the game menu's **Music** page and the Sound dialog (start screen too). Music needs `scores.mix` from a Red Alert disc, the Steam or Origin release or C&C Remastered: OpenRA's quick install package has none. The Counterstrike and Aftermath tracks come from those expansion discs (or the `expand` folder of an OpenRA content install)
+- [x] Background music as in OpenRA: the intro behind the main menu, "Militant Force" after a won game and the map track after a lost one, each until you pick another track; every track at OpenRA's volume for it
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated); team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
@@ -129,6 +133,11 @@ them (WebRA's own art and synthesized sounds).
   files), and choose the files or drop them on the game.
 - Everything is read in your browser and stored **only on your device**
   (IndexedDB). Remove it any time with "Remove installed content".
+- **Counterstrike and Aftermath music:** drop the expansion disc's CD
+  image or its `MAIN.MIX` (each holds its own `scores.mix`), the
+  `scores.mix` itself, or the loose tracks from the `expand` folder of an
+  OpenRA content install (`araziod.aud`, `wastelnd.aud`, ...). They join the
+  playlist after the base tracks, as in OpenRA's music player.
 - `desert.mix` from Tiberian Dawn adds desert terrain, as in OpenRA. The
   interior theater is not used (WebRA has no interior maps).
 - Effects, projectiles, mines and helicopter rotors keep WebRA art.
@@ -265,7 +274,7 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu. With the mouse captured, the first Esc only releases it |
 | Click into the game | Capture the mouse (in fullscreen by default; Settings, Mouse capture), see the notes below |
 | Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
-| Sidebar right click | Cancel the last queued one (refunds what was paid) |
+| Sidebar right click | Put the one being built on hold ("On hold"); on one that is on hold, finished or not started yet: cancel the last queued one (refunds what was paid). Left click resumes a held one, middle click cancels at once |
 | Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Game commands (OpenRA defaults):
