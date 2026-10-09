@@ -76,6 +76,12 @@ export const HELP = Object.freeze({
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
   'settings.playerStanceColors': 'Colours players by how they stand to you, like OpenRA: you green, allies yellow, enemies red. Spectators always see the players own colours.',
+  'settings.mouseCapture':
+    'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Alt+M (Option+M on a Mac; rebindable in Controls) turns it off and on, Esc releases it; opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
+  'settings.mouseCaptureSpeed':
+    'How fast the game cursor moves while the mouse is captured: 1x matches the normal pointer. Browsers that pass raw mouse movement (without the system acceleration) can feel slower; raise it then.',
+  'settings.mouseCaptureEscMenu':
+    'Off: with the mouse captured, the first Esc only releases it and the next Esc opens the menu. On: one Esc releases the mouse and also cancels the current mode or opens the menu.',
 
   // ---- Audio (js/audio/panel.js in the game menu) --------------------------------------------
   'audio.master': 'Turns every sound up or down at once: effects, voices and music.',

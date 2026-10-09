@@ -61,7 +61,7 @@ function runMixer(audio) {
   return audio.mixer.buses;
 }
 
-function setup({ win = fakeWindow(), withAudio = true, onContent } = {}) {
+function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = true } = {}) {
   const registry = createRegistry({ storage: memoryStorage() });
   const settings = createSettings(registry);
   const hotkeys = new HotkeyRegistry(settings);
@@ -82,6 +82,7 @@ function setup({ win = fakeWindow(), withAudio = true, onContent } = {}) {
     hotkeys,
     settings,
     fullscreen: { available: () => false, active: () => false, toggle: async () => ({ ok: true }) },
+    mouseCapture: { available: () => pointerLock },
     onChange() {},
     uiScale,
     renderRatio: () => 2,
@@ -98,10 +99,10 @@ function setup({ win = fakeWindow(), withAudio = true, onContent } = {}) {
 
 const $ = (root, sel) => root.querySelector(sel);
 
-test('settings page: display, scrolling and audio sections, with the scale help', () => {
+test('settings page: display, scrolling, mouse capture and audio sections, with the scale help', () => {
   const { root } = setup();
   const titles = root.querySelectorAll('h2').map((h) => h.textContent);
-  assert.deepEqual(titles.slice(0, 3), ['Display', 'Scrolling and units', 'Audio']);
+  assert.deepEqual(titles.slice(0, 4), ['Display', 'Scrolling and units', 'Mouse capture', 'Audio']);
   assert.ok(textOf(root).includes(DISPLAY_HELP), 'the three ways the picture changes are explained');
   for (const id of ['#game-menu-uiScale', '#game-menu-gameScale']) assert.ok($(root, id), id);
   assert.ok(root.querySelector('.game-menu-scroll'), 'the page scrolls inside the card');
@@ -455,4 +456,27 @@ test('the Sound dialog stays without help buttons (only the game menu asks for t
   mountAudioPanel(button, panel, audio);
   assert.ok(panel.querySelector('#audio-music'));
   assert.equal(panel.querySelectorAll('.info-btn').length, 0);
+});
+
+test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists, none without it', () => {
+  const { settings, root, menu } = setup();
+  // The game registers the capture hotkey (js/gamekeys.js): the section names its key.
+  menu.opts.hotkeys.registerAction('toggleMouseCapture', ['Alt+M'], () => {});
+  menu.render();
+  const texts = root.querySelectorAll('h2').map((h) => h.textContent);
+  assert.ok(texts.includes('Mouse capture'));
+  const always = root.querySelector('#game-menu-mouseCapture-always');
+  assert.ok(root.querySelector('#game-menu-mouseCapture-fullscreen').checked, 'in fullscreen by default');
+  check(always);
+  assert.equal(settings.get('mouseCapture'), 'always');
+  typeInto(root.querySelector('#game-menu-mouseCaptureSpeed'), '1.5');
+  assert.equal(settings.get('mouseCaptureSpeed'), 1.5);
+  check(root.querySelector('#game-menu-mouseCaptureEscMenu'));
+  assert.equal(settings.get('mouseCaptureEscMenu'), true);
+  assert.match(textOf(root), /(Alt|Option)\+M or Esc releases it/);
+  uninstallDom();
+  doc = installDom();
+  const none = setup({ pointerLock: false });
+  assert.ok(!none.root.querySelectorAll('h2').some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
+  assert.equal(none.root.querySelector('#game-menu-mouseCapture-always'), null);
 });

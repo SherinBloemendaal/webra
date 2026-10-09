@@ -75,7 +75,7 @@ const PACK_ID = /^[^\u0000-\u001f\u007f]{1,160}$/;
 export const GROUPS = deepFreeze({
   game: {
     label: 'Game',
-    description: 'Scrolling, graphics, health bars and hotkeys.',
+    description: 'Scrolling, mouse capture, graphics, health bars and hotkeys.',
     scope: 'game',
     settings: {
       edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3, step: 0.25, label: 'Edge scroll speed', help: '0 turns edge scrolling off.' },
@@ -119,6 +119,22 @@ export const GROUPS = deepFreeze({
         help: 'Original graphics need the original content installed on the device.',
       },
       hotkeys: { type: 'keymap', default: {}, maxEntries: 200, maxKeys: 4, label: 'Changed hotkeys', help: 'An empty list leaves the action without a key.' },
+      // Mouse capture (js/mouselock.js, Pointer Lock API): keeps the mouse in the game on multi-monitor setups.
+      mouseCapture: {
+        type: 'choice',
+        default: 'fullscreen',
+        options: ['off', 'fullscreen', 'always'],
+        labels: { off: 'Off', fullscreen: 'In fullscreen', always: 'Always (click into the game)' },
+        label: 'Capture the mouse',
+        help: 'Keeps the pointer inside the game. The capture hotkey or Esc releases it.',
+      },
+      mouseCaptureSpeed: { type: 'number', default: 1, min: 0.25, max: 3, step: 0.25, label: 'Captured mouse speed', help: 'Pointer speed while the mouse is captured.' },
+      mouseCaptureEscMenu: {
+        type: 'boolean',
+        default: false,
+        label: 'Esc also opens the menu while the mouse is captured',
+        help: 'Off: the first Esc only releases the mouse, the next one opens the menu.',
+      },
     },
   },
   audio: {
@@ -195,7 +211,7 @@ export const GROUPS = deepFreeze({
   },
   extra: {
     label: 'Other',
-    description: 'The original content notice and the map editor.',
+    description: 'The original content notice, the mouse capture hint and the map editor.',
     scope: 'game',
     open: true,
     maxBytes: 8 * 1024,
@@ -220,6 +236,8 @@ export const GROUPS = deepFreeze({
         label: 'Map editor: symmetry',
       },
       editorGrid: { type: 'boolean', default: true, label: 'Map editor: show grid' },
+      // How often the "Mouse captured" hint was shown (js/mouselock.js shows it the first few times).
+      mouseCaptureHints: { type: 'integer', default: 0, min: 0, max: 99, label: 'Mouse capture hints shown' },
     },
   },
 });
