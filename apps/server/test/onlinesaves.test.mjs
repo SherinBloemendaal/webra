@@ -231,6 +231,9 @@ test('resuming: the file is checked against the record, the players come back by
   const logged = guest.take('log').flatMap((m) => m.frames);
   assert.deepEqual(logged, (await ctx.s.session.log.read()).filter(([t]) => t <= agreed.tick));
   assert.deepEqual(guest.last('sync'), { t: 'sync', tick: saved.ticks, check: { tick: saved.ticks - 1, hash: saved.hash } });
+  // Players have a short time to catch up (the saved orders only).
+  const { resumeStartMs } = await import('../src/session.js');
+  for (const st2 of s.session.room.seatStates.filter(Boolean)) assert.ok(st2.until <= Date.now() + resumeStartMs(saved.ticks));
   // Orders before everyone caught up are refused; the relay waits.
   await s.send(host, { t: 'orders', tick: saved.ticks + 3, orders: [] });
   assert.equal(host.last('error').code, 'bad_state');
@@ -270,4 +273,42 @@ test('online save records: export lists them, 90 days and purging remove them, 2
   await env.DB.batch(purgeStatements(env.DB, accounts.guest.user.id));
   assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM online_saves')[0].n, 0, 'a purged player takes its saves along');
   assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM online_save_members')[0].n, 0);
+});
+
+test('resume uploads: the host is checked before the body is read, sizes are bounded early, the orders budget while validating', async () => {
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const s = await makeSession({ DB: env.DB, maxPlayers: 2 });
+  const sid = wire(env, s.session);
+  const host = s.connect('host', '10.0.0.1', authOf(accounts.host));
+  await s.send(host, hello(s, { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  const guest = s.connect('guest', '10.0.0.2', authOf(accounts.guest));
+  await s.send(guest, hello(s));
+  const gw = guest.take('welcome')[0];
+  const post = (b, w, body, headers = {}) => b.req('POST', `/api/sessions/${sid}/resume`, body, { headers: { [MEMBER_HEADER]: `${w.you}.${w.key}`, ...headers } });
+  // Not the host: refused before the (here malformed) body is looked at.
+  const notHost = await post(accounts.guest, gw, '{not json');
+  assert.deepEqual([notHost.status, notHost.body.error.code], [403, 'not_host']);
+  // A declared size beyond the orders limit plus a map is refused before reading.
+  const big = await post(accounts.host, hw, '{}', { 'Content-Length': String(17 * 1024 * 1024 + 300 * 1024) });
+  assert.equal(big.status, 413);
+  // Orders beyond the order log limit: refused while validating, before any digest.
+  const ids = Array.from({ length: 1990 }, () => 4294967295);
+  const frameSize = JSON.stringify([[0, [{ o: 'stop', player: 0, ids }]]]).length + 16;
+  const count = Math.ceil((16 * 1024 * 1024) / frameSize) + 2;
+  const frames = Array.from({ length: count }, (_, i) => [i, [[0, [{ o: 'stop', player: 0, ids }]]]]);
+  const options = { ...((await import('@webra/protocol')).DEFAULT_OPTIONS), players: [{ slot: 0, type: 'human', name: 'A', faction: 'germany', color: 0, team: 0 }, { slot: 1, type: 'human', name: 'B', faction: 'russia', color: 1, team: 0 }] };
+  const ticks = 25 * Math.ceil((count + 1) / 25) + 1;
+  const text = JSON.stringify({ format: REPLAY_FORMAT, version: REPLAY_VERSION, kind: 'save', mode: 'online', engine: s.version, createdAt: 1, title: 'Long', options, map: null, mapHash: null, player: 0, ticks, frames, hashes: [[ticks, 'ab']], online: { id: '0123456789abcdef' } });
+  assert.ok(text.length < 17 * 1024 * 1024 + 256 * 1024, 'within the upload cap');
+  const long = await post(accounts.host, hw, text);
+  assert.deepEqual([long.status, long.body.error.code], [413, 'too_large']);
+});
+
+test('a resumed start waits at most a few minutes for its players', async () => {
+  const { resumeStartMs, RESUME_START_MAX_MS } = await import('../src/session.js');
+  assert.equal(resumeStartMs(1), 60_001);
+  assert.equal(resumeStartMs(10_000_000), RESUME_START_MAX_MS);
+  assert.ok(RESUME_START_MAX_MS <= 3 * 60_000);
 });

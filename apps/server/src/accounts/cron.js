@@ -50,7 +50,7 @@ export async function runRetention(env, now = Date.now()) {
     .all();
   for (const { id } of results) {
     await db.batch([
-      ...purgeStatements(db, id),
+      ...purgeStatements(db, id, now),
       auditStatement(db, { actor: null, action: 'user.purge', targetType: 'user', targetId: id, before: { purged: true }, after: { purged: true }, reason: 'Deleted more than 30 days ago' }, now),
     ]);
     out.purged++;

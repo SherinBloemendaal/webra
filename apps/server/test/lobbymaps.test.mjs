@@ -170,6 +170,15 @@ test('session: unlisted maps cannot be picked by id; the game start waits for ev
   assert.equal((await s.session.shareMap({ member: member(hw), prepared: p, ip: '1.1.1.1' })).status, 409);
 });
 
+test('session: sharing a map is refused while the lobby resumes a save (no stray rows, no 500)', async () => {
+  const env = makeEnv({ email: false });
+  const { s, hw } = await lobbyWithDb(env);
+  s.session.room.resume = { id: '0123456789abcdef', title: 'x', createdAt: 0, ticks: 26, hash: 'ab', options: { players: [] }, seats: [], chunks: 0 };
+  const r = await s.session.shareMap({ member: member(hw), prepared: await prepared(mapFile('resume')), ip: '1.1.1.1' });
+  assert.deepEqual([r.status, r.code], [409, 'forbidden']);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM maps')[0].n, 0, 'nothing stored');
+});
+
 test('session: the host removes a spectator who declined the map', async () => {
   const env = makeEnv({ email: false });
   const { s, host, guest, eye, hw, ew } = await lobbyWithDb(env);
@@ -316,9 +325,28 @@ test('retention: unlisted maps unused for 30 days go; purged accounts take their
   const exp = await user.get('/api/account/export');
   assert.equal(exp.status, 200);
   assert.deepEqual(exp.body.maps.map((m) => m.published).sort(), [false, true]);
-  // Purging the account deletes its shared maps; published maps stay without the uploader.
-  const { purgeStatements } = await import('../src/accounts/routes-admin.js');
-  await env.DB.batch(purgeStatements(env.DB, user.user.id));
+  // Purging the account deletes its shared maps no session used for a day; published maps stay without the uploader.
+  const { purgeStatements, SHARED_MAP_IN_USE_MS } = await import('../src/accounts/routes-admin.js');
+  await env.DB.batch(purgeStatements(env.DB, user.user.id, now + SHARED_MAP_IN_USE_MS + 1));
   assert.deepEqual(ids(), [pub.id]);
   assert.equal(env.DB.rows('SELECT uploader_id FROM maps')[0].uploader_id, null);
+});
+
+test('a shared map is stored once, under its first signed-in sharer; purging that account keeps it while a session uses it', async () => {
+  const env = makeEnv({ email: false });
+  const { storeMap, UNLISTED_RETENTION_MS } = await import('../src/maps.js');
+  const { purgeStatements } = await import('../src/accounts/routes-admin.js');
+  const first = await signup(env, 'First Sharer');
+  const p = await prepared(mapFile('both'));
+  const now = Date.now();
+  // An anonymous host shares it, then a signed-in one shares the same content: one row, owned by the account.
+  await storeMap(env.DB, p, { listed: false, uploaderId: null, now: now - 1000 });
+  await storeMap(env.DB, p, { listed: false, uploaderId: first.user.id, now });
+  assert.deepEqual(env.DB.rows('SELECT uploader_id, listed FROM maps'), [{ uploader_id: first.user.id, listed: 0 }]);
+  // The anonymous host's lobby keeps using it; purging the account does not take it away.
+  await env.DB.batch(purgeStatements(env.DB, first.user.id, now + 60_000));
+  assert.deepEqual(env.DB.rows('SELECT uploader_id FROM maps'), [{ uploader_id: null }], 'kept, without the uploader');
+  // Once nobody uses it, the 30 day retention removes it.
+  await scheduled(env, now + UNLISTED_RETENTION_MS + 1);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM maps')[0].n, 0);
 });

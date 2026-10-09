@@ -14,7 +14,6 @@ import {
   optionsDigest,
   parseReplay,
   PROTOCOL_VERSION,
-  REPLAY_MAX_BYTES,
   SESSION_ID_RE,
   SHA256_RE,
 } from '@webra/protocol';
@@ -138,12 +137,19 @@ async function sessionMapShare(ctx, id) {
 
 /** Resumes per network and hour (each upload is a whole save file). */
 const RESUME_LIMIT = 10;
+/**
+ * Largest resume upload: the orders (the order log limit), the map and room
+ * for the rest of the file. Checked from Content-Length before reading.
+ */
+const RESUME_MAX_BYTES = LOG_MAX_BYTES + MAP_MAX_BYTES + 256 * 1024;
 
 /**
  * POST /api/sessions/<id>/resume: the host loads a saved online game into
- * its lobby (docs/contracts.md section 4, "Online saves"). The file is
- * checked strictly and against the server's record of the save: the same
- * save point, state hash, orders, options, map and game version, and the
+ * its lobby (docs/contracts.md section 4, "Online saves"). Cheap checks first
+ * (member header, account, quota, the host role, Content-Length), then the
+ * file is checked strictly (orders within the order log limit while they are
+ * validated) and against the server's record of the save: the same save
+ * point, state hash, orders, options, map and game version, and the
  * requester's account played in it.
  */
 async function sessionResume(ctx, id) {
@@ -155,8 +161,17 @@ async function sessionResume(ctx, id) {
   if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'resume', ctx.ip, RESUME_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many resumed games. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
-  const parsed = await parseReplay(await readText(ctx.request, REPLAY_MAX_BYTES));
-  if (!parsed.ok) throw new HttpError(422, 'invalid', `Invalid save: ${parsed.error}.`);
+  const declared = ctx.request.headers.get('Content-Length');
+  if (declared !== null && (!/^\d{1,10}$/.test(declared) || Number(declared) > RESUME_MAX_BYTES)) {
+    throw new HttpError(413, 'too_large', 'This saved game is too large to resume online.');
+  }
+  // Only the host's own upload is read at all.
+  rpcResult(await stub.checkHost({ member, account, ip: ctx.ip }));
+  const parsed = await parseReplay(await readText(ctx.request, RESUME_MAX_BYTES), { maxBytes: RESUME_MAX_BYTES, maxFrameBytes: LOG_MAX_BYTES });
+  if (!parsed.ok) {
+    if (parsed.code === 'too_large') throw new HttpError(413, 'too_large', 'This game is too long to resume online.');
+    throw new HttpError(422, 'invalid', `Invalid save: ${parsed.error}.`);
+  }
   const save = parsed.replay;
   if (save.kind !== 'save' || save.mode !== 'online') throw new HttpError(422, 'invalid', 'This is not a saved online game.');
   const record = await loadSaveRecord(ctx.env.DB, save.online.id);
@@ -169,7 +184,6 @@ async function sessionResume(ctx, id) {
     record.framesDigest === (await framesDigest(save.frames)) &&
     record.optionsDigest === (await optionsDigest(save.options));
   if (!same) throw new HttpError(409, 'invalid', 'This file does not match the saved game on the server.');
-  if (JSON.stringify(save.frames).length > LOG_MAX_BYTES) throw new HttpError(413, 'too_large', 'This game is too long to resume online.');
   const seats = save.options.players.map((p, i) => (p.type === 'human' ? (record.members.find((m) => m.seat === i)?.userId ?? null) : null));
   if (save.options.players.some((p, i) => p.type === 'human' && seats[i] === null)) throw new HttpError(409, 'invalid', 'A player of this saved game no longer exists.');
   if (!seats.includes(account.id)) throw new HttpError(403, 'forbidden', 'You did not play in this saved game.');

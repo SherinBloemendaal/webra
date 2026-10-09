@@ -63,7 +63,7 @@ import {
   REJOINABLE_REASONS,
   RESUME_TIMEOUT_MS,
   S2C,
-  framesDigest,
+  FramesDigest,
   optionsDigest,
   usernameKey,
 } from '@webra/protocol';
@@ -125,6 +125,18 @@ const RESUME_MS_PER_TICK = 5;
 const RESUME_MAX_MS = 15 * 60 * 1000;
 /** Reasons after which a member can never come back. */
 const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
+
+/**
+ * How long the players of a resumed save have to catch up before the game
+ * goes on without them (they can rejoin later): their clients only
+ * re-simulate the saved orders, so this is much shorter than a rejoin's
+ * allowance: 60 s plus 1 ms per saved tick, at most 3 minutes.
+ */
+export const RESUME_START_BASE_MS = 60_000;
+export const RESUME_START_MAX_MS = 3 * 60_000;
+export function resumeStartMs(ticks) {
+  return Math.min(RESUME_START_MAX_MS, RESUME_START_BASE_MS + ticks);
+}
 
 /** An RPC answer the Worker turns into an HTTP error. */
 const rpcError = (status, code, message) => ({ ok: false, status, code, message });
@@ -249,13 +261,19 @@ export class Session extends DurableObject {
       if (!this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
       if (this.room.phase !== 'lobby') return rpcError(409, ERRORS.STATE, 'The game has already started.');
       if (!this.room.isHost(client)) return rpcError(403, ERRORS.NOT_HOST, 'Only the host can change the map.');
+      if (this.room.resume) return rpcError(409, ERRORS.FORBIDDEN, 'A resumed game keeps its saved map.');
       return null;
     };
     if (problem()) return problem();
     const { created, ...summary } = await storeMap(this.env.DB, prepared, { listed: false, uploaderId: account?.id ?? null });
     // Re-checked after the await: the host or the phase may have changed.
     if (problem()) return problem();
-    this.room.setMap(client, summary);
+    try {
+      this.room.setMap(client, summary);
+    } catch (err) {
+      if (err instanceof RoomError) return rpcError(409, err.code, err.message);
+      throw err;
+    }
     await this.saveRoom();
     this.broadcastLobby();
     await this.syncDirectory();
@@ -482,7 +500,9 @@ export class Session extends DurableObject {
 
   /** How long a catch-up may take before the client must confirm it (longer games take longer). */
   catchUpMs() {
-    return Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + (this.lockstep?.next ?? this.room?.resumeStart?.ticks ?? 0) * RESUME_MS_PER_TICK);
+    // The start of a resumed save: everyone re-simulates the saved orders (see resumeStartMs).
+    if (!this.lockstep && this.room?.resumeStart) return resumeStartMs(this.room.resumeStart.ticks);
+    return Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + (this.lockstep?.next ?? 0) * RESUME_MS_PER_TICK);
   }
 
   /** Whether a member can still catch up with the running game (relay and full log present). */
@@ -776,6 +796,19 @@ export class Session extends DurableObject {
   // ---- Resuming an online save ----------------------------------------------------------------
 
   /**
+   * RPC from the Worker before it reads a resume upload: whether `member`
+   * is the host of this lobby (cheap; the upload is checked again by `loadSave`).
+   */
+  async checkHost({ member, account = null, ip = 'unknown' }) {
+    if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const client = await this.checkMember(member, account, ip);
+    if (typeof client !== 'number') return client;
+    if (!this.room || this.room.phase !== 'lobby') return rpcError(409, ERRORS.STATE, 'The game has already started.');
+    if (!this.room.isHost(client)) return rpcError(403, ERRORS.NOT_HOST, 'Only the host can resume a saved game.');
+    return { ok: true };
+  }
+
+  /**
    * RPC from the Worker (POST /api/sessions/<id>/resume): the host loads a
    * saved online game into this lobby. The Worker checked the file against
    * the save record (state hash, frames and options digests, map hash) and
@@ -842,11 +875,13 @@ export class Session extends DurableObject {
     for (let i = 0; i < chunks; i++) {
       const bytes = await this.ctx.storage.get(`resume:${i}`);
       for (const [tick, orders] of JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)))) this.log.append({ tick, orders });
+      // Sealed log chunks are written before the next one is read: one chunk in memory at a time.
+      await this.log.writing;
       await this.ctx.storage.delete(`resume:${i}`);
     }
     this.lockstep = null;
     const now = Date.now();
-    const until = now + Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + start.resume.ticks * RESUME_MS_PER_TICK);
+    const until = now + resumeStartMs(start.resume.ticks);
     for (const s of this.room.seatStates) if (s) s.until = until;
     await this.saveRoom();
     await this.syncDirectory();
@@ -932,7 +967,12 @@ export class Session extends DurableObject {
   /** Store the record of a save after frame `tick`. Returns { id } or a cancel reason. */
   async recordSavePoint(tick, hash, voters, now) {
     if (!this.log || this.log.full) return 'too_long';
-    const frames = (await this.log.read()).filter(([t]) => t <= tick);
+    // Chunk by chunk: one chunk of the order log in memory at a time.
+    const digest = new FramesDigest();
+    for await (const chunk of this.log.chunks()) {
+      for (const f of chunk) if (f[0] <= tick) await digest.add(f);
+      if (chunk.length && chunk.at(-1)[0] > tick) break;
+    }
     const start = this.room.startMsg;
     const members = this.room.seats.flatMap((c, seat) => (c === null ? [] : [{ seat, userId: this.room.accountOf(c) }]));
     if (members.some((m) => m.userId === null) || members.some((m) => !voters.includes(this.room.seats[m.seat]))) return 'accounts';
@@ -943,7 +983,7 @@ export class Session extends DurableObject {
         title: this.meta.name,
         ticks: tick + 1,
         stateHash: hash,
-        framesDigest: await framesDigest(frames),
+        framesDigest: digest.value(),
         optionsDigest: await optionsDigest(start.options),
         mapHash: start.map ? start.map.hash : null,
         members,
