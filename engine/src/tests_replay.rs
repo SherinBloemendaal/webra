@@ -439,3 +439,60 @@ fn observer_view_shows_the_whole_map() {
     assert_eq!(plain.state_hash(), g.world.state_hash());
     assert_ne!(plain.state_hash(), hash, "the game went on");
 }
+
+// ---- Presentation never changes the game ------------------------------------------------
+
+/// Everything a client does besides applying its frames is presentation:
+/// the selection, the hovered actor, control groups, health bars, sprite
+/// poses (original art), building overlays, sound events, and building the
+/// frame for any view (its own, another player's, all players' together, the
+/// observer's). Two lockstep peers with different screens, settings and
+/// installed art must stay in step: none of it may change the state hash.
+#[test]
+fn presentation_state_never_changes_the_simulation() {
+    use crate::combined::COMBINED;
+    use crate::world::NONE;
+    let (frames, hashes) = record();
+    let mut plain = Game::wrap(replay_world());
+    let mut busy = Game::wrap(replay_world());
+    busy.set_audio_events(true);
+    busy.set_health_bars(2);
+    busy.set_sprite_poses(true);
+    let types = busy.world.rules.actors.len();
+    busy.set_building_overlays(vec![1; types]);
+    let size = 80.0 * crate::render::PX_PER_CELL;
+    let mut events = 0;
+    while plain.world.tick < SNAPSHOT_TICK {
+        let t = plain.world.tick;
+        if let Some((_, frame)) = frames.iter().find(|(ft, _)| *ft == t) {
+            let json = serde_json::to_string(frame).unwrap();
+            plain.apply_frame(&json).unwrap();
+            busy.apply_frame(&json).unwrap();
+        }
+        // The busy peer looks around between ticks like a player's screen does.
+        let units = own_units(&busy.world, (t % 2) as u8);
+        busy.set_selection(units.clone());
+        busy.set_hover(units.first().copied().unwrap_or(NONE));
+        busy.set_control_groups(units.clone(), units.iter().map(|_| (t % 10) as u8).collect());
+        if t.is_multiple_of(7) {
+            busy.set_health_bars((t % 3) as u8);
+            busy.set_sprite_poses(t.is_multiple_of(2));
+        }
+        for view in [0u8, 1, COMBINED, OBSERVER] {
+            busy.build_render(view, 0.5, 0.0, 0.0, size, size);
+            busy.build_render_records(view);
+            busy.fog_ptr(view);
+            busy.build_lines(view, 0.5, true);
+            busy.build_heat_fx(view, 0.0, 0.0, size, size);
+        }
+        events += busy.take_audio_events().len();
+        let _ = busy.player_json(0);
+        let _ = busy.observer_stats();
+        plain.tick();
+        busy.tick();
+        let tick = plain.world.tick;
+        assert_eq!(busy.world.state_hash(), plain.world.state_hash(), "presentation changed the game at tick {tick}");
+        assert_eq!(plain.world.state_hash(), hashes[tick as usize], "the plain peer follows the recording at tick {tick}");
+    }
+    assert!(events > 0, "the busy peer did take sound events");
+}
