@@ -5,7 +5,7 @@
 // (docs/accounts-api.md 8). Moderators see only what their role allows.
 // The server checks every action again.
 
-import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
+import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
 import {
   AUDIT_ACTIONS,
   BAN_PRESETS,
@@ -26,10 +26,10 @@ import {
   parseView,
   permissions,
   viewHash,
-} from '/play/js/account/admin-state.js';
-import { buildSettingsForm } from '/play/js/account/admin-forms.js';
-import { checkDocument } from '/play/js/registry.js';
-import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/play/protocol/accounts.js';
+} from '/lib/js/account/admin-state.js';
+import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
+import { checkDocument } from '/lib/js/registry.js';
+import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
 import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [

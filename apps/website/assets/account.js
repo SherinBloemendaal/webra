@@ -7,9 +7,9 @@
 // (#verify=<token>, #reset=<token>); Discord comes back with #discord=ok or
 // #discord=error&code=<code>. The fragment is removed at once.
 
-import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
-import { AccountSession, accountState, signInMethods } from '/play/js/account/session.js';
-import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/play/js/account/passkey.js';
+import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { AccountSession, accountState, signInMethods } from '/lib/js/account/session.js';
+import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/lib/js/account/passkey.js';
 import {
   ACCOUNT_PASSWORD_MAX,
   ACCOUNT_PASSWORD_MIN,
@@ -20,7 +20,7 @@ import {
   validEmail,
   validNewPassword,
   validUsername,
-} from '/play/protocol/accounts.js';
+} from '/lib/protocol/accounts.js';
 import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
