@@ -251,6 +251,18 @@ export const BUTTON_SOUNDS = {
   beacon: { synth: 'beacon', originals: ['beepslct'].map(fileName) },
 };
 
+/**
+ * The sidebar cash counter ticking up or down (OpenRA PlayerResources
+ * CashTickUpNotification and CashTickDownNotification: notifications.yaml
+ * CashTickUp cashup1 and CashTickDown cashdn1, VolumeModifier 0.33, overlapping).
+ */
+export const CASH_TICK_SOUNDS = {
+  up: { synth: 'cash_up', originals: ['cashup1'].map(fileName) },
+  down: { synth: 'cash_down', originals: ['cashdn1'].map(fileName) },
+};
+/** OpenRA's VolumeModifier of both cash tick notifications. */
+export const CASH_TICK_GAIN = 0.33;
+
 /** Sound where a support power strikes. */
 export function powerSound(code) {
   const kind = POWER_KINDS[code];
@@ -323,6 +335,7 @@ export function allOriginalNames() {
   add(INFANTRY_DIE);
   add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);
   for (const s of Object.values(BUTTON_SOUNDS)) add(s.originals);
+  for (const s of Object.values(CASH_TICK_SOUNDS)) add(s.originals);
   for (const set of Object.values(VOICE_SETS)) {
     for (const line of ['select', 'action']) {
       for (const base of set[line]) for (const v of Object.values(set.variants).flat()) add([base + v]);

@@ -863,6 +863,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
+      onCashTick: (direction) => audio?.cashTick(direction),
     },
     { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );

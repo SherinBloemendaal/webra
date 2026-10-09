@@ -13,7 +13,7 @@ import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
 import { labelWithHelp } from '../infotip.js';
 
 /** Controls that get a "?" with `help: true` (texts: js/help.js `audio.<key>`). */
-export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle', 'musicRepeat']);
+export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'musicOn', 'musicShuffle', 'musicRepeat']);
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -127,6 +127,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
       : 'This browser has no speech synthesis: you hear radio blips and announcer chimes instead.',
   });
   const original = check('original', 'Use installed original sounds');
+  const cashTicks = check('cashTicks', 'Cash ticks');
 
   const testFx = el('button', { type: 'button', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
@@ -181,7 +182,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     }
   };
 
-  const checks = [enabled, speech, original, musicOn, shuffle];
+  const checks = [enabled, speech, cashTicks, original, musicOn, shuffle];
   const sync = (p) => {
     for (const c of [...checks, ...sliders]) c.sync(p);
     syncMusic();
@@ -196,7 +197,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
 
   if (opts.help) {
     for (const s of sliders) labelWithHelp(s.row, `audio.${s.key}`, s.input);
-    for (const c of [speech, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
+    for (const c of [speech, cashTicks, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
     labelWithHelp(repeatRow, 'audio.musicRepeat', repeat.root);
   }
 
@@ -205,6 +206,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     ...sliders.map((s) => s.row),
     speech.row,
     speechNote,
+    cashTicks.row,
     el('div', { class: 'audio-buttons' }, testFx, testVoice),
     el(
       'section',

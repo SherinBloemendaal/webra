@@ -18,7 +18,7 @@ import { defaultRegistry } from '../registry.js';
 
 /** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
 export const FOG_VISIBLE = 255;
-import { EVA } from './catalog.js';
+import { EVA, CASH_TICK_SOUNDS, CASH_TICK_GAIN } from './catalog.js';
 import { actorInfo } from '../sim/methods.js';
 
 /** Game methods that give a unit order: the units reply. Their second argument is the unit ids. */
@@ -306,6 +306,16 @@ export class AudioSystem {
     if (!this.prefs.get().enabled) return;
     // A layered sound (catalog.js placeSound) plays all of its parts at once.
     for (const r of this.bank.resolveAll(sound)) this.mixer.play(r.buffer, { bus: 'effects', gain, pan, rate: r.rate });
+  }
+
+  /**
+   * The sidebar credits counter ticked (js/cashcounter.js): 'up' or 'down'.
+   * OpenRA plays these as UI notifications (not in the world) when Cash ticks is on.
+   */
+  cashTick(direction) {
+    const sound = CASH_TICK_SOUNDS[direction];
+    if (!sound || !this.prefs.get().cashTicks) return;
+    this.effect(sound, { gain: CASH_TICK_GAIN, pan: 0 });
   }
 
   /** A unit reply: original voice, or radio blip with an optional spoken line. */

@@ -389,6 +389,7 @@ const SETTINGS_SECTIONS = {
     music: num(0, 1),
     speech: boolean,
     original: boolean,
+    cashTicks: boolean,
     musicOn: boolean,
     musicShuffle: boolean,
     musicRepeat: choice(MUSIC_REPEAT_MODES),
