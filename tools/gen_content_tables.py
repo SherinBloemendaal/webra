@@ -422,6 +422,12 @@ def actor_art(actors, seqs):
         elif kind == 'infantry':
             entry['body'] = poses(image, {'idle': 'stand', 'move': 'run', 'attack': 'shoot'})
             entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-shoot'})
+            # Civilians lie down never; their second slot is the panic of
+            # ScaredyCat (IRenderInfantrySequenceModifier: PanicSequencePrefix).
+            scared = trait(rules_of(aid), 'ScaredyCat')
+            if scared is not None:
+                prefix = scared.get('PanicSequencePrefix', ['panic-'])[0]
+                entry['second'] = poses(image, {'idle': prefix + 'stand', 'move': prefix + 'run'})
         else:
             mapping = {'idle': 'idle'}
             if a.get('harvester'):

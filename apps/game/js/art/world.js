@@ -699,6 +699,27 @@ function civilianDraw(c) {
   };
 }
 
+/**
+ * A civilian in panic (OpenRA ScaredyCat "panic-stand" and "panic-run"):
+ * both arms thrown up beside the head, the weapon dropped, the body leaning
+ * forward into the run.
+ */
+function civilianPanicDraw(c) {
+  return (ctx, P) => {
+    circle(ctx, P.c(C.shadow), 5.6, 7.4, 3.6);
+    if (c.f) poly(ctx, P.c(c.legs), [1.5, 10.4, 8.5, 10.4, 7.4, 7.2, 2.6, 7.2]);
+    poly(ctx, P.c(c.shirt), [2, 6.2, 8, 6.2, 7.6, 9.6, 2.4, 9.6]);
+    if (c.coat) poly(ctx, P.c(tone(c.shirt, -0.12)), [2, 8.6, 8, 8.6, 8.4, 11.2, 1.6, 11.2]);
+    // Arms up: sleeves from the shoulders past the head, hands at the top.
+    for (const [x0, x1] of [[2.4, 1.2], [7.6, 8.8]]) {
+      poly(ctx, P.c(c.shirt), [x0 - 0.7, 6.6, x0 + 0.7, 6.6, x1 + 0.6, 1.6, x1 - 0.6, 1.6]);
+      circle(ctx, P.c(C.skin), x1, 1.4, 0.8);
+    }
+    circle(ctx, P.c(C.skin), 5, 5.2, 1.9);
+    circle(ctx, P.c(c.hair), 5, 4.8, 1.6);
+  };
+}
+
 // ---- Tables ------------------------------------------------------------------------------------
 
 /** Structure art by actor id (upper-case): (actor record of rules_json) -> draw(ctx, P). */
@@ -826,8 +847,13 @@ export function worldSecond(a) {
   return a.world?.bridge ? [a.width * 24, a.height * 24, bridgeDraw(a, true)] : null;
 }
 
-/** Civilian infantry bodies ({ body: [w, h, draw] }, like sprites.js UNIT_DRAW). */
-export const CIVILIAN_DRAW = Object.fromEntries(Object.entries(CIVILIANS).map(([id, c]) => [id, { body: [10, 12, civilianDraw(c)] }]));
+/**
+ * Civilian infantry ({ body, panic: [w, h, draw] }, like sprites.js UNIT_DRAW):
+ * the panic pose fills the second sprite slot, where soldiers lie prone.
+ */
+export const CIVILIAN_DRAW = Object.fromEntries(
+  Object.entries(CIVILIANS).map(([id, c]) => [id, { body: [10, 12, civilianDraw(c)], panic: [10, 12, civilianPanicDraw(c)] }]),
+);
 
 /**
  * Decoration specials (art/decorations.js slots 2 and 3, engine neutral.rs

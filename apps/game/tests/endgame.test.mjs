@@ -50,6 +50,7 @@ const SKIRMISH = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  techBuildings: 'standard',
   cheats: false,
   mapStyle: 'land',
   biome: 'temperate',

@@ -31,6 +31,8 @@ export const HELP = Object.freeze({
     'Layout of a generated map. Land: open plains, or highlands with cliffs and narrow passes. Rivers: river valleys with fords. Lakes: a central lake joined to smaller lakes by streams. Islands: a central sea with islands and straits. On Rivers, Lakes and Islands every base gets the same harbour. Random picks one from the seed.',
   biome:
     'Terrain of a generated map and the weather it gets. Temperate: rain and thunderstorms. Snow: snowfall, slippery vehicles, slower infantry and frozen ponds (ice). Desert: heat waves and sandstorms. Random picks one from the seed. Map files bring their own biome.',
+  techBuildings:
+    'Neutral buildings of a generated map, captured with engineers. Standard: an oil derrick in every base and a hospital in the middle. Extra: also forward command posts and communications centers between neighbouring bases. Oil only: a derrick in every base and one in the middle. Oil rush: two derricks in every base, more in the middle and between neighbours. None: no tech buildings. Every base gets the same ones; villages of civilian buildings come with every generated map. Map files bring their own.',
   weather:
     "On: after 2 to 3 clear minutes the biome's weather comes and goes. Sight drops to 90 % in rain, 85 % in thunderstorms and snowfall, 75 % in sandstorms. On snow infantry moves at 90 % and vehicles speed up and brake slowly, turn at 70 % (50 % on ice) and slide. In a heat wave vehicles heat up by driving (about 40 s) and firing; overheated, they move at 75 % and reload a third slower until they cool down. Lightning does no damage. Cosmetic only: the same skies, but the game plays as under clear skies, snow and heat included. Off: always clear skies.",
 

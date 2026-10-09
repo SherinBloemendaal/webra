@@ -31,6 +31,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  techBuildings: 'standard',
   cheats: false,
 };
 
@@ -105,14 +106,19 @@ test('prone poses and rank decorations sit in the sprite slots the engine draws'
   for (const [k, a] of actors.entries()) {
     if (a.kind !== 'infantry') continue;
     const key = a.id.replace(/R1$/, '');
-    // Infantry have no turret: their second slot is the prone pose (civilians, without prone art, stand).
-    assert.equal(list[2 * k + 1], PRONE_DRAW[key] ?? CIVILIAN_DRAW[key]?.body, a.id);
+    // Infantry have no turret: their second slot is the prone pose (civilians: the panic pose).
+    assert.equal(list[2 * k + 1], PRONE_DRAW[key] ?? CIVILIAN_DRAW[key]?.panic, a.id);
     assert.ok(list[2 * k + 1], `${a.id} has a second pose`);
   }
 });
 
 test('veterancy art draws within its box', () => {
-  const draws = [...VETERANCY_SPECIALS, ...DECORATION_SPECIALS, ...Object.values(PRONE_DRAW)];
+  const draws = [
+    ...VETERANCY_SPECIALS,
+    ...DECORATION_SPECIALS,
+    ...Object.values(PRONE_DRAW),
+    ...Object.values(CIVILIAN_DRAW).flatMap((d) => [d.body, d.panic]),
+  ];
   for (const [w, h, draw] of draws) {
     let minX = Infinity;
     let minY = Infinity;

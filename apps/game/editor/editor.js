@@ -877,6 +877,11 @@ function newMapDialog() {
   const option = (v) => el('option', { value: v }, v.charAt(0).toUpperCase() + v.slice(1));
   const genStyle = el('select', {}, ['random', 'land', 'rivers', 'lakes', 'islands'].map(option));
   const genBiome = el('select', {}, ['random', ...BIOMES].map(option));
+  // Tech buildings (OpenRA's map generator option "Buildings", engine mapgen/settlements.rs).
+  const techLabels = { none: 'None', standard: 'Standard', extra: 'Extra', oilonly: 'Oil only', oilrush: 'Oil rush' };
+  const genTech = el('select', {}, Object.entries(techLabels).map(([v, label]) => el('option', { value: v }, label)));
+  genTech.value = 'standard';
+  const hasTech = typeof Game.generated_map_with === 'function';
   const hasGenerator = typeof Game.generated_map === 'function';
   const hasStyles = typeof Game.generated_map_styled === 'function';
   const kind = (v) => el('input', { type: 'radio', name: 'newkind', value: v, checked: v === 'blank' });
@@ -900,6 +905,7 @@ function newMapDialog() {
         el('label', {}, ['Seed ', seed]),
         hasStyles ? el('label', {}, ['Style ', genStyle]) : null,
         hasStyles ? el('label', {}, ['Biome ', genBiome]) : null,
+        hasTech ? el('label', {}, ['Tech buildings ', genTech]) : null,
         hasGenerator ? null : el('p', { class: 'hint' }, 'Needs an engine build with Game.generated_map.'),
       ]),
       el('p', { class: 'hint' }, 'The current map stays in the undo history.'),
@@ -920,9 +926,11 @@ function newMapDialog() {
       if (!inRange(num(genSize))) return toast(`Size must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
       const genSeed = Math.max(0, num(seed)) >>> 0;
       map = JSON.parse(
-        hasStyles
-          ? Game.generated_map_styled(genSeed, num(genSize), num(players), genStyle.value, genBiome.value)
-          : Game.generated_map(genSeed, num(genSize), num(players)),
+        hasTech
+          ? Game.generated_map_with(genSeed, num(genSize), num(players), genStyle.value, genBiome.value, genTech.value)
+          : hasStyles
+            ? Game.generated_map_styled(genSeed, num(genSize), num(players), genStyle.value, genBiome.value)
+            : Game.generated_map(genSeed, num(genSize), num(players)),
       );
       map.author = defaultRegistry().get('extra', 'editorAuthor') || map.author;
     } else {

@@ -551,7 +551,8 @@ export function spriteList(actors) {
       const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? d.body) : (d.turret ?? null));
+      // Infantry: the prone pose, or for civilians the panic pose (engine neutral.rs draws_panic).
+      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? CIVILIAN_DRAW[key]?.panic ?? d.body) : (d.turret ?? null));
     }
   }
   return list.concat(
