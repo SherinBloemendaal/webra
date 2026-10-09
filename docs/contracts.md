@@ -31,12 +31,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   "author": "Commander",            // 1..64 chars
   "description": "",                // 0..500 chars
   "width": 96, "height": 96,        // 32..256 each
-  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford
+  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford, 6 road, 7 bridge, 8 beach, 9 river, 10 wall
   "ore": "<base64>",                // width*height bytes, 0..12 ore density
   "gems": "<base64>",               // format 2 only: width*height bytes, 0..3 gem density
   "spawns": [[8, 8], [85, 84]],     // 2..8 top-left cells of the starting construction yard / MCV
   "actors": [                       // optional pre-placed actors
-    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral
+    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral; type: 1..16 of A-Z a-z 0-9 . (V19.Husk)
   ],
   "rules": null,                    // optional rules overrides, see below
   "biome": "snow"                   // optional: temperate (default, left out), snow or desert
@@ -48,6 +48,29 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   so a ground route over a river never cuts the water network. Structures
   never stand on a ford (naval yards need open water), and fords hold no ore
   or gems. Generated maps put fords where ground routes cross water.
+- Terrain types 6 to 10 are OpenRA's (`data/source/rules/world.yaml`,
+  `defaults.yaml`; speeds per locomotor in `engine/rules.json`): road (6)
+  is clear ground with OpenRA's road speed, buildable and able to hold
+  resources; bridge (7) is the deck of a bridge actor (as fast as a road,
+  never buildable); beach (8) is passable sand that slows everything,
+  wheeled vehicles most (50 %), and holds no resources or structures; river (9) and wall (10)
+  stop ground units and ships alike. The engine owns bridge cells: a
+  bridge actor writes its template's terrain over them when it is placed,
+  damaged, destroyed or repaired, so a destroyed span turns into river or
+  water under it (`engine/src/bridges.rs`).
+- The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
+  to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
+  (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
+  `FCOM`, `OILB`), barrels (`BARL`, `BRL3`, `AMMOBOX1`...), rocks, ice floes,
+  bridges (`BRIDGE1`...`BRIDGE4`, `SBRIDGE1`...`SBRIDGE4`, `BR1`...`BR3`),
+  ore mines (`MINE`, `GMINE`) and the map-only walls (`CYCL`, `BARB`,
+  `WOOD`) and France's fake Sub Pen (`SPEF`) are ordinary actors of the
+  `actors` list. Tree terrain (4) of older maps becomes tree actors when
+  the game starts (one per cell, deterministic). A bridge actor goes at the
+  top-left cell of its template; its footprint is all `-` (lies over the
+  cells without claiming them), and the engine places its huts itself.
+  Generated maps get an ore mine (gem mine on gems) at the heart of every
+  field, mirrored like the bases.
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -64,12 +87,14 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   2 map with an all-zero gems layer is valid, but it is a different map
   (different hash) from its format 1 twin.
 - Resources (OpenRA `ResourceLayer`): ore holds up to 12 bales per cell,
-  gems up to 3. Both lie on clear or rough ground only, and a cell holds ore
+  gems up to 3. Both lie on clear or rough ground or roads only, and a cell holds ore
   or gems, never both. A bale pays `player.ore_value` (25) or
   `player.gem_value` (50) credits (OpenRA `PlayerResources.ResourceValues`);
   a harvester carries 20 bales of either or both and the refinery pays each
-  bale at its own value. With the `oreRegrowth` option ore regrows and
-  spreads onto free clear ground; gems neither regrow nor spread (Red Alert).
+  bale at its own value. With the `oreRegrowth` option ore mines (`MINE`)
+  and gem mines (`GMINE`) grow one bale every 75 ticks on the first cell of
+  a random walk from the mine that can take one (OpenRA `SeedsResource`);
+  without mines, fields never grow back.
   Gem cells slow units like ore cells (OpenRA gives the `Gems` and `Ore`
   terrain types the same locomotor speeds). Harvesters pick the nearest
   resource cell by distance only, gems or ore alike, as OpenRA does
@@ -81,7 +106,7 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 - Validation errors for the layers (engine wording, `packages/protocol`
   matches it): `format 1 maps have no gems layer`, `format 2 maps need a gems
   layer`, `unsupported map format N`, `invalid gem density N`, `gems can only
-  lie on clear or rough ground`, `a cell cannot hold both ore and gems`,
+  lie on clear or rough ground or roads`, `a cell cannot hold both ore and gems`,
   `the gems layer must have N bytes`, `gems is not valid base64`.
 - Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
   above (`description`, `actors` and `rules` always present, `gems` only in
