@@ -15,12 +15,13 @@
 // anonymous and pending visitors get no game files, an active account gets
 // them with a play pass, signing out clears it. A second, two-player lobby
 // shares the host's custom map with the session only: the guest installs it
-// by hash (checked with the protocol package), the game starts on it, and a
-// rematch brings both back into the lobby with their rejoin keys.
+// by hash (checked with the protocol package), the game starts on it, the
+// players save it online, a rematch brings both back into the lobby with
+// their rejoin keys, and the save is resumed in a new session.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { encodeClient, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, sha256Hex } from '@webra/protocol';
+import { encodeClient, encodeReplay, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -380,9 +381,53 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
   assert.deepEqual(hs, gs);
   assert.equal(hs.map.hash, shared.body.hash, 'the game runs on the shared map');
-  for (let t = 0; t < 3; t++) await Promise.all([host.type('frame', (f) => f.tick === t), guest.type('frame', (f) => f.tick === t)]);
+  // Both run ticks like net.js (orders for t + 3 after frame t, a hash every 25 ticks).
+  const hSeat = hs.players.find((p) => p.client === hw.you).player;
+  const gSeat = hs.players.find((p) => p.client === gw.you).player;
+  const played = [];
+  let tick = 0;
+  const playTo = async (to) => {
+    for (; tick < to; tick++) {
+      const [hf] = await Promise.all([host.type('frame', (f) => f.tick === tick), guest.type('frame', (f) => f.tick === tick)]);
+      if (hf.orders.length) played.push([hf.tick, hf.orders]);
+      host.send({ t: 'orders', tick: tick + 3, orders: tick === 4 ? [{ o: 'stop', player: hSeat, ids: [42] }] : [] });
+      guest.send({ t: 'orders', tick: tick + 3, orders: tick === 6 ? [{ o: 'stop', player: gSeat, ids: [43] }] : [] });
+      if (tick > 0 && tick % 25 === 0) {
+        host.send({ t: 'hash', tick, hash: 'e2e0' });
+        guest.send({ t: 'hash', tick, hash: 'e2e0' });
+      }
+    }
+  };
+  await playTo(10);
   // In the game the map stays available to its members (a reload rejoins with it).
   assert.equal((await get(GUEST, gw)).status, 200);
+
+  // Online save: the guest proposes, the host agrees, both report the hash at the save point.
+  guest.send({ t: 'save', accept: true });
+  await host.type('save', (m) => m.state === 'open');
+  host.send({ t: 'save', accept: true });
+  const agreed = await guest.type('save', (m) => m.state === 'agreed');
+  await playTo(agreed.tick + 1);
+  const [saved] = await Promise.all([host.type('save', (m) => m.state === 'saved'), guest.type('save', (m) => m.state === 'saved')]);
+  assert.deepEqual([saved.ticks, saved.hash], [agreed.tick + 1, 'e2e0']);
+  // The file each player's browser keeps (js/replay.js Recorder.encodeOnlineSave).
+  const saveText = encodeReplay({
+    format: REPLAY_FORMAT,
+    version: REPLAY_VERSION,
+    kind: 'save',
+    mode: 'online',
+    engine: VERSION,
+    createdAt: Date.now(),
+    title: 'Shared map',
+    options: hs.options,
+    map: text,
+    mapHash: shared.body.hash,
+    player: hSeat,
+    ticks: saved.ticks,
+    frames: played.filter(([t]) => t < saved.ticks),
+    hashes: [[saved.ticks, saved.hash]],
+    online: { id: saved.id },
+  });
 
   // Rematch: the host proposes, the guest accepts, both go back to the lobby.
   host.send({ t: 'rematch', accept: true });
@@ -408,7 +453,51 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
     [[hw.you, false, 'installed'], [gw.you, false, 'installed']],
   );
   for (const c of back) c.send({ t: 'leave' });
-  console.log('  shared map lobby and rematch passed');
+
+  // Resume the online save in a new session: the guest comes back by its account,
+  // installs the map, both catch up through the saved orders and play on after the save point.
+  const again = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Resumed', public: false, maxPlayers: 2, version: VERSION }) }, HOST);
+  assert.equal(again.status, 201);
+  const rhost = new Client('resume-host', HOST);
+  await rhost.open(again.body.id);
+  rhost.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, hostKey: again.body.hostKey });
+  const rhw = await rhost.type('welcome');
+  const resumePath = `/api/sessions/${again.body.id}/resume`;
+  const tampered = saveText.replace('"ids":[42]', '"ids":[41]');
+  assert.equal((await api(resumePath, { method: 'POST', body: tampered, headers: member(rhw) }, HOST)).status, 409, 'checked against the record');
+  assert.equal((await api(resumePath, { method: 'POST', body: saveText, headers: member(rhw) }, WATCHER)).status, 403, 'another account');
+  const loaded = await api(resumePath, { method: 'POST', body: saveText, headers: member(rhw) }, HOST);
+  assert.equal(loaded.status, 200, JSON.stringify(loaded.body));
+  const rl = await rhost.type('lobby', (m) => m.resume !== undefined);
+  assert.deepEqual(rl.resume.waiting, [GUEST]);
+  assert.equal(rl.map.hash, shared.body.hash);
+  const rguest = new Client('resume-guest', GUEST);
+  await rguest.open(again.body.id);
+  rguest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  const rgw = await rguest.type('welcome');
+  await rhost.type('lobby', (m) => m.resume?.waiting.length === 0);
+  rguest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await rhost.type('lobby', (m) => m.slots.some((x) => x.client === rgw.you && x.ready));
+  rhost.send({ t: 'start' });
+  const [rs] = await Promise.all([rhost.type('start'), rguest.type('start')]);
+  assert.deepEqual(rs.resume, { ticks: saved.ticks, hash: saved.hash });
+  const sync = await rguest.type('sync');
+  assert.deepEqual(sync.check, { tick: saved.ticks - 1, hash: saved.hash });
+  rhost.send({ t: 'resume' });
+  rguest.send({ t: 'resume' });
+  await Promise.all([rhost.type('back', (m) => m.client === rgw.you), rguest.type('back', (m) => m.client === rhw.you)]);
+  const seatOf = (w) => rs.players.find((p) => p.client === w.you).player;
+  const resumed = [];
+  for (let t = saved.ticks; t < saved.ticks + 5; t++) {
+    const [f] = await Promise.all([rhost.type('frame', (x) => x.tick === t), rguest.type('frame', (x) => x.tick === t)]);
+    resumed.push(f);
+    rhost.send({ t: 'orders', tick: t + 3, orders: [] });
+    rguest.send({ t: 'orders', tick: t + 3, orders: t === saved.ticks ? [{ o: 'stop', player: seatOf(rgw), ids: [44] }] : [] });
+  }
+  assert.deepEqual(resumed.at(-2).orders.map(([p]) => p), [seatOf(rgw)], 'the resumed game goes on in lockstep');
+  rhost.send({ t: 'leave' });
+  rguest.send({ t: 'leave' });
+  console.log('  shared map lobby, online save, rematch and resume passed');
 }
 
 async function main() {

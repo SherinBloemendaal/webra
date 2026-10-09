@@ -5,7 +5,19 @@
 // this handler first (wrangler.jsonc `run_worker_first`). The daily cron
 // trigger runs the accounts retention job.
 
-import { MAP_MAX_BYTES, MEMBER_HEADER, MEMBER_RE, PROTOCOL_VERSION, SESSION_ID_RE, SHA256_RE } from '@webra/protocol';
+import {
+  framesDigest,
+  LOG_MAX_BYTES,
+  MAP_MAX_BYTES,
+  MEMBER_HEADER,
+  MEMBER_RE,
+  optionsDigest,
+  parseReplay,
+  PROTOCOL_VERSION,
+  REPLAY_MAX_BYTES,
+  SESSION_ID_RE,
+  SHA256_RE,
+} from '@webra/protocol';
 import pkg from '../package.json' with { type: 'json' };
 import { checkCsrf, checkOrigin, errorResponse, HttpError, json, jsonText, readJson, readText, withCookies } from './http.js';
 import { listSessions, pruneSessions } from './directory.js';
@@ -13,6 +25,7 @@ import { checkJsonType, getMap, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPL
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
+import { loadSaveRecord } from './onlinesaves.js';
 import { scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
@@ -123,6 +136,57 @@ async function sessionMapShare(ctx, id) {
   return json({ id: r.id, hash: r.hash }, r.created ? 201 : 200);
 }
 
+/** Resumes per network and hour (each upload is a whole save file). */
+const RESUME_LIMIT = 10;
+
+/**
+ * POST /api/sessions/<id>/resume: the host loads a saved online game into
+ * its lobby (docs/contracts.md section 4, "Online saves"). The file is
+ * checked strictly and against the server's record of the save: the same
+ * save point, state hash, orders, options, map and game version, and the
+ * requester's account played in it.
+ */
+async function sessionResume(ctx, id) {
+  checkJsonType(ctx.request);
+  const member = memberOf(ctx.request);
+  const stub = sessionStub(ctx.env, id);
+  const account = await requirePlay(ctx);
+  if (!account) throw new HttpError(403, 'account_required', 'Resuming an online game needs a signed-in account.');
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'resume', ctx.ip, RESUME_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many resumed games. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const parsed = await parseReplay(await readText(ctx.request, REPLAY_MAX_BYTES));
+  if (!parsed.ok) throw new HttpError(422, 'invalid', `Invalid save: ${parsed.error}.`);
+  const save = parsed.replay;
+  if (save.kind !== 'save' || save.mode !== 'online') throw new HttpError(422, 'invalid', 'This is not a saved online game.');
+  const record = await loadSaveRecord(ctx.env.DB, save.online.id);
+  if (!record) throw new HttpError(404, 'not_found', 'The server no longer knows this saved game (records are kept for 90 days).');
+  const same =
+    record.ticks === save.ticks &&
+    record.stateHash === save.hashes.at(-1)[1] &&
+    record.engine === save.engine &&
+    record.mapHash === save.mapHash &&
+    record.framesDigest === (await framesDigest(save.frames)) &&
+    record.optionsDigest === (await optionsDigest(save.options));
+  if (!same) throw new HttpError(409, 'invalid', 'This file does not match the saved game on the server.');
+  if (JSON.stringify(save.frames).length > LOG_MAX_BYTES) throw new HttpError(413, 'too_large', 'This game is too long to resume online.');
+  const seats = save.options.players.map((p, i) => (p.type === 'human' ? (record.members.find((m) => m.seat === i)?.userId ?? null) : null));
+  if (save.options.players.some((p, i) => p.type === 'human' && seats[i] === null)) throw new HttpError(409, 'invalid', 'A player of this saved game no longer exists.');
+  if (!seats.includes(account.id)) throw new HttpError(403, 'forbidden', 'You did not play in this saved game.');
+  const prepared = save.map ? await prepareMap(save.map) : null;
+  const r = rpcResult(
+    await stub.loadSave({
+      member,
+      account,
+      ip: ctx.ip,
+      resume: { id: record.id, title: record.title, createdAt: record.createdAt, engine: save.engine, ticks: save.ticks, hash: record.stateHash, options: save.options, seats, mapHash: save.mapHash },
+      frames: save.frames,
+      prepared,
+    }),
+  );
+  return json({ id: record.id, ok: r.ok });
+}
+
 async function route(ctx) {
   const { request, env, exec } = ctx;
   const path = ctx.url.pathname;
@@ -154,6 +218,11 @@ async function route(ctx) {
     if (method === 'GET') return sessionMapGet(ctx, m[1]);
     if (method === 'POST') return sessionMapShare(ctx, m[1]);
     throw methodNotAllowed('GET, POST');
+  }
+  m = /^\/api\/sessions\/([^/]+)\/resume$/.exec(path);
+  if (m) {
+    if (method !== 'POST') throw methodNotAllowed('POST');
+    return sessionResume(ctx, m[1]);
   }
   if (path === '/api/maps') {
     if (method === 'GET') return listMaps(env);

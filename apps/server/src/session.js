@@ -31,6 +31,16 @@
 // account). Members report whether they installed or declined the lobby map
 // (`mapstate`); the game starts only when everyone has it.
 //
+// Online saves: players agree to save (`save`); at the save point (a hash
+// tick) every player reports its state hash, and when they all match the
+// session records the save in D1 (onlinesaves.js) and every player's client
+// stores the file. Resuming: the host uploads its save file
+// (POST /api/sessions/<id>/resume, checked by the Worker against that
+// record); `loadSave` turns the lobby into the saved game, whose players come
+// back by account. At the start every client fast-forwards through the saved
+// orders (the catch-up of a rejoin) and the relay starts after the save point
+// once every player caught up (`resumeStart`).
+//
 // Rematch: the host proposes playing again (`rematch`), every active player
 // accepts, and the session goes back to its lobby (room.js `backToLobby`).
 // The members reload their page and come back with their rejoin keys
@@ -53,6 +63,8 @@ import {
   REJOINABLE_REASONS,
   RESUME_TIMEOUT_MS,
   S2C,
+  framesDigest,
+  optionsDigest,
   usernameKey,
 } from '@webra/protocol';
 import {
@@ -69,7 +81,8 @@ import {
 import { HEARTBEAT_MS, removeSession, upsertSession } from './directory.js';
 import { Lockstep, LockstepError } from './lockstep.js';
 import { lookupMap, mapTextByHash, storeMap } from './maps.js';
-import { OrderLog } from './orderlog.js';
+import { gunzip, gzip, OrderLog } from './orderlog.js';
+import { recordSave } from './onlinesaves.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
 import { cheatsAllowed, ordersFitRules } from './validate.js';
@@ -469,12 +482,12 @@ export class Session extends DurableObject {
 
   /** How long a catch-up may take before the client must confirm it (longer games take longer). */
   catchUpMs() {
-    return Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + (this.lockstep?.next ?? 0) * RESUME_MS_PER_TICK);
+    return Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + (this.lockstep?.next ?? this.room?.resumeStart?.ticks ?? 0) * RESUME_MS_PER_TICK);
   }
 
   /** Whether a member can still catch up with the running game (relay and full log present). */
   canCatchUp() {
-    return this.room?.phase === 'game' && this.lockstep !== null && this.log !== null && !this.log.full;
+    return this.room?.phase === 'game' && (this.lockstep !== null || this.room.resumeStart !== null) && this.log !== null && !this.log.full;
   }
 
   /**
@@ -506,7 +519,7 @@ export class Session extends DurableObject {
     }
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
-    if (!this.lockstep) return this.sessionLost();
+    if (!this.lockstep && !this.room.resumeStart) return this.sessionLost();
     if (!this.canCatchUp()) return this.reject(ws, ERRORS.STATE, 'This game is too long to rejoin.', true);
     // Everything that does not depend on the member's current connection is
     // checked before that connection is touched: a refused rejoin never
@@ -641,9 +654,12 @@ export class Session extends DurableObject {
     }
     const queued = this.syncing.get(ws);
     this.syncing.delete(ws);
-    if (!queued || !this.room || !this.lockstep || this.attachment(ws).gone) return;
-    const tick = queued.length > 0 ? queued[0].tick : this.lockstep.next;
-    const agreed = this.lockstep.agreed;
+    if (!queued || !this.room || this.attachment(ws).gone) return;
+    const pending = this.room.resumeStart;
+    if (!this.lockstep && !pending) return;
+    // A resumed save whose relay waits for every player: the log ends at the save point.
+    const tick = queued.length > 0 ? queued[0].tick : this.lockstep ? this.lockstep.next : pending.ticks;
+    const agreed = this.lockstep ? this.lockstep.agreed : { tick: pending.ticks - 1, hash: pending.hash };
     this.send(ws, { t: S2C.SYNC, tick, check: agreed && agreed.tick < tick ? { ...agreed } : null });
     for (const f of queued) this.send(ws, { t: S2C.FRAME, ...f });
   }
@@ -737,6 +753,7 @@ export class Session extends DurableObject {
       case C2S.RESUME:
       case C2S.SYNCED:
       case C2S.REMATCH:
+      case C2S.SAVE:
         throw new RoomError('The game has not started.', ERRORS.STATE);
       default:
         throw new RoomError('Unexpected message.', ERRORS.BAD_MESSAGE);
@@ -744,6 +761,7 @@ export class Session extends DurableObject {
   }
 
   async startGame(client) {
+    if (this.room.resume) return this.startResumed(client);
     const start = this.room.start(client, randomInt);
     const humans = this.room.seats.map((c, i) => (c === null ? -1 : i)).filter((i) => i >= 0);
     this.lockstep = new Lockstep({ players: humans, delay: start.delay });
@@ -755,15 +773,222 @@ export class Session extends DurableObject {
     await this.ctx.storage.setAlarm(Date.now() + GAME_ALARM_MS);
   }
 
+  // ---- Resuming an online save ----------------------------------------------------------------
+
+  /**
+   * RPC from the Worker (POST /api/sessions/<id>/resume): the host loads a
+   * saved online game into this lobby. The Worker checked the file against
+   * the save record (state hash, frames and options digests, map hash) and
+   * that the requester played in it. `resume`: { id, title, createdAt,
+   * engine, ticks, hash, options, seats: [account | null] per player },
+   * `frames`: the saved orders, `prepared`: the map (prepareMap) or null.
+   */
+  async loadSave({ member, account = null, ip = 'unknown', resume, frames, prepared = null }) {
+    if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const client = await this.checkMember(member, account, ip);
+    if (typeof client !== 'number') return client;
+    const problem = () => {
+      if (!this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+      if (this.room.phase !== 'lobby') return rpcError(409, ERRORS.STATE, 'The game has already started.');
+      if (!this.room.isHost(client)) return rpcError(403, ERRORS.NOT_HOST, 'Only the host can resume a saved game.');
+      if (resume.engine !== this.meta.version) return rpcError(409, ERRORS.VERSION, 'This save was made by another game version.');
+      if (account === null || !resume.seats.includes(account.id)) return rpcError(403, ERRORS.FORBIDDEN, 'You did not play in this saved game.');
+      return null;
+    };
+    if (problem()) return problem();
+    const map = prepared ? (({ created: _c, ...summary }) => summary)(await storeMap(this.env.DB, prepared, { listed: false, uploaderId: account.id })) : null;
+    if (problem()) return problem();
+    if ((map?.hash ?? null) !== (resume.mapHash ?? null)) return rpcError(422, ERRORS.INVALID, 'The saved map does not match.');
+    // The saved orders wait in storage (the object may sleep while the lobby fills).
+    const old = this.room.resume?.chunks ?? 0;
+    const chunks = [];
+    let chunk = [];
+    let bytes = 0;
+    for (const f of frames) {
+      const size = JSON.stringify(f).length + 1;
+      if (chunk.length && bytes + size > 64 * 1024) {
+        chunks.push(chunk);
+        chunk = [];
+        bytes = 0;
+      }
+      chunk.push(f);
+      bytes += size;
+    }
+    if (chunk.length) chunks.push(chunk);
+    try {
+      this.room.setMap(client, map, { resume: true });
+      this.room.loadResume(client, { id: resume.id, title: resume.title, createdAt: resume.createdAt, ticks: resume.ticks, hash: resume.hash, options: resume.options, seats: resume.seats, chunks: chunks.length });
+    } catch (err) {
+      if (err instanceof RoomError) return rpcError(409, err.code, err.message);
+      throw err;
+    }
+    for (let i = 0; i < chunks.length; i++) await this.ctx.storage.put(`resume:${i}`, await gzip(JSON.stringify(chunks[i])));
+    for (let i = chunks.length; i < old; i++) await this.ctx.storage.delete(`resume:${i}`);
+    await this.saveRoom();
+    this.broadcastLobby();
+    await this.syncDirectory();
+    return { ok: true };
+  }
+
+  /**
+   * Start a resumed save: the order log is rebuilt from the saved orders,
+   * every member gets the start message, the log and `sync` (with the saved
+   * state hash to check), and the relay waits until every player caught up.
+   */
+  async startResumed(client) {
+    const chunks = this.room.resume.chunks;
+    const start = this.room.start(client, randomInt);
+    this.log = new OrderLog(this.ctx.storage);
+    for (let i = 0; i < chunks; i++) {
+      const bytes = await this.ctx.storage.get(`resume:${i}`);
+      for (const [tick, orders] of JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)))) this.log.append({ tick, orders });
+      await this.ctx.storage.delete(`resume:${i}`);
+    }
+    this.lockstep = null;
+    const now = Date.now();
+    const until = now + Math.min(RESUME_MAX_MS, RESUME_TIMEOUT_MS + start.resume.ticks * RESUME_MS_PER_TICK);
+    for (const s of this.room.seatStates) if (s) s.until = until;
+    await this.saveRoom();
+    await this.syncDirectory();
+    await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = this.attachment(ws);
+      if (att.client === null || att.gone) continue;
+      const role = this.room.seatOf(att.client) >= 0 ? 'player' : 'spectator';
+      await this.catchUp(ws, att.client, role);
+    }
+  }
+
+  /** Every player of a resumed save caught up (or is gone): the relay starts after the save point. */
+  async maybeStartResumed() {
+    const room = this.room;
+    if (!room?.resumeStart || room.phase !== 'game') return;
+    const live = room.liveSeats();
+    if (live.length === 0 || live.some((seat) => room.seatState(seat) !== 'active')) return;
+    const { ticks, hash } = room.resumeStart;
+    this.lockstep = new Lockstep({ players: live, delay: room.startMsg.delay, start: ticks });
+    // Rejoining players and late spectators check against the saved state.
+    this.lockstep.agreed = { tick: ticks - 1, hash };
+    room.resumeStart = null;
+    await this.saveRoom();
+    for (const seat of live) this.broadcast({ t: S2C.BACK, player: seat, client: room.seats[seat], name: this.clientName(room.seats[seat]) ?? 'Player', tick: ticks });
+    this.emitFrames(this.lockstep.initialFrames());
+  }
+
+  // ---- Online saves ---------------------------------------------------------------------------
+
+  /** A `save` message from a player: propose, accept, decline or withdraw. */
+  async saveMessage(client, accept, now = Date.now()) {
+    const room = this.room;
+    const reason = accept && !room.saving ? (room.proposeSave(client, now), null) : room.answerSave(client, accept, now);
+    await this.saveRoom();
+    if (reason) return this.broadcastSaveEnd(reason);
+    return this.saveProgress(now);
+  }
+
+  /** Everyone accepted (and is connected): fix the save point; else tell everyone where it stands. */
+  async saveProgress(now = Date.now()) {
+    const room = this.room;
+    if (!room?.saving || room.saving.phase !== 'open' || !this.lockstep) return;
+    if (room.saveAgreed((c) => this.lockstep.isActive(room.seatOf(c)))) {
+      const tick = room.agreeSave(this.lockstep.next + this.lockstep.delay, now);
+      await this.saveRoom();
+      this.broadcast({ t: S2C.SAVE, state: 'agreed', tick });
+      return;
+    }
+    this.broadcast({ t: S2C.SAVE, ...room.saveStatus(now) });
+  }
+
+  broadcastSaveEnd(reason) {
+    this.broadcast({ t: S2C.SAVE, state: 'cancelled', reason });
+  }
+
+  /** A player's hash at the save point; once all match, the save is recorded. */
+  async saveHash(client, tick, hash) {
+    const result = this.room.noteSaveHash(client, tick, hash);
+    if (result === null) return;
+    const now = Date.now();
+    if (result === 'desync') {
+      this.room.cancelSave('desync', now);
+      await this.saveRoom();
+      return this.broadcastSaveEnd('desync');
+    }
+    const sv = this.room.saving;
+    const reason = await this.recordSavePoint(sv.tick, hash, sv.voters, now).catch((err) => {
+      console.error('online save failed', err?.name, err?.message);
+      return 'failed';
+    });
+    if (!this.room) return;
+    if (typeof reason === 'string') {
+      this.room.cancelSave(reason, now);
+      await this.saveRoom();
+      return this.broadcastSaveEnd(reason);
+    }
+    this.room.cancelSave('saved', now);
+    await this.saveRoom();
+    this.broadcast({ t: S2C.SAVE, state: 'saved', id: reason.id, ticks: sv.tick + 1, hash });
+  }
+
+  /** Store the record of a save after frame `tick`. Returns { id } or a cancel reason. */
+  async recordSavePoint(tick, hash, voters, now) {
+    if (!this.log || this.log.full) return 'too_long';
+    const frames = (await this.log.read()).filter(([t]) => t <= tick);
+    const start = this.room.startMsg;
+    const members = this.room.seats.flatMap((c, seat) => (c === null ? [] : [{ seat, userId: this.room.accountOf(c) }]));
+    if (members.some((m) => m.userId === null) || members.some((m) => !voters.includes(this.room.seats[m.seat]))) return 'accounts';
+    const id = await recordSave(
+      this.env.DB,
+      {
+        engine: this.meta.version,
+        title: this.meta.name,
+        ticks: tick + 1,
+        stateHash: hash,
+        framesDigest: await framesDigest(frames),
+        optionsDigest: await optionsDigest(start.options),
+        mapHash: start.map ? start.map.hash : null,
+        members,
+      },
+      now,
+    );
+    return { id };
+  }
+
+  /** A player of the running game is gone (for now): the proposal or the save in progress may end. */
+  async saveAfterLoss(client, now) {
+    const room = this.room;
+    if (!room?.saving || room.phase !== 'game') return;
+    const sv = room.saving;
+    const gone = (c) => room.seatState(room.seatOf(c)) === 'gone';
+    const away = (c) => !this.lockstep?.isActive(room.seatOf(c));
+    if (sv.phase === 'open') {
+      if (sv.by === client || room.saveProblem()) {
+        room.cancelSave('left', now);
+        await this.saveRoom();
+        return this.broadcastSaveEnd('left');
+      }
+      return this.saveProgress(now);
+    }
+    // At the save point every player must report its hash: one who left cannot.
+    if (sv.voters.some((c) => gone(c) || (away(c) && sv.hashes[c] === undefined))) {
+      room.cancelSave('left', now);
+      await this.saveRoom();
+      return this.broadcastSaveEnd('left');
+    }
+  }
+
   // ---- Game ----------------------------------------------------------------------------------
 
   async gameMessage(ws, client, msg) {
-    if (!this.lockstep) {
+    if (!this.lockstep && !(this.room.resumeStart && this.log)) {
       // The object was restarted mid-game and lost the in-memory relay.
       await this.sessionLost();
       return;
     }
     const seat = this.room.seatOf(client);
+    if (!this.lockstep && ![C2S.RESUME, C2S.SYNCED, C2S.CHAT, C2S.LEAVE].includes(msg.t)) {
+      // A resumed save waits for every player to catch up.
+      throw new RoomError('The game continues once every player caught up.', ERRORS.STATE);
+    }
     if (seat < 0 && (msg.t === C2S.ORDERS || msg.t === C2S.HASH)) {
       // Spectators watch; an honest client never sends either.
       this.reject(ws, ERRORS.FORBIDDEN, 'Spectators cannot send orders.', true);
@@ -798,6 +1023,7 @@ export class Session extends DurableObject {
       }
       case C2S.HASH: {
         const desync = this.lockstep.hash(seat, msg.tick, msg.hash);
+        if (this.room.saving?.phase === 'agreed') await this.saveHash(client, msg.tick, msg.hash);
         if (desync !== null) {
           // Tell only the players whose state left the majority (all of them without one).
           const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
@@ -812,6 +1038,12 @@ export class Session extends DurableObject {
         if (seat < 0) throw new RoomError('Spectators have no seat to resume.', ERRORS.STATE);
         const record = this.room.resumeSeat(seat);
         this.catching.delete(ws);
+        if (!this.lockstep) {
+          // A resumed save: the relay starts when the last player caught up.
+          await this.saveRoom();
+          await this.maybeStartResumed();
+          return;
+        }
         const tick = this.lockstep.rejoin(seat, record);
         await this.saveRoom();
         this.broadcast({ t: S2C.BACK, player: seat, client, name: this.clientName(client) ?? 'Player', tick });
@@ -819,8 +1051,13 @@ export class Session extends DurableObject {
         this.emitFrames(this.lockstep.flush());
         // A proposed rematch now waits for this player too.
         if (this.room.rematch) this.broadcast({ t: S2C.REMATCH, ...this.room.rematchStatus(Date.now()) });
+        await this.saveProgress();
         return;
       }
+      case C2S.SAVE:
+        if (seat < 0) throw new RoomError('Only players save the game.', ERRORS.FORBIDDEN);
+        await this.saveMessage(client, msg.accept);
+        return;
       case C2S.REMATCH: {
         const now = Date.now();
         const room = this.room;
@@ -946,6 +1183,8 @@ export class Session extends DurableObject {
     this.emitFrames(frames);
     await this.endIfOver();
     await this.rematchAfterLoss(client, now);
+    await this.saveAfterLoss(client, now);
+    await this.maybeStartResumed();
   }
 
   // ---- Rematch -------------------------------------------------------------------------------
@@ -1046,8 +1285,8 @@ export class Session extends DurableObject {
       if (att.client === null && now - att.since > HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
     }
     if (this.room.phase === 'game') {
-      if (!this.lockstep) return this.sessionLost();
-      for (const seat of this.lockstep.silent(now, DROP_AFTER_MS)) {
+      if (!this.lockstep && !(this.room.resumeStart && this.log)) return this.sessionLost();
+      for (const seat of this.lockstep ? this.lockstep.silent(now, DROP_AFTER_MS) : []) {
         const client = this.room.seats[seat];
         const ws = this.socketOf(client);
         if (ws) {
@@ -1089,6 +1328,12 @@ export class Session extends DurableObject {
         this.room.cancelRematch('expired', now);
         await this.saveRoom();
         this.broadcastRematchEnd('expired');
+      }
+      // A save proposal nobody completed, or hashes that never all came.
+      if (this.room.saving && this.room.saving.until <= now) {
+        this.room.cancelSave('expired', now);
+        await this.saveRoom();
+        this.broadcastSaveEnd('expired');
       }
       if (this.meta && this.room?.phase === 'game') await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
       return;

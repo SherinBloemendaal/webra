@@ -1,6 +1,7 @@
 // Admin and moderator API: /api/admin/* (docs/accounts-api.md, section 8).
 // Every check is made here on the server; every change is audit logged.
 
+import { purgeOnlineSavesStatement } from '../onlinesaves.js';
 import {
   ACCOUNT_FLAGS,
   ACCOUNT_ROLES,
@@ -350,6 +351,8 @@ export function purgeStatements(db, userId) {
   return [
     db.prepare(`UPDATE audit_log SET before_json = '{"purged":true}', after_json = '{"purged":true}', target_label = NULL, reason = NULL WHERE target_type = 'user' AND target_id = ?1`).bind(userId),
     db.prepare('DELETE FROM game_presence WHERE user_id = ?1').bind(userId),
+    // Saved online games it played in go too (none can be resumed without it).
+    purgeOnlineSavesStatement(db, userId),
     // Maps the account shared with online sessions only go too (published maps stay, without the uploader).
     db.prepare('DELETE FROM maps WHERE uploader_id = ?1 AND listed = 0').bind(userId),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(userId),

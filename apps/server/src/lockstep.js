@@ -55,20 +55,23 @@ export class LockstepError extends Error {
 
 export class Lockstep {
   /**
-   * @param {{ players: number[], delay: number, now?: number }} config
-   *   players: game player indices controlled by connected humans
+   * @param {{ players: number[], delay: number, now?: number, start?: number }} config
+   *   players: game player indices controlled by connected humans;
+   *   start: the first frame to emit (a resumed online save continues after its ticks)
    */
-  constructor({ players, delay, now = Date.now() }) {
+  constructor({ players, delay, now = Date.now(), start = 0 }) {
     this.delay = delay;
+    /** First frame of this relay (0, or the save point + 1 of a resumed game). */
+    this.start = start;
     /** Next frame tick to emit. */
-    this.next = 0;
+    this.next = start;
     this.active = new Set(players);
     /** Every seat the game started with. */
     this.seats = new Set(players);
     /** Next tick each player must submit. */
-    this.expected = new Map(players.map((p) => [p, delay]));
+    this.expected = new Map(players.map((p) => [p, start + delay]));
     /** First tick each player's orders are part of (later for rejoined players). */
-    this.joinTick = new Map(players.map((p) => [p, 0]));
+    this.joinTick = new Map(players.map((p) => [p, start]));
     /**
      * Drop window per player. `frame` is the value of `next` when it began,
      * `heldMs` how long the player held the game up in it (did not deliver
@@ -78,7 +81,7 @@ export class Lockstep {
      * the count but never resets it, so players cannot take turns.
      */
     this.windows = new Map(
-      players.map((p) => [p, { frame: delay, heldMs: 0, at: now, ready: now + HOLD_GRACE_MS, debtMs: 0, drainedAt: now }]),
+      players.map((p) => [p, { frame: start + delay, heldMs: 0, at: now, ready: now + HOLD_GRACE_MS, debtMs: 0, drainedAt: now }]),
     );
     /** tick -> when its frame went out, for the last few frames. */
     this.emitted = new Map();
@@ -89,7 +92,7 @@ export class Lockstep {
     this.hashes = new Map();
     /** Players already told that their game diverged from the majority. */
     this.diverged = new Set();
-    this.lastHashTick = new Map(players.map((p) => [p, -1]));
+    this.lastHashTick = new Map(players.map((p) => [p, start - 1]));
     /** First tick with mismatching hashes, or null. */
     this.desyncTick = null;
     /** Last state hash a strict majority of the players reported: { tick, hash } or null. */
@@ -114,10 +117,10 @@ export class Lockstep {
     return true;
   }
 
-  /** The empty frames 0..delay-1 every client needs before its first tick. */
+  /** The empty frames start..start+delay-1 every client needs before its first tick. */
   initialFrames() {
     const frames = [];
-    while (this.next < this.delay) {
+    while (this.next < this.start + this.delay) {
       this.emitted.set(this.next, this.startedAt);
       frames.push({ tick: this.next++, orders: [] });
     }

@@ -3,6 +3,7 @@
 
 import { pruneSessions } from '../directory.js';
 import { UNLISTED_RETENTION_MS } from '../maps.js';
+import { ONLINE_SAVE_RETENTION_MS } from '@webra/protocol';
 import { pruneQuotas } from '../quota.js';
 import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
 import { purgeStatements } from './routes-admin.js';
@@ -39,6 +40,8 @@ export async function runRetention(env, now = Date.now()) {
     ),
     // Maps shared with an online session only (unlisted): kept while sessions use them.
     sharedMaps: await run('DELETE FROM maps WHERE listed = 0 AND COALESCE(used_at, created_at) < ?1', now - UNLISTED_RETENTION_MS),
+    // Saved online games: their records go after 90 days (the files stay with the players).
+    onlineSaves: await run('DELETE FROM online_saves WHERE created_at < ?1', now - ONLINE_SAVE_RETENTION_MS),
     purged: 0,
   };
   const { results } = await db

@@ -42,6 +42,19 @@
 // places and come back with their rejoin keys within REMATCH_RETURN_MS
 // (`returning`: while it runs, a lost connection does not cost the place);
 // everyone else's place opens.
+//
+// Online saves: any player still in the game proposes saving it; every such
+// player must accept (SAVE_VOTE_MS), and all of them must be signed in. The
+// save point is a hash tick the server has not sent yet; once every player
+// reported the same state hash there, the session records the save.
+//
+// Resuming a save (`resume`): the host loads a saved game into its lobby.
+// The slots become the saved players (factions, colours, teams resolved as
+// they were); a human slot is reserved for the account that played it and
+// only that account can take it. Options and map are the saved ones and
+// cannot change. Everyone ready (accepting) and the map installed, the host
+// starts: every client fast-forwards through the saved orders and the game
+// goes on after the save point once every player caught up.
 
 import {
   COLOR_COUNT,
@@ -55,6 +68,10 @@ import {
   REMATCH_COOLDOWN_MS,
   REMATCH_RETURN_MS,
   REMATCH_VOTE_MS,
+  HASH_INTERVAL,
+  SAVE_COOLDOWN_MS,
+  SAVE_HASH_MS,
+  SAVE_VOTE_MS,
 } from '@webra/protocol';
 
 export class RoomError extends Error {
@@ -105,6 +122,16 @@ export class Room {
     r.rematchCooldown = 0;
     /** Client id -> deadline: members of the finished game coming back into the lobby. */
     r.returning = {};
+    /** Saving the running game: { phase: 'open', by, accepted, until } or { phase: 'agreed', tick, hashes, until }, or null. */
+    r.saving = null;
+    r.saveCooldown = 0;
+    /**
+     * The saved online game this lobby resumes, or null: { id, title, createdAt,
+     * ticks, hash, options (the saved game options), seats: [account | null] per player, chunks }.
+     */
+    r.resume = null;
+    /** A resumed game whose players are still catching up: { ticks, hash }, or null. */
+    r.resumeStart = null;
     return r;
   }
 
@@ -124,6 +151,10 @@ export class Room {
     r.rematch ??= null;
     r.rematchCooldown ??= 0;
     r.returning ??= {};
+    r.saving ??= null;
+    r.saveCooldown ??= 0;
+    r.resume ??= null;
+    r.resumeStart ??= null;
     return r;
   }
 
@@ -148,6 +179,10 @@ export class Room {
       rematch: this.rematch,
       rematchCooldown: this.rematchCooldown,
       returning: this.returning,
+      saving: this.saving,
+      saveCooldown: this.saveCooldown,
+      resume: this.resume,
+      resumeStart: this.resumeStart,
     };
   }
 
@@ -211,13 +246,17 @@ export class Room {
     } else if (this.phase !== 'lobby') {
       fail('The game has already started.', 'bad_state');
     }
-    const slot = spectate ? -1 : this.slots.findIndex((s) => s.type === 'open');
-    if (slot < 0 && !spectate) fail('The session is full.', 'full');
+    // A resumed save: a player takes the place its account played, nobody else plays.
+    const slot = spectate ? -1 : this.resume ? this.reservedSlotOf(account) : this.slots.findIndex((s) => s.type === 'open');
+    if (slot < 0 && !spectate) {
+      if (this.resume) fail('This lobby continues a saved game: only its players can play. You can watch.', 'forbidden');
+      fail('The session is full.', 'full');
+    }
     const client = this.nextClient++;
     this.names[client] = name;
     if (account !== null) this.accounts[client] = account;
     if (spectate) this.spectators.push({ client, name });
-    else this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
+    else this.slots[slot] = this.resume ? this.savedSlot(slot, client, name) : { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
     this.pruneNames();
     if (this.phase === 'lobby' && (host || this.hostId === null)) this.hostId = client;
     return { client, slot, role: spectate ? 'spectator' : 'player' };
@@ -230,7 +269,7 @@ export class Room {
    */
   leave(client) {
     const slot = this.slotOf(client);
-    if (slot >= 0 && this.phase === 'lobby') this.slots[slot] = { type: 'open' };
+    if (slot >= 0 && this.phase === 'lobby') this.slots[slot] = this.resume ? { type: 'open', reserved: slot } : { type: 'open' };
     this.spectators = this.spectators.filter((s) => s.client !== client);
     // Leaving a lobby is final: joining again goes through the password check.
     if (this.phase === 'lobby') {
@@ -275,15 +314,79 @@ export class Room {
       if (watching) return;
       if (this.spectators.length >= this.maxSpectators) fail('The spectator places are taken.', 'full');
       this.spectators.push({ client, name: this.slots[slot].name });
-      this.slots[slot] = { type: 'open' };
+      this.slots[slot] = this.resume ? { type: 'open', reserved: slot } : { type: 'open' };
       return;
     }
     if (!watching) return;
-    const open = this.slots.findIndex((s) => s.type === 'open');
-    if (open < 0) fail('No player slot is open.', 'full');
+    const open = this.resume ? this.reservedSlotOf(this.accountOf(client)) : this.slots.findIndex((s) => s.type === 'open');
+    if (open < 0) fail(this.resume ? 'This lobby continues a saved game: only its players can play.' : 'No player slot is open.', this.resume ? 'forbidden' : 'full');
     const name = this.names[client] ?? this.spectators.find((s) => s.client === client).name;
     this.spectators = this.spectators.filter((s) => s.client !== client);
-    this.slots[open] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
+    this.slots[open] = this.resume ? this.savedSlot(open, client, name) : { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
+  }
+
+  // ---- Resuming an online save --------------------------------------------------------
+
+  /** The open slot reserved for `account` in a resumed save, or -1. */
+  reservedSlotOf(account) {
+    if (!this.resume || account === null) return -1;
+    return this.slots.findIndex((s, i) => s.type === 'open' && s.reserved === i && this.resume.seats[i] === account);
+  }
+
+  /** The saved player `i` as a lobby slot for `client`. */
+  savedSlot(i, client, name) {
+    const p = this.resume.options.players[i];
+    return { type: 'human', client, name, faction: p.faction, color: p.color, team: p.team, ready: false };
+  }
+
+  /** Changing settings is refused while the lobby resumes a save. */
+  refuseInResume() {
+    if (this.resume) fail("A resumed game keeps its saved settings.", 'forbidden');
+  }
+
+  /**
+   * Host: turn the lobby into the resume of a saved game (checked by the
+   * caller: the save record, the host's account among its players).
+   * `info`: { id, title, createdAt, ticks, hash, options, seats, chunks }.
+   * Members whose account played a seat take it; other players watch (when
+   * places allow, else the load is refused). Returns nothing.
+   */
+  loadResume(client, info) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!this.isHost(client)) fail('Only the host can resume a saved game.', 'not_host');
+    const players = info.options.players;
+    if (players.length > this.slots.length) fail(`This saved game has ${players.length} players: create a session with at least as many places.`, 'invalid');
+    // Who is here, and which seat (if any) its account played.
+    const members = [...this.humans().map((s) => ({ client: s.client, name: s.name })), ...this.spectators.map((s) => ({ client: s.client, name: s.name }))];
+    const seatOf = (c) => {
+      const a = this.accountOf(c);
+      return a === null ? -1 : info.seats.findIndex((x) => x === a);
+    };
+    const watchers = members.filter((m) => seatOf(m.client) < 0);
+    if (watchers.length > MAX_SPECTATORS) fail('Too many members who did not play this game are here.', 'full');
+    this.resume = { ...info, options: structuredClone(info.options), seats: [...info.seats] };
+    this.slots = this.slots.map((_, i) => {
+      if (i >= players.length) return { type: 'closed' };
+      const p = players[i];
+      if (p.type === 'ai') return { type: 'ai', difficulty: p.difficulty, faction: p.faction, color: p.color, team: p.team };
+      return { type: 'open', reserved: i };
+    });
+    for (const m of members) {
+      const seat = seatOf(m.client);
+      if (seat >= 0 && players[seat]?.type === 'human') this.slots[seat] = this.savedSlot(seat, m.client, m.name);
+    }
+    this.spectators = watchers.map((m) => ({ client: m.client, name: m.name }));
+    this.maxSpectators = Math.max(this.maxSpectators, this.spectators.length);
+    const { players: _players, ...rest } = info.options;
+    this.options = { ...DEFAULT_OPTIONS, ...Object.fromEntries(Object.keys(DEFAULT_OPTIONS).map((k) => [k, rest[k] ?? DEFAULT_OPTIONS[k]])) };
+    this.mapStates = this.map ? { [client]: 'installed' } : {};
+  }
+
+  /** The `resume` field of lobby messages. */
+  resumeView() {
+    const r = this.resume;
+    const waiting = this.slots.flatMap((s, i) => (s.type === 'open' && s.reserved === i ? [r.options.players[i].name] : []));
+    return { id: r.id, title: r.title, createdAt: r.createdAt, ticks: r.ticks, waiting };
   }
 
   /**
@@ -291,6 +394,7 @@ export class Room {
    */
   setSlot(client, msg) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    this.refuseInResume();
     const mine = this.slotOf(client);
     const host = this.isHost(client);
     // A spectating host still manages the other slots (types and AI settings).
@@ -362,14 +466,16 @@ export class Room {
 
   setOptions(client, options) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can change options.', 'not_host');
     this.options = { ...options };
     this.resetReady();
   }
 
   /** @param {null | {id, hash, name, modded, players}} map trusted (looked up server side) */
-  setMap(client, map) {
+  setMap(client, map, { resume = false } = {}) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!resume) this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can change the map.', 'not_host');
     this.map = map ? { ...map } : null;
     // Map states belong to one map; the host has the one it picked.
@@ -432,6 +538,10 @@ export class Room {
     const players = this.participants();
     if (players.length < MIN_PLAYERS) return 'At least two players are needed.';
     if (this.map && players.length > this.map.players) return `This map has room for ${this.map.players} players.`;
+    if (this.resume) {
+      const waiting = this.resumeView().waiting;
+      if (waiting.length) return `Waiting for ${waiting.join(', ')} to come back.`;
+    }
     if (this.map) {
       // Every player and spectator needs the exact map (the host has it).
       const lacking = [...this.humans(), ...this.spectators].find((m) => this.mapStateOf(m.client) !== 'installed');
@@ -451,6 +561,7 @@ export class Room {
   start(client, pick) {
     const problem = this.startProblem(client);
     if (problem) fail(problem, this.isHost(client) ? 'not_ready' : 'not_host');
+    if (this.resume) return this.startResume();
     const players = [];
     const startPlayers = [];
     const seats = [];
@@ -474,6 +585,7 @@ export class Room {
     this.rematch = null;
     this.rematchCooldown = 0;
     this.returning = {};
+    this.saving = null;
     this.seats = seats;
     this.seatStates = seats.map((c) => (c === null ? null : { state: 'active', until: 0, record: null }));
     this.startMsg = {
@@ -575,6 +687,8 @@ export class Room {
     this.rejoins = {};
     this.rematch = null;
     this.rematchCooldown = 0;
+    this.saving = null;
+    this.resumeStart = null;
     // Everyone coming back played (or watched) this map: they have it.
     this.mapStates = this.map ? Object.fromEntries([...keep].map((c) => [c, 'installed'])) : {};
     this.hostId = keep.has(by) ? by : (this.slots.find((s) => s.type === 'human')?.client ?? this.spectators[0]?.client ?? null);
@@ -612,6 +726,120 @@ export class Room {
   nextReturnDeadline() {
     const all = Object.values(this.returning);
     return all.length ? Math.min(...all) : null;
+  }
+
+  /**
+   * Start a resumed save: the saved options exactly, every human seat
+   * catching up (`syncing`; the caller sets deadlines), and `resumeStart`
+   * until all of them did. Returns the start message fields.
+   */
+  startResume() {
+    const r = this.resume;
+    const players = r.options.players;
+    const seats = players.map((p, i) => (p.type === 'human' ? this.slots[i].client : null));
+    this.phase = 'game';
+    this.rematch = null;
+    this.rematchCooldown = 0;
+    this.returning = {};
+    this.saving = null;
+    this.seats = seats;
+    this.seatStates = seats.map((c) => (c === null ? null : { state: 'syncing', until: 0, record: null }));
+    this.startMsg = {
+      seed: r.options.seed,
+      options: structuredClone(r.options),
+      map: this.map,
+      players: players.map((p, i) => ({ player: i, slot: i, client: seats[i], name: p.type === 'human' ? this.slots[i].name : p.name, type: p.type })),
+      delay: ORDER_DELAY,
+      resume: { ticks: r.ticks, hash: r.hash },
+    };
+    this.resumeStart = { ticks: r.ticks, hash: r.hash };
+    this.resume = null;
+    return structuredClone(this.startMsg);
+  }
+
+  // ---- Online saves -----------------------------------------------------------------------
+
+  /** Whether every human seat is still in the game and signed in (online saves need accounts). */
+  saveProblem() {
+    if (this.phase !== 'game' || this.resumeStart) return 'There is no running game to save.';
+    for (const [seat, c] of (this.seats ?? []).entries()) {
+      if (c === null) continue;
+      if (this.seatState(seat) === 'gone') return 'Every player who started the game must still be in it to save it.';
+      if (this.accountOf(c) === null) return 'Saving online games needs every player signed in with an account.';
+    }
+    return null;
+  }
+
+  /** Clients whose answer a save needs: the players still in the game. */
+  saveVoters() {
+    return this.rematchVoters();
+  }
+
+  /** Propose saving (any player still in the game); the proposer accepts at once. */
+  proposeSave(client, now) {
+    if (this.saving) fail('Saving is already under way.', 'bad_state');
+    if (!this.saveVoters().includes(client)) fail('Only players can propose saving.', 'forbidden');
+    if (now < this.saveCooldown) fail('Wait a moment before proposing again.', 'rate_limited');
+    const problem = this.saveProblem();
+    if (problem) fail(problem, 'forbidden');
+    this.saving = { phase: 'open', by: client, accepted: [client], until: now + SAVE_VOTE_MS };
+  }
+
+  /** An answer to the open proposal; returns the cancel reason when it ended, else null. */
+  answerSave(client, accept, now) {
+    const sv = this.saving;
+    if (!sv) fail('Nobody proposed saving.', 'bad_state');
+    if (sv.phase !== 'open') fail('The game is being saved.', 'bad_state');
+    if (!this.saveVoters().includes(client)) fail('Only players answer.', 'forbidden');
+    if (!accept) return this.cancelSave(client === sv.by ? 'withdrawn' : 'declined', now);
+    if (!sv.accepted.includes(client)) sv.accepted.push(client);
+    return null;
+  }
+
+  /** The proposal or save in progress ended (also after a successful save): a short cooldown follows. */
+  cancelSave(reason, now) {
+    this.saving = null;
+    this.saveCooldown = now + SAVE_COOLDOWN_MS;
+    return reason;
+  }
+
+  /** The open proposal as a `save` message. */
+  saveStatus(now) {
+    const sv = this.saving;
+    const voters = this.saveVoters();
+    return { state: 'open', by: sv.by, accepted: sv.accepted.filter((c) => voters.includes(c)), waiting: voters.filter((c) => !sv.accepted.includes(c)), msLeft: Math.max(0, sv.until - now) };
+  }
+
+  /** Every voter accepted and is connected: `active` says whether a seat is connected now. */
+  saveAgreed(active) {
+    const sv = this.saving;
+    if (!sv || sv.phase !== 'open') return false;
+    const voters = this.saveVoters();
+    return voters.every((c) => sv.accepted.includes(c) && active(c));
+  }
+
+  /**
+   * Agreed: the save point is the first hash tick at or after `from` (the
+   * next frame the server sends plus the order delay, so no player ran it).
+   * Returns it.
+   */
+  agreeSave(from, now) {
+    const tick = Math.ceil(from / HASH_INTERVAL) * HASH_INTERVAL;
+    this.saving = { phase: 'agreed', tick, hashes: {}, voters: this.saveVoters(), until: now + SAVE_HASH_MS };
+    return tick;
+  }
+
+  /**
+   * A player's state hash at `tick`. Returns null while hashes are missing,
+   * 'desync' when they differ, or 'complete' with every voter agreeing.
+   */
+  noteSaveHash(client, tick, hash) {
+    const sv = this.saving;
+    if (!sv || sv.phase !== 'agreed' || tick !== sv.tick || !sv.voters.includes(client)) return null;
+    sv.hashes[client] = hash;
+    const all = sv.voters.map((c) => sv.hashes[c]);
+    if (all.some((h) => h === undefined)) return null;
+    return all.every((h) => h === all[0]) ? 'complete' : 'desync';
   }
 
   // ---- Seats in a running game ------------------------------------------------------
@@ -750,14 +978,20 @@ export class Room {
       if (this.map) out.mapState = this.mapStateOf(entry.client);
       return out;
     };
-    return {
-      slots: this.slots.map((s) => (s.type === 'human' ? mark(s) : { ...s })),
+    const view = {
+      slots: this.slots.map((s) => {
+        if (s.type === 'human') return mark(s);
+        const { reserved: _reserved, ...rest } = s;
+        return rest;
+      }),
       options: { ...this.options },
       map: this.map,
       hostId: this.hostId,
       spectators: this.spectators.map(mark),
       maxSpectators: this.maxSpectators,
     };
+    if (this.resume) view.resume = this.resumeView();
+    return view;
   }
 
   /** Keep the name table bounded: forget departed players beyond 64 entries. */
