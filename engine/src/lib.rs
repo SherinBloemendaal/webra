@@ -19,6 +19,7 @@ mod commands;
 pub mod debug;
 pub mod doors;
 pub mod flowfield;
+pub mod fx;
 mod helicopter;
 pub mod instances;
 pub mod map;
@@ -59,6 +60,8 @@ mod tests_commands;
 mod tests_debug;
 #[cfg(test)]
 mod tests_doors;
+#[cfg(test)]
+mod tests_fx;
 #[cfg(test)]
 mod tests_helis;
 #[cfg(test)]

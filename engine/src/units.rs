@@ -648,6 +648,8 @@ impl World {
                     a.refinery = rref;
                     a.harv = HarvState::Unloading;
                     a.harv_timer = hv.bale_unload_delay;
+                    // The dock animation (fx.rs, presentation only).
+                    self.note_dock(i, true);
                     return;
                 }
                 // Wait outside while another harvester unloads.
@@ -683,6 +685,7 @@ impl World {
                     self.actors[r].dock_user = NONE;
                     let a = &mut self.actors[i];
                     a.harv = HarvState::Search;
+                    self.note_dock(i, false);
                 }
             }
         }
@@ -838,6 +841,8 @@ impl World {
             self.order_move(&[i], rx, ry, false);
             return;
         }
+        // The depot's repair animation (fx.rs, presentation only).
+        self.note_service(d);
         self.repair_step(i, &rep);
     }
 

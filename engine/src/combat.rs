@@ -556,6 +556,8 @@ impl World {
         };
         let shooter_ty = self.actors[i].ty as i32;
         self.sound.push(SoundEventKind::Fire, w as i32, sx, sy, owner, shooter_ty);
+        // Muzzle flash, recoil and the Tesla charge (fx.rs, presentation only).
+        self.note_fire(i, w);
         // The shooter gets the kill and its rank's firepower applies (veterancy.rs).
         let shot = self.shot_of(i);
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
@@ -678,20 +680,11 @@ impl World {
     /// the actor processed first does not kill its target before the target
     /// fires back, so mirrored fights do not depend on processing order.
     fn land_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot, end_of_tick: bool) {
-        let max_damage = self.rules.weapons[w].max_damage();
-        let (kind, ttl) = if max_damage >= 20000 {
-            (EffectKind::NukeExplosion, 40)
-        } else if max_damage >= 3000 {
-            // Long enough for OpenRA's small_explosion (veh-hit3.shp, 14 frames at one per tick).
-            (EffectKind::SmallExplosion, 14)
-        } else {
-            (EffectKind::Piff, 6)
-        };
-        // Shells landing in open water splash instead (naval.rs).
-        let splash = self.water_impact_effect(x, y, ttl);
-        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(splash.is_some()));
-        let (kind, ttl) = splash.unwrap_or((kind, ttl));
-        self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
+        // The weapon's explosions where they land (OpenRA CreateEffect
+        // warheads: on the ground, in open water, on a ship or in the air; fx.rs).
+        let class = self.impact_class(x, y);
+        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(class == crate::fx::IMPACT_WATER));
+        self.spawn_weapon_effects(w, x, y, class);
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
             if delay > 0 || end_of_tick {
@@ -808,6 +801,8 @@ impl World {
             self.sound.push(kind, ty, x, y, owner, 0);
         }
         self.note_damage(u, dealt);
+        // Damage smoke (fx.rs, presentation only).
+        self.note_damage_fx(u);
         // An AI remembers who hits its structures (ai.rs target choice).
         if self.actors[u].kind == Kind::Building {
             if let Some(by) = self.observer.source {
@@ -837,6 +832,12 @@ impl World {
         // A plane shot down in the air already exploded where it crashed (plane.rs).
         if self.crashed(i) {
             return;
+        }
+        // FireWarheadsOnDeath: its explosions where it dies (fx.rs).
+        if let Some(w) = self.rules.actors[self.actors[i].ty as usize].death_weapon {
+            let (x, y) = (self.actors[i].x, self.actors[i].y);
+            let class = self.impact_class(x, y);
+            self.spawn_weapon_effects(w, x, y, class);
         }
         let a = &self.actors[i];
         // FireWarheadsOnDeath: the dying actor's firepower, nobody to credit (DamageSource Self).

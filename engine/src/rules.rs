@@ -898,6 +898,9 @@ pub struct Rules {
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
     pub obtainable: Vec<Vec<bool>>,
+    /// Presentation facts (fx.rs, engine/render.json): explosions, muzzle
+    /// flashes, damage smoke, working animations. Never read by the simulation.
+    pub render: crate::fx::RenderData,
 }
 
 pub const TOKEN_DISABLED: &str = "disabled";
@@ -1582,8 +1585,10 @@ impl Rules {
             tokens,
             damage_types,
             obtainable: Vec::new(),
+            render: Default::default(),
         };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();
+        rules.render = crate::fx::RenderData::load(&rules);
         Ok(rules)
     }
 

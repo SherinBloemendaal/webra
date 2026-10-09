@@ -30,6 +30,7 @@
 //! [`World::rearm_step`], [`World::find_rearm_base`], [`World::target_kind`].
 
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
+use crate::render::{posed, Pose};
 use crate::rules::{Kind, SupportPowerInfo};
 use crate::world::{Activity, SmartAction, World, MAX_WEAPONS, NONE};
 
@@ -39,6 +40,9 @@ const FACING_TOLERANCE: i32 = 80;
 const MAX_PITCH: i32 = 56;
 /// After passing over the target, fly on this far beyond the minimum range before turning back.
 const OVERSHOOT: i32 = 2 * CELL;
+/// Height of a paratrooper's canopy over it (OpenRA WithParachute Offset 0,0,427 of ^Infantry).
+const PARACHUTE_HEIGHT: i32 = 427;
+
 /// Ticks between searches for a free airfield while none is available.
 const BASE_RETRY: i32 = 25;
 /// `Parachutable.FallRate` of `^Soldier` (defaults.yaml): world units per tick.
@@ -370,7 +374,13 @@ impl World {
         let f = self.flight(i);
         let on_base = self.resolve(self.actors[i].air.base).filter(|&b| self.is_rearm_base_for(i, b));
         let full = match on_base {
-            Some(_) => self.rearm_step(i),
+            Some(b) => {
+                // The airfield's rearm animation while there is ammo to load (fx.rs).
+                if self.actors[i].air.spent > 0 {
+                    self.note_service(b);
+                }
+                self.rearm_step(i)
+            }
             None => {
                 self.actors[i].air.base = NONE;
                 self.ammo_left(i) >= f.max_ammo
@@ -768,6 +778,8 @@ impl World {
                         let p = &mut self.actors[u];
                         p.altitude = alt;
                         p.air.parachute = true;
+                        // The parachute opens (fx.rs, presentation only).
+                        self.note_drop(u);
                     }
                 }
             }
@@ -882,10 +894,19 @@ impl World {
                 }
                 let lift = px(a.altitude);
                 let at = SpriteRec::moving(from, to, 48.0);
-                let body = (a.ty * 2) as f32;
+                // With pre-rendered art: the falling pose (WithInfantryBody@PARACHUTE)
+                // and the canopy opening from the jump (WithParachute, fx.rs).
+                let (body, canopy) = if self.render_opts.poses {
+                    let age = crate::fx::age_of(a.fx.dropped, self.tick).unwrap_or(crate::render::MAX_POSE_AGE);
+                    (posed(a.ty as u32 * 2, Pose::Parachute, 0), posed(parachute as u32, Pose::Idle, age))
+                } else {
+                    ((a.ty * 2) as f32, parachute)
+                };
+                // OpenRA draws the canopy at WithParachute.Offset (0,0,427 for infantry: 10 pixels up).
+                let above = if self.render_opts.is_original(parachute as u32) { px(PARACHUTE_HEIGHT) } else { 7.0 };
                 sink.sprite(sprites, at.look(body, a.owner as f32, 0.9, 0.25, -1.0).offset(lift * 0.4, 0.0));
                 sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift));
-                sink.sprite(sprites, at.look(parachute, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift - 7.0));
+                sink.sprite(sprites, at.look(canopy, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift - above));
                 continue;
             }
             if a.kind != Kind::Aircraft || a.altitude <= 0 || !self.is_plane(i) {

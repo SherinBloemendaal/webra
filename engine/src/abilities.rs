@@ -1243,6 +1243,8 @@ impl World {
                 && self.rules.actors[a.ty as usize].abilities.support_powers.as_ref().is_some_and(|l| l.iter().any(|p| p.key == info.key))
         });
         let Some(silo) = silo else { return false };
+        // The silo opens (fx.rs, presentation only).
+        self.note_launch(silo);
         let launch = self.tick + info.missile_delay.max(0) as u32;
         self.abil.nukes.push(Nuke {
             owner: player,
