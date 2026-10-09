@@ -190,7 +190,7 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
 human|ai|closed, name, faction, color, team, difficulty}], startingCash,
 startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, cheats, mapStyle, biome, weather, map`.
+redeployableMcv, oreRegrowth, reusableEngineers, cheats, mapStyle, biome, weather, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -201,7 +201,10 @@ The protocol requires all three (protocol version 4); the engine treats
 missing keys as `random`, `temperate` and `full` (older callers, tools) and
 refuses unknown values. `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
-orders work (section 5). `team` 0 means no team (free for all);
+orders work (section 5). `reusableEngineers` is OpenRA's "Reusable
+Engineers" (default off): engineers capture from next to a structure after
+375 ticks instead of going in after 200, and stay (`Captures@REUSABLE`).
+Game modes saved before it existed get it off. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -600,7 +603,10 @@ fields on water cells, naval yards are their docks) and `air` (free flight,
 no pathfinding). Queue types: Building, Defense, Infantry, Vehicle, Aircraft,
 Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16,
 mine 32, underwater 64 (submerged submarines), submarine 128 (any
-submarine; depth charge warheads). Naval yards are structure and water.
+submarine; depth charge warheads), heal 512 (damaged infantry: the Medic),
+repair 1024 (damaged vehicles, ships and landed aircraft: the Mechanic).
+Naval yards are structure and water. Warheads carry `relationships`
+(OpenRA ValidRelationships: 1 ally, 2 neutral, 4 enemy).
 
 Transports (engine/src/cargo.rs): a right-click with units on an own
 transport they fit in is the smart action `Load` (6, `Game.cursor_action`).
@@ -697,6 +703,48 @@ warhead (`damage_types`); modded maps can tune them within
 (`SpriteIds::veterancy_base` + 0..2 chevrons, + 3 elite,
 apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
 `2t + 1` is the prone pose.
+
+### Infantry (`engine/src/infantry.rs`, `infantry_combat.rs`, `dog.rs`)
+
+Every Red Alert soldier of OpenRA's infantry.yaml: E1 to E4, E6 (engineer),
+E7 (Tanya), DOG, MEDI, MECH, SPY and SPY.England, THF and SHOK. rules.json
+carries per actor `build_limit`, `producible_level` (ProducibleWithLevel),
+`fire_delays` (Armament.FireDelay per weapon slot), `targets_allies`
+(healers), `death` (WithDeathAnimation: death sequence per damage type),
+`infiltrate_types` and `disguisable`, and abilities `captures`,
+`capturable`, `instantly_repairs`, `instantly_repairable`,
+`repairs_bridges`, `infiltrates`, `infiltrated` (InfiltrateFor* effects:
+cash, exploration, power_outage, support_power, power_reset, decoration),
+`disguise`, `ignores_disguise`, `demolition`, `demolishable`,
+`attack_leap`, `announce_on_kill` and, on proxy actors (kind `proxy`, never
+on a map), `proxy`. Proxies are granted per player (`Player::proxies`) for
+their prerequisites and support powers (the Sonar Pulse, a
+`SpawnActorPower`).
+
+Right clicks (`Game.cursor_action`, world.rs `SmartAction`): 8 capture, 9
+infiltrate, 10 C4, 11 engineer repair (structures and bridge huts), 12 heal,
+13 mechanic repair, 14 disguise, 15 blocked enter, 16 blocked engineer
+repair (undamaged), 17 capture from outside (reusable engineers). They go
+through the `Smart` order: no new order kinds. A forced attack of Tanya on a
+structure plants C4. `Game.actor_json` adds `disguise` (`{type, owner}` or
+null; only the owner and allies should be shown the spy behind it),
+`beingCaptured`, `demolished` and `powerOutage` (ticks left).
+
+For the world objects: anything with `abilities.capturable` can be captured
+(`World::can_capture`, `World::capture(target, new_owner, captor)`); bridge
+huts register with `World::register_bridge_hut`, report their bridge with
+`World::set_bridge_hut_state(hut, damaged, repairing)` and collect the huts
+engineers entered with `World::take_bridge_repairs`.
+
+Audio: the `Death` event's `b` is the kind code with the death sequence
+(1..6 die1..die6, 7 crushed) in the bits above 8; event 40 (`Infantry`)
+carries an `InfantryEvent` in `a` (1 structure captured, 2 structure lost,
+3 unit stolen, 4 unit lost, 5 building infiltrated, 6 credits stolen with
+`b` the amount, 7 credits gained, 8 C4 planted, 9 disguised, 10 engineer
+repair, 11 a kill to announce with `b` the killer's type, 12 sonar pulse).
+Sprites: `SpriteIds::infantry_base` + 0..4 built-in dying soldiers (shot,
+blown up, burned, electrocuted, crushed), 5 spy tag, 6 fake tag, 7 sonar
+ring (apps/game/js/art/infantry.js).
 
 ### Helicopters (`engine/src/helicopter.rs`)
 
@@ -1111,7 +1159,7 @@ doing. `Game.set_sprite_poses(true)` (a render setting, off by default; the
 main thread turns it on when the atlas holds such art) makes body sprites
 carry a pose in the sprite id:
 
-    id = slot + 4096 * (pose + 16 * age)
+    id = slot + 4096 * (pose + 32 * age)
 
 `slot` is the sprite slot as before (actor `t`: body `2t`, second part
 `2t + 1`; specials after them), always below 4096. Poses
@@ -1120,7 +1168,12 @@ carry a pose in the sprite id:
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
 (structure placed during the game, `age` = ticks since then, up to 127), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
-remembered structure under fog), 8 damaged and still. Walls report idle or
+remembered structure under fog), 8 damaged and still, 9 the second stand
+sequence and 10, 11 the idle animations of a standing soldier (`age` = ticks
+into the animation), 12 to 17 death sequences die1 to die6 and 18 a crushed
+body (`age` = ticks since the death). Dying soldiers are drawn with their
+death sequences only for actor types `Game.set_death_art(types)` names (the
+atlas's `deaths`); others show the built-in bodies. Walls report idle or
 damaged with `age` = their connection mask (OpenRA WithWallSpriteBody: 1
 north, 2 east, 4 south, 8 west, same type only). Building turrets report
 damaged too. Poses are read from the world and never written: the state
@@ -1135,7 +1188,7 @@ A slot whose `seq.y` (pose count) is non-zero is a pose table: entry
 frame, frames per facing, frames per second, mode) and `seq` = (facings,
 flags: 1 classic facings, 2 free rotation; interpolated facings). Modes: 0
 loop on the render clock, 1 once from `age` (then the idle descriptor), 2
-first frame, 3 frame `age`. The facing comes from the instance angle:
+first frame, 3 frame `age`, 4 once from `age` and then nothing (deaths). The facing comes from the instance angle:
 `a = (1024 - round(angle * 1024 / 2pi)) mod 1024` (OpenRA turns
 counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
 sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
@@ -1181,7 +1234,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
