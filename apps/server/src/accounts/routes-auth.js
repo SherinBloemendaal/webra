@@ -26,7 +26,7 @@ import {
   requestOptions,
 } from './passkeys.js';
 import { publicSite } from './site.js';
-import { clearSessionCookie, reauthUntil, sessionToken } from './sessions.js';
+import { reauthUntil, sessionToken, signOutCookies } from './sessions.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByEmail, userById, userByUsername } from './users.js';
 import { assertionIds, rpIdFor, verifyAuthentication, verifyRegistration, WebAuthnError } from './webauthn.js';
 import { ipRecord } from './ip.js';
@@ -275,7 +275,7 @@ async function login(ctx) {
 async function logout(ctx) {
   const token = sessionToken(ctx.request);
   if (token) await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1').bind(await sha256Hex(token)).run();
-  ctx.cookies.push(clearSessionCookie(ctx.request));
+  ctx.cookies.push(...signOutCookies(ctx.request));
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
 

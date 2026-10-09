@@ -29,6 +29,12 @@ test('account states and sign-in methods follow the account and the site', () =>
   assert.match(accountState({ status: 'pending_approval' }).text, /closed beta/);
   assert.match(accountState({ status: 'pending_email' }).label, /Verify/);
   assert.match(accountState({ status: 'banned', ban: { reason: 'Cheating' } }).text, /Reason: Cheating/);
+  // The play gate: the copy says the game waits, unless the site lets everyone play.
+  assert.match(accountState({ status: 'pending_approval' }).text, /game opens for you once it is approved/);
+  assert.match(accountState({ status: 'pending_approval' }, { gameRequiresAccount: false }).text, /play skirmish/);
+  assert.match(accountState(null).text, /^Sign in to play,/);
+  assert.match(accountState(null, { gameRequiresAccount: false }).text, /play online/);
+  assert.match(accountState({ status: 'banned' }).text, /cannot play/);
   const site = { login: { password: true, email: false, discord: false, passkey: true }, registration: { open: false } };
   assert.deepEqual(signInMethods(site, { passkeys: false }), { password: true, passkey: false, discord: false, email: false, signup: false });
   assert.equal(signInMethods(site, { passkeys: true }).passkey, true);
@@ -37,7 +43,7 @@ test('account states and sign-in methods follow the account and the site', () =>
   assert.equal(onlineRefusal('ip_banned').signIn, false);
   assert.equal(onlineRefusal('kicked'), null);
   assert.equal(settingLabel('audio', 'master'), 'Sound: Master volume');
-  assert.equal(valueText('game', 'healthBars', 'all'), 'All units');
+  assert.equal(valueText('game', 'healthBars', 'all'), 'All units and buildings');
   assert.equal(valueText('audio', 'enabled', false), 'off');
 });
 
@@ -111,7 +117,7 @@ test('the one-click content install follows the account; the conflict dialog nam
   const choice = askConflict({ conflicts: [{ group: 'game', key: 'healthBars', local: 'all', remote: 'off' }] });
   await settle();
   const dialog = doc.body.querySelector('[role="dialog"]');
-  assert.match(textOf(dialog), /Game: Health bars here: All units; account: Selected and hovered only/);
+  assert.match(textOf(dialog), /Game: Health bars here: All units and buildings; account: Selected and hovered only/);
   click(byText(dialog, 'button', /Keep this device/));
   assert.equal(await choice, 'local');
   const closed = askConflict({ conflicts: [] });

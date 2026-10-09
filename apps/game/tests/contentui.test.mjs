@@ -294,3 +294,104 @@ test('the toast lives outside the game view, so a message about a file dropped o
   const css = readFileSync(fileURLToPath(new URL('../css/style.css', import.meta.url)), 'utf8');
   assert.match(css, /#toast \{\s*position: fixed;/);
 });
+
+test('dialog: Graphics and Sounds are segmented controls (WebRA | Original); Original waits for installed content', async () => {
+  const content = fakeContent();
+  const audio = fakeAudio();
+  audio.prefs.set({ original: false });
+  const { root, view: viewOf } = mount(content, audio);
+  await settle();
+  const gfx = root.querySelector('[role="radiogroup"][aria-label="Graphics"]');
+  const snd = root.querySelector('[role="radiogroup"][aria-label="Sounds"]');
+  assert.ok(gfx.classList.contains('ui-segmented') && snd.classList.contains('ui-segmented'));
+  assert.deepEqual(gfx.querySelectorAll('label').map((l) => l.textContent), ['WebRA', 'Original']);
+  assert.equal(root.querySelectorAll('input[type="radio"]').length, 4);
+
+  // Nothing installed: Original is off for both, with the reason in a note the group points to.
+  const gOriginal = root.querySelector('#content-graphics-original');
+  const sOriginal = root.querySelector('#content-sounds-original');
+  assert.equal(gOriginal.disabled, true);
+  assert.equal(sOriginal.disabled, true);
+  assert.equal(root.querySelector('#content-graphics-webra').checked, true);
+  assert.equal(root.querySelector('#content-sounds-webra').checked, true);
+  const note = root.querySelector(`#${gfx.getAttribute('aria-describedby')}`);
+  assert.match(textOf(note), /Original is off until the original content is installed/);
+  assert.match(root.querySelector('label[for="content-graphics-original"]').getAttribute('title'), /Install the original content/);
+  assert.match(textOf(root.querySelector(`#${snd.getAttribute('aria-describedby')}`)), /Original is off until/);
+
+  // Installed: Original can be chosen and sets the same settings as the old radios and checkbox.
+  content.installed = true;
+  await viewOf.refresh();
+  await settle();
+  assert.equal(gOriginal.disabled, false);
+  assert.equal(sOriginal.disabled, false);
+  assert.equal(root.querySelector('label[for="content-graphics-original"]').hasAttribute('title'), false);
+  check(gOriginal, true);
+  assert.equal(content.settings.get('graphics'), 'original');
+  check(sOriginal, true);
+  assert.equal(audio.prefs.get().original, true);
+  check(root.querySelector('#content-graphics-webra'), true);
+  assert.equal(content.settings.get('graphics'), 'webra');
+  check(root.querySelector('#content-sounds-webra'), true);
+  assert.equal(audio.prefs.get().original, false);
+});
+
+test('dialog: the segmented controls follow changes made elsewhere (Sound dialog, install)', async () => {
+  const content = fakeContent();
+  const audio = fakeAudio();
+  const { root } = mount(content, audio);
+  await settle();
+  audio.prefs.set({ original: false });
+  assert.equal(root.querySelector('#content-sounds-webra').checked, true);
+  assert.equal(root.querySelector('#content-sounds-original').checked, false);
+  audio.prefs.set({ original: true });
+  assert.equal(root.querySelector('#content-sounds-original').checked, true);
+  // An install switches the graphics: the group shows it.
+  await content.install([zipFile()], { onProgress() {} });
+  await settle();
+  assert.equal(root.querySelector('#content-graphics-original').checked, true);
+  assert.equal(root.querySelector('#content-graphics-webra').checked, false);
+});
+
+test('dialog: the use-all switch is a labelled switch and keeps both settings together', async () => {
+  const { root, content, audio } = mount();
+  await settle();
+  const useAll = root.querySelector('#content-use-all');
+  assert.equal(useAll.getAttribute('role'), 'switch');
+  assert.equal(root.querySelector('label[for="content-use-all"]').textContent, 'Use the original graphics and sounds');
+  content.installed = true;
+  check(useAll, true);
+  assert.equal(useAll.getAttribute('aria-checked'), 'true');
+  assert.equal(content.settings.get('graphics'), 'original');
+  assert.equal(audio.prefs.get().original, true);
+});
+
+test('dialog: pack rows have an on/off switch, a priority line, order buttons and remove', async () => {
+  const content = fakeContent();
+  const moved = [];
+  const enabled = [];
+  content.packs = ['a', 'b'].map((id, i) => ({
+    record: { id, name: `Pack ${id}`, version: '1.0', author: 'Someone', license: 'CC0', size: 2048, enabled: i === 0 },
+    manifest: {},
+    problems: [],
+  }));
+  content.movePack = async (id, d) => moved.push([id, d]);
+  content.setPackEnabled = async (id, on) => enabled.push([id, on]);
+  content.removePack = async () => {};
+  const { root } = mount(content);
+  await settle();
+  const rows = root.querySelectorAll('.content-pack');
+  assert.equal(rows.length, 2);
+  const sw = rows[0].querySelector('input[role="switch"]');
+  assert.equal(sw.checked, true);
+  assert.equal(sw.getAttribute('aria-checked'), 'true');
+  assert.match(rows[0].querySelector(`label[for="${sw.id}"]`).textContent, /Pack a 1\.0 by Someone \(CC0, 2 KB\)/);
+  assert.match(textOf(rows[1]), /Priority 2 of 2/);
+  check(rows[1].querySelector('input[role="switch"]'), true);
+  assert.deepEqual(enabled, [['b', true]]);
+  const [up0, down0] = rows[0].querySelectorAll('button');
+  assert.equal(up0.disabled, true, 'the first pack cannot move up');
+  click(down0);
+  assert.deepEqual(moved, [['a', 1]]);
+  assert.equal(rows[1].querySelectorAll('button')[1].disabled, true, 'the last pack cannot move down');
+});

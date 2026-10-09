@@ -23,6 +23,7 @@
 import { instanceLines } from './crowd.js';
 import { defaultRegistry } from './registry.js';
 import { VIEWS } from './debug-views.js';
+import { switchInput } from './ui/controls.js';
 
 /** Cheat flags (engine/src/debug.rs DevFlag), in menu order. */
 export const CHEATS = [
@@ -252,8 +253,7 @@ export class DebugMenu {
       for (const c of CHEATS) {
         const row = el('label', 'debug-check');
         row.title = c.title;
-        const box = el('input');
-        box.type = 'checkbox';
+        const box = switchInput({ small: true });
         box.addEventListener('change', () => {
           this.pending.set(c.flag, { on: box.checked, until: performance.now() + 3000 });
           this.game.dev_flag(this.player, c.flag, box.checked);
@@ -287,8 +287,7 @@ export class DebugMenu {
     for (const v of VIEWS) {
       const row = el('label', 'debug-check');
       row.title = v.title;
-      const box = el('input');
-      box.type = 'checkbox';
+      const box = switchInput({ small: true });
       box.checked = this.prefs[v.key];
       box.addEventListener('change', () => {
         this.prefs[v.key] = box.checked;
@@ -306,8 +305,7 @@ export class DebugMenu {
     rendering.append(el('h3', 'debug-heading', 'Rendering'));
     const row = el('label', 'debug-check');
     row.title = 'Build every frame\'s sprites in the simulation instead of interpolating tick-rate records on the GPU.';
-    const box = el('input');
-    box.type = 'checkbox';
+    const box = switchInput({ small: true });
     box.checked = this.prefs.cpuInstances;
     box.addEventListener('change', () => {
       this.prefs.cpuInstances = box.checked;

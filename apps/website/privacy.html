@@ -61,11 +61,12 @@
           <a href="https://github.com/SherinBloemendaal/webra">GitHub</a>.
         </p>
 
-        <h2>Playing without an account</h2>
+        <h2>What stays in your browser</h2>
         <ul>
           <li>
-            The game, your settings, saves, replays, installed original content and texture packs stay in your browser
-            (local storage and IndexedDB). Nothing of that is uploaded unless you sign in and sync your settings.
+            The game needs an account while the site says so (the admins can open it to everyone). Your settings, saves,
+            replays, installed original content and texture packs stay in your browser (local storage and IndexedDB).
+            Nothing of that is uploaded unless you sign in and sync your settings.
           </li>
           <li>
             Rate limits (for example for map uploads, the content download and sign-in attempts) count requests per network
@@ -93,7 +94,11 @@
         </ul>
         <p>
           The session cookie (<code>__Host-webra_session</code>) is strictly necessary for signing in; it is HttpOnly,
-          Secure and first party, and no other cookies are set, except a short-lived one while you sign in with Discord.
+          Secure and first party, and no other cookies are set, except a short-lived one while you sign in with Discord
+          and the play pass (<code>__Host-webra_play</code>). While the game is only for accounts, the server checks your
+          account when you load it and then sets the play pass: your account id, part of the session's hash and an
+          expiry, signed by the server and valid for 10 minutes, so it does not look your account up for every game file.
+          It is HttpOnly, Secure and first party, holds nothing else, and is removed when you sign out.
         </p>
 
         <h2>Network addresses and bans</h2>

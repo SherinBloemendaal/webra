@@ -1,5 +1,6 @@
-// WebRA Worker: serves dist/ (website at /, game at /play/) and the /api/*
-// routes (docs/contracts.md, sections 4 and 6). Deployed by .github/workflows/deploy.yml.
+// WebRA Worker: serves dist/ (website at /, game at /play/ behind the play
+// gate) and the /api/* routes (docs/contracts.md, sections 4 and 6).
+// Deployed by .github/workflows/deploy.yml.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "webra",
@@ -10,7 +11,11 @@
   "assets": {
     "directory": "../../dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"],
+    // The Worker answers the API and gates the game: /play and /play/* are
+    // served only to accounts that may play (src/playgate.js). Patterns
+    // match the raw path; other spellings of game paths are redirected by
+    // Static Assets to the canonical, gated path (docs/security.md).
+    "run_worker_first": ["/api/*", "/play", "/play/*"],
     "not_found_handling": "404-page"
   },
   "durable_objects": {
