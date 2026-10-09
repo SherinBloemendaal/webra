@@ -209,6 +209,19 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
+are named bundles of every lobby option except `seed` and `mapSize`:
+Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
+Sandbox (skirmish only), plus the player's saved modes (settings
+`lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those
+options; changing any of them reads as Custom. They are a lobby
+convenience only: online the host sends plain `options` (protocol
+unchanged), and every peer works out the mode name from the options, so
+guests see the built-in mode a setup matches (a host's saved mode reads as
+Custom to them). The lobby help texts (`apps/game/js/help.js`) quote the
+numbers of this section and are checked against the engine by
+`apps/game/tests/help.test.mjs`.
+
 Generated maps come in a style (`engine/src/mapgen/`): **land** (open
 plains, or highlands with long cliffs broken by passes), **rivers** (river
 valleys from a confluence pool to the map edges, fords every 11 to 15 cells,
