@@ -3,10 +3,13 @@
 //! the same rules and economy as a human; difficulty changes how fast it reacts
 //! and how large its waves are.
 //!
-//! In free for all and team games it picks one enemy player to attack (the
-//! nearest hostile base, the weakest of equally near ones), AI teammates attack
-//! the same enemy as their team leader, and idle units help allies whose base
-//! is under attack. Allies and neutral actors are never targeted.
+//! In free for all and team games it picks one enemy player to attack: the
+//! nearest hostile base (measured to its starting yard), and among equally near
+//! ones a player that recently hit its structures, else the one the fewest
+//! other AIs already attack, so neighbours do not gang up on one player. It
+//! keeps that target until another is clearly better. AI teammates attack the
+//! same enemy as their team leader, and idle units help allies whose base is
+//! under attack. Allies and neutral actors are never targeted.
 //!
 //! Aircraft, ships, unit abilities and superweapons live in ai_arsenal.rs.
 
@@ -21,6 +24,8 @@ pub(crate) const DEFEND_RADIUS: i32 = 14 * CELL;
 const NEAR_TIE: i32 = 8 * CELL;
 /// How long an attack target is kept before it is reconsidered (one minute).
 const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
+/// How long a player that damaged our structures stays the preferred target.
+const GRUDGE_TICKS: u32 = 2 * RETARGET_TICKS;
 /// A gathered army that has not grown for this long attacks below wave size.
 const ARMY_STALL_TICKS: u32 = 90 * crate::world::TICKS_PER_SECOND;
 /// An army that grows too slowly to ever fill its wave (both economies
@@ -62,6 +67,12 @@ pub struct AiState {
     army_grew_at: u32,
     /// Tick of the last attack wave (WAVE_PATIENCE_TICKS).
     last_wave: u32,
+    /// Builds and defends its base but never sends attack waves. Not a lobby
+    /// option: fairness sweeps (examples/target_sweep.rs) use it to stand in
+    /// for a human who turtles.
+    pub passive: bool,
+    /// Per player: last tick it damaged one of our structures.
+    pub(crate) hurt_at: Vec<Option<u32>>,
 }
 
 impl AiState {
@@ -90,6 +101,8 @@ impl AiState {
             army_seen: 0,
             army_grew_at: 0,
             last_wave: 0,
+            passive: false,
+            hurt_at: Vec::new(),
         }
     }
 }
@@ -632,6 +645,12 @@ fn command_army(w: &mut World, player: u8) {
 
     // Gather idle units at a rally point toward the enemy, attack in waves.
     set_factory_rally(w, player, rally);
+    if w.ai[player as usize].passive {
+        let strays: Vec<usize> =
+            idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) >= 6 * CELL).collect();
+        w.order_move(&strays, rally.0, rally.1, false);
+        return;
+    }
     let gathered: Vec<usize> = idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) < 6 * CELL).collect();
     let target_player = update_target_player(w, player);
     let target = enemy_target(w, player, target_player, base);
@@ -762,35 +781,133 @@ fn strength(w: &World, player: u8) -> i64 {
         .sum()
 }
 
-/// Distance from a point to a player's nearest building, or nearest unit when
-/// it has no buildings left.
+/// How far a player's base is: its starting yard while it has structures
+/// (an expansion toward someone does not make it a nearer target), else its
+/// nearest unit.
 fn distance_to_player(w: &World, from: (i32, i32), p: u8) -> i32 {
-    let mut best: Option<(bool, i32)> = None;
-    for a in w.actors.iter().filter(|a| a.alive && a.owner == p && a.in_world() && a.kind != Kind::Mine) {
-        let key = (a.kind != Kind::Building, dist(from.0, from.1, a.x, a.y));
-        if best.is_none_or(|b| key < b) {
-            best = Some(key);
-        }
+    if has_buildings(w, p) {
+        let b = base_point(w, p);
+        return dist(from.0, from.1, b.0, b.1);
     }
-    best.map_or(i32::MAX, |(_, d)| d)
+    w.actors
+        .iter()
+        .filter(|a| a.alive && a.owner == p && a.in_world() && a.kind != Kind::Mine)
+        .map(|a| dist(from.0, from.1, a.x, a.y))
+        .min()
+        .unwrap_or(i32::MAX)
 }
 
-/// The enemy player to attack from `player`'s point of view: the nearest
-/// hostile base; among bases about as near as that one, the weakest player.
-pub(crate) fn choose_target_player(w: &World, player: u8) -> Option<u8> {
+/// Other AIs that attack `p`, not counting `player` and its allies (AI
+/// teammates attack their leader's target on purpose).
+fn attackers_of(w: &World, player: u8, p: u8) -> usize {
+    (0..w.players.len() as u8)
+        .filter(|&q| q != player && !w.are_allies(player, q) && w.players[q as usize].is_ai && !w.players[q as usize].defeated)
+        .filter(|&q| w.ai.get(q as usize).is_some_and(|a| a.target_player == Some(p)))
+        .count()
+}
+
+/// Whether `p` damaged one of `player`'s structures within `GRUDGE_TICKS`.
+fn has_grudge(w: &World, player: u8, p: u8) -> bool {
+    w.ai.get(player as usize).and_then(|a| a.hurt_at.get(p as usize).copied().flatten()).is_some_and(|t| w.tick < t + GRUDGE_TICKS)
+}
+
+/// Record that `attacker` damaged a structure of `victim` (combat.rs): an AI
+/// victim prefers to strike back at it (`target_candidates`).
+pub(crate) fn note_structure_damage(w: &mut World, victim: u8, attacker: u8) {
+    if attacker == victim || !w.players.get(victim as usize).is_some_and(|p| p.is_ai) || !w.are_enemies(victim, attacker) {
+        return;
+    }
+    let tick = w.tick;
+    if let Some(st) = w.ai.get_mut(victim as usize) {
+        if st.hurt_at.len() <= attacker as usize {
+            st.hurt_at.resize(attacker as usize + 1, None);
+        }
+        st.hurt_at[attacker as usize] = Some(tick);
+    }
+}
+
+/// An enemy player `player` could attack and what speaks for it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Candidate {
+    pub player: u8,
+    /// It recently damaged one of our structures.
+    pub grudge: bool,
+    /// Other AIs already attacking it.
+    pub attackers: usize,
+    /// Seeded tie break: how far around the map centre the candidate's base
+    /// is from ours, in the game's direction (`turn_from`), then a seeded hash.
+    tie: (i32, u64),
+    strength: i64,
+}
+
+impl Candidate {
+    /// What makes a target clearly better than another (hysteresis in
+    /// `update_target_player`): a grudge first, then fewer attackers.
+    fn merit(&self) -> (bool, usize) {
+        (!self.grudge, self.attackers)
+    }
+
+    /// Full order: merit, then the seeded tie break, then strength (weakest
+    /// first; only decides exact ties).
+    fn rank(&self) -> (bool, usize, (i32, u64), i64) {
+        (!self.grudge, self.attackers, self.tie, self.strength)
+    }
+}
+
+/// The enemies `player` may attack, best first: only bases about as near as
+/// the nearest one (within `NEAR_TIE`); among those a player that recently
+/// hit our structures, then the one the fewest other AIs already attack, so
+/// two neighbours do not gang up on the same player; then a seeded tie break
+/// that favours no slot (the next base around the map in the game's
+/// direction, `turn_from`); strength only decides exact ties.
+pub(crate) fn target_candidates(w: &World, player: u8) -> Vec<Candidate> {
     let base = base_point(w, player);
     let enemies: Vec<(u8, i32)> =
         (0..w.players.len() as u8).filter(|&p| is_live_enemy(w, player, p)).map(|p| (p, distance_to_player(w, base, p))).collect();
-    let nearest = enemies.iter().map(|&(_, d)| d).min()?;
-    let tie = |p: u8| tie_break(w, player, p as u64, (w.tick / RETARGET_TICKS) as u64);
-    enemies.iter().filter(|&&(_, d)| d <= nearest.saturating_add(NEAR_TIE)).min_by_key(|&&(p, _)| (strength(w, p), tie(p))).map(|&(p, _)| p)
+    let Some(nearest) = enemies.iter().map(|&(_, d)| d).min() else { return Vec::new() };
+    let turn = |p: u8| turn_from(w, player, base_point(w, p));
+    let mut out: Vec<Candidate> = enemies
+        .iter()
+        .filter(|&&(_, d)| d <= nearest.saturating_add(NEAR_TIE))
+        .map(|&(p, _)| Candidate {
+            player: p,
+            grudge: has_grudge(w, player, p),
+            attackers: attackers_of(w, player, p),
+            tie: (turn(p), tie_break(w, player, p as u64)),
+            strength: strength(w, p),
+        })
+        .collect();
+    out.sort_by_key(|c| (c.rank(), c.player));
+    out
+}
+
+/// How far `to` lies around the map centre from `player`'s base, as an
+/// angle (0 to 1023) clockwise or counterclockwise: the direction is the same
+/// for every AI of a game and picked by its seed. Among otherwise equal
+/// targets every AI takes the next base in that direction, so AIs on a ring
+/// each take a different neighbour instead of two of them meeting at one.
+fn turn_from(w: &World, player: u8, to: (i32, i32)) -> i32 {
+    let centre = (w.map.width * CELL / 2, w.map.height * CELL / 2);
+    let angle = |(x, y): (i32, i32)| crate::math::facing_of(x - centre.0, y - centre.1).unwrap_or(0);
+    let salt = w.ai.get(player as usize).map_or(0, |a| a.salt);
+    let delta = (angle(to) - angle(base_point(w, player))).rem_euclid(1024);
+    if (salt >> 17) & 1 == 0 {
+        delta
+    } else {
+        (1024 - delta) % 1024
+    }
+}
+
+/// The enemy player to attack from `player`'s point of view (see `target_candidates`).
+pub(crate) fn choose_target_player(w: &World, player: u8) -> Option<u8> {
+    target_candidates(w, player).first().map(|c| c.player)
 }
 
 /// Deterministic pseudo-random key for breaking ties between equal choices
 /// (seeded by the game, so no player slot or map side is favoured).
-fn tie_break(w: &World, player: u8, choice: u64, round: u64) -> u64 {
+fn tie_break(w: &World, player: u8, choice: u64) -> u64 {
     let salt = w.ai.get(player as usize).map_or(0, |a| a.salt);
-    let mut z = salt ^ (round << 24) ^ ((player as u64) << 16) ^ choice;
+    let mut z = salt ^ ((player as u64) << 16) ^ choice;
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)
@@ -821,7 +938,13 @@ pub(crate) fn update_target_player(w: &mut World, player: u8) -> Option<u8> {
     if current.is_some() && w.tick < state.retarget_at {
         return current;
     }
-    let chosen = choose_target_player(w, player);
+    // Keep the current target unless another one is clearly better (a
+    // grudge, or fewer attackers): targets do not flip at every retarget.
+    let candidates = target_candidates(w, player);
+    let best = candidates.first().copied();
+    let kept =
+        current.and_then(|c| candidates.iter().find(|k| k.player == c).copied()).filter(|k| best.is_none_or(|b| b.merit() >= k.merit()));
+    let chosen = kept.or(best).map(|c| c.player);
     let state = &mut w.ai[player as usize];
     state.target_player = chosen;
     state.retarget_at = w.tick + RETARGET_TICKS;

@@ -898,20 +898,31 @@ fn spawn_tanks(w: &mut World, owner: u8, cell: (i32, i32), n: i32) -> Vec<usize>
 }
 
 #[test]
-fn ai_attacks_the_nearest_enemy_base_and_the_weakest_of_equally_near_ones() {
+fn ai_attacks_the_nearest_enemy_base_and_the_least_attacked_of_equally_near_ones() {
     // Four players in two rows (spawns by column, top first): 1 (below) and
-    // 2 (beside) are 0's neighbours, 3 sits across.
-    let list = [("england", true, 0), ("russia", false, 0), ("germany", false, 0), ("ukraine", false, 0)];
+    // 2 (beside) are 0's neighbours, 3 sits across and is an AI as well.
+    let list = [("england", true, 0), ("russia", false, 0), ("germany", false, 0), ("ukraine", true, 0)];
     let mut w = World::with_options(7, 96, &setups(&list), opts());
     let first = crate::ai::choose_target_player(&w, 0).unwrap();
     assert!(first == 1 || first == 2, "a neighbour, not the far base: {first}");
-    // The stronger neighbour is left alone while an equally near one is weaker.
-    let (sx, sy) = w.players[1].start;
-    spawn_tanks(&mut w, 1, (sx, sy + 5), 4);
-    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(2));
-    let (sx, sy) = w.players[2].start;
-    spawn_tanks(&mut w, 2, (sx, sy + 5), 6);
-    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(1));
+    let other = 3 - first;
+    // Strength no longer decides: a much stronger neighbour is no reason to
+    // gang up on the weaker one.
+    let (sx, sy) = w.players[other as usize].start;
+    spawn_tanks(&mut w, other, (sx, sy + 5), 6);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(first));
+    // Another AI already attacks `first`: the other neighbour is the choice.
+    w.ai[3].target_player = Some(first);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(other));
+    // An expansion does not bring a far base nearer: distances count to the yard.
+    let (ax, ay) = w.players[0].start;
+    let pbox = ty(&w, "PBOX");
+    w.spawn_building(pbox, 3, ax + 6, ay + 6);
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(other));
+    // A grudge beats both: `first` hit one of 0's structures.
+    let yard = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].kind == Kind::Building).unwrap();
+    w.with_damage_source(first, |w| w.damage(yard, 10));
+    assert_eq!(crate::ai::choose_target_player(&w, 0), Some(first));
     // Far bases only count once the near ones are gone.
     for i in 0..w.actors.len() {
         if w.actors[i].alive && (w.actors[i].owner == 1 || w.actors[i].owner == 2) {
@@ -920,6 +931,24 @@ fn ai_attacks_the_nearest_enemy_base_and_the_weakest_of_equally_near_ones() {
     }
     run(&mut w, 25);
     assert_eq!(crate::ai::choose_target_player(&w, 0), Some(3));
+}
+
+#[test]
+fn ai_keeps_its_target_until_another_is_clearly_better() {
+    let list = [("england", true, 0), ("russia", false, 0), ("germany", false, 0), ("ukraine", true, 0)];
+    let mut w = World::with_options(7, 96, &setups(&list), opts());
+    let first = crate::ai::update_target_player(&mut w, 0).unwrap();
+    let other = 3 - first;
+    // Retargets keep an equally good target, whatever the tie break says now.
+    w.ai[0].target_player = Some(other);
+    for _ in 0..3 {
+        w.tick += 60 * crate::world::TICKS_PER_SECOND;
+        assert_eq!(crate::ai::update_target_player(&mut w, 0), Some(other));
+    }
+    // Once another AI attacks it too, the free neighbour is clearly better.
+    w.ai[3].target_player = Some(other);
+    w.tick += 60 * crate::world::TICKS_PER_SECOND;
+    assert_eq!(crate::ai::update_target_player(&mut w, 0), Some(first));
 }
 
 #[test]

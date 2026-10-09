@@ -670,6 +670,12 @@ impl World {
             let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
             self.sound.push(SoundEventKind::BuildingDamaged, ty, x, y, owner, 0);
         }
+        // An AI remembers who hits its structures (ai.rs target choice).
+        if self.actors[u].kind == Kind::Building {
+            if let Some(by) = self.observer.source {
+                crate::ai::note_structure_damage(self, self.actors[u].owner, by);
+            }
+        }
         self.take_cover(u, types);
         if self.actors[u].hp <= 0 {
             self.award_kill(u, source);
