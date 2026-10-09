@@ -171,7 +171,7 @@ write migrations so that the previous Worker version still works with them.
 - Site and game without the API: `npm run build`, then
   `python3 -m http.server 8080 --directory dist` and open
   <http://localhost:8080/>. The maps and multiplayer pages show a notice that
-  the API is unavailable.
+  the API is unavailable. There is no play gate there: the game is open.
 - Everything, including the API and Durable Objects: `npm run build`, then
   from `apps/server`:
 
@@ -185,7 +185,11 @@ write migrations so that the previous Worker version still works with them.
   gets `Secure` and the `__Host-` prefix (browsers refuse it over plain HTTP)
   and passkeys are unavailable. Open <http://localhost:8799/> (passkeys need
   `localhost`, not `127.0.0.1`). Local development needs no `IP_HASH_SALT`
-  (plain HTTP to localhost uses a fixed development key).
+  (plain HTTP to localhost uses a fixed development key, also for the play
+  pass). The play gate is on here too: sign up, make the account an admin
+  (`node tools/promote-admin.mjs <username> --local`) or switch
+  "The game needs an account" off in the admin dashboard to load `/play/`.
+  In production the gate needs `IP_HASH_SALT`; without it `/play` answers 503.
 - End-to-end smoke test: start wrangler dev as above with
   `--var WEBRA_DEV_ROUTES:1` added, then `node test/e2e/smoke.mjs
   http://localhost:8799`. The variable enables the test-only
