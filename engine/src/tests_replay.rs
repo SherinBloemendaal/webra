@@ -496,3 +496,38 @@ fn presentation_state_never_changes_the_simulation() {
     }
     assert!(events > 0, "the busy peer did take sound events");
 }
+
+// ---- Online saves ----------------------------------------------------------------------
+
+/// An online save is the frames before its save point (the tick after a hash
+/// tick) and the state hash every player agreed on there. A peer rebuilt
+/// from it (as every client of a resumed game is) reaches that hash and
+/// then plays on in step with a peer that never stopped, frame for frame.
+#[test]
+fn online_save_resumes_in_step_with_the_original() {
+    let (frames, hashes) = record();
+    // Saved after frame 500, a multiple of the protocol's hash interval (25).
+    let save_ticks: u32 = 501;
+    let saved: Vec<Frame> = frames.iter().filter(|(t, _)| *t < save_ticks).cloned().collect();
+    assert!(saved.len() < frames.len(), "orders came after the save point too");
+    let mut original = Game::wrap(replay_world());
+    replay_until(&mut original, &frames, &hashes, save_ticks);
+    let mut resumed = Game::wrap(replay_world());
+    replay_until(&mut resumed, &saved, &hashes, save_ticks);
+    assert_eq!(resumed.world.state_hash(), original.world.state_hash(), "the resumed peer has the saved state");
+    assert_eq!(resumed.state_hash(), format!("{:016x}", hashes[save_ticks as usize]), "the hash players compare at the save point");
+    // After the save point both run the same frames and stay identical.
+    while original.world.tick < REPLAY_TICKS {
+        let t = original.world.tick;
+        if let Some((_, frame)) = frames.iter().find(|(ft, _)| *ft == t) {
+            let json = serde_json::to_string(frame).unwrap();
+            original.apply_frame(&json).unwrap();
+            resumed.apply_frame(&json).unwrap();
+        }
+        original.tick();
+        resumed.tick();
+        let tick = original.world.tick;
+        assert_eq!(resumed.world.state_hash(), original.world.state_hash(), "the resumed game left the original at tick {tick}");
+        assert_eq!(original.world.state_hash(), hashes[tick as usize]);
+    }
+}
