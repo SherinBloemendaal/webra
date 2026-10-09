@@ -64,7 +64,7 @@ test('registry: lenient normalization clamps, trims and falls back; strict check
   assert.equal(normalizeValue(speed, '2'), 1, 'text is not a number');
   assert.match(checkValue(speed, 9), /between 0 and 3/);
   assert.equal(normalizeValue(specOf('lobby', 'color'), 2.6), 3, 'integers round');
-  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'off');
+  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'damaged');
   // Lobby names follow the protocol's text rules (spaces collapsed, no control characters).
   const name = specOf('lobby', 'name');
   assert.equal(normalizeValue(name, '  Tanya   Adams '), 'Tanya Adams');

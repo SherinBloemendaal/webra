@@ -43,7 +43,7 @@ test('account states and sign-in methods follow the account and the site', () =>
   assert.equal(onlineRefusal('ip_banned').signIn, false);
   assert.equal(onlineRefusal('kicked'), null);
   assert.equal(settingLabel('audio', 'master'), 'Sound: Master volume');
-  assert.equal(valueText('game', 'healthBars', 'all'), 'All units');
+  assert.equal(valueText('game', 'healthBars', 'all'), 'All units and buildings');
   assert.equal(valueText('audio', 'enabled', false), 'off');
 });
 
@@ -117,7 +117,7 @@ test('the one-click content install follows the account; the conflict dialog nam
   const choice = askConflict({ conflicts: [{ group: 'game', key: 'healthBars', local: 'all', remote: 'off' }] });
   await settle();
   const dialog = doc.body.querySelector('[role="dialog"]');
-  assert.match(textOf(dialog), /Game: Health bars here: All units; account: Selected and hovered only/);
+  assert.match(textOf(dialog), /Game: Health bars here: All units and buildings; account: Selected and hovered only/);
   click(byText(dialog, 'button', /Keep this device/));
   assert.equal(await choice, 'local');
   const closed = askConflict({ conflicts: [] });

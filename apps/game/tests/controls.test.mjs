@@ -53,14 +53,14 @@ test('settings: defaults, clamping, persistence and wrong types', () => {
 test('settings: choices keep one of their options (health bars)', () => {
   const storage = memoryStorage();
   const s = createSettings(storage);
-  assert.equal(s.get('healthBars'), 'off');
+  assert.equal(s.get('healthBars'), 'damaged', 'damaged units and buildings show a bar by default');
   assert.deepEqual(SCHEMA.healthBars.options, ['off', 'damaged', 'all']);
-  assert.equal(s.set('healthBars', 'damaged'), 'damaged');
-  assert.equal(createSettings(storage).get('healthBars'), 'damaged', 'persisted');
-  assert.equal(s.set('healthBars', 'sometimes'), 'off', 'unknown option: default');
-  assert.equal(s.set('healthBars', 2), 'off', 'not an option: default');
+  assert.equal(s.set('healthBars', 'off'), 'off');
+  assert.equal(createSettings(storage).get('healthBars'), 'off', 'persisted');
+  assert.equal(s.set('healthBars', 'sometimes'), 'damaged', 'unknown option: default');
+  assert.equal(s.set('healthBars', 2), 'damaged', 'not an option: default');
   assert.equal(s.set('healthBars', 'all'), 'all');
-  assert.equal(s.reset('healthBars'), 'off');
+  assert.equal(s.reset('healthBars'), 'damaged');
 });
 
 test('settings: corrupt or throwing storage falls back to defaults and keeps working', () => {
