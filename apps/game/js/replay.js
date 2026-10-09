@@ -135,6 +135,17 @@ export class Recorder {
   encode(kind, ticks, finalHash = null) {
     return encodeReplay(this.build(kind, ticks, finalHash));
   }
+
+  /**
+   * An online save after `ticks` ticks (the agreed save point) with the
+   * state hash every player reported there and the server's record `id`
+   * (docs/contracts.md section 4, "Online saves").
+   */
+  encodeOnlineSave(ticks, hash, id) {
+    if (this.start.mode !== 'online') throw new Error('Only online games are saved online.');
+    if (this.full) throw new Error('This game is too long to save.');
+    return encodeReplay({ ...this.build('save', ticks, hash), online: { id } });
+  }
 }
 
 /**

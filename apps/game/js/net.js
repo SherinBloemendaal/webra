@@ -96,6 +96,9 @@ export const api = {
    */
   sessionMap: async (sessionId, member, hash) =>
     (await request(`${sessionMapPath(sessionId)}?hash=${encodeURIComponent(hash)}`, { headers: memberHeader(member), cache: 'no-store' })).text,
+  /** Host: continue a saved online game in this session (the save file's text). */
+  resumeSession: async (sessionId, member, saveText) =>
+    (await postJson(`/api/sessions/${encodeURIComponent(sessionId)}/resume`, saveText, true, memberHeader(member))).body,
   /** Host: share a map file with this session only. @returns {Promise<{id: string, hash: string}>} */
   shareSessionMap: async (sessionId, member, json) => (await postJson(sessionMapPath(sessionId), json, true, memberHeader(member))).body,
 };

@@ -18,6 +18,13 @@
 // pins its hash and keeps it in the library; Decline leaves the player
 // unready, and the host sees who lacks the map.
 //
+// Online saves: any player proposes saving; once every player accepted and
+// reported the same state hash at the save point, every player's browser
+// keeps the save file (js/saves.js). "Resume a saved game" creates a session,
+// uploads the file (the server checks it against its record) and the lobby
+// waits for the game's players, matched by account; the game then continues
+// after the save point with every client fast-forwarded to it.
+//
 // Rematch: after (or during) a game the host proposes playing again with
 // the same settings; every player accepts in the game overlay or the end of
 // game dialog. The session goes back to its lobby and this page reloads,
@@ -64,6 +71,8 @@ import { presetOptions } from './modes.js';
 import { hotkeys } from './hotkeys.js';
 import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from './chatkeys.js';
 import { mapLibrary } from './maplibrary.js';
+import { formatTicks } from './replay.js';
+import { SaveStore } from './saves.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
@@ -384,6 +393,11 @@ export class OnlineUI {
     /** The rematch proposal of the running game (`rematch` messages) or null, and who listens. */
     this.rematch = null;
     this.rematchSubs = new Set();
+    /** Saving the running game (`save` messages) or null, and who listens. */
+    this.saving = null;
+    this.saveSubs = new Set();
+    /** Saved games in this browser (online saves are stored here too). */
+    this.saves = ctx.saves ?? SaveStore.browser();
     this.refreshTimer = 0;
     this.inGame = false;
     this.root.classList.add('online');
@@ -452,6 +466,7 @@ export class OnlineUI {
     tools.append(
       nameField,
       button('Host game', 'online-btn-primary', () => this.hostDialog()),
+      button('Resume a saved game', null, () => this.resumeDialog()),
       button('Refresh', null, () => this.refresh()),
     );
     const joinRow = el('div', 'online-tools');
@@ -569,22 +584,29 @@ export class OnlineUI {
     this.listStatus.textContent = sessions.length ? '' : 'No open public sessions. Host one!';
   }
 
-  async hostDialog() {
+  /**
+   * The host dialog; creates the session and joins it. `resume`: the text
+   * and parsed replay of an online save to continue in it.
+   */
+  async hostDialog(resume = null) {
     const name = this.playerName();
     if (!name) return;
-    const input = await modal('Host a game', (body, close) => {
+    const saved = resume?.replay ?? null;
+    const input = await modal(saved ? 'Resume a saved game' : 'Host a game', (body, close) => {
+      if (saved) body.append(el('p', 'online-muted', `${saved.title}: ${formatTicks(saved.ticks)} played. Its players come back by their accounts.`));
       const title = el('input', 'online-input');
       title.maxLength = SESSION_NAME_MAX;
-      title.value = `${name}'s game`;
-      const pub = switchInput({ checked: true });
+      title.value = saved ? saved.title.slice(0, SESSION_NAME_MAX) : `${name}'s game`;
+      const pub = switchInput({ checked: !saved });
       const pass = el('input', 'online-input');
       pass.type = 'password';
       pass.maxLength = PASSWORD_MAX;
       pass.autocomplete = 'new-password';
       pass.placeholder = 'Optional';
+      const need = saved ? Math.max(MIN_PLAYERS, saved.options.players.length) : MIN_PLAYERS;
       const max = select(
-        Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => [i + MIN_PLAYERS, String(i + MIN_PLAYERS)]),
-        4,
+        Array.from({ length: MAX_PLAYERS - need + 1 }, (_, i) => [i + need, String(i + need)]),
+        saved ? need : 4,
       );
       const pubRow = el('label', 'online-toggle');
       pubRow.append(pub, el('span', null, 'List in the server browser'));
@@ -601,8 +623,54 @@ export class OnlineUI {
       if (input.password) body.password = input.password;
       const { id, hostKey } = await api.createSession(body);
       await this.connect(id, { name, hostKey });
+      if (resume) await this.loadResume(resume.text);
     } catch (err) {
       this.showProblem(err);
+    }
+  }
+
+  /** Online saves in this browser; pick one to continue it in a new session. */
+  async resumeDialog() {
+    let saves = [];
+    try {
+      saves = (await this.saves.list()).filter((x) => x.mode === 'online');
+    } catch (err) {
+      return this.setError(`Saved games are unavailable: ${messageOf(err)}`);
+    }
+    const chosen = await modal('Resume a saved game', (body, close) => {
+      if (!saves.length) body.append(el('p', 'online-muted', 'No saved online games in this browser. Save one from the game menu during an online game.'));
+      const list = el('div', 'online-sessions');
+      for (const x of saves) {
+        const row = el('div', 'online-row');
+        const info = el('div', 'online-cell online-cell-name');
+        info.append(el('span', null, x.title), el('span', 'online-muted', ` ${formatTicks(x.ticks)} played, saved ${new Date(x.createdAt).toLocaleString()}`));
+        const go = button('Resume', 'online-btn-primary', () => close(x));
+        go.disabled = x.engine !== this.ctx.version;
+        if (go.disabled) go.title = `Made with WebRA ${x.engine}`;
+        row.append(info, go);
+        list.append(row);
+      }
+      const actions = el('div', 'online-dialog-actions');
+      actions.append(button('Cancel', null, () => close(null)));
+      body.append(list, actions);
+    });
+    if (!chosen) return undefined;
+    try {
+      const textValue = await this.saves.text(chosen.id);
+      const r = await this.saves.load(chosen.id, this.ctx.version);
+      if (!r.ok || !textValue) throw new Error(r.error ?? 'This save no longer exists.');
+      return this.hostDialog({ text: textValue, replay: r.replay });
+    } catch (err) {
+      return this.setError(messageOf(err));
+    }
+  }
+
+  /** Host: load the saved game into this lobby (the server checks it against its record). */
+  async loadResume(textValue) {
+    try {
+      await api.resumeSession(this.state.session.id, this.member, textValue);
+    } catch (err) {
+      this.setError(`Could not resume the saved game: ${messageOf(err)}`);
     }
   }
 
@@ -654,6 +722,7 @@ export class OnlineUI {
       .on('sync', (m) => this.net('sync', m))
       .on('desync', (d) => this.inGame && this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true))
       .on('rematch', (m) => this.onRematch(m))
+      .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
     const welcome = await conn.open({ version: this.ctx.version, ...hello });
     clearInterval(this.refreshTimer);
@@ -868,7 +937,10 @@ export class OnlineUI {
     this.barStatus = el('span', 'online-muted');
     bar.append(this.barStatus, this.readyBtn, this.startBtn);
 
-    page.append(head, this.banner, body, bar);
+    this.resumeBox = el('section', 'online-panel online-resume');
+    this.resumeBox.setAttribute('role', 'status');
+    this.resumeBox.hidden = true;
+    page.append(head, this.banner, this.resumeBox, body, bar);
     this.root.append(page);
   }
 
@@ -895,6 +967,7 @@ export class OnlineUI {
       hostId: m.hostId,
       spectators: m.spectators,
       maxSpectators: m.maxSpectators,
+      resume: m.resume ?? null,
       lobbySeen: true,
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
@@ -916,7 +989,8 @@ export class OnlineUI {
     this.renderSpectators();
     this.readyBtn.hidden = this.isHost || !me;
     this.startBtn.hidden = !this.isHost;
-    this.readyBtn.textContent = me && me.ready ? 'Not ready' : 'Ready';
+    this.readyBtn.textContent = me && me.ready ? 'Not ready' : this.state.resume ? 'Ready to continue' : 'Ready';
+    this.renderResume();
     this.readyBtn.disabled = !mapReady && !(me && me.ready);
     const waiting = this.state.slots.filter((s) => s.type === 'human' && s.client !== this.state.hostId && !s.ready).length;
     // Who still lacks the lobby's map (players and spectators; the server checks this too).
@@ -931,6 +1005,18 @@ export class OnlineUI {
           : this.isHost
             ? 'Everyone is ready.'
             : 'Waiting for the host to start.';
+  }
+
+  /** The saved game this lobby resumes, and whose players it still waits for. */
+  renderResume() {
+    const box = this.resumeBox;
+    if (!box) return;
+    const r = this.state.resume;
+    box.hidden = !r;
+    box.textContent = '';
+    if (!r) return;
+    box.append(el('strong', null, `Resuming "${r.title}"`), el('span', null, ` saved ${new Date(r.createdAt).toLocaleString()}, after ${formatTicks(r.ticks)}. The saved settings stay; getting ready means continuing this game.`));
+    if (r.waiting.length) box.append(el('p', 'online-warning', `Waiting for its players: ${r.waiting.join(', ')}.`));
   }
 
   /** Names of the members (players and spectators) without the lobby's map installed. */
@@ -1003,7 +1089,8 @@ export class OnlineUI {
       row.setAttribute('role', 'row');
       const who = el('div', 'online-cell online-cell-player');
       who.append(el('span', 'online-badge', `P${i + 1}`));
-      const editable = (slot.type === 'human' && i === mine) || (slot.type === 'ai' && host);
+      // A resumed save keeps its saved slots.
+      const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
       if (slot.type === 'human' || slot.type === 'ai') {
         row.style.setProperty('--slot-color', rgbCss(this.ctx.colors[slot.color] || [1, 1, 1]));
         if (slot.type === 'human') {
@@ -1059,7 +1146,7 @@ export class OnlineUI {
         const badge = this.mapBadge(slot);
         if (badge) action.append(badge);
       }
-      if (host && i !== mine) {
+      if (host && i !== mine && !this.state.resume) {
         const current = slot.type === 'human' ? 'human' : slot.type;
         const choices = [['open', 'Open'], ['closed', 'Closed'], ['ai', 'Computer']];
         if (slot.type === 'human') choices.unshift(['human', 'Player (kick)']);
@@ -1070,7 +1157,7 @@ export class OnlineUI {
         describedBy(type, this.columnTips.playerOnline);
         action.append(type);
       }
-      if (slot.type === 'open') action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
+      if (slot.type === 'open' && !this.state.resume) action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
       row.append(action);
       box.append(row);
     });
@@ -1134,7 +1221,8 @@ export class OnlineUI {
   renderOptions() {
     const o = this.state.options;
     if (!o || !this.optionControls) return;
-    const host = this.isHost;
+    // A resumed save keeps its options.
+    const host = this.isHost && !this.state.resume;
     for (const [key] of [...WORLD_OPTIONS, ...SELECT_OPTIONS]) {
       this.optionControls[key].value = String(o[key]);
       this.optionControls[key].disabled = !host;
@@ -1180,7 +1268,7 @@ export class OnlineUI {
     const offer = this.renderMapOffer();
     if (offer) box.append(offer);
     box.append(el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text));
-    if (!this.isHost) return;
+    if (!this.isHost || st.resume) return;
 
     // Host controls: a generated map, a community map or one of the host's own maps.
     const source = el('select', 'online-select');
@@ -1508,7 +1596,9 @@ export class OnlineUI {
       return;
     }
     // Joining a running game (rejoin, late spectator): the order log follows.
-    const catchUp = st.rejoin || !st.lobbySeen;
+    // A resumed save starts like a rejoin: every client fast-forwards through the saved orders.
+    const catchUp = st.rejoin || !st.lobbySeen || !!m.resume;
+    let resumeFailed = false;
     this.pendingNet ??= [];
     const conn = this.conn;
     let mapText = null;
@@ -1545,13 +1635,16 @@ export class OnlineUI {
         conn,
         onCaughtUp: () => {
           // Players take their seat back; spectators confirm (the server counts them as catching up until then).
-          if (!spectator) this.send({ t: 'resume' });
+          if (!spectator && resumeFailed) {
+            this.gameLine('Your game differs from the saved one, so it cannot continue here. Leave and rejoin to try again.', true);
+          } else if (!spectator) this.send({ t: 'resume' });
           else {
             this.send({ t: 'synced' });
             this.gameLine('Caught up: watching live.');
           }
         },
         onCheck: (ok, tick) => {
+          if (!ok && m.resume) resumeFailed = true;
           if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
         },
       });
@@ -1569,6 +1662,8 @@ export class OnlineUI {
     }
     const { host, game, driver, recorder } = session;
     this.driver = driver;
+    this.recorder = recorder;
+    this.mySeat = me ? me.player : null;
     // Messages that arrived while the game was being set up.
     const pending = this.pendingNet;
     this.pendingNet = null;
@@ -1589,7 +1684,115 @@ export class OnlineUI {
         driver.stop();
       },
       rematch: this.rematchHandle(),
+      save: this.saveHandle(),
     });
+    if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
+  }
+
+  // ---- Online saves --------------------------------------------------------------------
+
+  /**
+   * What this client can do about saving now: 'propose', 'accept' (a
+   * proposal waits for this player), 'waiting' (it accepted; others not
+   * yet), 'saving' (agreed, at the save point soon) or null (spectators).
+   */
+  saveAction() {
+    if (!this.inGame || this.mySeat === null || this.mySeat === undefined || this.returning) return null;
+    const sv = this.saving;
+    if (!sv) return 'propose';
+    if (sv.state === 'agreed') return 'saving';
+    if (sv.waiting.includes(this.state.you)) return 'accept';
+    return 'waiting';
+  }
+
+  /** The handle main.js uses for the game menu's Save game. */
+  saveHandle() {
+    const ui = this;
+    return {
+      action: () => ui.saveAction(),
+      run: () => ui.answerSave(true),
+      decline: () => ui.answerSave(false),
+      subscribe: (fn) => {
+        ui.saveSubs.add(fn);
+        return () => ui.saveSubs.delete(fn);
+      },
+    };
+  }
+
+  /** Propose or accept saving (`true`), decline or withdraw it (`false`). */
+  answerSave(accept) {
+    const action = this.saveAction();
+    if (accept && action !== 'propose' && action !== 'accept') return false;
+    if (!accept && (!this.saving || this.saving.state !== 'open')) return false;
+    this.send({ t: 'save', accept });
+    return true;
+  }
+
+  /** A `save` message: a proposal, the agreed save point, the record, or why it ended. */
+  async onSave(m) {
+    if (!this.inGame) return;
+    if (m.state === 'open') {
+      if (!this.saving) this.gameLine(`${m.by === this.state.you ? 'You want' : `${this.clientName(m.by)} wants`} to save the game.`, true);
+      this.saving = m;
+    } else if (m.state === 'agreed') {
+      this.saving = m;
+      this.gameLine(`Everyone agreed: saving the game at ${formatTicks(m.tick + 1)}.`, true);
+    } else if (m.state === 'cancelled') {
+      this.saving = null;
+      const why = {
+        declined: 'a player declined',
+        withdrawn: 'it was withdrawn',
+        left: 'a player left',
+        expired: 'not everyone answered in time',
+        desync: 'the players\' games differ',
+        accounts: 'every player must be signed in',
+        too_long: 'the game is too long',
+        failed: 'the server could not store it',
+      }[m.reason] ?? m.reason;
+      this.gameLine(`Not saved: ${why}.`, true);
+    } else if (m.state === 'saved') {
+      this.saving = null;
+      await this.storeOnlineSave(m);
+    }
+    this.renderSaveBar();
+    for (const fn of this.saveSubs) fn();
+  }
+
+  /** Keep the save file in this browser (players only: spectators cannot resume). */
+  async storeOnlineSave(m) {
+    if (this.mySeat === null || this.mySeat === undefined || !this.recorder) {
+      this.gameLine('The players saved the game.', true);
+      return;
+    }
+    try {
+      const textValue = await this.recorder.encodeOnlineSave(m.ticks, m.hash, m.id);
+      await this.saves.add(textValue);
+      this.gameLine('Game saved. Continue it later with its players: Play online, Resume a saved game.', true);
+    } catch (err) {
+      this.gameLine(`The game was saved on the server, but this browser could not keep the file: ${messageOf(err)}`, true);
+    }
+  }
+
+  /** The save line of the in-game overlay: the proposal with Accept and Decline, or whom it waits for. */
+  renderSaveBar() {
+    const bar = this.saveBar;
+    if (!bar) return;
+    bar.textContent = '';
+    const sv = this.saving;
+    bar.hidden = !sv;
+    if (!sv) return;
+    if (sv.state === 'agreed') {
+      bar.append(el('span', null, 'Saving the game...'));
+      return;
+    }
+    bar.append(el('span', null, `${sv.by === this.state.you ? 'You want' : `${this.clientName(sv.by)} wants`} to save the game.`));
+    const action = this.saveAction();
+    if (action === 'accept') {
+      bar.append(button('Accept', 'online-btn-primary', () => this.answerSave(true)), button('Decline', null, () => this.answerSave(false)));
+    } else if (sv.waiting.length) {
+      bar.append(el('span', 'online-muted', ` Waiting for ${sv.waiting.map((c) => this.clientName(c)).join(', ')}.`));
+    }
+    if (sv.by === this.state.you) bar.append(button('Withdraw', null, () => this.answerSave(false)));
   }
 
   // ---- Rematch ------------------------------------------------------------------------
@@ -1792,7 +1995,10 @@ export class OnlineUI {
     this.rematchBar = el('div', 'online-game-rematch');
     this.rematchBar.setAttribute('role', 'status');
     this.rematchBar.hidden = true;
-    box.append(this.gameLog, this.waitLine, this.rematchBar, chatInput);
+    this.saveBar = el('div', 'online-game-rematch online-game-save');
+    this.saveBar.setAttribute('role', 'status');
+    this.saveBar.hidden = true;
+    box.append(this.gameLog, this.waitLine, this.rematchBar, this.saveBar, chatInput);
     field2.append(box);
     const list = names.join(', ');
     this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);

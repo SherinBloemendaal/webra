@@ -447,14 +447,14 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null }) => {
           entry.hidden = true;
           applyColors(options.players);
           start(host, {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator, rematch },
+            online: { driver, onQuit, spectator, rematch, save },
             recorder,
             viewer: spectator ? viewerPlayers(options.players) : null,
             roster: viewerPlayers(options.players),
@@ -626,6 +626,8 @@ async function acceptMap(replay) {
 /** Continue a saved skirmish: re-simulate it, check its state hash, play on. */
 async function loadSave(replay, lobby) {
   if (!renderer || !records) return;
+  // An online save continues only online, with its players (js/online.js).
+  if (replay.mode === 'online') return lobby.showError('This is a saved online game: resume it with its players from Play online.');
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
   try {
@@ -1061,7 +1063,27 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
-  const recordActions = records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress }) : [];
+  // Online: Save game asks every player (js/online.js); the file is kept once they all agree.
+  const onlineSave = online && !online.spectator ? (online.save ?? null) : null;
+  const onlineSaveAction = onlineSave
+    ? [
+        {
+          id: 'onlinesave',
+          label: 'Save game',
+          run: async () => {
+            const action = onlineSave.action();
+            if (action === 'propose' || action === 'accept') {
+              onlineSave.run();
+              return action === 'accept' ? 'You agreed to save the game.' : 'Every player must agree to save the game; it goes on meanwhile.';
+            }
+            if (action === 'waiting') return 'Waiting for the other players to agree.';
+            if (action === 'saving') return 'The game is being saved.';
+            return 'This game cannot be saved now.';
+          },
+        },
+      ]
+    : [];
+  const recordActions = [...onlineSaveAction, ...(records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress }) : [])];
   const fullscreen = {
     available: () => fullscreenAvailable(),
     active: () => isFullscreen(),

@@ -148,6 +148,15 @@ async function mountLobby({ host, maps = [] }) {
   return { root, ui, sent, lobby, requests, responses, library, known };
 }
 
+/** Wait (in real time, the hashing runs on a thread pool) until `cond()` holds. */
+async function until(cond, ms = 5000) {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 const ref = (i, extra = {}) => ({ id: '0123456789abcdef', hash: i.hash, name: i.map.name, modded: false, players: 2, author: i.map.author, width: W, height: W, bytes: i.canonical.length, shared: true, ...extra });
 
 test('online lobby: a player without the map is asked; Decline reports it, Install downloads, checks, keeps and reports it', async () => {
@@ -169,7 +178,7 @@ test('online lobby: a player without the map is asked; Decline reports it, Insta
     // Install: from this session, with this member's key, pinned by hash.
     responses.push({ status: 200, body: shared.canonical });
     click(buttons()[0]);
-    await settle(10);
+    await until(() => sent.at(-1).state === 'installed');
     const req = requests.at(-1);
     assert.equal(req.url, `/api/sessions/${SID}/map?hash=${shared.hash}`);
     assert.equal(req.init.headers[MEMBER_HEADER], `2.${KEY}`);
@@ -182,8 +191,7 @@ test('online lobby: a player without the map is asked; Decline reports it, Insta
     ui.installed.clear();
     lobby(null);
     lobby(ref(shared));
-    await settle(10);
-    assert.equal(ui.installed.has(shared.hash), true);
+    await until(() => ui.installed.has(shared.hash));
     assert.equal(root.querySelector('.online-map-offer'), null, 'not asked again');
   } finally {
     uninstallDom();
@@ -202,15 +210,14 @@ test('online lobby: a download with another hash is refused; names and authors a
     assert.equal(root.querySelectorAll('b').length, 0);
     responses.push({ status: 200, body: other.canonical });
     click(root.querySelectorAll('.online-map-offer button')[0]);
-    await settle(10);
+    await until(() => /hash mismatch/.test(ui.mapStatus.text));
     assert.equal(ui.installed.size, 0);
     assert.match(ui.mapStatus.text, /hash mismatch/);
     assert.ok(!sent.some((m) => m.t === 'mapstate' && m.state === 'installed'));
     // A server error is shown, nothing installed.
     responses.push({ status: 403, body: JSON.stringify({ error: { code: 'forbidden', message: 'You are not a member of this session.' } }) });
     click(root.querySelectorAll('.online-map-offer button')[0]);
-    await settle(10);
-    assert.match(ui.mapStatus.text, /not a member/);
+    await until(() => /not a member/.test(ui.mapStatus.text));
   } finally {
     uninstallDom();
   }
@@ -231,7 +238,7 @@ test('online lobby: the host shares a map from its library and sees who lacks it
     responses.push({ status: 201, body: JSON.stringify({ id: '0123456789abcdef', hash: mine.hash }) });
     picker.value = `mine:${mine.hash}`;
     picker.dispatchEvent(new FakeEvent('change'));
-    await settle(10);
+    await until(() => ui.installed.has(mine.hash));
     const post = requests.at(-1);
     assert.equal(post.url, `/api/sessions/${SID}/map`);
     assert.equal(post.init.method, 'POST');
@@ -384,4 +391,99 @@ test("spectators hear no player's private sounds (placement, deploy, sell, annou
   const owner = run(0);
   assert.ok(owner.effects > 0 && owner.announced.length > 0, "the owner hears its own (player 0's)");
   assert.deepEqual(run(NO_PLAYER), { effects: 0, announced: [] }, 'a spectator hears none of them');
+});
+
+// ---- Online saves -------------------------------------------------------------------------------------
+
+const SAVE_OPTIONS = {
+  ...DEFAULT_OPTIONS,
+  seed: 4,
+  players: [
+    { slot: 0, type: 'human', name: 'Host', faction: 'germany', color: 0, team: 0 },
+    { slot: 1, type: 'human', name: 'Guest', faction: 'russia', color: 1, team: 0 },
+  ],
+};
+
+async function onlineRecorder() {
+  const { Recorder } = await import('../js/replay.js');
+  const rec = new Recorder({ mode: 'online', options: SAVE_OPTIONS, map: null, mapHash: null, player: 1, engine: '1.0.0', title: 'Friday' });
+  rec.record(3, [[1, [{ o: 'stop', player: 1, ids: [7] }]]]);
+  rec.record(30, [[0, [{ o: 'stop', player: 0, ids: [8] }]]]);
+  return rec;
+}
+
+test('an online save file: the frames before the save point, its hash and the record id', async () => {
+  const { parseReplay } = await import('../protocol/index.js');
+  const rec = await onlineRecorder();
+  const r = await parseReplay(rec.encodeOnlineSave(26, 'abcd', '0123456789abcdef'));
+  assert.ok(r.ok, r.error);
+  assert.deepEqual([r.replay.kind, r.replay.mode, r.replay.ticks, r.replay.player], ['save', 'online', 26, 1]);
+  assert.deepEqual(r.replay.frames.map(([t]) => t), [3], 'only orders before the save point');
+  assert.deepEqual(r.replay.hashes.at(-1), [26, 'abcd']);
+  assert.deepEqual(r.replay.online, { id: '0123456789abcdef' });
+  const { Recorder } = await import('../js/replay.js');
+  const skirmish = new Recorder({ mode: 'skirmish', options: SAVE_OPTIONS, map: null, mapHash: null, player: 0, engine: '1.0.0', title: 'x' });
+  assert.throws(() => skirmish.encodeOnlineSave(26, 'ab', '0123456789abcdef'), /online/);
+});
+
+test('saving online: a player accepts in the overlay; the saved file is kept in this browser only for players', async () => {
+  const { SaveStore, MemoryBackend } = await import('../js/saves.js');
+  const { ui, sent } = await inGame({ host: false });
+  try {
+    const rec = await onlineRecorder();
+    ui.saves = new SaveStore(new MemoryBackend());
+    ui.saveSubs = new Set();
+    ui.saveBar = document.createElement('div');
+    ui.mySeat = 1;
+    ui.recorder = { encodeOnlineSave: async (ticks, hash, id) => rec.encodeOnlineSave(ticks, hash, id) };
+    const handle = ui.saveHandle();
+    assert.equal(handle.action(), 'propose');
+    await ui.onSave({ t: 'save', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 50000 });
+    assert.equal(handle.action(), 'accept');
+    assert.match(textOf(ui.saveBar), /Host wants to save the game/);
+    click(ui.saveBar.querySelectorAll('button').find((b) => b.textContent === 'Accept'));
+    assert.deepEqual(sent.at(-1), { t: 'save', accept: true });
+    await ui.onSave({ t: 'save', state: 'agreed', tick: 25 });
+    assert.equal(handle.action(), 'saving');
+    assert.equal(handle.run(), false, 'nothing to send while saving');
+    await ui.onSave({ t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 26, hash: 'abcd' });
+    const rows = await ui.saves.list();
+    assert.deepEqual(rows.map((x) => [x.mode, x.online, x.ticks]), [['online', '0123456789abcdef', 26]]);
+    assert.match(textOf(ui.gameLog), /Game saved/);
+    // A spectator keeps nothing (it cannot resume a game it did not play).
+    ui.mySeat = null;
+    await ui.onSave({ t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 26, hash: 'abcd' });
+    assert.equal((await ui.saves.list()).length, 1);
+    await ui.onSave({ t: 'save', state: 'cancelled', reason: 'desync' });
+    assert.match(textOf(ui.gameLog), /games differ/);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('a lobby that resumes a save shows it and keeps the saved settings', async () => {
+  const { root, ui } = await mountLobby({ host: true });
+  try {
+    ui.onLobby({
+      slots: [
+        { type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false },
+        { type: 'open' },
+      ],
+      options: { ...DEFAULT_OPTIONS },
+      map: null,
+      hostId: 1,
+      spectators: [],
+      maxSpectators: 2,
+      resume: { id: '0123456789abcdef', title: 'Friday <i>night</i>', createdAt: 0, ticks: 1501, waiting: ['Guest'] },
+    });
+    assert.match(textOf(ui.resumeBox), /Resuming "Friday <i>night<\/i>"/);
+    assert.match(textOf(ui.resumeBox), /Waiting for its players: Guest/);
+    assert.equal(root.querySelectorAll('i').length, 0);
+    assert.equal(ui.resumeBox.hidden, false);
+    for (const c of root.querySelectorAll('.online-options select')) assert.equal(c.disabled, true, 'options stay as saved');
+    assert.equal(root.querySelectorAll('.online-slots button').some((b) => b.textContent === 'Take'), false);
+    assert.equal(root.querySelector('.online-map select'), null, 'no map picker');
+  } finally {
+    uninstallDom();
+  }
 });
