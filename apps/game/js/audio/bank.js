@@ -78,6 +78,39 @@ export class SoundBank {
   }
 
   /**
+   * Everything to play at once for `sound`: a list of { buffer, rate, original }.
+   * A `layered` sound (OpenRA plays every entry, e.g. BuildSounds placbldg and
+   * build5) plays each of its originals that a texture pack or the installed
+   * files have, together; with none of them it falls back to the sound
+   * event's pack sound or our synthesized one, like `resolve`. Any other
+   * sound gives at most one, from `resolve`.
+   */
+  resolveAll(sound, random = Math.random) {
+    if (!sound.layered) {
+      const one = this.resolve(sound, random);
+      return one ? [one] : [];
+    }
+    // Same order as `resolve`: texture packs (the original names, then the
+    // sound event), installed originals, ours. A pack that replaces one part
+    // keeps the installed files of the other parts.
+    const names = sound.originals ?? [];
+    const packed = names.map((n) => this.packBuffer(n));
+    const installed = new Set(this.installed(sound));
+    const original = (n) => (installed.has(n) ? this.originalBuffer(n) : null);
+    if (packed.some(Boolean)) {
+      return names
+        .map((n, i) => (packed[i] ? { buffer: packed[i], rate: 1, original: false, pack: true } : { buffer: original(n), rate: 1, original: true }))
+        .filter((r) => r.buffer);
+    }
+    const own = this.packBuffer(sound.synth);
+    if (own) return [{ buffer: own, rate: 1, original: false, pack: true }];
+    const layers = names.map(original).filter(Boolean).map((buffer) => ({ buffer, rate: 1, original: true }));
+    if (layers.length) return layers;
+    const one = this.resolve({ synth: sound.synth, originals: [] }, random);
+    return one ? [one] : [];
+  }
+
+  /**
    * Something to play for `sound`: { buffer, rate, original } or null.
    * `random` picks among candidates and variants (Math.random by default).
    */

@@ -709,7 +709,7 @@ Serialized size at most 32 KiB.
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
-    "speech": true, "original": true,
+    "speech": true, "original": true, "cashTicks": true,
     "musicOn": true, "musicShuffle": true,
     "musicRepeat": "all"           // "all" | "one" | "off" (MUSIC_REPEAT_MODES)
   },

@@ -4,16 +4,18 @@
 // control follows the settings, also when they change elsewhere (the other
 // place, another tab, the account). Installing the original Red Alert content
 // (sounds, music and graphics in one flow) lives in the Original content
-// dialog (js/content/panel.js), which `opts.onContent` opens.
+// dialog (js/content/panel.js), which `opts.onContent` opens; the music
+// player (js/audio/musicplayer.js) is `opts.onMusicPlayer`.
 
 import { installedSummary } from './install.js';
+import { MUSIC_SOURCE_HINT } from './catalog.js';
 import { DEFAULT_PREFS } from './prefs.js';
 import { GROUPS } from '../registry.js';
 import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
 import { labelWithHelp } from '../infotip.js';
 
 /** Controls that get a "?" with `help: true` (texts: js/help.js `audio.<key>`). */
-export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle', 'musicRepeat']);
+export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'musicOn', 'musicShuffle', 'musicRepeat']);
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -58,21 +60,21 @@ function summaryText(s) {
 export function musicText(audio) {
   const p = audio.prefs.get();
   const box = audio.jukebox;
-  if (!box.available) return 'No music installed. Music comes from your own copy of Red Alert (Original content) or a texture pack with music.';
+  if (!box.available) return `No music installed. Music comes from your own copy of Red Alert (Original content) or a texture pack with music. ${MUSIC_SOURCE_HINT}`;
   const count = plural(box.tracks.length, 'track', 'tracks');
   if (box.playing) return `Now playing: ${box.playing}`;
   if (!p.enabled) return `${count} installed. Sound is off.`;
   if (!p.musicOn || p.music <= 0) return `${count} installed. Music is off.`;
   if (box.finished) return `${count} installed. The playlist has ended: Next track plays it again.`;
-  return `${count} installed; music plays during games.`;
+  return `${count} installed; music plays during games and from the music player.`;
 }
 
 /**
  * Build the sound settings into `root`.
  * @param {HTMLElement} root
  * @param {import('./index.js').AudioSystem} audio
- * @param {{ onContent?(): void, idPrefix?: string, heading?: number, help?: boolean }} [opts]
- *   onContent opens the Original content dialog; idPrefix keeps element ids
+ * @param {{ onContent?(): void, onMusicPlayer?(): void, idPrefix?: string, heading?: number, help?: boolean }} [opts]
+ *   onContent opens the Original content dialog; onMusicPlayer the music player; idPrefix keeps element ids
  *   unique when the settings are on the page twice; heading is the level of
  *   the section titles (2 in the Sound dialog, 3 under the Settings page's Audio);
  *   help adds the "?" help of AUDIO_HELP_KEYS (the game menu).
@@ -127,6 +129,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
       : 'This browser has no speech synthesis: you hear radio blips and announcer chimes instead.',
   });
   const original = check('original', 'Use installed original sounds');
+  const cashTicks = check('cashTicks', 'Cash ticks');
 
   const testFx = el('button', { type: 'button', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
@@ -148,6 +151,9 @@ export function mountAudioSettings(root, audio, opts = {}) {
   const nowPlaying = el('p', { class: 'audio-note audio-now', role: 'status', 'aria-live': 'polite' });
   const nextTrack = el('button', { type: 'button', text: 'Next track' });
   nextTrack.addEventListener('click', () => audio.nextTrack());
+  const musicPlayer = el('button', { type: 'button', text: 'Music player...' });
+  musicPlayer.hidden = !opts.onMusicPlayer;
+  musicPlayer.addEventListener('click', () => opts.onMusicPlayer?.());
   const musicContent = el('button', { type: 'button', text: 'Original content...' });
   musicContent.addEventListener('click', () => opts.onContent?.());
   const musicControls = el('div', { class: 'audio-music-controls' }, musicOn.row, shuffle.row, repeatRow);
@@ -181,7 +187,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     }
   };
 
-  const checks = [enabled, speech, original, musicOn, shuffle];
+  const checks = [enabled, speech, cashTicks, original, musicOn, shuffle];
   const sync = (p) => {
     for (const c of [...checks, ...sliders]) c.sync(p);
     syncMusic();
@@ -196,7 +202,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
 
   if (opts.help) {
     for (const s of sliders) labelWithHelp(s.row, `audio.${s.key}`, s.input);
-    for (const c of [speech, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
+    for (const c of [speech, cashTicks, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
     labelWithHelp(repeatRow, 'audio.musicRepeat', repeat.root);
   }
 
@@ -205,6 +211,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     ...sliders.map((s) => s.row),
     speech.row,
     speechNote,
+    cashTicks.row,
     el('div', { class: 'audio-buttons' }, testFx, testVoice),
     el(
       'section',
@@ -212,7 +219,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
       el(h, { id: id('music-title'), text: 'Music' }),
       musicControls,
       nowPlaying,
-      el('div', { class: 'audio-buttons' }, nextTrack, musicContent),
+      el('div', { class: 'audio-buttons' }, musicPlayer, nextTrack, musicContent),
     ),
     el(
       'section',
@@ -255,6 +262,12 @@ export function mountAudioPanel(button, panel, audio, opts = {}) {
       ? () => {
           open(false);
           opts.onContent();
+        }
+      : undefined,
+    onMusicPlayer: opts.onMusicPlayer
+      ? () => {
+          open(false);
+          opts.onMusicPlayer();
         }
       : undefined,
   });

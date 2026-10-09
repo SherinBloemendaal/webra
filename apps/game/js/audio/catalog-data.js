@@ -735,6 +735,9 @@ export const ACTOR_SOUNDS = {
     "sell": [
       "cashturn"
     ],
+    "undeploy": [
+      "cashturn"
+    ],
     "death": [
       "kaboom22"
     ]
@@ -1008,6 +1011,11 @@ export const ACTOR_SOUNDS = {
   },
   "MCV": {
     "voice": "VehicleVoice",
+    "transform": [
+      "placbldg",
+      "build5"
+    ],
+    "noTransformNotification": "BuildingCannotPlaceAudio",
     "death": [
       "kaboom15"
     ]

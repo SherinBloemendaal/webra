@@ -22,10 +22,9 @@ import {
   resolveSequence,
   packSprite,
   unpackSprite,
-  TICKS_PER_SECOND,
 } from '../js/content/sequences.js';
 import { ACTOR_ART, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES } from '../js/content/tables.js';
-import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage, doorDescriptor, DOOR_HOLD_TICKS } from '../js/content/atlas.js';
+import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage } from '../js/content/atlas.js';
 import {
   originalTerrain,
   packTerrain,
@@ -521,13 +520,20 @@ test('bib: tile i of the template under footprint column i % width, in the botto
   assert.equal(bibImage([null], lookup, 2, 2), null);
 });
 
-test('door: the layer opens, holds and closes once; hidden while built is the engine part', () => {
-  const idle = { frames: [7, 8, 9, 10], length: 4, facings: 1, fps: 25, mode: MODE.LOOP, classic: false, interpolatedFacings: 0, rotate: false };
-  const d = doorDescriptor(idle);
-  assert.equal(d.mode, MODE.ONCE);
-  assert.deepEqual(d.frames, [7, 8, 9, 10, ...new Array(DOOR_HOLD_TICKS).fill(10), 10, 9, 8, 7]);
-  assert.equal(d.length, d.frames.length);
-  assert.ok(d.length / d.fps * TICKS_PER_SECOND < 127, 'the whole cycle fits in the ages the engine reports');
+test('door: a production door shows the frame the engine names and never loops on its own', () => {
+  const desc = (mode, frames) => ({ frames, length: frames.length, facings: 1, fps: 25, mode, classic: false, interpolatedFacings: 0, rotate: false });
+  const pose = (frames) => ({ loop: desc(MODE.LOOP, frames), once: desc(MODE.ONCE, frames), still: desc(MODE.STILL, frames), index: desc(MODE.INDEX, frames) });
+  const have = { idle: pose([7, 8, 9, 10]), damaged: pose([11, 12, 13, 14]) };
+  const door = poseTable(have, { door: true });
+  // OpenRA WithProductionDoorOverlay plays the sequence with PlayFetchDirection: frame by frame
+  // towards the engine's door frame (engine/src/doors.rs), shut (frame 0) while nothing comes out.
+  for (const p of [POSE.IDLE, POSE.DAMAGED, POSE.MAKE, POSE.MOVE]) assert.equal(door[p].mode, MODE.INDEX, `pose ${p}`);
+  assert.deepEqual(door[POSE.IDLE].frames, [7, 8, 9, 10]);
+  assert.deepEqual(door[POSE.DAMAGED].frames, [11, 12, 13, 14]);
+  assert.equal(door[POSE.STILL].mode, MODE.STILL);
+  assert.deepEqual(door[POSE.DAMAGED_STILL].frames, [11, 12, 13, 14]);
+  // Other layers and bodies keep looping their idle sequence (OpenRA PlayRepeating).
+  assert.equal(poseTable(have)[POSE.IDLE].mode, MODE.LOOP);
 });
 
 /** Synthetic War Factory parts: body 72 x 48, roof and door 72 x 48 (4 + 4 damaged), make, bib 3 x 2. */
@@ -542,7 +548,7 @@ function syntheticFactory() {
   return files;
 }
 
-test('original slots: the War Factory body sits on its bib, its roof and door are a layer with the door cycle', () => {
+test('original slots: the War Factory body sits on its bib, its roof and door are a layer showing the door frame', () => {
   const files = syntheticFactory();
   const out = originalSlots(ACTORS, (n) => files.get(n) ?? null, 'TEMPERAT');
   const t = ACTORS.findIndex((a) => a.id === 'WEAP');
@@ -556,11 +562,12 @@ test('original slots: the War Factory body sits on its bib, its roof and door ar
   // The make animation stands on the bib too.
   const make = body.images[body.poses[POSE.MAKE].frames[0]];
   assert.ok(make.offset[1] + make.height / 2 >= 36);
-  // The layer: idle, damaged (weap2.shp frames 4..7), the door cycle as its make pose.
+  // The layer: idle, damaged (weap2.shp frames 4..7), each showing the door frame the engine names
+  // (MODE.INDEX): shut while idle or building instead of opening and closing all the time.
   assert.equal(layer.poses[POSE.IDLE].length, 4);
   assert.notEqual(layer.poses[POSE.DAMAGED].frames[0], layer.poses[POSE.IDLE].frames[0]);
-  assert.equal(layer.poses[POSE.MAKE].mode, MODE.ONCE);
-  assert.equal(layer.poses[POSE.MAKE].length, 8 + DOOR_HOLD_TICKS);
+  for (const p of [POSE.IDLE, POSE.DAMAGED, POSE.MAKE]) assert.equal(layer.poses[p].mode, MODE.INDEX, `pose ${p}`);
+  assert.equal(layer.poses[POSE.STILL].mode, MODE.STILL);
   // Centred like the body (LocalCenterOffset half a cell up), never under the bib.
   const roof = layer.images[layer.poses[POSE.IDLE].frames[0]];
   assert.ok(roof.offset[1] < idle.offset[1]);
@@ -572,7 +579,9 @@ test('original slots: the War Factory body sits on its bib, its roof and door ar
   globalThis.document = pixelDocument();
   try {
     const atlas = buildAtlas(ACTORS, { slots: combined.slots, layers: combined.layers, filter: 'nearest' });
-    assert.equal(atlas.overlays[t], packSprite(2 * t + 1, POSE.STILL));
+    // Its age is the number of door frames: the engine walks the door over them (engine/src/doors.rs).
+    assert.equal(atlas.overlays[t], packSprite(2 * t + 1, POSE.STILL, 4));
+    assert.deepEqual(unpackSprite(atlas.overlays[t]), { slot: 2 * t + 1, pose: POSE.STILL, age: 4 });
     assert.ok(atlas.overlays[t] >= POSE_STRIDE);
   } finally {
     delete globalThis.document;

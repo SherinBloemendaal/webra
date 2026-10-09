@@ -11,8 +11,8 @@ import { Director, EV, STRIDE, spatial, MAX_EFFECTS_PER_FRAME, MAX_SAME_PER_FRAM
 import { Announcer } from '../js/audio/announcer.js';
 import { Prefs, sanitizePrefs, busGain, DEFAULT_PREFS } from '../js/audio/prefs.js';
 import { createRegistry, REGISTRY_KEY } from '../js/registry.js';
-import { WEAPON_SYNTH, fireSound, impactSound, deathSound, voiceLine, EVA, allOriginalNames, fileName, powerReadyLine, MUSIC } from '../js/audio/catalog.js';
-import { WEAPON_SOUNDS } from '../js/audio/catalog-data.js';
+import { WEAPON_SYNTH, fireSound, impactSound, deathSound, placeSound, transformSounds, deployBlocked, voiceLine, EVA, allOriginalNames, fileName, powerReadyLine, MUSIC } from '../js/audio/catalog.js';
+import { WEAPON_SOUNDS, ACTOR_SOUNDS } from '../js/audio/catalog-data.js';
 import { RECIPES, render } from '../js/audio/synth.js';
 import { installFromFiles, installedSummary, categoryOf } from '../js/audio/install.js';
 import { MemoryStore } from '../js/audio/store.js';
@@ -381,6 +381,122 @@ test('installed originals replace synthesized sounds unless switched off', async
   assert.ok(b.buffer.samples.length > 1000);
   assert.equal(bank.resolve(fireSound('M1Carbine'), () => 0).original, false, 'missing originals fall back');
   assert.equal(bank.resolve({ synth: null, originals: ['nothing.aud'] }), null);
+});
+
+// ---- Structures: placing, deploying, packing up ----------------------------------------------------
+
+test('placing a structure plays every BuildSounds entry at once (OpenRA PlaceBuilding)', async () => {
+  const sound = placeSound('POWR');
+  assert.deepEqual(sound.originals, ['placbldg.aud', 'build5.aud'], 'defaults.yaml ^Building BuildSounds');
+  assert.equal(sound.layered, true);
+  assert.deepEqual(placeSound('SBAG').originals, ['placbldg.aud'], 'walls only thud');
+  const store = new MemoryStore();
+  await installFromFiles([new File([tone(100)], 'placbldg.aud'), new File([tone(200)], 'build5.aud')], store);
+  const mixer = { ctx: { sampleRate: 22050 }, buffer: (samples, rate) => ({ samples, rate }) };
+  let original = true;
+  const bank = new SoundBank(mixer, () => ({ original }));
+  await bank.loadInstalled(store);
+  const both = bank.resolveAll(sound);
+  assert.deepEqual(both.map((r) => [r.original, r.buffer.samples.length]), [[true, 100], [true, 200]], 'both layers, not one of them');
+  assert.equal(bank.resolveAll(fireSound('90mm')).length, 1, 'other sounds still pick one');
+  // A texture pack that replaces one part keeps the installed other part.
+  bank.pack = new Map([['build5', 'pack-build5']]);
+  assert.deepEqual(bank.resolveAll(sound).map((r) => [r.pack === true, r.buffer.samples?.length ?? r.buffer]), [[false, 100], [true, 'pack-build5']]);
+  // A pack sound for the event replaces the installed files, like `resolve`.
+  bank.pack = new Map([['place_building', 'pack-event']]);
+  assert.deepEqual(bank.resolveAll(sound).map((r) => r.buffer), ['pack-event']);
+  bank.pack = new Map();
+  // Only one installed: that one. Originals off or none installed: our place_building sound (thud and clank in one).
+  bank.originals.delete('build5.aud');
+  assert.deepEqual(bank.resolveAll(sound).map((r) => r.buffer.samples.length), [100]);
+  original = false;
+  const synth = bank.resolveAll(sound, () => 0);
+  assert.equal(synth.length, 1);
+  assert.equal(synth[0].original, false);
+  assert.ok(synth[0].buffer.samples.length > 1000);
+});
+
+test('the audio system plays every layer of a layered sound on the effects bus', () => {
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  const played = [];
+  audio.mixer.play = (buffer, opts) => played.push([buffer, opts.bus, opts.gain]);
+  audio.bank.resolveAll = (sound) => sound.originals.map((n) => ({ buffer: n, rate: 1 }));
+  audio.effect(placeSound('POWR'), { gain: 0.7 });
+  assert.deepEqual(played, [['placbldg.aud', 'effects', 0.7], ['build5.aud', 'effects', 0.7]]);
+});
+
+test('an MCV deploying plays its TransformSounds, a yard packing up its UndeploySounds (OpenRA Transforms)', () => {
+  assert.deepEqual(ACTOR_SOUNDS.MCV.transform, ['placbldg', 'build5'], 'vehicles.yaml MCV Transforms TransformSounds');
+  assert.deepEqual(ACTOR_SOUNDS.FACT.undeploy, ['cashturn'], 'defaults.yaml ^Building UndeploySounds');
+  assert.equal(ACTOR_SOUNDS.FACT.transform, undefined, 'the yard names no TransformSounds');
+  assert.deepEqual(transformSounds('MCV'), [{ synth: 'place_building', originals: ['placbldg.aud', 'build5.aud'], layered: true }]);
+  assert.deepEqual(transformSounds('FACT'), [{ synth: 'sell', originals: ['cashturn.aud'], layered: true }]);
+  assert.deepEqual(transformSounds('1TNK'), [], 'nothing named, nothing played');
+  assert.deepEqual(deployBlocked('MCV'), { sound: null, announce: 'cannotDeploy' }, 'NoTransformNotification: BuildingCannotPlaceAudio');
+  assert.deepEqual(EVA.cannotDeploy.originals, ['nodeply1.aud']);
+  for (const n of ['placbldg.aud', 'build5.aud', 'cashturn.aud', 'nodeply1.aud']) assert.ok(allOriginalNames().includes(n), n);
+
+  const rules = { actors: [{ id: 'MCV', kind: 'vehicle' }, { id: 'FACT', kind: 'building' }, { id: 'POWR', kind: 'building' }], weapons: [] };
+  const effects = [];
+  const announced = [];
+  let t = 10;
+  const d = new Director({
+    rules,
+    player: 0,
+    side: 'allies',
+    pxPerWorld: 1,
+    lookup: () => null,
+    sink: { effect: (sound, opts) => effects.push({ sound, ...opts }), voice() {}, announce: (k) => announced.push(k) },
+    now: () => (t += 1),
+  });
+  // Own MCV into a yard, then an enemy one; OpenRA plays them to the owner only (PlayToPlayer).
+  d.onEvents(ev([EV.TRANSFORMED, 0, 500, 300, 0, 1], [EV.TRANSFORMED, 0, 500, 300, 1, 1]), VIEW);
+  assert.equal(effects.length, 1);
+  assert.deepEqual(effects[0].sound.originals, ['placbldg.aud', 'build5.aud']);
+  assert.ok(effects[0].gain > 0.9, 'at the MCV, in the middle of the view');
+  effects.length = 0;
+  d.onEvents(ev([EV.TRANSFORMED, 1, 500, 300, 0, 0]), VIEW);
+  assert.deepEqual(effects.map((e) => e.sound.originals), [['cashturn.aud']]);
+  // Placement: the owner only, too.
+  effects.length = 0;
+  d.onEvents(ev([EV.BUILDING_PLACED, 2, 500, 300, 1, 0]), VIEW);
+  assert.equal(effects.length, 0, 'an enemy placing a structure is not heard');
+  d.onEvents(ev([EV.BUILDING_PLACED, 2, 500, 300, 0, 0]), VIEW);
+  assert.deepEqual(effects.map((e) => e.sound.layered), [true]);
+  // A refused deploy: "Cannot deploy here", for the owner.
+  d.onEvents(ev([EV.DEPLOY_BLOCKED, 0, 500, 300, 1, 0]), VIEW);
+  assert.deepEqual(announced, []);
+  d.onEvents(ev([EV.DEPLOY_BLOCKED, 0, 500, 300, 0, 0], [EV.DEPLOY_BLOCKED, 2, 500, 300, 0, 0]), VIEW);
+  assert.deepEqual(announced, ['cannotDeploy']);
+});
+
+test('the engine reports an MCV deploy and a yard packing up to the client', () => {
+  const opts = {
+    seed: 5,
+    mapSize: 64,
+    players: [
+      { slot: 0, type: 'human', faction: 'england', color: 0 },
+      { slot: 1, type: 'ai', difficulty: 'easy', faction: 'russia', color: 1 },
+    ],
+    startingUnits: 'mcv',
+    redeployableMcv: true,
+  };
+  const game = Game.from_options(JSON.stringify(opts));
+  const rules = JSON.parse(game.rules_json());
+  const id = (name) => rules.actors.findIndex((a) => a.id === name);
+  const size = 1e7;
+  const own = () => Array.from(game.select_box(0, 0, 0, size, size)).map((i) => [i, JSON.parse(game.actor_json(i))]);
+  game.set_audio_events(true);
+  const mcv = own().find(([, a]) => a.type === 'MCV');
+  assert.ok(mcv, 'the player starts with an MCV');
+  game.deploy(0, [mcv[0]]);
+  const seen = [];
+  for (let t = 0; t < 3; t++) {
+    game.tick();
+    const e = game.take_audio_events();
+    for (let i = 0; i < e.length; i += STRIDE) if (e[i] === EV.TRANSFORMED) seen.push([e[i + 1], e[i + 4], e[i + 5]]);
+  }
+  assert.deepEqual(seen, [[id('MCV'), 0, id('FACT')]]);
 });
 
 // ---- Synthesized sounds ------------------------------------------------------------------------

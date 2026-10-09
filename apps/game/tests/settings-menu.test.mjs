@@ -217,13 +217,13 @@ test('audio section: every sound control, bound to the settings; the Sound dialo
   const { root, audio } = setup({ onContent: () => opened++ });
   const buses = runMixer(audio);
   const box = root.querySelector('.game-menu-audio');
-  for (const key of ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle']) {
+  for (const key of ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'musicOn', 'musicShuffle']) {
     const input = box.querySelector(`#menu-audio-${key}`);
     assert.ok(input, key);
     assert.ok(box.querySelector(`label[for="menu-audio-${key}"]`), `${key} has a label`);
   }
   // The shared themed controls (js/ui/controls.js): switches for on/off, sliders, a segmented repeat choice.
-  for (const key of ['enabled', 'speech', 'original', 'musicOn', 'musicShuffle']) assert.equal(box.querySelector(`#menu-audio-${key}`).getAttribute('role'), 'switch', key);
+  for (const key of ['enabled', 'speech', 'original', 'cashTicks', 'musicOn', 'musicShuffle']) assert.equal(box.querySelector(`#menu-audio-${key}`).getAttribute('role'), 'switch', key);
   for (const key of ['master', 'effects', 'voices', 'music']) assert.ok(box.querySelector(`#menu-audio-${key}`).classList.contains('ui-slider'), key);
   const repeatGroup = box.querySelector('#menu-audio-musicRepeat');
   assert.equal(repeatGroup.getAttribute('role'), 'radiogroup');

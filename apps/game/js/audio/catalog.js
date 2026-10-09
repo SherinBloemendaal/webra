@@ -112,7 +112,42 @@ export const deathSound = cached((actorId, kind) => {
   return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName) };
 });
 
-export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName) }));
+/**
+ * Placing a structure. OpenRA PlaceBuilding plays every Building.BuildSounds
+ * entry at once (placbldg and build5 together), so the sound is `layered`:
+ * the bank plays all of its originals instead of picking one. Our own
+ * place_building sound already holds both the thud and the clank.
+ */
+export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName), layered: true }));
+
+/**
+ * What an actor that transforms (OpenRA Transforms: an MCV deploying, a
+ * Construction Yard packing up) plays as it turns into its other form: a
+ * structure's Building.UndeploySounds (Building.cs BeforeTransform) and its
+ * TransformSounds (Activities/Transform.cs), every entry at once. Both are
+ * empty for actors whose rules name no sounds, as in OpenRA.
+ * @returns {{ synth: string, originals: string[], layered: true }[]}
+ */
+export const transformSounds = cached((actorId) => {
+  const a = ACTOR_SOUNDS[actorId] ?? {};
+  const out = [];
+  if (a.undeploy?.length) out.push({ synth: 'sell', originals: a.undeploy.map(fileName), layered: true });
+  if (a.transform?.length) out.push({ synth: 'place_building', originals: a.transform.map(fileName), layered: true });
+  return out;
+});
+
+/** Speech notifications (OpenRA mods/ra/audio/notifications.yaml) the rules name, as EVA keys. */
+export const NOTIFICATION_EVA = Object.freeze({ BuildingCannotPlaceAudio: 'cannotDeploy' });
+
+/**
+ * A refused deploy (OpenRA Transforms.DeployTransform): the NoTransformSounds
+ * and the EVA key of the NoTransformNotification, or null when the rules name neither.
+ */
+export const deployBlocked = cached((actorId) => {
+  const a = ACTOR_SOUNDS[actorId] ?? {};
+  const sound = a.noTransform?.length ? { synth: null, originals: a.noTransform.map(fileName), layered: true } : null;
+  return { sound, announce: NOTIFICATION_EVA[a.noTransformNotification] ?? null };
+});
 
 export const sellSound = cached((actorId) => ({ synth: 'sell', originals: (ACTOR_SOUNDS[actorId]?.sell ?? ['cashturn']).map(fileName) }));
 
@@ -178,6 +213,8 @@ export const EVA = {
   structureSold: { text: 'Structure sold', chime: 'eva_cash', originals: ['strusld1'], cooldown: 1 },
   // OpenRA RepairableBuilding RepairingNotification (the Repair button).
   repairing: { text: 'Repairing', chime: 'eva_info', originals: ['repair1'], cooldown: 1 },
+  // OpenRA Transforms NoTransformNotification of the MCV (BuildingCannotPlaceAudio).
+  cannotDeploy: { text: 'Cannot deploy here', chime: 'eva_warn', originals: ['nodeply1'], cooldown: 1 },
   selectTarget: { text: 'Select target', chime: 'eva_info', originals: ['slcttgt1'], cooldown: 1 },
   cancelled: { text: 'Cancelled', chime: 'eva_loss', originals: ['cancld1'], cooldown: 1 },
   powerReady: { text: 'Ready', chime: 'eva_ready', originals: [], cooldown: 0.5 },
@@ -214,6 +251,18 @@ export const BUTTON_SOUNDS = {
   beacon: { synth: 'beacon', originals: ['beepslct'].map(fileName) },
 };
 
+/**
+ * The sidebar cash counter ticking up or down (OpenRA PlayerResources
+ * CashTickUpNotification and CashTickDownNotification: notifications.yaml
+ * CashTickUp cashup1 and CashTickDown cashdn1, VolumeModifier 0.33, overlapping).
+ */
+export const CASH_TICK_SOUNDS = {
+  up: { synth: 'cash_up', originals: ['cashup1'].map(fileName) },
+  down: { synth: 'cash_down', originals: ['cashdn1'].map(fileName) },
+};
+/** OpenRA's VolumeModifier of both cash tick notifications. */
+export const CASH_TICK_GAIN = 0.33;
+
 /** Sound where a support power strikes. */
 export function powerSound(code) {
   const kind = POWER_KINDS[code];
@@ -225,28 +274,41 @@ export function powerSound(code) {
 
 // ---- Music ------------------------------------------------------------------------------
 
-/** Red Alert soundtrack (scores.mix), installed content only. */
+/**
+ * Red Alert soundtrack (scores.mix), installed content only: the tracks of
+ * OpenRA's music player, with its titles (mods/ra/audio/music.yaml, without
+ * the hidden intro, map and score tracks), in its order.
+ */
 export const MUSIC = [
+  ['await_r', 'Afterlife (Await)'],
   ['bigf226m', 'Bigfoot'],
   ['crus226m', 'Crush'],
-  ['fac1226m', 'Face the Enemy 1'],
-  ['fac2226m', 'Face the Enemy 2'],
-  ['hell226m', 'Hell March'],
-  ['run1226m', 'Run for Your Life'],
-  ['smsh226m', 'Smash'],
-  ['tren226m', 'Trenches'],
-  ['work226m', 'Workmen'],
-  ['await', 'Await'],
   ['dense_r', 'Dense'],
+  ['fac1226m', 'Face to the Enemy 1'],
+  ['fac2226m', 'Face to the Enemy 2'],
   ['fogger1a', 'Fogger'],
+  ['hell226m', 'Hell March'],
   ['mud1a', 'Mud'],
   ['radio2', 'Radio 2'],
+  ['credits', 'Reload Fire (Credits)'],
   ['rollout', 'Roll Out'],
+  ['run1226m', 'Run (For Your Life)'],
+  ['smsh226m', 'Smash'],
   ['snake', 'Snake'],
   ['terminat', 'Terminate'],
-  ['twin', 'Twin'],
+  ['tren226m', 'Trenches'],
+  ['twin', 'Twin Cannon'],
   ['vector1a', 'Vector'],
+  ['work226m', 'Workmen'],
 ].map(([base, title]) => ({ file: fileName(base), title }));
+
+/**
+ * Where music comes from, for the music player and the content dialog. The
+ * OpenRA quick install package (ra-quickinstall.zip) has no music: OpenRA too
+ * takes it from a Red Alert disc, the Steam or Origin release or C&C Remastered.
+ */
+export const MUSIC_SOURCE_HINT =
+  'The OpenRA quick install package (ra-quickinstall.zip) has no music: OpenRA itself also needs a Red Alert disc, the Steam or Origin release, or C&C Remastered for it. Add scores.mix (or main.mix or redalert.mix, which contain it) from such a copy by dropping it on this page or in the Original content dialog.';
 
 /** MIX archives that may hold the files above, possibly nested in main.mix or redalert.mix. */
 export const ARCHIVES = [
@@ -279,10 +341,14 @@ export function allOriginalNames() {
     add(a.build ?? []);
     add(a.sell ?? []);
     add(a.death ?? []);
+    add(a.transform ?? []);
+    add(a.undeploy ?? []);
+    add(a.noTransform ?? []);
   }
   add(INFANTRY_DIE);
   add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);
   for (const s of Object.values(BUTTON_SOUNDS)) add(s.originals);
+  for (const s of Object.values(CASH_TICK_SOUNDS)) add(s.originals);
   for (const set of Object.values(VOICE_SETS)) {
     for (const line of ['select', 'action']) {
       for (const base of set[line]) for (const v of Object.values(set.variants).flat()) add([base + v]);

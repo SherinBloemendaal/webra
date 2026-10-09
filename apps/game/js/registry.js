@@ -149,6 +149,8 @@ export const GROUPS = deepFreeze({
       music: { type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, label: 'Music volume' },
       speech: { type: 'boolean', default: true, label: 'Speak unit replies and announcements' },
       original: { type: 'boolean', default: true, label: 'Use installed original sounds' },
+      // OpenRA Settings.Sound.CashTicks.
+      cashTicks: { type: 'boolean', default: true, label: 'Cash ticks', help: 'Ticks while the credits counter counts up or down.' },
       musicOn: { type: 'boolean', default: true, label: 'Music on', help: 'Music needs installed original content or a texture pack with music.' },
       musicShuffle: { type: 'boolean', default: true, label: 'Shuffle music' },
       musicRepeat: {

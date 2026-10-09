@@ -31,6 +31,7 @@ import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
+import { mountMusicPanel } from './audio/musicplayer.js';
 import { CURSORS } from './cursors.js';
 import { hotkeys } from './hotkeys.js';
 import { settings } from './settings.js';
@@ -224,7 +225,9 @@ async function setupRecords(lobby, gpuError) {
 function setupAudio() {
   try {
     audio = new AudioSystem();
-    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open() });
+    // The music player opens from the Sound dialog (start screen and in games) and the game menu.
+    const musicPanel = mountMusicPanel($('music-panel'), audio, { onContent: () => contentPanel?.open() });
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open($('audio-button')) });
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
@@ -864,6 +867,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
+      onCashTick: (direction) => audio?.cashTick(direction),
     },
     { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );

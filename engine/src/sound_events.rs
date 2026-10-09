@@ -61,6 +61,13 @@ pub enum SoundEventKind {
     /// A unit of `owner` was hit by another player's weapon after a quiet
     /// spell (OpenRA DamageNotifier@Unit: a radar ping); a = actor type.
     UnitDamaged = 14,
+    /// An actor of `owner` transformed (OpenRA Transforms: an MCV deployed, a
+    /// Construction Yard packed up), at the old actor's position;
+    /// a = actor type before, b = actor type after.
+    Transformed = 15,
+    /// A deploy order could not transform the actor where it stands (OpenRA
+    /// Transforms NoTransformNotification); a = actor type.
+    DeployBlocked = 16,
 }
 
 impl SoundEventKind {

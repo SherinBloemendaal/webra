@@ -7,7 +7,7 @@
 //! render buffers, the simulation never reads `RenderOptions`.
 
 use crate::instances::{Anchor, Sink, SpriteRec};
-use crate::render::{posed, push_anchored_rects, px, Pose, MAX_POSE_AGE, POSE_STRIDE};
+use crate::render::{posed, push_anchored_rects, px, Pose, POSE_STRIDE};
 use crate::rules::Kind;
 use crate::world::{World, NONE};
 
@@ -44,10 +44,11 @@ pub struct RenderOptions {
     /// when the type has none. The animated head frame is the type's second
     /// sprite slot (`2t + 1`), see apps/game/js/sprites.js `buildAtlas`.
     /// A value of `POSE_STRIDE` or more is a layer with poses (the original
-    /// War Factory roof and door): with `poses` on it shows the structure's
-    /// pose, is hidden while the structure is built and plays `Pose::Make`
-    /// (the door) when a unit has just been produced; the value itself is
-    /// the layer's still sprite (fog, no power).
+    /// War Factory roof and door, OpenRA WithProductionDoorOverlay): with
+    /// `poses` on it is hidden while the structure is built and otherwise
+    /// shows the door frame (doors.rs) as the age of the idle or damaged
+    /// pose; the value itself is the layer's still sprite (fog), its age
+    /// field the number of door frames.
     pub building_overlays: Vec<u32>,
     /// Sprite poses (render.rs `Pose`): body sprites carry what the actor is
     /// doing, for art with pre-rendered animations (original graphics,
@@ -269,11 +270,11 @@ impl World {
             match self.building_pose(i) {
                 // OpenRA shows the layer once the structure is built.
                 (Pose::Make, _) => return,
-                (Pose::Idle, _) => match self.door_age(i) {
-                    Some(age) => posed(slot, Pose::Make, age),
-                    None => posed(slot, Pose::Idle, 0),
-                },
-                (pose, _) => posed(slot, pose, 0),
+                // The door frame, by damage state only: OpenRA's door is
+                // never paused (no power condition), it follows the
+                // damaged sequence (NormalizeSequence).
+                (Pose::Damaged | Pose::DamagedStill, _) => posed(slot, Pose::Damaged, self.door_frame(i)),
+                _ => posed(slot, Pose::Idle, self.door_frame(i)),
             }
         } else if self.is_powered_down(i) {
             // Low power or switched off with the power down button (repair.rs).
@@ -282,36 +283,6 @@ impl World {
             slot as f32
         };
         sink.sprite(out, SpriteRec::at(x, y, 96.0).look(sprite, a.owner as f32, 1.0, alpha, flash));
-    }
-
-    /// Ticks since structure `i` produced a unit that is still near one of
-    /// its exits (OpenRA WithProductionDoorOverlay opens the door for it), or
-    /// None. The youngest such unit of the owner within two cells of an exit.
-    pub(crate) fn door_age(&self, i: usize) -> Option<u32> {
-        let a = &self.actors[i];
-        let b = self.rules.actors[a.ty as usize].building.as_ref()?;
-        let mut best: Option<u32> = None;
-        for &(ex, ey) in &b.exits {
-            for dy in -2..=2 {
-                for dx in -2..=2 {
-                    let (cx, cy) = (a.cx + ex + dx, a.cy + ey + dy);
-                    if !self.map.contains(cx, cy) {
-                        continue;
-                    }
-                    for &u in self.units_in_cell(self.map.idx(cx, cy)) {
-                        let o = &self.actors[u as usize];
-                        if !o.alive || o.owner != a.owner || o.born == 0 {
-                            continue;
-                        }
-                        let age = self.tick.saturating_sub(o.born);
-                        if age < MAX_POSE_AGE && best.is_none_or(|b| age < b) {
-                            best = Some(age);
-                        }
-                    }
-                }
-            }
-        }
-        best
     }
 
     /// The static frame of a remembered (fogged) building's animated layer.
