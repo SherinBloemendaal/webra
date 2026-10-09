@@ -640,19 +640,22 @@ impl World {
     }
 
     pub fn deploy(&mut self, i: usize) -> bool {
+        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
+        let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
         if !self.can_deploy(i) {
+            self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
             return false;
         }
-        let (into, cx, cy) = self.deploy_target(i).unwrap();
-        let owner = self.actors[i].owner;
-        let facing = self.rules.actors[self.actors[i].ty as usize].abilities.transforms.as_ref().unwrap().facing;
-        let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[self.actors[i].ty as usize].hp as i64);
-        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let facing = self.rules.actors[from as usize].abilities.transforms.as_ref().unwrap().facing;
+        let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[from as usize].hp as i64);
         // The new form first: should it not fit after all, the old one stays.
         // (A unit occupies no structure cells, and a structure only turns
         // into a unit, so the old form is never in the way.)
         let j = if self.rules.actors[into as usize].kind == Kind::Building {
-            let Some(j) = self.spawn_building(into, owner, cx, cy) else { return false };
+            let Some(j) = self.spawn_building(into, owner, cx, cy) else {
+                self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
+                return false;
+            };
             j
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)
@@ -665,6 +668,9 @@ impl World {
         let max = self.rules.actors[into as usize].hp as i64;
         self.actors[j].hp = ((max * hp_ratio.0 / hp_ratio.1.max(1)) as i32).max(1);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 16, max: 16 });
+        // OpenRA plays the old form's TransformSounds (and a structure's
+        // UndeploySounds) at its position as it turns into the new one.
+        self.sound.push(SoundEventKind::Transformed, from as i32, x, y, owner, into as i32);
         self.refresh_tokens();
         self.update_power();
         true
