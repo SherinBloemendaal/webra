@@ -85,7 +85,8 @@ the new paths are guarded like this:
   time; an unknown client id still costs a hash, so timing does not tell ids
   apart. Wrong keys count toward the per-IP lockout like wrong passwords. A
   key only works for its own client id, only while the game runs (and, since
-  protocol 6, once to come back into the lobby after a rematch), at most 10
+  protocol 6, to come back into the lobby after a rematch: repeatedly, but
+  only until that member's return deadline), at most 10
   times per member and game, and never after leaving, being kicked or being
   removed for a protocol violation (the key is forgotten). A rejoin replaces
   an open connection of the same member (it leaves lockstep first), so two
@@ -600,8 +601,14 @@ game go back to its lobby for a rematch.
   endpoints.
 - **Retention and accounts.** Unlisted maps no session used for 30 days are
   deleted by the daily job (`used_at` moves on every share and download).
-  Purging an account deletes the maps it shared; its published maps stay,
-  without the uploader. The data export lists both kinds.
+  A map is stored once per content: a later sharer of the same map reuses
+  the row, which keeps its first signed-in sharer as uploader (an anonymous
+  sharer leaves none, and a later signed-in one is recorded). Purging an
+  account deletes the maps it shared that no session used for a day (its own
+  sessions ended long before a purge, so a map in use was shared by someone
+  else too); a map still in use stays without the uploader and goes with the
+  30 day retention. Its published maps stay, without the uploader. The data
+  export lists both kinds.
 - **Rematch.** Only the host proposes; every player still in the game must
   accept (one decline, the host leaving or 2 minutes end it, then 10 s
   before the next proposal), so a host cannot end a game others are playing.
@@ -637,7 +644,10 @@ players (docs/contracts.md section 4, "Online saves").
 - **Resume checks.** Only a signed-in account that played in the save can
   load it, as the host of the session (member key, constant time and bound to
   the account, as for the map endpoints), within 10 resumes per hour per
-  network and 32 MiB. The file is validated strictly (`parseReplay`) and must
+  network. The host role is checked before the body is read, and the body is
+  limited to the order log limit plus a map plus 256 KiB (Content-Length
+  checked first); the orders are counted against the order log limit while
+  they are validated, before any digest. The file is validated strictly (`parseReplay`) and must
   match the record exactly (save point, state hash, game version, map hash,
   options digest, frames digest), so a player cannot resume with edited
   orders, options or map. Its orders must fit the order log limit. Only the
@@ -647,7 +657,12 @@ players (docs/contracts.md section 4, "Online saves").
 - **Fair restart.** Every client fast-forwards through the same orders and
   compares its state hash with the saved one before it may continue; the
   relay starts only when every player caught up, so nobody gets a head start.
-  Orders and hashes sent before that are refused.
+  Orders and hashes sent before that are refused. A player who does not catch
+  up holds the start at most 60 s plus 1 ms per saved tick, never more than 3
+  minutes (it may rejoin later), not the 15 minutes a rejoin may take.
+- **Server memory.** The frames digest is chained frame by frame, so the
+  session computes it while reading its order log one chunk at a time, and a
+  resumed start writes each log chunk before reading the next.
 
 ## Inherent to lockstep
 

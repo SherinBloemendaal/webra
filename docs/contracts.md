@@ -597,9 +597,11 @@ save point is a tick in the past for everyone by the time the save is
 written, so nothing has to stand still). Every player reports its state hash
 at that tick anyway (`hash`). When all of them match, the server stores a
 record in D1 (`online_saves`, `online_save_members`): the save point
-(`ticks = tick + 1`), the agreed state hash, the SHA-256 of the order frames
-before the save point (computed from its order log in their validated form,
-`framesDigest`), the SHA-256 of the game options (`optionsDigest`), the map
+(`ticks = tick + 1`), the agreed state hash, a digest of the order frames
+before the save point (`framesDigest`: starting from the SHA-256 of the empty
+string, each frame in its validated form is chained as `h = SHA-256(h +
+JSON([tick, orders]))`, so the server computes it from its order log chunk
+by chunk), the SHA-256 of the game options (`optionsDigest`), the map
 hash, the game version, the session name and the account of every seat. It
 answers `save { state: 'saved', id, ticks, hash }`, and every player's client
 writes the save file (section 7, `online.id` = the record) from its own
@@ -614,12 +616,14 @@ online saves; the player creates a session as host (private by default, at
 least as many places as the save has players; the other players join with
 the invite link) and the client sends the file with
 `POST /api/sessions/:id/resume` and its member header. The Worker needs a
-signed-in account, 10 resumes per hour per network and at most 32 MiB; it
-validates the file (`parseReplay`), finds the record by `online.id` (404 when
+signed-in account and 10 resumes per hour per network; before reading the
+body it checks that the requester is the host (the session's `checkHost`)
+and that Content-Length is at most the order log limit plus a map plus 256 KiB
+(413). It validates the file (`parseReplay`, the orders counted against the
+order log limit while validating: 413), finds the record by `online.id` (404 when
 the server no longer keeps it), and requires the same save point, final state
 hash, game version, map hash, options digest and frames digest (409
-otherwise), orders within the order log limit (16 MiB) and the requester's
-account among the save's players (403). The map, when there is one, is
+otherwise) and the requester's account among the save's players (403). The map, when there is one, is
 checked like an upload and shared with the session (it stays unlisted). The
 session object checks the member key and the host role and that the session
 runs the save's game version, keeps the orders in its storage and turns the
@@ -635,8 +639,9 @@ hash }`. Every member gets it with the saved orders as `log` messages and
 `sync { tick: ticks, check: { tick: ticks - 1, hash } }`: clients fast-forward
 like a rejoin and compare their state hash at the save point. A player whose
 hash differs does not continue; the others send `resume`. When every player
-caught up (or the catch-up time ran out for some, who may rejoin like after a
-lost connection), the relay starts at `ticks`: `back` with that tick for
+caught up (or the catch-up time ran out for some: 60 s plus 1 ms per saved
+tick, at most 3 minutes; they may rejoin later like after a lost
+connection), the relay starts at `ticks`: `back` with that tick for
 every player, then the empty frames `ticks .. ticks + delay - 1`, and the game
 goes on in lockstep. Orders and hashes before that are refused with
 `bad_state`. The resumed game records itself completely (it replays from tick
