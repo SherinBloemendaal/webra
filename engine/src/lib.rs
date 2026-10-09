@@ -17,6 +17,7 @@ mod combat;
 mod combined;
 mod commands;
 pub mod debug;
+pub mod doors;
 pub mod flowfield;
 mod helicopter;
 pub mod instances;
@@ -56,6 +57,8 @@ mod tests_combat;
 mod tests_commands;
 #[cfg(test)]
 mod tests_debug;
+#[cfg(test)]
+mod tests_doors;
 #[cfg(test)]
 mod tests_helis;
 #[cfg(test)]

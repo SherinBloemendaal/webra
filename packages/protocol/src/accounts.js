@@ -381,6 +381,9 @@ const SETTINGS_SECTIONS = {
     graphics: choice(['webra', 'original']),
     hotkeys,
     attackMoveTipSeen: boolean,
+    mouseCapture: choice(['off', 'fullscreen', 'always']),
+    mouseCaptureSpeed: num(0.25, 3),
+    mouseCaptureEscMenu: boolean,
   },
   audio: {
     enabled: boolean,
@@ -390,6 +393,7 @@ const SETTINGS_SECTIONS = {
     music: num(0, 1),
     speech: boolean,
     original: boolean,
+    cashTicks: boolean,
     musicOn: boolean,
     musicShuffle: boolean,
     musicRepeat: choice(MUSIC_REPEAT_MODES),

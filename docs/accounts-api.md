@@ -703,11 +703,14 @@ Serialized size at most 32 KiB.
     "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
-    "attackMoveTipSeen": false     // the one-time attack-move tip was shown (apps/game/js/hints.js)
+    "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
+    "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
+    "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
+    "mouseCaptureEscMenu": false   // true: Esc releases the mouse and opens the menu at once
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
-    "speech": true, "original": true,
+    "speech": true, "original": true, "cashTicks": true,
     "musicOn": true, "musicShuffle": true,
     "musicRepeat": "all"           // "all" | "one" | "off" (MUSIC_REPEAT_MODES)
   },
@@ -731,6 +734,7 @@ Serialized size at most 32 KiB.
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
+                                   // (the game keeps e.g. "mouseCaptureHints": 0..99 there)
 }
 ```
 

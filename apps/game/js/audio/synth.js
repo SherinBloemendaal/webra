@@ -243,6 +243,9 @@ export const RECIPES = {
       0.75,
     ),
   sell: (sr) => normalize(sequence(sr, [[0, tone(sr, 1320, 0.12, { tau: 0.04 })], [0.08, tone(sr, 1760, 0.3, { tau: 0.09 })]], 0.4), 0.5),
+  // Credits counter ticking up and down (OpenRA CashTickUp cashup1, CashTickDown cashdn1): short clicks.
+  cash_up: (sr) => normalize(tone(sr, 2100, 0.035, { tau: 0.008, shape: 'square' }), 0.3),
+  cash_down: (sr) => normalize(tone(sr, 1400, 0.035, { tau: 0.008, shape: 'square' }), 0.3),
   // Power down button (OpenRA DisablePower bleep11, EnablePower bleep12) and beacons (Beacon beepslct).
   power_down: (sr) => normalize(sequence(sr, [[0, tone(sr, 880, 0.08, { tau: 0.03, shape: 'square' })], [0.09, tone(sr, 520, 0.12, { tau: 0.05, shape: 'square' })]], 0.24), 0.35),
   power_up: (sr) => normalize(sequence(sr, [[0, tone(sr, 520, 0.08, { tau: 0.03, shape: 'square' })], [0.09, tone(sr, 880, 0.12, { tau: 0.05, shape: 'square' })]], 0.24), 0.35),

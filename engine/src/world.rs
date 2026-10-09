@@ -848,7 +848,11 @@ pub struct World {
     pub env: crate::weather::Environment,
     /// Write-only audio event log for the client (sound_events.rs).
     pub sound: crate::sound_events::SoundEvents,
-    /// Client render settings (overlays.rs); never read by the simulation.
+    /// Production doors (doors.rs): presentation only, never read by the
+    /// simulation and not part of `state_hash`.
+    pub doors: crate::doors::Doors,
+    /// Client render settings (overlays.rs); never read by the simulation
+    /// (the production doors read them, presentation only: doors.rs).
     pub render_opts: crate::overlays::RenderOptions,
     /// Observer statistics (observer.rs). Not part of `state_hash`.
     pub observer: crate::observer::ObserverStats,
@@ -1028,6 +1032,7 @@ impl World {
             powers: Default::default(),
             env: Default::default(),
             sound: Default::default(),
+            doors: Default::default(),
             render_opts: Default::default(),
             observer: Default::default(),
             render_all: false,
@@ -1908,6 +1913,10 @@ impl World {
             self.refresh_tokens();
         }
         self.update_power();
+        // Production doors (doors.rs, presentation only): the frame steps
+        // before this tick's production, like OpenRA's door animation runs
+        // the tick after UnitProduced.
+        self.tick_doors();
         for p in 0..self.players.len() {
             if self.players[p].is_ai && !self.players[p].defeated {
                 crate::ai::think(self, p as u8);

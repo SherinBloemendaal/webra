@@ -225,14 +225,15 @@ fn records_with_poses_match_the_cpu_path() {
 }
 
 #[test]
-fn structure_layers_take_the_structure_pose_hide_while_built_and_open_the_door() {
+fn structure_layers_hide_while_built_and_show_the_door_frame_by_damage_state() {
     let mut w = world();
     w.render_opts.poses = true;
     let weap = ty(&w, "WEAP");
     let tank = ty(&w, "1TNK");
     let layer = weap as u32 * 2 + 1;
     let mut table = vec![0u32; w.rules.actors.len()];
-    table[weap as usize] = posed(layer, Pose::Still, 0) as u32;
+    // The still pose, its age the door frames (four, like the original weap2.shp).
+    table[weap as usize] = posed(layer, Pose::Still, 4) as u32;
     w.render_opts.building_overlays = table;
     w.players[0].power_gen = 100;
     w.tick = 500;
@@ -244,45 +245,42 @@ fn structure_layers_take_the_structure_pose_hide_while_built_and_open_the_door()
     assert_eq!(pose_of(&w, layer), None);
     w.tick = 500 + MAX_POSE_AGE + 1;
     assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)));
-    // A unit just produced at the exit (1, 2): the door plays, its age from the unit's.
+    // A unit produced at the exit (1, 2): the door frame is the age of the idle pose (doors.rs).
     let (ex, ey) = w.rules.actors[weap as usize].building.as_ref().unwrap().exits[0];
-    w.tick = 700;
     let u = w.spawn_unit(tank, 0, cell_center(30 + ex), cell_center(30 + ey), 512);
+    w.actors[u].activity = Activity::Move;
     w.rebuild_hash();
-    w.tick = 705;
-    assert_eq!(pose_of(&w, layer), Some((Pose::Make as u32, 5)));
-    // Still near the exit two cells on: the door keeps its cycle.
-    w.actors[u].x = cell_center(30 + ex + 2);
-    w.actors[u].px = w.actors[u].x;
-    w.rebuild_hash();
-    assert_eq!(pose_of(&w, layer), Some((Pose::Make as u32, 5)));
-    // Older than the ages the id carries: closed.
-    w.tick = 700 + MAX_POSE_AGE;
+    w.door_unit_produced(f, u);
+    w.tick_doors();
+    w.tick_doors();
+    assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 2)));
+    // An enemy at the exit does not open a shut door.
+    w.kill(u);
+    for _ in 0..4 {
+        w.tick_doors();
+    }
     assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)));
-    // An enemy at the exit does not open it.
-    w.tick = 900;
-    w.actors[u].alive = false;
-    w.rebuild_hash();
     w.spawn_unit(tank, 1, cell_center(30 + ex), cell_center(30 + ey), 512);
     w.rebuild_hash();
-    w.tick = 903;
+    w.tick_doors();
     assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)));
-    // Damage and power as the body (the War Factory works without power, so test the rule both ways).
+    // Damage picks the damaged door sequence; power does not pause the door
+    // (OpenRA WithProductionDoorOverlay has no pause condition), so a
+    // powered down factory keeps the idle or damaged pose.
     let max = w.rules.actors[weap as usize].hp;
     w.actors[f].hp = max / 2 - 1;
     assert_eq!(pose_of(&w, layer), Some((Pose::Damaged as u32, 0)));
     w.players[0].power_use = 1000;
     w.players[0].power_gen = 0;
-    let needs = w.rules.actors[weap as usize].requires_power;
-    assert_eq!(pose_of(&w, layer), Some((if needs { Pose::DamagedStill } else { Pose::Damaged } as u32, 0)));
     w.rules.actors[weap as usize].requires_power = true;
-    assert_eq!(pose_of(&w, layer), Some((Pose::DamagedStill as u32, 0)));
-    assert_eq!(pose_of(&w, layer), pose_of(&w, weap as u32 * 2), "the layer follows the body");
+    assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::DamagedStill as u32, 0)));
+    assert_eq!(pose_of(&w, layer), Some((Pose::Damaged as u32, 0)));
     w.actors[f].hp = max;
-    assert_eq!(pose_of(&w, layer), Some((Pose::Still as u32, 0)));
+    assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Still as u32, 0)));
+    assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)));
     // Without poses the old rule: the plain slot, the table's value without power.
     w.render_opts.poses = false;
-    assert!(sprite_ids(&w).contains(&(posed(layer, Pose::Still, 0))));
+    assert!(sprite_ids(&w).contains(&(posed(layer, Pose::Still, 4))));
     w.players[0].power_gen = 2000;
     assert!(sprite_ids(&w).contains(&(layer as f32)));
 }
@@ -293,15 +291,20 @@ fn structure_layer_records_match_the_cpu_path() {
     w.render_opts.poses = true;
     let weap = ty(&w, "WEAP");
     let mut table = vec![0u32; w.rules.actors.len()];
-    table[weap as usize] = posed(weap as u32 * 2 + 1, Pose::Still, 0) as u32;
+    table[weap as usize] = posed(weap as u32 * 2 + 1, Pose::Still, 4) as u32;
     w.render_opts.building_overlays = table;
     w.players[0].power_gen = 100;
-    w.spawn_building(weap, 0, 20, 20).unwrap();
+    let f = w.spawn_building(weap, 0, 20, 20).unwrap();
     w.spawn_building(weap, 0, 40, 20).unwrap();
     let (ex, ey) = w.rules.actors[weap as usize].building.as_ref().unwrap().exits[0];
     w.tick = 300;
-    w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(20 + ex), cell_center(20 + ey), 512);
+    let u = w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(20 + ex), cell_center(20 + ey), 512);
+    w.actors[u].activity = Activity::Move;
     w.rebuild_hash();
+    w.door_unit_produced(f, u);
+    for _ in 0..4 {
+        w.tick_doors();
+    }
     w.tick = 304;
     w.update_vision();
     let (mut recs, mut extras, mut rect_recs) = (Vec::new(), Vec::new(), Vec::new());
@@ -316,7 +319,7 @@ fn structure_layer_records_match_the_cpu_path() {
         let layers: Vec<(u32, u32, u32)> =
             s_cpu.chunks(SPRITE_FLOATS).map(|q| unpack(q[3])).filter(|&(s, _, _)| s == weap as u32 * 2 + 1).collect();
         assert_eq!(layers.len(), 2, "one layer per factory");
-        assert!(layers.contains(&(weap as u32 * 2 + 1, Pose::Make as u32, 4)), "the door of the factory that produced");
+        assert!(layers.contains(&(weap as u32 * 2 + 1, Pose::Idle as u32, 3)), "the door of the factory that produced");
         assert!(layers.contains(&(weap as u32 * 2 + 1, Pose::Idle as u32, 0)), "the other one stays shut");
     }
 }

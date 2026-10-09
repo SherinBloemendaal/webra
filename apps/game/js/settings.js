@@ -31,6 +31,13 @@ export const KEYS = Object.freeze({
   graphics: ['game', 'graphics'],
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: ['game', 'hotkeys'],
+  // Mouse capture (js/mouselock.js): 'off', 'fullscreen' or 'always'; the
+  // pointer speed while captured; whether Esc also opens the menu then; how
+  // often the "Mouse captured" hint was shown.
+  mouseCapture: ['game', 'mouseCapture'],
+  mouseCaptureSpeed: ['game', 'mouseCaptureSpeed'],
+  mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
+  mouseCaptureHints: ['extra', 'mouseCaptureHints'],
 });
 
 /**
