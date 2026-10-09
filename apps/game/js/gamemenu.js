@@ -1,7 +1,9 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
 // Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
-// actions (save the game, download the replay; js/records.js). Phones get the
-// same menu from the HUD's Menu button.
+// actions (save the game, download the replay; js/records.js), Restart
+// (single player and replays, after a confirm step) and Statistics (once the
+// local player watches: spectators, replays, after a defeat or at the end).
+// Phones get the same menu from the HUD's Menu button.
 //
 // The Settings page has three parts: Display (UI scale, game scale, render
 // resolution, fullscreen; js/scale.js), Scrolling and health bars, and Audio
@@ -146,6 +148,9 @@ export class GameMenu {
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
+   *   restart?: { replay?: boolean, run(): void },  Restart (asks first); none online
+   *   onStats?(): void,  the statistics screen (js/stats.js)
+   *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -276,6 +281,7 @@ export class GameMenu {
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'controls') this.renderControls(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
+    else if (this.view === 'restart') this.renderRestart(c);
     else this.renderMain(c);
     if (this.message) {
       const m = el('p', 'hint game-menu-message', this.message);
@@ -297,8 +303,10 @@ export class GameMenu {
     c.append(el('h1', null, online ? 'Menu' : 'Paused'), el('p', 'tagline', tagline));
     const fs = this.opts.fullscreen;
     const actions = (this.opts.actions ?? []).map((a) => button(a.label, null, () => this.runAction(a)));
+    const stats = this.opts.onStats && (this.opts.statsAvailable?.() ?? true);
     c.append(
       button('Resume', 'primary', () => this.close()),
+      ...(stats ? [button('Statistics', null, () => this.opts.onStats())] : []),
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
@@ -306,6 +314,7 @@ export class GameMenu {
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
+      ...(this.opts.restart ? [button(this.opts.restart.replay ? 'Restart replay' : 'Restart', null, () => this.show('restart'))] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
@@ -344,6 +353,26 @@ export class GameMenu {
       el('h1', null, kind === 'exit' ? 'Exit' : 'Leave'),
       el('p', 'tagline', `${what} ${note}`),
       button(kind === 'exit' ? 'Exit' : 'Leave', 'primary', () => (kind === 'exit' ? this.opts.onExit() : this.opts.onLeave())),
+      button('Back', null, () => this.show('main')),
+    );
+  }
+
+  /** Restart: progress is lost, so it asks first. */
+  renderRestart(c) {
+    const replay = !!this.opts.restart?.replay;
+    c.append(
+      el('h1', null, 'Restart'),
+      el(
+        'p',
+        'tagline',
+        replay
+          ? 'Play this replay again from the start?'
+          : 'Restart this game from the beginning with exactly the same settings? Everything played so far is lost (save it first to keep it).',
+      ),
+      button(replay ? 'Restart replay' : 'Restart', 'primary', () => {
+        this.close();
+        this.opts.restart.run();
+      }),
       button('Back', null, () => this.show('main')),
     );
   }

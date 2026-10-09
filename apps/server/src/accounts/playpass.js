@@ -80,7 +80,9 @@ export async function verifyPass(key, value, nowMs = Date.now()) {
   const now = Math.floor(nowMs / 1000);
   if (exp <= now || exp > now + PASS_MAX_AHEAD_S) return null;
   const mac = fromBase64Url(macText);
-  if (!mac || mac.length !== 32) return null;
+  // Only the canonical spelling: the last character also carries 2 padding
+  // bits, so other spellings of the same MAC are refused (one pass, one value).
+  if (!mac || mac.length !== 32 || toBase64Url(mac) !== macText) return null;
   const ok = await crypto.subtle.verify('HMAC', key, mac, enc.encode(payload(version, userId, sid, expText)));
   return ok ? { userId, sid, exp } : null;
 }

@@ -67,9 +67,10 @@ const COLUMNS = [
 export class ObserverPanel {
   /**
    * @param {HTMLElement} parent
-   * @param {{ players: { name: string, color: number[] }[], view: number, onView(view: number): void }} opts
+   * @param {{ players: { name: string, color: number[] }[], view: number, onView(view: number): void, onStats?(): void }} opts
+   *   `onStats`: a Statistics button that opens the full statistics screen (js/stats.js)
    */
-  constructor(parent, { players, view = OBSERVER_VIEW, onView }) {
+  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null }) {
     this.players = players;
     this.onView = onView;
     this.view = view;
@@ -100,6 +101,13 @@ export class ObserverPanel {
       this.toggle.setAttribute('aria-expanded', String(!this.table.hidden));
     });
     head.append(this.toggle);
+    if (onStats) {
+      const more = el('button', 'observer-toggle observer-stats-button', 'Statistics');
+      more.type = 'button';
+      more.setAttribute('aria-haspopup', 'dialog');
+      more.addEventListener('click', () => onStats());
+      head.append(more);
+    }
     this.root.append(head, this.table);
     parent.append(this.root);
     this.setView(view, false);
@@ -139,10 +147,12 @@ export class ObserverPanel {
 
 /**
  * A view of the game for spectators and replays: the order methods do
- * nothing (selecting and looking around still work).
+ * nothing (selecting and looking around still work). `blocked()` decides per
+ * call, so a player's game turns view-only when it starts watching after
+ * its defeat.
  */
-export function viewOnly(game) {
-  const blocked = new Set([
+export function viewOnly(game, blocked = () => true) {
+  const orders = new Set([
     'order_smart',
     'order_move',
     'order_attack',
@@ -167,9 +177,11 @@ export function viewOnly(game) {
   const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'sell_value']);
   return new Proxy(game, {
     get(target, prop) {
-      // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
-      if (blocked.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
-      if (zero.has(prop)) return () => 0;
+      if (blocked()) {
+        // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
+        if (orders.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
+        if (zero.has(prop)) return () => 0;
+      }
       const v = Reflect.get(target, prop, target);
       return typeof v === 'function' ? v.bind(target) : v;
     },

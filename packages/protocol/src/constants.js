@@ -169,6 +169,7 @@ export const C2S = Object.freeze({
   RESUME: 'resume',
   /** A spectator processed the whole catch-up (log and sync). */
   SYNCED: 'synced',
+  DEFEATED: 'defeated',
 });
 
 /** Server to client. */

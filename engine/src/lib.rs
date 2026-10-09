@@ -76,6 +76,8 @@ mod tests_security;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
+mod tests_stats;
+#[cfg(test)]
 mod tests_veterancy;
 #[cfg(test)]
 mod tests_weather;
@@ -317,8 +319,10 @@ impl Game {
                     continue;
                 }
                 o.set_player(player);
-                self.world.queue_order(o);
-                queued += 1;
+                // Defeated players' orders are refused (observer.rs counts the rest).
+                if self.world.queue_player_order(o) {
+                    queued += 1;
+                }
             }
         }
         Ok(queued)
@@ -1333,7 +1337,7 @@ impl Game {
         if self.lockstep {
             self.outbox.push(o);
         } else {
-            self.world.queue_order(o);
+            self.world.queue_player_order(o);
         }
     }
 }
