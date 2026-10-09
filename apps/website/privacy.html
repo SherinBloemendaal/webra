@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Privacy | WebRA</title>
+    <meta name="description" content="What WebRA stores about accounts and players, why, for how long, and how to get a copy or have it deleted." />
+    <meta name="theme-color" content="#0a0c0f" />
+    <link rel="canonical" href="https://webra.sherin.dev/privacy.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WebRA" />
+    <meta property="og:title" content="Privacy | WebRA" />
+    <meta property="og:description" content="What WebRA stores about accounts and players, why, for how long, and how to get a copy or have it deleted." />
+    <meta property="og:url" content="https://webra.sherin.dev/privacy.html" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%232a3139'/%3E%3Crect x='1.5' y='1.5' width='29' height='29' rx='2' fill='none' stroke='%237d8996' stroke-width='2'/%3E%3Ccircle cx='5' cy='5' r='1.3' fill='%23aeb8c2'/%3E%3Ccircle cx='27' cy='5' r='1.3' fill='%23aeb8c2'/%3E%3Ccircle cx='5' cy='27' r='1.3' fill='%23aeb8c2'/%3E%3Ccircle cx='27' cy='27' r='1.3' fill='%23aeb8c2'/%3E%3Cpath d='M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z' fill='%23e2321f'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/js-flag.js"></script>
+    <script type="module" src="/assets/site.js"></script>
+  </head>
+  <body data-page="privacy">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="WebRA home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="3" fill="#2a3139" /><rect x="1.5" y="1.5" width="29" height="29" rx="2" fill="none" stroke="#7d8996" stroke-width="2" /><circle cx="5" cy="5" r="1.3" fill="#aeb8c2" /><circle cx="27" cy="5" r="1.3" fill="#aeb8c2" /><circle cx="5" cy="27" r="1.3" fill="#aeb8c2" /><circle cx="27" cy="27" r="1.3" fill="#aeb8c2" /><path d="M16 6L18.6 13.4L26.5 13.6L20.2 18.4L22.5 25.9L16 21.4L9.5 25.9L11.8 18.4L5.5 13.6L13.4 13.4Z" fill="#e2321f" /></svg>
+          <span>Web<b>RA</b></span>
+        </a>
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <nav class="site-nav" id="site-nav" aria-label="Main">
+          <ul>
+            <li><a href="/#features">Features</a></li>
+            <li><a href="/#factions">Factions</a></li>
+            <li><a href="/maps.html">Maps</a></li>
+            <li><a href="/multiplayer.html">Multiplayer</a></li>
+            <li><a href="/changelog">Changelog</a></li>
+            <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play now</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="page-head" aria-labelledby="page-title">
+        <div class="wrap">
+          <span class="kicker">Privacy notice</span>
+          <h1 id="page-title">Privacy</h1>
+          <p>
+            What WebRA stores when you play and when you have an account, why, for how long, and what you can do about
+            it. WebRA is a free fan project without ads, trackers or analytics cookies.
+          </p>
+        </div>
+      </section>
+      <div class="wrap page-body prose">
+        <h2>Who runs WebRA</h2>
+        <p>
+          WebRA is run by its maintainer on Cloudflare (Workers, Durable Objects and D1 in Cloudflare's network). Questions
+          and requests: open an issue or contact the repository owner on
+          <a href="https://github.com/SherinBloemendaal/webra">GitHub</a>.
+        </p>
+
+        <h2>Playing without an account</h2>
+        <ul>
+          <li>
+            The game, your settings, saves, replays, installed original content and texture packs stay in your browser
+            (local storage and IndexedDB). Nothing of that is uploaded unless you sign in and sync your settings.
+          </li>
+          <li>
+            Rate limits (for example for map uploads, the content download and sign-in attempts) count requests per network
+            address. The address is stored only as a salted hash, never as such, and counters are deleted after two days.
+          </li>
+          <li>Maps you upload are public: their name, author field and content are shown to everyone.</li>
+        </ul>
+
+        <h2>Your account</h2>
+        <p>When you sign up, WebRA stores:</p>
+        <ul>
+          <li>your username, display name, avatar color, email address (optional unless email confirmation is required), role, account state and flags;</li>
+          <li>
+            how you sign in: a salted password hash (never the password), your passkeys' public keys and names, and your
+            Discord account id and username if you link Discord (WebRA reads your Discord id, username and email, and
+            never your messages or servers);
+          </li>
+          <li>your sign-in sessions: a hash of the session id, a short device summary such as "Firefox on Linux", a salted hash of the address, and when they were created and last used;</li>
+          <li>your synchronized game settings (the settings document);</li>
+          <li>when the account was created, approved and last used, and the maps you uploaded while signed in.</li>
+        </ul>
+        <p>
+          The session cookie (<code>__Host-webra_session</code>) is strictly necessary for signing in; it is HttpOnly,
+          Secure and first party, and no other cookies are set, except a short-lived one while you sign in with Discord.
+        </p>
+
+        <h2>Network addresses and bans</h2>
+        <p>
+          To stop abuse, moderators and admins can ban accounts, and admins can ban network addresses and ranges. To make
+          that possible WebRA keeps the last 20 network (IP) addresses each account used, with when each was first and
+          last seen. Only admins can see them. An address that was not seen for <strong>90 days</strong> is deleted
+          automatically every day, and all of them are deleted when the account is deleted for good. While you are in an
+          online game, the server also notes which game you are in and from which address, so a ban can remove you from
+          it; that note is deleted when you leave and at the latest after one day.
+        </p>
+
+        <h2>How long data is kept</h2>
+        <ul>
+          <li>Sign-in sessions: until you sign out, at most 30 days, or 14 days without use.</li>
+          <li>Email links: 1 hour (password reset) or 24 hours (confirmation), and they work once.</li>
+          <li>IP history: 90 days after an address was last seen.</li>
+          <li>Expired IP bans: 90 days after they end.</li>
+          <li>The admin audit log (what admins and moderators changed): 365 days.</li>
+          <li>
+            Deleted accounts: kept for 30 days (so a mistaken deletion can be undone), then purged with everything stored
+            about them. Audit log entries about a purged account keep only that an action happened.
+          </li>
+        </ul>
+
+        <h2>Your rights</h2>
+        <ul>
+          <li>Download everything stored about your account as a JSON file from your account page (data export).</li>
+          <li>Correct your profile and settings yourself, or ask an admin.</li>
+          <li>Delete your account from your account page at any time.</li>
+          <li>Ask questions or object through the contact above.</li>
+        </ul>
+
+        <h2>Email</h2>
+        <p>
+          When email is enabled, confirmation and password reset emails are sent through Cloudflare Email Sending from
+          noreply@webra.sherin.dev. WebRA sends no newsletters or marketing.
+        </p>
+
+        <h2>Original Red Alert files</h2>
+        <p>
+          The one-click install streams Electronic Arts' freeware Red Alert files from OpenRA's mirrors through WebRA's
+          server to your browser. Nothing of it is stored on the server, and only accounts that are allowed to use it can.
+        </p>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>WebRA, a free fan project. Licensed under the GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
+        <ul class="footer-links">
+          <li><a href="/play/">Play</a></li>
+          <li><a href="/maps.html">Maps</a></li>
+          <li><a href="/multiplayer.html">Multiplayer</a></li>
+          <li><a href="/changelog">Changelog</a></li>
+          <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
+          <li><a href="/#credits">Credits</a></li>
+          <li><a href="/privacy.html">Privacy</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>
