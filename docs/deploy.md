@@ -261,6 +261,22 @@ Notes:
   session address hashes meaningless (harmless; they expire), it never locks
   anyone out.
 
+### Content relays
+
+`/api/content/ra-quickinstall` (OpenRA's package) and `/api/content/ra-scores`
+(the music, read by range out of the freeware CD images on the Internet
+Archive) need no binding or secret beyond `IP_HASH_SALT` and the D1 quota
+table; both follow the `contentRelay` site setting (admin page) and the
+`content_autoinstall` account flag. The music relay makes at most four
+upstream requests per call, eight with the archive's redirect (the Free
+plan allows 50 subrequests), passes the body through as a stream (no
+buffering, little CPU), and writes two quota rows per 8 MiB piece (16 per
+full download). If the archive moves or changes the images, the relay
+answers 502 (the pinned size and `Content-Range` no longer match) and
+players can still install from a CD image themselves; new pins are measured
+as described in docs/security.md and changed in both
+`apps/server/src/cdmusic.js` and `apps/game/js/content/cdmusic.js`.
+
 ### Rate limiting and D1 writes
 
 The D1 Free plan allows 100,000 row writes a day, so floods must not turn

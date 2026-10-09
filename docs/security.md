@@ -204,6 +204,50 @@ cross-origin isolated page, so the headers changed:
   and 240 s for the transfer. Nothing is stored or cached: no Cache API, KV,
   R2 or D1 for the content, `cache: 'no-store'` upstream and `Cache-Control:
   no-store` downstream. Tests mock the mirrors; CI never downloads them.
+- **The music relay reads one file out of the freeware CDs.** `GET
+  /api/content/ra-scores` (`apps/server/src/cdmusic.js`) serves byte ranges
+  of `scores.mix` (the soundtrack, 64,171,360 bytes) out of the freeware
+  Red Alert CD images (EA's `CD1_ALLIED_DISC.ISO` and `CD2_SOVIET_DISC.ISO`
+  of 2008) on the Internet Archive, for the game's one-click music install.
+  It is not a proxy: the player sends only a range of `scores.mix`
+  (`Range: bytes=a-b`, one range, at most 8 MiB, inside the file; anything
+  else is 416 before any fetch or quota write); the Worker adds the pinned
+  offset of `scores.mix` in the pinned image and asks the pinned URL
+  (`archive.org/download/command-conquer-red-alert_202309/...[CD1].ISO`,
+  then `[CD2].ISO`) for exactly that window, so no other part of the discs
+  can be read through it. Redirects are followed by hand (`redirect:
+  'manual'`), once, and only to an https data node of the archive
+  (`ia<n>`/`dn<n>.<region>.archive.org`, default port, no query) with the
+  same item and file path. The answer must be `206` with `Content-Range` of
+  exactly the asked window and the pinned image size (a changed or other
+  image is refused) and is streamed through cut to the asked length. Only
+  `GET`, the game page (`X-WebRA-Content`, Origin, `Sec-Fetch-Site`), the
+  same account gate as the package relay (active, `content_autoinstall` or
+  admin, `contentRelay` on, address not banned). Budgets in the D1 quota
+  table: 256 MiB per account per UTC day (each request counts its size,
+  rounded up to whole MiB: four full downloads) and 64 requests per IP per
+  hour; keys are salted hashes. No player header (cookie, address) goes
+  upstream; nothing is stored or cached (`cache: 'no-store'`, `Cache-Control:
+  no-store`). At most four upstream attempts per request (two rounds over
+  the two discs, the archive's data nodes sometimes answer 500 once), 15 s
+  for headers, 120 s per piece. The game checks the assembled file against
+  the pinned SHA-256 before it installs anything and throws a mismatch away.
+  The pins (image sizes, offsets, the size and SHA-256 of `scores.mix`)
+  were measured once with range requests: the ISO 9660 directory gives
+  `MAIN.MIX`'s extent, its encrypted MIX index gives `scores.mix`'s offset,
+  the first 4,096 bytes of `MAIN.MIX` match the SHA-1 that OpenRA's content
+  installer uses to recognise each disc (`mods/ra-content/installer/allies95.yaml`
+  and `soviet95.yaml`), the image sizes match EA's 2008 download, and only
+  the `scores.mix` range was downloaded to hash it (the same hash on both
+  discs). They are numbers about EA's files, not the files. Tests use
+  synthetic bytes and a mocked archive.
+- **CD images from the player.** A dropped or picked `.iso` is read by
+  slices (`File.slice`), never loaded whole: the volume descriptor, the
+  directories on the way to `MAIN.MIX` and `INSTALL/REDALERT.MIX`, then
+  those archives' indexes and the wanted entries, all bounds checked
+  (`apps/game/js/content/iso.js`: directories capped at 1 MiB, depth at 8,
+  records must stay inside their directory, files inside the image,
+  multi-extent files refused).
 
 ## Accounts and admin (2026-10-09)
 
@@ -326,7 +370,9 @@ data, admins only), roles (admin powers), and the right to play online.
   through the `game_presence` table and the session object's `evict`.
 - **Content relay.** Only active accounts with the `content_autoinstall`
   flag (or admins), only while the site setting allows it, on top of the
-  relay's existing header, origin and rate limit checks.
+  relay's existing header, origin and rate limit checks. The same gate
+  covers the music relay (`/api/content/ra-scores`), whose daily byte budget
+  is kept per account.
 - **Abuse of the API.** Rate limits per IP and per account (section 9 of the
   accounts API), body size caps, strict schemas that refuse unknown fields,
   versioned writes (`If-Match`) for settings documents and site settings.

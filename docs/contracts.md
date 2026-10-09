@@ -329,6 +329,7 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/maps/:id` | the map JSON |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited) |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
+| `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
@@ -358,6 +359,27 @@ answer, 240 s for the transfer). Response: `200`, `Content-Type:
 application/zip`, `Content-Length`, `Cache-Control: no-store`,
 `Cross-Origin-Resource-Policy: same-origin`; 502 when no mirror fits.
 Nothing is stored anywhere on the server.
+
+`/api/content/ra-scores` (`apps/server/src/cdmusic.js`): the game's
+one-click music install. The same account gate and `X-WebRA-Content` and
+same-origin checks as above. The request carries `Range: bytes=a-b` (or
+`bytes=a-`): one range inside `scores.mix` (64,171,360 bytes), at most
+8 MiB (8,388,608 bytes); otherwise `416 bad_range` with `Content-Range:
+bytes */64171360`. Budgets: 256 MiB per account per UTC day (each request
+counts its length rounded up to whole MiB) and 64 requests per IP per hour
+(429 with `Retry-After`). The Worker reads the matching window of the
+pinned Allied disc image, then the Soviet one (`scores.mix` is the same on
+both), from the Internet Archive with `Range`, `redirect: 'manual'` (one
+redirect to an archive data node with the same item and path) and `cache:
+'no-store'`; it takes only a `206` whose `Content-Range` is exactly that
+window of the pinned image size. Response: `206`, `Content-Type:
+application/octet-stream`, `Content-Length`, `Content-Range: bytes
+a-b/64171360`, `Cache-Control: no-store`, `Cross-Origin-Resource-Policy:
+same-origin`; 502 when neither disc answers (two rounds). The game
+(`apps/game/js/content/cdmusic.js`) asks for 8 MiB pieces, keeps finished
+pieces in IndexedDB (`partials` in the content database) to resume, checks
+the whole file's SHA-256 (`313ef2e4...0846`, pinned on both sides) and
+then installs it like a picked `scores.mix`.
 
 ### WebSocket messages (JSON, `{ "t": type, ... }`)
 

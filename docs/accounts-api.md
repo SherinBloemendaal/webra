@@ -72,12 +72,13 @@ body. Errors always look like this:
 | 403 | `registration_closed` | Signup is closed in the site settings |
 | 403 | `method_disabled` | That login method is switched off in the site settings |
 | (WebSocket) | `account_required` | Online play needs a signed-in account; HTTP routes answer `401 unauthenticated` instead |
-| 403 | `relay_forbidden` | The content relay needs the `content_autoinstall` flag (or admin) and the relay switched on |
+| 403 | `relay_forbidden` | The content relays (package and music) need the `content_autoinstall` flag (or admin) and the relay switched on |
 | 404 | `not_found` | No such endpoint or object |
 | 405 | `bad_message` | Method not allowed (`Allow` header lists the allowed ones) |
 | 409 | `conflict` | Username or email already taken, Discord already linked, last login method |
 | 412 | `version_conflict` | `If-Match` does not match the stored version (`current` attached) |
 | 413 | `too_large` | Body too large |
+| 416 | `bad_range` | The music relay got no single byte range inside `scores.mix` (`Content-Range: bytes */64171360`) |
 | 415 | `bad_message` | Not `application/json` |
 | 428 | `precondition_required` | `If-Match` missing on a versioned write |
 | 429 | `rate_limited` | A rate limit was hit (`retryAfter`) |
@@ -100,7 +101,7 @@ body. Errors always look like this:
 | `avatarColor` | string | `#rrggbb`, lower case hex. Random at signup. |
 | `role` | string | `user`, `moderator` or `admin` |
 | `status` | string | `pending_email`, `pending_approval`, `active`, `banned`, `deleted` (see 2.2) |
-| `flags` | string[] | Known flags only: `content_autoinstall` (may use the one-click Red Alert content relay) |
+| `flags` | string[] | Known flags only: `content_autoinstall` (may use the one-click Red Alert content relays: the package and the music) |
 | `createdAt`, `lastSeenAt` | number | `lastSeenAt` is updated at most hourly (or when the address changes) |
 | `usernameChangedAt` | number or null | Last self-service rename |
 
@@ -907,6 +908,12 @@ or the admin role (`403 relay_forbidden`, message: "The one-click install is
 not enabled for your account. Ask an admin, or install the files from your
 own copy."). `GET` stays without the CSRF header (it is a download started by
 the game page, with the existing `X-WebRA-Content: 1` header).
+
+`GET /api/content/ra-scores` (the music from the freeware CDs, see
+[contracts](contracts.md) section 4) has the same gate, in the same order,
+before its own checks. Its daily budget of 256 MiB is counted per account
+(the account id as a salted hash in the quota table), next to 64 requests
+per IP per hour; both answer `429 rate_limited` with `Retry-After`.
 
 ## 8. Admin API (`/api/admin/*`)
 

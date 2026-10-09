@@ -83,7 +83,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated); team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
-- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: a one-click download, your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
+- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: a one-click download (with the music from the freeware CDs for selected accounts), a freeware Red Alert CD image (`.iso`, read by slices), your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
 - [x] **Texture packs** (`.webrapack`): sprites, cameos, terrain tiles and sounds made by players, with a preview of what a pack replaces before it is installed, and a pack manager (enable, order, remove). Cosmetic only, so safe in multiplayer. Format: [docs/texture-packs.md](docs/texture-packs.md); build one with `node tools/make-pack.mjs`
 
 ### Engineering
@@ -108,6 +108,14 @@ them (WebRA's own art and synthesized sounds).
   webra.sherin.dev**: the WebRA server passes the file through as a stream
   and keeps no copy (no cache, no storage; at most 3 downloads per hour per
   network). So the WebRA server does relay EA's files when you click this.
+- **Music:** `ra-quickinstall.zip` has no music. Selected accounts get
+  "Music (from the freeware Red Alert CDs)": the WebRA server reads only
+  `scores.mix` (64 MB) out of the freeware CD images on the Internet Archive
+  by HTTP range and passes it through; the game resumes cut off downloads
+  and checks the file's SHA-256 before installing it. Everyone else
+  downloads the Allied or Soviet CD image (linked in the dialog) and drops
+  the `.iso` on the game: it is read by slices, never loaded whole, and
+  installs the music, sounds and graphics on the disc.
 - **Or yourself:** download `ra-quickinstall.zip` from one of the mirrors
   listed in the dialog, or use your own copy (`main.mix` and `redalert.mix`
   from the freeware release or the CD, the archives inside them, or loose
