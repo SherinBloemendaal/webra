@@ -181,6 +181,12 @@ export function formatCombo(combo, mac = isMac()) {
   return out.join('+');
 }
 
+/** The key that runs `action` now, formatted for a tooltip ("D", "Cmd+X"), or null when none is bound. */
+export function boundKey(registry, action) {
+  const combo = registry && action ? registry.bindingsFor(action)[0] : null;
+  return combo ? formatCombo(combo) : null;
+}
+
 // ---- Bindings saved by older WebRA versions ------------------------------------------
 
 /** Keymap entry that marks overrides as written by this version of the defaults. */

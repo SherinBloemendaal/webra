@@ -576,54 +576,6 @@
   pointer-events: none;
 }
 
-/* ---- Tooltip ------------------------------------------------------------------- */
-
-#sidebar .sb-tip {
-  position: fixed;
-  z-index: 50;
-  width: calc(230 * var(--ui-px));
-  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
-  background:
-    var(--ui-scan),
-    linear-gradient(180deg, rgba(34, 40, 48, 0.98), rgba(20, 24, 29, 0.98));
-  border: 1px solid var(--ui-edge);
-  border-top: 2px solid var(--ui-accent);
-  border-radius: var(--ui-radius);
-  box-shadow:
-    var(--ui-bevel),
-    0 6px 18px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
-
-#sidebar .sb-tip-name {
-  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
-  color: #fff;
-}
-
-#sidebar .sb-tip-stats {
-  margin-top: calc(2 * var(--ui-px));
-  font: var(--ui-fs-s) var(--ui-font-mono);
-  color: var(--ui-money);
-  white-space: pre;
-}
-
-#sidebar .sb-tip-desc {
-  margin-top: calc(5 * var(--ui-px));
-  color: var(--ui-text);
-}
-
-#sidebar .sb-tip-warn {
-  margin-top: calc(5 * var(--ui-px));
-  color: var(--ui-bad);
-  font-weight: 600;
-}
-
-#sidebar .sb-tip-hint {
-  margin-top: calc(6 * var(--ui-px));
-  font-size: var(--ui-fs-xs);
-  color: var(--ui-muted);
-}
-
 /* ---- Selection panel ------------------------------------------------------------ */
 
 #sidebar .sb-sel {

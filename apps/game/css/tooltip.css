@@ -1,0 +1,125 @@
+/* The shared tooltip (js/ui/tooltip.js), drawn like OpenRA's Red Alert
+   tooltips (mods/common/chrome/tooltips.yaml): a dark "dialog4" panel with a
+   thin light rim, the name in bold white, the hotkey after it in yellow
+   (TextColor FFFF00), a smaller description under it, and for production
+   items cost, build time and power in a column on the right, in red when
+   they cannot be met. The panel is fixed to the viewport and never takes
+   the pointer, so it does not get in the way of the map or the buttons. */
+
+#ui-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  gap: calc(12 * var(--ui-px));
+  width: max-content;
+  max-width: min(calc(320 * var(--ui-px)), calc(100vw - 12 * var(--ui-px)));
+  padding: calc(5 * var(--ui-px)) calc(8 * var(--ui-px)) calc(6 * var(--ui-px));
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(22, 24, 27, 0.97), rgba(10, 11, 13, 0.97));
+  border: 1px solid #6d7178;
+  outline: 1px solid var(--ui-edge);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  text-align: left;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+
+#ui-tooltip[hidden] {
+  display: none;
+}
+
+#ui-tooltip .ui-tooltip-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#ui-tooltip .ui-tooltip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: calc(5 * var(--ui-px));
+}
+
+#ui-tooltip .ui-tooltip-key {
+  color: #ffff00;
+  white-space: nowrap;
+}
+
+#ui-tooltip .ui-tooltip-requires {
+  margin-top: calc(1 * var(--ui-px));
+  color: var(--ui-bad);
+  font-size: var(--ui-fs-xs);
+}
+
+#ui-tooltip .ui-tooltip-desc,
+#ui-tooltip .ui-tooltip-note {
+  margin-top: calc(3 * var(--ui-px));
+  max-width: calc(240 * var(--ui-px));
+  color: #d8d8d8;
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
+#ui-tooltip .ui-tooltip-warn {
+  color: var(--ui-bad);
+}
+
+#ui-tooltip .ui-tooltip-hint {
+  color: var(--ui-muted);
+  font-weight: 400;
+}
+
+#ui-tooltip .ui-tooltip-stats {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--ui-px));
+  padding-left: calc(10 * var(--ui-px));
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#ui-tooltip .ui-tooltip-stat {
+  display: flex;
+  align-items: center;
+  gap: calc(5 * var(--ui-px));
+  white-space: nowrap;
+}
+
+#ui-tooltip .ui-tooltip-stat .ui-icon {
+  width: calc(12 * var(--ui-px));
+  height: calc(12 * var(--ui-px));
+  fill: currentColor;
+}
+
+#ui-tooltip .ui-tooltip-stat-cost .ui-icon {
+  color: var(--ui-money);
+}
+
+#ui-tooltip .ui-tooltip-stat-time .ui-icon {
+  color: #cfd6dd;
+}
+
+#ui-tooltip .ui-tooltip-stat-power .ui-icon {
+  color: #ffd84a;
+}
+
+#ui-tooltip .ui-tooltip-bad,
+#ui-tooltip .ui-tooltip-bad .ui-icon {
+  color: var(--ui-bad);
+}
+
+/* Targets: a long press opens the tooltip, so no text selection or callout. */
+.has-tooltip {
+  -webkit-touch-callout: none;
+  user-select: none;
+}

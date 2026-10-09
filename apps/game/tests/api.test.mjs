@@ -208,6 +208,11 @@ test('rally lines and control group numbers: local UI state drawn by the engine,
   assert.equal(plates(), 0, 'only while selected');
   game.set_selection(Uint32Array.from([yard]));
   assert.equal(game.state_hash(), hash, 'selection, rally line and groups are not simulation state');
+  // The production tooltip's numbers come with the game.
+  const state = JSON.parse(game.player_json(0));
+  const powr = state.buildable.find((b) => b.id === 'POWR');
+  assert.ok(Number.isInteger(powr.buildTicks) && powr.buildTicks > 0, `build ticks ${powr.buildTicks}`);
+  assert.ok(JSON.parse(game.rules_json()).lowPowerModifier > 100);
 });
 
 test('orders: smart move and stop', () => {

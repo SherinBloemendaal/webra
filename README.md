@@ -309,6 +309,8 @@ Camera, control groups, chat, music and spectators:
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
 
+Every icon button (the command bar, the sidebar's buttons, tabs and cameos, the support powers, the HUD buttons) has a Red Alert style tooltip with its current key: hover it a moment, focus it with the keyboard, or long press it on a touch screen. The cameos show OpenRA's production tooltip: cost, build time, power, what is still missing and the description.
+
 ### Touch (phones and tablets)
 
 Touch and pen input works next to the mouse and keyboard; the touch action bar appears at the bottom left of the battlefield on touch screens.

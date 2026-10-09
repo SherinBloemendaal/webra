@@ -41,6 +41,8 @@ export const ICON_PATHS = {
     'M1 1h5L4.3 2.7L6.6 5L5 6.6L2.7 4.3L1 6ZM15 1v5l-1.7-1.7L11 6.6L9.4 5l2.3-2.3L10 1ZM1 15v-5l1.7 1.7L5 9.4L6.6 11l-2.3 2.3L6 15ZM15 15h-5l1.7-1.7L9.4 11L11 9.4l2.3 2.3L15 10Z',
   options: cogPath(),
   power: 'M9.5 1L3 9h4l-1.5 6L13 6.5H8.8Z',
+  // Production tooltip: build time (OpenRA production-tooltip-time).
+  time: 'M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1Zm0 1.8a5.2 5.2 0 1 0 0 10.4A5.2 5.2 0 0 0 8 2.8ZM7.2 4h1.6v3.7l2.6 1.5l-.8 1.4L7.2 8.6Z',
   // OpenRA's Red Alert top row: beacon, repair, power down.
   beacon: 'M7 1h2v5.5h2.6L8 10.2L4.4 6.5H7ZM2 12.6c0-.9 2.7-1.6 6-1.6s6 .7 6 1.6s-2.7 1.6-6 1.6s-6-.7-6-1.6ZM4.4 12.6c0 .3 1.6.6 3.6.6s3.6-.3 3.6-.6s-1.6-.6-3.6-.6s-3.6.3-3.6.6Z',
   repair: 'M10.5 1a4.5 4.5 0 0 0-4.2 6.1L1.4 12a1.6 1.6 0 0 0 2.3 2.3l4.9-4.9a4.5 4.5 0 0 0 6.2-5.8l-2.6 2.6l-2.1-.5l-.5-2.1l2.6-2.6A4.5 4.5 0 0 0 10.5 1Z',

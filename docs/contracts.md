@@ -548,6 +548,10 @@ queue, structures included (no extra order types):
   `start_production` and `place` are refused for such items.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`.
+- `player_json().buildable[].buildTicks` is the time the item takes with the
+  player's current factories (BuildTimeSpeedReduction), before the low power
+  slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
+  sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
 
 ## 5. Domains for units
 

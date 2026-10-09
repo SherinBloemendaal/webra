@@ -465,6 +465,8 @@ impl Game {
             "weapons": r.weapons.iter().map(|w| &w.name).collect::<Vec<_>>(),
             "factions": r.factions,
             "pxPerCell": PX_PER_CELL,
+            // Production takes this percentage of its time while power is low (OpenRA LowPowerModifier).
+            "lowPowerModifier": r.player.low_power_modifier,
             // Teams (0: none, equal non-zero teams are allies) and neutral owners:
             // the client's relationship colours and radar pings follow them.
             "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai, "team": p.team, "neutral": p.neutral})).collect::<Vec<_>>(),
@@ -1166,7 +1168,10 @@ impl Game {
                     .collect::<Vec<_>>()
             })
             .collect();
-        // Every item that can be built in this game mode, with what is still missing.
+        // Every item that can be built in this game mode, with what is still
+        // missing and its build time with the player's factories (before the
+        // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
+        let factories = w.factories(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
@@ -1177,6 +1182,7 @@ impl Game {
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
+                    "buildTicks": w.build_time_with(t as u16, w.producer_count_in(&factories, t as u16)),
                 })
             })
             .collect();

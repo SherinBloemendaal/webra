@@ -55,6 +55,7 @@ import { presetOptions } from './modes.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { switchInput } from './ui/controls.js';
+import { attachTooltip } from './ui/tooltip.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
 // its label and choices. Map style, biome and weather are the World group of
@@ -199,7 +200,10 @@ class ColorPicker {
     this.button.setAttribute('aria-haspopup', 'listbox');
     this.button.setAttribute('aria-expanded', 'false');
     this.button.setAttribute('aria-controls', id);
-    this.button.title = 'Player color. Picking a color used by another player swaps the two.';
+    attachTooltip(this.button, () => ({
+      title: `Color: ${this.lobby.colorName(this.lobby.state.players[this.slot].color)}`,
+      desc: 'Pick a color. Picking a color used by another player swaps the two.',
+    }));
     this.swatch = el('span', 'lobby-swatch');
     this.button.append(this.swatch, el('span', 'lobby-caret'));
 
@@ -222,7 +226,16 @@ class ColorPicker {
       o.addEventListener('click', () => this.pick(i));
       o.addEventListener('pointermove', () => this.setActive(i));
       this.list.append(o);
-      return { node: o, tag };
+      const rec = { node: o, tag, owner: -1 };
+      attachTooltip(
+        o,
+        () => ({
+          title: this.lobby.colorName(i),
+          desc: rec.owner >= 0 ? `Used by Player ${rec.owner + 1}: picking it swaps colors.` : '',
+        }),
+        { side: 'right' },
+      );
+      return rec;
     });
 
     this.button.addEventListener('click', () => (this.open ? this.close(true) : this.show()));
@@ -246,13 +259,14 @@ class ColorPicker {
     const name = this.lobby.colorName(color);
     this.swatch.style.background = rgbCss(this.lobby.colors[color]);
     this.button.setAttribute('aria-label', `Color: ${name}`);
-    this.options.forEach(({ node, tag }, i) => {
+    this.options.forEach((rec, i) => {
+      const { node, tag } = rec;
       const owner = players.findIndex((p, s) => s !== this.slot && p.color === i);
+      rec.owner = owner;
       node.setAttribute('aria-selected', i === color ? 'true' : 'false');
       node.classList.toggle('taken', owner >= 0);
       tag.textContent = owner >= 0 ? `P${owner + 1}` : '';
       const label = this.lobby.colorName(i);
-      node.title = owner >= 0 ? `${label}: used by Player ${owner + 1}, picking it swaps colors` : label;
       node.setAttribute('aria-label', owner >= 0 ? `${label}, used by Player ${owner + 1}` : label);
     });
   }
@@ -680,8 +694,9 @@ export class Lobby {
 
     this.diceBtn = el('button', 'lobby-btn lobby-dice');
     this.diceBtn.type = 'button';
-    this.diceBtn.title = 'Generate a new random seed';
     this.diceBtn.setAttribute('aria-label', 'New seed');
+    // On narrow screens the button is only the die (css/lobby.css).
+    attachTooltip(this.diceBtn, () => ({ title: 'New seed', desc: 'Generate a new random seed for the map.' }));
     const die = el('span', 'lobby-die');
     die.setAttribute('aria-hidden', 'true');
     this.diceBtn.append(die, el('span', 'lobby-dice-text', 'New seed'));
@@ -923,7 +938,11 @@ export class Lobby {
     remove.type = 'button';
     remove.append(el('span', 'lobby-remove-x'));
     remove.setAttribute('aria-label', `Remove player ${slot + 1}`);
-    remove.title = player.type === 'human' ? 'You cannot remove your own slot' : 'Remove this slot';
+    attachTooltip(remove, () =>
+      this.state.players[slot]?.type === 'human'
+        ? { title: 'Remove this slot', desc: 'You cannot remove your own slot.' }
+        : { title: 'Remove this slot', desc: canRemoveSlot(this.state, slot) ? `Remove player ${slot + 1} from the game.` : 'A game needs at least two players.' },
+    );
     remove.disabled = !canRemoveSlot(this.state, slot);
     remove.addEventListener('click', () => {
       if (!removeSlot(this.state, slot)) return;
