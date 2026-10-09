@@ -673,13 +673,17 @@ Serialized size at most 32 KiB.
     "showUnitPaths": false,
     "pixelRatioCap": 2,            // number 0.5..3 (resolution cap)
     "lowQuality": false,
+    "uiScale": "auto",             // "auto" | number 0.5..2 (size of the sidebar, bars, menus; UI_SCALE_LIMITS)
+    "gameScale": "auto",           // "auto" | number 0.5..3 (base zoom of the battlefield; GAME_SCALE_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] }
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
-    "speech": true, "original": true
+    "speech": true, "original": true,
+    "musicOn": true, "musicShuffle": true,
+    "musicRepeat": "all"           // "all" | "one" | "off" (MUSIC_REPEAT_MODES)
   },
   "content": {
     "packs": [{ "id": "desert tiles|someone", "enabled": true }]   // order = priority, first wins
