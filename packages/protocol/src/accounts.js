@@ -378,6 +378,7 @@ const SETTINGS_SECTIONS = {
     healthBars: choice(['off', 'damaged', 'all']),
     graphics: choice(['webra', 'original']),
     hotkeys,
+    attackMoveTipSeen: boolean,
   },
   audio: {
     enabled: boolean,

@@ -79,6 +79,8 @@ test('settings document: every section optional, strict keys, free-form extra wi
   assert.deepEqual(validateSettingsDocument(doc), doc);
   throwsField(() => validateSettingsDocument({ game: { edgeScrollSpeed: NaN } }), 'settings.game.edgeScrollSpeed');
   throwsField(() => validateSettingsDocument({ game: { edgeScrollSpeed: '1' } }), 'settings.game.edgeScrollSpeed');
+  assert.deepEqual(validateSettingsDocument({ game: { attackMoveTipSeen: true } }), { game: { attackMoveTipSeen: true } });
+  throwsField(() => validateSettingsDocument({ game: { attackMoveTipSeen: 'yes' } }), 'settings.game.attackMoveTipSeen');
   throwsField(() => validateSettingsDocument({ audio: [] }), 'settings.audio');
   throwsField(() => validateSettingsDocument({ extra: { 'bad key': 1 } }), 'settings.extra');
   throwsField(() => validateSettingsDocument({ extra: { a: Array(65).fill(0) } }), 'settings.extra.a');
