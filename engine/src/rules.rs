@@ -26,6 +26,8 @@ pub struct PlayerRules {
     pub gem_value: i32,
     /// Bales a gem cell holds at most (ResourceLayer Gems MaxDensity).
     pub gem_max_density: u8,
+    /// Ticks a placed beacon stays on the map (PlaceBeacon.Duration, beacons.rs).
+    pub beacon_duration: i32,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +51,7 @@ struct RawActor {
     requires_power: bool,
     defense: bool,
     opportunity_fire: bool,
+    base_building: bool,
     death_weapon: Option<usize>,
     self_heal: Option<SelfHeal>,
     turret_offsets: Vec<Vec<i32>>,
@@ -358,6 +361,9 @@ struct RawBuilding {
     provides: BTreeMap<String, Vec<String>>,
     refinery: Option<RawRefinery>,
     repairs: Option<RepairInfo>,
+    repairable: Option<RepairableInfo>,
+    power_down: bool,
+    value: i32,
     center_offset: Vec<i32>,
 }
 
@@ -373,6 +379,19 @@ pub struct RepairInfo {
     pub hp_per_step: i32,
     pub interval: i32,
     pub value_percent: i32,
+}
+
+/// The repair button (OpenRA RepairableBuilding, repair.rs): a step of at
+/// most `step` hit points every `interval` ticks, costing `percent` percent of
+/// the building's value for a full repair; `bonuses` speed up each step when
+/// several allied players repair together (one entry per repairer count, so
+/// at most `bonuses.len() - 1` players repair at once).
+#[derive(Deserialize, Clone, Debug)]
+pub struct RepairableInfo {
+    pub percent: i32,
+    pub interval: i32,
+    pub step: i32,
+    pub bonuses: Vec<i32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -648,6 +667,12 @@ pub struct BuildingInfo {
     pub provides: Vec<Vec<u16>>,
     pub refinery: Option<RefineryInfo>,
     pub repairs: Option<RepairInfo>,
+    /// The repair button works on it (repair.rs).
+    pub repairable: Option<RepairableInfo>,
+    /// The power down button works on it (repair.rs).
+    pub power_down: bool,
+    /// OpenRA GetSellValue: CustomSellValue or the cost; the base of the repair cost.
+    pub value: i32,
     pub center_offset: (i32, i32),
 }
 
@@ -697,6 +722,8 @@ pub struct ActorInfo {
     /// Fires at targets of opportunity while moving (OpenRA AttackTurreted
     /// with OpportunityFire, the default): turreted units.
     pub opportunity_fire: bool,
+    /// OpenRA BaseBuilding (Construction Yard, MCV): the base hotkey cycles through them.
+    pub base_building: bool,
     pub death_weapon: Option<usize>,
     pub self_heal: Option<SelfHeal>,
     /// (forward, lateral) offset of each turret from the actor's centre (OpenRA Turreted.Offset).
@@ -904,6 +931,7 @@ impl Rules {
     /// ranges, counts and timers stay within bounds that keep loops and
     /// allocations small (vision circles, blast scans, squads, pips).
     pub fn validate(&self) -> Result<(), String> {
+        within("player.beacon_duration", self.player.beacon_duration, 1, TIMER)?;
         let armors = self.weapons.iter().flat_map(|w| w.warheads.iter()).map(|h| h.versus.len()).min().unwrap_or(5);
         let max_armor = self.actors.iter().map(|a| a.armor).max().unwrap_or(0);
         if max_armor >= armors {
@@ -1128,6 +1156,18 @@ impl Rules {
             within(&n("repairs.hp_per_step"), r.hp_per_step, 0, 100_000_000)?;
             within(&n("repairs.interval"), r.interval, 1, TIMER)?;
             within(&n("repairs.value_percent"), r.value_percent, 0, 1000)?;
+        }
+        within(&n("value"), b.value, 0, 1_000_000)?;
+        if let Some(r) = &b.repairable {
+            within(&n("repairable.percent"), r.percent, 0, MAX_PERCENT)?;
+            within(&n("repairable.interval"), r.interval, 1, TIMER)?;
+            within(&n("repairable.step"), r.step, 0, 100_000_000)?;
+            if r.bonuses.is_empty() || r.bonuses.len() > MAX_REPAIR_BONUSES {
+                return Err(n(&format!("repairable.bonuses needs 1 to {MAX_REPAIR_BONUSES} values")));
+            }
+            for &v in &r.bonuses {
+                within(&n("repairable.bonuses"), v, 0, MAX_PERCENT)?;
+            }
         }
         if let Some(r) = &b.refinery {
             within(&n("refinery.dock_offset"), r.dock_offset.0, -4 * CELLS, 4 * CELLS)?;
@@ -1416,6 +1456,9 @@ impl Rules {
                         provides,
                         refinery,
                         repairs: b.repairs,
+                        repairable: b.repairable,
+                        power_down: b.power_down,
+                        value: b.value,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
                     })
                 }
@@ -1452,6 +1495,7 @@ impl Rules {
                 requires_power: a.requires_power,
                 defense: a.defense,
                 opportunity_fire: a.opportunity_fire,
+                base_building: a.base_building,
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
                 turret_offsets,
@@ -1627,6 +1671,8 @@ pub const MAX_LEVELS: usize = 8;
 const MAX_PERCENT: i32 = 1000;
 /// Upper bound for timers and delays, in ticks (over an hour of game time).
 const TIMER: i32 = 100_000;
+/// Most repair bonus steps: one more than the players that may repair one building at once (repair.rs).
+pub const MAX_REPAIR_BONUSES: usize = 9;
 /// Largest vision-like radius (sight, gap generator shroud and sight): vision
 /// circles are cached per radius and cost (2r + 1)^2 cells.
 const MAX_VISION: i32 = 40 * CELLS;
@@ -1759,6 +1805,12 @@ mod tests {
             serde_json::json!({ "weapons": { "25mm": { "burst": 0 } } }),
             serde_json::json!({ "weapons": { "25mm": { "burst_delays": [] } } }),
             serde_json::json!({ "weapons": { "25mm": { "range": 2000000000 } } }),
+            // Repair button (repair.rs).
+            serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "interval": 0 } } } } }),
+            serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [] } } } } }),
+            serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100] } } } } }),
+            serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "percent": -1 } } } } }),
+            serde_json::json!({ "actors": { "POWR": { "building": { "value": -1 } } } }),
         ] {
             assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
         }

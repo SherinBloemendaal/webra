@@ -225,6 +225,23 @@ test('spectators: lobby places, frames, no orders, no stalls, late joining', asy
   assert.deepEqual(s.session.lockstep.agreed, { tick: 25, hash: 'aa' });
 });
 
+test('a defeated player keeps watching; its orders are dropped, spectators cannot report a defeat', async () => {
+  const { s, host, guest, watchers, hSeat, gSeat } = await started({ spectators: 1 });
+  const seats = [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }];
+  await play(s, seats, 0, 10);
+  await s.send(guest, { t: 'defeated' });
+  assert.equal(guest.take('error').length, 0);
+  assert.ok(!guest.closed, 'it stays connected and keeps receiving frames');
+  await play(s, seats, 10, 20, (c) => [{ o: 'stop', player: c.seat, ids: [1] }]);
+  assert.equal(host.take('error').length + guest.take('error').length, 0);
+  const frames = watchers[0].ws.take('frame').filter((f) => f.tick >= 13);
+  assert.equal(frames.length, 10);
+  for (const f of frames) assert.deepEqual(f.orders.map(([p]) => p), [hSeat], `tick ${f.tick}: only the host's orders`);
+  await s.send(watchers[0].ws, { t: 'defeated' });
+  assert.equal(watchers[0].ws.take('error')[0].code, 'bad_state');
+  assertValid(guest);
+});
+
 test('a spectator rejoins with its key; players cannot join a running game', async () => {
   const { s, host, guest, watchers, hSeat, gSeat } = await started({ spectators: 1 });
   await play(s, [{ ws: host, seat: hSeat }, { ws: guest, seat: gSeat }], 0, 4);
@@ -324,6 +341,32 @@ test('catch-ups count until the client confirms; the byte budget follows the log
   await s.send(f, { t: 'synced' });
   const g = await watch('g');
   assert.equal(g.take('error')[0].code, 'rate_limited');
+});
+
+test('team chat reaches the team only; spectators chat among themselves', async () => {
+  const { s, host, guest, watchers } = await started({ spectators: 1, start: false });
+  const w = watchers[0].ws;
+  const room = s.session.room;
+  const slotOf = (ws) => room.slots.findIndex((x) => x.type === 'human' && x.name === (ws === host ? 'Host' : 'Guest'));
+  await s.send(host, { t: 'slot', slot: slotOf(host), team: 1 });
+  await s.send(guest, { t: 'slot', slot: slotOf(guest), team: 2 });
+  for (const ws of [host, guest, w]) ws.take('chat');
+  await s.send(host, { t: 'chat', text: 'flank right', team: true });
+  assert.deepEqual(host.take('chat').map((m) => [m.text, m.team]), [['flank right', true]], 'the sender sees it');
+  assert.equal(guest.take('chat').length, 0, 'another team does not');
+  assert.equal(w.take('chat').length, 0, 'spectators do not');
+  await s.send(guest, { t: 'slot', slot: slotOf(guest), team: 1 });
+  await s.send(host, { t: 'chat', text: 'together', team: true });
+  assert.equal(guest.take('chat').length, 1, 'a team mate does');
+  assert.equal(host.take('chat').length, 1);
+  assert.equal(w.take('chat').length, 0);
+  await s.send(w, { t: 'chat', text: 'nice', team: true });
+  assert.equal(w.take('chat').length, 1);
+  assert.equal(host.take('chat').length + guest.take('chat').length, 0, 'spectator team chat stays with the spectators');
+  await s.send(host, { t: 'chat', text: 'gl hf' });
+  assert.equal(guest.take('chat')[0].team, undefined, 'all chat reaches everyone');
+  assert.equal(w.take('chat').length, 1);
+  for (const ws of [host, guest, w]) assertValid(ws);
 });
 
 test('chat has its own rate limit and a flood closes the connection', async () => {

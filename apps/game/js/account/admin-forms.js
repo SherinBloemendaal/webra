@@ -32,6 +32,8 @@ export function controlFor(spec) {
       return { kind: 'textarea', rows: 3, hint: 'One pack per line, highest priority first: on or off, then the pack id ("on desert tiles|someone").' };
     case 'json':
       return { kind: 'textarea', rows: 5, hint: 'A JSON object.' };
+    case 'presets':
+      return { kind: 'textarea', rows: 5, hint: 'A JSON list of saved game modes: [{ "name": ..., "options": { every mode option } }].' };
     default:
       return { kind: 'text', attrs: { type: 'text' } };
   }
@@ -49,6 +51,7 @@ export function formatValue(spec, value) {
     case 'packs':
       return (value ?? []).map((p) => `${p.enabled ? 'on' : 'off'} ${p.id}`).join('\n');
     case 'json':
+    case 'presets':
       return value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
     default:
       return value === null || value === undefined ? '' : String(value);
@@ -106,9 +109,10 @@ export function parseValue(spec, input) {
       }
       break;
     }
-    case 'json': {
+    case 'json':
+    case 'presets': {
       const text = String(input).trim();
-      if (!text) value = spec.nullable ? null : {};
+      if (!text) value = spec.type === 'presets' ? [] : spec.nullable ? null : {};
       else {
         try {
           value = JSON.parse(text);

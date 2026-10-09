@@ -65,3 +65,14 @@ export {
   SAVE_SLOTS_MAX,
   validateReplay,
 } from './replay.js';
+export {
+  BUILTIN_MODES,
+  PRESET_KEYS,
+  PRESET_NAME_MAX,
+  PRESETS_MAX,
+  presetNameKey,
+  presetOptions,
+  validatePresetOptions,
+  validPresetName,
+  validateSavedPresets,
+} from './presets.js';

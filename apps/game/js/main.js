@@ -7,6 +7,11 @@
 // lobby's Load game and Replays buttons (js/records.js) load them again.
 // Spectators and the replay viewer watch with the observer panel
 // (js/observer.js): whole map or one player's view, and player stats.
+// When the local player is defeated or wins, js/endgame.js shows what
+// happened (single player pauses meanwhile); a defeated player can watch on
+// as a spectator. The end-game statistics (js/stats.js) come from the engine
+// and show at the end, for spectators and in replays. Restart (js/restart.js)
+// plays a single player game again with the same settings.
 //
 // The simulation (the wasm Game, its driver, the recorder) runs in a Web
 // Worker when the browser allows it (js/sim): the UI talks to a game handle
@@ -21,6 +26,8 @@ import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
 import { CommandBar } from './commandbar.js';
+import { registerGameKeys } from './gamekeys.js';
+import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
@@ -53,6 +60,11 @@ import { allOriginalNames } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
+import { askOf } from './sim/methods.js';
+import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
+import { EndGameDialog, EndGameFlow } from './endgame.js';
+import { StatsScreen } from './stats.js';
+import { restartRecord, saveRestart, takeRestart } from './restart.js';
 
 const PLAYER = 0;
 
@@ -144,7 +156,10 @@ async function boot() {
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
-  offerLinkedMap(lobby);
+  // Restart (js/restart.js): the game the page was reloaded for, with the same settings.
+  const again = takeRestart(sessionStore());
+  if (again && !gpuError && renderer) startSkirmish(again.options, lobby);
+  else offerLinkedMap(lobby);
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
 }
@@ -246,6 +261,24 @@ function setupAccount() {
   } catch (err) {
     console.warn('Accounts are unavailable:', err);
     account = null;
+  }
+}
+
+/** This tab's sessionStorage, or null when the browser blocks it. */
+function sessionStore() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** The restart record of a single player game (js/restart.js), or null when it cannot have one. */
+function restartOf(options) {
+  try {
+    return restartRecord(options);
+  } catch {
+    return null;
   }
 }
 
@@ -410,6 +443,7 @@ function setupOnline(lobby, gpuError) {
             online: { driver, onQuit, spectator },
             recorder,
             viewer: spectator ? viewerPlayers(options.players) : null,
+            roster: viewerPlayers(options.players),
           });
         },
       });
@@ -454,10 +488,10 @@ function hasRejoinRecord() {
   }
 }
 
-/** Names and colours of the players in a game's options, for the observer panel. */
+/** Names and colours of the players in a game's options, for the observer panel and the statistics. */
 function viewerPlayers(players) {
   return players.map((p, i) => ({
-    name: p.type === 'human' ? p.name : p.name || `Computer (${p.difficulty})`,
+    name: p.type === 'human' ? p.name || `Player ${i + 1}` : p.name || `Computer (${p.difficulty})`,
     color: TEAM_COLORS[i] ?? [1, 1, 1],
   }));
 }
@@ -555,7 +589,7 @@ async function startSkirmish(options, lobby) {
   const run = await launch({ kind: 'skirmish', options: engineOptions, map: canonicalMap, player, recorder: recording, tickMs }, lobby, 'Could not start the game');
   if (!run) return;
   applyColors(playing);
-  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run) });
+  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run), roster: viewerPlayers(playing), restart: restartOf(options) });
 }
 
 /** "England vs 2 opponents" style title for a recorded skirmish. */
@@ -590,7 +624,15 @@ async function loadSave(replay, lobby) {
   const run = await launch({ kind: 'save', replay, tickMs }, lobby, 'Could not load the save');
   if (!run) return;
   applyColors(replay.options.players);
-  start(run.host, { stress: false, tickMs, player: replay.player, recorder: recorderOf(run) });
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player: replay.player,
+    recorder: recorderOf(run),
+    roster: viewerPlayers(replay.options.players),
+    // Restart plays the saved game again from its start, with its settings.
+    restart: restartOf({ ...replay.options, map: replay.map ?? null }),
+  });
 }
 
 /** Open the replay viewer. */
@@ -637,8 +679,10 @@ function recorderOf({ host, info }) {
 // `replay` (ReplayHandle) controls a replay; `recorder` (RecorderHandle) saves
 // and downloads; `viewer` (the players' names and colours) turns the screen
 // into a spectator view: no sidebar, no orders, the observer panel with the
-// view switcher and stats.
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null }) {
+// view switcher and stats. `roster` names and colours the players of any
+// game (statistics, the observer panel after a defeat); `restart` is the
+// js/restart.js record of a single player game (null: no restart).
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null }) {
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
@@ -652,13 +696,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const rules = JSON.parse(game.rules_json());
   // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
   document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
-  audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell() });
+  // Relationships (engine World::are_allies): the same player, or the same non-zero team.
+  const slots = rules.players ?? [];
+  const allies = (a, b) => a === b || (!slots[a]?.neutral && !slots[b]?.neutral && !!slots[a]?.team && slots[a]?.team === slots[b]?.team);
+  audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell(), allied: (owner) => !viewer && allies(player, owner) });
+  // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
+  game.set_audio_events(true);
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
   const watched = audio ? audio.watch(game) : game;
-  const ui = viewer && records ? records.viewOnly(watched) : watched;
+  // A defeated player who watches on gives no orders either (js/endgame.js).
+  let spectating = false;
+  const watching = () => !!viewer || spectating;
+  const ui = viewer ? viewOnly(watched) : viewOnly(watched, () => spectating);
+  const players = viewer ?? roster ?? [];
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
-  const view = { player: viewer && records ? records.OBSERVER_VIEW : player };
+  const view = { player: viewer ? OBSERVER_VIEW : player };
   // Driver state from the newest frame (loading a save, catching up, seeking).
   let status = { busy: false };
   const busy = () => !!status.busy;
@@ -673,7 +726,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     let atlas = null;
     if (art?.slots.size) {
       try {
-        atlas = buildAtlas(rules.actors, { slots: art.slots, filter: art.filter, maxSize: renderer.maxTextureSize });
+        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
@@ -732,6 +785,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let weatherText = '';
 
   let sidebar = null;
+  let notices = null;
   let powerBar = null;
   let commandBar = null;
   let touch = null;
@@ -742,6 +796,29 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     layout.setPlacing(false);
     touch?.update();
   };
+  // Radar pings (js/radarpings.js): attacks, beacons and superweapons of the
+  // watched player and their allies; the last one is where Space jumps to.
+  const watchedPlayer = () => (view.player === OBSERVER_VIEW || view.player === COMBINED_VIEW ? null : view.player);
+  const pings = new RadarPings({
+    visible: (owner) => watchedPlayer() !== null && allies(watchedPlayer(), owner),
+    color: (owner) => TEAM_COLORS[owner] ?? [1, 1, 1],
+    pxPerWorld: rules.pxPerCell / Game.world_units_per_cell(),
+    tickMs,
+  });
+  // OpenRA's relationship colours (TogglePlayerStanceColor, game menu
+  // Settings): you, allies, enemies and neutrals instead of the players' own
+  // colours; never for spectators. TEAM_COLORS is changed in place, so the
+  // renderer, the radar and the sidebar follow it.
+  const ownColors = TEAM_COLORS.map((c) => c.slice());
+  const applyRelationshipColors = () => {
+    const on = !viewer && !!settings.get('playerStanceColors');
+    slots.forEach((slot, i) => {
+      const c = !on ? ownColors[i] : relationshipColor(i === player ? 'self' : allies(player, i) ? 'ally' : slot.neutral ? 'neutral' : 'enemy');
+      if (c && TEAM_COLORS[i]) TEAM_COLORS[i].splice(0, 3, ...c.slice(0, 3));
+    });
+    sidebar?.repaintIcons();
+  };
+  settings.subscribe('playerStanceColors', applyRelationshipColors);
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
@@ -764,11 +841,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     },
     onPlaced: placementEnded,
     onCancelPlace: placementEnded,
-    onNumpad: (slot, opts) => sidebar?.activateSlot(slot, opts),
-    onTab: (dir) => sidebar?.cycleTab(dir),
-    onSellMode: (on) => sidebar?.setSellMode(on),
+    onMode: (mode) => sidebar?.setMode(mode),
+    lastEvent: () => pings.last(),
+    feedback: (text) => notices?.push(text),
     onMenu: () => menu.open(),
-  });
+  }, { spectator: !!viewer });
+  input.watchAll = !!viewer && view.player === OBSERVER_VIEW;
   // Spectators and replays have no sidebar (and no sidebar drawer on phones).
   if (viewer) $('app').classList.add('viewer');
   sidebar = new Sidebar(
@@ -788,21 +866,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         placementEnded();
       },
       shiftLatched: () => !!touch?.queue,
-      onSell: () => input.toggleSellMode(),
+      onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
     },
-    { ticksPerSecond: Game.ticks_per_second() },
+    { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );
+  applyRelationshipColors();
   // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
   // test leaves the slot empty, which shows "Radar offline".
-  const minimap = stress ? null : new Minimap($('radar'), { game: ui, fog: (p) => game.fog_bytes(p), player, input, colors: TEAM_COLORS, biome: sky.biome });
+  const minimap = stress ? null : new Minimap($('radar'), { game: ui, fog: (p) => game.fog_bytes(p), player, input, colors: TEAM_COLORS, biome: sky.biome, pings });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
   touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
   // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
-  const notices = new NotificationView($('field'));
+  notices = new NotificationView($('field'));
   if (!viewer) {
     const tipView = new TipView($('field'));
     attackMoveTip = new AttackMoveTip({
@@ -824,14 +903,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onTargetLost: () => input.cancelPower(),
   });
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
-  commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys });
+  commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
   // Spectators and replays give no orders: no power bar, no command bar.
   if (viewer) {
     powerBar.root.hidden = true;
     commandBar.root.hidden = true;
   }
   // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
+  // A local game stands still while the menu, the debug menu's pause or an end-game dialog asks for it.
   let paused = false;
+  let menuPaused = false;
+  let debugPaused = false;
+  // OpenRA's Pause hotkey stops a local game without the menu (js/gamekeys.js).
+  let keyPaused = false;
+  const updatePaused = () => {
+    paused = menuPaused || debugPaused || keyPaused || flow.paused;
+  };
   const debug = new DebugMenu($('field'), {
     game,
     input,
@@ -845,7 +932,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     instances: () => instanceInfo,
     isPaused: () => paused,
     setPaused: online || replay ? undefined : (on) => {
-      paused = on;
+      debugPaused = on;
+      updatePaused();
     },
     step: () => {
       if (!paused || online || replay || busy()) return false;
@@ -856,16 +944,36 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Observer panel and replay controls (js/observer.js, js/records.js).
   let observer = null;
   let replayBar = null;
-  if (viewer && records) {
-    observer = new records.ObserverPanel($('field'), {
-      players: viewer,
+  // End-game statistics (js/stats.js): at the end, for spectators and replays, from the menu once out.
+  const statsScreen = stress
+    ? null
+    : new StatsScreen($('stats-screen'), {
+        load: async () => {
+          const text = await askOf(game).observer_report();
+          return text ? JSON.parse(text) : null;
+        },
+        players,
+        rules,
+        localPlayer: viewer ? null : player,
+        live: true,
+        actions: [],
+      });
+  const openStats = () => statsScreen?.open();
+  const mountObserver = () => {
+    observer = new ObserverPanel($('field'), {
+      players,
       view: view.player,
       onView: (v) => {
         view.player = v;
-        input.player = v === records.OBSERVER_VIEW ? 0 : v;
+        // The whole map and all players' vision together are no player's view.
+        const all = v === OBSERVER_VIEW || v === COMBINED_VIEW;
+        input.player = all ? (viewer ? 0 : player) : v;
+        input.watchAll = all;
       },
+      onStats: statsScreen ? openStats : null,
     });
-  }
+  };
+  if (viewer) mountObserver();
   if (replay && records) replayBar = new records.ReplayBar($('field'), replay);
   const progress = records ? new records.ProgressOverlay($('field')) : null;
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
@@ -896,6 +1004,26 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     replay?.dispose();
     location.reload();
   };
+  // Restart (js/restart.js): a replay plays again from 0 here; a single player
+  // game reloads the page, which starts it again with the same settings and
+  // fresh audio, notifications, statistics, minimap, sidebar, selection and
+  // camera. Online games have none.
+  const restartGame = replay
+    ? () => {
+        replay.seek(0);
+        if (!replay.playing) replay.togglePlay();
+        flow.reset();
+      }
+    : restart && !online && !stress
+      ? () => {
+          if (!saveRestart(restart, sessionStore())) {
+            showToast('Could not restart: this browser does not let the page keep the settings.');
+            return;
+          }
+          leaving = true;
+          location.reload();
+        }
+      : null;
   const exit = () => {
     leaving = true;
     online?.onQuit();
@@ -918,7 +1046,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onChange: (open, isPaused) => {
       input.setSuspended(open);
       if (open) touch.reset();
-      paused = isPaused;
+      menuPaused = isPaused;
+      updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
     uiScale,
@@ -927,42 +1056,98 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),
+    restart: restartGame ? { replay: !!replay, run: restartGame } : undefined,
+    onStats: statsScreen ? openStats : undefined,
+    // Live statistics of the other players would give a player still in the game away.
+    statsAvailable: () => watching() || flow.over,
     onLeave: leave,
     onExit: exit,
   });
   $('menu-button').hidden = false;
   $('menu-button').addEventListener('click', () => menu.toggle());
-  $('again').addEventListener('click', leave);
-  hotkeys.registerAction('debugMenu', '`', () => debug.toggle(), { label: 'Debug menu', group: 'Game' });
-  hotkeys.registerAction('menu', 'F10', () => menu.toggle(), { label: 'Game menu (Esc also opens it)', group: 'Game' });
-  if (replay) hotkeys.registerAction('pause', ['Pause', 'P'], () => replay.togglePlay(), { label: 'Pause (replays: play and pause)', group: 'Game' });
-  else if (!online) hotkeys.registerAction('pause', ['Pause', 'P'], () => menu.toggle(), { label: 'Pause (opens the menu)', group: 'Game' });
-  // OpenRA has no default key for its path lines; L is free in WebRA's set.
-  hotkeys.registerAction(
-    'showUnitPaths',
-    'L',
-    () => {
-      const on = settings.set('showUnitPaths', !settings.get('showUnitPaths'));
-      showToast(on ? 'Unit paths shown' : 'Unit paths hidden');
+  // OpenRA DisableUserInterface / DisableAllUserInterface: only the battlefield
+  // (and without the cursor), pressed again: everything back.
+  let interfaceHidden = false;
+  let cursorHidden = false;
+  const toggleInterface = (all) => {
+    if (!all && interfaceHidden && cursorHidden) cursorHidden = false;
+    else if (all && interfaceHidden && !cursorHidden) cursorHidden = true;
+    else {
+      interfaceHidden = !interfaceHidden;
+      cursorHidden = all && interfaceHidden;
+    }
+    $('app').classList.toggle('ui-hidden', interfaceHidden);
+    $('app').classList.toggle('cursor-hidden', cursorHidden);
+  };
+  // OpenRA TakeScreenshot: the next frame of the battlefield, saved as a PNG.
+  let screenshotPending = false;
+  // The game screen's hotkeys (js/gamekeys.js): OpenRA's Red Alert set, plus
+  // WebRA's debug menu, unit paths, fullscreen and the sidebar numpad.
+  // Spectators and replays get OpenRA's spectator hotkeys.
+  const HEALTH_BAR_CYCLE = ['off', 'damaged', 'all'];
+  const quickSave = recordActions.find((a) => a.id === 'save');
+  registerGameKeys(
+    hotkeys,
+    {
+      // OpenRA Pause: the game stops (and goes on) without the menu; replays
+      // play and pause. Online games cannot pause (the lockstep server drops
+      // a player who holds the game up).
+      pause: replay
+        ? () => replay.togglePlay()
+        : online
+          ? undefined
+          : () => {
+              keyPaused = !keyPaused;
+              updatePaused();
+            },
+      menu: () => menu.toggle(),
+      debugMenu: () => debug.toggle(),
+      showUnitPaths: () => {
+        const on = settings.set('showUnitPaths', !settings.get('showUnitPaths'));
+        showToast(on ? 'Unit paths shown' : 'Unit paths hidden');
+      },
+      fullscreen: async () => {
+        const r = await fullscreen.toggle();
+        if (!r.ok) showToast(r.message);
+      },
+      // OpenRA CycleStatusBars: Standard, Damaged, Always show.
+      cycleStatusBars: () => {
+        const i = HEALTH_BAR_CYCLE.indexOf(settings.get('healthBars'));
+        settings.set('healthBars', HEALTH_BAR_CYCLE[(i + 1) % HEALTH_BAR_CYCLE.length]);
+      },
+      toggleMute: audio
+        ? () => {
+            const muted = audio.toggleMute();
+            showToast(muted ? 'Audio muted' : 'Audio unmuted');
+          }
+        : undefined,
+      togglePlayerStanceColor: () => settings.set('playerStanceColors', !settings.get('playerStanceColors')),
+      takeScreenshot: () => {
+        screenshotPending = true;
+      },
+      // OpenRA QuickSave: single player games only (skirmish saves, js/records.js).
+      quickSave: quickSave && !online && !replay ? async () => showToast(await quickSave.run()) : undefined,
+      disableUserInterface: () => toggleInterface(false),
+      disableAllUserInterface: () => toggleInterface(true),
+      productionTab: (q) => sidebar.openTab(q),
+      selectProductionBuilding: () => input.selectProductionBuilding(sidebar.activeTab),
+      cycleProductionBuildings: () => input.cycleProductionBuildings(),
+      productionSlot: (n, e) => sidebar.activateSlot(n, { shift: !!e?.shiftKey }),
+      cycleTab: (dir) => sidebar.cycleTab(dir),
+      numpadSlot: (n, e) => sidebar.activateSlot(n, { shift: !!e?.shiftKey, cancel: !!(e?.ctrlKey || e?.metaKey) }),
+      cancelPlacement: () => input.cancelPlacing(),
+      supportPower: (i) => powerBar.activate(i),
+      stopMusic: audio ? () => audio.music('stop') : undefined,
+      pauseMusic: audio ? () => audio.music('pause') : undefined,
+      prevMusic: audio ? () => audio.music('prev') : undefined,
+      nextMusic: audio ? () => audio.music('next') : undefined,
+      observerCombinedView: () => observer?.setView(COMBINED_VIEW),
+      observerWorldView: () => observer?.setView(OBSERVER_VIEW),
+      statistics: (panel) => observer?.showPanel(panel),
+      replaySpeed: replayBar ? (speed) => replayBar.setSpeed(speed) : undefined,
     },
-    { label: 'Show unit paths', group: 'Game' },
+    { spectator: !!viewer },
   );
-  hotkeys.registerAction(
-    'fullscreen',
-    'Alt+Enter',
-    async () => {
-      const r = await fullscreen.toggle();
-      if (!r.ok) showToast(r.message);
-    },
-    { label: 'Fullscreen', group: 'Game' },
-  );
-  // Production tabs, OpenRA's Red Alert keys (E R T Y U I), and Tab / Shift+Tab to cycle.
-  ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'].forEach((name, q) => {
-    hotkeys.registerAction(`productionTab${name}`, 'ERTYUI'[q], () => sidebar.selectTab(q), { label: `${name} tab`, group: 'Production' });
-  });
-  // Not while a button has focus, so Tab still moves between the sidebar's buttons there.
-  hotkeys.registerAction('nextTab', 'Tab', () => sidebar.cycleTab(1), { label: 'Next production tab', group: 'Production', inControls: false });
-  hotkeys.registerAction('previousTab', 'Shift+Tab', () => sidebar.cycleTab(-1), { label: 'Previous production tab', group: 'Production', inControls: false });
   // Fullscreen changes the canvas size; the renderer and input follow it each
   // frame, the toast says when the browser refused.
   onFullscreenChange(() => {
@@ -980,12 +1165,61 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     leaving = true;
     showToast(`The game stopped: ${message}`);
   });
-  const replayButton = $('gameover-replay');
   const download = recordActions.find((a) => a.id === 'replay');
-  if (replayButton && download) {
-    replayButton.hidden = false;
-    replayButton.addEventListener('click', async () => showToast(await download.run()));
+  if (statsScreen) {
+    statsScreen.opts.actions = [
+      ...(restartGame ? [{ label: replay ? 'Restart replay' : 'Play again', run: () => (replay ? (statsScreen.close(), restartGame()) : restartGame()) }] : []),
+      { label: online && !replay && !online.spectator ? 'Leave game' : 'Return to lobby', run: leave },
+    ];
   }
+
+  // ---- Defeat, victory and the end of the game (js/endgame.js) ----------------------
+  /** Names of the winning side, from the newest player state. */
+  let winner = null;
+  const winnerText = () => {
+    if (winner === null || winner === undefined) return '';
+    const names = players.filter((_, i) => i === winner || game.are_allies(i, winner)).map((p) => p.name);
+    if (!names.length) return '';
+    return `${names.join(' and ')} ${names.length === 1 ? 'wins' : 'win'}`;
+  };
+  /** Defeated: the observer's screen, the whole map, no orders. */
+  const enterSpectator = () => {
+    spectating = true;
+    for (let i = 0; i < 8 && input.cancelMode(); i++);
+    input.cancelPlacing();
+    placementEnded();
+    input.setSelection([]);
+    powerBar.root.hidden = true;
+    commandBar.root.hidden = true;
+    $('app').classList.add('viewer');
+    view.player = OBSERVER_VIEW;
+    if (!observer) mountObserver();
+    else observer.setView(OBSERVER_VIEW, false);
+  };
+  const flow = new EndGameFlow({
+    online: !!online,
+    viewer: !!viewer,
+    replay: !!replay,
+    onChange: (f) => {
+      updatePaused();
+      if (f.spectating && !spectating) enterSpectator();
+      endDialog.render();
+    },
+  });
+  const endDialog = new EndGameDialog($('gameover'), {
+    flow,
+    actions: {
+      spectate: () => flow.spectate(),
+      continue: () => flow.close(),
+      stats: openStats,
+      restart: () => restartGame?.(),
+      download: async () => showToast(await download.run()),
+      leave,
+      exit,
+    },
+    context: () => ({ winnerText: winnerText(), canRestart: !!restartGame, canDownload: !!download }),
+    blocked: () => !!statsScreen?.isOpen || menu.isOpen,
+  });
   // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
   if (!stress && !replay) {
     window.addEventListener('beforeunload', (e) => {
@@ -1014,7 +1248,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const dt = Math.min(now - last, 250);
     last = now;
     const catching = busy();
-    if ((catching || menu.isOpen) !== input.suspended) input.setSuspended(catching || menu.isOpen);
+    const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
+    if (suspend !== input.suspended) input.setSuspended(suspend);
     input.update(dt / 1000);
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.
@@ -1076,9 +1311,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       instanceInfo = { path: f.instances, reason: f.instances === choice.path ? choice.reason : 'switching', buildMs: f.buildMs, bytes: f.renderBytes };
     }
     progress?.show(busy() ? progressText() : null);
-    // Sounds of what happened, heard from the camera (fog hides enemy sounds).
-    // Fast-forwarding (loading, rejoining, seeking) stays silent: the simulation drops them.
-    audio?.frame(v, () => f.fog());
+    // Sounds of what happened, heard from the camera (fog hides enemy sounds),
+    // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
+    // silent: the simulation drops the events.
+    const events = game.take_audio_events();
+    pings.onEvents(events, now);
+    audio?.frame(v, () => f.fog(), events);
 
     // UI rects may call into wasm (placement preview, main thread mode), which
     // may grow its memory, so the frame's views are made after them.
@@ -1099,6 +1337,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const canvas = $('view');
     const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    // Read the canvas in the same task as the draw, before it is presented.
+    if (screenshotPending) {
+      screenshotPending = false;
+      saveScreenshot(canvas).then(showToast);
+    }
     // Shared memory: count a frame the worker wrote over while it was read (js/sim/framebuffer.js).
     f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.
@@ -1117,7 +1360,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       // Null in a worker until its first answer.
       const json = game.player_json(player);
       const state = json ? JSON.parse(json) : null;
-      if (state && !viewer) {
+      if (state && !watching()) {
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
         commandBar.update();
@@ -1125,24 +1368,47 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         sidebar.setSelection(selectionInfo(game, input.selection));
         sidebar.setDeployState(input.deployState());
       }
-      const stats = viewer ? game.observer_stats() : null;
-      if (stats) observer?.update(JSON.parse(stats), game.tick_count());
+      const stats = watching() ? game.observer_stats() : null;
+      if (stats && observer) observer.update(JSON.parse(stats), game.tick_count(), observerExtra(observer.needs()));
       replayBar?.update();
-      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator ? 'Spectating' : null);
+      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null);
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).
       if (f.weather) weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText);
       touch.update();
       if (state) debug.update(state);
-      if (state && !over && !stress && !viewer && (state.won || state.defeated || (state.winner !== null && state.winner !== undefined))) {
-        over = true;
-        $('gameover-title').textContent = state.won ? 'Mission accomplished' : 'Mission failed';
-        $('gameover').hidden = false;
-        audio?.gameOver(!!state.won);
+      if (state && !stress) {
+        winner = state.winner ?? null;
+        const event = flow.update(state, { ended: !!replay?.ended });
+        // The announcer: "Mission failed" on the defeat, "Mission accomplished" on a win (also an ally's, after a defeat).
+        if (event === 'defeat') audio?.gameOver(false);
+        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
+        over = flow.over || flow.phase !== 'playing';
       }
     }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  /** What the observer's statistics panel needs per player besides observer_stats (js/observer.js `needs`). */
+  function observerExtra(need) {
+    const names = (id) => rules.actors.find((a) => a.id === id)?.name ?? id;
+    return (p) => {
+      if (need === 'harvesters') return { harvesters: game.harvesters(p).length };
+      if (need === 'army') {
+        const flat = game.army_counts(p);
+        const army = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) army.push([rules.actors[flat[i]]?.name ?? '?', flat[i + 1]]);
+        return { army };
+      }
+      if (need === 'state') {
+        const json = game.player_json(p);
+        const state = json ? JSON.parse(json) : null;
+        for (const q of state?.queues ?? []) for (const it of q) it.name = names(it.id);
+        return { state };
+      }
+      return {};
+    };
+  }
 
   function progressText() {
     if (status.loading) return `Loading the saved game... ${Math.round((status.loadProgress ?? 0) * 100)}%`;
@@ -1153,6 +1419,38 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     if (replay?.seeking) return `Seeking... ${records.formatTicks(replay.target)}`;
     return null;
   }
+}
+
+/** OpenRA metrics PlayerStanceColor*: rgb 0..1 for 'self', 'ally', 'enemy' and 'neutral'. */
+function relationshipColor(kind) {
+  const hex = { self: 0x32cd32, ally: 0xffff00, enemy: 0xff0000, neutral: 0xd2b48c }[kind];
+  return [(hex >> 16) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+}
+
+/** Save the battlefield canvas as a PNG file (OpenRA's screenshot-<UTC time>.png); resolves to a message. */
+function saveScreenshot(canvas) {
+  return new Promise((resolve) => {
+    if (typeof canvas.toBlob !== 'function') {
+      resolve('Screenshots are not available in this browser.');
+      return;
+    }
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        resolve('Could not take a screenshot.');
+        return;
+      }
+      const stamp = new Date().toISOString().replace(/[:]/g, '').replace(/\.\d+Z$/, 'Z');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `screenshot-${stamp}.png`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      resolve(`Screenshot saved: ${a.download}`);
+    }, 'image/png');
+  });
 }
 
 function selectionInfo(game, ids) {

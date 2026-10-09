@@ -71,7 +71,7 @@ test('edge scrolling: direction from the mouse, blocked at the camera limits', a
 
 test('chrome icons: every sidebar icon has path data and builds an inert SVG', async () => {
   const { ICON_PATHS, icon } = await import('../js/ui-icons.js');
-  for (const name of ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval', 'sell', 'deploy', 'options', 'power']) {
+  for (const name of ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval', 'sell', 'deploy', 'options', 'power', 'beacon', 'repair', 'powerDown']) {
     assert.match(ICON_PATHS[name], /^M[-\d. MLZHVCAQSTlhvcaqstmz]+Z$/i, name);
   }
   const node = (tag) => ({

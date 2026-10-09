@@ -1,0 +1,268 @@
+/* Help tips ("?" buttons, js/infotip.js), the World group and the game mode
+   row (js/modepicker.js) of both lobbies, and the help in the game menu.
+   Colours and fonts come from css/theme.css. */
+
+/* ---- "?" help buttons and their tips ----------------------------------------- */
+
+.info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  vertical-align: middle;
+}
+
+.info-btn,
+.menu-card button.info-btn,
+#menu .lobby button.info-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  background: var(--ui-metal-2);
+  color: var(--ui-muted);
+  border: 1px solid var(--ui-line);
+  border-radius: 50%;
+  box-shadow: none;
+  font: 700 10px/1 var(--ui-font);
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+  cursor: help;
+}
+
+/* A bigger touch target than the drawn circle. */
+.info-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.info-btn:hover,
+.info-open .info-btn,
+.menu-card button.info-btn:hover,
+#menu .lobby button.info-btn:hover {
+  color: var(--ui-text);
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-lo);
+  filter: none;
+}
+
+.info-btn:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.info-tip {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  z-index: 60;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 8px 10px;
+  transform: translateX(calc(-50% + var(--info-shift, 0px)));
+  background: var(--ui-metal-1);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-shadow);
+  font: 400 12px/1.45 var(--ui-font);
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  text-shadow: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: auto;
+}
+
+.info-tip-up {
+  top: auto;
+  bottom: calc(100% + 7px);
+}
+
+.info-tip[hidden] {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .info-btn,
+  .menu-card button.info-btn,
+  #menu .lobby button.info-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+  }
+
+  .info-btn::after {
+    inset: -10px;
+  }
+}
+
+/* ---- Label rows with help ----------------------------------------------------------- */
+
+#menu .lobby-field-head,
+.online-field-head,
+.game-menu-name,
+.mode-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+#menu .lobby-field-label {
+  cursor: default;
+}
+
+#menu .lobby-slot-head .info,
+.online-row-head .info,
+.online-panel-title .info,
+#menu .lobby-source .info {
+  margin-left: 6px;
+}
+
+#menu .lobby-toggle-row,
+.online-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.online-field[hidden] {
+  display: none;
+}
+
+/* ---- World group (map style, biome, weather) --------------------------------------- */
+
+#menu .lobby-world,
+.online-world {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.online-world {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#menu .lobby-world-title,
+.online-world-title {
+  padding: 0 6px;
+  font: 700 11px/1 var(--ui-font);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ui-accent-hi);
+}
+
+/* ---- Game mode ------------------------------------------------------------------------ */
+
+.mode-picker {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.mode-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.mode-desc,
+.mode-status {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mode-status:empty {
+  display: none;
+}
+
+.mode-tools,
+.mode-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-save .mode-name {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 0;
+}
+
+.mode-picker .mode-confirm {
+  border-color: var(--ui-bad);
+  color: #ffb4a2;
+}
+
+.mode-picker [hidden] {
+  display: none !important;
+}
+
+/* ---- Column help on narrow screens -------------------------------------------------------
+   The slot tables drop their header row when they stack into cards; the
+   column names stay as a row of help chips so the help is still there. */
+
+@container (max-width: 560px) {
+  #menu .lobby-slot.lobby-slot-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    padding: 0 2px 4px;
+  }
+
+  #menu .lobby-slot-head .lobby-cell:empty {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .online-slot.online-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+
+  .online-row-head .online-cell:empty {
+    display: none;
+  }
+}
+
+/* ---- Game menu settings rows (js/ui/controls.js rows with a "?") ---------------------- */
+
+.ui-row > .ui-label-help {
+  min-width: 0;
+}
+
+.ui-label-help > .ui-label {
+  display: block;
+  margin: 0;
+  color: var(--ui-text);
+  font: var(--ui-fs-m) / 1.35 var(--ui-font);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+.ui-label-help > label.ui-label {
+  cursor: pointer;
+}

@@ -15,7 +15,8 @@ struct Globals {
     // when the player prefers reduced motion, else 1).
     env2: vec4f,
     // Art (js/content): x terrain flags (1 tile terrain: original graphics or
-    // a texture pack, 2 ore tiles, 4 gem tiles), yzw unused.
+    // a texture pack, 2 ore tiles, 4 gem tiles, 8 rotating water colours),
+    // yzw unused.
     art: vec4f,
 };
 

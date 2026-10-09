@@ -39,6 +39,7 @@ import { BRUSH_SIZES } from '../editor/js/edits.js';
 import { FACTIONS } from '../protocol/constants.js';
 import { text as protocolText } from '../protocol/check.js';
 import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, MUSIC_REPEAT_MODES } from '../protocol/accounts.js';
+import { PRESETS_MAX, presetNameKey, validateSavedPresets } from '../protocol/presets.js';
 
 /** localStorage key of the registry document. */
 export const REGISTRY_KEY = 'webra.prefs.v1';
@@ -65,6 +66,7 @@ const PACK_ID = /^[^\u0000-\u001f\u007f]{1,160}$/;
  * - keymap { maxEntries, maxKeys }: { actionName: ['Ctrl+X', ...] } hotkey overrides
  * - packs { maxItems }: [{ id, enabled }] texture packs in priority order
  * - json { maxBytes, nullable? }: a free JSON object (JSON_RULES)
+ * - presets { maxItems }: [{ name, options }] saved game modes (protocol/presets.js)
  *
  * Every setting has `label` and may have `help`. Groups have `label`,
  * `description` and `scope` ('game' or 'editor': where they are used);
@@ -106,6 +108,8 @@ export const GROUPS = deepFreeze({
         labels: { off: 'Selected and hovered only', damaged: 'Also damaged units and buildings', all: 'All units and buildings' },
         label: 'Health bars',
       },
+      // OpenRA UsePlayerStanceColors: you green, allies yellow, enemies red, neutrals tan.
+      playerStanceColors: { type: 'boolean', default: false, label: 'Relationship colours', help: 'Colour players by relationship instead of their own colour.' },
       graphics: {
         type: 'choice',
         default: 'webra',
@@ -171,13 +175,20 @@ export const GROUPS = deepFreeze({
   },
   lobby: {
     label: 'Lobby',
-    description: 'Name, faction and colour, and the last skirmish setup.',
+    description: 'Name, faction and colour, the last skirmish setup and saved game modes.',
     scope: 'game',
     settings: {
       name: { type: 'string', default: 'Commander', minLength: 1, maxLength: 20, name: true, label: 'Player name', help: 'Used when not signed in.' },
       faction: { type: 'choice', default: 'random', options: [...FACTIONS], label: 'Faction' },
       color: { type: 'integer', default: 0, min: 0, max: 7, label: 'Colour' },
       lastOptions: { type: 'json', default: {}, maxBytes: 4 * 1024, label: 'Last skirmish setup', help: 'Checked by the lobby when it loads.' },
+      presets: {
+        type: 'presets',
+        default: [],
+        maxItems: PRESETS_MAX,
+        label: 'Saved game modes',
+        help: 'Named bundles of lobby options, picked from the Game mode list in the lobby.',
+      },
     },
   },
   releaseNotes: {
@@ -357,6 +368,18 @@ export function checkValue(spec, value) {
       }
       return null;
     }
+    case 'presets': {
+      if (Array.isArray(value) && value.length > spec.maxItems) return `must have at most ${spec.maxItems} modes`;
+      try {
+        validateSavedPresets(value, 'presets');
+        return null;
+      } catch (err) {
+        // "presets[2].options.biome has ..." reads "mode 3 options.biome has ...".
+        const m = /^presets\[(\d+)\]\.?(\S*) (.*)$/.exec(err.message);
+        if (!m) return err.message.replace(/^presets /, '');
+        return `mode ${Number(m[1]) + 1}${m[2] && m[2] !== ':' ? ` ${m[2]}` : m[2]} ${m[3]}`;
+      }
+    }
     case 'json': {
       if (value === null) return spec.nullable ? null : 'must be an object';
       if (!isPlainObject(value)) return 'must be an object';
@@ -413,6 +436,21 @@ export function normalizeValue(spec, value) {
         if (out.length >= spec.maxItems) break;
         if (!isPlainObject(p) || typeof p.id !== 'string' || !PACK_ID.test(p.id) || out.some((q) => q.id === p.id)) continue;
         out.push({ id: p.id, enabled: p.enabled !== false });
+      }
+      return out;
+    }
+    case 'presets': {
+      // Keep every valid mode (first of a name wins), drop the rest.
+      if (!Array.isArray(value)) return defaultOf(spec);
+      const out = [];
+      for (const p of value) {
+        if (out.length >= spec.maxItems) break;
+        try {
+          const [clean] = validateSavedPresets([p], 'presets');
+          if (!out.some((q) => presetNameKey(q.name) === presetNameKey(clean.name))) out.push(clean);
+        } catch {
+          // A bad entry (an older or newer build, a hand edit): skipped.
+        }
       }
       return out;
     }

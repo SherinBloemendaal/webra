@@ -8,6 +8,7 @@ import { heatText } from './weather-fx.js';
 import { TEAM_COLORS } from './renderer.js';
 import { cameoPainter } from './cameo.js';
 import { icon } from './ui-icons.js';
+import { formatCombo } from './hotkeys.js';
 import {
   BuildEta,
   cancelEndsPlacement,
@@ -66,9 +67,11 @@ export class Sidebar {
    * @param {object} game wasm Game instance
    * @param {object} rules parsed rules_json()
    * @param {number} playerId local player id
-   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onSell?: () => void,
+   * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onMode?: (mode: string) => void,
    *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean}} callbacks
-   * @param {{ticksPerSecond?: number}} [options] game ticks per second, for the clocks
+   *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed
+   * @param {{ticksPerSecond?: number, hotkeys?: import('./hotkeys.js').HotkeyRegistry}} [options]
+   *   game ticks per second, for the clocks; the hotkey registry, for the keys in tooltips
    */
   constructor(root, game, rules, playerId, callbacks = {}, options = {}) {
     this.root = root;
@@ -76,6 +79,7 @@ export class Sidebar {
     this.playerId = playerId;
     this.callbacks = callbacks;
     this.ticksPerSecond = options.ticksPerSecond || 25;
+    this.hotkeys = options.hotkeys ?? null;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
 
     this.actors = new Map();
@@ -111,6 +115,20 @@ export class Sidebar {
     return b;
   }
 
+  /** Current key of a hotkey action ("Z", "Ctrl+X" or "Cmd+X"), or null. */
+  keyOf(action) {
+    const combo = this.hotkeys?.bindingsFor(action)[0];
+    return combo ? formatCombo(combo) : null;
+  }
+
+  /** Tooltips of the top row with the current keys (also after rebinding in the game menu). */
+  updateToolTitles() {
+    for (const t of this.tools) {
+      const key = t.action ? this.keyOf(t.action) : null;
+      t.btn.title = `${t.label}${key ? ` (${key})` : ''}: ${t.help}`;
+    }
+  }
+
   build() {
     const root = this.root;
     root.textContent = '';
@@ -118,23 +136,43 @@ export class Sidebar {
     root.setAttribute('aria-label', 'Command sidebar');
     root.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Command buttons. Only what the engine implements: there is no repair
-    // or power down order yet, so those buttons are left out.
+    // Command buttons, OpenRA's Red Alert top row: Beacon, Sell, Power down
+    // and Repair modes (js/input.js), then WebRA's Deploy and the Options menu.
     const tools = el('div', 'sb-tools');
-    this.sellBtn = this.toolButton('sell', 'Sell', 'Sell a structure for 50% of its value (scaled by health). Hotkey: Z', () => this.callbacks.onSell?.());
-    this.sellBtn.setAttribute('aria-pressed', 'false');
-    this.deployBtn = this.toolButton(
+    this.tools = [];
+    this.modeButtons = new Map();
+    const tool = (name, label, action, help, onClick) => {
+      const btn = this.toolButton(name, label, help, onClick);
+      this.tools.push({ btn, label, action, help });
+      tools.append(btn);
+      return btn;
+    };
+    const mode = (name, mode, label, action, help) => {
+      const btn = tool(name, label, action, help, () => this.callbacks.onMode?.(mode));
+      btn.setAttribute('aria-pressed', 'false');
+      this.modeButtons.set(mode, btn);
+      return btn;
+    };
+    mode('beacon', 'beacon', 'Place beacon', 'placeBeacon', 'Click the map to mark a spot for your allies.');
+    mode('sell', 'sell', 'Sell', 'sell', 'Click your structures to sell them for half their value (scaled by health). Right click or Esc ends it.');
+    mode('powerDown', 'powerDown', 'Power down', 'powerDown', 'Click your defences, radar and superweapons to switch them off (freeing their power) or on again.');
+    mode('repair', 'repair', 'Repair', 'repair', 'Click your or allied damaged structures to start or stop repairing them, or a damaged unit to send it to the repair depot.');
+    this.deployBtn = tool(
       'deploy',
       'Deploy',
-      'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport. Hotkey: F or D',
+      'deploy',
+      'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport.',
       () => this.callbacks.onDeploy?.(),
     );
-    tools.append(this.sellBtn, this.deployBtn);
     if (this.callbacks.onMenu) {
-      this.menuBtn = this.toolButton('options', 'Options', 'Game menu: settings, controls, leave (Esc)', () => this.callbacks.onMenu());
+      this.menuBtn = tool('options', 'Options', null, 'Game menu: settings, controls, leave (Esc).', () => this.callbacks.onMenu());
       this.menuBtn.classList.add('sb-tool-end');
-      tools.append(this.menuBtn);
     }
+    this.updateToolTitles();
+    this.hotkeys?.onChange(() => {
+      this.updateToolTitles();
+      this.slotKeys = null;
+    });
 
     // Radar slot: the minimap draws in here. Empty, it shows "radar offline".
     this.radarEl = el('div', 'sb-radar');
@@ -192,7 +230,7 @@ export class Sidebar {
       badge.hidden = true;
       btn.append(icon(QUEUE_ICONS[q]), badge);
       btn.addEventListener('click', () => {
-        this.selectTab(q);
+        this.openTab(q);
       });
       tabs.append(btn);
       return { btn, badge, name, state: '' };
@@ -352,6 +390,17 @@ export class Sidebar {
     if (endsPlacement) this.callbacks.onCancelPlace?.();
   }
 
+  /**
+   * A production tab picked by the player (click or hotkey, OpenRA
+   * ProductionTypeButton): show it, and pick up a structure of it that is
+   * ready to place.
+   */
+  openTab(q) {
+    this.selectTab(q);
+    const ready = this.state?.queues?.[q]?.find((it) => it.done);
+    if (ready && isStructureQueue(q) && this.placingId !== ready.id) this.callbacks.onPlace?.(ready.id);
+  }
+
   selectTab(q) {
     this.activeTab = q;
     this.tabs.forEach((t, i) => {
@@ -378,9 +427,12 @@ export class Sidebar {
     setText(this.tipDesc, a.description || '');
     this.tipDesc.hidden = !a.description;
     this.updateTipWarning(c);
-    const hint = isStructureQueue(a.queue)
-      ? `Left click: build / place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
-      : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
+    const slot = this.visibleIds?.indexOf(id) ?? -1;
+    const key = slot >= 0 ? this.keyOf(`production${String(slot + 1).padStart(2, '0')}`) : null;
+    const hint =
+      (isStructureQueue(a.queue)
+        ? `Left click: build / place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
+        : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`) + (key ? ` Hotkey: ${key}.` : '');
     setText(this.tipHint, hint);
     this.tipEl.hidden = false;
 
@@ -544,7 +596,7 @@ export class Sidebar {
     }
     const locked = !!c.exclusive;
     c.btn.classList.toggle('exclusive', locked);
-    const slot = index < 9 ? String(index + 1) : '';
+    const slot = this.slotKey(index);
     if (c.slotText !== slot) {
       c.slotText = slot;
       setText(c.slot, slot);
@@ -567,8 +619,23 @@ export class Sidebar {
   }
 
   /**
-   * Numpad hotkeys: act on the n-th card (1-based) of the active tab, like a
-   * left click (or shift click), or cancel like a right click.
+   * The short key shown on the n-th card (0-based): its production slot
+   * hotkey (OpenRA Production01..: F1..F12) when that is one plain key.
+   */
+  slotKey(index) {
+    if (!this.slotKeys) {
+      this.slotKeys = [];
+      for (let i = 0; i < 24; i++) {
+        const combo = this.hotkeys?.bindingsFor(`production${String(i + 1).padStart(2, '0')}`)[0] ?? '';
+        this.slotKeys.push(combo && !combo.includes('+') ? formatCombo(combo) : '');
+      }
+    }
+    return this.slotKeys[index] ?? '';
+  }
+
+  /**
+   * Production slot and numpad hotkeys: act on the n-th card (1-based) of the
+   * active tab, like a left click (or shift click), or cancel like a right click.
    */
   activateSlot(n, { shift = false, cancel = false } = {}) {
     const id = this.visibleIds?.[n - 1];
@@ -577,10 +644,12 @@ export class Sidebar {
     else this.onCardClick(id, shift);
   }
 
-  /** Highlight the Sell button while sell mode is active. */
-  setSellMode(on) {
-    this.sellBtn.classList.toggle('active', !!on);
-    this.sellBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  /** Highlight the button of the active top row mode (js/input.js `mode`), or none. */
+  setMode(mode) {
+    for (const [m, btn] of this.modeButtons) {
+      btn.classList.toggle('active', m === mode);
+      btn.setAttribute('aria-pressed', m === mode ? 'true' : 'false');
+    }
   }
 
   /** Enable the Deploy button when the selection can deploy (0 no, 1 yes, 2 blocked). */

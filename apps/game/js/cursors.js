@@ -92,6 +92,34 @@ function scrollCursors() {
   return out;
 }
 
+/** Wrench (the repair cursor of the sidebar's Repair mode, OpenRA "repair"). */
+const WRENCH = (fill) =>
+  `<g transform="rotate(45 16 16)"><rect x="13.5" y="9" width="5" height="20" rx="2" fill="${fill}" stroke="${OUTLINE}" stroke-width="2"/>` +
+  `<path d="M9 3 A7 7 0 1 0 23 3 L19.5 3 L19.5 8 L12.5 8 L12.5 3 Z" fill="${fill}" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/></g>`;
+
+/** Power symbol (the sidebar's Power down mode, OpenRA "powerdown"). */
+const POWER = (fill) =>
+  `<path d="M10.5 8.5 A10 10 0 1 0 21.5 8.5" fill="none" stroke="${OUTLINE}" stroke-width="6" stroke-linecap="round"/>` +
+  `<path d="M10.5 8.5 A10 10 0 1 0 21.5 8.5" fill="none" stroke="${fill}" stroke-width="3" stroke-linecap="round"/>` +
+  `<path d="M16 3 L16 15" stroke="${OUTLINE}" stroke-width="6" stroke-linecap="round"/><path d="M16 3 L16 15" stroke="${fill}" stroke-width="3" stroke-linecap="round"/>`;
+
+/** A red bar across a cursor: the mode has nothing to do here (OpenRA "*-blocked"). */
+const BAR =
+  `<line x1="6" y1="26" x2="26" y2="6" stroke="${OUTLINE}" stroke-width="6" stroke-linecap="round"/>` +
+  `<line x1="6" y1="26" x2="26" y2="6" stroke="#ff4a3a" stroke-width="3" stroke-linecap="round"/>`;
+
+const COIN = (fill, ring) =>
+  `<circle cx="16" cy="16" r="12" fill="${fill}" stroke="${OUTLINE}" stroke-width="2.5"/>` +
+  `<circle cx="16" cy="16" r="9" fill="none" stroke="${ring}" stroke-width="1.5"/>` +
+  `<text x="16" y="21.5" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="15" font-weight="900" fill="${OUTLINE}">$</text>`;
+
+/** Beacon: an arrow pointing down at a ring on the ground (OpenRA's "ability" cursor for beacons). */
+const BEACON =
+  `<ellipse cx="16" cy="25" rx="10" ry="4.5" fill="none" stroke="${OUTLINE}" stroke-width="5"/>` +
+  `<ellipse cx="16" cy="25" rx="10" ry="4.5" fill="none" stroke="#7fd0ff" stroke-width="2.4"/>` +
+  `<path d="M16 3 L16 19 M10 13 L16 19 L22 13" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+  `<path d="M16 3 L16 19 M10 13 L16 19 L22 13" fill="none" stroke="#7fd0ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+
 export const CURSORS = {
   select: cursor(ARROW, 3, 2, 'default'),
   // Building placement: valid spot (an invalid one shows `blocked`).
@@ -121,13 +149,7 @@ export const CURSORS = {
     16,
     'copy',
   ),
-  repair: cursor(
-    `<g transform="rotate(45 16 16)"><rect x="13.5" y="9" width="5" height="20" rx="2" fill="#7fd0ff" stroke="${OUTLINE}" stroke-width="2"/>` +
-      `<path d="M9 3 A7 7 0 1 0 23 3 L19.5 3 L19.5 8 L12.5 8 L12.5 3 Z" fill="#7fd0ff" stroke="${OUTLINE}" stroke-width="2" stroke-linejoin="round"/></g>`,
-    16,
-    16,
-    'alias',
-  ),
+  repair: cursor(WRENCH('#7fd0ff'), 16, 16, 'alias'),
   rally: cursor(
     `<line x1="8" y1="3" x2="8" y2="29" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round"/>` +
       `<line x1="8" y1="3" x2="8" y2="29" stroke="#e8e8e8" stroke-width="2" stroke-linecap="round"/>` +
@@ -136,14 +158,15 @@ export const CURSORS = {
     29,
     'pointer',
   ),
-  sell: cursor(
-    `<circle cx="16" cy="16" r="12" fill="#d9b23a" stroke="${OUTLINE}" stroke-width="2.5"/>` +
-      `<circle cx="16" cy="16" r="9" fill="none" stroke="#9c7d20" stroke-width="1.5"/>` +
-      `<text x="16" y="21.5" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="15" font-weight="900" fill="${OUTLINE}">$</text>`,
-    16,
-    16,
-    'pointer',
-  ),
+  sell: cursor(COIN('#d9b23a', '#9c7d20'), 16, 16, 'pointer'),
+  // Sidebar modes (OpenRA sell-blocked, repair, repair-blocked, powerdown,
+  // powerdown-blocked, and the beacon's ability cursor).
+  sellBlocked: cursor(COIN('#8a8a7a', '#6a6a5a') + BAR, 16, 16, 'not-allowed'),
+  repairMode: cursor(WRENCH('#f2c94c'), 16, 16, 'pointer'),
+  repairBlocked: cursor(WRENCH('#8a8a7a') + BAR, 16, 16, 'not-allowed'),
+  powerDown: cursor(POWER('#ffd23a'), 16, 16, 'pointer'),
+  powerDownBlocked: cursor(POWER('#8a8a7a') + BAR, 16, 16, 'not-allowed'),
+  beacon: cursor(BEACON, 16, 25, 'crosshair'),
   deploy: cursor(
     [[0, -1], [1, 0], [0, 1], [-1, 0]]
       .map(([dx, dy]) => {
@@ -248,3 +271,11 @@ export function scrollCursor(dx, dy, blocked = false) {
   const d = SCROLL_DIRS.find(([, x, y]) => x === Math.sign(dx) && y === Math.sign(dy));
   return d ? CURSORS[`scroll${d[0]}${blocked ? 'Blocked' : ''}`] : null;
 }
+
+/** Cursor of a sidebar mode (js/input.js `mode`) over a spot where it can act or not. */
+export const MODE_CURSORS = {
+  sell: [CURSORS.sell, CURSORS.sellBlocked],
+  repair: [CURSORS.repairMode, CURSORS.repairBlocked],
+  powerDown: [CURSORS.powerDown, CURSORS.powerDownBlocked],
+  beacon: [CURSORS.beacon, CURSORS.beacon],
+};

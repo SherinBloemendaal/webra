@@ -242,6 +242,23 @@ test('command bar orders name no actor type and pass the rules check once the pr
   assert.equal(bad.ok, false);
 });
 
+test('sidebar button orders name no actor type and pass the rules check once the protocol accepts them', () => {
+  // engine/src/repair.rs (repair, power down) and beacons.rs.
+  const orders = [
+    { o: 'repair_building', player: 0, building: 12 },
+    { o: 'power_down', player: 0, building: 13 },
+    { o: 'place_beacon', player: 0, x: 600, y: 900 },
+  ];
+  const msg = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders }));
+  assert.ok(msg.ok, msg.message);
+  assert.deepEqual(msg.msg.orders, orders);
+  assert.equal(ordersFitRules(msg.msg.orders, ENGINE_RULES.actors.length), true);
+  assert.equal(cheatsAllowed(msg.msg.orders, { cheats: false }), true, 'not cheats');
+  for (const o of [{ o: 'repair_building', player: 0, building: 'x' }, { o: 'place_beacon', player: 0, x: 1 }, { o: 'power_down', player: 0 }]) {
+    assert.equal(parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders: [o] })).ok, false, JSON.stringify(o));
+  }
+});
+
 test('cheat orders are relayed only in games with the cheats option', () => {
   const normal = [{ o: 'stop', player: 0, ids: [1] }, { o: 'place', player: 0, ty: 3, cx: 1, cy: 1 }];
   const cheats = [

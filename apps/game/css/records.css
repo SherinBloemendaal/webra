@@ -122,10 +122,6 @@
   flex-wrap: wrap;
 }
 
-#gameover-replay {
-  margin-top: 8px;
-}
-
 /* ---- Observer panel (spectators and replays) ------------------------------------ */
 
 .observer-panel {
@@ -177,7 +173,7 @@
 
 .observer-row {
   display: grid;
-  grid-template-columns: minmax(80px, 1.4fr) repeat(7, minmax(52px, 1fr));
+  grid-template-columns: minmax(80px, 1.4fr) repeat(var(--cols, 7), minmax(52px, 1fr));
   gap: 6px;
   padding: 2px 6px;
   white-space: nowrap;
@@ -202,6 +198,20 @@
 
 .observer-cell {
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.observer-panels {
+  max-width: 160px;
+}
+
+.observer-graph {
+  justify-self: end;
+  width: min(480px, 100%);
+  height: auto;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 /* ---- Replay bar ------------------------------------------------------------------- */

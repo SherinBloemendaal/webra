@@ -33,9 +33,11 @@ import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
+import { DECORATION_SPECIALS } from './art/decorations.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
+import { POSE, POSE_STRIDE, packSprite } from './content/sequences.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -492,7 +494,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities, veterancy), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -557,6 +559,7 @@ export function spriteList(actors) {
     slots(HELI_SPECIALS),
     slots(ABILITY_SPECIALS),
     slots(VETERANCY_SPECIALS),
+    slots(DECORATION_SPECIALS),
   );
 }
 
@@ -623,7 +626,10 @@ function shelfPack(boxes, width, startY = 0) {
  * `start + k` instead (shaders/sprite.wgsl, js/anim.js animFrame).
  * `overlays[t]` is the still frame of actor type t's animated layer, or 0; the
  * engine draws it for fogged buildings and those without power
- * (engine/src/overlays.rs, Game.set_building_overlays).
+ * (engine/src/overlays.rs, Game.set_building_overlays). For a layer that is
+ * a pose table (`opts.layers`, js/content/atlas.js) it is the layer's slot
+ * with the STILL pose (`slot + POSE_STRIDE * POSE.STILL`, at least
+ * POSE_STRIDE): the engine then gives the layer the structure's pose.
  *
  * `opts.slots` (js/content/atlas.js) replaces sprite slots with other art:
  * a slot mapped to null is empty, a slot mapped to a sequence slot
@@ -652,12 +658,18 @@ export function buildAtlas(actors, opts = {}) {
   const overlays = new Uint32Array(actors.length);
   for (const p of plan) {
     meta.set(p.head, { offset: p.offset, anim: [p.start, p.frames, p.fps] });
+    // Still frames stay below POSE_STRIDE: larger values mark pose-table layers.
+    if (p.start >= POSE_STRIDE) throw new Error(`animated layer frame ${p.start} past ${POSE_STRIDE}`);
     overlays[p.actor] = p.start;
     if (meta.has(p.start)) continue; // an alias already added the frames
     for (let f = 0; f < p.frames; f++) {
       meta.set(p.start + f, { offset: p.offset, anim: [0, 0, 0] });
       list.push(layerSprite(p.anim, f));
     }
+  }
+  // Layers drawn over structures with the structure's pose (original War Factory roof and door).
+  for (const k of opts.layers ?? []) {
+    if (k % 2 === 1 && slots.get(k)) overlays[(k - 1) / 2] = packSprite(k, POSE.STILL);
   }
   // Sequence slots: images placed once, entries after the WebRA frames.
   const images = [];

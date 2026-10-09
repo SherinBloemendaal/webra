@@ -37,7 +37,8 @@
   ],
   "ore_max_density": 12,
   "gem_value": 50,
-  "gem_max_density": 3
+  "gem_max_density": 3,
+  "beacon_duration": 750
  },
  "actors": [
   {
@@ -62,6 +63,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": true,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -153,6 +155,24 @@
       "structures.ukraine"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 2000,
     "center_offset": [
      0,
      -512
@@ -181,6 +201,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -245,6 +266,24 @@
       "anypower"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 300,
     "center_offset": [
      0,
      -512
@@ -274,6 +313,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -338,6 +378,24 @@
       "anypower"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      -512
@@ -367,6 +425,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -443,6 +502,24 @@
       2
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 300,
     "center_offset": [
      0,
      -512
@@ -472,6 +549,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -520,6 +598,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 150,
     "center_offset": [
      0,
      0
@@ -550,6 +646,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -641,6 +738,24 @@
       "tent"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      -512
@@ -671,6 +786,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -760,6 +876,24 @@
       "infantry.ukraine"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      -512
@@ -790,6 +924,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -888,6 +1023,24 @@
       "kenn"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 200,
     "center_offset": [
      0,
      0
@@ -917,6 +1070,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1002,6 +1156,24 @@
       "weap"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 2000,
     "center_offset": [
      0,
      -512
@@ -1031,6 +1203,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1100,6 +1273,24 @@
      "interval": 7,
      "value_percent": 20
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 1200,
     "center_offset": [
      0,
      0
@@ -1129,6 +1320,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1196,6 +1388,24 @@
       "dome"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -1225,6 +1435,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1305,6 +1516,24 @@
       "hpad"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      -512
@@ -1336,6 +1565,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1493,6 +1723,24 @@
       "aircraft.ukraine"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      0
@@ -1523,6 +1771,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1680,6 +1929,24 @@
       "aircraft.ukraine"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 500,
     "center_offset": [
      0,
      0
@@ -1710,6 +1977,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1813,6 +2081,24 @@
      "interval": 24,
      "value_percent": 20
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 1000,
     "center_offset": [
      0,
      0
@@ -1843,6 +2129,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1960,6 +2247,24 @@
      "interval": 24,
      "value_percent": 20
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 800,
     "center_offset": [
      0,
      0
@@ -1991,6 +2296,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2078,6 +2384,24 @@
       "techcenter"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -2109,6 +2433,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2180,6 +2505,24 @@
       "techcenter"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -2210,6 +2553,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2260,6 +2604,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 800,
     "center_offset": [
      0,
      0
@@ -2290,6 +2652,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2400,6 +2763,24 @@
       "pdox"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 1500,
     "center_offset": [
      0,
      0
@@ -2430,6 +2811,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2499,6 +2881,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 2000,
     "center_offset": [
      0,
      0
@@ -2528,6 +2928,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2597,6 +2998,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 2500,
     "center_offset": [
      0,
      0
@@ -2627,6 +3046,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2671,6 +3091,8 @@
      "russia": [],
      "ukraine": []
     },
+    "power_down": false,
+    "value": 0,
     "center_offset": [
      0,
      0
@@ -2701,6 +3123,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2745,6 +3168,8 @@
      "russia": [],
      "ukraine": []
     },
+    "power_down": false,
+    "value": 0,
     "center_offset": [
      0,
      0
@@ -2774,6 +3199,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2818,6 +3244,8 @@
      "russia": [],
      "ukraine": []
     },
+    "power_down": false,
+    "value": 0,
     "center_offset": [
      0,
      0
@@ -2850,6 +3278,7 @@
    "requires_power": false,
    "defense": true,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -2926,6 +3355,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 400,
     "center_offset": [
      0,
      0
@@ -2958,6 +3405,7 @@
    "requires_power": false,
    "defense": true,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -3049,6 +3497,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 550,
     "center_offset": [
      0,
      0
@@ -3081,6 +3547,7 @@
    "requires_power": false,
    "defense": true,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -3143,6 +3610,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 800,
     "center_offset": [
      0,
      0
@@ -3175,6 +3660,7 @@
    "requires_power": false,
    "defense": true,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -3251,6 +3737,24 @@
       "ftur"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 600,
     "center_offset": [
      0,
      0
@@ -3283,6 +3787,7 @@
    "requires_power": true,
    "defense": true,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3354,6 +3859,24 @@
       "tsla"
      ]
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 1200,
     "center_offset": [
      0,
      0
@@ -3386,6 +3909,7 @@
    "requires_power": true,
    "defense": true,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -3441,6 +3965,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 800,
     "center_offset": [
      0,
      0
@@ -3473,6 +4015,7 @@
    "requires_power": true,
    "defense": true,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -3528,6 +4071,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": true,
+    "value": 700,
     "center_offset": [
      0,
      0
@@ -3557,6 +4118,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3607,6 +4169,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 30,
     "center_offset": [
      0,
      -512
@@ -3636,6 +4216,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3686,6 +4267,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 50,
     "center_offset": [
      0,
      -512
@@ -3715,6 +4314,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3764,6 +4364,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 100,
     "center_offset": [
      0,
      0
@@ -3793,6 +4411,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3843,6 +4462,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 200,
     "center_offset": [
      0,
      -512
@@ -3872,6 +4509,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3922,6 +4560,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 180,
     "center_offset": [
      0,
      -512
@@ -3951,6 +4607,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4001,6 +4658,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 120,
     "center_offset": [
      0,
      0
@@ -4030,6 +4705,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4080,6 +4756,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 50,
     "center_offset": [
      0,
      -512
@@ -4109,6 +4803,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4159,6 +4854,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 150,
     "center_offset": [
      0,
      -512
@@ -4188,6 +4901,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4237,6 +4951,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 150,
     "center_offset": [
      0,
      0
@@ -4266,6 +4998,7 @@
    "requires_power": true,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4314,6 +5047,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 250,
     "center_offset": [
      0,
      0
@@ -4343,6 +5094,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4394,6 +5146,24 @@
      "russia": [],
      "ukraine": []
     },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ]
+    },
+    "power_down": false,
+    "value": 200,
     "center_offset": [
      0,
      -512
@@ -4425,6 +5195,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4542,6 +5313,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4656,6 +5428,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 10,
    "self_heal": {
     "step": 100,
@@ -4727,6 +5500,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": true,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -4794,6 +5568,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -4858,6 +5633,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -4978,6 +5754,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -5094,6 +5871,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -5202,6 +5980,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -5311,6 +6090,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -5420,6 +6200,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -5531,6 +6312,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": {
     "step": 100,
@@ -5645,6 +6427,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 21,
    "self_heal": null,
    "turret_offsets": [],
@@ -5749,6 +6532,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 23,
    "self_heal": null,
    "turret_offsets": [],
@@ -5850,6 +6634,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
@@ -5974,6 +6759,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -6040,6 +6826,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -6106,6 +6893,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -6210,6 +6998,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 27,
    "self_heal": null,
    "turret_offsets": [],
@@ -6273,6 +7062,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -6381,6 +7171,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [
@@ -6516,6 +7307,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 11,
    "self_heal": null,
    "turret_offsets": [],
@@ -6582,6 +7374,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
@@ -6693,6 +7486,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [
@@ -6809,6 +7603,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
@@ -6938,6 +7733,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [
@@ -7056,6 +7852,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": true,
+   "base_building": false,
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [
@@ -7171,6 +7968,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 36,
    "self_heal": null,
    "turret_offsets": [],
@@ -7295,6 +8093,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -7433,6 +8232,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -7563,6 +8363,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -7694,6 +8495,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -7823,6 +8625,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -7945,6 +8748,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -8065,6 +8869,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8181,6 +8986,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8294,6 +9100,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -8359,6 +9166,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -8437,6 +9245,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 42,
    "self_heal": null,
    "turret_offsets": [],
@@ -8502,6 +9311,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 24,
    "self_heal": null,
    "turret_offsets": [],
@@ -8549,6 +9359,7 @@
    "requires_power": false,
    "defense": false,
    "opportunity_fire": false,
+   "base_building": false,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],

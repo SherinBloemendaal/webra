@@ -11,8 +11,10 @@ mod ai;
 mod ai_arsenal;
 mod ai_economy;
 mod air;
+pub mod beacons;
 mod cargo;
 mod combat;
+mod combined;
 mod commands;
 pub mod debug;
 pub mod flowfield;
@@ -31,6 +33,7 @@ mod plane;
 mod powers;
 mod production;
 pub mod render;
+mod repair;
 pub mod rng;
 pub mod rules;
 pub mod sound_events;
@@ -72,11 +75,15 @@ mod tests_poses;
 #[cfg(test)]
 mod tests_production;
 #[cfg(test)]
+mod tests_repair;
+#[cfg(test)]
 mod tests_replay;
 #[cfg(test)]
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
+#[cfg(test)]
+mod tests_stats;
 #[cfg(test)]
 mod tests_veterancy;
 #[cfg(test)]
@@ -319,8 +326,10 @@ impl Game {
                     continue;
                 }
                 o.set_player(player);
-                self.world.queue_order(o);
-                queued += 1;
+                // Defeated players' orders are refused (observer.rs counts the rest).
+                if self.world.queue_player_order(o) {
+                    queued += 1;
+                }
             }
         }
         Ok(queued)
@@ -385,7 +394,8 @@ impl Game {
             if !a.alive || !a.in_world() || a.env.heat < weather::HEAT_RECOVER / 2 || a.x < ax || a.x > bx || a.y < ay || a.y > by {
                 continue;
             }
-            if a.owner != player && !w.is_visible_to(i, player) {
+            // The spectator views (observer.rs, combined.rs) are no player slot: everything shows.
+            if (player as usize) < w.players.len() && a.owner != player && !w.is_visible_to(i, player) {
                 continue;
             }
             let k = PX_PER_CELL / CELL as f32;
@@ -444,6 +454,9 @@ impl Game {
                     "harvester": a.unit.as_ref().is_some_and(|u| u.harvester.is_some()),
                     "refinery": b.is_some_and(|b| b.refinery.is_some()),
                     "repairs": b.is_some_and(|b| b.repairs.is_some()),
+                    // Sidebar buttons (repair.rs): the Repair and Power down buttons work on it.
+                    "repairable": b.is_some_and(|b| b.repairable.is_some()),
+                    "powerDown": b.is_some_and(|b| b.power_down),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
                 })
             })
@@ -454,7 +467,9 @@ impl Game {
             "weapons": r.weapons.iter().map(|w| &w.name).collect::<Vec<_>>(),
             "factions": r.factions,
             "pxPerCell": PX_PER_CELL,
-            "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai})).collect::<Vec<_>>(),
+            // Teams (0: none, equal non-zero teams are allies) and neutral owners:
+            // the client's relationship colours and radar pings follow them.
+            "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai, "team": p.team, "neutral": p.neutral})).collect::<Vec<_>>(),
         })
         .to_string()
     }
@@ -481,6 +496,8 @@ impl Game {
     pub fn fog_ptr(&mut self, player: u8) -> *const u8 {
         if player == observer::OBSERVER {
             self.world.observer_fog_bytes(&mut self.fog);
+        } else if player == combined::COMBINED {
+            self.world.combined_fog_bytes(&mut self.fog);
         } else {
             self.world.fog_bytes(player, &mut self.fog);
         }
@@ -519,9 +536,16 @@ impl Game {
         // The spectator view renders as slot 0 with every visibility check
         // passing; the flag is cleared again before anything else can run.
         let observer = player == observer::OBSERVER;
+        let alpha = alpha.clamp(0.0, 1.0);
+        if player == combined::COMBINED {
+            // Every player's vision together, rendered as slot 0 (combined.rs).
+            let Game { world, selection, sprites, rects, .. } = self;
+            world.with_combined_view(|w| w.build_render(0, alpha, &view, selection, sprites, rects));
+            return self.sprites.len() / render::SPRITE_FLOATS;
+        }
         self.world.render_all = observer;
         let player = if observer { 0 } else { player };
-        self.world.build_render(player, alpha.clamp(0.0, 1.0), &view, &self.selection, &mut self.sprites, &mut self.rects);
+        self.world.build_render(player, alpha, &view, &self.selection, &mut self.sprites, &mut self.rects);
         self.world.render_all = false;
         self.sprites.len() / render::SPRITE_FLOATS
     }
@@ -536,6 +560,11 @@ impl Game {
     pub fn build_render_records(&mut self, player: u8) -> usize {
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
         let observer = player == observer::OBSERVER;
+        if player == combined::COMBINED {
+            let Game { world, selection, sprite_records, sprite_extras, rect_records, .. } = self;
+            world.with_combined_view(|w| w.build_render_records(0, selection, sprite_records, sprite_extras, rect_records));
+            return self.sprite_records.len() / instances::SPRITE_REC_FLOATS;
+        }
         self.world.render_all = observer;
         let player = if observer { 0 } else { player };
         self.world.build_render_records(player, &self.selection, &mut self.sprite_records, &mut self.sprite_extras, &mut self.rect_records);
@@ -735,6 +764,11 @@ impl Game {
             "xp": a.xp / 100,
             "nextXp": self.world.level_experience(i, (a.rank as usize + 1).min(self.world.max_rank(i) as usize)) / 100,
             "prone": self.world.is_prone(i),
+            // Repair and power down buttons (repair.rs).
+            "repairing": !a.repairers.is_empty(),
+            "repairers": a.repairers,
+            "poweredOff": a.powered_off,
+            "canPowerDown": self.world.has_power_down(i),
         })
         .to_string()
     }
@@ -887,6 +921,144 @@ impl Game {
         let info = &self.world.rules.actors[a.ty as usize];
         let pct = info.building.as_ref().unwrap().sell_refund;
         (info.cost as i64 * pct as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32
+    }
+
+    // ---- Sidebar buttons: repair, power down, beacon (repair.rs, beacons.rs) -----------
+
+    /// Start or stop repairing an own or allied structure.
+    pub fn repair_building(&mut self, player: u8, building: u32) {
+        self.submit(Order::RepairBuilding { player, building });
+    }
+
+    /// Switch an own structure off, or on again.
+    pub fn power_down(&mut self, player: u8, building: u32) {
+        self.submit(Order::PowerDown { player, building });
+    }
+
+    /// Place the player's beacon at a world-pixel position (replaces their previous one).
+    pub fn place_beacon(&mut self, player: u8, x: f32, y: f32) {
+        self.submit(Order::PlaceBeacon { player, x: to_wu(x), y: to_wu(y) });
+    }
+
+    /// What a click with the repair cursor on actor `id` does (OpenRA
+    /// RepairOrderGenerator): 0 nothing, 1 start or stop repairing a friendly
+    /// damaged structure, 2 send an own damaged unit to its repair depot
+    /// (`repair_unit_target`).
+    pub fn repair_cursor(&self, player: u8, id: u32) -> u8 {
+        let Some(i) = self.world.resolve(id) else { return 0 };
+        if self.world.can_repair_building(player, i) {
+            1
+        } else if self.world.repair_depot_for(player, i).is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
+    /// World-pixel `[x, y]` of the depot an own damaged unit would be repaired
+    /// at (own depots only, the nearest first), or empty.
+    pub fn repair_unit_target(&self, player: u8, id: u32) -> Vec<f32> {
+        let Some(i) = self.world.resolve(id) else { return Vec::new() };
+        match self.world.repair_depot_for(player, i) {
+            Some((x, y)) => vec![px(x), px(y)],
+            None => Vec::new(),
+        }
+    }
+
+    /// Whether a click with the power down cursor on actor `id` toggles it.
+    pub fn can_power_down(&self, player: u8, id: u32) -> bool {
+        self.world.resolve(id).is_some_and(|i| self.world.can_power_down(player, i))
+    }
+
+    // ---- Hotkey helpers (apps/game/js/ingame-hotkeys.js) ----------------------------
+
+    /// What the base hotkey cycles through (OpenRA CycleBasesHotkeyLogic): the
+    /// player's Construction Yards and MCVs (BaseBuilding), or else their first
+    /// selectable structure. Ids in actor order.
+    pub fn base_actors(&self, player: u8) -> Vec<u32> {
+        let w = &self.world;
+        if player as usize >= w.players.len() {
+            return Vec::new();
+        }
+        let bases: Vec<u32> = (0..w.actors.len())
+            .filter(|&i| {
+                let a = &w.actors[i];
+                a.alive && a.owner == player && a.in_world() && w.rules.actors[a.ty as usize].base_building
+            })
+            .map(|i| w.make_ref(i))
+            .collect();
+        if !bases.is_empty() {
+            return bases;
+        }
+        (0..w.actors.len())
+            .find(|&i| {
+                let a = &w.actors[i];
+                a.alive && a.owner == player && a.kind == Kind::Building && !w.rules.actors[a.ty as usize].is_wall()
+            })
+            .map(|i| vec![w.make_ref(i)])
+            .unwrap_or_default()
+    }
+
+    /// The player's harvesters on the map (OpenRA CycleHarvestersHotkeyLogic), in actor order.
+    pub fn harvesters(&self, player: u8) -> Vec<u32> {
+        let w = &self.world;
+        (0..w.actors.len())
+            .filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].in_world() && w.is_harvester(i))
+            .map(|i| w.make_ref(i))
+            .collect()
+    }
+
+    /// The player's production structures other than Construction Yards
+    /// (OpenRA CycleProductionActorsHotkeyLogic), ordered by what they produce
+    /// first, then actor order.
+    pub fn production_buildings(&self, player: u8) -> Vec<u32> {
+        let w = &self.world;
+        let mut list: Vec<(String, usize)> = (0..w.actors.len())
+            .filter_map(|i| {
+                let a = &w.actors[i];
+                let info = &w.rules.actors[a.ty as usize];
+                let b = info.building.as_ref()?;
+                (a.alive && a.owner == player && a.kind == Kind::Building && !info.base_building && !b.production_types.is_empty())
+                    .then(|| (b.production_types[0].clone(), i))
+            })
+            .collect();
+        list.sort();
+        list.into_iter().map(|(_, i)| w.make_ref(i)).collect()
+    }
+
+    /// The structure that builds what production tab `queue` (rules.rs
+    /// QueueType order) makes, or NONE (OpenRA `MostLikelyProducer`; the same
+    /// structure new units come out of).
+    pub fn queue_producer(&self, player: u8, queue: u8) -> u32 {
+        let w = &self.world;
+        if queue as usize >= rules::QUEUE_COUNT {
+            return NONE;
+        }
+        let q = QueueType::from_index(queue as usize);
+        (0..w.actors.len())
+            .find(|&i| {
+                let a = &w.actors[i];
+                a.alive
+                    && a.owner == player
+                    && a.kind == Kind::Building
+                    && w.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.produces.contains(&q))
+            })
+            .map_or(NONE, |i| w.make_ref(i))
+    }
+
+    /// The player's army by type for the observer's army panel (OpenRA
+    /// ObserverArmyIcons): flat `[actor type index, count, ...]`, the units
+    /// that count for the army value (observer.rs: no harvesters, no support
+    /// aircraft), in rules order.
+    pub fn army_counts(&self, player: u8) -> Vec<u32> {
+        let w = &self.world;
+        let mut counts = vec![0u32; w.rules.actors.len()];
+        for (i, a) in w.actors.iter().enumerate() {
+            if a.alive && a.owner == player && a.is_unit() && a.hp > 0 && !w.is_harvester(i) && !w.is_support_aircraft(i) {
+                counts[a.ty as usize] += 1;
+            }
+        }
+        counts.iter().enumerate().filter(|(_, &n)| n > 0).flat_map(|(t, &n)| [t as u32, n]).collect()
     }
 
     /// Deploy selected MCVs / pack up a selected Construction Yard / unload selected transports.
@@ -1344,7 +1516,7 @@ impl Game {
         if self.lockstep {
             self.outbox.push(o);
         } else {
-            self.world.queue_order(o);
+            self.world.queue_player_order(o);
         }
     }
 }

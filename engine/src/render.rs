@@ -47,6 +47,8 @@ pub struct SpriteIds {
     pub helis_base: f32,
     pub abilities_base: f32,
     pub veterancy_base: f32,
+    /// Repair wrench and power off icon (repair.rs).
+    pub decorations_base: f32,
 }
 
 impl SpriteIds {
@@ -70,11 +72,16 @@ impl SpriteIds {
             helis_base: b + 28.0,
             abilities_base: b + 36.0,
             veterancy_base: b + 44.0,
+            decorations_base: b + 52.0,
         }
     }
 }
 
 const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
+
+/// Opacity of the black layer over a disabled structure (OpenRA
+/// WithColoredOverlay@IDISABLE colour 000000B4: 180 of 255).
+pub const DISABLED_SHADE: f32 = 180.0 / 255.0;
 
 /// What a body or turret sprite shows, for art with pre-rendered animations
 /// (apps/game/js/content: original graphics and texture packs pick their
@@ -182,15 +189,29 @@ impl World {
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
             let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            sink.sprite(sprites, at.look(self.body_sprite(i, a.ty as u32 * 2), a.owner as f32, 1.0, alpha, flash));
+            let body = self.body_sprite(i, a.ty as u32 * 2);
+            sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, alpha, flash));
+            // Disabled (low power, switched off): darkened like OpenRA's
+            // WithColoredOverlay@IDISABLE (black at 70 percent) over every layer.
+            let dim = self.is_powered_down(i);
+            if dim {
+                sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, alpha * DISABLED_SHADE, -1.0));
+            }
             // Radar dishes, smoke and lights (overlays.rs), over every building body.
             self.push_building_overlay(i, x, y, alpha, flash, sink, &mut building_turrets);
+            if dim {
+                self.push_building_overlay(i, x, y, alpha * DISABLED_SHADE, -1.0, sink, &mut building_turrets);
+            }
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 // Interpolated by the frame's alpha like unit turrets (the angle used to be taken at the building's opacity).
                 let slot = a.ty as u32 * 2 + 1;
                 let turret = if self.render_opts.poses && self.heavily_damaged(i) { posed(slot, Pose::Damaged, 0) } else { slot as f32 };
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(turret, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut building_turrets, r);
+                if dim {
+                    let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(turret, a.owner as f32, 1.0, DISABLED_SHADE, -1.0);
+                    sink.sprite(&mut building_turrets, r);
+                }
             }
         }
         // The spectator view (observer.rs) draws every structure live, no ghosts.
@@ -284,6 +305,8 @@ impl World {
         sprites.extend_from_slice(&aircraft);
         // Rank chevrons on top of every unit (veterancy.rs).
         self.render_veterancy(player, sink, ids.veterancy_base, sprites);
+        // Repair wrenches and power off icons on structures (repair.rs).
+        self.render_building_decorations(player, sink, ids.decorations_base, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));
@@ -398,6 +421,8 @@ impl World {
             }
         }
         self.render_waypoints(player, selected, sink, rects);
+        // Beacons of the player and their allies, over the shroud (beacons.rs).
+        self.render_beacons(player, sink, rects);
     }
 
     /// Queued waypoints of the selected own units: a marker per waypoint and
@@ -496,7 +521,7 @@ impl World {
     }
 
     /// The pose of a live structure's body sprite, and its age.
-    fn building_pose(&self, i: usize) -> (Pose, u32) {
+    pub(crate) fn building_pose(&self, i: usize) -> (Pose, u32) {
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
         let damaged = self.heavily_damaged(i);
@@ -507,7 +532,7 @@ impl World {
         if a.born > 0 && age < MAX_POSE_AGE {
             return (Pose::Make, age);
         }
-        if info.requires_power && self.players[a.owner as usize].low_power() {
+        if self.is_powered_down(i) {
             return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);
         }
         (if damaged { Pose::Damaged } else { Pose::Idle }, 0)

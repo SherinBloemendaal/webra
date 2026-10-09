@@ -24,8 +24,11 @@ import {
 export const TICKS_PER_SECOND = 25;
 /** Wall time per animation frame spent fast-forwarding (loading, seeking). */
 export const FAST_FORWARD_BUDGET_MS = 40;
-/** Replay playback speeds. */
-export const REPLAY_SPEEDS = [1, 2, 4, 8];
+/**
+ * Replay playback speeds. OpenRA's replay speed hotkeys: Slow (half), Regular,
+ * Fast (double) and Maximum (the highest).
+ */
+export const REPLAY_SPEEDS = [0.5, 1, 2, 4, 8];
 /** In-memory snapshots for seeking in a replay (keyframes). */
 export const MAX_KEYFRAMES = 12;
 export const KEYFRAME_TICKS = 1500;

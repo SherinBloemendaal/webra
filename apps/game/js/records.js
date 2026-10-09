@@ -265,6 +265,12 @@ export class ReplayBar {
     this.update();
   }
 
+  /** The replay speed hotkeys (js/gamekeys.js): a speed of REPLAY_SPEEDS, or 'max' for the highest. */
+  setSpeed(speed) {
+    this.c.setSpeed(speed === 'max' ? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1] : speed);
+    this.update();
+  }
+
   update() {
     const c = this.c;
     this.play.textContent = c.ended ? 'Restart' : c.playing ? 'Pause' : 'Play';

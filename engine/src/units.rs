@@ -677,7 +677,7 @@ impl World {
                     a.gem_bales -= gem as i32;
                     let owner = a.owner;
                     let value = if gem { self.rules.player.gem_value } else { self.rules.player.ore_value };
-                    self.give_harvested(owner, value);
+                    self.give_harvested(owner, value, gem);
                 }
                 if self.actors[i].bales == 0 {
                     self.actors[r].dock_user = NONE;
@@ -856,6 +856,7 @@ impl World {
         let price = ((cost as i64 * rep.value_percent as i64 * step as i64 + 100 * max_hp as i64 - 1) / (100 * max_hp as i64)) as i32;
         let owner = a.owner;
         if self.spend(owner, price) {
+            self.note_repair(owner, price);
             self.actors[i].hp += step;
             self.uncloak_on(i, "Heal");
         }

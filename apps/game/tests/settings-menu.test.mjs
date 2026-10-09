@@ -12,7 +12,9 @@ import { HotkeyRegistry } from '../js/hotkeys.js';
 import { GameMenu, scaleLabel, MENU_SETTINGS, DISPLAY_HELP } from '../js/gamemenu.js';
 import { UiScale, crispGameScales, autoGameScale, screenOf } from '../js/scale.js';
 import { AudioSystem } from '../js/audio/index.js';
-import { mountAudioPanel, musicText } from '../js/audio/panel.js';
+import { mountAudioPanel, musicText, AUDIO_HELP_KEYS } from '../js/audio/panel.js';
+import { MENU_HELP_KEYS } from '../js/gamemenu.js';
+import { HELP } from '../js/help.js';
 import { Jukebox, playOrder } from '../js/audio/music.js';
 import { DEFAULT_PREFS, busGain } from '../js/audio/prefs.js';
 import { MUSIC } from '../js/audio/catalog.js';
@@ -406,4 +408,51 @@ test('music: off when music is off, the music volume is 0, or sound is off', () 
     audio.prefs.set(DEFAULT_PREFS);
   }
   assert.equal(audio.musicWanted(), true);
+});
+
+test('settings page: every setting with help has a "?" wired to its control; Esc closes an open tip before the page', () => {
+  const listeners = [];
+  globalThis.window.addEventListener = (type, fn) => listeners.push([type, fn]);
+  globalThis.Element = globalThis.HTMLElement;
+  try {
+    const { root, menu } = setup();
+    const buttons = root.querySelectorAll('.info-btn');
+    const keys = new Set(buttons.map((b) => b.dataset.help));
+    for (const k of MENU_HELP_KEYS) assert.ok(keys.has(`settings.${k}`), `no "?" for ${k}`);
+    for (const k of AUDIO_HELP_KEYS) assert.ok(keys.has(`audio.${k}`), `no "?" for audio ${k}`);
+    // Auto has its own "?" on both scale rows.
+    assert.equal(buttons.filter((b) => b.dataset.help === 'settings.scaleAuto').length, 2);
+    for (const b of buttons) {
+      const tip = root.querySelector(`#${b.getAttribute('aria-describedby')}`);
+      assert.equal(tip.textContent, HELP[b.dataset.help]);
+      const described = root.querySelectorAll('[aria-describedby]').filter((e) => e !== b && e.getAttribute('aria-describedby').split(' ').includes(tip.id));
+      assert.equal(described.length, 1, `${b.dataset.help} describes one control`);
+    }
+    for (const id of ['#game-menu-uiScale', '#game-menu-gameScale', '#game-menu-uiScale-auto', '#game-menu-pixelRatioCap', '#game-menu-lowQuality']) {
+      assert.ok(root.querySelector(id).getAttribute('aria-describedby'), id);
+    }
+    // The labels still name their controls.
+    for (const label of root.querySelectorAll('.ui-label-help > label')) assert.ok(root.querySelector(`#${label.getAttribute('for')}`), textOf(label));
+    const onKey = listeners.find(([t]) => t === 'keydown')[1];
+    const esc = () => onKey(Object.assign(new FakeEvent('keydown', { key: 'Escape' }), { stopImmediatePropagation() {}, target: doc.body }));
+    click(buttons[0]);
+    assert.ok(root.querySelector('.info-tip:not([hidden])'));
+    esc();
+    assert.equal(root.querySelector('.info-tip:not([hidden])'), null, 'Esc closed the tip');
+    assert.equal(menu.view, 'settings', 'and left the settings page open');
+    esc();
+    assert.equal(menu.view, 'main');
+  } finally {
+    delete globalThis.Element;
+  }
+});
+
+test('the Sound dialog stays without help buttons (only the game menu asks for them)', () => {
+  const { audio } = setup();
+  const button = doc.createElement('button');
+  const panel = doc.createElement('section');
+  doc.body.append(button, panel);
+  mountAudioPanel(button, panel, audio);
+  assert.ok(panel.querySelector('#audio-music'));
+  assert.equal(panel.querySelectorAll('.info-btn').length, 0);
 });

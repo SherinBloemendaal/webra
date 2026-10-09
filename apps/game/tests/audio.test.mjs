@@ -17,7 +17,7 @@ import { RECIPES, render } from '../js/audio/synth.js';
 import { installFromFiles, installedSummary, categoryOf } from '../js/audio/install.js';
 import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
-import { shuffle } from '../js/audio/music.js';
+import { shuffle, Jukebox } from '../js/audio/music.js';
 import { AudioSystem, FOG_VISIBLE } from '../js/audio/index.js';
 import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
@@ -407,6 +407,65 @@ test('music shuffles every track once before repeating', () => {
   const order = shuffle(10, random);
   assert.deepEqual([...order].sort((a, b) => a - b), [...Array(10).keys()]);
   assert.notEqual(shuffle(5, random, 3)[0], 3, 'does not repeat the last track first');
+});
+
+test('music hotkeys: stop stays stopped, pause resumes where it was, previous goes back', async () => {
+  const played = [];
+  let now = 0;
+  const mixer = {
+    ready: true,
+    play: (buffer, { offset = 0, onEnded }) => {
+      const h = { buffer, offset, stopped: false, onEnded, stop: () => (h.stopped = true), position: () => offset + now };
+      played.push(h);
+      return h;
+    },
+  };
+  const tracks = new Map(MUSIC.slice(0, 3).map((m, i) => [m.file, { id: i }]));
+  const j = new Jukebox(mixer, async () => ({ names: async () => [] }), () => {}, () => tracks, () => false);
+  await j.refresh();
+  await j.next();
+  const first = played.at(-1);
+  now = 12;
+  await j.togglePause();
+  assert.equal(first.stopped, true, 'pause stops the track');
+  assert.ok(j.paused && !j.handle);
+  await j.togglePause();
+  assert.equal(played.at(-1).buffer, first.buffer, 'the same track again');
+  assert.equal(played.at(-1).offset, 12, 'from where it paused');
+  await j.next();
+  const second = played.at(-1).buffer;
+  assert.notEqual(second, first.buffer);
+  await j.prev();
+  assert.equal(played.at(-1).buffer, first.buffer, 'previous: the track before');
+  j.userStop();
+  assert.equal(j.stoppedByUser, true);
+  assert.equal(j.handle, null);
+  await j.togglePause();
+  assert.equal(j.stoppedByUser, false, 'pause after stop starts a track');
+  assert.ok(j.handle);
+});
+
+test('mute and the music commands go through the audio system', () => {
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  assert.equal(audio.prefs.get().enabled, true);
+  assert.equal(audio.toggleMute(), true, 'muted');
+  assert.equal(audio.prefs.get().enabled, false);
+  assert.equal(audio.toggleMute(), false);
+  const calls = [];
+  audio.jukebox = {
+    userStop: () => calls.push('stop'),
+    togglePause: () => calls.push('pause'),
+    prev: () => calls.push('prev'),
+    next: () => calls.push('next'),
+    // Settings changes sync the music too.
+    start() {},
+    stop() {},
+  };
+  for (const c of ['stop', 'pause', 'prev', 'next']) audio.music(c);
+  assert.deepEqual(calls, ['stop'], 'out of a game only stop does something');
+  audio.musicWanted = () => true;
+  for (const c of ['pause', 'prev', 'next']) audio.music(c);
+  assert.deepEqual(calls, ['stop', 'pause', 'prev', 'next']);
 });
 
 // ---- Wiring ----------------------------------------------------------------------------------------

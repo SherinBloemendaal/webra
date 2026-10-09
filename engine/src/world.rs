@@ -188,6 +188,16 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+
+    // Repair and power down buttons (repair.rs)
+    /// Players repairing this building (OpenRA RepairableBuilding.Repairers), in the order they started.
+    pub repairers: Vec<u8>,
+    /// Ticks until the next repair step.
+    pub repair_ticks: i32,
+    /// A repairer paid for the last step (OpenRA RepairActive): the wrench shows.
+    pub repair_active: bool,
+    /// Switched off with the power down button (OpenRA `powerdown` condition).
+    pub powered_off: bool,
 }
 
 impl Actor {
@@ -264,6 +274,10 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            repairers: Vec::new(),
+            repair_ticks: 0,
+            repair_active: false,
+            powered_off: false,
         }
     }
 
@@ -592,6 +606,24 @@ pub enum Order {
         ids: Vec<u32>,
         stance: Stance,
     },
+    /// Start or stop repairing an own or allied structure (the sidebar's
+    /// Repair button, OpenRA RepairableBuilding; repair.rs).
+    RepairBuilding {
+        player: u8,
+        building: u32,
+    },
+    /// Switch an own structure off or on again (the sidebar's Power down
+    /// button, OpenRA ToggleConditionOnOrder; repair.rs).
+    PowerDown {
+        player: u8,
+        building: u32,
+    },
+    /// Mark a spot on the map for the player's allies (OpenRA PlaceBeacon; beacons.rs).
+    PlaceBeacon {
+        player: u8,
+        x: i32,
+        y: i32,
+    },
     /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
     /// unless the game has the cheats option.
     DevFlag {
@@ -645,6 +677,9 @@ impl Order {
             | Order::Scatter { player, .. }
             | Order::Waypoint { player, .. }
             | Order::SetStance { player, .. }
+            | Order::RepairBuilding { player, .. }
+            | Order::PowerDown { player, .. }
+            | Order::PlaceBeacon { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -675,6 +710,9 @@ impl Order {
             | Order::Scatter { player, .. }
             | Order::Waypoint { player, .. }
             | Order::SetStance { player, .. }
+            | Order::RepairBuilding { player, .. }
+            | Order::PowerDown { player, .. }
+            | Order::PlaceBeacon { player, .. }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -736,6 +774,9 @@ impl Order {
             | Order::Rally { .. }
             | Order::Sell { .. }
             | Order::SupportPower { .. }
+            | Order::RepairBuilding { .. }
+            | Order::PowerDown { .. }
+            | Order::PlaceBeacon { .. }
             | Order::DevFlag { .. }
             | Order::DevCash { .. }
             | Order::DevKill { .. }
@@ -815,6 +856,11 @@ pub struct World {
     /// everything as visible. Set by `Game::build_render` for the spectator
     /// view for the duration of that call; always false while `step` runs.
     pub render_all: bool,
+    /// Render only (combined.rs): slot 0 holds every player's vision for the
+    /// spectator "All players" view; decorations follow the spectator rules.
+    pub render_combined: bool,
+    /// Map beacons players placed for their allies (beacons.rs).
+    pub beacons: crate::beacons::Beacons,
 }
 
 impl World {
@@ -985,6 +1031,8 @@ impl World {
             render_opts: Default::default(),
             observer: Default::default(),
             render_all: false,
+            render_combined: false,
+            beacons: Default::default(),
             map,
         }
     }
@@ -1409,6 +1457,19 @@ impl World {
         self.orders.push(o);
     }
 
+    /// Queue an order from the order log (a player's action, not an AI
+    /// decision): refused for defeated players, counted for the observer
+    /// stats otherwise. Returns whether it was queued.
+    pub fn queue_player_order(&mut self, o: Order) -> bool {
+        let p = o.player();
+        if self.players.get(p as usize).is_none_or(|pl| pl.defeated) {
+            return false;
+        }
+        self.note_order(p);
+        self.orders.push(o);
+        true
+    }
+
     fn owned_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
         let mut out: Vec<usize> = ids
             .iter()
@@ -1427,6 +1488,11 @@ impl World {
     fn apply_orders(&mut self) {
         let orders = std::mem::take(&mut self.orders);
         for o in orders {
+            // A defeated player is out of the game: whatever it still owns
+            // (submarines, walls, mines) takes no more orders.
+            if self.players.get(o.player() as usize).is_none_or(|p| p.defeated) {
+                continue;
+            }
             if let Some(ids) = o.commanded_ids() {
                 for i in self.owned_units(o.player(), ids) {
                     self.clear_commands(i);
@@ -1533,6 +1599,17 @@ impl World {
                     self.order_waypoint(&units, x, y, attack_move);
                 }
                 Order::SetStance { player, ids, stance } => self.set_stance(player, &ids, stance),
+                Order::RepairBuilding { player, building } => {
+                    if let Some(b) = self.resolve(building) {
+                        self.toggle_repair(player, b);
+                    }
+                }
+                Order::PowerDown { player, building } => {
+                    if let Some(b) = self.resolve(building) {
+                        self.toggle_power_down(player, b);
+                    }
+                }
+                Order::PlaceBeacon { player, x, y } => self.place_beacon(player, x, y),
                 // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
                 Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
                 Order::DevCash { player } => self.dev_give_cash(player),
@@ -1842,6 +1919,9 @@ impl World {
         }
         // Support power timers, cameras and falling bombs (powers.rs).
         self.tick_support_powers();
+        // Repair button steps (repair.rs) and beacons running out (beacons.rs).
+        self.tick_repairs();
+        self.tick_beacons();
         self.tick_abilities_world();
         self.tick_units();
         self.tick_projectiles();
@@ -1866,6 +1946,8 @@ impl World {
         if self.tick.is_multiple_of(TICKS_PER_SECOND) {
             self.check_victory();
         }
+        // Statistics history (observer.rs): reads the world, never changes it.
+        self.sample_stats();
     }
 
     fn check_victory(&mut self) {
@@ -1885,6 +1967,7 @@ impl World {
         for (p, &n) in alive_count.iter().enumerate() {
             if n == 0 && !self.players[p].neutral {
                 self.players[p].defeated = true;
+                self.note_defeated(p as u8);
             }
         }
         // The game ends when every remaining player is on the same side.
@@ -1893,6 +1976,7 @@ impl World {
         let playing = self.players.iter().filter(|p| !p.neutral).count();
         if playing > 1 && !remaining.is_empty() && remaining.iter().all(|&p| self.are_allies(p, remaining[0])) {
             self.winner = Some(remaining[0]);
+            self.note_game_end();
         }
     }
 
@@ -1928,6 +2012,13 @@ impl World {
                 mix(a.xp);
                 mix(a.rank as i64);
                 mix(a.prone_ticks as i64);
+                // Repair and power down buttons (repair.rs).
+                mix(a.repairers.len() as i64);
+                for &p in &a.repairers {
+                    mix(p as i64);
+                }
+                mix(a.repair_ticks as i64);
+                mix(a.powered_off as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

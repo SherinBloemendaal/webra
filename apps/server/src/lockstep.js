@@ -8,6 +8,9 @@
 // - a player may not run ahead of the last emitted frame by more than `delay`;
 // - orders are stamped with the sender's player index (never trusted);
 // - dropping a player discards their undelivered orders and may complete frames;
+// - a defeated player (it said so: `defeat`) keeps its seat and its stall
+//   rules, but its orders are dropped from then on (the engine refuses them
+//   too, so a client that never says so still cannot act);
 // - a suspended player (connection lost) is out of the game until it rejoins:
 //   nobody waits for it meanwhile. It rejoins at a future tick (`rejoin`) with
 //   the stall budget it left with (`suspend` returns it), never a fresh one.
@@ -60,6 +63,8 @@ export class Lockstep {
     /** Next frame tick to emit. */
     this.next = 0;
     this.active = new Set(players);
+    /** Every seat the game started with. */
+    this.seats = new Set(players);
     /** Next tick each player must submit. */
     this.expected = new Map(players.map((p) => [p, delay]));
     /** First tick each player's orders are part of (later for rejoined players). */
@@ -89,6 +94,24 @@ export class Lockstep {
     this.desyncTick = null;
     /** Last state hash a strict majority of the players reported: { tick, hash } or null. */
     this.agreed = null;
+    /** Seats that reported their defeat: their orders are dropped (kept across suspend and rejoin). */
+    this.defeated = new Set();
+  }
+
+  /**
+   * A player reports that the engine defeated it. It keeps running the game
+   * (it watches, sends empty orders and hashes), but no order of it reaches a
+   * frame again, including ones already waiting for a later frame. Returns
+   * whether this was news.
+   */
+  defeat(player) {
+    if (!this.seats.has(player)) {
+      throw new LockstepError('not a player of this game', 'bad_state');
+    }
+    if (this.defeated.has(player)) return false;
+    this.defeated.add(player);
+    for (const byPlayer of this.pending.values()) if (byPlayer.has(player)) byPlayer.set(player, []);
+    return true;
   }
 
   /** The empty frames 0..delay-1 every client needs before its first tick. */
@@ -121,9 +144,10 @@ export class Lockstep {
       this.pending.set(tick, byPlayer);
     }
     // Server stamp: the sender's index wins over anything in the order.
+    // A defeated player's orders never reach a frame.
     byPlayer.set(
       player,
-      orders.map((o) => ({ ...o, player })),
+      this.defeated.has(player) ? [] : orders.map((o) => ({ ...o, player })),
     );
     const frames = this.flush(now);
     this.track(now);

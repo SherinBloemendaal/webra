@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSettings as settingsOver, SCHEMA } from '../js/settings.js';
 import { createRegistry, REGISTRY_KEY } from '../js/registry.js';
-import { HotkeyRegistry, comboFromEvent, normalizeCombo, formatCombo, isReservedCombo, keyName } from '../js/hotkeys.js';
-import { ControlGroups, groupKeyFromEvent, groupCommand, DOUBLE_TAP_MS } from '../js/controlgroups.js';
+import { HotkeyRegistry, comboFromEvent, normalizeCombo, formatCombo, isReservedCombo, keyName, KEYMAP_VERSION, KEYMAP_VERSION_KEY } from '../js/hotkeys.js';
+import { ControlGroups, DOUBLE_TAP_MS } from '../js/controlgroups.js';
 import { MenuState, fixedControls, speedLabel } from '../js/gamemenu.js';
 
 /** In-memory Web Storage stand-in; `fail` makes every call throw. */
@@ -127,6 +127,10 @@ test('hotkeys: combos from events (layout letters, Cmd as Ctrl, digits by code)'
   assert.equal(formatCombo('Ctrl+Alt+X', true), 'Cmd+Option+X');
   assert.equal(formatCombo('Ctrl+Alt+X', false), 'Ctrl+Alt+X');
   assert.equal(formatCombo('Alt+ArrowUp', false), 'Alt+Up');
+  assert.equal(formatCombo('NumpadEnter', false), 'Keypad Enter');
+  assert.equal(formatCombo('Numpad7', false), 'Numpad 7');
+  assert.equal(keyName(key('NumpadEnter', 'Enter')), 'NumpadEnter');
+  assert.equal(keyName({ code: '', key: 'MediaPlayPause' }), 'MediaPlayPause');
 });
 
 function registry() {
@@ -183,7 +187,8 @@ test('hotkeys: rebinding persists, moves a key from its old action, and resets',
   assert.deepEqual(reg.rebind('stop', 'ctrl+s'), { ok: true, displaced: null });
   assert.equal(reg.actionFor('S'), null);
   assert.equal(reg.actionFor('Ctrl+S'), 'stop');
-  assert.deepEqual(settings.get('hotkeys'), { stop: ['Ctrl+S'] });
+  // Saved with the keymap version (js/hotkeys.js migrateOverrides).
+  assert.deepEqual(settings.get('hotkeys'), { stop: ['Ctrl+S'], [KEYMAP_VERSION_KEY]: [KEYMAP_VERSION] });
   // Taking a key of another action: that action keeps its other keys.
   assert.deepEqual(reg.rebind('attackMove', 'F'), { ok: true, displaced: 'deploy' });
   assert.deepEqual(reg.bindingsFor('deploy'), ['D']);
@@ -205,7 +210,7 @@ test('hotkeys: rebinding persists, moves a key from its old action, and resets',
   reg.reset('stop');
   assert.deepEqual(reg.bindingsFor('stop'), ['S']);
   reg.reset();
-  assert.deepEqual(settings.get('hotkeys'), {});
+  assert.deepEqual(settings.get('hotkeys'), { [KEYMAP_VERSION_KEY]: [KEYMAP_VERSION] });
   assert.deepEqual(reg.bindingsFor('deploy'), ['F', 'D']);
   assert.deepEqual(
     reg.list().map((a) => [a.name, a.keys]),
@@ -222,13 +227,16 @@ test('hotkeys: reserved and browser keys cannot be bound; listeners hear changes
   reg.registerAction('stop', 'S', () => {});
   let changes = 0;
   reg.onChange(() => changes++);
-  for (const combo of ['Escape', '1', 'Ctrl+1', 'Shift+0', 'Numpad5', 'ArrowUp', 'Enter', 'Ctrl+W', 'Ctrl+T', 'F11']) {
+  for (const combo of ['Escape', 'Ctrl+W', 'Ctrl+T', 'Ctrl+N', 'Ctrl+Q', 'Ctrl+Tab', 'F11', 'F12']) {
     assert.ok(isReservedCombo(normalizeCombo(combo)), combo);
     const r = reg.rebind('stop', combo);
     assert.equal(r.ok, false, combo);
   }
-  assert.equal(isReservedCombo('Alt+ArrowUp'), null);
-  assert.equal(isReservedCombo('Alt+Enter'), null);
+  // Every other key is OpenRA's to use and the player's to rebind: digits
+  // (control groups), the numpad, arrows (scrolling), Enter (chat), F5, Ctrl+F11.
+  for (const combo of ['1', 'Ctrl+1', 'Shift+0', 'Numpad5', 'NumpadEnter', 'ArrowUp', 'Enter', 'Shift+Enter', 'F5', 'Ctrl+F11', 'Alt+ArrowUp', 'Alt+Enter']) {
+    assert.equal(isReservedCombo(normalizeCombo(combo)), null, combo);
+  }
   assert.equal(reg.rebind('nope', 'X').ok, false);
   assert.equal(changes, 0);
   reg.rebind('stop', 'X');
@@ -236,17 +244,6 @@ test('hotkeys: reserved and browser keys cannot be bound; listeners hear changes
 });
 
 // ---- controlgroups.js ---------------------------------------------------------------
-
-test('control groups: digit row only, Ctrl/Cmd assigns, Shift adds, Alt is left alone', () => {
-  assert.equal(groupKeyFromEvent(key('Digit1', '&')), '1', 'AZERTY digit row');
-  assert.equal(groupKeyFromEvent(key('Digit0', '0')), '0');
-  assert.equal(groupKeyFromEvent(key('Numpad1', '1')), null, 'the numpad drives the sidebar');
-  assert.equal(groupCommand(key('Digit1', '1', { ctrlKey: true })), 'assign');
-  assert.equal(groupCommand(key('Digit1', '1', { metaKey: true })), 'assign');
-  assert.equal(groupCommand(key('Digit1', '!', { shiftKey: true })), 'add');
-  assert.equal(groupCommand(key('Digit1', '1')), 'select');
-  assert.equal(groupCommand(key('Digit1', '1', { altKey: true })), null);
-});
 
 test('control groups: one group per unit, dead units drop out, double tap centres', () => {
   const g = new ControlGroups();
@@ -274,7 +271,20 @@ test('control groups: one group per unit, dead units drop out, double tap centre
   alive.add(10);
   assert.deepEqual(g.members('1', filter), [], 'dead ids never come back');
   g.assign('2', []);
-  assert.equal(g.has('2'), false, 'Ctrl+number with nothing selected clears the group');
+  assert.equal(g.has('2'), false, 'assigning nothing clears the group');
+});
+
+test('control groups: add the selection to a group, remove actors from their group', () => {
+  const g = new ControlGroups();
+  g.assign('1', [1, 2]);
+  g.assign('2', [3]);
+  g.add('1', [3, 4]);
+  assert.deepEqual(g.members('1'), [1, 2, 3, 4], 'added at the end');
+  assert.equal(g.has('2'), false, 'unit 3 left group 2 (one group per actor)');
+  g.remove([2, 4]);
+  assert.deepEqual(g.members('1'), [1, 3]);
+  g.remove([1, 3]);
+  assert.equal(g.has('1'), false);
 });
 
 // ---- gamemenu.js --------------------------------------------------------------------
@@ -300,12 +310,14 @@ test('game menu: single player pauses while open, online never pauses', () => {
   ]);
 });
 
-test('game menu: fixed controls list the control groups with the right modifier', () => {
+test('game menu: fixed controls are the mouse and Esc, with the right modifier', () => {
   const mac = fixedControls(true).map(([k]) => k);
   const pc = fixedControls(false).map(([k]) => k);
-  assert.ok(mac.includes('Cmd (or Ctrl) + 1..9, 0'));
-  assert.ok(pc.includes('Ctrl + 1..9, 0'));
-  assert.ok(pc.includes('Shift + 1..9, 0'));
+  assert.ok(mac.includes('Cmd (or Ctrl) + drag'));
+  assert.ok(pc.includes('Ctrl + drag'));
+  assert.ok(pc.includes('Esc'));
+  // Control groups, the numpad and chat are hotkeys now (rebindable).
+  assert.ok(!pc.some((k) => /1\.\.9|Numpad|Enter/.test(k)));
   assert.equal(speedLabel(0), 'Off');
   assert.equal(speedLabel(1.25), '1.25x');
 });

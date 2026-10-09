@@ -8,6 +8,7 @@
 
 import { COLOR_COUNT, FACTIONS, NAME_MAX, VERSION_RE } from './constants.js';
 import { isPlainObject, ProtocolError, text } from './check.js';
+import { validateSavedPresets } from './presets.js';
 
 // ---- Value sets ------------------------------------------------------------------
 
@@ -376,6 +377,7 @@ const SETTINGS_SECTIONS = {
     uiScale: scale(UI_SCALE_LIMITS),
     gameScale: scale(GAME_SCALE_LIMITS),
     healthBars: choice(['off', 'damaged', 'all']),
+    playerStanceColors: boolean,
     graphics: choice(['webra', 'original']),
     hotkeys,
     attackMoveTipSeen: boolean,
@@ -402,6 +404,14 @@ const SETTINGS_SECTIONS = {
       return v;
     },
     lastOptions: freeObject(SETTINGS_LAST_OPTIONS_MAX_BYTES),
+    presets: (v, f) => {
+      try {
+        return validateSavedPresets(v, 'presets');
+      } catch (err) {
+        if (err instanceof ProtocolError) bad(`${f}${err.path ?? ''}`, `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`);
+        throw err;
+      }
+    },
   },
   releaseNotes: {
     lastSeenVersion: (v, f) => {

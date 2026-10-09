@@ -193,8 +193,8 @@ impl World {
             if !det.types.iter().any(|t| cloak_types.contains(t)) {
                 continue;
             }
-            // Detection that needs power (Tesla Coil) stops on low power.
-            if det.needs_power && self.players[d.owner as usize].low_power() {
+            // Detection that needs power (Tesla Coil) stops on low power or when switched off (repair.rs).
+            if det.needs_power && (self.players[d.owner as usize].low_power() || d.powered_off) {
                 continue;
             }
             if dist(x, y, d.x, d.y) <= det.range {
@@ -208,8 +208,8 @@ impl World {
     /// owner, allies, and players whose (or whose allies') detectors reveal them.
     pub(crate) fn naval_visible(&self, i: usize, player: u8) -> bool {
         let a = &self.actors[i];
-        // The spectator view (observer.rs) shows submerged submarines too.
-        if self.render_all || !a.submerged || self.are_allies(a.owner, player) {
+        // The spectator views (observer.rs, combined.rs) show submerged submarines too.
+        if self.render_all || self.render_combined || !a.submerged || self.are_allies(a.owner, player) {
             return true;
         }
         (0..self.players.len().min(32)).any(|p| a.detected_by & (1 << p) != 0 && self.are_allies(p as u8, player))

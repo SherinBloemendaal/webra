@@ -51,6 +51,11 @@ export class Jukebox {
     /** The playlist ended with repeat off: quiet until the player asks for the next track. */
     this.finished = false;
     this.token = 0;
+    /** The music hotkeys stopped it (OpenRA StopMusic): it stays off until started again. */
+    this.stoppedByUser = false;
+    /** Paused (OpenRA PauseMusic): { index, buffer, at } to resume from, or null. */
+    this.paused = null;
+    this.buffer = null;
   }
 
   /** Refresh the installed track list from the store. */
@@ -102,8 +107,47 @@ export class Jukebox {
     const h = this.handle;
     this.handle = null;
     this.playing = null;
+    this.paused = null;
     h?.stop();
     this.onChange();
+  }
+
+  /** The stop music hotkey: off until the player starts it again (next, previous, pause). */
+  userStop() {
+    this.stop();
+    this.stoppedByUser = true;
+  }
+
+  /**
+   * The pause music hotkey (OpenRA PauseOrResumeMusic): pause what plays,
+   * resume what was paused, or start the next track.
+   */
+  async togglePause() {
+    if (this.handle && this.buffer) {
+      const paused = { index: this.current, buffer: this.buffer, at: this.handle.position?.() ?? 0 };
+      this.stop();
+      this.paused = paused;
+      this.onChange();
+      return;
+    }
+    this.stoppedByUser = false;
+    const p = this.paused;
+    if (p && this.mixer.ready && this.tracks[p.index]) {
+      this.paused = null;
+      this.current = p.index;
+      this.play(this.tracks[p.index], p.buffer, ++this.token, p.at);
+      return;
+    }
+    await this.next();
+  }
+
+  /** The track before the playing one in the play order (OpenRA PrevMusic). */
+  async prev() {
+    if (!this.tracks.length) return;
+    const i = this.order.indexOf(this.current);
+    this.pos = i > 0 ? i - 1 : Math.max(0, this.order.length - 1);
+    this.finished = false;
+    await this.next();
   }
 
   /**
@@ -127,6 +171,8 @@ export class Jukebox {
    * end; "Next track" (the player) always plays one, also after a finished playlist.
    */
   async next({ ended = false } = {}) {
+    this.stoppedByUser = false;
+    this.paused = null;
     if (!this.tracks.length || !this.mixer.ready) return;
     const token = ++this.token;
     const old = this.handle;
@@ -161,10 +207,18 @@ export class Jukebox {
       }
     }
     if (!buffer || token !== this.token) return;
+    this.play(track, buffer, token);
+  }
+
+  /** Play `buffer` of `track` from `offset` seconds; when it ends, the next track follows. */
+  play(track, buffer, token, offset = 0) {
     this.wanted = true;
+    this.stoppedByUser = false;
     this.playing = track.title;
+    this.buffer = buffer;
     this.handle = this.mixer.play(buffer, {
       bus: 'music',
+      offset,
       onEnded: () => {
         if (token === this.token && this.wanted) this.next({ ended: true });
       },

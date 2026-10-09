@@ -1,7 +1,9 @@
 // In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
 // Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
-// actions (save the game, download the replay; js/records.js). Phones get the
-// same menu from the HUD's Menu button.
+// actions (save the game, download the replay; js/records.js), Restart
+// (single player and replays, after a confirm step) and Statistics (once the
+// local player watches: spectators, replays, after a defeat or at the end).
+// Phones get the same menu from the HUD's Menu button.
 //
 // The Settings page has three parts: Display (UI scale, game scale, render
 // resolution, fullscreen; js/scale.js), Scrolling and health bars, and Audio
@@ -15,19 +17,31 @@
 // game hotkey fires; default actions (Tab between buttons, arrow keys on a
 // slider) still work.
 
-import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
+import { BROWSER_SUBSTITUTES, comboFromEvent, formatCombo, GROUP_ORDER, isMac } from './hotkeys.js';
+import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
 import { segmented, slider as createSlider, switchInput, toggle as createToggle } from './ui/controls.js';
 import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
+import { closeOpenTip, labelWithHelp } from './infotip.js';
+
+/**
+ * Settings of the Settings page with a "?" (tests check each one has help
+ * in js/help.js as `settings.<key>`); the Audio section's are AUDIO_HELP_KEYS
+ * of js/audio/panel.js.
+ */
+export const MENU_HELP_KEYS = Object.freeze(['uiScale', 'gameScale', 'scaleAuto', 'pixelRatioCap', 'lowQuality', 'fullscreen', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'playerStanceColors']);
+
+/** The "?" of setting `key` beside the row's label, describing `control`. */
+const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
   const ctrl = mac ? 'Cmd (or Ctrl)' : 'Ctrl';
   return [
-    ['Esc', 'Cancel placement, targeting, sell or attack move; otherwise open this menu'],
+    ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu'],
     ['Left click', 'Select, or give the order shown by the cursor'],
     ['Left drag', 'Box select'],
     ['Shift + click / drag', 'Add to or remove from the selection'],
@@ -36,15 +50,9 @@ export function fixedControls(mac = isMac()) {
     ['Right click', 'Cancel the current mode, or clear the selection'],
     ['Middle drag', 'Pan the map'],
     ['Mouse wheel', 'Zoom'],
-    ['Arrow keys, screen edges', 'Scroll the map'],
-    [`${ctrl} + 1..9, 0`, 'Store the selected units as a control group'],
-    ['1..9, 0', 'Select a control group (press twice: centre the camera on it)'],
-    ['Shift + 1..9, 0', 'Add a control group to the selection'],
+    ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],
-    ['Numpad 1..9', 'Build the n-th item of the sidebar tab (Shift: 5, Ctrl: cancel one)'],
-    ['Numpad + / 0 / -', 'Next / previous sidebar tab'],
-    ['Numpad .', 'Cancel building placement'],
-    ['Enter', 'Chat (online games)'],
+    ['Shift + production key', 'Build 5 (production slots, numpad)'],
   ];
 }
 
@@ -98,7 +106,7 @@ export const DISPLAY_HELP =
   'Max resolution and low quality set how many pixels the battlefield is drawn with: sharpness and speed, not size.';
 
 /** Game menu settings that the Defaults button puts back (the Audio section's are added). */
-export const MENU_SETTINGS = Object.freeze(['uiScale', 'gameScale', 'pixelRatioCap', 'lowQuality', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars']);
+export const MENU_SETTINGS = Object.freeze(['uiScale', 'gameScale', 'pixelRatioCap', 'lowQuality', 'edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'playerStanceColors']);
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -114,8 +122,9 @@ function button(text, className, onClick) {
   return b;
 }
 
-// Actions that still run while the menu is open (they close it or are harmless).
-const MENU_ACTIONS = new Set(['menu', 'pause', 'fullscreen']);
+// Actions that still run while the menu is open (they close it or are
+// harmless; OpenRA's menu context has ToggleMute and TakeScreenshot).
+const MENU_ACTIONS = new Set(['menu', 'pause', 'fullscreen', 'toggleMute', 'takeScreenshot']);
 
 export class GameMenu {
   /**
@@ -135,6 +144,9 @@ export class GameMenu {
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
+   *   restart?: { replay?: boolean, run(): void },  Restart (asks first); none online
+   *   onStats?(): void,  the statistics screen (js/stats.js)
+   *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -233,6 +245,8 @@ export class GameMenu {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopImmediatePropagation();
+      // An open help tip closes first.
+      if (closeOpenTip()) return;
       if (this.view === 'main') this.close();
       else this.show('main');
       return;
@@ -263,6 +277,7 @@ export class GameMenu {
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'controls') this.renderControls(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
+    else if (this.view === 'restart') this.renderRestart(c);
     else this.renderMain(c);
     if (this.message) {
       const m = el('p', 'hint game-menu-message', this.message);
@@ -284,8 +299,10 @@ export class GameMenu {
     c.append(el('h1', null, online ? 'Menu' : 'Paused'), el('p', 'tagline', tagline));
     const fs = this.opts.fullscreen;
     const actions = (this.opts.actions ?? []).map((a) => button(a.label, null, () => this.runAction(a)));
+    const stats = this.opts.onStats && (this.opts.statsAvailable?.() ?? true);
     c.append(
       button('Resume', 'primary', () => this.close()),
+      ...(stats ? [button('Statistics', null, () => this.opts.onStats())] : []),
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
@@ -293,6 +310,7 @@ export class GameMenu {
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
+      ...(this.opts.restart ? [button(this.opts.restart.replay ? 'Restart replay' : 'Restart', null, () => this.show('restart'))] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
@@ -335,6 +353,26 @@ export class GameMenu {
     );
   }
 
+  /** Restart: progress is lost, so it asks first. */
+  renderRestart(c) {
+    const replay = !!this.opts.restart?.replay;
+    c.append(
+      el('h1', null, 'Restart'),
+      el(
+        'p',
+        'tagline',
+        replay
+          ? 'Play this replay again from the start?'
+          : 'Restart this game from the beginning with exactly the same settings? Everything played so far is lost (save it first to keep it).',
+      ),
+      button(replay ? 'Restart replay' : 'Restart', 'primary', () => {
+        this.close();
+        this.opts.restart.run();
+      }),
+      button('Back', null, () => this.show('main')),
+    );
+  }
+
   renderSettings(c) {
     const s = this.opts.settings;
     c.append(el('h1', null, 'Settings'));
@@ -354,10 +392,12 @@ export class GameMenu {
           control.output.textContent = speedLabel(s.set(key, v));
         },
       });
-      return control.row;
+      return withHelp(control.row, key, control.input);
     };
-    const check = (key, text) =>
-      createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) }).row;
+    const check = (key, text) => {
+      const t = createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) });
+      return withHelp(t.row, key, t.input);
+    };
     const choice = (key, text, labels, hint) => {
       const id = `game-menu-${key}`;
       const group = segmented({
@@ -386,7 +426,8 @@ export class GameMenu {
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());
     fsButton.disabled = !fs.available();
-    fsRow.append(el('span', null, `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    fsRow.append(el('span', 'ui-label', `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    withHelp(fsRow, 'fullscreen', fsButton);
     list.append(fsRow);
     if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
 
@@ -397,6 +438,7 @@ export class GameMenu {
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
       choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
+      check('playerStanceColors', 'Relationship colours'),
     );
 
     // ---- Audio (the Sound dialog's controls) ----
@@ -404,7 +446,7 @@ export class GameMenu {
     if (audio) {
       const box = el('div', 'game-menu-audio');
       list.append(el('h2', null, 'Audio'), box);
-      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, idPrefix: 'menu-audio', heading: 3 });
+      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, idPrefix: 'menu-audio', heading: 3, help: true });
       this.pageOffs.push(() => mount.dispose());
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
@@ -451,6 +493,7 @@ export class GameMenu {
       },
     });
     const { row, input, output } = control;
+    withHelp(row, key, input);
     const wrap = el('div', 'game-menu-scale');
     if (ticks.length) {
       const marks = el('datalist');
@@ -470,6 +513,11 @@ export class GameMenu {
     const auto = switchInput({ id: `${id}-auto`, small: true, onChange: (on) => s.set(key, on ? 'auto' : resolve('auto')) });
     const reset = button('Reset', 'ui-mini', () => s.reset(key));
     tools.append(autoLabel, auto, reset);
+    // The Auto switch's help sits after its label, like the rows' help.
+    const autoName = el('span', 'game-menu-name');
+    autoLabel.replaceWith(autoName);
+    autoName.append(autoLabel);
+    labelWithHelp(autoName, 'settings.scaleAuto', auto, autoLabel);
     const show = (setting) => {
       const v = resolve(setting);
       control.set(v);
@@ -557,7 +605,9 @@ export class GameMenu {
       if (!groups.has(a.group)) groups.set(a.group, []);
       groups.get(a.group).push(a);
     }
-    for (const [group, actions] of groups) {
+    // Sections in the order of OpenRA's hotkey settings, then any others.
+    const order = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
+    for (const [group, actions] of [...groups].sort((x, y) => order(x[0]) - order(y[0]))) {
       list.append(el('h2', null, group));
       const table = el('div', 'game-menu-keys');
       for (const a of actions) {
@@ -565,19 +615,27 @@ export class GameMenu {
         const waiting = this.capture === a.name;
         const keys = el('span', 'game-menu-keycap', waiting ? 'Press a key...' : a.keys.length ? a.keys.map((k) => formatCombo(k)).join(' / ') : 'Unbound');
         const changed = JSON.stringify(a.keys) !== JSON.stringify(a.defaults);
-        row.append(
-          el('span', 'game-menu-key-label', a.label),
-          keys,
-          button('Change', 'game-menu-mini', () => {
-            this.capture = a.name;
-            this.message = '';
-            this.render();
-          }),
-          button('Clear', 'game-menu-mini', () => reg.unbind(a.name)),
-        );
-        const resetBtn = button('Reset', 'game-menu-mini', () => reg.reset(a.name));
-        resetBtn.disabled = !changed;
-        row.append(resetBtn);
+        const label = el('span', 'game-menu-key-label', a.label);
+        // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key.
+        const sub = a.openra && BROWSER_SUBSTITUTES[a.openra];
+        if (sub && OPENRA_HOTKEYS[a.openra]?.key) label.title = `OpenRA: ${formatCombo(OPENRA_HOTKEYS[a.openra].key)} (${sub.why}).`;
+        if (a.context === 'chat-input') label.append(el('span', 'hint', ' (in the chat line)'));
+        row.append(label, keys);
+        if (a.readonly) {
+          row.classList.add('game-menu-fixed');
+        } else {
+          row.append(
+            button('Change', 'game-menu-mini', () => {
+              this.capture = a.name;
+              this.message = '';
+              this.render();
+            }),
+            button('Clear', 'game-menu-mini', () => reg.unbind(a.name)),
+          );
+          const resetBtn = button('Reset', 'game-menu-mini', () => reg.reset(a.name));
+          resetBtn.disabled = !changed;
+          row.append(resetBtn);
+        }
         table.append(row);
       }
       list.append(table);
@@ -602,7 +660,7 @@ export class GameMenu {
       el(
         'p',
         'hint',
-        'Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.',
+        "The keys are OpenRA's Red Alert defaults, except where the browser keeps OpenRA's key: Shift+Tab is the next facility (Ctrl+Tab switches tabs), Alt+Shift+Q and Alt+Shift+W record bookmarks 1 and 2 (Ctrl+Q and Ctrl+W quit and close), and F11 and F12 have nothing (full screen and developer tools). Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.",
       ),
     );
     c.append(list, button('Reset all hotkeys', null, () => reg.reset()), button('Back', 'primary', () => this.show('main')));

@@ -55,6 +55,15 @@
   touch-action: none;
 }
 
+/* Radar pings (js/radarpings.js): over the picture, never in the way of clicks. */
+#sidebar .mm-pings {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 #sidebar .mm-camera {
   position: absolute;
   left: var(--cam-l, 0);

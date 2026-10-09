@@ -700,6 +700,7 @@ Serialized size at most 32 KiB.
     "uiScale": "auto",             // "auto" | number 0.5..2 (size of the sidebar, bars, menus; UI_SCALE_LIMITS)
     "gameScale": "auto",           // "auto" | number 0.5..3 (base zoom of the battlefield; GAME_SCALE_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
+    "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false     // the one-time attack-move tip was shown (apps/game/js/hints.js)
@@ -721,7 +722,12 @@ Serialized size at most 32 KiB.
     "name": "Commander",           // 1..20 characters, lobby name text rules
     "faction": "random",           // a lobby faction (FACTIONS)
     "color": 0,                    // 0..7
-    "lastOptions": { }             // the skirmish lobby's stored setup, a JSON object (see below)
+    "lastOptions": { },            // the skirmish lobby's stored setup, a JSON object (see below)
+    "presets": [                   // saved game modes (see below)
+      { "name": "Night ops", "options": { "mapStyle": "land", "biome": "snow", "weather": "full", "startingCash": 5000,
+        "startingUnits": "mcv", "techLevel": "unrestricted", "gameSpeed": "normal", "fog": true, "explored": false,
+        "buildRadius": true, "redeployableMcv": true, "oreRegrowth": true, "cheats": false } }
+    ]
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
@@ -739,6 +745,16 @@ Serialized size at most 32 KiB.
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at
   most 8 KiB serialized.
+- `presets`: the player's saved game modes (`validateSavedPresets` in the
+  protocol package, `src/presets.js`): a list of at most 16 entries
+  `{ name, options }`. `name` is 1 to 32 characters of display text
+  (normalized: single spaces, no control or bidi characters), unique
+  ignoring case and not the name of a built-in mode. `options` holds exactly
+  the mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
+  `biome`, `weather`, `startingCash`, `startingUnits`, `techLevel`,
+  `gameSpeed`, `fog`, `explored`, `buildRadius`, `redeployableMcv`,
+  `oreRegrowth`, `cheats`), each with a value the lobby options accept
+  (docs/contracts.md section 3).
 
 ### 5.9 Data export and deletion
 

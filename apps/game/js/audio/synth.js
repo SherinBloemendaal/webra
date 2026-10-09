@@ -243,6 +243,10 @@ export const RECIPES = {
       0.75,
     ),
   sell: (sr) => normalize(sequence(sr, [[0, tone(sr, 1320, 0.12, { tau: 0.04 })], [0.08, tone(sr, 1760, 0.3, { tau: 0.09 })]], 0.4), 0.5),
+  // Power down button (OpenRA DisablePower bleep11, EnablePower bleep12) and beacons (Beacon beepslct).
+  power_down: (sr) => normalize(sequence(sr, [[0, tone(sr, 880, 0.08, { tau: 0.03, shape: 'square' })], [0.09, tone(sr, 520, 0.12, { tau: 0.05, shape: 'square' })]], 0.24), 0.35),
+  power_up: (sr) => normalize(sequence(sr, [[0, tone(sr, 520, 0.08, { tau: 0.03, shape: 'square' })], [0.09, tone(sr, 880, 0.12, { tau: 0.05, shape: 'square' })]], 0.24), 0.35),
+  beacon: (sr) => normalize(sequence(sr, [[0, tone(sr, 1500, 0.06, { tau: 0.03 })], [0.08, tone(sr, 1500, 0.06, { tau: 0.03 })], [0.16, tone(sr, 2000, 0.1, { tau: 0.05 })]], 0.3), 0.4),
   chrono: (sr, r) => normalize(shimmer(sr, r, 1.4), 0.6),
   iron_curtain: (sr) => normalize(hum(sr, 1.3), 0.6),
   nuke_launch: (sr, r) => normalize(whoosh(sr, r, { seconds: 2.2, from: 120, to: 900, gain: 1, rumble: 1 }), 0.8),

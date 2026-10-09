@@ -5,16 +5,16 @@
 //   Attack move (A)    move, attacking enemies met on the way
 //   Force move         Alt+click: move there whatever is under the cursor
 //   Force attack       Ctrl+click: fire on the ground, or on any unit (own too)
-//   Guard (D, G)       then click an own or allied unit to follow and protect
+//   Guard (D)          then click an own or allied unit to follow and protect
 //   Deploy (F)         MCVs, transports, ability units
-//   Scatter (X)        each unit steps to a random free neighbouring cell
+//   Scatter (Ctrl+X)   each unit steps to a random free neighbouring cell
 //   Stop (S)
 //   Queue orders       Shift+click (or this toggle): add waypoints
 //
-// and the fire stances (C cycles; each stance can get a key in the game menu):
-// Attack anything, Defend, Return fire, Hold fire. A stance shared by part of
-// the selection shows as mixed. Keys go through the hotkey registry
-// (js/hotkeys.js), so tooltips show the current bindings.
+// and the fire stances (OpenRA keys Alt+A, Alt+S, Alt+D, Alt+F; cycling them
+// has no default key): Attack anything, Defend, Return fire, Hold fire. A
+// stance shared by part of the selection shows as mixed. Keys go through the
+// hotkey registry (js/hotkeys.js), so tooltips show the current bindings.
 //
 // Buttons enable and disable with the selection (`Game.command_state`). The
 // armed modes (force move, force attack, guard) act on the next left click on
@@ -31,10 +31,10 @@ const OUTLINE = '#101010';
 
 /** Fire stances, as the engine names them (rules.rs Stance), in bar order. */
 export const STANCES = [
-  { id: 'attack_anything', action: 'stanceAttackAnything', label: 'Attack anything', help: 'Attack enemies that come into range, and chase them.' },
-  { id: 'defend', action: 'stanceDefend', label: 'Defend', help: 'Attack enemies in range without moving.' },
-  { id: 'return_fire', action: 'stanceReturnFire', label: 'Return fire', help: 'Only shoot back at attackers in range.' },
-  { id: 'hold_fire', action: 'stanceHoldFire', label: 'Hold fire', help: 'Never fire unless ordered to.' },
+  { id: 'attack_anything', action: 'stanceAttackAnything', openra: 'StanceAttackAnything', label: 'Attack anything', help: 'Attack enemies that come into range, and chase them.' },
+  { id: 'defend', action: 'stanceDefend', openra: 'StanceDefend', label: 'Defend', help: 'Attack enemies in range without moving.' },
+  { id: 'return_fire', action: 'stanceReturnFire', openra: 'StanceReturnFire', label: 'Return fire', help: 'Only shoot back at attackers in range.' },
+  { id: 'hold_fire', action: 'stanceHoldFire', openra: 'StanceHoldFire', label: 'Hold fire', help: 'Never fire unless ordered to.' },
 ];
 
 /**
@@ -52,12 +52,16 @@ export const COMMANDS = [
   { id: 'queue', label: 'Queue orders', hint: 'Shift+click', help: 'Add waypoints: moves run one after another.' },
 ];
 
-/** Hotkeys this bar registers: name, default keys (OpenRA: Guard D, Scatter X), label. */
+/**
+ * Hotkeys this bar registers: name and the OpenRA hotkey whose defaults it
+ * takes (Guard D, Scatter Ctrl+X, the stances Alt+A/S/D/F), or WebRA's own
+ * stance cycling (no default key; OpenRA has no such hotkey).
+ */
 export const COMMAND_HOTKEYS = [
-  { name: 'guard', keys: ['D', 'G'], label: 'Guard' },
-  { name: 'scatter', keys: 'X', label: 'Scatter' },
-  { name: 'stanceCycle', keys: 'C', label: 'Cycle fire stance' },
-  ...STANCES.map((s) => ({ name: s.action, keys: [], label: `Fire stance: ${s.label}` })),
+  { name: 'guard', openra: 'Guard' },
+  { name: 'scatter', openra: 'Scatter' },
+  ...STANCES.map((s) => ({ name: s.action, openra: s.openra })),
+  { name: 'stanceCycle', keys: [], label: 'Cycle fire stance', group: 'Unit Stance Commands' },
 ];
 
 // ---- Icons ------------------------------------------------------------------------------
@@ -213,7 +217,7 @@ export class CommandBar {
    * @param {HTMLElement} parent the battlefield element
    * @param {{ game, input, player: number, hotkeys: import('./hotkeys.js').HotkeyRegistry }} opts
    */
-  constructor(parent, { game, input, player, hotkeys }) {
+  constructor(parent, { game, input, player, hotkeys, spectator = false }) {
     this.game = game;
     this.input = input;
     this.player = player;
@@ -237,7 +241,7 @@ export class CommandBar {
     for (const s of STANCES) stances.appendChild(this.button(s.id, ICONS[s.id], () => this.setStance(s.id)));
     this.root.append(orders, stances);
     // Keep clicks and keys on the bar away from the map: a mousedown would
-    // deselect, Space would also jump to the base.
+    // deselect, Space would also jump to the last radar event.
     this.root.addEventListener('mousedown', (e) => e.stopPropagation());
     this.root.addEventListener('keydown', (e) => this.onKeyDown(e));
     parent.appendChild(this.root);
@@ -247,7 +251,10 @@ export class CommandBar {
       stanceCycle: () => this.cycleStance(),
       ...Object.fromEntries(STANCES.map((s) => [s.action, () => this.setStance(s.id)])),
     };
-    this.offKeys = COMMAND_HOTKEYS.map((h) => hotkeys.registerAction(h.name, h.keys, handlers[h.name], { label: h.label, group: 'Orders' }));
+    // Spectators give no orders: OpenRA has these keys in the player context only.
+    this.offKeys = spectator
+      ? []
+      : COMMAND_HOTKEYS.map((h) => hotkeys.registerAction(h.name, h.keys, handlers[h.name], { openra: h.openra, label: h.label, group: h.group }));
     // Tooltips follow rebinding in the game menu.
     this.offChange = hotkeys.onChange(() => this.update());
     this.update();

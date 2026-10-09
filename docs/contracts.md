@@ -209,6 +209,19 @@ that is not closed, and it takes spawn N. `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
+are named bundles of every lobby option except `seed` and `mapSize`:
+Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
+Sandbox (skirmish only), plus the player's saved modes (settings
+`lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those
+options; changing any of them reads as Custom. They are a lobby
+convenience only: online the host sends plain `options` (protocol
+unchanged), and every peer works out the mode name from the options, so
+guests see the built-in mode a setup matches (a host's saved mode reads as
+Custom to them). The lobby help texts (`apps/game/js/help.js`) quote the
+numbers of this section and are checked against the engine by
+`apps/game/tests/help.test.mjs`.
+
 Generated maps come in a style (`engine/src/mapgen/`): **land** (open
 plains, or highlands with long cliffs broken by passes), **rivers** (river
 valleys from a confluence pool to the map edges, fords every 11 to 15 cells,
@@ -379,7 +392,8 @@ Client to server:
 | `options` | `options` (host only) | lobby |
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
-| `chat` | `text` (<= 200 chars) | any time |
+| `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
+| `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
 | `orders` | `tick, orders: [...]` | in game, every tick (may be empty) |
 | `hash` | `tick, hash` | in game, every 25 ticks |
@@ -389,7 +403,9 @@ Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {sl
 options, map, hostId, spectators: [{client, name, account?}], maxSpectators}`
 (human slots and spectators carry `account: true` when the name comes from a
 signed-in account), `chat
-{from, text}`, `start {seed, options, map, players, delay}`, `frame {tick,
+{from, text, team?}` (with `team: true` the line went to the sender's team
+only: the players of its non-zero team, the sender alone without a team, the
+spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
 orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
@@ -473,6 +489,18 @@ host role. Spectators are not in `start.players`, receive every frame and
 chat, never count for stalls or hash majorities, and the server removes a
 spectator that sends `orders` or `hash` (`left` reason `removed`).
 
+### Defeated players
+
+The engine refuses every order of a defeated player (it may still own
+submarines, walls or mines), on every peer and in replays; `apply_frame`
+skips them. A defeated player may keep watching: its client switches to the
+observer view, keeps running lockstep (empty `orders` every tick, `hash`
+as before, the same stall rules) and sends `defeated` once (again after a
+reconnect). The server keeps the seat but drops its orders from then on,
+also ones already waiting for a frame and after a rejoin. A seat cannot
+undo it; a spectator sending `defeated` gets `bad_state`. Online games never
+pause for the end-game dialog.
+
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
 an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 (`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
@@ -484,11 +512,35 @@ all); `player_json` has `won`, `defeated` and `team`.
 
 Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
 `build_render`, `build_render_records` and `fog_ptr` renders the whole map with every actor live (no
-ghosts, no owner-only decorations); `Game.observer_stats()` returns `[{
-player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
-buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
-for the non-neutral players (kills credited to the owner of the weapon that
-dealt the killing damage; not part of the state hash). `Game.snapshot()` and
+ghosts, no owner-only decorations); 254 (engine/src/combined.rs, OpenRA's "All
+players" view) renders what every non-neutral player sees together: cells any
+of them sees, structures any of them remembers, fog where any explored, gap
+generator shroud only where it hides a cell from all, cloaked and submerged
+units shown and no owner-only decorations (render only: slot 0's vision is
+swapped for the union during the call and restored). `Game.army_counts(player)`
+lists `[actor type index, count, ...]` of the units that count for the army
+value (the observer panel's army statistics). `Game.observer_stats()` returns `[{
+player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
+spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
+buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
+unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
+promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
+defeatedAt, won }]` for the non-neutral players (kills credited to the owner
+of the weapon that dealt the killing damage; `orders` counts the orders of
+the order log, AI decisions are not orders; `score` is the value destroyed
+plus half the value built; not part of the state hash).
+`Game.observer_report()` adds per player `productionTicks` (per queue),
+`built`, `killed`, `lost`, `units`, `structures` (actor id -> count) and
+`powers` (power key -> times fired), plus `{ tick, ticksPerSecond, winner,
+endTick, history: { interval, ticks, players: [{ player, funds, earned,
+spent, armyValue, kills, deaths, assetsDestroyed, assetsLost, harvested,
+powerGenerated, powerUsed, orders, damageDealt }] } }`: a sample on tick 1,
+every 125 ticks (5 s) and on the tick the game ended, the same on every peer
+and in a replay. `Game.player_defeated(p)` is a cheap check for the lockstep
+driver. The client's end-game dialog (`js/endgame.js`) and statistics screen
+(`js/stats.js`, tabs Basic, Economy, Production, Combat, Army, Support powers,
+Graphs) read these; the screen asks for the report (`ask.observer_report`)
+when it opens and every two seconds while it is open. `Game.snapshot()` and
 `game.restore(snapshot)` copy the whole world in memory (replay seeking; not
 serialized).
 
@@ -740,6 +792,58 @@ bars). Target class 256 is
 `ground` (terrain for force-fire; no actor has it). Return fire uses the shooter that every shot
 carries for veterancy (`Shot.source`), so shells in flight count too.
 
+Sidebar buttons (engine/src/repair.rs, engine/src/beacons.rs,
+apps/game/js/input.js modes, js/sidebar.js top row): orders
+`{"o": "repair_building", player, building}` (start or stop repairing an own
+or allied structure with `building.repairable`; starting needs it damaged; at
+most `bonuses.len() - 1` repairers), `{"o": "power_down", player, building}`
+(switch an own structure with `building.power_down` off or on) and
+`{"o": "place_beacon", player, x, y}` (world units, inside the map; the
+beacon sits on the centre of that cell and replaces the player's previous
+one). Repair follows OpenRA's RepairableBuilding: a step of `min(step,
+missing hp)` every `interval + 1` ticks, each repairing player pays
+`max(1, hp * percent * value / (max_hp * 100))` (`building.value`: OpenRA
+GetSellValue, CustomSellValue or the cost), the step is multiplied by
+`bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
+insufficient funds event per player, repairers who are no longer allied or
+playing drop out, a full structure ends the repair. Powered off, a structure
+adds nothing to the power drain and `is_powered_down` is true (defences hold
+fire, radar, gap generator and detection stop, support powers stop
+charging, the sprite stands still and is darkened like low power). Both are
+in the state hash; beacons are not (they change nothing) and last
+`player.beacon_duration` ticks (OpenRA PlaceBeacon.Duration, 750), shown to
+the owner and allies (rects over the shroud, not in the spectator views).
+Rules: `building.repairable {percent, interval, step, bonuses}` or null,
+`building.power_down`, `building.value`, `base_building` (actor),
+`player.beacon_duration`; `Rules::validate` bounds them (bonuses 1..9 values).
+`rules_json` actors have `repairable` and `powerDown`, players `team` and
+`neutral`. Wasm: `repair_building`, `power_down`, `place_beacon(player, x,
+y)` (pixels), `repair_cursor(player, id)` (0 nothing, 1 toggle repairing that
+structure, 2 an own damaged unit goes to its depot), `repair_unit_target(player,
+id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`, and for the hotkeys
+`base_actors(player)` (Construction Yards and MCVs, else the first
+structure), `harvesters(player)`, `production_buildings(player)` (no
+Construction Yards, by first production type) and `queue_producer(player,
+queue)` (the structure units of that tab come out of, or NONE). `actor_json`
+has `repairing`, `repairers`, `poweredOff` and `canPowerDown`. Audio events
+(engine/src/sound_events.rs): 11 `RepairStarted` (owner: the repairing
+player, b: the structure's owner; the "Repairing" announcement), 12
+`PowerToggled` (b: 1 off, 0 on; OpenRA's power sounds), 13 `BeaconPlaced`
+(b: ticks it stays; a sound and radar ping for allies), 14 `UnitDamaged` (a
+unit hit by another player after a quiet spell; a radar ping like OpenRA's
+DamageNotifier@Unit).
+
+Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
+(`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
+data/source/hotkeys; CI checks it is up to date), each action naming its
+OpenRA hotkey (`openra`), except `BROWSER_SUBSTITUTES` (Ctrl+Tab, Ctrl+Q,
+Ctrl+W, F11, F12). Saved overrides (`settings.hotkeys`, synced with the
+account) carry `"webra:keymap": ["2"]`; overrides without it come from WebRA
+0.7 and are migrated on reading (`migrateOverrides`: overrides equal to the
+old defaults, or old defaults that only lost keys to other actions' user
+bindings, are dropped; everything else stays). Radar pings and the "last
+event" (Space) are client side (js/radarpings.js) from the audio events.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
@@ -818,6 +922,10 @@ about options added since; files of the running build are validated in full:
   The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
   (backwards from in-memory snapshots, `Game.snapshot`), and switches between
   the whole map and each player's view with the observer stats.
+- Restart (`js/restart.js`): single player games and loaded saves restart
+  from tick 0 with the same options and map through a page reload (the
+  settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
+  viewer restarts playback in place. Online games have no restart.
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
@@ -1009,7 +1117,22 @@ sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
-levels) and gem overlay tiles at 240 (bit 4, 4 x 4).
+levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours
+(bit 8: a pixel with alpha 248 + k shows the k-th of the 7 colours in the
+atlas's last pixel row, turned 6.25 times a second on the render clock like
+OpenRA's RotationPaletteEffect). With tile terrain a cell names its tile as
+R + 256 G (map tiles 0..191 and 256..1023).
+
+Layers over structures (`Game.set_building_overlays`, one value per actor
+type): a value below 4096 is the still frame of WebRA's animated layer
+(slot `2t + 1` animates, the still frame is drawn without power or under
+fog). A value of 4096 or more marks a layer that is a pose table (the
+original War Factory roof and door, OpenRA WithProductionDoorOverlay): with
+poses on, the engine draws slot `2t + 1` with the structure's pose (idle,
+damaged, still), leaves it out while the structure is built (make), and
+gives it the make pose with `age` = ticks since the youngest unit of the
+owner within two cells of an exit appeared (the door opens and closes once).
+Under fog the value itself (the layer's still pose) is drawn.
 
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
@@ -1027,11 +1150,11 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_paths`, `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).

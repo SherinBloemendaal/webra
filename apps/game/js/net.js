@@ -239,6 +239,8 @@ export class LockstepDriver {
    * @param {{
    *   delay: number, tickMs: number,
    *   spectator?: boolean,   never sends orders or hashes
+   *   player?: number | null,  this client's player: once the engine defeats it, the
+   *                          driver tells the server (`defeated`) and sends only empty orders
    *   rejoining?: boolean,   waits for `back` before sending
    *   recorder?: { record(tick: number, orders: any[]): void, noteHash(ticks: number, hash: string): void } | null,
    *   onCaughtUp?: () => void,  caught up with `sync` (a rejoining player sends `resume` here)
@@ -247,7 +249,7 @@ export class LockstepDriver {
    *   now?: () => number,
    * }} opts
    */
-  constructor(conn, game, { delay, tickMs, spectator = false, rejoining = false, recorder = null, onCaughtUp = null, onCheck = null, hidden = null, now = null }) {
+  constructor(conn, game, { delay, tickMs, spectator = false, player = null, rejoining = false, recorder = null, onCaughtUp = null, onCheck = null, hidden = null, now = null }) {
     this.conn = conn;
     this.game = game;
     this.delay = delay;
@@ -260,6 +262,11 @@ export class LockstepDriver {
     this.stalledMs = 0;
     this.stopped = false;
     this.spectator = spectator;
+    this.player = spectator ? null : player;
+    /** The engine defeated this client's player: it watches on and gives no orders. */
+    this.defeated = false;
+    /** The server was told about the defeat on the current connection. */
+    this.defeatSent = false;
     /** Whether this client's orders and hashes go to the server (from `joinTick` on). */
     this.sending = !spectator && !rejoining;
     this.joinTick = 0;
@@ -284,6 +291,7 @@ export class LockstepDriver {
   reattach(conn) {
     this.conn = conn;
     this.sending = false;
+    this.defeatSent = false;
     this.waitingSync = true;
     this.queue = [];
     this.check = null;
@@ -417,6 +425,12 @@ export class LockstepDriver {
       }
       if (this.recorder && this.next % REPLAY_HASH_INTERVAL === 0) this.recorder.noteHash(this.next, hash);
     }
+    // The engine checks for defeat once a second (25 ticks).
+    if (this.player !== null && !this.defeated && t % HASH_INTERVAL === 0 && this.game.player_defeated?.(this.player)) this.defeated = true;
+    if (this.defeated && this.sending && !this.defeatSent && t >= this.joinTick) {
+      this.defeatSent = true;
+      this.safeSend({ t: C2S.DEFEATED });
+    }
   }
 
   /** Orders issued while this client cannot send (spectating, rejoining) are dropped. */
@@ -430,6 +444,12 @@ export class LockstepDriver {
   }
 
   sendOrders(tick) {
+    if (this.defeated) {
+      // Out of the game: still in step (empty orders), never an order.
+      this.discardOrders();
+      this.safeSend({ t: C2S.ORDERS, tick, orders: [] });
+      return;
+    }
     let local = [];
     try {
       local = JSON.parse(this.game.take_orders());

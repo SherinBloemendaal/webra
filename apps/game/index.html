@@ -19,7 +19,9 @@
     <link rel="stylesheet" href="css/touch.css" />
     <link rel="stylesheet" href="css/commandbar.css" />
     <link rel="stylesheet" href="css/records.css" />
+    <link rel="stylesheet" href="css/endgame.css" />
     <link rel="stylesheet" href="css/account.css" />
+    <link rel="stylesheet" href="css/help.css" />
   </head>
   <body>
     <!-- Pre-game lobby, built by js/lobby.js -->
@@ -46,13 +48,11 @@
       <aside id="sidebar"></aside>
     </div>
 
-    <section id="gameover" hidden>
-      <div class="menu-card">
-        <h1 id="gameover-title">Mission accomplished</h1>
-        <button id="again" class="primary" type="button">Play again</button>
-        <button id="gameover-replay" type="button" hidden>Download replay</button>
-      </div>
-    </section>
+    <!-- Defeat, victory and the end of the game, built by js/endgame.js -->
+    <section id="gameover" hidden></section>
+
+    <!-- End-game statistics, built by js/stats.js -->
+    <section id="stats-screen" class="overlay" hidden></section>
 
     <!-- In-game menu (Esc), built by js/gamemenu.js -->
     <section id="game-menu" class="overlay" hidden></section>

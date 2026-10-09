@@ -217,8 +217,8 @@ impl World {
     /// allied, and no detector of `player` or an ally covers it. Used by
     /// targeting (`targetable`), picking and rendering.
     pub fn is_cloaked_from(&self, i: usize, player: u8) -> bool {
-        if self.render_all {
-            return false; // spectator view (observer.rs)
+        if self.render_all || self.render_combined {
+            return false; // spectator views (observer.rs, combined.rs)
         }
         let a = &self.actors[i];
         if a.kind == Kind::Ship {

@@ -10,6 +10,10 @@ import { installedSummary } from './install.js';
 import { DEFAULT_PREFS } from './prefs.js';
 import { GROUPS } from '../registry.js';
 import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
+import { labelWithHelp } from '../infotip.js';
+
+/** Controls that get a "?" with `help: true` (texts: js/help.js `audio.<key>`). */
+export const AUDIO_HELP_KEYS = Object.freeze(['master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle', 'musicRepeat']);
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -67,10 +71,11 @@ export function musicText(audio) {
  * Build the sound settings into `root`.
  * @param {HTMLElement} root
  * @param {import('./index.js').AudioSystem} audio
- * @param {{ onContent?(): void, idPrefix?: string, heading?: number }} [opts]
+ * @param {{ onContent?(): void, idPrefix?: string, heading?: number, help?: boolean }} [opts]
  *   onContent opens the Original content dialog; idPrefix keeps element ids
  *   unique when the settings are on the page twice; heading is the level of
- *   the section titles (2 in the Sound dialog, 3 under the Settings page's Audio).
+ *   the section titles (2 in the Sound dialog, 3 under the Settings page's Audio);
+ *   help adds the "?" help of AUDIO_HELP_KEYS (the game menu).
  * @returns {{ dispose(): void }} stops following the settings (call when `root` goes away)
  */
 export function mountAudioSettings(root, audio, opts = {}) {
@@ -188,6 +193,12 @@ export function mountAudioSettings(root, audio, opts = {}) {
       refresh();
     }),
   ];
+
+  if (opts.help) {
+    for (const s of sliders) labelWithHelp(s.row, `audio.${s.key}`, s.input);
+    for (const c of [speech, original, musicOn, shuffle]) labelWithHelp(c.row, `audio.${c.key}`, c.input);
+    labelWithHelp(repeatRow, 'audio.musicRepeat', repeat.root);
+  }
 
   root.replaceChildren(
     enabled.row,

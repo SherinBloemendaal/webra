@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_OPTIONS, encodeServer, parseServerMessage } from '@webra/protocol';
+import { BUILTIN_MODES, DEFAULT_OPTIONS, encodeServer, parseClientMessage, parseServerMessage } from '@webra/protocol';
 import { Room, RoomError } from '../src/room.js';
 
 const first = () => 0;
@@ -190,6 +190,24 @@ test('map style, biome and weather: host only, carried into the start options, d
   const back = Room.fromJSON({ ...lobby(2).room.toJSON(), options: { ...old, seed: 4 } });
   assert.deepEqual([back.options.mapStyle, back.options.biome, back.options.weather], ['random', 'random', 'full']);
   assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
+});
+
+test('game modes are plain option bundles: the host sends them, guests cannot, nothing new on the wire', () => {
+  const { room, host, guest } = lobby(2);
+  for (const mode of BUILTIN_MODES.filter((m) => !m.skirmishOnly)) {
+    const options = { ...room.options, ...mode.options };
+    const parsed = parseClientMessage(JSON.stringify({ t: 'options', options }));
+    assert.ok(parsed.ok, `${mode.id}: ${parsed.message}`);
+    throwsRoom(() => room.setOptions(guest, parsed.msg.options), 'not_host');
+    room.setOptions(host, parsed.msg.options);
+    assert.deepEqual(room.lobbyView().options, options, `${mode.id}: every player sees the bundle`);
+  }
+  // A bundle with a field the protocol does not know is refused before the room sees it.
+  const extra = parseClientMessage(JSON.stringify({ t: 'options', options: { ...room.options, mode: 'rush' } }));
+  assert.equal(extra.ok, false);
+  room.setReady(guest, true, null);
+  const start = room.start(host, first);
+  for (const [k, v] of Object.entries(BUILTIN_MODES.filter((m) => !m.skirmishOnly).at(-1).options)) assert.equal(start.options[k], v, k);
 });
 
 test('spectators: places set by the host, switching in the lobby, joining a running game', () => {

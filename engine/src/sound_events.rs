@@ -51,11 +51,21 @@ pub enum SoundEventKind {
     PowerActivated = 9,
     /// A structure finished building and waits for placement; a = actor type.
     ConstructionReady = 10,
+    /// `owner` started repairing a structure (repair.rs); a = actor type, b = the structure's owner.
+    RepairStarted = 11,
+    /// A structure was switched off (b = 1) or on again (b = 0) with the power
+    /// down button (repair.rs); a = actor type.
+    PowerToggled = 12,
+    /// `owner` placed a beacon at (x, y) (beacons.rs); b = ticks it stays.
+    BeaconPlaced = 13,
+    /// A unit of `owner` was hit by another player's weapon after a quiet
+    /// spell (OpenRA DamageNotifier@Unit: a radar ping); a = actor type.
+    UnitDamaged = 14,
 }
 
 impl SoundEventKind {
     fn is_combat(self) -> bool {
-        matches!(self, SoundEventKind::Fire | SoundEventKind::Impact | SoundEventKind::BuildingDamaged)
+        matches!(self, SoundEventKind::Fire | SoundEventKind::Impact | SoundEventKind::BuildingDamaged | SoundEventKind::UnitDamaged)
     }
 }
 
