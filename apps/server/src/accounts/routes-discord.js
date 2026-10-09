@@ -2,7 +2,7 @@
 // (docs/accounts-api.md, section 4.6).
 
 import { emailKey, validEmail, validUsername } from '@webra/protocol';
-import { cookieHeader, cookieName, HttpError, json, parseCookies } from '../http.js';
+import { cookieHeader, cookieName, HttpError, isReturnPath, json, parseCookies } from '../http.js';
 import { randomInt, randomToken, sha256Hex } from '../crypto.js';
 import { invalid } from './context.js';
 import { rotate, statusAfterVerification } from './common.js';
@@ -13,7 +13,6 @@ import { LIMITS, methodDisabled } from './routes-auth.js';
 
 const MODES = ['login', 'signup', 'link', 'reauth'];
 const DEFAULT_RETURN = '/account/';
-const RETURN_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]{0,199}$/;
 const STATE_RE = /^[A-Za-z0-9_-]{43}$/;
 
 async function requireDiscord(ctx) {
@@ -29,7 +28,7 @@ async function start(ctx) {
   const eff = await requireDiscord(ctx);
   if (!MODES.includes(body.mode)) throw invalid('mode', 'Mode must be login, signup, link or reauth.');
   const returnTo = body.returnTo ?? DEFAULT_RETURN;
-  if (typeof returnTo !== 'string' || !RETURN_RE.test(returnTo) || returnTo.includes('\\')) throw invalid('returnTo', 'returnTo must be a path on this site.');
+  if (!isReturnPath(returnTo)) throw invalid('returnTo', 'returnTo must be a path on this site.');
   await ctx.burst('discord', LIMITS.discordBurst);
   let userId = null;
   let sessionHash = null;

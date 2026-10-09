@@ -60,14 +60,34 @@ export const HELP = Object.freeze({
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators.',
 
-  // ---- In-game settings (Esc menu) ------------------------------------------------------
+  // ---- In-game settings (Esc menu, js/scale.js and js/layout.js) -----------------------
+  'settings.uiScale':
+    'Size of the sidebar, bars, menus and dialogs, from 50 % to 200 %; the battlefield gets the room that is left. It changes size only: how sharp the battlefield is drawn is Max resolution and Low quality.',
+  'settings.gameScale':
+    'How big units and terrain look, from 50 % to 300 %: the zoom a game starts at and Reset zoom returns to. The mouse wheel, pinch and the zoom keys zoom from there. The marks on the slider are the scales where pixel art is sharpest. Unlike Max resolution and Low quality, it changes size, not sharpness.',
+  'settings.scaleAuto':
+    'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900 (90 % on high-density screens), smaller in smaller windows, never below 85 % (80 % on high-density screens). Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones.',
+  'settings.pixelRatioCap':
+    'Highest number of pixels the battlefield is drawn with per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer. Sharpness and speed only: sizes are UI scale and game scale.',
+  'settings.lowQuality':
+    'Draws the battlefield below screen resolution (0.75 pixels per screen pixel) and with fewer weather particles: faster on phones and old computers, a little softer, the same size.',
+  'settings.fullscreen': 'Fills the screen with the game. Esc and the number keys then go to the game in browsers that allow it.',
   'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
-  'settings.pixelRatioCap':
-    'Highest number of rendered pixels per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer.',
-  'settings.lowQuality': 'Renders below screen resolution and with fewer weather particles. Faster on phones and old computers.',
-  'settings.fullscreen': 'Fills the screen with the game. Esc and the number keys then go to the game in browsers that allow it.',
+
+  // ---- Audio (js/audio/panel.js in the game menu) --------------------------------------------
+  'audio.master': 'Turns every sound up or down at once: effects, voices and music.',
+  'audio.effects': 'Weapons, explosions, thunder and the other sounds of the battlefield.',
+  'audio.voices': 'Unit replies and the announcer, spoken lines included.',
+  'audio.music': 'Volume of the music; at 0 % no music plays, as with Music off.',
+  'audio.speech':
+    "When no original voice line is installed, your browser speaks unit replies and announcements with your system's voices. Off: radio blips and chimes only.",
+  'audio.original':
+    "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Off: WebRA's sounds even when the originals are installed.",
+  'audio.musicOn': 'Plays music during games. Music needs installed original content or a texture pack with music.',
+  'audio.musicShuffle': 'Plays the tracks in a random order. Off: in playlist order.',
+  'audio.musicRepeat': 'All: the playlist starts again after the last track. One: the current track repeats. Off: music stops after the last track.',
 });
 
 /** The help text of `key`; throws for an unknown key so a missing text is a bug, not a blank tooltip. */

@@ -4,19 +4,19 @@
    Every selector is scoped under #sidebar. */
 
 #sidebar {
-  --sb-cameo-gap: 2px;
-  --sb-tab-size: 30px;
-  --sb-power-width: 12px;
+  --sb-cameo-gap: calc(2 * var(--ui-px));
+  --sb-tab-size: calc(30 * var(--ui-px));
+  --sb-power-width: calc(12 * var(--ui-px));
 
   box-sizing: border-box;
-  width: 264px;
-  min-width: 264px;
-  max-width: 264px;
+  width: calc(264 * var(--ui-px));
+  min-width: calc(264 * var(--ui-px));
+  max-width: calc(264 * var(--ui-px));
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px;
+  gap: calc(5 * var(--ui-px));
+  padding: calc(6 * var(--ui-px));
   overflow: hidden;
   background:
     var(--ui-rivet) left 2px bottom 2px / 8px 8px no-repeat,
@@ -85,12 +85,12 @@
 #sidebar .sb-tools {
   flex: none;
   display: flex;
-  gap: 3px;
+  gap: calc(3 * var(--ui-px));
 }
 
 #sidebar .sb-tool {
-  width: 30px;
-  height: 28px;
+  width: calc(30 * var(--ui-px));
+  height: calc(28 * var(--ui-px));
 }
 
 #sidebar .sb-tool-end {
@@ -167,7 +167,7 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  padding: 2px 8px;
+  padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(0, 0, 0, 0.7);
   border: 1px solid var(--ui-line);
   color: var(--ui-dim);
@@ -184,13 +184,13 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
-  padding: 3px 8px 2px;
+  gap: calc(8 * var(--ui-px));
+  padding: calc(3 * var(--ui-px)) calc(8 * var(--ui-px)) calc(2 * var(--ui-px));
   background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 75%, #000), #06080b);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
-  font: 700 18px / 1.15 var(--ui-font-mono);
+  font: 700 calc(18 * var(--ui-px)) / 1.15 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: #f4f6f8;
   text-shadow: 1px 1px 0 #000;
@@ -198,7 +198,7 @@
 
 #sidebar .sb-money {
   display: flex;
-  gap: 6px;
+  gap: calc(6 * var(--ui-px));
   min-width: 0;
 }
 
@@ -222,8 +222,8 @@
 #sidebar .sb-silo {
   flex: none;
   position: relative;
-  height: 4px;
-  margin-top: -3px;
+  height: calc(4 * var(--ui-px));
+  margin-top: calc(-3 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-top: 0;
@@ -248,7 +248,7 @@
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  gap: 4px;
+  gap: calc(4 * var(--ui-px));
 }
 
 #sidebar .sb-power {
@@ -257,14 +257,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: calc(3 * var(--ui-px));
 }
 
 #sidebar .sb-power-meter {
   position: relative;
   flex: 1;
   width: 100%;
-  min-height: 40px;
+  min-height: calc(40 * var(--ui-px));
   overflow: hidden;
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
@@ -304,7 +304,7 @@
   left: 0;
   right: 0;
   bottom: calc(var(--cap, 0) * 100% - 1px);
-  height: 2px;
+  height: calc(2 * var(--ui-px));
   background: #fff;
   box-shadow: 0 0 3px #fff;
   z-index: 1;
@@ -316,8 +316,8 @@
 }
 
 #sidebar .sb-power-icon .ui-icon {
-  width: 12px;
-  height: 12px;
+  width: calc(12 * var(--ui-px));
+  height: calc(12 * var(--ui-px));
 }
 
 #sidebar .sb-power.tight .sb-power-icon {
@@ -333,7 +333,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: calc(3 * var(--ui-px));
   width: var(--sb-tab-size);
 }
 
@@ -365,16 +365,16 @@
 
 #sidebar .sb-tab-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
+  top: calc(-4 * var(--ui-px));
+  right: calc(-4 * var(--ui-px));
+  min-width: calc(14 * var(--ui-px));
+  height: calc(14 * var(--ui-px));
+  padding: 0 calc(3 * var(--ui-px));
   border: 1px solid var(--ui-edge);
   border-radius: 7px;
   background: var(--ui-money);
   color: #15120a;
-  font: 700 9px / 12px var(--ui-font-mono);
+  font: 700 calc(9 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
   text-align: center;
 }
 
@@ -403,7 +403,7 @@
 
 #sidebar .sb-empty {
   grid-column: 1 / -1;
-  padding: 16px 4px;
+  padding: calc(16 * var(--ui-px)) calc(4 * var(--ui-px));
   color: var(--ui-dim);
   text-align: center;
   font-style: italic;
@@ -447,11 +447,11 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 1px 2px;
+  padding: 1px calc(2 * var(--ui-px));
   overflow: hidden;
   background: rgba(0, 0, 0, 0.72);
   color: #eef1f4;
-  font: 700 8.5px / 1.25 var(--ui-font);
+  font: 700 calc(8.5 * var(--ui-px)) / 1.25 var(--ui-font);
   letter-spacing: 0.02em;
   text-align: center;
   text-overflow: ellipsis;
@@ -481,7 +481,7 @@
   top: 32%;
   transform: translateY(-50%);
   color: #fff;
-  font: 700 11px / 1 var(--ui-font-mono);
+  font: 700 calc(11 * var(--ui-px)) / 1 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
   text-shadow:
@@ -498,14 +498,14 @@
 
 #sidebar .sb-count {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  padding: 0 3px;
+  top: calc(2 * var(--ui-px));
+  right: calc(2 * var(--ui-px));
+  min-width: calc(14 * var(--ui-px));
+  padding: 0 calc(3 * var(--ui-px));
   background: rgba(0, 0, 0, 0.78);
   border: 1px solid var(--ui-money);
   color: var(--ui-money);
-  font: 700 10px / 12px var(--ui-font-mono);
+  font: 700 calc(10 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
   text-align: center;
   pointer-events: none;
 }
@@ -516,10 +516,10 @@
   top: 40%;
   transform: translate(-50%, -50%);
   display: none;
-  padding: 1px 5px;
+  padding: 1px calc(5 * var(--ui-px));
   background: rgba(0, 0, 0, 0.75);
   color: var(--ui-ok);
-  font: 700 11px / 1.2 var(--ui-font-mono);
+  font: 700 calc(11 * var(--ui-px)) / 1.2 var(--ui-font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-shadow: 1px 1px 0 #000;
@@ -565,13 +565,13 @@
 /* Numpad hotkey for the first nine cameos. */
 #sidebar .sb-slot {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  min-width: 12px;
-  padding: 0 2px;
+  top: calc(2 * var(--ui-px));
+  left: calc(2 * var(--ui-px));
+  min-width: calc(12 * var(--ui-px));
+  padding: 0 calc(2 * var(--ui-px));
   background: rgba(0, 0, 0, 0.6);
   color: #b6bfc8;
-  font: 700 9px / 12px var(--ui-font-mono);
+  font: 700 calc(9 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
   text-align: center;
   pointer-events: none;
 }
@@ -581,8 +581,8 @@
 #sidebar .sb-tip {
   position: fixed;
   z-index: 50;
-  width: 230px;
-  padding: 8px 10px;
+  width: calc(230 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
   background:
     var(--ui-scan),
     linear-gradient(180deg, rgba(34, 40, 48, 0.98), rgba(20, 24, 29, 0.98));
@@ -601,25 +601,25 @@
 }
 
 #sidebar .sb-tip-stats {
-  margin-top: 2px;
+  margin-top: calc(2 * var(--ui-px));
   font: var(--ui-fs-s) var(--ui-font-mono);
   color: var(--ui-money);
   white-space: pre;
 }
 
 #sidebar .sb-tip-desc {
-  margin-top: 5px;
+  margin-top: calc(5 * var(--ui-px));
   color: var(--ui-text);
 }
 
 #sidebar .sb-tip-warn {
-  margin-top: 5px;
+  margin-top: calc(5 * var(--ui-px));
   color: var(--ui-bad);
   font-weight: 600;
 }
 
 #sidebar .sb-tip-hint {
-  margin-top: 6px;
+  margin-top: calc(6 * var(--ui-px));
   font-size: var(--ui-fs-xs);
   color: var(--ui-muted);
 }
@@ -628,8 +628,8 @@
 
 #sidebar .sb-sel {
   flex: none;
-  min-height: 52px;
-  padding: 5px 8px;
+  min-height: calc(52 * var(--ui-px));
+  padding: calc(5 * var(--ui-px)) calc(8 * var(--ui-px));
   background: linear-gradient(180deg, var(--ui-metal-0), #0a0d10);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -652,8 +652,8 @@
 /* Health: green, yellow, red in segments, like the bars over units. */
 #sidebar .sb-hp {
   position: relative;
-  height: 6px;
-  margin: 4px 0 3px;
+  height: calc(6 * var(--ui-px));
+  margin: calc(4 * var(--ui-px)) 0 calc(3 * var(--ui-px));
   background: #000;
   border: 1px solid var(--ui-edge);
   overflow: hidden;
@@ -734,11 +734,11 @@ body.touch #sidebar .sb-card .sb-req:not([hidden]) {
   right: 1px;
   top: 50%;
   display: block;
-  padding: 1px 2px;
+  padding: 1px calc(2 * var(--ui-px));
   transform: translateY(-60%);
   background: rgba(0, 0, 0, 0.78);
   color: var(--ui-warn);
-  font: 600 8.5px / 1.15 var(--ui-font);
+  font: 600 calc(8.5 * var(--ui-px)) / 1.15 var(--ui-font);
   text-align: center;
   pointer-events: none;
 }

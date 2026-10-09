@@ -18,6 +18,9 @@ import {
   validNewPassword,
   validUsername,
   validateSettingsDocument,
+  UI_SCALE_LIMITS,
+  GAME_SCALE_LIMITS,
+  MUSIC_REPEAT_MODES,
 } from '../src/index.js';
 
 const throwsField = (fn, field) =>
@@ -86,6 +89,30 @@ test('settings document: every section optional, strict keys, free-form extra wi
   throwsField(() => validateSettingsDocument({ game: { hotkeys: many } }), 'settings.game.hotkeys');
 });
 
+test('settings document: UI and game scale take "auto" or a factor in their limits; music settings', () => {
+  const doc = {
+    game: { uiScale: 'auto', gameScale: 1.5 },
+    audio: { musicOn: false, musicShuffle: true, musicRepeat: 'one' },
+  };
+  assert.deepEqual(validateSettingsDocument(doc), doc);
+  for (const [key, limits] of [
+    ['uiScale', UI_SCALE_LIMITS],
+    ['gameScale', GAME_SCALE_LIMITS],
+  ]) {
+    assert.deepEqual(validateSettingsDocument({ game: { [key]: limits.min } }), { game: { [key]: limits.min } });
+    assert.deepEqual(validateSettingsDocument({ game: { [key]: limits.max } }), { game: { [key]: limits.max } });
+    for (const bad of [limits.min - 0.01, limits.max + 0.01, 'Auto', '1', null, NaN, Infinity, true]) {
+      throwsField(() => validateSettingsDocument({ game: { [key]: bad } }), `settings.game.${key}`);
+    }
+  }
+  assert.deepEqual(UI_SCALE_LIMITS, { min: 0.5, max: 2, step: 0.05 });
+  assert.deepEqual(GAME_SCALE_LIMITS, { min: 0.5, max: 3, step: 0.05 });
+  for (const mode of MUSIC_REPEAT_MODES) assert.doesNotThrow(() => validateSettingsDocument({ audio: { musicRepeat: mode } }));
+  throwsField(() => validateSettingsDocument({ audio: { musicRepeat: 'never' } }), 'settings.audio.musicRepeat');
+  throwsField(() => validateSettingsDocument({ audio: { musicOn: 1 } }), 'settings.audio.musicOn');
+  throwsField(() => validateSettingsDocument({ audio: { musicShuffle: 'yes' } }), 'settings.audio.musicShuffle');
+});
+
 test('site settings: merge, validation, stored values over defaults', () => {
   const next = mergeSiteSettings(DEFAULT_SITE_SETTINGS, { login: { discord: false }, motd: '  Hello\r\nworld  ' });
   assert.equal(next.login.discord, false);
@@ -98,6 +125,16 @@ test('site settings: merge, validation, stored values over defaults', () => {
   assert.equal(stored.registration.open, false);
   assert.equal(stored.registration.approvalRequired, true, 'bad stored values keep their default');
   assert.equal('obsolete' in stored, false);
+});
+
+test('site settings: gameRequiresAccount defaults on, validates, and older documents read it as on', () => {
+  assert.equal(DEFAULT_SITE_SETTINGS.gameRequiresAccount, true);
+  assert.equal(mergeSiteSettings(DEFAULT_SITE_SETTINGS, { gameRequiresAccount: false }).gameRequiresAccount, false);
+  throwsField(() => mergeSiteSettings(DEFAULT_SITE_SETTINGS, { gameRequiresAccount: 'no' }), 'settings.gameRequiresAccount');
+  // Documents stored before the setting existed have no key: the default (on) applies.
+  assert.equal(normalizeSiteSettings({ onlineRequiresAccount: false }).gameRequiresAccount, true);
+  assert.equal(normalizeSiteSettings({ gameRequiresAccount: 0 }).gameRequiresAccount, true, 'a bad stored value keeps the default');
+  assert.equal(normalizeSiteSettings({ gameRequiresAccount: false }).gameRequiresAccount, false);
 });
 
 test('settings documents refuse prototype keys everywhere', () => {

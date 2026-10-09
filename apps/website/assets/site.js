@@ -3,7 +3,11 @@
 //
 // Unit and building art is not shipped as images: the gallery imports the
 // game's own procedural sprite code (/play/js/sprites.js) and draws every
-// icon live onto a canvas, exactly as the in-game sidebar does.
+// icon live onto a canvas, exactly as the in-game sidebar does. While the
+// game needs an account (the play gate, docs/security.md), only visitors who
+// may play get that module; the others see a note instead of the art.
+
+import { initPlayLinks } from './play-links.js';
 
 const SPRITES_URL = '/play/js/sprites.js';
 
@@ -204,9 +208,13 @@ async function initBuildInfo() {
 let spritesPromise = null;
 /** The game's sprite module, or null when /play is not available. */
 function loadSprites() {
-  spritesPromise ??= import(SPRITES_URL).catch((err) => {
-    console.warn('webra: could not load the game sprites', err);
-    return null;
+  spritesPromise ??= playLinks.then((access) => {
+    // The play gate refuses the module to visitors who may not play: do not ask.
+    if (access === 'signin' || access === 'blocked') return null;
+    return import(SPRITES_URL).catch((err) => {
+      console.warn('webra: could not load the game sprites', err);
+      return null;
+    });
   });
   return spritesPromise;
 }
@@ -222,8 +230,24 @@ function paintIcon(sprites, canvas, actor, rgb) {
   }
 }
 
-/** Show a notice in place of art when the sprite module is missing. */
-function spritesUnavailable(container) {
+/** Show a notice in place of art when the sprite module is missing (or refused: `access` from play-links.js). */
+function spritesUnavailable(container, access) {
+  if (access === 'signin' || access === 'blocked') {
+    container.replaceChildren(
+      el(
+        'div',
+        { class: 'notice' },
+        el(
+          'p',
+          {},
+          'The unit art is drawn by the game itself, and the game is for WebRA accounts. ',
+          access === 'signin' ? el('a', { href: '/account/?returnTo=%2Fplay%2F', text: 'Sign in to play' }) : el('a', { href: '/account/', text: 'Check your account' }),
+          ' to see it.',
+        ),
+      ),
+    );
+    return;
+  }
   container.replaceChildren(
     el(
       'div',
@@ -419,7 +443,7 @@ async function initGallery() {
 
   const sprites = await loadSprites();
   if (!sprites) {
-    spritesUnavailable(list.parentElement);
+    spritesUnavailable(list.parentElement, await playLinks);
     root.querySelector('.toolbar')?.setAttribute('hidden', '');
     return;
   }
@@ -901,4 +925,5 @@ const PAGES = {
 
 initNav();
 initBuildInfo();
+const playLinks = initPlayLinks();
 PAGES[document.body.dataset.page]?.();

@@ -8,7 +8,7 @@ import { clearQuota, countQuota, peekQuota, takeQuota, windowRemaining } from '.
 import { ipSalt, keyedHash } from '../ipkey.js';
 import { findIpBan } from './bans.js';
 import { effective, loadSite } from './site.js';
-import { clearSessionCookie, hasRecentReauth, loadSession } from './sessions.js';
+import { hasRecentReauth, loadSession, signOutCookies } from './sessions.js';
 import { banOf, effectiveStatus } from './users.js';
 
 /** A JSON object (not an array or null). */
@@ -92,7 +92,7 @@ export class RequestContext {
   async auth() {
     if (!this._auth) {
       const r = await loadSession(this.env, this.request, this.ip, this.now);
-      if (r.clear) this.cookies.push(clearSessionCookie(this.request));
+      if (r.clear) this.cookies.push(...signOutCookies(this.request));
       this._auth = { session: r.session, user: r.user };
     }
     return this._auth;

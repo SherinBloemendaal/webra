@@ -16,9 +16,10 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 const { HELP_KEYS } = await import('../js/lobby.js');
 const { ONLINE_HELP_KEYS } = await import('../js/online.js');
 const { MENU_HELP_KEYS } = await import('../js/gamemenu.js');
+const { AUDIO_HELP_KEYS } = await import('../js/audio/panel.js');
 
 test('every lobby option, online option and menu setting has a help text', () => {
-  const used = new Set([...HELP_KEYS, ...ONLINE_HELP_KEYS, ...MENU_HELP_KEYS.map((k) => `settings.${k}`)]);
+  const used = new Set([...HELP_KEYS, ...ONLINE_HELP_KEYS, ...MENU_HELP_KEYS.map((k) => `settings.${k}`), ...AUDIO_HELP_KEYS.map((k) => `audio.${k}`)]);
   for (const key of used) {
     assert.ok(Object.hasOwn(HELP, key), `no help text for ${key}`);
     assert.ok(helpText(key).length >= 20, `help for ${key} is too short`);

@@ -211,7 +211,7 @@ export function mountAccountEntry(host, session, { onSignIn = () => openSignIn(s
   host.classList.add('account-entry');
   const render = () => {
     const user = session.user;
-    const state = accountState(user);
+    const state = accountState(user, session.site);
     const parts = [];
     if (session.site?.motd) parts.push(el('p', { class: 'account-motd', role: 'note', text: session.site.motd }));
     if (!user) {

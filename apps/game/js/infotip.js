@@ -164,6 +164,24 @@ class InfoTip {
   }
 }
 
+/**
+ * Put the "?" help of `key` beside a row's label (js/ui/controls.js rows):
+ * the label is wrapped with the button in a span.ui-label-help (css/help.css)
+ * that takes the label's place, unless it already sits in such a wrapper.
+ * The tip describes `control`. Returns the row.
+ */
+export function labelWithHelp(row, key, control, label = row.querySelector('.ui-label')) {
+  let name = label.parentNode;
+  if (!name.classList.contains('ui-label-help') && !name.classList.contains('game-menu-name')) {
+    name = document.createElement('span');
+    name.className = 'game-menu-name ui-label-help';
+    label.replaceWith(name);
+    name.append(label);
+  }
+  name.append(infoTip(key, { label: label.textContent, describes: control }).root);
+  return row;
+}
+
 /** Let one more control be described by a tip made earlier (a column header's tip and the row controls). */
 export function describedBy(control, tip) {
   describe(control, tip.tip.id);

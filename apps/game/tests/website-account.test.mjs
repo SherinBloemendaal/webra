@@ -8,7 +8,7 @@ import { strayValues, installDom, uninstallDom, FakeEvent, click, check, settle,
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 
-const { mountAccountPage, parseFragment, DISCORD_ERRORS } = await import('../../website/assets/account.js');
+const { mountAccountPage, parseFragment, DISCORD_ERRORS, returnTarget, discordReturn } = await import('../../website/assets/account.js');
 
 let doc;
 beforeEach(() => {
@@ -18,12 +18,12 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
-async function page(server, hash = '') {
+async function page(server, hash = '', search = '') {
   const root = doc.createElement('div');
   doc.body.append(root);
   const replaced = [];
   const navigated = [];
-  const location = { hash, pathname: '/account/', search: '', assign: (u) => navigated.push(u) };
+  const location = { hash, pathname: '/account/', search, assign: (u) => navigated.push(u) };
   const history = { replaceState: (_s, _t, url) => replaced.push(url) };
   const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u) });
   await settle(10);
@@ -184,4 +184,89 @@ test('account page: devices list marks this one; signing out another device', as
   assert.equal(server.sessions.has(other), false);
   assert.equal(server.sessions.has(server.cookie), true);
   void FakeEvent;
+});
+
+// ---- Back to the game after signing in (the play gate) ------------------------------------------------
+
+test('returnTo: paths on this site only; anything else goes to /play/; none stays here', () => {
+  assert.equal(returnTarget(''), null);
+  assert.equal(returnTarget('?x=1'), null);
+  assert.equal(returnTarget('?returnTo=%2Fplay%2F'), '/play/');
+  assert.equal(returnTarget('?returnTo=%2Fplay%2F%3Fjoin%3Dabc'), '/play/?join=abc');
+  assert.equal(returnTarget('?returnTo=%2Fplay%2Feditor%2F'), '/play/editor/');
+  for (const bad of ['https://evil.example/', '//evil.example/play/', '/\\evil.example', 'javascript:alert(1)', '/api/auth/logout', 'play/', '', '/play/\u0000', `/${'x'.repeat(250)}`]) {
+    assert.equal(returnTarget(`?returnTo=${encodeURIComponent(bad)}`), '/play/', bad);
+  }
+  assert.equal(discordReturn(null), '/account/');
+  assert.equal(discordReturn('/play/?join=abc'), '/account/?returnTo=%2Fplay%2F%3Fjoin%3Dabc');
+  assert.equal(discordReturn(`/play/?map=${'a'.repeat(180)}`), '/account/?returnTo=%2Fplay%2F', 'too long for the server: the game start');
+});
+
+test('returnTo: a password sign-in of an account that may play goes back to the game', async () => {
+  const server = new MockAccountServer();
+  server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  const { root, navigated } = await page(server, '', '?returnTo=%2Fplay%2F%3Fjoin%3Dabc');
+  assert.match(textOf(root), /Sign in to play\./);
+  inputByLabel(root, /Username or email/).value = 'tanya';
+  inputByLabel(root, /^Password$/).value = 'a long passphrase';
+  submit(root.querySelector('form'));
+  await settle(20);
+  assert.deepEqual(navigated, ['/play/?join=abc']);
+});
+
+test('returnTo: a pending account stays and reads why the game is closed; no Play button', async () => {
+  const server = new MockAccountServer();
+  server.addUser({ username: 'Waiting', password: 'a long passphrase', status: 'pending_approval' });
+  const { root, navigated } = await page(server, '', '?returnTo=%2Fplay%2F');
+  inputByLabel(root, /Username or email/).value = 'Waiting';
+  inputByLabel(root, /^Password$/).value = 'a long passphrase';
+  submit(root.querySelector('form'));
+  await settle(20);
+  assert.deepEqual(navigated, []);
+  assert.match(textOf(root), /Waiting for approval/);
+  assert.match(textOf(root), /The game opens for you once it is approved/);
+  assert.equal(root.querySelector('a.btn-play'), null);
+});
+
+test('returnTo: sign up of an account that is active at once goes to the game; Discord carries the target', async () => {
+  const server = new MockAccountServer();
+  server.site.registration.approvalRequired = false;
+  const { root, navigated } = await page(server, '#signup', '?returnTo=%2Fplay%2F');
+  inputByLabel(root, /^Username/).value = 'Boris';
+  inputByLabel(root, /^Password/).value = 'a long passphrase';
+  check(root.querySelector('#signup-privacy'));
+  submit(root.querySelectorAll('form')[0]);
+  await settle(20);
+  assert.deepEqual(navigated, ['/play/']);
+
+  uninstallDom();
+  doc = installDom();
+  const server2 = new MockAccountServer();
+  server2.services.discord = true;
+  const d = await page(server2, '', '?returnTo=%2Fplay%2F');
+  click(byText(d.root, 'button', /Sign in with Discord/));
+  await settle(10);
+  const start = server2.requests.find((r) => r.url === '/api/auth/discord/start');
+  assert.equal(JSON.parse(start.body).returnTo, '/account/?returnTo=%2Fplay%2F');
+});
+
+test('returnTo: back from Discord signed in goes on to the game', async () => {
+  const server = new MockAccountServer();
+  const u = server.addUser({ username: 'Discordian' });
+  server.signIn(u);
+  const { navigated } = await page(server, '#discord=ok', '?returnTo=%2Fplay%2F');
+  assert.deepEqual(navigated, ['/play/']);
+});
+
+test('account page: a clear Play button for accounts that may play (to the target, else /play/)', async () => {
+  const server = new MockAccountServer();
+  const u = server.addUser({ username: 'Player' });
+  server.signIn(u);
+  const a = await page(server);
+  assert.equal(a.root.querySelector('a.btn-play').getAttribute('href'), '/play/');
+  assert.deepEqual(a.navigated, [], 'no automatic redirect when the page is opened');
+  a.root.remove();
+  const b = await page(server, '', '?returnTo=%2Fplay%2Feditor%2F');
+  assert.equal(b.root.querySelector('a.btn-play').getAttribute('href'), '/play/editor/');
+  assert.deepEqual(b.navigated, []);
 });

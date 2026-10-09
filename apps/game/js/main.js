@@ -37,12 +37,14 @@ import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
 import { AccountSession } from './account/session.js';
 import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
+import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
 import { setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
@@ -84,6 +86,14 @@ let contentPanel = null;
 let contentNotice = null;
 /** The signed-in account (js/account/session.js): online play, settings sync, the one-click content install. */
 let account = null;
+/**
+ * Loads of game files after the start (lazy modules, the simulation worker):
+ * when the server stops serving them mid-session (js/account/gate.js), the
+ * player gets a sign-in prompt; the running game is not touched.
+ */
+const playAccess = new PlayAccess({ onLost: playAccessLost });
+/** The page's UI scale (js/scale.js): follows the setting and the screen, previewed by the game menu. */
+let uiScale = null;
 
 async function boot() {
   let gpuError = null;
@@ -93,6 +103,8 @@ async function boot() {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
   $('version').textContent = wasm ? `v${version()}` : '';
+  // UI scale first, so every screen and dialog opens at its size.
+  uiScale = new UiScale({ settings, win: window, root: document.documentElement });
   setupAudio();
   setupAccount();
   setupContent();
@@ -152,7 +164,24 @@ async function loadEngine() {
 
 /** Where the next game's simulation runs (js/sim/host.js): a worker if possible. */
 function newSimHost() {
-  return createSimHost({ Game, memory: () => wasm.memory, module: wasmModule });
+  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule }));
+}
+
+/** The game files were refused (js/account/gate.js): sign in again, or see why on the account page. */
+async function playAccessLost(state) {
+  if (state === 'signin' && account) {
+    await openSignIn(account, {
+      reason: 'Your sign-in has ended, so the game cannot load the rest of its files. Sign in again to go on; the game that is running keeps running.',
+      returnTo: location.pathname + location.search,
+    });
+    return;
+  }
+  showToast(state === 'signin' ? 'Your sign-in has ended. Sign in on the account page to go on playing.' : 'Your account cannot load the game right now. The account page says why.');
+}
+
+/** The message for a load that failed: the sign-in prompt already explains a refusal. */
+function loadErrorText(err) {
+  return err instanceof PlayAccessLost ? err.message : (err?.message ?? String(err));
 }
 
 /**
@@ -161,7 +190,7 @@ function newSimHost() {
  */
 async function setupRecords(lobby, gpuError) {
   try {
-    const [replay, ui, protocol] = await Promise.all([import('./replay.js'), import('./records.js'), import('./protocol.js')]);
+    const [replay, ui, protocol] = await playAccess.load(() => Promise.all([import('./replay.js'), import('./records.js'), import('./protocol.js')]));
     records = { ...replay, ...ui, replayOptions: protocol.replayOptions };
   } catch (err) {
     console.warn('Saves and replays are unavailable:', err);
@@ -330,11 +359,11 @@ async function offerLinkedMap(lobby) {
   const params = new URLSearchParams(location.search);
   if (params.get('editorTest') !== '1' && !params.get('map')) return;
   try {
-    const { loadPendingMap } = await import('./maploader.js');
+    const { loadPendingMap } = await playAccess.load(() => import('./maploader.js'));
     const map = await loadPendingMap(params);
     if (map) lobby.offerMapText(JSON.stringify(map));
   } catch (err) {
-    lobby.reportMapProblem(err?.message ?? err);
+    lobby.reportMapProblem(loadErrorText(err));
   }
 }
 
@@ -357,7 +386,7 @@ function setupOnline(lobby, gpuError) {
     root.hidden = false;
     if (ui) return;
     try {
-      const { mountOnline } = await import('./online.js');
+      const { mountOnline } = await playAccess.load(() => import('./online.js'));
       ui = mountOnline(root, {
         Game,
         version: version(),
@@ -480,7 +509,7 @@ async function launch(spec, lobby, failText) {
     return { host, info };
   } catch (err) {
     host?.dispose();
-    lobby.showError(`${failText}: ${err.message ?? err}`);
+    lobby.showError(`${failText}: ${loadErrorText(err)}`);
     return null;
   } finally {
     starting = false;
@@ -824,6 +853,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
   window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
+  // Game scale (game menu, Settings; js/scale.js): the view's base zoom. Auto
+  // follows the window and the render resolution, so those changes pick again.
+  const applyGameScale = () => input.setGameScale(resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: renderer.pixelRatio() }));
+  applyGameScale();
+  for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
+  window.addEventListener('resize', applyGameScale);
+  watchPixelRatio(window, applyGameScale);
   const [sx, sy] = game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
@@ -866,6 +902,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       paused = isPaused;
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
     },
+    uiScale,
+    renderRatio: () => renderer.pixelRatio(),
+    audio,
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),

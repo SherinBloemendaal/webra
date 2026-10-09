@@ -2,7 +2,7 @@
 // createElement and textContent: the site's CSP allows no inline scripts or
 // style attributes, and text from the server is never parsed as HTML.
 
-import { checkInput, switchInput } from '/play/js/ui/controls.js';
+import { checkInput, switchInput } from '/lib/js/ui/controls.js';
 
 export function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);

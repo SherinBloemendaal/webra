@@ -1,6 +1,8 @@
 // WebRA Worker entry: the HTTP API (docs/contracts.md, section 4, and
-// docs/accounts-api.md). Static files (website and game) are served by
-// Workers Assets; only /api/* reaches this handler first. The daily cron
+// docs/accounts-api.md) and the play gate in front of the game files
+// (playgate.js, docs/security.md). Other static files (the website) are
+// served by Workers Assets directly; only /api/*, /play and /play/* reach
+// this handler first (wrangler.jsonc `run_worker_first`). The daily cron
 // trigger runs the accounts retention job.
 
 import { PROTOCOL_VERSION, SESSION_ID_RE } from '@webra/protocol';
@@ -11,6 +13,7 @@ import { getMap, listMaps, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
+import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
 
 export { Session } from './session.js';
@@ -117,6 +120,7 @@ function methodNotAllowed(allow) {
 export default {
   async fetch(request, env, exec) {
     const url = new URL(request.url);
+    if (isPlayPath(url.pathname)) return servePlay(request, env, exec);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     const ctx = newContext(request, env, exec);
     try {

@@ -5,8 +5,8 @@
 // (docs/accounts-api.md 8). Moderators see only what their role allows.
 // The server checks every action again.
 
-import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
-import { checkInput } from '/play/js/ui/controls.js';
+import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { checkInput } from '/lib/js/ui/controls.js';
 import {
   AUDIT_ACTIONS,
   BAN_PRESETS,
@@ -27,10 +27,10 @@ import {
   parseView,
   permissions,
   viewHash,
-} from '/play/js/account/admin-state.js';
-import { buildSettingsForm } from '/play/js/account/admin-forms.js';
-import { checkDocument } from '/play/js/registry.js';
-import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/play/protocol/accounts.js';
+} from '/lib/js/account/admin-state.js';
+import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
+import { checkDocument } from '/lib/js/registry.js';
+import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
 import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [
@@ -828,6 +828,11 @@ export async function mountAdmin(root, deps = {}) {
     const loginEmail = toggle('Email (verification, reset and change links)', s.login.email, null, unavailable(s.login.email, svc.email, 'Unavailable until the email plan is upgraded'));
     const loginDiscord = toggle('Discord sign-in', s.login.discord, null, unavailable(s.login.discord, svc.discord, 'Unavailable: Discord is not configured'));
     const loginPasskey = toggle('Passkeys', s.login.passkey);
+    const game = toggle(
+      'The game needs an account',
+      s.gameRequiresAccount !== false,
+      'The server serves /play only to active, unbanned accounts (admins and moderators always). Off: anyone can load the game. A change reaches every server within 30 seconds; a revoked sign-in loses the game within 10 minutes.',
+    );
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
     const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
@@ -838,7 +843,7 @@ export async function mountAdmin(root, deps = {}) {
       { class: 'form-stack', novalidate: true },
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Registration' }), open.row, approval.row, verify.row),
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Sign-in methods' }), loginPw.row, loginEmail.row, loginDiscord.row, loginPasskey.row),
-      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), online.row, relay.row),
+      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row),
       motd.row,
       el('div', { class: 'form-actions' }, save),
     );
@@ -848,6 +853,7 @@ export async function mountAdmin(root, deps = {}) {
       const patch = {
         registration: { open: open.input.checked, approvalRequired: approval.input.checked, emailVerification: verify.input.checked },
         login: { password: loginPw.input.checked, email: loginEmail.input.checked, discord: loginDiscord.input.checked, passkey: loginPasskey.input.checked },
+        gameRequiresAccount: game.input.checked,
         onlineRequiresAccount: online.input.checked,
         contentRelay: relay.input.checked,
         motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),

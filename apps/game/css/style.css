@@ -1,5 +1,11 @@
 /* Page layout, menus, dialogs and HUD. Colours, fonts and the metal recipes
-   come from theme.css; the sidebar has its own stylesheet. */
+   come from theme.css; the sidebar has its own stylesheet. Sizes are
+   multiples of --ui-px, the UI scale unit of theme.css. */
+
+/* 1px where theme.css is not loaded (the map editor uses this sheet alone). */
+:root {
+  --ui-px: 1px;
+}
 
 * {
   box-sizing: border-box;
@@ -11,7 +17,7 @@ body {
   height: 100%;
   background: var(--ui-bg);
   color: var(--ui-text);
-  font: 14px/1.4 var(--ui-font);
+  font: calc(14 * var(--ui-px))/1.4 var(--ui-font);
   overflow: hidden;
   user-select: none;
 }
@@ -40,9 +46,9 @@ body {
 
 #hud {
   position: absolute;
-  left: 8px;
-  top: 6px;
-  padding: 2px 8px;
+  left: calc(8 * var(--ui-px));
+  top: calc(6 * var(--ui-px));
+  padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(6, 8, 11, 0.72);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -59,10 +65,10 @@ body {
 /* Biome and weather badge (js/weather-fx.js): what the sky does to the battle. */
 #weather {
   position: absolute;
-  left: 8px;
-  top: 34px;
-  max-width: min(360px, 60vw);
-  padding: 2px 8px;
+  left: calc(8 * var(--ui-px));
+  top: calc(34 * var(--ui-px));
+  max-width: min(calc(360 * var(--ui-px)), 60vw);
+  padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(6, 8, 11, 0.72);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -91,8 +97,8 @@ body {
   /* Taller than the screen (phones): scroll from the top instead of cutting it off. */
   place-items: safe center;
   overflow: auto;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
+  padding: max(calc(16 * var(--ui-px)), env(safe-area-inset-top)) max(calc(16 * var(--ui-px)), env(safe-area-inset-right)) max(calc(16 * var(--ui-px)), env(safe-area-inset-bottom))
+    max(calc(16 * var(--ui-px)), env(safe-area-inset-left));
   background:
     var(--ui-scan),
     var(--ui-grid),
@@ -112,35 +118,35 @@ body {
 }
 
 .game-menu-card {
-  width: min(560px, 100%);
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px);
+  width: min(calc(560 * var(--ui-px)), 100%);
+  max-height: calc(100vh - calc(32 * var(--ui-px)));
+  max-height: calc(100dvh - calc(32 * var(--ui-px)));
   display: flex;
   flex-direction: column;
 }
 
 .game-menu-card h1 {
-  font-size: 30px;
+  font-size: calc(30 * var(--ui-px));
 }
 
 .menu-card .game-menu-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: center;
-  gap: 10px;
-  margin: 10px 0;
+  gap: calc(10 * var(--ui-px));
+  margin: calc(10 * var(--ui-px)) 0;
 }
 
 /* Choice settings span the slider and value columns (look: css/controls.css). */
 .menu-card select.game-menu-select {
   grid-column: 2 / span 2;
-  min-width: 180px;
+  min-width: calc(180 * var(--ui-px));
 }
 
 .game-menu-value {
-  min-width: 44px;
+  min-width: calc(44 * var(--ui-px));
   text-align: right;
-  font: 12px var(--ui-font-mono);
+  font: calc(12 * var(--ui-px)) var(--ui-font-mono);
   color: var(--ui-muted);
 }
 
@@ -148,20 +154,20 @@ body {
   overflow: auto;
   min-height: 0;
   flex: 1;
-  margin-top: 6px;
-  padding-right: 4px;
+  margin-top: calc(6 * var(--ui-px));
+  padding-right: calc(4 * var(--ui-px));
 }
 
 .game-menu-keys {
   display: grid;
-  gap: 4px;
+  gap: calc(4 * var(--ui-px));
 }
 
 .game-menu-key-row {
   display: grid;
-  grid-template-columns: 1fr minmax(84px, auto) auto auto auto;
+  grid-template-columns: 1fr minmax(calc(84 * var(--ui-px)), auto) auto auto auto;
   align-items: center;
-  gap: 6px;
+  gap: calc(6 * var(--ui-px));
 }
 
 .game-menu-key-row.game-menu-fixed {
@@ -170,12 +176,12 @@ body {
 }
 
 .game-menu-keycap {
-  padding: 2px 6px;
+  padding: calc(2 * var(--ui-px)) calc(6 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
-  font: 12px var(--ui-font-mono);
+  font: calc(12 * var(--ui-px)) var(--ui-font-mono);
   text-align: center;
   white-space: nowrap;
 }
@@ -183,9 +189,49 @@ body {
 .menu-card button.game-menu-mini {
   width: auto;
   margin: 0;
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: calc(3 * var(--ui-px)) calc(8 * var(--ui-px));
+  font-size: calc(11 * var(--ui-px));
   letter-spacing: 0.5px;
+}
+
+/* Settings: section titles, the scale rows (slider, value, Auto, Reset) and the Audio section. */
+.game-menu-card .game-menu-scroll h2:first-child {
+  margin-top: calc(4 * var(--ui-px));
+}
+
+.menu-card h3 {
+  margin: calc(12 * var(--ui-px)) 0 calc(4 * var(--ui-px));
+  font: 700 var(--ui-fs-s) / 1.3 var(--ui-font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.game-menu-scale .game-menu-row {
+  margin-bottom: calc(2 * var(--ui-px));
+}
+
+.game-menu-scale-tools {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: calc(10 * var(--ui-px));
+  margin-bottom: calc(8 * var(--ui-px));
+}
+
+/* "Auto" names the switch beside it. */
+.menu-card .game-menu-scale-tools label.game-menu-auto {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-m);
+}
+
+.game-menu-explain {
+  font-size: var(--ui-fs-m);
+}
+
+.game-menu-audio {
+  margin-top: calc(4 * var(--ui-px));
 }
 
 .game-menu-message {
@@ -196,10 +242,10 @@ body {
 #toast {
   position: fixed;
   left: 50%;
-  top: max(40px, env(safe-area-inset-top));
+  top: max(calc(40 * var(--ui-px)), env(safe-area-inset-top));
   transform: translateX(-50%);
-  max-width: min(520px, 90%);
-  padding: 6px 12px;
+  max-width: min(calc(520 * var(--ui-px)), 90%);
+  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
   background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
   border: 1px solid var(--ui-edge);
   border-top: 2px solid var(--ui-accent);
@@ -215,9 +261,9 @@ body {
 
 .hud-button {
   position: absolute;
-  right: 8px;
-  top: 6px;
-  padding: 3px 10px;
+  right: calc(8 * var(--ui-px));
+  top: calc(6 * var(--ui-px));
+  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -240,11 +286,11 @@ body {
 /* Debug, Build / Map (phones) and Menu in one row at the top right. */
 .hud-buttons {
   position: absolute;
-  right: 8px;
-  top: 6px;
+  right: calc(8 * var(--ui-px));
+  top: calc(6 * var(--ui-px));
   z-index: 6;
   display: flex;
-  gap: 6px;
+  gap: calc(6 * var(--ui-px));
 }
 
 .hud-buttons .hud-button {
@@ -253,8 +299,8 @@ body {
 
 #version {
   position: fixed;
-  left: 8px;
-  bottom: 6px;
+  left: calc(8 * var(--ui-px));
+  bottom: calc(6 * var(--ui-px));
   z-index: 60;
   font: var(--ui-fs-s) var(--ui-font-mono);
   color: rgba(200, 210, 220, 0.5);
@@ -265,8 +311,8 @@ body {
    with the side's accent along the top. */
 .menu-card {
   position: relative;
-  width: min(440px, 100%);
-  padding: 22px 28px 24px;
+  width: min(calc(440 * var(--ui-px)), 100%);
+  padding: calc(22 * var(--ui-px)) calc(28 * var(--ui-px)) calc(24 * var(--ui-px));
   background:
     var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
     var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
@@ -283,12 +329,12 @@ body {
 }
 
 .menu-card h1 {
-  margin: 0 0 4px;
-  padding-bottom: 10px;
+  margin: 0 0 calc(4 * var(--ui-px));
+  padding-bottom: calc(10 * var(--ui-px));
   border-bottom: 1px solid var(--ui-line);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
-  font: 900 34px/1 var(--ui-font-display);
-  letter-spacing: 2px;
+  font: 900 calc(34 * var(--ui-px))/1 var(--ui-font-display);
+  letter-spacing: calc(2 * var(--ui-px));
   text-transform: uppercase;
   color: #f2f4f6;
   text-shadow:
@@ -301,7 +347,7 @@ body {
 }
 
 .menu-card h2 {
-  margin: 22px 0 8px;
+  margin: calc(22 * var(--ui-px)) 0 calc(8 * var(--ui-px));
   font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -311,7 +357,7 @@ body {
 .tagline,
 .hint {
   color: var(--ui-muted);
-  margin: 6px 0 0;
+  margin: calc(6 * var(--ui-px)) 0 0;
 }
 
 .error {
@@ -322,8 +368,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin: 8px 0;
+  gap: calc(12 * var(--ui-px));
+  margin: calc(8 * var(--ui-px)) 0;
 }
 
 /* Selects and text fields in a card: the look is in css/controls.css. */
@@ -331,8 +377,8 @@ body {
 /* Bevelled metal button; .primary is the side's colour. */
 .menu-card button {
   width: 100%;
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: calc(10 * var(--ui-px));
+  padding: calc(10 * var(--ui-px));
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -365,7 +411,7 @@ body {
 }
 
 .controls {
-  margin-top: 18px;
+  margin-top: calc(18 * var(--ui-px));
   color: var(--ui-muted);
 }
 
@@ -375,7 +421,7 @@ body {
 }
 
 .controls ul {
-  padding-left: 18px;
+  padding-left: calc(18 * var(--ui-px));
 }
 
 /* The sidebar has its own Options button: on desktop the HUD Menu button
@@ -385,7 +431,7 @@ body {
 }
 
 #app[data-layout='desktop'] .debug-button {
-  right: 8px;
+  right: calc(8 * var(--ui-px));
 }
 
 /* Phone layouts (portrait and landscape drawers) live in css/touch.css. */
