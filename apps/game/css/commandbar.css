@@ -7,20 +7,20 @@
 
 #commandbar {
   position: absolute;
-  left: 8px;
-  bottom: var(--cb-bottom, 52px);
+  left: calc(8 * var(--ui-px));
+  bottom: var(--cb-bottom, calc(52 * var(--ui-px)));
   z-index: 6;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  max-width: calc(100% - 16px);
+  gap: calc(4 * var(--ui-px));
+  max-width: calc(100% - calc(16 * var(--ui-px)));
   pointer-events: none;
 }
 
 #commandbar .cb-group {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  gap: calc(2 * var(--ui-px));
+  padding: calc(2 * var(--ui-px));
   background:
     var(--ui-scan),
     linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
@@ -35,8 +35,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: calc(30 * var(--ui-px));
+  height: calc(30 * var(--ui-px));
   padding: 0;
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
@@ -48,8 +48,8 @@
 }
 
 #commandbar .cb-button svg {
-  width: 22px;
-  height: 22px;
+  width: calc(22 * var(--ui-px));
+  height: calc(22 * var(--ui-px));
 }
 
 #commandbar .cb-button:hover:not(:disabled) {
@@ -81,10 +81,10 @@
 #commandbar .cb-button.mixed::after {
   content: '';
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 5px;
-  height: 5px;
+  right: calc(2 * var(--ui-px));
+  bottom: calc(2 * var(--ui-px));
+  width: calc(5 * var(--ui-px));
+  height: calc(5 * var(--ui-px));
   background: var(--ui-accent-hi);
   border-radius: 1px;
 }
@@ -105,29 +105,29 @@ body.touch #commandbar .cb-queue {
 }
 
 body.touch #commandbar .cb-button {
-  width: 44px;
-  height: 44px;
+  width: max(44px, calc(44 * var(--ui-px)));
+  height: max(44px, calc(44 * var(--ui-px)));
 }
 
 body.touch #commandbar .cb-button svg {
-  width: 28px;
-  height: 28px;
+  width: calc(28 * var(--ui-px));
+  height: calc(28 * var(--ui-px));
 }
 
 /* Narrow screens without touch: smaller buttons, stances wrap when needed. */
 @media (max-width: 720px) {
   body:not(.touch) #commandbar {
-    left: 4px;
-    max-width: calc(100% - 8px);
+    left: calc(4 * var(--ui-px));
+    max-width: calc(100% - calc(8 * var(--ui-px)));
   }
 
   body:not(.touch) #commandbar .cb-button {
-    width: 28px;
-    height: 28px;
+    width: calc(28 * var(--ui-px));
+    height: calc(28 * var(--ui-px));
   }
 
   body:not(.touch) #commandbar .cb-button svg {
-    width: 20px;
-    height: 20px;
+    width: calc(20 * var(--ui-px));
+    height: calc(20 * var(--ui-px));
   }
 }

@@ -45,6 +45,14 @@
   --ui-fs-l: 15px;
   --ui-radius: 2px;
 
+  /* ---- UI scale ----
+     --ui-scale is the player's UI scale (game menu, Settings; js/scale.js
+     sets it on <html>). Sizes of the game's chrome are multiples of --ui-px,
+     which is 1px outside the scaled parts below, so the start screens keep
+     their size. Hairlines (borders, bevels, outlines) stay 1px. */
+  --ui-scale: 1;
+  --ui-px: 1px;
+
   /* ---- Metal recipes ---- */
   --ui-bevel: inset 1px 1px 0 var(--ui-bevel-hi), inset -1px -1px 0 var(--ui-bevel-lo);
   --ui-bevel-in: inset 1px 1px 0 var(--ui-bevel-lo), inset -1px -1px 0 var(--ui-bevel-hi);
@@ -75,6 +83,26 @@
   --ui-accent-glow: rgba(196, 58, 43, 0.5);
   --ui-primary: #8f2a1f;
   --ui-primary-hi: #b23726;
+}
+
+/* The scaled parts: the game screen, its menu and dialogs. Custom properties
+   resolve where they are declared, so the font sizes are declared again here
+   over the scaled --ui-px, and text that only inherits a size gets one too. */
+#app,
+#game-menu,
+#gameover,
+#toast,
+#audio-button,
+#audio-panel,
+#content-button,
+#content-panel,
+#release-notes {
+  --ui-px: calc(1px * var(--ui-scale));
+  --ui-fs-xs: calc(10 * var(--ui-px));
+  --ui-fs-s: calc(11 * var(--ui-px));
+  --ui-fs-m: calc(13 * var(--ui-px));
+  --ui-fs-l: calc(15 * var(--ui-px));
+  font-size: calc(14 * var(--ui-px));
 }
 
 /* ---- Shared metal parts --------------------------------------------------
@@ -109,8 +137,8 @@
 /* Inline SVG icons (js/ui-icons.js) take the text colour. */
 .ui-icon {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: calc(16 * var(--ui-px));
+  height: calc(16 * var(--ui-px));
   fill: currentColor;
   flex: none;
   pointer-events: none;
@@ -128,20 +156,20 @@
 #notices {
   position: absolute;
   left: 50%;
-  bottom: 56px;
+  bottom: calc(56 * var(--ui-px));
   z-index: 25;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  width: min(560px, calc(100% - 32px));
+  gap: calc(2 * var(--ui-px));
+  width: min(calc(560 * var(--ui-px)), calc(100% - calc(32 * var(--ui-px))));
   transform: translateX(-50%);
   pointer-events: none;
 }
 
 #notices .notice {
   max-width: 100%;
-  padding: 1px 8px;
+  padding: 1px calc(8 * var(--ui-px));
   color: #f2f4f6;
   font: 600 var(--ui-fs-l) / 1.35 var(--ui-font-mono);
   letter-spacing: 0.02em;

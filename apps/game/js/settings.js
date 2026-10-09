@@ -21,6 +21,9 @@ export const KEYS = Object.freeze({
   healthBars: ['game', 'healthBars'],
   pixelRatioCap: ['game', 'pixelRatioCap'],
   lowQuality: ['game', 'lowQuality'],
+  // 'auto' or a factor (js/scale.js): the size of the chrome, and of units and terrain.
+  uiScale: ['game', 'uiScale'],
+  gameScale: ['game', 'gameScale'],
   // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the
   // original Red Alert graphics the player installed from their own copy).
   graphics: ['game', 'graphics'],

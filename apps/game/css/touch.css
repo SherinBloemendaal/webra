@@ -28,25 +28,25 @@
 
 body.touch #touch-bar {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
+  left: calc(8 * var(--ui-px));
+  bottom: calc(8 * var(--ui-px));
   z-index: 6;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  max-width: calc(100% - 16px);
+  gap: calc(6 * var(--ui-px));
+  max-width: calc(100% - calc(16 * var(--ui-px)));
 }
 
 body.touch #touch-place {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  bottom: calc(8 * var(--ui-px));
   z-index: 7;
   display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 16px);
-  padding: 6px;
+  gap: calc(8 * var(--ui-px));
+  max-width: calc(100% - calc(16 * var(--ui-px)));
+  padding: calc(6 * var(--ui-px));
   background:
     var(--ui-scan),
     linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
@@ -58,22 +58,22 @@ body.touch #touch-place {
 }
 
 .touch-place-hint {
-  padding: 0 4px;
+  padding: 0 calc(4 * var(--ui-px));
   color: var(--ui-muted);
-  font: 12px var(--ui-font);
+  font: calc(12 * var(--ui-px)) var(--ui-font);
   white-space: nowrap;
 }
 
 .touch-button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
+  min-width: max(44px, calc(44 * var(--ui-px)));
+  min-height: max(44px, calc(44 * var(--ui-px)));
+  padding: 0 calc(12 * var(--ui-px));
   background: linear-gradient(180deg, rgba(58, 66, 77, 0.92), rgba(34, 40, 48, 0.92));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
-  font: 700 12px/1.1 var(--ui-font);
+  font: 700 calc(12 * var(--ui-px))/1.1 var(--ui-font);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   touch-action: manipulation;
@@ -103,28 +103,50 @@ body.touch #touch-place {
 /* ---- Larger targets on touch screens (44 px) -------------------------------- */
 
 body.touch .hud-button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
-  font-size: 13px;
+  min-width: max(44px, calc(44 * var(--ui-px)));
+  min-height: max(44px, calc(44 * var(--ui-px)));
+  padding: 0 calc(12 * var(--ui-px));
+  font-size: calc(13 * var(--ui-px));
   touch-action: manipulation;
 }
 
 body.touch .debug-panel {
-  top: 56px;
+  top: calc(56 * var(--ui-px));
 }
 
 body.touch #powers .power {
-  min-height: 44px;
+  min-height: max(44px, calc(44 * var(--ui-px)));
 }
 
 body.touch #sidebar .sb-tab,
 body.touch #sidebar .sb-tool {
-  min-height: 44px;
+  min-height: max(44px, calc(44 * var(--ui-px)));
 }
 
 body.touch #sidebar button {
   touch-action: manipulation;
+}
+
+/* A small UI scale (game menu, Settings) keeps the sidebar's taps usable on
+   touch screens: tabs at least 30 px wide, cameos at least about 48 px. */
+body.touch #sidebar {
+  --sb-tab-size: max(30px, calc(30 * var(--ui-px)));
+}
+
+body.touch #app[data-layout='desktop'] #sidebar {
+  width: max(208px, calc(264 * var(--ui-px)));
+  min-width: max(208px, calc(264 * var(--ui-px)));
+  max-width: max(208px, calc(264 * var(--ui-px)));
+}
+
+body.touch #app[data-layout='landscape'] #sidebar {
+  width: max(160px, calc(196 * var(--ui-px)));
+  min-width: max(160px, calc(196 * var(--ui-px)));
+  max-width: max(160px, calc(196 * var(--ui-px)));
+}
+
+body.touch #app[data-layout='portrait'] #sidebar .sb-grid {
+  grid-template-columns: repeat(auto-fill, minmax(max(48px, calc(64 * var(--ui-px))), 1fr));
 }
 
 /* Hover tooltips stick on touch screens; the cameos show what is missing
@@ -136,12 +158,12 @@ body.touch #sidebar .sb-tip {
 body.touch .menu-card button,
 body.touch .menu-card select,
 body.touch .menu-card input:not([type='checkbox']):not([type='range']) {
-  min-height: 44px;
+  min-height: max(44px, calc(44 * var(--ui-px)));
 }
 
 body.touch .menu-card input.game-menu-check {
-  width: 28px;
-  height: 28px;
+  width: calc(28 * var(--ui-px));
+  height: calc(28 * var(--ui-px));
 }
 
 /* The Sound button and the version tag would sit on the action bar: the game
@@ -163,7 +185,7 @@ body.touch #app:not([hidden]) ~ #version,
 
 #app[data-layout='portrait'] #hud,
 #app[data-layout='landscape'] #hud {
-  font-size: 11px;
+  font-size: calc(11 * var(--ui-px));
 }
 
 /* Portrait: the sidebar is a drawer along the bottom. The radar and the
@@ -186,8 +208,8 @@ body.touch #app:not([hidden]) ~ #version,
     'radar status'
     'radar silo'
     'sel main';
-  gap: 5px 8px;
-  padding: 6px 8px;
+  gap: calc(5 * var(--ui-px)) calc(8 * var(--ui-px));
+  padding: calc(6 * var(--ui-px)) calc(8 * var(--ui-px));
   border-left: 0;
   border-top: 1px solid var(--ui-edge);
   box-shadow:
@@ -207,7 +229,7 @@ body.touch #app:not([hidden]) ~ #version,
 
 #app[data-layout='portrait'] #sidebar .sb-status {
   grid-area: status;
-  font-size: 16px;
+  font-size: calc(16 * var(--ui-px));
 }
 
 #app[data-layout='portrait'] #sidebar .sb-silo {
@@ -241,14 +263,14 @@ body.touch #app:not([hidden]) ~ #version,
 
 #app[data-layout='portrait'] #sidebar .sb-grid {
   grid-area: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(64 * var(--ui-px)), 1fr));
 }
 
 #app[data-layout='portrait'] #sidebar .sb-sel {
   grid-area: sel;
   align-self: end;
   min-height: 0;
-  padding: 3px 6px;
+  padding: calc(3 * var(--ui-px)) calc(6 * var(--ui-px));
   overflow: hidden;
 }
 
@@ -257,17 +279,17 @@ body.touch #app:not([hidden]) ~ #version,
 }
 
 #app[data-layout='portrait'] #sidebar .sb-hp {
-  margin: 2px 0;
+  margin: calc(2 * var(--ui-px)) 0;
 }
 
 /* Landscape: a narrow drawer on the right, the selection panel left out (the
    map shows it), a smaller radar and two cameo columns. */
 #app[data-layout='landscape'] #sidebar {
-  width: 196px;
-  min-width: 196px;
-  max-width: 196px;
-  gap: 4px;
-  padding: 4px 6px;
+  width: calc(196 * var(--ui-px));
+  min-width: calc(196 * var(--ui-px));
+  max-width: calc(196 * var(--ui-px));
+  gap: calc(4 * var(--ui-px));
+  padding: calc(4 * var(--ui-px)) calc(6 * var(--ui-px));
 }
 
 #app[data-layout='landscape'] #sidebar .sb-radar {
@@ -275,7 +297,7 @@ body.touch #app:not([hidden]) ~ #version,
 }
 
 #app[data-layout='landscape'] #sidebar .sb-status {
-  font-size: 15px;
+  font-size: calc(15 * var(--ui-px));
 }
 
 #app[data-layout='landscape'] #sidebar .sb-sel {
@@ -298,7 +320,7 @@ body.touch #app:not([hidden]) ~ #version,
 
 /* Phones: fewer action bar labels per row. */
 #app[data-layout='portrait'] .touch-button {
-  padding: 0 9px;
+  padding: 0 calc(9 * var(--ui-px));
 }
 
 /* ---- Lobby and menus on phones ------------------------------------------------- */
@@ -308,23 +330,23 @@ body.touch #app:not([hidden]) ~ #version,
   #menu .lobby-input,
   #menu .lobby-btn,
   #menu .lobby-color-btn {
-    min-height: 44px;
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 
   #menu .lobby-remove {
-    width: 44px;
+    width: max(44px, calc(44 * var(--ui-px)));
   }
 
   #menu .lobby-toggle {
-    min-height: 44px;
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 
   #menu .lobby-color-list {
-    grid-template-columns: repeat(4, 44px);
+    grid-template-columns: repeat(4, max(44px, calc(44 * var(--ui-px))));
   }
 
   #menu .lobby-color-opt {
-    min-height: 44px;
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 
   .online-btn,
@@ -332,7 +354,7 @@ body.touch #app:not([hidden]) ~ #version,
   .online-select,
   #online-button,
   #audio-button {
-    min-height: 44px;
+    min-height: max(44px, calc(44 * var(--ui-px)));
   }
 }
 
@@ -340,15 +362,15 @@ body.touch #app:not([hidden]) ~ #version,
   /* The Play online entry moves from the lobby's title bar to the bottom corner. */
   #online-button {
     top: auto;
-    right: max(12px, env(safe-area-inset-right));
-    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(calc(12 * var(--ui-px)), env(safe-area-inset-right));
+    bottom: max(calc(12 * var(--ui-px)), env(safe-area-inset-bottom));
   }
 
   #menu {
-    padding-bottom: 76px;
+    padding-bottom: calc(76 * var(--ui-px));
   }
 
   #audio-button {
-    bottom: max(24px, env(safe-area-inset-bottom));
+    bottom: max(calc(24 * var(--ui-px)), env(safe-area-inset-bottom));
   }
 }
