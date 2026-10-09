@@ -226,8 +226,9 @@ const CLIENT = {
       t: C2S.HELLO,
       protocol: int(m.protocol, 0, 0xffff, 'protocol'),
       version: matches(m.version, VERSION_RE, 'version'),
-      name: validName(m.name),
     };
+    // Signed-in connections play under their username; anonymous ones must name themselves.
+    if (has(m, 'name')) out.name = validName(m.name);
     if (has(m, 'password')) out.password = validPassword(m.password);
     if (has(m, 'hostKey')) out.hostKey = matches(m.hostKey, HOST_KEY_RE, 'hostKey');
     // Join as a spectator (lobby, or a running game).
@@ -320,7 +321,7 @@ function validSessionInfo(v, what = 'session') {
   };
 }
 
-const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'faction', 'color', 'team', 'difficulty', 'ready'];
+const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready'];
 
 /** One slot of the online lobby as the server publishes it. */
 export function validLobbySlot(v, what = 'slot') {
@@ -335,9 +336,11 @@ export function validLobbySlot(v, what = 'slot') {
     out.client = validClientId(v.client, `${what}.client`);
     out.name = validName(v.name, `${what}.name`);
     out.ready = bool(v.ready, `${what}.ready`);
+    // Present (true) only when the name comes from a signed-in account.
+    if (has(v, 'account') && bool(v.account, `${what}.account`)) out.account = true;
     if (has(v, 'difficulty')) fail(`${what}: humans have no difficulty`);
   } else {
-    if (has(v, 'client') || has(v, 'name') || has(v, 'ready')) fail(`${what}: AI slots carry no client, name or ready`);
+    if (has(v, 'client') || has(v, 'name') || has(v, 'ready') || has(v, 'account')) fail(`${what}: AI slots carry no client, name, account or ready`);
     out.difficulty = oneOf(v.difficulty, DIFFICULTIES, `${what}.difficulty`);
   }
   out.faction = validFaction(v.faction, `${what}.faction`);
@@ -350,10 +353,12 @@ const START_PLAYER_KEYS = ['player', 'slot', 'client', 'name', 'type'];
 
 const SERVER = {
   [S2C.WELCOME](m) {
-    object(m, ['t', 'you', 'hostId', 'session', 'role', 'key'], 'welcome');
+    object(m, ['t', 'you', 'name', 'hostId', 'session', 'role', 'key'], 'welcome');
     const out = {
       t: S2C.WELCOME,
       you: validClientId(m.you, 'you'),
+      // The name this member plays under (its username when signed in).
+      name: validName(m.name, 'name'),
       hostId: m.hostId === null ? null : validClientId(m.hostId, 'hostId'),
       session: validSessionInfo(m.session),
       role: oneOf(m.role, ROLES, 'role'),
@@ -371,8 +376,9 @@ const SERVER = {
     if (!Array.isArray(m.spectators) || m.spectators.length > maxSpectators) fail('lobby.spectators must list at most maxSpectators');
     const clients = new Set();
     const spectators = m.spectators.map((v, i) => {
-      object(v, ['client', 'name'], `spectators[${i}]`);
+      object(v, ['client', 'name', 'account'], `spectators[${i}]`);
       const sp = { client: validClientId(v.client, `spectators[${i}].client`), name: validName(v.name, `spectators[${i}].name`) };
+      if (has(v, 'account') && bool(v.account, `spectators[${i}].account`)) sp.account = true;
       if (clients.has(sp.client)) fail('lobby.spectators lists a client twice');
       clients.add(sp.client);
       return sp;
