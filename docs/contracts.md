@@ -188,9 +188,10 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
-human|ai|closed, name, faction, color, team, difficulty}], startingCash,
-startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, cheats, mapStyle, biome, weather, map`.
+human|ai|closed, name, faction, color, team, difficulty, handicap?}],
+startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
+explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
+bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome, weather, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -205,14 +206,58 @@ orders work (section 5). `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
-that is not closed, and it takes spawn N. `map` is the map file JSON string
+that is not closed, and it takes spawn N (unless separate team spawns
+moves it, below). `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+OpenRA's other lobby options (rules in `data/source/rules/world.yaml`,
+`player.yaml`, `misc.yaml`; protocol version 6 requires the keys, the
+engine treats a missing one as its OpenRA default):
+
+- `crates` (default on, OpenRA CrateSpawner): crates appear on land and water
+  or are dropped by a neutral Badger (`engine/src/crates.rs`), with OpenRA's
+  minimum and maximum counts, spawn interval, lifetime and action weights;
+  ground units and ships pick them up. A neutral player owns crates and the
+  wrecks of defeated players.
+- `shortGame` (default on, OpenRA MapOptions ShortGame): a player has lost
+  when it has no structures and no MCV left (MustBeDestroyed); off, every
+  unit counts too.
+- `allyBuildRadius` (default on): structures may also be placed near allied
+  structures.
+- `separateTeamSpawns` (default on, OpenRA MapStartingLocations): in a team
+  game the players without a team keep their slot's spawn and team members
+  take the free spawns. On a generated map the teams take them team by team
+  (in the order of each team's first slot, members in slot order) in the
+  order the map lists its spawns, which is by column, top first, so the
+  halves of the list are mirrored sides; on a map file the members, in slot
+  order, take the free spawn farthest from the enemies placed so far (sum of
+  squared distances), then nearest to team mates, then the lowest.
+  `engine/src/gamerules.rs` `assign_spawns` and `packages/protocol`
+  `assignSpawns` (lobby markers) share the cases of
+  `packages/protocol/test/fixtures/spawn-cases.json`.
+- `bounty` (default off, OpenRA GivesBounty): a kill pays the killer the
+  victim's GivesBounty percentage (10 % by default) of its value; allies pay
+  nothing.
+- `timeLimit` (minutes: 0 = none, 10, 20, 30, 40, 60, 90; OpenRA
+  TimeLimitManager): the countdown counts game time in real seconds of the
+  chosen speed, warns at OpenRA's notification marks and when it runs out
+  the player or team with the most player experience wins, everyone else
+  loses; a tie is a draw.
+- `handicap` per player (0 to 95 in steps of 5, default 0, OpenRA
+  HandicapFirepowerMultiplier and friends): firepower and armour drop and
+  build time grows by the percentage. AI slots take 0. The engine refuses
+  other values.
+
+Starting units (`startingUnits`) come from `world.yaml` StartingUnits per
+faction and class (`none`, `light`, `heavy`) through `tools/gen_rules.py`;
+`base` keeps WebRA's construction yard start. Support units stand on a ring
+around the MCV (inner and outer radius from the rules) with a random facing.
+
 Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
 are named bundles of every lobby option except `seed` and `mapSize`:
-Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
-Sandbox (skirmish only), plus the player's saved modes (settings
+Classic, Competitive, Weather war, Winter, Desert storm, Islands naval, Rush,
+Turtle and Sandbox (skirmish only), plus the player's saved modes (settings
 `lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those
 options; changing any of them reads as Custom. They are a lobby
 convenience only: online the host sends plain `options` (protocol
@@ -432,9 +477,10 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 5
+{player, client, name, tick}`, `error {code, message}`. Protocol version 6
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello`. Version 5 added accounts: the optional hello `name`, the welcome
+at `hello`. Version 6 added OpenRA's other lobby options (section 3: the
+option keys and the slots' optional `handicap`). Version 5 added accounts: the optional hello `name`, the welcome
 `name`, the `account` marks, one place per account and session, rejoin keys
 bound to their account, and the error codes `account_required`,
 `account_inactive`, `banned` and `ip_banned` (sent in answer to `hello`, or
@@ -609,6 +655,34 @@ it can unload now and 2 when no free cell is next to it. `Game.actor_json`
 reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
 transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
 out of the world: not pickable, not box-selectable, dropped from the selection.
+
+Primary buildings: on a production structure with PrimaryBuilding
+`Game.deploy_state` is 3: `Game.deploy` (or clicking the
+selected structure) toggles it as the primary producer of its queue
+(`engine/src/primary.rs`), which new units leave from first; sound event 46
+announces it.
+
+Leftovers (`engine/src/husks.rs`, `crates.rs`, `smudges.rs`): crates and
+husks are actors of kind `crate` and `husk`. They are not units: not selectable or targetable (husks take damage
+from warheads and burn down by ChangesHealth), each holds its cell for
+placement and movement, and a right click on one is a move. Husks follow
+OpenRA's Husk rules (drag to the death position, crush what the locomotor
+crushes, Capturable / InfiltrateForTransform data in `rules_json` for the
+capture orders). Selling spawns crew (SpawnActorsOnSell). LeaveSmudge
+warheads mark a cell (one mark per cell: a newer one replaces it) in the
+alpha byte of `terrain_ptr`: 255 none, else bit 6 crater (else scorch), bits
+3 to 5 the variant (0 to 5, OpenRA cr1..cr6 and sc1..sc6), bits 0 to 2 the
+depth (`engine/src/smudges.rs` `encode`); the terrain shader draws them and a
+new mark only shows once its cell is in the view player's sight. DestroyResource
+and CreateResource change ore deterministically. Effects of these are sound
+events (`[kind, a, x, y, owner, b]`): 40 CrateCollected (a = index of the
+crate action in the crate's `crateActions` of `rules_json`, b = crate type),
+41 Bounty (a = amount shown, owner = killer), 42 TimeLimit (a = minutes left,
+b = warning index, or a = 0 and b = -1 when time ran out), 43 PlayerLost, 44
+ScreenShake (a = ticks, b = intensity, owner = `mx + 16 * my`), 45 Flash
+(a = ticks, b = 1 nuke) and 46 PrimaryBuilding (a = actor type); they are
+presentation only (`apps/game/js/battlefx.js`, the audio director), and the
+Reduce motion setting turns the shake off and the flash down.
 
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
@@ -1114,7 +1188,9 @@ carry a pose in the sprite id:
     id = slot + 4096 * (pose + 16 * age)
 
 `slot` is the sprite slot as before (actor `t`: body `2t`, second part
-`2t + 1`; specials after them), always below 4096. Poses
+`2t + 1`; specials after them, the leftover specials of
+`apps/game/js/art/leftovers.js` at `2 * actors + 60`: fire, smoke, the
+PRIMARY tag and the crate pickup signs), always below 4096. Poses
 (`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
 1 move (the actor moved this tick), 2 attack (attacking and standing), 3
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
