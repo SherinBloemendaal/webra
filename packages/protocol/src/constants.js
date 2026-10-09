@@ -67,6 +67,55 @@ export const MAX_REJOINS = 10;
  * size for rejoining players and spectators. A longer log disables both.
  */
 export const LOG_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Rematch (`rematch` messages): the host proposes playing again with the same
+ * settings; every connected player must accept within REMATCH_VOTE_MS. The
+ * session then goes back to its lobby, and the members who were in the game
+ * come back into it with their rejoin keys within REMATCH_RETURN_MS (the
+ * client reloads the page to leave the finished game).
+ */
+export const REMATCH_VOTE_MS = 120_000;
+export const REMATCH_RETURN_MS = 60_000;
+/** A host can propose again this long after a proposal ended without a rematch. */
+export const REMATCH_COOLDOWN_MS = 10_000;
+/** States of a rematch proposal (`rematch.state`). */
+export const REMATCH_STATES = ['open', 'cancelled', 'lobby'];
+/** Why a proposal was cancelled (`rematch.reason`). */
+export const REMATCH_CANCEL_REASONS = ['declined', 'expired', 'left', 'withdrawn'];
+
+/**
+ * Online saves (`save` messages): any player proposes saving the running
+ * game; every player still in it must accept within SAVE_VOTE_MS. The save
+ * point is the next hash tick (a multiple of HASH_INTERVAL) the server has
+ * not sent yet; once every player reported the same state hash there, the
+ * server records the save and each player's client stores the file.
+ */
+export const SAVE_VOTE_MS = 60_000;
+/** Players must report their state hash at the save point within this long after agreeing. */
+export const SAVE_HASH_MS = 60_000;
+export const SAVE_COOLDOWN_MS = 10_000;
+export const SAVE_STATES = ['open', 'agreed', 'saved', 'cancelled'];
+export const SAVE_CANCEL_REASONS = ['declined', 'withdrawn', 'left', 'expired', 'desync', 'accounts', 'too_long', 'failed'];
+/** Saved online games the server remembers per account (the oldest go first), and for how long. */
+export const ONLINE_SAVES_PER_ACCOUNT = 20;
+export const ONLINE_SAVE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const SAVE_ID_RE = /^[0-9a-f]{16}$/;
+
+// ---- Lobby maps -----------------------------------------------------------------------
+
+/**
+ * Whether a member has the lobby's map (`mapState` of lobby slots and
+ * spectators, `mapstate` messages): installed (the exact hash is in its
+ * library), missing (not yet) or declined (it said no to installing it).
+ */
+export const MAP_STATES = ['installed', 'missing', 'declined'];
+/**
+ * Header with a member's credential for the session's map endpoints
+ * (GET and POST /api/sessions/<id>/map): `<client>.<rejoin key>`.
+ */
+export const MEMBER_HEADER = 'X-WebRA-Member';
+export const MEMBER_RE = /^([1-9][0-9]{0,9})\.([A-Za-z0-9_-]{43})$/;
+
 /** Why a member left (`left.reason`). */
 export const LEFT_REASONS = ['left', 'dropped', 'kicked', 'disconnected', 'removed', 'expired'];
 /** Reasons after which a player can still rejoin a running game. */
@@ -196,6 +245,14 @@ export const C2S = Object.freeze({
   /** A spectator processed the whole catch-up (log and sync). */
   SYNCED: 'synced',
   DEFEATED: 'defeated',
+  /** Whether this member installed or declined the lobby's map (lobby). */
+  MAPSTATE: 'mapstate',
+  /** Host: remove a spectator from the lobby (players are removed through `slot`). */
+  KICK: 'kick',
+  /** Propose (host) or accept a rematch (`accept: true`), or decline / withdraw it (`accept: false`). */
+  REMATCH: 'rematch',
+  /** Propose or accept saving the running game (`accept: true`), or decline / withdraw it. */
+  SAVE: 'save',
 });
 
 /** Server to client. */
@@ -214,6 +271,10 @@ export const S2C = Object.freeze({
   SYNC: 'sync',
   /** A player rejoined; its orders count again from `tick` on. */
   BACK: 'back',
+  /** A rematch proposal: open (with who accepted), cancelled, or the session is back in its lobby. */
+  REMATCH: 'rematch',
+  /** Saving the game: proposed, agreed (the save point), saved (the record's id), or cancelled. */
+  SAVE: 'save',
 });
 
 /** Error codes the server sends in `error` messages and HTTP error bodies. */

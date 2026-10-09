@@ -231,7 +231,7 @@ test('original art: crates on land and water, husks, smudges and the leftover sp
     assert.ok(`leftovers.${k}` in SPECIAL_ART, `leftovers.${k}`);
     assert.equal(specialSlot(`leftovers.${k}`, 5), 10 + LEFTOVER_SPECIAL_OFFSET + k);
   });
-  assert.deepEqual(SPECIAL_ART['leftovers.0'], { image: 'fire', sequence: '1', mode: 'loop' });
+  assert.deepEqual(SPECIAL_ART['leftovers.0'], { image: 'fire', sequences: ['1'], mode: 'loop' });
   assert.equal(SEQUENCES.fire['1'].file, 'fire1.shp');
   assert.equal(SPECIAL_ART['leftovers.3'], null, 'OpenRA drew the level up animation: WebRA art');
   // Installed files: the specials come out after the actors.

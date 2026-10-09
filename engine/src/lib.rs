@@ -20,6 +20,7 @@ pub mod crates;
 pub mod debug;
 pub mod doors;
 pub mod flowfield;
+pub mod fx;
 pub mod gamerules;
 mod helicopter;
 pub mod husks;
@@ -66,6 +67,8 @@ mod tests_commands;
 mod tests_debug;
 #[cfg(test)]
 mod tests_doors;
+#[cfg(test)]
+mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
 #[cfg(test)]

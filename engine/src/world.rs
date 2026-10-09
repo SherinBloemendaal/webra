@@ -188,6 +188,8 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+    /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
+    pub fx: crate::fx::ActorFx,
 
     // Repair and power down buttons (repair.rs)
     /// Players repairing this building (OpenRA RepairableBuilding.Repairers), in the order they started.
@@ -278,6 +280,7 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
             repair_active: false,
@@ -392,6 +395,9 @@ pub enum EffectKind {
     Naval(u8),
     /// Smudge smoke, flames and crate pickup animations (husks.rs `LEFTOVER_*`).
     Leftover(u8),
+    /// An explosion of a CreateEffect warhead (fx.rs): its index in
+    /// `Rules::render.explosions` and the ticks before it shows.
+    Explosion(u16, u8),
 }
 
 #[derive(Clone)]
@@ -1328,7 +1334,10 @@ impl World {
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
         // Long enough for OpenRA's self_destruct explosion (art-exp1.shp, 22 frames at one per tick).
         let ttl = if kind == Kind::Building { 30 } else { 22 };
-        self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        // A death weapon with explosions shows those instead (death_explosion, fx.rs).
+        if kind == Kind::Infantry || !self.has_death_explosions(i) {
+            self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        }
         if kind == Kind::Ship {
             self.ship_death_effect(i);
         }
@@ -2035,6 +2044,8 @@ impl World {
         // before this tick's production, like OpenRA's door animation runs
         // the tick after UnitProduced.
         self.tick_doors();
+        // Landing craft doors (fx.rs, presentation only).
+        self.tick_fx();
         for p in 0..self.players.len() {
             if self.players[p].is_ai && !self.players[p].defeated {
                 crate::ai::think(self, p as u8);

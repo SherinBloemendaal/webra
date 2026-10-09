@@ -440,4 +440,9 @@ export class RecorderHandle {
   encode(kind) {
     return this.host.command('encode', [kind]);
   }
+
+  /** The online save file at the agreed save point (`ticks`, `hash`, the server's record `id`). */
+  encodeOnlineSave(ticks, hash, id) {
+    return this.host.command('encodeOnlineSave', [ticks, hash, id]);
+  }
 }

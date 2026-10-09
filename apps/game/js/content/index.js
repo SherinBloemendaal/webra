@@ -23,6 +23,7 @@ import { installContent, contentSummary } from './install.js';
 import { originalSlots, combineSlots, originalSlotInfo, TILESET_OF_BIOME } from './atlas.js';
 import { originalTerrain, packTerrain } from './terrain.js';
 import { cameoSource, originalCameoPixels } from './cameos.js';
+import { originalCursors } from './cursors.js';
 import { ACTOR_ART, ACTOR_PALETTE } from './tables.js';
 import { decodePackImages, packCameos, packId, packSlots, readPack, validateManifest, PackError } from './packs.js';
 import { defaultRegistry } from '../registry.js';
@@ -238,6 +239,17 @@ export class ContentSystem {
   }
 
   /** Cameo pictures for js/cameo.js setCameoArt, or null for WebRA's own. */
+  /**
+   * Mouse cursors from the original graphics (content/cursors.js
+   * originalCursors: OpenRA cursor name -> { frames, fps }) for
+   * js/cursors.js setCursorArt, or null for WebRA's own.
+   */
+  cursors() {
+    if (!this.originalActive) return null;
+    const art = originalCursors((n) => this.getFile(n));
+    return art.size ? art : null;
+  }
+
   cameos() {
     const sources = this.enabledPacks()
       .filter((p) => Object.keys(p.manifest.cameos).length)

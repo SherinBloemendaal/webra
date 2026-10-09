@@ -628,6 +628,8 @@ impl World {
         self.note_built(player, ty);
         let (bx, by) = (self.actors[b].x, self.actors[b].y);
         self.sound.push(SoundEventKind::BuildingPlaced, ty as i32, bx, by, player, 0);
+        // The construction yard's placement animation (fx.rs, presentation only).
+        self.note_placed(player);
         self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);

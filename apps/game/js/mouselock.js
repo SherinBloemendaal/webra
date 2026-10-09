@@ -171,8 +171,13 @@ const TEXT_CURSOR = (() => {
 const KEYWORD_ART = {
   text: TEXT_CURSOR,
   'vertical-text': TEXT_CURSOR,
-  'not-allowed': CURSORS.blocked,
-  'no-drop': CURSORS.blocked,
+  // Read when used: the original cursors may have replaced it (cursors.js setCursorArt).
+  get 'not-allowed'() {
+    return CURSORS.blocked;
+  },
+  get 'no-drop'() {
+    return CURSORS.blocked;
+  },
 };
 
 /** What to draw for a CSS cursor value: { src, x, y }, or null for none (the cursor is hidden). */

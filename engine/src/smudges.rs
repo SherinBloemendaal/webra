@@ -22,7 +22,7 @@ use crate::husks::{LEFTOVER_FIRE, LEFTOVER_SMOKE};
 use crate::map::Terrain;
 use crate::rules_options::{EffectKind, WarheadEffect, RESOURCE_GEMS, RESOURCE_ORE, SMUDGE_CRATER, SMUDGE_SCORCH};
 use crate::sound_events::SoundEventKind;
-use crate::world::{cell_center, Effect, EffectKind as WorldEffect, World, NONE};
+use crate::world::{cell_center, World, NONE};
 
 /// SmudgeLayer@SCORCH and @CRATER (world.yaml): SmokeChance and MaxSmokeOffsetDistance.
 const SMOKE_CHANCE_SCORCH: i32 = 50;
@@ -142,16 +142,16 @@ impl World {
         // SmudgeLayer smoke: SmokeChance percent, MaxSmokeOffsetDistance around
         // the centre (scorches burn, craters smoke). Presentation.
         let h = mix(ci as u32 ^ 0xA5A5, self.tick);
-        let (chance, reach, kind, ttl) = if crater {
-            (SMOKE_CHANCE_CRATER, SMOKE_OFFSET_CRATER, LEFTOVER_SMOKE, 30)
+        let (chance, reach, kind) = if crater {
+            (SMOKE_CHANCE_CRATER, SMOKE_OFFSET_CRATER, LEFTOVER_SMOKE)
         } else {
-            (SMOKE_CHANCE_SCORCH, SMOKE_OFFSET_SCORCH, LEFTOVER_FIRE, 40)
+            (SMOKE_CHANCE_SCORCH, SMOKE_OFFSET_SCORCH, LEFTOVER_FIRE)
         };
         if (h % 100) as i32 <= chance {
             let off = |v: u32| (v % (2 * reach as u32 + 1)) as i32 - reach;
             let w = self.map.width as usize;
             let (x, y) = (cell_center((ci % w) as i32) + off(h >> 8), cell_center((ci / w) as i32) + off(h >> 20));
-            self.effects.push(Effect { x, y, tx: x, ty: y, kind: WorldEffect::Leftover(kind), ttl, max: ttl });
+            self.effects.push(crate::husks::leftover_effect(kind, x, y));
         }
     }
 

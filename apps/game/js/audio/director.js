@@ -89,6 +89,12 @@ export const EV = {
   PILOT_EJECTED: 37,
 };
 export const STRIDE = 6;
+/**
+ * The local player of a spectator or a replay viewer: no player at all, so
+ * no event counts as its own (OpenRA PlayToPlayer notifications, placement,
+ * deploy and sell sounds, unit replies stay with their owner).
+ */
+export const NO_PLAYER = -1;
 /** `owner` of events every player hears (sound_events.rs ALL_PLAYERS). */
 export const ALL_PLAYERS = 255;
 
@@ -148,7 +154,7 @@ export class Director {
   /**
    * @param {object} o
    * @param {{ actors: { id: string, kind: string, queue?: number, powers?: string[] }[], weapons: string[] }} o.rules
-   * @param {number} o.player local player index (-1: a spectator, who hears no player's notifications)
+   * @param {number} o.player local player index, or NO_PLAYER (spectators, replays: no player's notifications)
    * @param {'allies' | 'soviet'} o.side local player's side (voice variants)
    * @param {number} o.pxPerWorld pixels per world unit
    * @param {(id: number) => { type: string, owner: number, building: boolean } | null} o.lookup actor info by id

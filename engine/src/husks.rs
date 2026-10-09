@@ -37,6 +37,18 @@ pub const LEFTOVER_HEAL: u8 = 4;
 pub const LEFTOVER_HIDE_MAP: u8 = 5;
 pub const LEFTOVER_REVEAL_MAP: u8 = 6;
 pub const LEFTOVER_INVULN: u8 = 7;
+/// Ticks a leftover effect is drawn, per special (the PRIMARY tag is no
+/// effect). An original sequence played once must end within them
+/// (apps/game/js/content/audit.js FX_LIMITS.leftovers): smoke_m idle has
+/// 49 + 42 frames at one per tick; the crate pickup animations get the
+/// explosions' time (fx.rs EXPLOSION_LIFE).
+pub const LEFTOVER_EFFECT_TICKS: [i32; 8] = [40, 91, 0, 48, 48, 48, 48, 48];
+
+/// A leftover effect `n` (LEFTOVER_*) at (x, y), for its LEFTOVER_EFFECT_TICKS.
+pub fn leftover_effect(n: u8, x: i32, y: i32) -> crate::world::Effect {
+    let ttl = LEFTOVER_EFFECT_TICKS[n as usize];
+    crate::world::Effect { x, y, tx: x, ty: y, kind: crate::world::EffectKind::Leftover(n), ttl, max: ttl }
+}
 
 /// Per actor state of husks and crates.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

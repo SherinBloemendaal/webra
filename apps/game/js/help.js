@@ -23,7 +23,7 @@ export const HELP = Object.freeze({
   mapFile:
     'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first.',
   onlineMap:
-    'A generated map, or a map file from the server or uploaded by the host. Players without the file download it before they can get ready.',
+    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it.',
   seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
 
   // ---- World -----------------------------------------------------------------------

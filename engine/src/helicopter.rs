@@ -627,6 +627,10 @@ impl World {
             let air = self.heli_air(i);
             (air.ammo, air.reload_delay.max(1), air.reload_count.max(1), air.take_off_on_resupply)
         };
+        if self.actors[i].heli.ammo_used > 0 && max > 0 {
+            // The helipad's rearm animation (fx.rs, presentation only).
+            self.note_service(pad);
+        }
         let h = &mut self.actors[i].heli;
         if h.ammo_used > 0 && max > 0 {
             // AmmoPool reload: ReloadCount rounds every ReloadDelay ticks.
@@ -970,7 +974,14 @@ impl World {
                 continue;
             }
             let c = self.crashes.remove(k);
-            self.effects.push(Effect { x: c.x, y: c.y, tx: c.x, ty: c.y, kind: EffectKind::LargeExplosion, ttl: 22, max: 22 });
+            // The death weapon's explosions where it hits the ground (fx.rs), else a generic one.
+            let shown = self.rules.actors[c.ty as usize].death_weapon.is_some_and(|w| {
+                let class = self.impact_class(c.x, c.y);
+                self.spawn_weapon_effects(w, c.x, c.y, class)
+            });
+            if !shown {
+                self.effects.push(Effect { x: c.x, y: c.y, tx: c.x, ty: c.y, kind: EffectKind::LargeExplosion, ttl: 22, max: 22 });
+            }
             if let Some(w) = self.rules.actors[c.ty as usize].death_weapon {
                 for h in 0..self.warhead_count(w) {
                     let delay = self.warhead_delay(w, h).max(1);

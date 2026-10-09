@@ -13,11 +13,15 @@
 // refused for sending orders, a player reconnecting with its rejoin key
 // (order log, sync, resume), leaving, and the stall drop. The play gate:
 // anonymous and pending visitors get no game files, an active account gets
-// them with a play pass, signing out clears it.
+// them with a play pass, signing out clears it. A second, two-player lobby
+// shares the host's custom map with the session only: the guest installs it
+// by hash (checked with the protocol package), the game starts on it, the
+// players save it online, a rematch brings both back into the lobby with
+// their rejoin keys, and the save is resumed in a new session.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
+import { encodeClient, encodeReplay, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -304,6 +308,198 @@ async function playGate(ADMIN, HOST) {
   assert.equal((await get('/play/js/main.js', SUB, cookies.get(LEAVER))).status, 401, 'without the pass, the signed-out session opens nothing');
 }
 
+/**
+ * Map sharing (docs/contracts.md section 4, "Lobby maps") and the rematch:
+ * the host shares a custom map with a two-player lobby only, the guest
+ * installs it by hash and the game starts on it; then both go back to the
+ * lobby and return with their keys.
+ */
+async function sharedMapLobby(HOST, GUEST, WATCHER) {
+  // Three places, so the public list shows the lobby (full lobbies are not listed).
+  const created = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Shared map', public: true, maxPlayers: 3, version: VERSION }) }, HOST);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const { id, hostKey } = created.body;
+  const host = new Client('map-host', HOST);
+  await host.open(id);
+  host.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, hostKey });
+  const hw = await host.type('welcome');
+  const guest = new Client('map-guest', GUEST);
+  await guest.open(id);
+  guest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  const gw = await guest.type('welcome');
+  await host.type('lobby', (m) => m.slots[1].type === 'human');
+  const member = (w) => ({ [MEMBER_HEADER]: `${w.you}.${w.key}` });
+
+  // The host shares a map made for this run (a custom map nobody else has).
+  const w = 48;
+  const terrain = Buffer.alloc(w * w).toString('base64');
+  const custom = { format: 1, name: `Custom <b>${RUN}</b>`, author: `Host ${RUN}`, width: w, height: w, terrain, ore: terrain, spawns: [[3, 3], [44, 44]] };
+  const path = `/api/sessions/${id}/map`;
+  assert.equal((await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(gw) }, GUEST)).body.error.code, 'not_host');
+  assert.equal((await api(path, { method: 'POST', body: JSON.stringify(custom) }, HOST)).status, 403, 'the member header is required');
+  const shared = await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(hw) }, HOST);
+  assert.equal(shared.status, 201, JSON.stringify(shared.body));
+  const announced = await guest.type('lobby', (m) => m.map !== null);
+  const { id: mapId, bytes, ...details } = announced.map;
+  assert.equal(mapId, shared.body.id);
+  assert.ok(bytes > 0 && bytes < 64 * 1024, `file bytes ${bytes}`);
+  assert.deepEqual(details, { hash: shared.body.hash, name: custom.name, modded: false, players: 2, author: custom.author, width: w, height: w, shared: true });
+  assert.deepEqual(announced.slots.map((x) => x.mapState), ['installed', 'missing', undefined]);
+  // Not public: not listed, not served by id, the session list shows its name only.
+  assert.equal((await api('/api/maps')).body.some((m) => m.hash === shared.body.hash), false);
+  assert.equal((await api(`/api/maps/${shared.body.id}`)).status, 404);
+  const listing = (await api('/api/sessions')).body.find((x) => x.id === id);
+  assert.deepEqual(listing.map, { name: custom.name, modded: false, shared: true });
+  host.send({ t: 'map', map: { id: shared.body.id, hash: shared.body.hash, name: 'x', modded: false } });
+  assert.equal((await host.type('error')).code, 'not_found', 'a shared map cannot be picked by id');
+
+  // The guest cannot be ready or let the game start without the map.
+  guest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === true && m.slots[1].mapState === 'installed');
+  guest.send({ t: 'ready', ready: false, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === false);
+  guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'declined' });
+  await host.type('lobby', (m) => m.slots[1].mapState === 'declined');
+
+  // Install: download from the session by hash, as this member, and check it.
+  const get = (who, w2, hash = shared.body.hash) => fetch(`${BASE}${path}?hash=${hash}`, { headers: { Origin: ORIGIN, Cookie: cookies.get(who), ...member(w2) } });
+  assert.equal((await get(WATCHER, gw)).status, 403, "another account cannot use the guest's key");
+  assert.equal((await get(GUEST, gw, 'f'.repeat(64))).status, 409, 'pinned to the lobby map');
+  const dl = await get(GUEST, gw);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.headers.get('cache-control'), 'private, no-store');
+  const text = await dl.text();
+  const parsed = parseMap(text);
+  assert.ok(parsed.ok, parsed.errors?.join('; '));
+  assert.equal(await mapHash(parsed.map), shared.body.hash);
+  assert.equal(await sha256Hex(text), shared.body.hash, 'the canonical text');
+  guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'installed' });
+  await host.type('lobby', (m) => m.slots[1].mapState === 'installed');
+  guest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === true);
+  host.send({ t: 'start' });
+  const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
+  assert.deepEqual(hs, gs);
+  assert.equal(hs.map.hash, shared.body.hash, 'the game runs on the shared map');
+  // Both run ticks like net.js (orders for t + 3 after frame t, a hash every 25 ticks).
+  const hSeat = hs.players.find((p) => p.client === hw.you).player;
+  const gSeat = hs.players.find((p) => p.client === gw.you).player;
+  const played = [];
+  let tick = 0;
+  const playTo = async (to) => {
+    for (; tick < to; tick++) {
+      const [hf] = await Promise.all([host.type('frame', (f) => f.tick === tick), guest.type('frame', (f) => f.tick === tick)]);
+      if (hf.orders.length) played.push([hf.tick, hf.orders]);
+      host.send({ t: 'orders', tick: tick + 3, orders: tick === 4 ? [{ o: 'stop', player: hSeat, ids: [42] }] : [] });
+      guest.send({ t: 'orders', tick: tick + 3, orders: tick === 6 ? [{ o: 'stop', player: gSeat, ids: [43] }] : [] });
+      if (tick > 0 && tick % 25 === 0) {
+        host.send({ t: 'hash', tick, hash: 'e2e0' });
+        guest.send({ t: 'hash', tick, hash: 'e2e0' });
+      }
+    }
+  };
+  await playTo(10);
+  // In the game the map stays available to its members (a reload rejoins with it).
+  assert.equal((await get(GUEST, gw)).status, 200);
+
+  // Online save: the guest proposes, the host agrees, both report the hash at the save point.
+  guest.send({ t: 'save', accept: true });
+  await host.type('save', (m) => m.state === 'open');
+  host.send({ t: 'save', accept: true });
+  const agreed = await guest.type('save', (m) => m.state === 'agreed');
+  await playTo(agreed.tick + 1);
+  const [saved] = await Promise.all([host.type('save', (m) => m.state === 'saved'), guest.type('save', (m) => m.state === 'saved')]);
+  assert.deepEqual([saved.ticks, saved.hash], [agreed.tick + 1, 'e2e0']);
+  // The file each player's browser keeps (js/replay.js Recorder.encodeOnlineSave).
+  const saveText = encodeReplay({
+    format: REPLAY_FORMAT,
+    version: REPLAY_VERSION,
+    kind: 'save',
+    mode: 'online',
+    engine: VERSION,
+    createdAt: Date.now(),
+    title: 'Shared map',
+    options: hs.options,
+    map: text,
+    mapHash: shared.body.hash,
+    player: hSeat,
+    ticks: saved.ticks,
+    frames: played.filter(([t]) => t < saved.ticks),
+    hashes: [[saved.ticks, saved.hash]],
+    online: { id: saved.id },
+  });
+
+  // Rematch: the host proposes, the guest accepts, both go back to the lobby.
+  host.send({ t: 'rematch', accept: true });
+  const open = await guest.type('rematch', (m) => m.state === 'open');
+  assert.deepEqual(open.waiting, [gw.you]);
+  guest.send({ t: 'rematch', accept: true });
+  await Promise.all([host.type('rematch', (m) => m.state === 'lobby'), guest.type('rematch', (m) => m.state === 'lobby')]);
+  // The pages reload: new connections with the same keys bring both back.
+  host.ws.close();
+  guest.ws.close();
+  const back = [];
+  for (const [who, w2] of [[HOST, hw], [GUEST, gw]]) {
+    const c = new Client(`${who}-back`, who);
+    await c.open(id);
+    c.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, rejoin: { client: w2.you, key: w2.key } });
+    assert.equal((await c.type('welcome')).you, w2.you);
+    back.push(c);
+  }
+  const lobby = await back[1].type('lobby');
+  assert.equal(lobby.map.hash, shared.body.hash, 'the same map');
+  assert.deepEqual(
+    lobby.slots.filter((x) => x.type === 'human').map((x) => [x.client, x.ready, x.mapState]),
+    [[hw.you, false, 'installed'], [gw.you, false, 'installed']],
+  );
+  for (const c of back) c.send({ t: 'leave' });
+
+  // Resume the online save in a new session: the guest comes back by its account,
+  // installs the map, both catch up through the saved orders and play on after the save point.
+  const again = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Resumed', public: false, maxPlayers: 2, version: VERSION }) }, HOST);
+  assert.equal(again.status, 201);
+  const rhost = new Client('resume-host', HOST);
+  await rhost.open(again.body.id);
+  rhost.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, hostKey: again.body.hostKey });
+  const rhw = await rhost.type('welcome');
+  const resumePath = `/api/sessions/${again.body.id}/resume`;
+  const tampered = saveText.replace('"ids":[42]', '"ids":[41]');
+  assert.equal((await api(resumePath, { method: 'POST', body: tampered, headers: member(rhw) }, HOST)).status, 409, 'checked against the record');
+  assert.equal((await api(resumePath, { method: 'POST', body: saveText, headers: member(rhw) }, WATCHER)).status, 403, 'another account');
+  const loaded = await api(resumePath, { method: 'POST', body: saveText, headers: member(rhw) }, HOST);
+  assert.equal(loaded.status, 200, JSON.stringify(loaded.body));
+  const rl = await rhost.type('lobby', (m) => m.resume !== undefined);
+  assert.deepEqual(rl.resume.waiting, [GUEST]);
+  assert.equal(rl.map.hash, shared.body.hash);
+  const rguest = new Client('resume-guest', GUEST);
+  await rguest.open(again.body.id);
+  rguest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  const rgw = await rguest.type('welcome');
+  await rhost.type('lobby', (m) => m.resume?.waiting.length === 0);
+  rguest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await rhost.type('lobby', (m) => m.slots.some((x) => x.client === rgw.you && x.ready));
+  rhost.send({ t: 'start' });
+  const [rs] = await Promise.all([rhost.type('start'), rguest.type('start')]);
+  assert.deepEqual(rs.resume, { ticks: saved.ticks, hash: saved.hash });
+  const sync = await rguest.type('sync');
+  assert.deepEqual(sync.check, { tick: saved.ticks - 1, hash: saved.hash });
+  rhost.send({ t: 'resume' });
+  rguest.send({ t: 'resume' });
+  await Promise.all([rhost.type('back', (m) => m.client === rgw.you), rguest.type('back', (m) => m.client === rhw.you)]);
+  const seatOf = (w) => rs.players.find((p) => p.client === w.you).player;
+  const resumed = [];
+  for (let t = saved.ticks; t < saved.ticks + 5; t++) {
+    const [f] = await Promise.all([rhost.type('frame', (x) => x.tick === t), rguest.type('frame', (x) => x.tick === t)]);
+    resumed.push(f);
+    rhost.send({ t: 'orders', tick: t + 3, orders: [] });
+    rguest.send({ t: 'orders', tick: t + 3, orders: t === saved.ticks ? [{ o: 'stop', player: seatOf(rgw), ids: [44] }] : [] });
+  }
+  assert.deepEqual(resumed.at(-2).orders.map(([p]) => p), [seatOf(rgw)], 'the resumed game goes on in lockstep');
+  rhost.send({ t: 'leave' });
+  rguest.send({ t: 'leave' });
+  console.log('  shared map lobby, online save, rematch and resume passed');
+}
+
 async function main() {
   // ---- Accounts ------------------------------------------------------------------
   const v = await api('/api/version');
@@ -345,6 +541,7 @@ async function main() {
     assert.equal(r.body.user.canPlayOnline, true);
   }
   await playGate(ADMIN, HOST);
+  await sharedMapLobby(HOST, GUEST, WATCHER);
 
   const stats = await api('/api/admin/stats', {}, ADMIN);
   assert.equal(stats.status, 200);
@@ -496,6 +693,11 @@ async function main() {
   assert.equal((await guest.type('error')).code, 'not_ready');
   guest.send({ t: 'ready', ready: true, mapHash: up.body.hash });
   await host.type('lobby', (m) => m.slots[1].ready === true);
+  // Spectators need the map too (protocol 6): the start waits for the watcher.
+  host.send({ t: 'start' });
+  assert.match((await host.type('error')).message, /does not have the map/);
+  watcher2.send({ t: 'mapstate', hash: up.body.hash, state: 'installed' });
+  await host.type('lobby', (m) => m.spectators[0].mapState === 'installed');
   host.send({ t: 'start' });
   const [hs, gs, ws] = await Promise.all([host.type('start'), guest.type('start'), watcher2.type('start')]);
   assert.deepEqual(hs, gs);

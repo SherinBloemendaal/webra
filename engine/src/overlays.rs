@@ -75,6 +75,9 @@ pub struct RenderOptions {
     /// Structures whose body shows the storage level (OpenRA
     /// WithResourceLevelSpriteBody): `(actor type, stages)`.
     pub level_stages: Vec<(u16, u32)>,
+    /// The original damage smoke (fx.rs `smoke_frame`): milliseconds per
+    /// frame, start frames, loop frames.
+    pub smoke_frames: Option<(u32, u32, u32)>,
 }
 
 impl Default for RenderOptions {
@@ -88,6 +91,7 @@ impl Default for RenderOptions {
             original_slots: Vec::new(),
             unit_overlays: Vec::new(),
             level_stages: Vec::new(),
+            smoke_frames: None,
         }
     }
 }
@@ -96,6 +100,8 @@ impl Default for RenderOptions {
 /// `info` list (four integers each: kind, actor type, a, b).
 pub const ORIGINAL_INFO_OVERLAY: i32 = 0;
 pub const ORIGINAL_INFO_LEVEL: i32 = 1;
+/// `[kind, milliseconds per frame, start frames, loop frames]` of the original damage smoke.
+pub const ORIGINAL_INFO_SMOKE: i32 = 2;
 /// Integers per `info` record.
 pub const ORIGINAL_INFO_STRIDE: usize = 4;
 
@@ -130,11 +136,15 @@ impl RenderOptions {
         self.original_slots = slots;
         self.unit_overlays.clear();
         self.level_stages.clear();
+        self.smoke_frames = None;
         for r in info.as_chunks::<ORIGINAL_INFO_STRIDE>().0 {
             let Ok(ty) = u16::try_from(r[1]) else { continue };
             match r[0] {
                 ORIGINAL_INFO_OVERLAY => self.unit_overlays.push((ty, r[2], r[3])),
                 ORIGINAL_INFO_LEVEL if r[2] > 0 => self.level_stages.push((ty, r[2] as u32)),
+                ORIGINAL_INFO_SMOKE if r[1] > 0 && r[2] >= 0 && r[3] >= 0 => {
+                    self.smoke_frames = Some((r[1] as u32, r[2] as u32, r[3] as u32))
+                }
                 _ => {}
             }
         }

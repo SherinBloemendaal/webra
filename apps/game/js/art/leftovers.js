@@ -13,10 +13,10 @@ const OUTLINE = '#141414';
 
 /**
  * Where the leftover specials start after the actor slots: past the 12
- * built-in specials and the six art modules before this one (SPECIAL_SLOTS
+ * built-in specials and the seven art modules before this one (SPECIAL_SLOTS
  * each; engine/src/render.rs SpriteIds::leftovers_base).
  */
-export const LEFTOVER_SPECIAL_OFFSET = 60;
+export const LEFTOVER_SPECIAL_OFFSET = 68;
 
 /** A steel crate (OpenRA scrate: the multiplayer crate). */
 function steelCrate(ctx, P, x, y, s) {

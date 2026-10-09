@@ -529,3 +529,76 @@
   gap: 6px;
   align-items: center;
 }
+
+/* ---- Lobby maps (shared maps, install question, who has the map) ---------- */
+
+.online-map-offer {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--o-edge);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.online-map-question {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.online-map-offer .online-dialog-actions {
+  justify-content: flex-start;
+  margin-top: 6px;
+}
+
+.online-map-details,
+.online-map-note {
+  overflow-wrap: anywhere;
+}
+
+.online-map-installed {
+  color: #9fd88a;
+  border-color: #3f6e33;
+}
+
+.online-map-missing {
+  color: var(--muted);
+}
+
+.online-map-declined {
+  color: #ffb4a2;
+  border-color: #b0412e;
+}
+
+.online-btn-small {
+  margin-left: 6px;
+  padding: 0 6px;
+  min-height: 0;
+  font-size: 11px;
+}
+
+/* ---- Rematch (in game) ---------------------------------------------------- */
+
+.online-game-rematch {
+  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 2px;
+  color: #ffd27a;
+  pointer-events: auto;
+}
+
+.online-game-rematch[hidden] {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .online-btn-small {
+    min-height: 44px;
+    padding: 0 12px;
+  }
+}

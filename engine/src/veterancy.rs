@@ -177,8 +177,7 @@ impl World {
         // GainsExperience LevelUpImage crate-effects: the level up animation (presentation, husks.rs).
         if ranks > 0 {
             let (x, y) = (self.actors[i].x, self.actors[i].y);
-            let kind = crate::world::EffectKind::Leftover(crate::husks::LEFTOVER_LEVELUP);
-            self.effects.push(crate::world::Effect { x, y, tx: x, ty: y, kind, ttl: 30, max: 30 });
+            self.effects.push(crate::husks::leftover_effect(crate::husks::LEFTOVER_LEVELUP, x, y));
         }
         self.note_experience(i, xp - before.0, ranks);
     }

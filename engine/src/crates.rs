@@ -24,7 +24,7 @@ use crate::math::{dist_sq, facing_vec, CELL};
 use crate::rules::{Domain, Kind};
 use crate::rules_options::{CrateAction, CrateActionKind};
 use crate::sound_events::SoundEventKind;
-use crate::world::{cell_center, Effect, EffectKind, World, NONE};
+use crate::world::{cell_center, World, NONE};
 
 /// Most attempts at finding a drop cell (OpenRA ChooseDropCell maxTries).
 const DROP_TRIES: i32 = 100;
@@ -334,7 +334,7 @@ impl World {
                 };
                 if let Some(n) = anim {
                     let (cx, cy) = (self.actors[collector].x, self.actors[collector].y);
-                    self.effects.push(Effect { x: cx, y: cy, tx: cx, ty: cy, kind: EffectKind::Leftover(n), ttl: 30, max: 30 });
+                    self.effects.push(crate::husks::leftover_effect(n, cx, cy));
                 }
                 self.activate_crate(&info.actions[k], collector, x, y);
                 let owner = self.actors[collector].owner;

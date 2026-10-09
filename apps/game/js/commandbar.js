@@ -23,7 +23,7 @@
 // disarms them. js/input.js asks this bar first through its hooks
 // (commandMouseDown, commandClick, commandCursor, cancelCommand, queueAttackMove).
 
-import { CURSORS } from './cursors.js';
+import { CURSORS, COMMAND_CURSOR_NAMES, registerCursors } from './cursors.js';
 import { formatCombo } from './hotkeys.js';
 import { actorInfo, askOf } from './sim/methods.js';
 import { attachTooltip } from './ui/tooltip.js';
@@ -126,6 +126,8 @@ export const COMMAND_CURSORS = {
     'pointer',
   ),
 };
+// With the original graphics: OpenRA's attack, guard and move cursors (cursors.js setCursorArt).
+registerCursors(COMMAND_CURSORS, COMMAND_CURSOR_NAMES);
 
 // ---- Pure state ----------------------------------------------------------------------------
 

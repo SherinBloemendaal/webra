@@ -32,8 +32,8 @@ pub struct SpriteIds {
     pub large_explosion: f32,
     pub piff: f32,
     pub rally: f32,
-    pub at_mine: f32,
-    pub ap_mine: f32,
+    // b + 5, b + 6: reserved (the at_mine and ap_mine names of texture packs
+    // address the mine actors' bodies: mines are drawn as actors, abilities.rs).
     /// Drawn pointing east (screen +x).
     pub tesla_bolt: f32,
     /// Drawn pointing east (screen +x).
@@ -49,6 +49,12 @@ pub struct SpriteIds {
     pub veterancy_base: f32,
     /// Repair wrench and power off icon (repair.rs).
     pub decorations_base: f32,
+    /// Damage smoke and the original Tesla zap frames (fx.rs).
+    pub fx_base: f32,
+    /// Actor `t`'s muzzle flash is `muzzle_base + t` (fx.rs).
+    pub muzzle_base: f32,
+    /// Explosion `k` of `Rules::render.explosions` is `explosion_base + k` (fx.rs).
+    pub explosion_base: f32,
     /// Husk fire, smoke, the PRIMARY tag and the crate pickup animations
     /// (husks.rs `LEFTOVER_SPECIALS`, apps/game/js/art/leftovers.js).
     pub leftovers_base: f32,
@@ -63,8 +69,6 @@ impl SpriteIds {
             large_explosion: b + 2.0,
             piff: b + 3.0,
             rally: b + 4.0,
-            at_mine: b + 5.0,
-            ap_mine: b + 6.0,
             tesla_bolt: b + 7.0,
             missile: b + 8.0,
             shell: b + 9.0,
@@ -76,7 +80,10 @@ impl SpriteIds {
             abilities_base: b + 36.0,
             veterancy_base: b + 44.0,
             decorations_base: b + 52.0,
-            leftovers_base: b + 60.0,
+            fx_base: b + 60.0,
+            leftovers_base: b + 68.0,
+            muzzle_base: b + 76.0,
+            explosion_base: b + 76.0 + actor_count as f32,
         }
     }
 }
@@ -127,6 +134,14 @@ pub enum Pose {
     /// A second overlay of the slot (the Chinook's rear rotor) on the ground and in the air.
     AuxIdle = 9,
     AuxMove = 10,
+    /// Working (fx.rs): resupplying, charging, launching, placing, recoiling,
+    /// the landing craft's doors open, the V2 launcher reloading.
+    Active = 11,
+    DamagedActive = 12,
+    /// A paratrooper falling under its parachute.
+    Parachute = 13,
+    /// Done working: the landing craft closing, the harvester leaving the refinery.
+    ActiveEnd = 14,
 }
 
 /// Sprite ids with poses: `slot + POSE_STRIDE * (pose + POSE_CODES * age)`.
@@ -228,7 +243,13 @@ impl World {
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 // Interpolated by the frame's alpha like unit turrets (the angle used to be taken at the building's opacity).
                 let slot = a.ty as u32 * 2 + 1;
-                let turret = if self.render_opts.poses && self.heavily_damaged(i) { posed(slot, Pose::Damaged, 0) } else { slot as f32 };
+                let damaged = self.heavily_damaged(i);
+                let turret = match self.fx_turret_pose(i, damaged).filter(|_| self.render_opts.poses) {
+                    // Recoil after a shot (OpenRA WithTurretAttackAnimation, fx.rs).
+                    Some((pose, age)) => posed(slot, pose, age),
+                    None if self.render_opts.poses && damaged => posed(slot, Pose::Damaged, 0),
+                    None => slot as f32,
+                };
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(turret, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut building_turrets, r);
                 if dim {
@@ -236,6 +257,8 @@ impl World {
                     sink.sprite(&mut building_turrets, r);
                 }
             }
+            // Muzzle flashes of defences (fx.rs).
+            self.push_muzzle(i, at, 0.0, sink, &mut building_turrets);
         }
         // The spectator view (observer.rs) draws every structure live, no ghosts.
         for g in p.ghosts.values().filter(|_| !self.render_all) {
@@ -290,6 +313,8 @@ impl World {
                 }
                 // Helicopter rotors and rotor wash (helicopter.rs).
                 self.push_heli_rotors(i, at, lift, sink, sprites, &mut aircraft);
+                // Muzzle flashes (fx.rs).
+                self.push_muzzle(i, at, lift, sink, &mut aircraft);
                 continue;
             }
             // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
@@ -300,6 +325,11 @@ impl World {
             let flash = (a.flash > 0) as i32 as f32;
             if a.kind == Kind::Ship {
                 self.push_ship(sink, sprites, &mut turrets, a, at, flash, &ids);
+                if !a.submerged {
+                    // Muzzle flashes and damage smoke (fx.rs).
+                    self.push_muzzle(i, at, 0.0, sink, &mut turrets);
+                    self.push_damage_smoke(i, at, 0.0, sink, &mut turrets);
+                }
                 continue;
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
@@ -325,6 +355,9 @@ impl World {
                 let r = at.facing(a.pfacing, turn).look(posed(a.ty as u32 * 2 + 1, Pose::Idle, 0), a.owner as f32, 1.0, body_alpha, flash);
                 sink.sprite(&mut turrets, r.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
             }
+            // Muzzle flashes and damage smoke (fx.rs).
+            self.push_muzzle(i, at, 0.0, sink, &mut turrets);
+            self.push_damage_smoke(i, at, 0.0, sink, &mut turrets);
         }
         // Shot-down helicopters falling (helicopter.rs).
         self.push_heli_crashes(player, sink, sprites, &mut aircraft);
@@ -374,6 +407,39 @@ impl World {
             let age = |alpha: f32| 1.0 - (e.ttl as f32 - alpha).max(0.0) / e.max as f32;
             let (t0, t1) = (age(0.0), age(1.0));
             let (fade0, fade1) = ((1.0 - t0).max(0.0), (1.0 - t1).max(0.0));
+            if let EffectKind::Explosion(k, delay) = e.kind {
+                // An explosion of a CreateEffect warhead (fx.rs), after its delay.
+                let slot = ids.explosion_base as u32 + k as u32;
+                let age = e.max - e.ttl - delay as i32;
+                if age < 0 {
+                    continue;
+                }
+                if self.render_opts.is_original(slot) {
+                    // OpenRA's sequence plays once from its start.
+                    sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(posed(slot, Pose::Make, age as u32), 0.0, 1.0, 1.0, 0.0));
+                    continue;
+                }
+                let name = self.rules.render.explosions.get(k as usize).map_or("", String::as_str);
+                let (s0, s1, ticks) = crate::fx::webra_explosion(name);
+                if age >= ticks {
+                    continue;
+                }
+                let at = |f: f32| {
+                    let t = (f / ticks as f32).min(1.0);
+                    (s0 + (s1 - s0) * t, 1.0 - t)
+                };
+                let ((scale0, a0), (scale1, a1)) = (at(age as f32), at(age as f32 + 1.0));
+                sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(slot as f32, 0.0, scale0, a0, 0.0).fade_to(scale1, a1));
+                continue;
+            }
+            if e.kind == EffectKind::TeslaBolt && self.render_opts.is_original((ids.fx_base + crate::fx::FX_ZAP_BRIGHT) as u32) {
+                // OpenRA's Tesla zap (TeslaZap.Duration ticks), stepped along in litning.shp frames.
+                if e.max - e.ttl < crate::fx::ZAP_TICKS {
+                    let seed = crate::fx::fx_hash(e.x ^ e.tx, e.y ^ e.ty, (e.max - e.ttl) as u32);
+                    self.push_tesla_zap([x, y], [px(e.tx), px(e.ty)], seed, sink, sprites);
+                }
+                continue;
+            }
             if e.kind == EffectKind::TeslaBolt {
                 // A chain of short zigzag segments from the coil to the target.
                 let (tx, ty) = (px(e.tx), px(e.ty));
@@ -398,7 +464,7 @@ impl World {
                 EffectKind::Naval(n) => (ids.naval_base + n as f32, 0.7 + t * 0.6, fade),
                 // Smudge smoke and crate pickup animations (husks.rs LEFTOVER_*).
                 EffectKind::Leftover(n) => (ids.leftovers_base + n as f32, 1.0, fade.min(1.0) * 0.9 + 0.1),
-                EffectKind::TeslaBolt => unreachable!(),
+                EffectKind::TeslaBolt | EffectKind::Explosion(..) => unreachable!(),
             };
             let ((sprite, scale0, a0), (_, scale1, a1)) = (look(t0, fade0), look(t1, fade1));
             if self.render_opts.is_original(sprite as u32) {
@@ -600,6 +666,10 @@ impl World {
         if a.born > 0 && age < MAX_POSE_AGE {
             return (Pose::Make, age);
         }
+        // Working animations (fx.rs): resupplying, the Tesla charge, a launch, placing.
+        if let Some(working) = self.fx_building_pose(i, damaged) {
+            return working;
+        }
         if let Some(stages) = self.render_opts.level_stages(a.ty) {
             // OpenRA WithResourceLevelSpriteBody: the stage of the owner's storage
             // level, (stages - 1) * resources / capacity, named in the age.
@@ -640,7 +710,12 @@ impl World {
         if !self.render_opts.poses {
             return slot as f32;
         }
-        let (pose, age) = if self.actors[i].kind == Kind::Building { self.building_pose(i) } else { (self.unit_pose(i), 0) };
+        let (pose, age) = if self.actors[i].kind == Kind::Building {
+            self.building_pose(i)
+        } else {
+            // Working, docking, falling (fx.rs) before moving and attacking.
+            self.fx_unit_pose(i).unwrap_or((self.unit_pose(i), 0))
+        };
         posed(slot, pose, age)
     }
 

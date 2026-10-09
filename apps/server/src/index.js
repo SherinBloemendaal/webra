@@ -5,14 +5,26 @@
 // this handler first (wrangler.jsonc `run_worker_first`). The daily cron
 // trigger runs the accounts retention job.
 
-import { PROTOCOL_VERSION, SESSION_ID_RE } from '@webra/protocol';
+import {
+  framesDigest,
+  LOG_MAX_BYTES,
+  MAP_MAX_BYTES,
+  MEMBER_HEADER,
+  MEMBER_RE,
+  optionsDigest,
+  parseReplay,
+  PROTOCOL_VERSION,
+  SESSION_ID_RE,
+  SHA256_RE,
+} from '@webra/protocol';
 import pkg from '../package.json' with { type: 'json' };
-import { checkCsrf, checkOrigin, errorResponse, HttpError, json, readJson, withCookies } from './http.js';
+import { checkCsrf, checkOrigin, errorResponse, HttpError, json, jsonText, readJson, readText, withCookies } from './http.js';
 import { listSessions, pruneSessions } from './directory.js';
-import { getMap, listMaps, uploadMap } from './maps.js';
+import { checkJsonType, getMap, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
+import { loadSaveRecord } from './onlinesaves.js';
 import { scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
@@ -63,6 +75,132 @@ async function connectSession(ctx, id) {
   return env.SESSION.get(doId).fetch(new Request(request, { headers }));
 }
 
+/** The session's Durable Object for an id from a path (404 for malformed ids). */
+function sessionStub(env, id) {
+  if (!SESSION_ID_RE.test(id)) throw new HttpError(404, 'not_found', 'No such session.');
+  try {
+    return env.SESSION.get(env.SESSION.idFromString(id));
+  } catch {
+    throw new HttpError(404, 'not_found', 'No such session.');
+  }
+}
+
+/** The member credential of a session map request: `<client>.<rejoin key>` (docs/contracts.md section 4). */
+function memberOf(request) {
+  const m = MEMBER_RE.exec(request.headers.get(MEMBER_HEADER) ?? '');
+  const client = m ? Number(m[1]) : 0;
+  if (!m || client > 0x7fffffff) throw new HttpError(403, 'forbidden', 'You are not a member of this session.');
+  return { client, key: m[2] };
+}
+
+/** An RPC answer of the session object, or its error as an HttpError. */
+function rpcResult(r) {
+  if (r?.ok === true) return r;
+  if (r && Number.isInteger(r.status) && typeof r.code === 'string') throw new HttpError(r.status, r.code, String(r.message));
+  throw new HttpError(500, 'internal', 'The session did not answer.');
+}
+
+/**
+ * GET /api/sessions/<id>/map?hash=<sha256>: the session's map file for one of
+ * its members (docs/security.md "Map sharing"). Never cached by anyone else.
+ */
+async function sessionMapGet(ctx, id) {
+  const hash = ctx.url.searchParams.get('hash') ?? '';
+  if (!SHA256_RE.test(hash)) throw new HttpError(400, 'bad_message', 'The map hash is missing or malformed.');
+  const member = memberOf(ctx.request);
+  const stub = sessionStub(ctx.env, id);
+  const account = await requirePlay(ctx);
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'mapget', ctx.ip, SESSION_MAP_GET_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many map downloads. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const r = rpcResult(await stub.memberMap({ member, account, ip: ctx.ip, hash }));
+  return jsonText(r.text, 200, { 'cache-control': 'private, no-store' });
+}
+
+/**
+ * POST /api/sessions/<id>/map: the host shares a map file with this session
+ * only. Validated like a public upload (protocol package and engine, upload
+ * quota) and stored unlisted.
+ */
+async function sessionMapShare(ctx, id) {
+  checkJsonType(ctx.request);
+  const member = memberOf(ctx.request);
+  const stub = sessionStub(ctx.env, id);
+  const account = await requirePlay(ctx);
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'maps', ctx.ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many map uploads. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const prepared = await prepareMap(await readText(ctx.request, MAP_MAX_BYTES));
+  const r = rpcResult(await stub.shareMap({ member, account, ip: ctx.ip, prepared }));
+  return json({ id: r.id, hash: r.hash }, r.created ? 201 : 200);
+}
+
+/** Resumes per network and hour (each upload is a whole save file). */
+const RESUME_LIMIT = 10;
+/**
+ * Largest resume upload: the orders (the order log limit), the map and room
+ * for the rest of the file. Checked from Content-Length before reading.
+ */
+const RESUME_MAX_BYTES = LOG_MAX_BYTES + MAP_MAX_BYTES + 256 * 1024;
+
+/**
+ * POST /api/sessions/<id>/resume: the host loads a saved online game into
+ * its lobby (docs/contracts.md section 4, "Online saves"). Cheap checks first
+ * (member header, account, quota, the host role, Content-Length), then the
+ * file is checked strictly (orders within the order log limit while they are
+ * validated) and against the server's record of the save: the same save
+ * point, state hash, orders, options, map and game version, and the
+ * requester's account played in it.
+ */
+async function sessionResume(ctx, id) {
+  checkJsonType(ctx.request);
+  const member = memberOf(ctx.request);
+  const stub = sessionStub(ctx.env, id);
+  const account = await requirePlay(ctx);
+  if (!account) throw new HttpError(403, 'account_required', 'Resuming an online game needs a signed-in account.');
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'resume', ctx.ip, RESUME_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many resumed games. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const declared = ctx.request.headers.get('Content-Length');
+  if (declared !== null && (!/^\d{1,10}$/.test(declared) || Number(declared) > RESUME_MAX_BYTES)) {
+    throw new HttpError(413, 'too_large', 'This saved game is too large to resume online.');
+  }
+  // Only the host's own upload is read at all.
+  rpcResult(await stub.checkHost({ member, account, ip: ctx.ip }));
+  const parsed = await parseReplay(await readText(ctx.request, RESUME_MAX_BYTES), { maxBytes: RESUME_MAX_BYTES, maxFrameBytes: LOG_MAX_BYTES });
+  if (!parsed.ok) {
+    if (parsed.code === 'too_large') throw new HttpError(413, 'too_large', 'This game is too long to resume online.');
+    throw new HttpError(422, 'invalid', `Invalid save: ${parsed.error}.`);
+  }
+  const save = parsed.replay;
+  if (save.kind !== 'save' || save.mode !== 'online') throw new HttpError(422, 'invalid', 'This is not a saved online game.');
+  const record = await loadSaveRecord(ctx.env.DB, save.online.id);
+  if (!record) throw new HttpError(404, 'not_found', 'The server no longer knows this saved game (records are kept for 90 days).');
+  const same =
+    record.ticks === save.ticks &&
+    record.stateHash === save.hashes.at(-1)[1] &&
+    record.engine === save.engine &&
+    record.mapHash === save.mapHash &&
+    record.framesDigest === (await framesDigest(save.frames)) &&
+    record.optionsDigest === (await optionsDigest(save.options));
+  if (!same) throw new HttpError(409, 'invalid', 'This file does not match the saved game on the server.');
+  const seats = save.options.players.map((p, i) => (p.type === 'human' ? (record.members.find((m) => m.seat === i)?.userId ?? null) : null));
+  if (save.options.players.some((p, i) => p.type === 'human' && seats[i] === null)) throw new HttpError(409, 'invalid', 'A player of this saved game no longer exists.');
+  if (!seats.includes(account.id)) throw new HttpError(403, 'forbidden', 'You did not play in this saved game.');
+  const prepared = save.map ? await prepareMap(save.map) : null;
+  const r = rpcResult(
+    await stub.loadSave({
+      member,
+      account,
+      ip: ctx.ip,
+      resume: { id: record.id, title: record.title, createdAt: record.createdAt, engine: save.engine, ticks: save.ticks, hash: record.stateHash, options: save.options, seats, mapHash: save.mapHash },
+      frames: save.frames,
+      prepared,
+    }),
+  );
+  return json({ id: record.id, ok: r.ok });
+}
+
 async function route(ctx) {
   const { request, env, exec } = ctx;
   const path = ctx.url.pathname;
@@ -88,6 +226,17 @@ async function route(ctx) {
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     return connectSession(ctx, m[1]);
+  }
+  m = /^\/api\/sessions\/([^/]+)\/map$/.exec(path);
+  if (m) {
+    if (method === 'GET') return sessionMapGet(ctx, m[1]);
+    if (method === 'POST') return sessionMapShare(ctx, m[1]);
+    throw methodNotAllowed('GET, POST');
+  }
+  m = /^\/api\/sessions\/([^/]+)\/resume$/.exec(path);
+  if (m) {
+    if (method !== 'POST') throw methodNotAllowed('POST');
+    return sessionResume(ctx, m[1]);
   }
   if (path === '/api/maps') {
     if (method === 'GET') return listMaps(env);

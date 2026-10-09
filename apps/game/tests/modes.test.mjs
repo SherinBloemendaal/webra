@@ -288,6 +288,7 @@ async function mountOnline({ host }) {
     installed: new Map(),
     mapStatus: { hash: null, text: '', ok: true },
     serverMaps: [],
+    libraryMaps: [],
     send: (m) => sent.push(m),
     state: {
       you: host ? 1 : 2,

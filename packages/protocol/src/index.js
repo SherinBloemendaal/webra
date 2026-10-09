@@ -16,6 +16,7 @@ export {
   isCheatOrder,
   validFrameOrders,
   validLobbySlot,
+  validResumeInfo,
   validMapRef,
   validName,
   ORDER_KINDS,
@@ -51,6 +52,10 @@ export {
 } from './map.js';
 export {
   encodeReplay,
+  FramesDigest,
+  framesDigest,
+  logEntryBytes,
+  optionsDigest,
   parseReplay,
   replayHeader,
   REPLAY_FORMAT,

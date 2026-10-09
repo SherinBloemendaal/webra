@@ -77,8 +77,9 @@ export class IdbBackend {
 }
 
 /**
- * Saved games. Rows: { id, title, createdAt, ticks, engine, data } where
- * `data` is the save file's text.
+ * Saved games. Rows: { id, title, createdAt, ticks, engine, mode, online, data }
+ * where `data` is the save file's text, `mode` skirmish or online and
+ * `online` the server's record id of an online save (older rows: skirmish).
  */
 export class SaveStore {
   constructor(backend) {
@@ -106,8 +107,9 @@ export class SaveStore {
     if (r.replay.kind !== 'save') throw new Error('Only saves can be stored here.');
     const rows = await this.backend.all();
     if (rows.length >= SAVE_SLOTS_MAX) throw new Error(`There are already ${SAVE_SLOTS_MAX} saves. Delete one first.`);
-    const { title, createdAt, ticks, engine } = r.replay;
-    return this.backend.add({ title, createdAt, ticks, engine, data: text });
+    const { title, createdAt, ticks, engine, mode } = r.replay;
+    // Online saves are resumed online (Play online, Resume a saved game), never loaded alone.
+    return this.backend.add({ title, createdAt, ticks, engine, mode, online: r.replay.online?.id ?? null, data: text });
   }
 
   /**
@@ -122,6 +124,12 @@ export class SaveStore {
 
   async remove(id) {
     await this.backend.remove(id);
+  }
+
+  /** A save's file text as stored (an online save is uploaded as it is to resume it), or null. */
+  async text(id) {
+    const row = await this.backend.get(id);
+    return row ? row.data : null;
   }
 }
 
