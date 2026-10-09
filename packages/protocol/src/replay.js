@@ -99,7 +99,7 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
     const orders = validFrameOrders(f[1], `frames[${i}]`);
     if (orders.length === 0) fail(`frames[${i}] is empty (empty frames are left out)`);
     for (const [p] of orders) if (p >= players) fail(`frames[${i}] names player ${p} of ${players}`);
-    frameBytes += JSON.stringify(orders).length + 16;
+    frameBytes += logEntryBytes(tick, orders);
     if (frameBytes > maxFrameBytes) fail('the orders are too long', 'too_large');
     return [tick, orders];
   });
@@ -175,6 +175,15 @@ export async function parseReplay(raw, { version = null, maxBytes = REPLAY_MAX_B
     if (err instanceof ProtocolError) return { ok: false, error: err.message, code: err.code };
     throw err;
   }
+}
+
+/**
+ * Bytes one frame takes in the server's order log (apps/server/src/orderlog.js)
+ * and in an online save's orders budget: one definition for both, so a game
+ * the server recorded as saved always fits when it is resumed.
+ */
+export function logEntryBytes(tick, orders) {
+  return JSON.stringify([tick, orders]).length + 1;
 }
 
 /**

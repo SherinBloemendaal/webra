@@ -54,6 +54,7 @@ export {
   encodeReplay,
   FramesDigest,
   framesDigest,
+  logEntryBytes,
   optionsDigest,
   parseReplay,
   replayHeader,
