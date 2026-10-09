@@ -839,6 +839,15 @@ impl Game {
             .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_guard(player, i, t))
     }
 
+    /// Whether a plain move of `ids` to (x, y) (world pixels) passes visible
+    /// enemies the armed units among them would ignore: the client offers the
+    /// attack-move tip then (World::move_hint).
+    pub fn move_hint(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> bool {
+        let w = &self.world;
+        let actors: Vec<usize> = ids.iter().filter_map(|&r| w.resolve(r)).collect();
+        w.move_hint(player, &actors, to_wu(x), to_wu(y))
+    }
+
     /// Whether players `a` and `b` are on the same side (the same player too).
     pub fn are_allies(&self, a: u8, b: u8) -> bool {
         let n = self.world.players.len();

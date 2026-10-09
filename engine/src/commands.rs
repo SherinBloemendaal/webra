@@ -28,7 +28,52 @@ use crate::world::{cell_center, Activity, Waypoint, World, MAX_WAYPOINTS, NONE};
 /// Guardable.Range: guards stay this close to the unit they protect.
 pub const GUARD_RANGE: i32 = 2 * CELL;
 
+/// `move_hint`: visible enemies this close to a plain move's path or
+/// destination make the attack-move tip worth showing.
+pub const MOVE_HINT_RADIUS: i32 = 6 * CELL;
+
 impl World {
+    /// Whether a plain move of `player`'s `ids` to (x, y) (world units) walks
+    /// into a fight it will not take up: the selection has armed units that
+    /// pick their own targets, and a visible enemy (a unit, or a structure
+    /// with weapons) is within `MOVE_HINT_RADIUS` of the destination or of
+    /// the straight line from the selection to it. The client then shows
+    /// the attack-move tip once (apps/game/js/hints.js). Read only.
+    pub fn move_hint(&self, player: u8, ids: &[usize], x: i32, y: i32) -> bool {
+        let units: Vec<usize> = ids
+            .iter()
+            .copied()
+            .filter(|&i| {
+                let a = &self.actors[i];
+                a.alive && a.owner == player && a.is_unit() && a.in_world() && a.kind != Kind::Aircraft
+            })
+            .collect();
+        if !units.iter().any(|&i| self.has_stance(i)) {
+            return false;
+        }
+        let n = units.len() as i64;
+        let cx = (units.iter().map(|&i| self.actors[i].x as i64).sum::<i64>() / n) as i32;
+        let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
+        // Distance from (px, py) to the segment from the selection to the destination.
+        let to_path = |px: i32, py: i32| -> i32 {
+            let (dx, dy) = ((x - cx) as i64, (y - cy) as i64);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 == 0 { 0 } else { (((px - cx) as i64 * dx + (py - cy) as i64 * dy) * 1024 / len2).clamp(0, 1024) };
+            let (qx, qy) = (cx + (dx * t / 1024) as i32, cy + (dy * t / 1024) as i32);
+            dist(px, py, qx, qy)
+        };
+        (0..self.actors.len()).any(|t| {
+            let a = &self.actors[t];
+            a.alive
+                && a.in_world()
+                && a.kind != Kind::Mine
+                && (a.is_unit() || self.has_weapons(t))
+                && self.are_enemies(player, a.owner)
+                && self.targetable(t, player)
+                && to_path(a.x, a.y) <= MOVE_HINT_RADIUS
+        })
+    }
+
     /// Stance a new actor starts with: AutoTarget InitialStance, or
     /// InitialStanceAI for AI players.
     pub(crate) fn initial_stance(&self, ty: u16, owner: u8) -> Stance {

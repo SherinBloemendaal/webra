@@ -297,3 +297,27 @@ fn attack_move_under_defend_passes_plain_structures() {
     run(&mut w, 25 * 20);
     assert_eq!(w.actors[powr].hp, max_hp(&w, powr), "OpenRA attack-move keeps the stance's priorities");
 }
+
+// ---- Attack-move tip ------------------------------------------------------------------------
+
+#[test]
+fn move_hint_flags_plain_moves_past_visible_enemies() {
+    let mut w = field(11);
+    let tank = unit(&mut w, "2TNK", 0, 10, 30);
+    let mcv = unit(&mut w, "MCV", 0, 10, 26);
+    let spotter = quiet(&mut w, "E1", 0, 24, 31);
+    quiet(&mut w, "E1", 1, 25, 33);
+    run(&mut w, 3);
+    let to = |cx: i32, cy: i32| (cell_center(cx), cell_center(cy));
+    let (ex, ey) = to(40, 30);
+    assert!(w.move_hint(0, &[tank], ex, ey), "the way east passes the rifleman");
+    assert!(w.move_hint(0, &[tank, mcv], ex, ey), "armed units among others count");
+    let (nx, ny) = to(10, 55);
+    assert!(!w.move_hint(0, &[tank], nx, ny), "the way south stays clear of it");
+    assert!(!w.move_hint(0, &[mcv], ex, ey), "nothing armed in the selection");
+    assert!(!w.move_hint(1, &[tank], ex, ey), "only own units");
+    // Out of sight it is no reason for the tip.
+    w.kill(spotter);
+    run(&mut w, 3);
+    assert!(!w.move_hint(0, &[tank], ex, ey));
+}
