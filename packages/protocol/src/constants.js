@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -67,6 +67,37 @@ export const MAX_REJOINS = 10;
  * size for rejoining players and spectators. A longer log disables both.
  */
 export const LOG_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Rematch (`rematch` messages): the host proposes playing again with the same
+ * settings; every connected player must accept within REMATCH_VOTE_MS. The
+ * session then goes back to its lobby, and the members who were in the game
+ * come back into it with their rejoin keys within REMATCH_RETURN_MS (the
+ * client reloads the page to leave the finished game).
+ */
+export const REMATCH_VOTE_MS = 120_000;
+export const REMATCH_RETURN_MS = 60_000;
+/** A host can propose again this long after a proposal ended without a rematch. */
+export const REMATCH_COOLDOWN_MS = 10_000;
+/** States of a rematch proposal (`rematch.state`). */
+export const REMATCH_STATES = ['open', 'cancelled', 'lobby'];
+/** Why a proposal was cancelled (`rematch.reason`). */
+export const REMATCH_CANCEL_REASONS = ['declined', 'expired', 'left', 'withdrawn'];
+
+// ---- Lobby maps -----------------------------------------------------------------------
+
+/**
+ * Whether a member has the lobby's map (`mapState` of lobby slots and
+ * spectators, `mapstate` messages): installed (the exact hash is in its
+ * library), missing (not yet) or declined (it said no to installing it).
+ */
+export const MAP_STATES = ['installed', 'missing', 'declined'];
+/**
+ * Header with a member's credential for the session's map endpoints
+ * (GET and POST /api/sessions/<id>/map): `<client>.<rejoin key>`.
+ */
+export const MEMBER_HEADER = 'X-WebRA-Member';
+export const MEMBER_RE = /^([1-9][0-9]{0,9})\.([A-Za-z0-9_-]{43})$/;
+
 /** Why a member left (`left.reason`). */
 export const LEFT_REASONS = ['left', 'dropped', 'kicked', 'disconnected', 'removed', 'expired'];
 /** Reasons after which a player can still rejoin a running game. */
@@ -170,6 +201,12 @@ export const C2S = Object.freeze({
   /** A spectator processed the whole catch-up (log and sync). */
   SYNCED: 'synced',
   DEFEATED: 'defeated',
+  /** Whether this member installed or declined the lobby's map (lobby). */
+  MAPSTATE: 'mapstate',
+  /** Host: remove a spectator from the lobby (players are removed through `slot`). */
+  KICK: 'kick',
+  /** Propose (host) or accept a rematch (`accept: true`), or decline / withdraw it (`accept: false`). */
+  REMATCH: 'rematch',
 });
 
 /** Server to client. */
@@ -188,6 +225,8 @@ export const S2C = Object.freeze({
   SYNC: 'sync',
   /** A player rejoined; its orders count again from `tick` on. */
   BACK: 'back',
+  /** A rematch proposal: open (with who accepted), cancelled, or the session is back in its lobby. */
+  REMATCH: 'rematch',
 });
 
 /** Error codes the server sends in `error` messages and HTTP error bodies. */
