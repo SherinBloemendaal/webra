@@ -67,10 +67,13 @@ export class FakeNode {
     while (n.parentNode) n = n.parentNode;
     return n === this.ownerDocument?.documentElement || n === this.ownerDocument;
   }
+  /** Like the DOM: anything that is not a node becomes text (null shows as "null"). */
+  toNode(n) {
+    return n !== null && typeof n === 'object' && 'childNodes' in n ? n : this.ownerDocument.createTextNode(String(n));
+  }
   append(...nodes) {
     for (let n of nodes) {
-      if (n === null || n === undefined) continue;
-      if (typeof n === 'string' || typeof n === 'number') n = this.ownerDocument.createTextNode(String(n));
+      n = this.toNode(n);
       n.parentNode?.removeChild(n);
       n.parentNode = this;
       this.childNodes.push(n);
@@ -89,7 +92,7 @@ export class FakeNode {
     const p = this.parentNode;
     if (!p) return;
     const i = p.childNodes.indexOf(this);
-    const added = nodes.map((n) => (typeof n === 'string' ? this.ownerDocument.createTextNode(n) : n));
+    const added = nodes.map((n) => this.toNode(n));
     for (const n of added) {
       n.parentNode?.removeChild(n);
       n.parentNode = p;
@@ -99,7 +102,7 @@ export class FakeNode {
   after(...nodes) {
     const p = this.parentNode;
     if (!p) return;
-    const added = nodes.map((n) => (typeof n === 'string' ? this.ownerDocument.createTextNode(n) : n));
+    const added = nodes.map((n) => this.toNode(n));
     for (const n of added) {
       n.parentNode?.removeChild(n);
       n.parentNode = p;
@@ -489,3 +492,14 @@ export const settle = async (n = 5) => {
 
 /** All text under a node, whitespace collapsed. */
 export const textOf = (node) => node.textContent.replace(/\s+/g, ' ').trim();
+
+/** Text nodes that are only "null", "undefined" or "false": a left-out child that the DOM printed. */
+export function strayValues(node) {
+  const out = [];
+  const walk = (n) => {
+    if (n.nodeType === 3 && /^(null|undefined|false)$/.test(n.data)) out.push(n.data);
+    for (const c of n.childNodes ?? []) walk(c);
+  };
+  walk(node);
+  return out;
+}

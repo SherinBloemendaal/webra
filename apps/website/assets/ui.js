@@ -18,6 +18,13 @@ export function el(tag, attrs = {}, ...children) {
   return e;
 }
 
+/**
+ * Children for append/replaceChildren without the gaps: the DOM turns null,
+ * undefined and false into text ("null"), so optional sections that are left
+ * out (null) must be dropped before inserting.
+ */
+export const present = (...xs) => xs.flat().filter((x) => x !== null && x !== undefined && x !== false);
+
 let uid = 0;
 /** A unique element id with a readable prefix. */
 export const nextId = (prefix) => `${prefix}-${++uid}`;

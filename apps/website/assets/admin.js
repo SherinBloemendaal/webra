@@ -30,7 +30,7 @@ import {
 import { buildSettingsForm } from '/play/js/account/admin-forms.js';
 import { checkDocument } from '/play/js/registry.js';
 import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/play/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy } from './ui.js';
+import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [
   ['overview', 'Overview', 'stats'],
@@ -482,7 +482,7 @@ export async function mountAdmin(root, deps = {}) {
       parts.push(detailsBlock(`Passkeys (${d.passkeys.length})`, el('ul', { class: 'item-list' }, ...d.passkeys.map((p) => el('li', { class: 'item', text: `${p.name}, added ${formatDateTime(p.createdAt)}, last used ${formatDateTime(p.lastUsedAt)}${p.counterError ? ' (counter error: may be cloned)' : ''}` })))));
     }
     if (can.settings) parts.push(settingsEditor(u));
-    body.replaceChildren(...parts);
+    body.replaceChildren(...present(parts));
   }
 
   function detailsBlock(title, content) {

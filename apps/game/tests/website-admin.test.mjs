@@ -7,7 +7,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
+import { strayValues, installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 import {
@@ -239,6 +239,7 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   await settle(20);
   const drawer = root.querySelector('.drawer');
   assert.match(textOf(drawer), new RegExp(target.username));
+  assert.deepEqual(strayValues(drawer), [], 'no left-out block shows as text');
   // Edit: the one-click flag.
   const flag = drawer.querySelectorAll('input[type="checkbox"]').find((c) => /One-click/.test(drawer.querySelector(`label[for="${c.id}"]`)?.textContent ?? ''));
   check(flag, true);

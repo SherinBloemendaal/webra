@@ -4,7 +4,7 @@
 import './play-loader.mjs';
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
+import { strayValues, installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 
@@ -66,6 +66,8 @@ test('account page: sign in with a password; wrong ones say so; the account sect
   assert.match(textOf(root), /Tanya/);
   for (const title of ['Profile', 'Email', 'Password', 'Passkeys', 'Devices', 'Your data']) assert.ok(root.querySelector(`#section-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`), title);
   assert.match(textOf(root), /tanya@example\.com.*Verified/);
+  // Discord is not configured, so its section is left out: no "null" in its place.
+  assert.deepEqual(strayValues(root), [], 'no left-out block shows as text');
 });
 
 test('account page: sign up needs the privacy notice; a new account waits for approval', async () => {

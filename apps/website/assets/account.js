@@ -21,7 +21,7 @@ import {
   validNewPassword,
   validUsername,
 } from '/play/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob } from './ui.js';
+import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 
@@ -443,7 +443,7 @@ export async function mountAccountPage(root, deps = {}) {
       parts.push(box);
     }
     parts.push(profileSection(user), emailSection(user), passwordSection(user), passkeySection(), discordSection(user), sessionsSection(), dataSection(user));
-    view.replaceChildren(...parts);
+    view.replaceChildren(...present(parts));
   }
 
   function roleBadge(role) {
