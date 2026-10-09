@@ -50,6 +50,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 1000,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -188,6 +189,7 @@
    "cost": 300,
    "build_ticks": 180,
    "palette_order": 10,
+   "build_limit": 0,
    "prerequisites": [
     "~techlevel.infonly"
    ],
@@ -299,6 +301,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 110,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~techlevel.medium"
@@ -411,6 +414,7 @@
    "cost": 1400,
    "build_ticks": 840,
    "palette_order": 60,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~techlevel.infonly"
@@ -535,6 +539,7 @@
    "cost": 150,
    "build_ticks": 90,
    "palette_order": 35,
+   "build_limit": 0,
    "prerequisites": [
     "proc",
     "~techlevel.infonly"
@@ -631,6 +636,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 20,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~structures.allies",
@@ -771,6 +777,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 30,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~structures.soviet",
@@ -909,6 +916,7 @@
    "cost": 200,
    "build_ticks": 120,
    "palette_order": 175,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~structures.soviet",
@@ -1056,6 +1064,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 80,
+   "build_limit": 0,
    "prerequisites": [
     "proc",
     "~techlevel.low"
@@ -1189,6 +1198,7 @@
    "cost": 1200,
    "build_ticks": 720,
    "palette_order": 100,
+   "build_limit": 0,
    "prerequisites": [
     "weap",
     "~techlevel.medium"
@@ -1306,6 +1316,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 90,
+   "build_limit": 0,
    "prerequisites": [
     "proc",
     "~techlevel.medium"
@@ -1421,6 +1432,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 120,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~techlevel.medium"
@@ -1549,6 +1561,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 130,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~structures.soviet",
@@ -1756,6 +1769,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 130,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~techlevel.medium",
@@ -1962,6 +1976,7 @@
    "cost": 1000,
    "build_ticks": 600,
    "palette_order": 40,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~structures.allies",
@@ -2114,6 +2129,7 @@
    "cost": 800,
    "build_ticks": 480,
    "palette_order": 50,
+   "build_limit": 0,
    "prerequisites": [
     "anypower",
     "~structures.soviet",
@@ -2280,6 +2296,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 140,
+   "build_limit": 0,
    "prerequisites": [
     "weap",
     "dome",
@@ -2417,6 +2434,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 150,
+   "build_limit": 0,
    "prerequisites": [
     "weap",
     "dome",
@@ -2538,6 +2556,7 @@
    "cost": 800,
    "build_ticks": 480,
    "palette_order": 110,
+   "build_limit": 0,
    "prerequisites": [
     "atek",
     "~structures.allies",
@@ -2637,6 +2656,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 120,
+   "build_limit": 1,
    "prerequisites": [
     "atek",
     "~structures.allies",
@@ -2796,6 +2816,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 130,
+   "build_limit": 1,
    "prerequisites": [
     "stek",
     "~structures.soviet",
@@ -2914,6 +2935,7 @@
    "cost": 2500,
    "build_ticks": 1500,
    "palette_order": 140,
+   "build_limit": 1,
    "prerequisites": [
     "techcenter",
     "~techlevel.unrestricted"
@@ -3031,6 +3053,7 @@
    "cost": 30,
    "build_ticks": 18,
    "palette_order": 10,
+   "build_limit": 0,
    "prerequisites": [
     "fact",
     "~structures.allies",
@@ -3108,6 +3131,7 @@
    "cost": 30,
    "build_ticks": 18,
    "palette_order": 20,
+   "build_limit": 0,
    "prerequisites": [
     "fact",
     "~structures.soviet",
@@ -3185,6 +3209,7 @@
    "cost": 200,
    "build_ticks": 120,
    "palette_order": 30,
+   "build_limit": 0,
    "prerequisites": [
     "fact",
     "~techlevel.medium"
@@ -3261,6 +3286,7 @@
    "cost": 600,
    "build_ticks": 360,
    "palette_order": 40,
+   "build_limit": 0,
    "prerequisites": [
     "tent",
     "~structures.allies",
@@ -3388,6 +3414,7 @@
    "cost": 750,
    "build_ticks": 450,
    "palette_order": 50,
+   "build_limit": 0,
    "prerequisites": [
     "tent",
     "~structures.allies",
@@ -3530,6 +3557,7 @@
    "cost": 800,
    "build_ticks": 480,
    "palette_order": 70,
+   "build_limit": 0,
    "prerequisites": [
     "tent",
     "~structures.allies",
@@ -3643,6 +3671,7 @@
    "cost": 600,
    "build_ticks": 360,
    "palette_order": 60,
+   "build_limit": 0,
    "prerequisites": [
     "barr",
     "~structures.soviet",
@@ -3770,6 +3799,7 @@
    "cost": 1200,
    "build_ticks": 720,
    "palette_order": 80,
+   "build_limit": 0,
    "prerequisites": [
     "weap",
     "~structures.soviet",
@@ -3892,6 +3922,7 @@
    "cost": 800,
    "build_ticks": 480,
    "palette_order": 90,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~structures.allies",
@@ -3998,6 +4029,7 @@
    "cost": 700,
    "build_ticks": 420,
    "palette_order": 100,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~structures.soviet",
@@ -4104,6 +4136,7 @@
    "cost": 30,
    "build_ticks": 18,
    "palette_order": 870,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.infonly"
@@ -4202,6 +4235,7 @@
    "cost": 50,
    "build_ticks": 30,
    "palette_order": 880,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.infonly"
@@ -4300,6 +4334,7 @@
    "cost": 100,
    "build_ticks": 60,
    "palette_order": 890,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -4397,6 +4432,7 @@
    "cost": 200,
    "build_ticks": 120,
    "palette_order": 920,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -4495,6 +4531,7 @@
    "cost": 180,
    "build_ticks": 108,
    "palette_order": 930,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -4593,6 +4630,7 @@
    "cost": 120,
    "build_ticks": 72,
    "palette_order": 940,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -4691,6 +4729,7 @@
    "cost": 50,
    "build_ticks": 30,
    "palette_order": 950,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -4789,6 +4828,7 @@
    "cost": 150,
    "build_ticks": 90,
    "palette_order": 970,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.high"
@@ -4887,6 +4927,7 @@
    "cost": 150,
    "build_ticks": 90,
    "palette_order": 980,
+   "build_limit": 1,
    "prerequisites": [
     "~structures.france",
     "~techlevel.unrestricted"
@@ -4984,6 +5025,7 @@
    "cost": 250,
    "build_ticks": 150,
    "palette_order": 990,
+   "build_limit": 1,
    "prerequisites": [
     "~structures.france",
     "~techlevel.unrestricted"
@@ -5080,6 +5122,7 @@
    "cost": 200,
    "build_ticks": 120,
    "palette_order": 1000,
+   "build_limit": 0,
    "prerequisites": [
     "~structures.france",
     "~techlevel.medium"
@@ -5179,6 +5222,7 @@
    "cost": 100,
    "build_ticks": 60,
    "palette_order": 10,
+   "build_limit": 0,
    "prerequisites": [
     "~barracks",
     "~techlevel.infonly"
@@ -5296,6 +5340,7 @@
    "cost": 300,
    "build_ticks": 180,
    "palette_order": 30,
+   "build_limit": 0,
    "prerequisites": [
     "~barracks",
     "~techlevel.infonly"
@@ -5414,6 +5459,7 @@
    "cost": 1100,
    "build_ticks": 660,
    "palette_order": 110,
+   "build_limit": 0,
    "prerequisites": [
     "proc",
     "~techlevel.infonly"
@@ -5486,6 +5532,7 @@
    "cost": 2000,
    "build_ticks": 1000,
    "palette_order": 210,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "~techlevel.medium"
@@ -5555,6 +5602,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 410,
+   "build_limit": 0,
    "prerequisites": [
     "~techlevel.low"
    ],
@@ -5617,6 +5665,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 130,
+   "build_limit": 0,
    "prerequisites": [
     "~vehicles.allies",
     "~techlevel.low"
@@ -5738,6 +5787,7 @@
    "cost": 850,
    "build_ticks": 510,
    "palette_order": 120,
+   "build_limit": 0,
    "prerequisites": [
     "~vehicles.soviet",
     "~techlevel.low"
@@ -5854,6 +5904,7 @@
    "cost": 600,
    "build_ticks": 360,
    "palette_order": 130,
+   "build_limit": 0,
    "prerequisites": [
     "~vehicles.soviet",
     "~techlevel.low"
@@ -5964,6 +6015,7 @@
    "cost": 700,
    "build_ticks": 420,
    "palette_order": 120,
+   "build_limit": 0,
    "prerequisites": [
     "~vehicles.allies",
     "~techlevel.low"
@@ -6073,6 +6125,7 @@
    "cost": 850,
    "build_ticks": 510,
    "palette_order": 220,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "~vehicles.allies",
@@ -6183,6 +6236,7 @@
    "cost": 1150,
    "build_ticks": 690,
    "palette_order": 220,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "~vehicles.soviet",
@@ -6293,6 +6347,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 320,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "stek",
@@ -6410,6 +6465,7 @@
    "cost": 900,
    "build_ticks": 540,
    "palette_order": 230,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~vehicles.soviet",
@@ -6515,6 +6571,7 @@
    "cost": 850,
    "build_ticks": 510,
    "palette_order": 230,
+   "build_limit": 0,
    "prerequisites": [
     "dome",
     "~vehicles.allies",
@@ -6620,6 +6677,7 @@
    "cost": 800,
    "build_ticks": 480,
    "palette_order": 310,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "~techlevel.medium"
@@ -6744,6 +6802,7 @@
    "cost": 1000,
    "build_ticks": 600,
    "palette_order": 320,
+   "build_limit": 0,
    "prerequisites": [
     "atek",
     "~vehicles.allies",
@@ -6811,6 +6870,7 @@
    "cost": 1000,
    "build_ticks": 600,
    "palette_order": 330,
+   "build_limit": 0,
    "prerequisites": [
     "atek",
     "~vehicles.england",
@@ -6875,6 +6935,7 @@
    "cost": 1350,
    "build_ticks": 810,
    "palette_order": 330,
+   "build_limit": 0,
    "prerequisites": [
     "tsla",
     "stek",
@@ -6981,6 +7042,7 @@
    "cost": 2500,
    "build_ticks": 1500,
    "palette_order": 330,
+   "build_limit": 0,
    "prerequisites": [
     "stek",
     "~vehicles.ukraine",
@@ -7045,6 +7107,7 @@
    "cost": 1350,
    "build_ticks": 810,
    "palette_order": 330,
+   "build_limit": 0,
    "prerequisites": [
     "atek",
     "~vehicles.germany",
@@ -7154,6 +7217,7 @@
    "cost": 1000,
    "build_ticks": 600,
    "palette_order": 330,
+   "build_limit": 0,
    "prerequisites": [
     "atek",
     "~vehicles.france",
@@ -7291,6 +7355,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 420,
+   "build_limit": 0,
    "prerequisites": [
     "fix",
     "stek",
@@ -7361,6 +7426,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 10,
+   "build_limit": 0,
    "prerequisites": [
     "~techlevel.low"
    ],
@@ -7469,6 +7535,7 @@
    "cost": 500,
    "build_ticks": 300,
    "palette_order": 20,
+   "build_limit": 0,
    "prerequisites": [
     "~syrd",
     "~techlevel.low"
@@ -7587,6 +7654,7 @@
    "cost": 950,
    "build_ticks": 570,
    "palette_order": 30,
+   "build_limit": 0,
    "prerequisites": [
     "~spen",
     "~techlevel.low"
@@ -7714,6 +7782,7 @@
    "cost": 1000,
    "build_ticks": 600,
    "palette_order": 40,
+   "build_limit": 0,
    "prerequisites": [
     "~syrd",
     "dome",
@@ -7834,6 +7903,7 @@
    "cost": 2400,
    "build_ticks": 1440,
    "palette_order": 50,
+   "build_limit": 0,
    "prerequisites": [
     "~syrd",
     "atek",
@@ -7950,6 +8020,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 60,
+   "build_limit": 0,
    "prerequisites": [
     "~spen",
     "stek",
@@ -8079,6 +8150,7 @@
    "cost": 900,
    "build_ticks": 540,
    "palette_order": 10,
+   "build_limit": 0,
    "prerequisites": [
     "~hpad",
     "~techlevel.medium"
@@ -8215,6 +8287,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 20,
+   "build_limit": 0,
    "prerequisites": [
     "~hpad",
     "~structures.soviet",
@@ -8346,6 +8419,7 @@
    "cost": 1500,
    "build_ticks": 900,
    "palette_order": 20,
+   "build_limit": 0,
    "prerequisites": [
     "~hpad",
     "~structures.allies",
@@ -8477,6 +8551,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 40,
+   "build_limit": 0,
    "prerequisites": [
     "~hpad",
     "atek",
@@ -8609,6 +8684,7 @@
    "cost": 1350,
    "build_ticks": 810,
    "palette_order": 30,
+   "build_limit": 0,
    "prerequisites": [
     "~afld",
     "~techlevel.medium"
@@ -8731,6 +8807,7 @@
    "cost": 2000,
    "build_ticks": 1200,
    "palette_order": 50,
+   "build_limit": 0,
    "prerequisites": [
     "~afld",
     "stek",
@@ -8854,6 +8931,7 @@
    "cost": 100,
    "build_ticks": 60,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -8970,6 +9048,7 @@
    "cost": 300,
    "build_ticks": 180,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -9087,6 +9166,7 @@
    "cost": 0,
    "build_ticks": 0,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -9153,6 +9233,7 @@
    "cost": 0,
    "build_ticks": 0,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -9230,6 +9311,7 @@
    "cost": 0,
    "build_ticks": 0,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -9298,6 +9380,7 @@
    "cost": 0,
    "build_ticks": 0,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],
@@ -9346,6 +9429,7 @@
    "cost": 0,
    "build_ticks": 0,
    "palette_order": 0,
+   "build_limit": 0,
    "prerequisites": [
     "~disabled"
    ],

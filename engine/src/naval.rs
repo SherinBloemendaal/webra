@@ -128,6 +128,7 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.actors[i].hp >= max_hp {
+            self.note_repaired(i, d);
             self.actors[i].activity = Activity::Idle;
             return;
         }
@@ -154,7 +155,7 @@ impl World {
             return;
         }
         let rep = self.rules.actors[self.actors[d].ty as usize].building.as_ref().unwrap().repairs.clone().unwrap();
-        self.repair_step(i, &rep);
+        self.repair_step(i, d, &rep);
     }
 
     // ---- Submarines --------------------------------------------------------------
@@ -169,6 +170,7 @@ impl World {
         }
         let max = self.rules.actors[ty].hp;
         let a = &mut self.actors[i];
+        let was = a.submerged;
         if a.hp * 100 < max * CRITICAL_PERCENT {
             // PauseOnCondition: cloak-force-disabled (Critical): stays surfaced, timer frozen.
             a.submerged = false;
@@ -177,6 +179,9 @@ impl World {
                 a.cloak_timer -= 1;
             }
             a.submerged = a.cloak_timer <= 0;
+        }
+        if a.submerged != was {
+            self.note_cloak(i);
         }
         self.actors[i].detected_by = if self.actors[i].submerged { self.detectors_of(i, &cloak.types) } else { 0 };
     }
@@ -240,9 +245,13 @@ impl World {
         }
         let delay = cloak.cloak_delay;
         let a = &mut self.actors[i];
+        let was = a.submerged;
         a.submerged = false;
         a.detected_by = 0;
         a.cloak_timer = a.cloak_timer.max(delay);
+        if was {
+            self.note_cloak(i);
+        }
     }
 
     // ---- Effects -------------------------------------------------------------------

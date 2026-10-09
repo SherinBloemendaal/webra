@@ -29,8 +29,10 @@
 //! helipad reservation), [`World::ammo_left`], [`World::max_ammo`],
 //! [`World::rearm_step`], [`World::find_rearm_base`], [`World::target_kind`].
 
+use crate::map::Terrain;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
 use crate::rules::{Kind, SupportPowerInfo};
+use crate::sound_events::SoundEventKind;
 use crate::world::{Activity, SmartAction, World, MAX_WEAPONS, NONE};
 
 /// OpenRA `AttackAircraft.FacingTolerance` of the Yak and MiG.
@@ -99,6 +101,11 @@ pub struct AirState {
     pub cargo: Vec<u16>,
     /// Infantry hanging on a parachute (altitude > 0).
     pub parachute: bool,
+    /// Support power aircraft: the power that sent it (`sound_events::power_ref`)
+    /// and the tick it was launched, which tell the planes of one drop apart
+    /// for its ReinforcementsArrived event (sound only, not hashed).
+    pub power: i32,
+    pub launched: u32,
 }
 
 impl Default for AirState {
@@ -119,6 +126,8 @@ impl Default for AirState {
             entered: false,
             cargo: Vec::new(),
             parachute: false,
+            power: 0,
+            launched: 0,
         }
     }
 }
@@ -677,6 +686,10 @@ impl World {
         a.air.parachute = false;
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         if self.pass.blocked[ci] {
+            // Parachutable Ground/WaterImpactSound (sound_events.rs).
+            let (ty, x, y, owner) = (self.actors[i].ty as i32, self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+            let water = i32::from(self.map.terrain[ci] == Terrain::Water);
+            self.sound.push(SoundEventKind::ParachuteImpact, ty, x, y, owner, water);
             self.kill(i);
         }
     }
@@ -686,8 +699,17 @@ impl World {
     /// Launch the aircraft of an AirstrikePower (spy plane, parabombs) or a
     /// ParatroopersPower toward (x, y). `dir` is an optional second point: the
     /// planes fly from the target toward it; without one they come from the
-    /// player's base side. Returns false when the power cannot be launched.
-    pub(crate) fn launch_air_power(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32, dir: Option<(i32, i32)>) -> bool {
+    /// player's base side. `power` is the power's `sound_events::power_ref`.
+    /// Returns false when the power cannot be launched.
+    pub(crate) fn launch_air_power(
+        &mut self,
+        player: u8,
+        info: &SupportPowerInfo,
+        power: i32,
+        x: i32,
+        y: i32,
+        dir: Option<(i32, i32)>,
+    ) -> bool {
         let Some(ty) = self.rules.actor_index(&info.unit_type) else { return false };
         if self.rules.actors[ty].unit.as_ref().and_then(|u| u.aircraft.as_ref()).is_none() {
             return false;
@@ -736,6 +758,8 @@ impl World {
             a.air.ty = y + ry * across / 1024;
             a.air.camera_range = info.camera_range;
             a.air.camera_delay = info.camera_remove_delay;
+            a.air.power = power;
+            a.air.launched = self.tick;
             if mission == Mission::Paradrop {
                 a.air.cargo = drops.clone();
             }
@@ -758,6 +782,9 @@ impl World {
             }
             Mission::Paradrop => {
                 if d <= f.drop_range && !a.air.cargo.is_empty() {
+                    // OpenRA ParatroopersPower: the first plane in the drop zone announces the reinforcements.
+                    let (power, launched) = (a.air.power, a.air.launched);
+                    self.sound.push_arrival(owner, power, launched, tx, ty);
                     self.place_camera(i);
                     let ci = self.cell_index(x, y);
                     let on_map = x >= 0 && y >= 0 && x < self.map.width * CELL && y < self.map.height * CELL;
@@ -768,6 +795,9 @@ impl World {
                         let p = &mut self.actors[u];
                         p.altitude = alt;
                         p.air.parachute = true;
+                        // ParaDrop.ChuteSound at the plane.
+                        let plane_ty = self.actors[i].ty as i32;
+                        self.sound.push(SoundEventKind::ParaDrop, plane_ty, x, y, owner, 0);
                     }
                 }
             }

@@ -76,6 +76,8 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   game.deploy(0, Uint32Array.from(units.slice(0, 1)));
   game.start_production(0, 'POWR', 2);
   game.cancel_production(0, 'POWR');
+  game.pause_production(0, 'POWR', true);
+  game.pause_production(0, 'POWR', false);
   // Command bar orders (engine/src/commands.rs).
   const all = Uint32Array.from(units);
   game.order_attack_ground(0, all, 300.5, 410);

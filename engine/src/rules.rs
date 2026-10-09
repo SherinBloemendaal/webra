@@ -40,6 +40,9 @@ struct RawActor {
     cost: i32,
     build_ticks: i32,
     palette_order: i32,
+    /// OpenRA Buildable.BuildLimit (0: no limit).
+    #[serde(default)]
+    build_limit: i32,
     prerequisites: Vec<String>,
     build_at: String,
     hp: i32,
@@ -707,6 +710,8 @@ pub struct ActorInfo {
     pub cost: i32,
     pub build_ticks: i32,
     pub palette_order: i32,
+    /// OpenRA Buildable.BuildLimit: at most this many owned and queued (0: no limit).
+    pub build_limit: i32,
     pub prerequisites: Vec<Prereq>,
     pub build_at: String,
     pub hp: i32,
@@ -978,6 +983,7 @@ impl Rules {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
+        within(&n("build_limit"), a.build_limit, 0, 1000)?;
         within(&n("hp"), a.hp, 1, 100_000_000)?;
         within(&n("sight"), a.sight, 0, MAX_VISION)?;
         count(&n("prerequisites"), a.prerequisites.len(), 32)?;
@@ -1484,6 +1490,7 @@ impl Rules {
                 cost: a.cost,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
+                build_limit: a.build_limit,
                 prerequisites,
                 build_at: a.build_at,
                 hp: a.hp,

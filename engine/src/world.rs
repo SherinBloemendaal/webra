@@ -300,6 +300,8 @@ pub struct QueueItem {
     pub paid: i32,
     pub slow: i32,
     pub done: bool,
+    /// On hold (OpenRA ProductionItem.Paused): a paused first item holds up its queue.
+    pub paused: bool,
 }
 
 #[derive(Clone, Default)]
@@ -512,6 +514,12 @@ pub enum Order {
         player: u8,
         ty: u16,
     },
+    /// Put the first queued item of `ty` on hold or resume it (OpenRA PauseProduction).
+    PauseProduction {
+        player: u8,
+        ty: u16,
+        paused: bool,
+    },
     Place {
         player: u8,
         ty: u16,
@@ -663,6 +671,7 @@ impl Order {
             | Order::Stop { player, .. }
             | Order::StartProduction { player, .. }
             | Order::CancelProduction { player, .. }
+            | Order::PauseProduction { player, .. }
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
@@ -696,6 +705,7 @@ impl Order {
             | Order::Stop { player, .. }
             | Order::StartProduction { player, .. }
             | Order::CancelProduction { player, .. }
+            | Order::PauseProduction { player, .. }
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
@@ -770,6 +780,7 @@ impl Order {
             | Order::SetStance { .. }
             | Order::StartProduction { .. }
             | Order::CancelProduction { .. }
+            | Order::PauseProduction { .. }
             | Order::Place { .. }
             | Order::Rally { .. }
             | Order::Sell { .. }
@@ -1530,6 +1541,7 @@ impl World {
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
                 Order::CancelProduction { player, ty } => self.cancel_production(player, ty),
+                Order::PauseProduction { player, ty, paused } => self.pause_production(player, ty, paused),
                 Order::Place { player, ty, cx, cy } => {
                     self.place_building(player, ty, cx, cy);
                 }
@@ -2037,6 +2049,8 @@ impl World {
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Production on hold (production.rs).
+            mix(p.queues.iter().flat_map(|q| &q.items).filter(|it| it.paused).count() as i64);
             // Cheat flags are simulation state; they can only be set with the cheats option.
             if self.options.cheats {
                 mix(p.dev.bits() as i64);

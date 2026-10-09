@@ -466,6 +466,8 @@ def main():
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
+            # Buildable.BuildLimit: owned plus queued at most (production.rs; 0 = none).
+            'build_limit': int(t['Buildable'].get('BuildLimit', 0) or 0) if isinstance(t.get('Buildable'), dict) else 0,
             'prerequisites': a['prerequisites'],
             'build_at': (t['Buildable'].get('BuildAtProductionType') if isinstance(t.get('Buildable'), dict) else None) or a['queue'],
             'hp': a['hp'],
