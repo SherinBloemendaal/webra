@@ -45,6 +45,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'data', 'source')
 OUT = os.path.join(ROOT, 'apps', 'game', 'js', 'content', 'tables.js')
+FACTS_OUT = os.path.join(ROOT, 'apps', 'game', 'js', 'content', 'render-facts.js')
 RULES_JSON = os.path.join(ROOT, 'engine', 'rules.json')
 OPENRA_COMMIT = 'b6fc03fcfaef1277592bbd4cbc7d44dd85219902'
 SEQUENCE_FILES = ['ships', 'vehicles', 'structures', 'infantry', 'aircraft', 'misc', 'decorations']
@@ -116,24 +117,107 @@ ORIGINAL_FILES = {
     'afldidle.shp': 'afld.shp',
     'tran2.shp': 'tran.shp',
     'msloicon2.shp': 'msloicon.shp',
+    # OpenRA's large rotor for the Hind; Red Alert draws the Hind with the
+    # helicopter rotor (the same 4 fast and 8 slow frames).
+    'lrotorlg.shp': 'lrotor.shp',
 }
 # Sequences whose OpenRA file has another layout than the original one.
 ORIGINAL_SEQUENCES = {
     # weap3.shp has ten door frames; the original weap2.shp has four, then four damaged ones.
     ('weap', 'build-top'): {'file': 'weap2.shp', 'start': 0, 'length': 4},
+    # silo2.shp has nine fill stages, then nine damaged ones; the original
+    # silo.shp has five, then five damaged ones.
+    ('silo', 'idle'): {'file': 'silo.shp', 'start': 0, 'length': 1},
+    ('silo', 'damaged-idle'): {'file': 'silo.shp', 'start': 5, 'length': 1},
+    ('silo', 'stages'): {'file': 'silo.shp', 'start': 0, 'length': 5},
+    ('silo', 'damaged-stages'): {'file': 'silo.shp', 'start': 5, 'length': 5},
 }
 # OpenRA's files with no original counterpart: sequences using them are left
 # out (fake structures show the real cameo, OpenRA's own units keep WebRA art,
 # small bibs and the refinery top are not drawn).
 NO_ORIGINAL = {
     'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
-    'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp',
+    'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp', 'yrotorlg.shp',
+    # Veterancy ranks, the repair wrench and the power off sign exist in OpenRA only.
+    'rank.shp', 'allyrepair.shp', 'poweroff.shp',
+    # The mines' sidebar icon.
+    'jmin.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
 SAME_LAYOUT = {
     'fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp',
     'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp',
+}
+
+# What the engine's special sprites (engine/src/render.rs SpriteIds, the
+# SPECIALS of apps/game/js/sprites.js and the eight slots of each art module)
+# show with the original graphics: [OpenRA image, sequence, mode] or None
+# when Red Alert has no art for it (WebRA's own art stays). Modes: "loop"
+# plays on the render clock (projectiles, flags, smoke), "effect" plays once
+# from the moment the engine starts the effect and then shows nothing
+# (explosions, splashes). WebRA's effects are generic where OpenRA picks one
+# per warhead, so each takes the sequence most of its users have in OpenRA.
+SPECIAL_ART = {
+    # Cannon shells (OpenRA ^Cannon Image: 120mm) and other direct fire.
+    'bullet': ['120mm', 'idle', 'loop'],
+    # Cannon hits (90mm, 105mm, 120mm: Explosions small_explosion).
+    'small_explosion': ['explosion', 'small_explosion', 'effect'],
+    # Vehicles, ships and aircraft blowing up (UnitExplode: self_destruct).
+    'large_explosion': ['explosion', 'self_destruct', 'effect'],
+    # Small arms hits (piff).
+    'piff': ['explosion', 'piff', 'effect'],
+    # The rally point flag (RallyPoint: rallypoint flag).
+    'rally': ['rallypoint', 'flag', 'loop'],
+    # Mines are drawn with their actor slots (MINV, MINP: ACTOR_ART).
+    'at_mine': None,
+    'ap_mine': None,
+    # Tesla zaps are drawn as a chain of segments by the engine; OpenRA's
+    # TeslaZap draws litning.shp frames along the whole line instead.
+    'tesla_bolt': None,
+    # Rockets (^AntiGroundMissile Image: DRAGON), 32 facings.
+    'missile': ['dragon', 'idle', 'loop'],
+    # Artillery shells (155mm, 8Inch: Image 120mm).
+    'shell': ['120mm', 'idle', 'loop'],
+    # The chronoshift shimmer has no sprite in Red Alert (OpenRA flashes the screen).
+    'chrono': None,
+    'nuke': ['explosion', 'nuke', 'effect'],
+    # Naval: torpedo (TorpTube Image: torpedo, 32 facings), depth charge
+    # (DepthCharge Image: BOMB), splash (med_splash), the submerged ripple and
+    # the sinking wreck (WebRA only).
+    'naval.0': ['torpedo', 'idle', 'loop'],
+    'naval.1': ['bomb', 'idle', 'loop'],
+    'naval.2': ['explosion', 'med_splash', 'effect'],
+    'naval.3': None,
+    'naval.4': None,
+    # Planes: parachute (WithParachute parach idle), parabomb, contrail
+    # (OpenRA draws contrails as lines), wreck smoke (LeavesTrails smokey).
+    'planes.0': ['parach', 'idle', 'loop'],
+    'planes.1': ['parabomb', 'idle', 'loop'],
+    'planes.2': None,
+    'planes.3': ['smokey', 'idle', 'loop'],
+    # Helicopters: rotor disc and rotor wash are WebRA's (the original rotor
+    # sequences replace both), smoke of a falling wreck.
+    'helis.0': None,
+    'helis.1': None,
+    'helis.2': ['smokey', 'idle', 'loop'],
+    # Ability markers (mine warning, MAD ring, chronoshift flash, iron curtain
+    # glow, gap generator edge, atom bomb beacon): WebRA only.
+    'abilities.0': None,
+    'abilities.1': None,
+    'abilities.2': None,
+    'abilities.3': None,
+    'abilities.4': None,
+    'abilities.5': None,
+    # Veterancy ranks (rank.shp is OpenRA's).
+    'veterancy.0': None,
+    'veterancy.1': None,
+    'veterancy.2': None,
+    'veterancy.3': None,
+    # Repair wrench (select.shp repair frame) and power off sign (speed.shp
+    # disabled frame, OpenRA's "powerdown" image).
+    'decorations.0': ['select', 'repair', 'loop'],
+    'decorations.1': ['powerdown', 'disabled', 'loop'],
 }
 
 sys.path.insert(0, SRC)
@@ -154,13 +238,15 @@ def load_bits():
 BITS = load_bits()
 
 
-def original_file(fn, where):
-    """The file a player's copy has for `fn` (None: there is none)."""
+def original_file(fn, where, strict=True):
+    """The file a player's copy has for `fn` (None: there is none). Not
+    strict: an OpenRA file nobody decided about has none either (the audit
+    facts list sequences WebRA does not use)."""
     if fn not in BITS or fn in SAME_LAYOUT:
         return fn
     if fn in ORIGINAL_FILES:
         return ORIGINAL_FILES[fn]
-    if fn in NO_ORIGINAL:
+    if fn in NO_ORIGINAL or not strict:
         return None
     raise SystemExit(f'{where}: {fn} is made by OpenRA (data/source/bits.txt); map it to an original file or list it in NO_ORIGINAL')
 
@@ -192,7 +278,7 @@ def field(data, defaults, key):
     return None
 
 
-def normalize(image, name, tree):
+def normalize(image, name, tree, strict=True):
     """One sequence of an image as compact JSON-friendly fields."""
     defaults = tree.get('Defaults', ['', {}])[1]
     if name not in tree:
@@ -246,23 +332,23 @@ def normalize(image, name, tree):
             out['offset'] = parts[:2]
     if out['facings'] == 0 or abs(out['facings']) & (abs(out['facings']) - 1):
         raise SystemExit(f'{image}.{name}: Facings must be a power of two')
-    return to_original(image, name, out)
+    return to_original(image, name, out, strict)
 
 
-def to_original(image, name, out):
+def to_original(image, name, out, strict=True):
     """The sequence on the original files (see ORIGINAL_FILES), or None when they cannot draw it."""
     if (image, name) in ORIGINAL_SEQUENCES:
         out.update(ORIGINAL_SEQUENCES[(image, name)])
         out.pop('tilesets', None)
         return out
-    fn = original_file(out['file'], f'{image}.{name}')
+    fn = original_file(out['file'], f'{image}.{name}', strict)
     if fn is None:
         return None
     out['file'] = fn
     if 'tilesets' in out:
         tilesets = {}
         for tid, tfn in out['tilesets'].items():
-            o = original_file(tfn, f'{image}.{name}')
+            o = original_file(tfn, f'{image}.{name}', strict)
             if o is None:
                 return None
             if o != fn:
@@ -302,6 +388,31 @@ def trait(tree, name):
     return None
 
 
+def tokens(text):
+    """A MiniYaml list ("a, b, c") as names."""
+    return [t.strip() for t in (text or '').split(',') if t.strip()]
+
+
+def wvec(text):
+    """A MiniYaml WVec ("597,0,213") as [forward, right, up] world units."""
+    parts = [int(x) for x in tokens(text)] if text else []
+    return (parts + [0, 0, 0])[:3]
+
+
+def lift_px(up):
+    """Screen pixels a WVec height raises a sprite (OpenRA's top-down projection: 1024 units per 24 px)."""
+    return round(-up * 24 / 1024, 3)
+
+
+def overlays_of(tree):
+    """WithIdleOverlay traits in key order: (key, sequence, condition, offset)."""
+    out = []
+    for k, (_v, ch) in sorted(tree.items()):
+        if k == 'WithIdleOverlay' or k.startswith('WithIdleOverlay@'):
+            out.append((k, ch.get('Sequence', ['idle'])[0], ch.get('RequiresCondition', [''])[0], wvec(ch.get('Offset', [''])[0])))
+    return out
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
@@ -327,19 +438,24 @@ def actor_art(actors, seqs):
     for a in actors:
         aid = a['id']
         kind = a['kind']
-        if kind == 'mine':
-            continue
         image = images.get(aid.upper(), aid.lower())
         if image not in seqs:
             continue
+        tree = rules_of(aid)
         entry = {'image': image}
         if kind == 'building':
             wall = a.get('_wall', False)
-            entry['body'] = poses(image, {'idle': 'idle', 'damaged': 'damaged-idle', **({} if wall else {'make': 'make'})})
+            level = trait(tree, 'WithResourceLevelSpriteBody')
+            if level is not None:
+                # OpenRA WithResourceLevelSpriteBody: the frame shows how full the player's storage is.
+                seq = level.get('Sequence', ['stages'])[0]
+                entry['body'] = poses(image, {'idle': seq, 'damaged': 'damaged-' + seq, 'make': 'make'})
+                entry['level'] = True
+            else:
+                entry['body'] = poses(image, {'idle': 'idle', 'damaged': 'damaged-idle', **({} if wall else {'make': 'make'})})
             if wall:
                 entry['wall'] = True
             entry['second'] = poses(image, {'idle': 'turret', 'damaged': 'damaged-turret'}) if a['turret'] else {}
-            tree = rules_of(aid)
             door = trait(tree, 'WithProductionDoorOverlay')
             if door is not None and not a['turret']:
                 seq = door.get('Sequence', ['build-top'])[0]
@@ -361,6 +477,53 @@ def actor_art(actors, seqs):
                 mapping.update({'harvest': 'harvest', 'dock': 'dock-loop'})
             entry['body'] = poses(image, mapping)
             entry['second'] = poses(image, {'idle': 'turret'}) if a['turret'] else {}
+            overlays = overlays_of(tree)
+            rotors = [o for o in overlays if o[2] == 'airborne']
+            if kind == 'aircraft' and rotors:
+                # Helicopter rotors (WithIdleOverlay@ROTOR*): the second slot plays
+                # the ground sequence while landed (pose idle) and the airborne one
+                # in flight (pose move); a second rotor (the Chinook's rear one)
+                # uses the aux poses. Each pair shares its offset; the height is
+                # drawn into the frames (`lift`), the forward offset is the
+                # engine's (rules.json aircraft.rotors, same order).
+                if len(rotors) > 2:
+                    raise SystemExit(f'{aid}: more than two rotors')
+                second = {}
+                lift = {}
+                for n, (_k, air_seq, _c, off) in enumerate(rotors):
+                    ground = [o for o in overlays if o[2] == '!airborne' and o[3] == off]
+                    if len(ground) != 1:
+                        raise SystemExit(f'{aid}: rotor {air_seq} has no ground sequence at the same offset')
+                    names = ('idle', 'move') if n == 0 else ('aux-idle', 'aux-move')
+                    got = poses(image, {names[0]: ground[0][1], names[1]: air_seq})
+                    second.update(got)
+                    for pose in got:
+                        lift[pose] = lift_px(off[2])
+                entry['second'] = second
+                if any(lift.values()):
+                    entry['lift'] = lift
+            else:
+                spinner = [o for o in overlays if not o[2]]
+                if spinner and not entry['second']:
+                    # A spinning overlay (WithIdleOverlay@SPINNER: radar dishes,
+                    # tesla coils): drawn over the body at its offset.
+                    _k, seq, _c, off = spinner[0]
+                    second = poses(image, {'idle': seq})
+                    if second:
+                        entry['second'] = second
+                        if off[2]:
+                            entry['lift'] = {'idle': lift_px(off[2])}
+                        if not a['turret']:
+                            # Not turreted: the engine draws it over the body at this forward and side offset.
+                            entry['unitOverlay'] = off[:2]
+                elif entry['second']:
+                    lifts = {wvec(ch.get('Offset', [''])[0])[2] for k, (_v, ch) in tree.items() if k == 'Turreted' or k.startswith('Turreted@')}
+                    if len(lifts) > 1:
+                        raise SystemExit(f'{aid}: turrets at different heights')
+                    up = lifts.pop() if lifts else 0
+                    if up:
+                        # Turreted.Offset height: the turret sits higher on the body.
+                        entry['lift'] = {pose: lift_px(up) for pose in entry['second']}
         if 'idle' not in entry['body']:
             continue
         fake = aid.upper() != image.upper() and kind == 'building' and use(image, 'fake-icon')
@@ -369,6 +532,153 @@ def actor_art(actors, seqs):
             entry['cameo'] = cameo
         art[aid] = entry
     return art, used
+
+
+def special_art(seqs, used):
+    """SPECIAL_ART with the sequences checked and recorded (see the table)."""
+    out = {}
+    for key, spec in SPECIAL_ART.items():
+        if spec is None:
+            out[key] = None
+            continue
+        image, name, mode = spec
+        if mode not in ('loop', 'effect'):
+            raise SystemExit(f'SPECIAL_ART {key}: unknown mode {mode}')
+        if image not in seqs or name not in seqs[image]:
+            raise SystemExit(f'SPECIAL_ART {key}: no sequence {image}.{name}')
+        rec = normalize(image, name, seqs[image])
+        if rec is None:
+            raise SystemExit(f'SPECIAL_ART {key}: {image}.{name} has no original file')
+        used.setdefault(image, {})[name] = rec
+        out[key] = {'image': image, 'sequence': name, 'mode': mode}
+    return out
+
+
+# Render traits whose sequences the audit (apps/game/js/content/audit.js)
+# checks, and the role each sequence plays. Decorations (selection, pips,
+# control groups, tooltips) are the engine's own drawing and are left out.
+def render_facts(actors, seqs):
+    """Per WebRA actor: [role, image, sequence, has original file] for every
+    sequence OpenRA's render traits draw (OpenRA facts, not WebRA's choices)."""
+    images = actor_images()
+    facts = {}
+    for a in actors:
+        aid = a['id']
+        image = images.get(aid.upper(), aid.lower())
+        tree = rules_of(aid)
+        out = []
+        seen = set()
+
+        def add(role, img, seq):
+            img = img.lower()
+            if img not in seqs or seq not in seqs[img] or (role, img, seq) in seen:
+                return
+            seen.add((role, img, seq))
+            out.append([role, img, seq, normalize(img, seq, seqs[img], strict=False) is not None])
+
+        def prefixed(img, prefix):
+            return sorted(n for n in seqs.get(img.lower(), {}) if n.startswith(prefix) and n != 'Defaults')
+
+        for k, (_v, ch) in tree.items():
+            name = k.split('@')[0]
+
+            def g(key, default):
+                return (ch.get(key, [default])[0] or default)
+
+            cond = g('RequiresCondition', '')
+            if name in ('WithSpriteBody', 'WithFacingSpriteBody', 'WithWallSpriteBody', 'WithHarvesterSpriteBody'):
+                seq = g('Sequence', 'idle')
+                role = 'reloading' if 'reloading' in cond and not cond.startswith('!') else 'body'
+                add(role, image, seq)
+                add(role + '-damaged', image, 'damaged-' + seq)
+            elif name == 'WithResourceLevelSpriteBody':
+                seq = g('Sequence', 'stages')
+                add('level', image, seq)
+                add('level-damaged', image, 'damaged-' + seq)
+            elif name == 'WithMakeAnimation':
+                add('make', image, g('Sequence', 'make'))
+            elif name == 'WithBuildingBib':
+                if g('HasMinibib', 'False').lower() != 'true':
+                    add('bib', image, g('Sequence', 'bib'))
+            elif name == 'WithSpriteTurret':
+                seq = g('Sequence', 'turret')
+                add('turret', image, seq)
+                add('turret-damaged', image, 'damaged-' + seq)
+            elif name == 'WithInfantryBody':
+                if 'parachute' in cond and not cond.startswith('!'):
+                    for st in tokens(g('StandSequences', 'parachute')):
+                        add('parachute-body', image, st)
+                    continue
+                for st in tokens(g('StandSequences', 'stand')):
+                    add('stand', image, st)
+                add('run', image, g('MoveSequence', 'run'))
+                add('shoot', image, g('DefaultAttackSequence', 'shoot'))
+                for idle in tokens(g('IdleSequences', '')):
+                    add('idle-anim', image, idle)
+                if trait(tree, 'TakeCover') is not None:
+                    prefix = trait(tree, 'TakeCover').get('ProneSequencePrefix', ['prone-'])[0]
+                    for st in tokens(g('StandSequences', 'stand')):
+                        add('prone-stand', image, prefix + st)
+                    add('prone-run', image, prefix + g('MoveSequence', 'run'))
+                    add('prone-shoot', image, prefix + g('DefaultAttackSequence', 'shoot'))
+            elif name == 'WithDeathAnimation':
+                for seq in prefixed(image, g('DeathSequence', 'die')):
+                    add('death', image, seq)
+                if 'CrushedSequence' in ch:
+                    add('death', image, g('CrushedSequence', 'die-crushed'))
+            elif name == 'WithIdleOverlay':
+                role = 'rotor-air' if cond == 'airborne' else 'rotor-ground' if cond == '!airborne' else 'overlay'
+                add(role, g('Image', image), g('Sequence', 'idle'))
+            elif name == 'WithProductionDoorOverlay':
+                seq = g('Sequence', 'build-top')
+                add('door', image, seq)
+                add('door-damaged', image, 'damaged-' + seq)
+            elif name == 'WithHarvestAnimation':
+                add('harvest', image, g('HarvestSequence', 'harvest'))
+            elif name == 'WithDockingAnimation':
+                add('dock', image, g('DockSequence', 'dock'))
+                add('dock-loop', image, g('DockLoopSequence', 'dock-loop'))
+            elif name == 'WithMuzzleOverlay':
+                for seq in prefixed(image, 'muzzle'):
+                    add('muzzle', image, seq)
+            elif name == 'WithDamageOverlay':
+                img = g('Image', 'smoke_m')
+                for key, default in [('StartSequence', 'start'), ('LoopSequence', 'loop'), ('EndSequence', 'end')]:
+                    add('damage-smoke', img, g(key, default))
+            elif name in ('WithResupplyAnimation', 'WithSupportPowerActivationAnimation'):
+                add('active', image, g('Sequence', 'active'))
+                add('active', image, 'damaged-' + g('Sequence', 'active'))
+            elif name == 'WithTeslaChargeAnimation':
+                add('active', image, g('ChargeSequence', 'active'))
+                add('active', image, 'damaged-' + g('ChargeSequence', 'active'))
+            elif name == 'WithTurretAttackAnimation':
+                add('recoil', image, g('Sequence', 'recoil'))
+            elif name == 'WithBuildingPlacedAnimation':
+                add('placed', image, g('Sequence', 'build'))
+            elif name == 'WithParachute':
+                img = g('Image', 'parach')
+                add('parachute', img, g('OpeningSequence', 'open'))
+                add('parachute', img, g('Sequence', 'idle'))
+            elif name == 'WithLandingCraftAnimation':
+                add('landing', image, g('OpenSequence', 'open'))
+                add('landing', image, g('UnloadSequence', 'unload'))
+            elif name == 'SpawnActorOnDeath':
+                # Husks (husks.yaml is not copied into data/source): the husk
+                # actor's own image, or OpenRA's "<unit>.destroyed" or
+                # "<unit>husk" naming.
+                husk = g('Actor', '').lower()
+                base = husk.split('.')[0]
+                for himg in [images.get(husk.upper()), husk, base + '.destroyed', base + 'husk', base + '1husk']:
+                    if himg and himg in seqs and 'idle' in seqs[himg]:
+                        add('husk', himg, 'idle')
+                        break
+            elif name == 'LeavesTrails':
+                img = g('Image', '')
+                for seq in tokens(g('Sequences', 'idle')):
+                    add('trail', img, seq)
+        add('icon', image, 'icon')
+        facts[aid] = {'image': image, 'parts': out}
+    return facts
 
 
 def terrain_tables():
@@ -432,6 +742,8 @@ def main():
             '_wall': a['id'].upper() in walls,
         })
     art, used = actor_art(actors, seqs)
+    specials = special_art(seqs, used)
+    facts = render_facts(actors, seqs)
 
     trees = {}
     for t in TREES:
@@ -490,11 +802,31 @@ def main():
     lines += [
         '};',
         '',
-        '/** Per WebRA actor: OpenRA image, sequence per pose of the body and second slot, wall, cameo. */',
+        '/**',
+        ' * Per WebRA actor: OpenRA image, sequence per pose of the body and second',
+        ' * slot (aux-idle and aux-move: a second rotor), wall, level (the frame',
+        ' * shows the storage level), lift (screen y offset in pixels of the second',
+        ' * slot per pose, negative is up), unitOverlay (forward and side offset of an overlay drawn',
+        ' * over a unit without a turret), cameo.',
+        ' */',
         'export const ACTOR_ART = {',
     ]
     for aid in sorted(art):
         lines.append(f'  {json.dumps(aid)}: {js(art[aid])},')
+    lines += [
+        '};',
+        '',
+        '/**',
+        ' * The engine\'s special sprites with original art (tools/gen_content_tables.py',
+        ' * SPECIAL_ART): key (apps/game/js/content/packs.js SPECIALS name, or art',
+        ' * module "naval", "planes", "helis", "abilities", "veterancy",',
+        ' * "decorations" and the index in its specials) -> { image, sequence, mode }',
+        ' * or null (WebRA art). Modes: loop, effect (plays once, then nothing).',
+        ' */',
+        f'export const SPECIAL_ART = {{',
+    ]
+    for key in SPECIAL_ART:
+        lines.append(f'  {json.dumps(key)}: {js(specials[key])},')
     lines += [
         '};',
         '',
@@ -532,6 +864,27 @@ def main():
     with open(OUT, 'w') as f:
         f.write('\n'.join(lines))
     print(f'wrote {os.path.relpath(OUT, ROOT)}: {len(art)} actors, {len(used)} images, {len(files)} files')
+
+    facts_lines = [
+        '// GENERATED by tools/gen_content_tables.py, do not edit.',
+        f'// Source: OpenRA mods/ra rules and sequences at commit {OPENRA_COMMIT}',
+        '// (GPL-3.0, copied into data/source) and engine/rules.json. Names only.',
+        '//',
+        '// What OpenRA draws for every WebRA actor, for the original art audit',
+        '// (apps/game/js/content/audit.js): per actor its image and one',
+        '// [role, image, sequence, original] row per sequence its render traits',
+        '// use; `original` is false when the file is made by OpenRA (bits.txt)',
+        '// and a player\'s copy of Red Alert has nothing for it. These are OpenRA\'s',
+        '// facts, not WebRA\'s choices (those are content/tables.js ACTOR_ART).',
+        '',
+        'export const RENDER_FACTS = {',
+    ]
+    for aid in sorted(facts):
+        facts_lines.append(f'  {json.dumps(aid)}: {js(facts[aid])},')
+    facts_lines += ['};', '']
+    with open(FACTS_OUT, 'w') as f:
+        f.write('\n'.join(facts_lines))
+    print(f'wrote {os.path.relpath(FACTS_OUT, ROOT)}: {sum(len(f["parts"]) for f in facts.values())} sequences of {len(facts)} actors')
 
 
 if __name__ == '__main__':

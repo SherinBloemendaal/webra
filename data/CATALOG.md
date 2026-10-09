@@ -7,7 +7,7 @@ Per-faction availability is computed by walking the tech tree (`ProvidesPrerequi
 
 Hotkeys (`data/source/hotkeys/*.yaml` and `*.ftl`, OpenRA `mods/common/hotkeys`, `mods/ra/hotkeys.yaml` and their `fluent/hotkeys.ftl` descriptions at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0; `ra.yaml` and `ra-hotkeys.ftl` are the Red Alert ones): OpenRA's default keys, contexts and descriptions; `tools/gen_hotkeys.py` turns them into `apps/game/js/openra-hotkeys.js`, the defaults of the game's hotkeys.
 
-Sprite sequences (`data/source/sequences/*.yaml`, OpenRA `mods/ra/sequences` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0) describe how OpenRA cuts the original Red Alert sprites into facings and animations; `tools/gen_content_tables.py` turns them, the rules and the tilesets into `apps/game/js/content/tables.js` (file names and frame numbers only: the graphics come from the player's own copy of Red Alert).
+Sprite sequences (`data/source/sequences/*.yaml`, OpenRA `mods/ra/sequences` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0) describe how OpenRA cuts the original Red Alert sprites into facings and animations; `tools/gen_content_tables.py` turns them, the rules and the tilesets into `apps/game/js/content/tables.js` and the audit facts `apps/game/js/content/render-facts.js` (file names and frame numbers only: the graphics come from the player's own copy of Red Alert).
 
 Full trait-level data for every actor (every property OpenRA defines) is in `actors.json`; every weapon with projectile and warheads is in `weapons.json`.
 

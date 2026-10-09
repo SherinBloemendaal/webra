@@ -1234,7 +1234,8 @@ impl World {
             return;
         }
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
-        let ttl = if kind == Kind::Building { 30 } else { 18 };
+        // Long enough for OpenRA's self_destruct explosion (art-exp1.shp, 22 frames at one per tick).
+        let ttl = if kind == Kind::Building { 30 } else { 22 };
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
         if kind == Kind::Ship {
             self.ship_death_effect(i);

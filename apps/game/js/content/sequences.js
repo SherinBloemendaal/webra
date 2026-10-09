@@ -42,8 +42,11 @@ export const POSE = Object.freeze({
   DOCK: 6,
   STILL: 7,
   DAMAGED_STILL: 8,
+  /** A second overlay of the slot (the Chinook's rear rotor): on the ground, and in the air. */
+  AUX_IDLE: 9,
+  AUX_MOVE: 10,
 });
-export const POSE_COUNT = 9;
+export const POSE_COUNT = 11;
 /** Sprite ids carry the pose: id = slot + POSE_STRIDE * (pose + POSE_CODES * age). */
 export const POSE_STRIDE = 4096;
 export const POSE_CODES = 16;

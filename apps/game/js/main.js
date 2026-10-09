@@ -742,9 +742,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const applyArt = () => {
     const art = content?.art(rules.actors, biome) ?? null;
     let atlas = null;
+    let original = null;
     if (art?.slots.size) {
       try {
         atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
+        original = art.original;
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
@@ -752,6 +754,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     }
     atlas ??= buildAtlas(rules.actors);
     renderer.setAtlas(atlas);
+    // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
+    game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
     // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
     game.set_building_overlays(atlas.overlays);
     // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).

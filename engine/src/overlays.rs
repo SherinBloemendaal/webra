@@ -4,7 +4,8 @@
 //! actors), and the animated layer of buildings (apps/game/js/art/anim.js).
 //!
 //! It also draws the control group number of selected actors (OpenRA
-//! WithSpriteControlGroupDecoration) and the rally point of selected
+//! WithSpriteControlGroupDecoration, moved to the box's bottom right corner)
+//! and the rally point of selected
 //! production structures (OpenRA RallyPointIndicator).
 //!
 //! Everything here is presentation only: it reads the world and fills the
@@ -63,6 +64,17 @@ pub struct RenderOptions {
     /// `(actor ref, group 0..=9)` sorted by ref, one entry per actor. Local
     /// UI state, set by the client and never part of the simulation.
     pub control_groups: Vec<(u32, u8)>,
+    /// Sprite slots drawn from the original graphics (apps/game/js/content/atlas.js
+    /// originalSlotInfo), sorted: those are drawn the OpenRA way (rotor
+    /// sequences, effects that animate themselves, projectiles with their
+    /// own facings). Empty with WebRA's art and texture packs.
+    pub original_slots: Vec<u32>,
+    /// Overlays drawn over units without a turret (OpenRA
+    /// WithIdleOverlay@SPINNER): `(actor type, forward, side)` in world units.
+    pub unit_overlays: Vec<(u16, i32, i32)>,
+    /// Structures whose body shows the storage level (OpenRA
+    /// WithResourceLevelSpriteBody): `(actor type, stages)`.
+    pub level_stages: Vec<(u16, u32)>,
 }
 
 impl Default for RenderOptions {
@@ -73,9 +85,19 @@ impl Default for RenderOptions {
             building_overlays: Vec::new(),
             poses: false,
             control_groups: Vec::new(),
+            original_slots: Vec::new(),
+            unit_overlays: Vec::new(),
+            level_stages: Vec::new(),
         }
     }
 }
+
+/// What `RenderOptions::set_original_art` reads from each record of its
+/// `info` list (four integers each: kind, actor type, a, b).
+pub const ORIGINAL_INFO_OVERLAY: i32 = 0;
+pub const ORIGINAL_INFO_LEVEL: i32 = 1;
+/// Integers per `info` record.
+pub const ORIGINAL_INFO_STRIDE: usize = 4;
 
 impl RenderOptions {
     /// Store the control groups: `refs[k]` is in group `groups[k]`. Pairs
@@ -93,6 +115,44 @@ impl RenderOptions {
             }
         }
         self.control_groups = out;
+    }
+
+    /// Store what the original art needs (Game.set_original_slots): the
+    /// slots drawn from it and `info` records `[kind, actor type, a, b]`:
+    /// an overlay over a unit (`ORIGINAL_INFO_OVERLAY`, a forward, b side
+    /// offset in world units) or a structure showing the storage level
+    /// (`ORIGINAL_INFO_LEVEL`, a stages). Unknown kinds and a trailing
+    /// partial record are ignored.
+    pub fn set_original_art(&mut self, slots: &[u32], info: &[i32]) {
+        let mut slots = slots.to_vec();
+        slots.sort_unstable();
+        slots.dedup();
+        self.original_slots = slots;
+        self.unit_overlays.clear();
+        self.level_stages.clear();
+        for r in info.as_chunks::<ORIGINAL_INFO_STRIDE>().0 {
+            let Ok(ty) = u16::try_from(r[1]) else { continue };
+            match r[0] {
+                ORIGINAL_INFO_OVERLAY => self.unit_overlays.push((ty, r[2], r[3])),
+                ORIGINAL_INFO_LEVEL if r[2] > 0 => self.level_stages.push((ty, r[2] as u32)),
+                _ => {}
+            }
+        }
+    }
+
+    /// Whether sprite slot `slot` is drawn from the original graphics.
+    pub fn is_original(&self, slot: u32) -> bool {
+        self.original_slots.binary_search(&slot).is_ok()
+    }
+
+    /// The forward and side offset of the overlay drawn over units of type `ty`, if any.
+    pub fn unit_overlay(&self, ty: u16) -> Option<(i32, i32)> {
+        self.unit_overlays.iter().find(|o| o.0 == ty).map(|o| (o.1, o.2))
+    }
+
+    /// The level stages of structures of type `ty`, if their body shows the storage level.
+    pub fn level_stages(&self, ty: u16) -> Option<u32> {
+        self.level_stages.iter().find(|o| o.0 == ty).map(|o| o.1)
     }
 
     /// The control group of actor ref `r`, if it is in one.
@@ -221,19 +281,28 @@ pub const GROUP_GLYPH_H: usize = 5;
 /// The digit's colour and the dark plate behind it (one pixel around the glyph).
 pub const GROUP_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub const GROUP_PLATE: [f32; 4] = [0.0, 0.0, 0.0, 0.75];
-/// Top-left of the plate from the box's top-left corner. OpenRA's Red Alert
-/// draws the group at the box's TopLeft (WithSpriteControlGroupDecoration,
-/// Margin -2,0, sequence offset 9,5): just inside the corner, right of the
-/// bracket's vertical arm and below its horizontal one, clear of the health
-/// bar above the box.
+/// Gap between the plate and the box's bottom and right edges. WebRA draws
+/// the group in the box's bottom right corner (OpenRA's Red Alert uses the
+/// top left): just inside the corner, left of the bracket's vertical arm and
+/// above its horizontal one, clear of the health bar above the box and of
+/// the cargo, ore and ammo pips below it.
 pub const GROUP_INSET: (f32, f32) = (BRACKET_THICKNESS, BRACKET_THICKNESS);
+/// Width and height of the dark plate (the glyph plus one pixel around it).
+pub const GROUP_PLATE_SIZE: (f32, f32) = (GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0);
 
-/// Rects of control group `group`'s number in the top left corner of the box
-/// (l, t): a dark plate, then one rect per horizontal run of each glyph row.
-pub fn push_group_number(l: f32, t: f32, group: u8, out: &mut Vec<f32>) {
+/// Top-left of the group number's plate for the box (l, t, w, h): in the
+/// bottom right corner, `GROUP_INSET` inside the bracket arms.
+pub fn group_plate_origin(l: f32, t: f32, w: f32, h: f32) -> (f32, f32) {
+    (l + w - GROUP_INSET.0 - GROUP_PLATE_SIZE.0, t + h - GROUP_INSET.1 - GROUP_PLATE_SIZE.1)
+}
+
+/// Rects of control group `group`'s number in the bottom right corner of
+/// the box (l, t, w, h): a dark plate, then one rect per horizontal run of
+/// each glyph row.
+pub fn push_group_number(l: f32, t: f32, w: f32, h: f32, group: u8, out: &mut Vec<f32>) {
     let Some(glyph) = GROUP_GLYPHS.get(group as usize) else { return };
-    let (x, y) = (l + GROUP_INSET.0, t + GROUP_INSET.1);
-    push_rect(out, x, y, GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0, GROUP_PLATE);
+    let (x, y) = group_plate_origin(l, t, w, h);
+    push_rect(out, x, y, GROUP_PLATE_SIZE.0, GROUP_PLATE_SIZE.1, GROUP_PLATE);
     for (row, bits) in glyph.iter().enumerate() {
         let mut col = 0;
         while col < GROUP_GLYPH_W {
