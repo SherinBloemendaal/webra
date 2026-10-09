@@ -27,8 +27,9 @@ export function powerTip(p, hotkey, ticksPerSecond) {
 export class PowerBar {
   /**
    * @param {HTMLElement} parent element the bar is placed in (the battlefield)
-   * @param {{ ticksPerSecond: number, onSelect(power): void, onTargetLost?(): void, hotkeys?: import('./hotkeys.js').HotkeyRegistry }} hooks
-   *   `hotkeys`: the registry, for the support power keys in the tooltips
+   * @param {{ ticksPerSecond: number, onSelect(power): void, onInsufficientPower?(power): void, onTargetLost?(): void, hotkeys?: import('./hotkeys.js').HotkeyRegistry }} hooks
+   *   `hotkeys`: the registry, for the support power keys in the tooltips;
+   *   `onInsufficientPower`: a power without a powered provider was clicked (OpenRA InsufficientPower)
    */
   constructor(parent, hooks) {
     this.hooks = hooks;
@@ -59,7 +60,8 @@ export class PowerBar {
       b.el.classList.toggle('ready', p.ready);
       b.el.classList.toggle('paused', !p.ready && !p.charging);
       b.el.classList.toggle('targeting', this.targeting === p.key);
-      b.el.disabled = !p.ready;
+      // A charging power cannot be picked; a paused one (no power) can be clicked to hear why (OpenRA ClickIcon).
+      b.el.disabled = !p.ready && p.charging;
       b.tip.refresh();
     });
     for (const [key, b] of this.buttons) {
@@ -84,7 +86,17 @@ export class PowerBar {
   activate(index) {
     const el = this.root.children[index];
     const b = el && [...this.buttons.values()].find((x) => x.el === el);
-    if (b?.power.ready) this.hooks.onSelect(b.power);
+    if (b) this.pick(b.power);
+  }
+
+  /**
+   * A power was clicked (OpenRA SupportPowersWidget.ClickIcon): without a
+   * powered provider it says Insufficient power; ready, it starts targeting;
+   * still charging, nothing happens.
+   */
+  pick(power) {
+    if (!power.charging) this.hooks.onInsufficientPower?.(power);
+    else if (power.ready) this.hooks.onSelect(power);
   }
 
   /** Highlight the power being targeted (null: none). */
@@ -112,8 +124,10 @@ export class PowerBar {
     el.addEventListener('mousedown', (e) => e.stopPropagation());
     el.addEventListener('click', () => {
       const b = this.buttons.get(p.key);
-      if (b?.power.ready) this.hooks.onSelect(b.power);
+      if (b) this.pick(b.power);
     });
+    // Its sounds are the power's own (OpenRA plays no ClickSound for support powers).
+    el.dataset.clickSound = 'own';
     const rec = { el, fill, time, power: p };
     // The hotkey of the button's place in the bar (SupportPower01.., js/gamekeys.js).
     const key = () => {

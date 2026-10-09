@@ -157,6 +157,10 @@ export const GROUPS = deepFreeze({
       original: { type: 'boolean', default: true, label: 'Use installed original sounds' },
       // OpenRA Settings.Sound.CashTicks.
       cashTicks: { type: 'boolean', default: true, label: 'Cash ticks', help: 'Ticks while the credits counter counts up or down.' },
+      // OpenRA plays its ClickSound on every interface button; this can mute them.
+      clickSounds: { type: 'boolean', default: true, label: 'Interface clicks', help: 'A click on buttons, tabs and switches, like Red Alert.' },
+      // OpenRA Settings.Sound.MuteBackgroundMusic, the other way round.
+      menuMusic: { type: 'boolean', default: true, label: 'Main menu music', help: 'The intro track behind the main menu, when the music is installed.' },
       musicOn: { type: 'boolean', default: true, label: 'Music on', help: 'Music needs installed original content or a texture pack with music.' },
       musicShuffle: { type: 'boolean', default: true, label: 'Shuffle music' },
       musicRepeat: {

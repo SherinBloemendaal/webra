@@ -23,6 +23,8 @@ import {
   isStructureQueue,
   placementLost,
   productionTip,
+  queueOutcome,
+  rightClickAction,
   summarizeQueues,
 } from './production.js';
 
@@ -66,8 +68,11 @@ export class Sidebar {
    * @param {object} rules parsed rules_json()
    * @param {number} playerId local player id
    * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onMode?: (mode: string) => void,
-   *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean}} callbacks
-   *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed
+   *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean,
+   *   onProductionClick?: (id: string, outcome: string | null) => void}} callbacks
+   *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed;
+   *   onProductionClick: a cameo click did something, with the queue's speech for it
+   *   ('queued', 'blocked', 'limited', 'resumed', 'onHold', 'cancelled', or null)
    * @param {{ticksPerSecond?: number, hotkeys?: import('./hotkeys.js').HotkeyRegistry}} [options]
    *   game ticks per second, for the clocks; the hotkey registry, for the keys in tooltips
    */
@@ -287,6 +292,8 @@ export class Sidebar {
     const btn = el('button', 'sb-card');
     btn.type = 'button';
     btn.dataset.id = id;
+    // Its sounds follow what the click did (onProductionClick), not every click.
+    btn.dataset.clickSound = 'own';
 
     const canvas = el('canvas', 'sb-icon');
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -301,6 +308,8 @@ export class Sidebar {
     const count = el('span', 'sb-count');
     count.hidden = true;
     const ready = el('span', 'sb-ready', 'Ready');
+    // OpenRA's "ON HOLD" over a paused item.
+    const hold = el('span', 'sb-hold', 'On hold');
     const name = el('span', 'sb-name', actor.name);
     const slot = el('span', 'sb-slot');
     slot.hidden = true;
@@ -308,13 +317,19 @@ export class Sidebar {
     const req = el('span', 'sb-req');
     req.setAttribute('aria-hidden', 'true');
     req.hidden = true;
-    btn.append(canvas, clock, eta, count, ready, slot, req, name);
+    btn.append(canvas, clock, eta, count, ready, hold, slot, req, name);
 
     // shiftLatched: the touch action bar's Add toggle stands in for Shift.
     btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.onCardCancel(id);
+    });
+    // OpenRA HandleMiddleClick: cancel at once, skipping "on hold".
+    btn.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      this.onCardCancel(id, { direct: true });
     });
     btn.addEventListener('keydown', (e) => {
       // Keyboard equivalent of right click.
@@ -345,6 +360,8 @@ export class Sidebar {
       enabled: null,
       building: null,
       ready: null,
+      paused: null,
+      head: undefined,
       queued: -1,
       progress: -1,
     };
@@ -373,21 +390,52 @@ export class Sidebar {
 
   // ---- Input -----------------------------------------------------------
 
+  /**
+   * Left click on a card (OpenRA ProductionPaletteWidget HandleLeftClick):
+   * resume an item on hold, pick up a finished structure, or queue more,
+   * saying Building or Training when the queue was empty (or why it cannot
+   * queue: Unable to build more, Building in progress).
+   */
   onCardClick(id, shift) {
     const c = this.cards.get(id);
     if (!c) return;
+    if (c.head?.paused) {
+      this.game.pause_production(this.playerId, id, false);
+      this.callbacks.onProductionClick?.(id, 'resumed');
+      return;
+    }
     const action = clickAction({ queue: c.actor.queue, enabled: c.enabled, ready: c.ready }, shift);
     if (!action) return;
-    if (action.place) this.callbacks.onPlace?.(id);
-    else this.game.start_production(this.playerId, id, action.count);
+    if (action.place) {
+      this.callbacks.onPlace?.(id);
+      this.callbacks.onProductionClick?.(id, null);
+      return;
+    }
+    const queue = this.state?.queues?.[c.actor.queue] ?? [];
+    const outcome = queueOutcome({ queueLength: queue.length, limitLeft: this.buildable?.get(id)?.limitLeft ?? null });
+    this.callbacks.onProductionClick?.(id, queue.length ? null : outcome);
+    if (outcome === 'queued') this.game.start_production(this.playerId, id, action.count);
   }
 
-  onCardCancel(id) {
+  /**
+   * Right click (or Delete) on a card (OpenRA HandleRightClick): put the item
+   * being built on hold, or cancel one (on hold, finished, not started yet).
+   * `direct` (middle click) always cancels.
+   */
+  onCardCancel(id, { direct = false } = {}) {
     const c = this.cards.get(id);
     if (!c) return;
     // Disabled cards can be cancelled too, so nothing ever stays stuck.
+    const what = direct && c.head?.count ? 'cancel' : rightClickAction(c.head);
+    if (!what) return;
+    if (what === 'pause') {
+      this.game.pause_production(this.playerId, id, true);
+      this.callbacks.onProductionClick?.(id, 'onHold');
+      return;
+    }
     const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued });
     this.game.cancel_production(this.playerId, id);
+    this.callbacks.onProductionClick?.(id, 'cancelled');
     if (endsPlacement) this.callbacks.onCancelPlace?.();
   }
 
@@ -526,9 +574,15 @@ export class Sidebar {
       c.btn.classList.toggle('disabled', !enabled);
       c.btn.setAttribute('aria-disabled', enabled ? 'false' : 'true');
     }
+    c.head = s;
     const count = s ? s.count : 0;
     const ready = !!(s && s.done);
     const building = !!s && !ready;
+    const paused = !!(s && s.paused && !ready);
+    if (c.paused !== paused) {
+      c.paused = paused;
+      c.btn.classList.toggle('paused', paused);
+    }
     const progress = building ? Math.max(0, Math.min(1, s.progress)) : 0;
 
     if (c.building !== building) {
@@ -566,6 +620,7 @@ export class Sidebar {
     let label = `${c.actor.name}, ${c.actor.cost} credits`;
     if (c.enabled === false) label += c.reqText ? `, unavailable: ${c.reqText}` : ', unavailable';
     if (c.ready) label += isStructureQueue(c.actor.queue) ? ', ready to place' : ', ready';
+    else if (c.paused) label += ', on hold';
     else if (c.building) label += c.etaText ? `, building, ${c.etaText} left` : ', building';
     if (c.queued > 1) label += `, ${c.queued} queued`;
     if (c.label !== label) {

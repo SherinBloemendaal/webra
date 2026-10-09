@@ -360,6 +360,7 @@ export function viewOnly(game, blocked = () => true) {
     'set_rally',
     'start_production',
     'cancel_production',
+    'pause_production',
     'place_building',
     'dev_flag',
     'dev_give_cash',

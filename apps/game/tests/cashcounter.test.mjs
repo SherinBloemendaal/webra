@@ -58,7 +58,9 @@ test('cash tick sounds: OpenRA notifications, our own clicks, gain and the Cash 
 
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
   const played = [];
-  audio.effect = (sound, opts) => played.push([sound.synth, opts.gain]);
+  // OpenRA notifications CashTickUp and CashTickDown (VolumeModifier 0.33, InterruptType Overlap).
+  audio.bank.resolveAll = (sound) => [{ buffer: sound.synth, rate: 1 }];
+  audio.mixer.play = (buffer, opts) => (played.push([buffer, opts.gain]), { stop() {}, ended: Promise.resolve() });
   audio.cashTick('up');
   audio.cashTick('down');
   audio.cashTick('sideways');

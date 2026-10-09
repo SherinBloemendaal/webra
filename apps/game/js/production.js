@@ -24,7 +24,8 @@ export function summarizeQueues(queues) {
     for (const it of items) {
       const s = perId.get(it.id);
       if (s) s.count += 1;
-      else perId.set(it.id, { count: 1, progress: it.progress, done: it.done });
+      // The first queued item of a type is the one OpenRA pauses and resumes.
+      else perId.set(it.id, { count: 1, progress: it.progress, done: it.done, paused: !!it.paused, started: !!it.started });
     }
   }
   return { perId, activity, ready };
@@ -41,6 +42,33 @@ export function clickAction({ queue, enabled, ready }, shift) {
   if (enabled === false) return null;
   if (isStructureQueue(queue) && ready) return { place: true };
   return { place: false, count: shift ? SHIFT_COUNT : 1 };
+}
+
+/** Items one production queue holds at most (engine/src/production.rs MAX_QUEUED). */
+export const QUEUE_MAX = 30;
+
+/**
+ * What OpenRA's ProductionQueue.CanQueue says about one more item: 'queued'
+ * (QueuedAudio), 'limited' (LimitedAudio: the queue is full) or 'blocked'
+ * (BlockedAudio: its Buildable.BuildLimit is reached).
+ * @param {{ queueLength: number, limitLeft?: number | null }} o limitLeft: player_json buildable `limitLeft` (null: no limit)
+ */
+export function queueOutcome({ queueLength, limitLeft = null }) {
+  if (queueLength >= QUEUE_MAX) return 'limited';
+  if (limitLeft !== null && limitLeft !== undefined && limitLeft <= 0) return 'blocked';
+  return 'queued';
+}
+
+/**
+ * What a right click on a card does (OpenRA ProductionPaletteWidget
+ * HandleRightClick): put the first queued item of it on hold ('pause'), or
+ * cancel one ('cancel') when that item is on hold, finished or not started
+ * (nothing paid yet); null with nothing queued.
+ * @param {{ count: number, done: boolean, paused: boolean, started: boolean } | undefined} head perId summary of the card
+ */
+export function rightClickAction(head) {
+  if (!head || !head.count) return null;
+  return head.paused || head.done || !head.started ? 'cancel' : 'pause';
 }
 
 /**
@@ -164,7 +192,7 @@ export function productionTip(actor, item, state, { hotkey = null, ticksPerSecon
     else requires = 'Unavailable';
   }
   const hint = isStructureQueue(actor.queue)
-    ? `Left click: build, then place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
-    : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
+    ? `Left click: build, then place. Shift: queue ${SHIFT_COUNT}. Right click: hold, then cancel. Middle click: cancel.`
+    : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: hold, then cancel. Middle click: cancel.`;
   return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes: [{ text: hint, tone: 'hint' }] };
 }
