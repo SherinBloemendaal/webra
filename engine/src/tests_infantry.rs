@@ -485,3 +485,99 @@ fn infantry_state_is_deterministic() {
         assert_eq!(a.state_hash(), b.state_hash());
     }
 }
+
+// ---- AI ------------------------------------------------------------------------------------
+
+#[test]
+fn ai_trains_dogs_and_grenadiers_within_limits() {
+    let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
+    w.players[0].cash = 50_000;
+    run(&mut w, 25 * 60 * 8);
+    let count = |id: &str| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == ty(&w, id)).count();
+    assert!(count("E2") > 0, "grenadiers");
+    assert!(count("DOG") > 0 && count("DOG") <= 4, "dogs, UnitLimits 4: {}", count("DOG"));
+    assert!(count("E1") > count("DOG"), "riflemen are the bulk");
+}
+
+#[test]
+fn ai_engineers_capture_what_they_see() {
+    let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
+    flat_reset(&mut w);
+    let powr = building(&mut w, "POWR", 1, 30, 30);
+    let e6 = unit(&mut w, "E6", 0, 31, 35);
+    run(&mut w, 25 * 40);
+    assert_eq!(w.actors[powr].owner, 0, "captured by the AI's engineer");
+    assert!(!w.actors[e6].alive);
+}
+
+fn flat_reset(w: &mut World) {
+    for i in 0..w.map.cells() {
+        if w.building_at[i] == crate::world::NONE {
+            w.map.terrain[i] = crate::map::Terrain::Clear;
+        }
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    w.pass_water = crate::flowfield::Passability::water(&w.map);
+    for b in 0..w.building_at.len() {
+        if w.building_at[b] != crate::world::NONE {
+            w.pass.set_blocked(b, true);
+        }
+    }
+    w.pass.refresh(&w.map);
+}
+
+// ---- Drawing ------------------------------------------------------------------------------
+
+fn sprite_ids(w: &World, player: u8) -> Vec<(u32, f32)> {
+    let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+    let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+    w.build_render(player, 1.0, &view, &[], &mut sprites, &mut rects);
+    sprites.chunks(crate::render::SPRITE_FLOATS).map(|s| (s[3] as u32, s[4])).collect()
+}
+
+#[test]
+fn enemies_see_a_disguised_spy_as_their_own_soldier() {
+    let mut w = flat_world();
+    let spy = passive(&mut w, "SPY.England", 0, 30, 30);
+    let e1 = passive(&mut w, "E1", 1, 31, 30);
+    w.update_vision();
+    w.disguise_as(spy, e1);
+    let slot = |id: &str| ty(&w, id) as u32 * 2;
+    let theirs = sprite_ids(&w, 1);
+    assert!(!theirs.iter().any(|&(s, _)| s == slot("SPY.England")), "the enemy never sees the spy");
+    assert_eq!(theirs.iter().filter(|&&(s, team)| s == slot("E1") && team == 1.0).count(), 2, "two of its own riflemen");
+    assert!(sprite_ids(&w, 0).iter().any(|&(s, _)| s == slot("SPY.England")), "the owner sees the spy");
+}
+
+#[test]
+fn dying_soldiers_are_drawn_with_their_death_and_original_art_gets_the_pose() {
+    let mut w = flat_world();
+    let e1 = passive(&mut w, "E1", 1, 30, 30);
+    w.update_vision();
+    let tesla = w.rules.weapons.iter().position(|x| x.name == "TeslaZap").unwrap();
+    let types = w.rules.weapons[tesla].warheads[0].damage_types;
+    w.damage_from(e1, 1_000_000, crate::world::NONE, types);
+    let base = crate::render::SpriteIds::new(w.rules.actors.len()).infantry_base;
+    let zapped = base + crate::infantry_render::SPRITE_DIE_ZAPPED;
+    assert!(sprite_ids(&w, 1).iter().any(|&(s, _)| s as f32 == zapped), "built-in electrocuted body (die6)");
+    w.render_opts.poses = true;
+    w.render_opts.death_art = vec![true; w.rules.actors.len()];
+    let posed = crate::render::posed(ty(&w, "E1") as u32 * 2, crate::render::Pose::Die6, 0) as u32;
+    assert!(sprite_ids(&w, 1).iter().any(|&(s, _)| s == posed), "die6 of the original art");
+}
+
+#[test]
+fn standing_soldiers_use_both_stand_sequences_and_idle_now_and_then() {
+    let mut w = flat_world();
+    let soldiers: Vec<usize> = (0..12).map(|k| passive(&mut w, "E1", 0, 10 + k, 20)).collect();
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..300 {
+        w.tick += 1;
+        for &i in &soldiers {
+            seen.insert(w.infantry_stand_pose(i).0 as u32);
+        }
+    }
+    for p in [crate::render::Pose::Idle, crate::render::Pose::Stand2, crate::render::Pose::Idle1, crate::render::Pose::Idle2] {
+        assert!(seen.contains(&(p as u32)), "{p:?} shows up");
+    }
+}

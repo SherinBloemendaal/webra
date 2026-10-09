@@ -49,6 +49,8 @@ pub struct SpriteIds {
     pub veterancy_base: f32,
     /// Repair wrench and power off icon (repair.rs).
     pub decorations_base: f32,
+    /// Infantry deaths, spy and fake tags, sonar ring (infantry_render.rs).
+    pub infantry_base: f32,
 }
 
 impl SpriteIds {
@@ -73,6 +75,7 @@ impl SpriteIds {
             abilities_base: b + 36.0,
             veterancy_base: b + 44.0,
             decorations_base: b + 52.0,
+            infantry_base: b + 60.0,
         }
     }
 }
@@ -104,13 +107,43 @@ pub enum Pose {
     /// The first frame only: no power, or remembered under the fog.
     Still = 7,
     DamagedStill = 8,
+    /// Infantry standing still: the second stand sequence (OpenRA
+    /// WithInfantryBody StandSequences `stand2`), and the two idle animations
+    /// (IdleSequences `idle1`, `idle2`), played once from the age.
+    Stand2 = 9,
+    Idle1 = 10,
+    Idle2 = 11,
+    /// Death animations die1..die6 (WithDeathAnimation) and the crushed body,
+    /// played once from the age (infantry_render.rs).
+    Die1 = 12,
+    Die2 = 13,
+    Die3 = 14,
+    Die4 = 15,
+    Die5 = 16,
+    Die6 = 17,
+    Crushed = 18,
+}
+
+impl Pose {
+    /// The pose of death sequence `n` (1..=6, `infantry::DEATH_CRUSHED` crushed).
+    pub fn death(n: u8) -> Pose {
+        match n {
+            1 => Pose::Die1,
+            2 => Pose::Die2,
+            3 => Pose::Die3,
+            4 => Pose::Die4,
+            5 => Pose::Die5,
+            6 => Pose::Die6,
+            _ => Pose::Crushed,
+        }
+    }
 }
 
 /// Sprite ids with poses: `slot + POSE_STRIDE * (pose + POSE_CODES * age)`.
 /// Slots stay below `POSE_STRIDE`, so `id % POSE_STRIDE` is always the slot
 /// (docs/contracts.md section 8).
 pub const POSE_STRIDE: u32 = 4096;
-pub const POSE_CODES: u32 = 16;
+pub const POSE_CODES: u32 = 32;
 /// Largest age the id carries (ticks since the actor appeared, or a wall's connection mask).
 pub const MAX_POSE_AGE: u32 = 127;
 
@@ -236,6 +269,8 @@ impl World {
 
         sprites.extend_from_slice(&building_turrets);
 
+        // Dying soldiers lie under the living (infantry_render.rs).
+        self.render_corpses(player, sink, &ids, sprites);
         // Units: bodies, then turrets on top; aircraft after everything on the
         // ground, raised by their altitude, with a dark shadow underneath.
         let mut turrets: Vec<f32> = Vec::new();
@@ -278,13 +313,15 @@ impl World {
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            // A disguised spy looks like its disguise to enemies (infantry.rs).
+            let (look, team) = self.disguise_seen_by(i, player).map_or((a.ty, a.owner), |d| (d.ty, d.owner));
             // Prone infantry lie flat (TakeCover, veterancy.rs).
-            let body = if self.draws_prone(i) { a.ty * 2 + 1 } else { a.ty * 2 };
+            let body = if self.draws_prone(i) { look * 2 + 1 } else { look * 2 };
             sink.sprite(
                 sprites,
                 at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
                     self.body_sprite(i, body as u32),
-                    a.owner as f32,
+                    team as f32,
                     1.0,
                     body_alpha,
                     flash,
@@ -305,6 +342,8 @@ impl World {
         sprites.extend_from_slice(&aircraft);
         // Rank chevrons on top of every unit (veterancy.rs).
         self.render_veterancy(player, sink, ids.veterancy_base, sprites);
+        // Spy and fake tags, capture progress, outage bars, sonar rings (infantry_render.rs).
+        self.render_infantry(player, sink, &ids, selected, sprites, rects);
         // Repair wrenches and power off icons on structures (repair.rs).
         self.render_building_decorations(player, sink, ids.decorations_base, sprites);
 
@@ -567,6 +606,9 @@ impl World {
             Pose::Move
         } else if matches!(a.activity, Activity::Attack | Activity::AttackGround) {
             Pose::Attack
+        } else if a.kind == Kind::Infantry {
+            // Stand variants and idle animations (infantry_render.rs).
+            self.infantry_stand_pose(i).0
         } else {
             Pose::Idle
         }
@@ -577,7 +619,14 @@ impl World {
         if !self.render_opts.poses {
             return slot as f32;
         }
-        let (pose, age) = if self.actors[i].kind == Kind::Building { self.building_pose(i) } else { (self.unit_pose(i), 0) };
+        let (pose, age) = match self.actors[i].kind {
+            Kind::Building => self.building_pose(i),
+            Kind::Infantry => match self.unit_pose(i) {
+                Pose::Idle | Pose::Stand2 | Pose::Idle1 | Pose::Idle2 => self.infantry_stand_pose(i),
+                p => (p, 0),
+            },
+            _ => (self.unit_pose(i), 0),
+        };
         posed(slot, pose, age)
     }
 

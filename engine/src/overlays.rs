@@ -63,6 +63,9 @@ pub struct RenderOptions {
     /// `(actor ref, group 0..=9)` sorted by ref, one entry per actor. Local
     /// UI state, set by the client and never part of the simulation.
     pub control_groups: Vec<(u32, u8)>,
+    /// Per actor type: its art has death sequences (with `poses`): dying
+    /// soldiers show them instead of the built-in bodies (infantry_render.rs).
+    pub death_art: Vec<bool>,
 }
 
 impl Default for RenderOptions {
@@ -73,6 +76,7 @@ impl Default for RenderOptions {
             building_overlays: Vec::new(),
             poses: false,
             control_groups: Vec::new(),
+            death_art: Vec::new(),
         }
     }
 }

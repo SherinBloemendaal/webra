@@ -10,6 +10,7 @@ mod actor_table;
 mod ai;
 mod ai_arsenal;
 mod ai_economy;
+mod ai_infantry;
 mod air;
 pub mod beacons;
 mod cargo;
@@ -23,6 +24,7 @@ pub mod flowfield;
 mod helicopter;
 pub mod infantry;
 mod infantry_combat;
+mod infantry_render;
 pub mod instances;
 pub mod map;
 pub mod mapdata;
@@ -467,6 +469,14 @@ impl Game {
                     "repairable": b.is_some_and(|b| b.repairable.is_some()),
                     "powerDown": b.is_some_and(|b| b.power_down),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
+                    // Infantry abilities (infantry.rs), for tooltips and order cursors.
+                    "buildLimit": a.build_limit,
+                    "heals": a.targets_allies,
+                    "disguise": a.abilities.disguise.is_some(),
+                    "captures": a.abilities.captures.is_some(),
+                    "infiltrates": a.abilities.infiltrates.is_some(),
+                    "demolition": a.abilities.demolition.is_some(),
+                    "leaps": a.abilities.attack_leap.is_some(),
                 })
             })
             .collect();
@@ -678,6 +688,20 @@ impl Game {
         self.world.render_opts.poses = on;
     }
 
+    /// Actor types whose art has death sequences (apps/game/js/sprites.js
+    /// `buildAtlas` returns them as `deaths`): with sprite poses on, dying
+    /// soldiers of these types play them (infantry_render.rs). Presentation only.
+    pub fn set_death_art(&mut self, types: Vec<u32>) {
+        let n = self.world.rules.actors.len();
+        let mut art = vec![false; n];
+        for t in types {
+            if let Some(v) = art.get_mut(t as usize) {
+                *v = true;
+            }
+        }
+        self.world.render_opts.death_art = art;
+    }
+
     /// The local player's control groups, for the numbers on their selection
     /// boxes (overlays.rs): `ids[k]` is in group `groups[k]` (0..=9). Local
     /// UI state like the selection: the simulation never reads it, so the
@@ -804,11 +828,21 @@ impl Game {
             "repairers": a.repairers,
             "poweredOff": a.powered_off,
             "canPowerDown": self.world.has_power_down(i),
+            // Infantry abilities (infantry.rs): a spy's disguise (type and owner;
+            // only the owner and allies should be shown the spy behind it), a
+            // capture in progress, C4 ticking, a power outage.
+            "disguise": a.inf.disguise.map(|d| json!({"type": self.world.rules.actors[d.ty as usize].id, "owner": d.owner})),
+            "beingCaptured": self.world.being_captured(i),
+            "demolished": self.world.being_demolished(i),
+            "powerOutage": if self.world.outage_disabled(i) { self.world.power_outage(a.owner) } else { 0 },
         })
         .to_string()
     }
 
-    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock, 5 repair, 6 load (enter a transport).
+    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock,
+    /// 5 repair, 6 load (enter a transport), 7 deliver cash, 8 capture, 9
+    /// infiltrate, 10 C4, 11 engineer repair, 12 heal, 13 mechanic repair, 14
+    /// disguise, 15 blocked enter, 16 blocked engineer repair (world.rs SmartAction).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()
