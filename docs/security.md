@@ -220,13 +220,20 @@ data, admins only), roles (admin powers), and the right to play online.
 **Threats and what answers them:**
 
 - **Password guessing and stuffing.** PBKDF2-HMAC-SHA256 through WebCrypto,
-  16-byte salt per hash, iteration count stored per hash (default 60,000,
-  sized for 10 ms of CPU on the Workers Free plan and raised with
-  `PASSWORD_ITERATIONS` up to the Workers maximum of 100,000; old hashes are
-  upgraded at sign-in), optional pepper from a Worker secret recorded per
-  hash. Sign-in is limited per IP (30 per 15 minutes) and per login name (10
-  failures per 15 minutes, 50 per day, keyed on the normalized name whether
-  or not it exists, so a lockout does not reveal accounts). Wrong name, wrong
+  16-byte salt per hash, iteration count stored per hash (default 40,000,
+  sized so one derivation takes about 3 to 6 ms of the Workers Free plan's
+  10 ms per request; raised with `PASSWORD_ITERATIONS` up to the Workers
+  maximum of 100,000, at most 50,000 on the Free plan), optional pepper from
+  a Worker secret recorded per hash. No request derives more than one key;
+  hashes are upgraded when the password is next set, never at sign-in.
+  Sign-in throttling resolves the login to its account first (username and
+  email share a budget): a burst limit per IP, 10 failures per 15 minutes per
+  account and IP (only that address is locked), 100 failures a day per IP,
+  and per account an escalating delay (doubling from the 10th failure in a
+  day, at most 15 minutes) that does not apply to addresses the account
+  signed in from before, so a third party cannot keep the owner out; there
+  is no hard lock. Unknown names are throttled the same way, so a lockout
+  does not reveal accounts. Wrong name, wrong
   password, deleted account and password-less account all get the same
   `bad_credentials` answer after the same work (unknown names still pay for a
   hash). New passwords: 10 to 128 characters, not the username or email, not
@@ -236,7 +243,8 @@ data, admins only), roles (admin powers), and the right to play online.
   Path=/); only their SHA-256 is stored. A new id on every sign-in (the
   previous cookie's session is deleted), on re-authentication and credential
   changes; password changes and resets revoke the other sessions; role
-  changes and bans revoke all of them. 30 days absolute, 14 days idle.
+  changes, status changes away from active and bans revoke all of them. 30
+  days absolute, 14 days idle.
   Plain-HTTP cookies without `Secure` exist only for local development hosts;
   a plain-HTTP request to any other host still gets a Secure cookie, which
   browsers refuse to store, so it fails closed.
@@ -250,18 +258,25 @@ data, admins only), roles (admin powers), and the right to play online.
   are stored hashed, work once (deleted on first use, also when the attempt
   fails), expire (1 hour reset, 24 hours verification), are replaced by newer
   ones of the same purpose, and travel in the URL fragment (never in server
-  logs or a Referer). A reset link only works while the account's email is
-  still the one it was sent to. "Forgot password" answers the same whether or
-  not an address exists and is limited per IP and per address. Sensitive
-  changes (password, email, passkeys, Discord, export, deletion) need a
-  sign-in proof from the last 10 minutes; failed re-authentications lock
-  after 10 per 15 minutes. An account always keeps at least one sign-in
-  method.
+  logs or a Referer). Only verified addresses get reset links, a reset link
+  only works while the account's email is still the one it was sent to, and
+  an unverified address claims nothing (another account may use and verify
+  it; unverified addresses expire after 7 days and can only be entered while
+  email works), so typing someone else's address neither squats it nor lets
+  its owner take the account over. "Forgot password" answers the same
+  whether or not an address exists and is limited per IP and per address.
+  Sensitive changes (password, email, passkeys, Discord, export, deletion)
+  need an explicit re-authentication from the last 10 minutes (password,
+  passkey with user verification, or Discord; signing in does not count);
+  failed re-authentications lock after 10 per 15 minutes. An account always
+  keeps at least one sign-in method (checked in one conditional statement,
+  so concurrent removals cannot race).
 - **Passkeys.** Implemented server-side without libraries: strict CBOR
   (no indefinite lengths, tags or duplicate keys, bounded depth and sizes),
   challenges of 32 random bytes that are single use, bound to their purpose
   and account and expire after 5 minutes, exact origin and rp id hash checks,
-  user presence required, ES256 (DER signatures checked strictly), RS256
+  user presence required (user verification too for re-authentication),
+  floats refused, ES256 (strict minimal DER signatures), RS256
   (2048-bit keys or more) and Ed25519. The signature counter must grow when
   either side is non-zero; a regression refuses the sign-in and flags the
   passkey. Attestation is not trusted (format `none` requested). Tests drive
@@ -272,18 +287,22 @@ data, admins only), roles (admin powers), and the right to play online.
   verifier stays on the server; the access token is revoked right after the
   profile is read. A Discord email counts as verified only when Discord says
   so, and never links an existing account by itself (an email collision
-  refuses the signup). `returnTo` is a same-site path only.
+  refuses the signup). Discord usernames go through the lobby text rules.
+  `returnTo` is a same-site path only.
 - **Privilege escalation.** Roles are checked on the server for every admin
-  route (moderators: approve, reject, ban and unban plain users, view users
-  with masked emails; admins: everything). Nobody changes their own role,
-  bans or deletes themselves, and the last active admin cannot be demoted or
-  delete their account. The first admin is made outside the web API
+  route, and only for **active** accounts (pending or banned staff have no
+  powers; a status change away from active signs the account out).
+  Moderators approve, reject, ban and unban plain users and view users with
+  masked emails; admins do everything. Nobody acts on themselves, and the
+  last active, unbanned admin cannot be deactivated, demoted, banned or
+  deleted. The first admin is made outside the web API
   (`tools/promote-admin.mjs`). The test-only promote route needs a variable
   that is never configured for deploys, plain HTTP and a local host, all
   three (tested). Every admin action is in the audit log with actor, target,
   before and after.
 - **Injection.** Every SQL statement binds its values; dynamic SQL is built
-  only from fixed column names and whitelisted sort keys. Usernames follow the
+  only from fixed column names and whitelisted sort keys. Settings documents
+  refuse `__proto__`, `constructor` and `prototype` keys. Usernames follow the
   lobby name rules (NFC, no control, bidi or invisible characters), may not
   mix Latin with Cyrillic or Greek letters (homoglyph impersonation), are
   unique after compatibility folding and lower casing, and exclude reserved
@@ -295,10 +314,12 @@ data, admins only), roles (admin powers), and the right to play online.
   Signed-in members play under their username, hold one place per session,
   and rejoin keys only work for the account they were issued to (wrong ones
   count toward the existing per-IP lockout). Lobbies mark account names
-  without publishing account ids.
+  without publishing account ids, and anonymous players (when accounts are
+  not required) cannot use a name that is an account's username.
 - **Bans.** Account bans (reason, expiry, author) and IP bans for addresses
-  and CIDR ranges (IPv4 and IPv6, IPv4-mapped addresses count as IPv4, no
-  range wider than /8 or /16, an admin cannot ban their own address) are
+  and CIDR ranges (IPv4 and IPv6, IPv4-mapped addresses count as IPv4, a bare
+  IPv6 address bans its /64, no range wider than /8 or /16, an admin cannot
+  ban their own address) are
   checked at sign-in, signup, on every authenticated request, for session
   creation, map uploads, WebSocket hellos and the content relay. A ban signs
   the account out and drops it from running lobbies and games for good
@@ -309,10 +330,19 @@ data, admins only), roles (admin powers), and the right to play online.
 - **Abuse of the API.** Rate limits per IP and per account (section 9 of the
   accounts API), body size caps, strict schemas that refuse unknown fields,
   versioned writes (`If-Match`) for settings documents and site settings.
+  D1 writes are the scarce resource (100,000 a day on the Free plan): burst
+  limits for the sign-in endpoints go through the Workers Rate Limiting
+  binding (no D1 access), D1 counters are read before they are written so a
+  refused request costs no write, and an active session costs about one row
+  write per 15 minutes. A Cloudflare WAF rate limiting rule for `/api/auth/*`
+  (docs/deploy.md) stops floods before they reach the Worker.
 
 **Privacy.** IP addresses are personal data: only the last 20 per account are
 kept raw, for admins only, and deleted 90 days after they were last seen;
-sessions and rate limits keep salted hashes only. The daily retention job
+sessions and rate limits keep only HMACs of addresses under the Worker
+secret `IP_HASH_SALT` (without it the Worker refuses to store any, except
+for local development), so a stored hash cannot be reversed by hashing the
+IPv4 space. The daily retention job
 also removes expired sessions, links and challenges, presence rows after a
 day, expired IP bans after 90 days, audit entries after 365 days, and
 accounts deleted more than 30 days ago (their audit entries keep only that an
@@ -320,10 +350,38 @@ action happened). Users export everything stored about them as JSON and can
 delete their account. `apps/website/privacy.html` says all of this to players.
 
 **Accepted:** no attestation trust (any authenticator can register);
+from a new address the owner may wait up to 15 minutes while someone keeps
+failing to guess the password (passkeys, Discord and reset links are not
+affected);
 usernames in non-Latin scripts can still resemble each other within one
 script; moderators see usernames and masked emails of every account; the
 first admin needs shell access to wrangler. Email verification is off while
 the email binding is missing (Workers Free plan).
+
+## Accounts review (2026-10-09)
+
+A security review (Fable 5.1) of the accounts system found these issues; all
+are fixed, and `apps/server/test/accounts-review.test.mjs` replays each
+exploit:
+
+| # | Severity | Finding | Fix |
+|---|----------|---------|-----|
+| F1 | Medium | The sign-in lockout was keyed on the login string: anyone could lock a victim's password sign-in for a whole day with 50 requests, and username and email were separate budgets. | The login is resolved to the account first; the short lock is per account and address, the long budget per address, and the account-wide limit is an escalating delay (at most 15 minutes) that addresses the account used before do not see. Success clears the counters. |
+| F2 | Medium | Staff routes did not require an active account, status changes kept sessions alive, approve and reject skipped the moderation rules: a deactivated admin could ban the last admin, a pending moderator could approve itself, a moderator could reject a pending admin. | Staff routes need an active account; a status change away from active revokes the sessions; approve and reject follow the moderation rules; the last active, unbanned admin is protected for status changes, demotion, bans and deletion. |
+| F3 | Medium | A password change with the current password, and a sign-in that rehashed, derived two keys in one request, more than the Free plan's 10 ms of CPU. | One derivation per request: password changes need a re-authentication instead, hashes are upgraded when the password is set; the default is 40,000 iterations (measured), with the ceiling documented. |
+| F4 | Medium-Low | Every rate limit check wrote to D1, even for refused requests, and a failed sign-in wrote three rows: a flood could use up the D1 Free daily write quota and take the site down. | Burst limits through the Workers Rate Limiting binding; D1 counters are read before written (refusals cost no write); session use writes about one row per 15 minutes; a WAF rule is documented. |
+| F5 | Low | IP hashes were unsalted by default (reversible by hashing the IPv4 space). | HMAC under the required secret `IP_HASH_SALT`; production refuses to store hashes without it. |
+| F6 | Low | Unverified addresses could get reset links and could be squatted while email was unavailable. | Reset links go to verified addresses only; addresses are only entered while they can be confirmed; unverified ones claim nothing and expire after 7 days. |
+| F7 | Low | The "keep one sign-in method" check was not atomic. | Conditional UPDATE and DELETE statements checked by their change count. |
+| F8 | Low | Discord usernames were not passed through the text rules. | Normalized with the lobby text rules, with a fallback. |
+
+Also done: sensitive changes need an explicit re-authentication (signing in
+no longer counts), passkey re-authentication needs user verification,
+prototype keys are refused in settings documents, bare IPv6 bans cover a
+/64, displayed admin reset links are audited, the privacy notice says that
+deleted accounts keep their username and email for 30 days, anonymous
+lobby names cannot be account usernames, and the content relay's transfer
+timer ends with the stream.
 
 ## Inherent to lockstep
 

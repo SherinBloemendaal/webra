@@ -84,6 +84,7 @@ body. Errors always look like this:
 | 429 | `locked` | Too many failed sign-ins for this login name or account (`retryAfter`) |
 | 500 | `internal` | Server error (nothing about it is echoed) |
 | 503 | `unavailable` | The feature needs a service that is not configured (email, Discord) |
+| 503 | `misconfigured` | The server lacks a required secret (`IP_HASH_SALT`); nothing that would store an address hash runs |
 
 ## 2. Model
 
@@ -100,7 +101,7 @@ body. Errors always look like this:
 | `role` | string | `user`, `moderator` or `admin` |
 | `status` | string | `pending_email`, `pending_approval`, `active`, `banned`, `deleted` (see 2.2) |
 | `flags` | string[] | Known flags only: `content_autoinstall` (may use the one-click Red Alert content relay) |
-| `createdAt`, `lastSeenAt` | number | `lastSeenAt` is updated at most every 5 minutes |
+| `createdAt`, `lastSeenAt` | number | `lastSeenAt` is updated at most hourly (or when the address changes) |
 | `usernameChangedAt` | number or null | Last self-service rename |
 
 Username and email normalization are exported by the protocol package
@@ -111,11 +112,21 @@ check input before sending; the server is the authority.
 taken as typed (spaces and any script allowed). Refused when equal to the
 username or the email, or when on a short list of very common passwords.
 Stored as PBKDF2-HMAC-SHA256 with a 16-byte random salt per user, the
-iteration count stored with every hash (default 60,000, configurable with
-the `PASSWORD_ITERATIONS` variable up to the Workers maximum of 100,000; old
-hashes are upgraded at the next sign-in), and, when the Worker secret
-`PASSWORD_PEPPER` is set, an HMAC-SHA256 of the password with the pepper
-before PBKDF2 (also recorded per hash).
+iteration count stored with every hash (default 40,000, configurable with
+the `PASSWORD_ITERATIONS` variable up to the Workers maximum of 100,000; keep
+it at or below 50,000 on the Workers Free plan, see docs/deploy.md), and,
+when the Worker secret `PASSWORD_PEPPER` is set, an HMAC-SHA256 of the
+password with the pepper before PBKDF2 (also recorded per hash). No request
+derives more than one key (10 ms of CPU per request on the Free plan), so
+hashes are upgraded to the current count and pepper when the password is
+next set (change or reset), never at sign-in.
+
+**Email addresses** claim nothing until verified: only a verified address is
+unique, used for sign-in by email and sent reset links. An address can only
+be added (signup, change) while email sending works, and unverified
+addresses are removed 7 days after they were set. A second account may sign
+up with an unverified address; the first one to verify it keeps it (the
+other's verification answers `409 conflict`).
 
 ### 2.2 Account states
 
@@ -317,11 +328,21 @@ null.
   time (an unknown login still pays for a password hash).
 - After correct credentials: `403 banned` (with `ban`). Pending accounts sign
   in normally (their `status` says what is missing).
-- Throttling: 30 attempts per 15 minutes per IP (`rate_limited`), and 10
-  failed attempts per 15 minutes and 50 per day per login name (normalized
-  username or email, whether or not it exists) lock that name (`429 locked`
-  with `retryAfter`) for the rest of the window. A successful sign-in clears
-  the name's 15 minute counter.
+- Throttling (`429` with `retryAfter`; `rate_limited` or `locked`). The login
+  is resolved to its account first, so username and email share one budget:
+  - a burst limit per IP (20 per minute through the Workers Rate Limiting
+    binding; 30 per 15 minutes in D1 without it);
+  - 10 failures per 15 minutes per account (or unknown name) **and IP**:
+    that address is locked for that account for the rest of the window;
+  - 100 failures per day per IP across all accounts;
+  - per account across all addresses an escalating delay: from the 10th
+    failure within a day each further failure doubles a wait (2 s, 4 s, ...,
+    at most 15 minutes). Addresses the account signed in from before (its IP
+    history) are exempt, so nobody else can keep the owner out; there is no
+    hard lock. Passkeys, Discord and reset links are never affected.
+  A successful sign-in clears the account's failure count and delay and the
+  failures of that account from that address. Refused attempts cost no D1
+  writes.
 - `login.password` off: `method_disabled`.
 
 `POST /api/auth/logout`: `204`, deletes the session and clears the cookie
@@ -329,7 +350,8 @@ null.
 
 `POST /api/auth/password/forgot` `{ "email": "..." }`: always `202 {}` when
 the request is well formed (whether or not an account has that email), and
-sends a reset link to the account's email if one exists. Needs email to be
+sends a reset link if an account has that address **verified** (never to an
+unverified one). Needs email to be
 available and `login.email` on (`503 unavailable` / `method_disabled`
 otherwise). Limits: 5 per hour per IP, 3 per hour per address.
 
@@ -440,16 +462,20 @@ account, the signature over `authenticatorData || SHA-256(clientDataJSON)`
 verifies with the stored key, and the signature counter: when the stored and
 received counters are not both zero, the received one must be greater (else
 `401 bad_credentials`, and the passkey is marked `counterError` for the
-owner and admins to see). Every failure is `401 bad_credentials`. Limits: 30
-per 15 minutes per IP. User verification is recorded (`uv`) but not
-required.
+owner and admins to see). Every failure is `401 bad_credentials`. Limits: 20
+per minute per IP (binding) or 30 per 15 minutes (D1). User verification is
+recorded (`uv`); it is not required to sign in, but it is required for a
+re-authentication (4.5).
 
 ### 4.5 Re-authentication
 
-Sensitive actions need a sign-in proof from the last 10 minutes on this
-session (`reauthUntil` in `/api/auth/me`): changing the password or email,
+Sensitive actions need an explicit re-authentication from the last 10
+minutes on this session (`reauthUntil` in `/api/auth/me`, 0 when there is
+none): setting or changing the password, changing or removing the email,
 adding or removing passkeys, linking or unlinking Discord, removing the
-password, deleting the account, exporting data. Signing in counts as one.
+password, deleting the account, exporting data. **Signing in or up does not
+count**: a stolen or forgotten session cannot change credentials without the
+password, a user-verified passkey, or Discord.
 
 `POST /api/auth/reauth` with one of
 
@@ -460,7 +486,8 @@ password, deleting the account, exporting data. Signing in counts as one.
 
 The passkey challenge comes from `POST /api/auth/passkey/options`
 `{ "purpose": "reauth" }` (signed in; `allowCredentials` lists the account's
-passkeys). Discord-only accounts re-authenticate through Discord (4.6,
+passkeys; `userVerification: "required"`). The assertion must carry the user
+verification flag (PIN or biometrics), else `401 bad_credentials`. Discord-only accounts re-authenticate through Discord (4.6,
 `mode: "reauth"`). Answers `200 { "reauthUntil": 0 }` and rotates the
 session cookie. Wrong proofs: `401 bad_credentials`; 10 failures per 15
 minutes per account lock it (`locked`).
@@ -481,7 +508,8 @@ with PKCE (S256) and `state`, scopes `identify email`, redirect URI
 - `login`: sign in with a linked Discord account.
 - `signup`: like `login`, but an unknown Discord account creates a WebRA
   account (registration must be open; `acceptPrivacy: true` required). The
-  username is taken from the Discord username (normalized; a number is
+  username is taken from the Discord username (passed through the lobby text
+  rules, `Discord user` when it does not fit; a number is
   appended when it is taken or invalid; changeable later). A Discord email
   that Discord reports verified is stored as verified; when that email
   already belongs to another account, the signup fails with `email_taken`.
@@ -555,21 +583,24 @@ changes per hour per account.
 
 ### 5.3 Password
 
-- `POST /api/account/password` `{ "currentPassword"?, "newPassword" }`:
-  `currentPassword` is required unless the session has a recent
-  re-authentication (or the account has no password yet, then the
-  re-authentication is required). Revokes all other sessions, rotates this
-  one, `200 { user }`.
+- `POST /api/account/password` `{ "newPassword" }` (recent
+  re-authentication, 4.5; there is no `currentPassword` field: proving the
+  old password and hashing the new one in one request would exceed the CPU
+  budget). Also upgrades the hash to the current iteration count and pepper.
+  Revokes all other sessions, rotates this one, `200 { user }`.
 - `DELETE /api/account/password`: removes the password (recent
-  re-authentication; another login method must remain, else `409 conflict`).
+  re-authentication; another login method must remain, else `409 conflict`,
+  checked atomically: concurrent removals never leave an account without a
+  method).
 
 ### 5.4 Email
 
 - `POST /api/account/email` `{ "email": "..." }` (recent re-authentication):
-  with email available, sends a change link to the new address and returns
-  `202 { user }` (`pendingEmail` set; the address changes when the link is
-  followed). Without email, the address is set at once, unverified. 5 per
-  day per account. A taken address: `409 conflict`.
+  sends a change link to the new address and returns `202 { user }`
+  (`pendingEmail` set; the address changes when the link is followed).
+  Without email sending: `503 unavailable` (addresses are never set
+  unverified). 5 per day per account. An address another account verified:
+  `409 conflict`.
 - `POST /api/account/email/resend` `{}`: sends the verification link again
   for the current unverified email. 3 per hour per account. `202 {}`.
 - `DELETE /api/account/email` (recent re-authentication): removes the email;
@@ -584,7 +615,7 @@ changes per hour per account.
   characters. At most 20 passkeys per account.
 - `PATCH /api/account/passkeys/:id` `{ "name" }` -> `200 { "passkey" }`
 - `DELETE /api/account/passkeys/:id` (recent re-authentication) -> `204`;
-  `409 conflict` when it is the last login method.
+  `409 conflict` when it is the last login method (checked atomically).
 
 Passkey ids in paths are the credential ids (base64url).
 
@@ -629,7 +660,9 @@ Version 0 with `settings: {}` means nothing is stored yet.
 **SettingsDocument** (schema 1; validated by
 `validateSettingsDocument` in the protocol package). Every section and every
 key is optional (the client fills defaults); unknown keys are refused except
-inside `extra`. Serialized size at most 32 KiB.
+inside `extra`. The keys `__proto__`, `constructor` and `prototype` are
+refused everywhere (sections, `extra`, `lastOptions`, hotkey action names).
+Serialized size at most 32 KiB.
 
 ```json
 {
@@ -704,7 +737,9 @@ in effect the account cannot sign in, sign up again with the same Discord
 account, play online, upload maps or use the relay.
 
 **IP bans:** a single address or a CIDR range, IPv4 (`203.0.113.7`,
-`203.0.113.0/24`) or IPv6 (`2001:db8::1`, `2001:db8::/48`), stored
+`203.0.113.0/24`) or IPv6 (`2001:db8::/48`; an IPv6 address without a prefix
+bans its /64, the block one network uses, since devices rotate addresses
+within it; write `/128` for a single address), stored
 normalized (host bits cleared; IPv4-mapped IPv6 addresses count as IPv4),
 with reason, expiry and author. Prefixes shorter than /8 (IPv4) or /16
 (IPv6) are refused. Requests from a banned address get `403 ip_banned` on
@@ -714,7 +749,8 @@ are dropped from running games.
 
 **IP history:** to make IP bans possible, the server keeps the last 20
 addresses per account (raw, with first and last seen and a count), recorded
-at sign-in, signup and at most every 5 minutes of use. Only admins can see
+at sign-in, signup, and while signed in at most hourly or when the address
+changes. Only admins can see
 them (and the account itself, in the export). Entries not seen for 90 days
 are deleted by a daily scheduled job, and all of them when the account is
 purged. `/privacy.html` documents this.
@@ -738,7 +774,9 @@ that is not banned, from an address that is not banned:
 Protocol 5 (`PROTOCOL_VERSION`, docs/contracts.md section 4):
 
 - `hello.name` is optional. A signed-in connection always plays under its
-  username (a `name` it sends is ignored); an anonymous one must send `name`.
+  username (a `name` it sends is ignored); an anonymous one must send `name`,
+  which may not be the username of any account (compared after folding):
+  `error invalid`.
 - `welcome` gains `name` (the name the server gave this member).
 - Human lobby slots and spectator entries gain `account: true` when the name
   comes from an account (clients may show a marker); anonymous members have
@@ -810,7 +848,15 @@ Moderators get `user`, `bans` and `passkeys` count only (`sessions`, `ips`,
 `{ "username"?, "displayName"?, "email"?, "emailVerified"?, "avatarColor"?, "status"?, "role"?, "flags"? }`
 -> `200 { user: AdminUser }`. `status` may be `pending_email`,
 `pending_approval` or `active` (bans and deletion have their own endpoints).
-`email: null` removes it. Role changes revoke the target's sessions.
+`email: null` removes it; an address only claims its key when
+`emailVerified` ends up true. Role changes and status changes away from
+`active` revoke the target's sessions. Taking the last active, unbanned
+admin out of service (status, role, ban, deletion) is `409 conflict`.
+
+Staff routes need an **active** account with the role: pending or banned
+staff have no powers (`403 account_inactive` or `banned`). Approval and
+rejection follow the moderation rules (nobody on themselves; moderators only
+on plain users).
 
 ### 8.2 Approval
 
@@ -851,7 +897,9 @@ Moderators get `user`, `bans` and `passkeys` count only (`sessions`, `ips`,
 `POST /api/admin/users/:id/password-reset` `{ "send": false }` (admin) ->
 `201 { "url": "https://webra.sherin.dev/account/#reset=...", "expiresAt", "sent": false }`.
 The link lives 24 hours. With `send: true` and email available, it is also
-mailed to the account's email (`sent: true`).
+mailed to the account's email (`sent: true`). The audit entry records that
+the link was displayed to the admin (`after.displayed: true`) and whether it
+was sent; a new link replaces the previous one.
 
 ### 8.7 Settings documents
 
@@ -903,19 +951,24 @@ anywhere).
 
 ## 9. Rate limits
 
-Per IP limits key on a salted hash of the address (never the address).
+Per IP limits key on an HMAC of the address under the secret `IP_HASH_SALT`
+(never the address). Burst limits go through the Workers Rate Limiting
+binding `AUTH_LIMITER` (20 per minute per purpose and address, no D1
+access); without the binding the D1 values in brackets apply. D1 counters
+are read before they are written: a request already over its limit costs no
+write.
 
 | What | Limit |
 |------|-------|
 | Signup (all methods) | 10 per hour per IP |
-| Password sign-in | 30 per 15 minutes per IP; 10 failures per 15 minutes and 50 per day per login name |
-| Passkey sign-in and options | 30 per 15 minutes per IP |
+| Password sign-in | burst per IP (30 per 15 minutes); 10 failures per 15 minutes per account and IP; 100 failures per day per IP; escalating account delay (4.3) |
+| Passkey sign-in and options | burst per IP (30 per 15 minutes) |
 | Re-authentication | 10 failures per 15 minutes per account |
 | Forgot password | 5 per hour per IP, 3 per hour per email address |
-| Token redemption (verify, reset) | 20 per 15 minutes per IP |
+| Token redemption (verify, reset) | burst per IP (20 per 15 minutes) |
 | Verification resend | 3 per hour per account |
 | Email change | 5 per day per account |
-| Discord start | 20 per 15 minutes per IP |
+| Discord start | burst per IP (20 per 15 minutes) |
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
 | Data export | 5 per hour per account |

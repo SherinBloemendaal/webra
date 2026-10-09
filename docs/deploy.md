@@ -184,7 +184,8 @@ write migrations so that the previous Worker version still works with them.
   dev presents every request as `webra.sherin.dev`: the session cookie then
   gets `Secure` and the `__Host-` prefix (browsers refuse it over plain HTTP)
   and passkeys are unavailable. Open <http://localhost:8799/> (passkeys need
-  `localhost`, not `127.0.0.1`).
+  `localhost`, not `127.0.0.1`). Local development needs no `IP_HASH_SALT`
+  (plain HTTP to localhost uses a fixed development key).
 - End-to-end smoke test: start wrangler dev as above with
   `--var WEBRA_DEV_ROUTES:1` added, then `node test/e2e/smoke.mjs
   http://localhost:8799`. The variable enables the test-only
@@ -227,13 +228,14 @@ settings.
 | `DISCORD_CLIENT_ID` | variable in `wrangler.jsonc` | Discord application id (public); empty means Discord is unavailable |
 | `DISCORD_CLIENT_SECRET` | secret | Discord application secret |
 | `PASSWORD_PEPPER` | secret, optional | At least 16 characters; HMAC key applied to passwords before PBKDF2 |
-| `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 60,000, sized for the Workers Free plan's 10 ms CPU per request) |
-| `IP_HASH_SALT` | secret, optional | Salt for the address hashes stored with sessions |
+| `IP_HASH_SALT` | secret, **required** | At least 16 random characters; HMAC key for every stored address hash (sessions, rate limits). Without it the Worker answers `503 misconfigured` to anything that would store one (only plain HTTP to localhost uses a fixed development key) |
+| `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
 
 ```bash
 cd apps/server
+openssl rand -base64 32 | npx wrangler secret put IP_HASH_SALT   # required, before the first deploy
 npx wrangler secret put DISCORD_CLIENT_SECRET
 npx wrangler secret put PASSWORD_PEPPER      # optional
 ```
@@ -244,8 +246,35 @@ Notes:
   it was peppered; hashes made before the pepper keep working and are
   upgraded at the next sign-in, but peppered hashes cannot be checked without
   it (those accounts would need a reset link).
-- **Iterations:** raising `PASSWORD_ITERATIONS` (for example to 100,000 on the
-  Workers Paid plan) upgrades each hash at its next successful sign-in.
+- **Iterations:** no request derives more than one key (a sign-in that also
+  rehashed would need two). Raising `PASSWORD_ITERATIONS` (for example to
+  100,000 on the Workers Paid plan) applies to new hashes and to each
+  account's hash the next time its password is set (change or reset).
+  Measured under workerd (Apple M-series): 40,000 iterations 2.8 ms, 50,000
+  3.6 ms, 60,000 4.2 ms, 100,000 7.2 ms per derivation; edge machines can be
+  up to about twice as slow.
+- **IP_HASH_SALT:** changing it makes existing rate limit counters and
+  session address hashes meaningless (harmless; they expire), it never locks
+  anyone out.
+
+### Rate limiting and D1 writes
+
+The D1 Free plan allows 100,000 row writes a day, so floods must not turn
+into writes:
+
+- `wrangler.jsonc` binds the Workers Rate Limiting API as `AUTH_LIMITER`
+  (`ratelimits`, 20 requests per minute per purpose and address) for the
+  sign-in, passkey, token and Discord endpoints: those checks never touch
+  D1. Without the binding (for example if the account's plan rejects it:
+  remove the `ratelimits` entry and redeploy) the Worker falls back to D1
+  counters that are read before they are written, so refused requests still
+  cost no write.
+- Recommended in addition, a Cloudflare WAF rate limiting rule on the zone
+  `sherin.dev` (Security, WAF, Rate limiting rules; the Free plan includes
+  one rule): expression `(http.host eq "webra.sherin.dev" and
+  starts_with(http.request.uri.path, "/api/auth/"))`, counting characteristic
+  IP, 30 requests per 10 seconds, action Block for 10 seconds. It stops
+  floods before they reach the Worker at all.
 
 ### Discord
 
