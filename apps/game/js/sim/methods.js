@@ -80,7 +80,6 @@ export const QUERY_DEFAULTS = Object.freeze({
   harvesters: EMPTY_U32,
   production_buildings: EMPTY_U32,
   queue_producer: () => NONE,
-  beacons: EMPTY_I32,
   army_counts: EMPTY_U32,
   deploy_state: () => 0,
   ability_deploy_state: () => 0,

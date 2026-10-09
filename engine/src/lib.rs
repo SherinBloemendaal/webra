@@ -1050,16 +1050,6 @@ impl Game {
         counts.iter().enumerate().filter(|(_, &n)| n > 0).flat_map(|(t, &n)| [t as u32, n]).collect()
     }
 
-    /// Beacons `player` sees, flat `[x, y, owner, ticks left, ...]` (world pixels).
-    pub fn beacons(&self, player: u8) -> Vec<i32> {
-        let tick = self.world.tick;
-        self.world
-            .visible_beacons(player)
-            .into_iter()
-            .flat_map(|b| [px(b.x) as i32, px(b.y) as i32, b.owner as i32, b.expires.saturating_sub(tick) as i32])
-            .collect()
-    }
-
     /// Deploy selected MCVs / pack up a selected Construction Yard / unload selected transports.
     pub fn deploy(&mut self, player: u8, ids: Vec<u32>) {
         self.submit(Order::Deploy { player, ids });
