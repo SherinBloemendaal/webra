@@ -25,5 +25,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Daily retention job for accounts data (src/accounts/cron.js).
+  "triggers": { "crons": ["17 3 * * *"] },
+  // Discord OAuth client id (public). The secret DISCORD_CLIENT_SECRET is a
+  // Worker secret set by the owner; without both, Discord sign-in is
+  // unavailable. Email sending (send_email) needs the Workers Paid plan and is
+  // added later, see docs/deploy.md.
+  "vars": { "DISCORD_CLIENT_ID": "" },
   "observability": { "enabled": true }
 }

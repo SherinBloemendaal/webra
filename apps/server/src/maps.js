@@ -42,7 +42,8 @@ export async function prepareMap(textValue, judge = engine()) {
   return { map: r.map, canonical: r.canonical, hash, modded: r.modded, players: r.players };
 }
 
-export async function uploadMap(request, env, ip, now = Date.now()) {
+/** `uploaderId`: the signed-in account (stored with the map), or null. */
+export async function uploadMap(request, env, ip, now = Date.now(), uploaderId = null) {
   const type = request.headers.get('Content-Type') || '';
   if (!/^application\/json\s*(;|$)/i.test(type)) throw new HttpError(415, 'bad_message', 'Content-Type must be application/json.');
   if (!(await takeQuota(env.DB, 'maps', ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
@@ -51,11 +52,11 @@ export async function uploadMap(request, env, ip, now = Date.now()) {
   const p = await prepareMap(await readText(request, MAP_MAX_BYTES));
   const id = randomHex(8);
   await env.DB.prepare(
-    `INSERT INTO maps (id, name, author, players, width, height, hash, modded, json, downloads, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)
+    `INSERT INTO maps (id, name, author, players, width, height, hash, modded, json, downloads, created_at, uploader_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)
      ON CONFLICT(hash) DO NOTHING`,
   )
-    .bind(id, p.map.name, p.map.author, p.players, p.map.width, p.map.height, p.hash, p.modded ? 1 : 0, p.canonical, now)
+    .bind(id, p.map.name, p.map.author, p.players, p.map.width, p.map.height, p.hash, p.modded ? 1 : 0, p.canonical, now, uploaderId)
     .run();
   const row = await env.DB.prepare('SELECT id FROM maps WHERE hash = ?1').bind(p.hash).first();
   if (!row) throw new HttpError(500, 'internal', 'The map could not be stored.');

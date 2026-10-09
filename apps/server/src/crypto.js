@@ -28,6 +28,21 @@ export function toBase64Url(bytes) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/** Decode base64url (with or without padding); null when malformed. */
+export function fromBase64Url(textValue) {
+  if (typeof textValue !== 'string' || !/^[A-Za-z0-9_-]*={0,2}$/.test(textValue)) return null;
+  const s = textValue.replace(/=+$/, '');
+  if (s.length % 4 === 1) return null;
+  try {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 export function randomHex(bytes) {
   return toHex(randomBytes(bytes));
 }
@@ -60,8 +75,25 @@ export async function sha256(textValue) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(textValue)));
 }
 
-async function pbkdf2(password, salt, iterations) {
-  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+/** SHA-256 of bytes or text, as bytes. */
+export async function sha256Bytes(data) {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', typeof data === 'string' ? enc.encode(data) : data));
+}
+
+export async function sha256Hex(data) {
+  return toHex(await sha256Bytes(data));
+}
+
+/** HMAC-SHA256 of `message` (text or bytes) under `secret` (text). */
+export async function hmacSha256(secret, message) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, typeof message === 'string' ? enc.encode(message) : message));
+}
+
+/** PBKDF2-HMAC-SHA256 over text or bytes, 256 bits. */
+export async function pbkdf2(password, salt, iterations) {
+  const material = typeof password === 'string' ? enc.encode(password) : password;
+  const key = await crypto.subtle.importKey('raw', material, 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, HASH_BITS);
   return new Uint8Array(bits);
 }

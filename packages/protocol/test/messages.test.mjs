@@ -214,20 +214,20 @@ const OPTIONS = {
 
 test('server messages round trip through encodeServer / parseServerMessage', () => {
   const msgs = [
-    { t: S2C.WELCOME, you: 1, hostId: 1, session: SESSION, role: 'player', key: 'k'.repeat(43) },
-    { t: S2C.WELCOME, you: 3, hostId: 1, session: SESSION, role: 'spectator' },
+    { t: S2C.WELCOME, you: 1, name: 'Host', hostId: 1, session: SESSION, role: 'player', key: 'k'.repeat(43) },
+    { t: S2C.WELCOME, you: 3, name: 'Watcher', hostId: 1, session: SESSION, role: 'spectator' },
     {
       t: S2C.LOBBY,
       hostId: 1,
       slots: [
-        { type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false },
+        { type: 'human', client: 1, name: 'Host', account: true, faction: 'germany', color: 0, team: 0, ready: false },
         { type: 'ai', difficulty: 'easy', faction: 'random', color: 1, team: 2 },
         { type: 'open' },
         { type: 'closed' },
       ],
       options: { ...DEFAULT_OPTIONS },
       map: { id: '0123456789abcdef', hash: 'b'.repeat(64), name: 'Twin', modded: false, players: 4 },
-      spectators: [{ client: 5, name: 'Watcher' }],
+      spectators: [{ client: 5, name: 'Watcher' }, { client: 6, name: 'Signed In', account: true }],
       maxSpectators: 2,
     },
     { t: S2C.CHAT, from: 1, name: 'Host', text: 'gl hf' },
@@ -320,8 +320,9 @@ test('game options: concrete factions, unique colours, slots in order', () => {
 
 test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0', name: 'Tanya' };
-  // Version 4 added the map style, biome and weather lobby options on top.
-  assert.equal(PROTOCOL_VERSION, 4);
+  // Version 4 added the map style, biome and weather lobby options on top;
+  // version 5 accounts (optional hello name, welcome name, account marks).
+  assert.equal(PROTOCOL_VERSION, 5);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);
@@ -363,8 +364,9 @@ test('server messages for rejoin and spectators reject inconsistent data', () =>
   assert.equal(p({ ...lobby, maxSpectators: 9 }).ok, false);
   const { spectators: _s, ...old } = lobby;
   assert.equal(p(old).ok, false, 'protocol 2 lobby messages are refused');
-  assert.equal(p({ t: 'welcome', you: 1, hostId: 1, session: SESSION, role: 'admin' }).ok, false);
-  assert.equal(p({ t: 'welcome', you: 1, hostId: 1, session: SESSION, role: 'player', key: 'x' }).ok, false);
+  assert.equal(p({ t: 'welcome', you: 1, name: 'Host', hostId: 1, session: SESSION, role: 'admin' }).ok, false);
+  assert.equal(p({ t: 'welcome', you: 1, name: 'Host', hostId: 1, session: SESSION, role: 'player', key: 'x' }).ok, false);
+  assert.equal(p({ t: 'welcome', you: 1, hostId: 1, session: SESSION, role: 'player' }).ok, false, 'protocol 5 welcome carries the name');
   assert.equal(p({ t: 'log', frames: [] }).ok, false, 'empty log message');
   assert.equal(p({ t: 'log', frames: [[5, []], [5, []]] }).ok, false, 'ticks must increase');
   assert.equal(p({ t: 'log', frames: [[5, [[0, [{ o: 'nuke', player: 0 }]]]]] }).ok, false, 'orders are validated');
@@ -372,4 +374,23 @@ test('server messages for rejoin and spectators reject inconsistent data', () =>
   assert.equal(p({ t: 'sync', tick: 100, check: { tick: 30, hash: 'aa' } }).ok, false, 'check on a hash tick');
   assert.equal(p({ t: 'back', player: 8, client: 2, name: 'G', tick: 3 }).ok, false);
   assert.equal(p({ t: 'left', player: 1, client: 2, name: 'G', reason: 'banned' }).ok, false);
+});
+
+test('protocol 5: accounts in hello, welcome and the lobby', () => {
+  const base = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0' };
+  assert.deepEqual(ok(base), base, 'a signed-in connection may leave the name out');
+  assert.equal(ok({ ...base, name: ' Tanya ' }).name, 'Tanya');
+  bad({ ...base, name: '' }, /empty/);
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  const slot = { type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false };
+  const lobby = { t: 'lobby', hostId: 1, slots: [slot, { type: 'open' }], options: DEFAULT_OPTIONS, map: null, spectators: [], maxSpectators: 2 };
+  assert.equal(p({ ...lobby, slots: [{ ...slot, account: true }, { type: 'open' }] }).msg.slots[0].account, true);
+  assert.equal('account' in p({ ...lobby, slots: [{ ...slot, account: false }, { type: 'open' }] }).msg.slots[0], false, 'false is dropped');
+  assert.equal(p({ ...lobby, slots: [{ ...slot, account: 'yes' }, { type: 'open' }] }).ok, false);
+  assert.equal(p({ ...lobby, slots: [slot, { type: 'ai', difficulty: 'easy', faction: 'random', color: 1, team: 0, account: true }] }).ok, false, 'AI slots have no account');
+  assert.equal(p({ ...lobby, slots: [slot, { type: 'open', account: true }] }).ok, false);
+  assert.equal(p({ ...lobby, spectators: [{ client: 2, name: 'W', account: true }] }).msg.spectators[0].account, true);
+  for (const code of ['account_required', 'account_inactive', 'banned', 'ip_banned']) {
+    assert.equal(p({ t: 'error', code, message: 'no' }).ok, true);
+  }
 });

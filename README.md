@@ -28,6 +28,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
 - [x] The AI uses the whole arsenal: helicopters and planes (away from heavy anti-air), naval yards and warships where water reaches the enemy, minefields, chrono tanks, MAD tanks and demolition trucks, radar jammers, and on Hard (Normal after 15 minutes) the Iron Curtain, Chronosphere and Atom Bomb, never where allies would be hit
 - [x] **Online multiplayer**: anyone can host a session, public (listed in the server browser) or private, optionally password protected; deterministic lockstep over WebSockets on Cloudflare Durable Objects, with desync detection
+- [x] **Accounts**: sign in with a password, a passkey or Discord (email verification and password reset links once email sending is enabled); online play under your username, settings synchronized across devices, sessions you can see and revoke, data export and account deletion. Admins and moderators approve sign-ups (closed or open beta), ban accounts and IP ranges, edit accounts and site settings, with an audit log ([accounts API](docs/accounts-api.md), [privacy notice](https://webra.sherin.dev/privacy.html))
 - [x] **Reconnecting**: a player whose connection drops (or who reloads the page) rejoins the running game within 2 minutes; the server keeps the game's order log, the client fast-forwards to the current tick, checks the state hash and takes its seat back. The game never pauses for a missing player
 - [x] **Spectators**: lobby places for observers (the host picks 0 to 8, same password rules), also joining a game in progress; they watch the whole map or any player's view, with observer stats (cash, income, army value, kills and losses per player) and can never give orders
 - [x] **Replays**: every game (skirmish and online) is recorded as start settings plus order frames; download it from the game menu or the game over screen and watch it with play, pause, 1x to 8x speed, seeking and the player view switcher. Replays from another WebRA version say so instead of playing wrong
@@ -185,12 +186,12 @@ webra/
 ├── apps/
 │   ├── game/               browser client, served at /play (ES modules, WebGPU, no bundler)
 │   ├── website/            landing site, served at /
-│   └── server/             Cloudflare Worker: static hosting, API, multiplayer sessions
+│   └── server/             Cloudflare Worker: static hosting, API, accounts (src/accounts), multiplayer sessions
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog extracted from OpenRA mods/ra
 ├── tools/                  gen_rules.py, gen_oramap_tables.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
-└── docs/                   contracts, README assets
+└── docs/                   contracts, accounts API, security, deploy, README assets
 ```
 
 ## Getting started
@@ -219,6 +220,8 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
 | Render data cost per frame: simulation in a worker or not, CPU or GPU instance path, 60 and 144 fps (after `npm run build:wasm`) | `node tools/sim-bench.mjs 20000` |
+| Make an existing account an admin (local wrangler dev or production) | `node tools/promote-admin.mjs <username> --local` |
+| End-to-end smoke test (accounts, lobby, game) against local `wrangler dev` | see [docs/deploy.md](docs/deploy.md), Local development |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |

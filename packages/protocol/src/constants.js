@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -208,4 +208,10 @@ export const ERRORS = Object.freeze({
   SESSION_LOST: 'session_lost',
   FORBIDDEN: 'forbidden',
   INTERNAL: 'internal',
+  /** Online play needs a signed-in account (site setting). */
+  ACCOUNT_REQUIRED: 'account_required',
+  /** The account is pending (email or approval) or deleted. */
+  ACCOUNT_INACTIVE: 'account_inactive',
+  BANNED: 'banned',
+  IP_BANNED: 'ip_banned',
 });

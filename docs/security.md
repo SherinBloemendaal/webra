@@ -205,6 +205,126 @@ cross-origin isolated page, so the headers changed:
   R2 or D1 for the content, `cache: 'no-store'` upstream and `Cache-Control:
   no-store` downstream. Tests mock the mirrors; CI never downloads them.
 
+## Accounts and admin (2026-10-09)
+
+Accounts, sign-in, sessions, bans and the admin API
+([accounts API](accounts-api.md), `apps/server/src/accounts`). Every
+guarantee above still holds: host keys, rejoin keys, passwords of lobbies,
+spectator rules, stall rules and rate limits are unchanged; accounts add
+checks in front of them.
+
+**Assets:** account credentials (password hashes, passkey public keys,
+Discord links), session ids, email and reset links, the IP history (personal
+data, admins only), roles (admin powers), and the right to play online.
+
+**Threats and what answers them:**
+
+- **Password guessing and stuffing.** PBKDF2-HMAC-SHA256 through WebCrypto,
+  16-byte salt per hash, iteration count stored per hash (default 60,000,
+  sized for 10 ms of CPU on the Workers Free plan and raised with
+  `PASSWORD_ITERATIONS` up to the Workers maximum of 100,000; old hashes are
+  upgraded at sign-in), optional pepper from a Worker secret recorded per
+  hash. Sign-in is limited per IP (30 per 15 minutes) and per login name (10
+  failures per 15 minutes, 50 per day, keyed on the normalized name whether
+  or not it exists, so a lockout does not reveal accounts). Wrong name, wrong
+  password, deleted account and password-less account all get the same
+  `bad_credentials` answer after the same work (unknown names still pay for a
+  hash). New passwords: 10 to 128 characters, not the username or email, not
+  on a list of very common passwords. Comparisons are constant time.
+- **Session theft and fixation.** Session ids are 32 random bytes in an
+  HttpOnly, Secure, SameSite=Lax cookie with the `__Host-` prefix (no Domain,
+  Path=/); only their SHA-256 is stored. A new id on every sign-in (the
+  previous cookie's session is deleted), on re-authentication and credential
+  changes; password changes and resets revoke the other sessions; role
+  changes and bans revoke all of them. 30 days absolute, 14 days idle.
+  Plain-HTTP cookies without `Secure` exist only for local development hosts;
+  a plain-HTTP request to any other host still gets a Secure cookie, which
+  browsers refuse to store, so it fails closed.
+- **CSRF and cross-site use.** Every state-changing request needs an Origin
+  equal to the site, `Sec-Fetch-Site` same-origin or absent, the custom
+  header `X-WebRA-CSRF: 1` (forces a CORS preflight the API never answers)
+  and a JSON body; account and admin reads need the header too. The only
+  cross-site entry is the Discord callback, which works only with the single
+  use state bound to the browser's OAuth cookie.
+- **Account takeover through recovery.** Email links carry 32 random bytes,
+  are stored hashed, work once (deleted on first use, also when the attempt
+  fails), expire (1 hour reset, 24 hours verification), are replaced by newer
+  ones of the same purpose, and travel in the URL fragment (never in server
+  logs or a Referer). A reset link only works while the account's email is
+  still the one it was sent to. "Forgot password" answers the same whether or
+  not an address exists and is limited per IP and per address. Sensitive
+  changes (password, email, passkeys, Discord, export, deletion) need a
+  sign-in proof from the last 10 minutes; failed re-authentications lock
+  after 10 per 15 minutes. An account always keeps at least one sign-in
+  method.
+- **Passkeys.** Implemented server-side without libraries: strict CBOR
+  (no indefinite lengths, tags or duplicate keys, bounded depth and sizes),
+  challenges of 32 random bytes that are single use, bound to their purpose
+  and account and expire after 5 minutes, exact origin and rp id hash checks,
+  user presence required, ES256 (DER signatures checked strictly), RS256
+  (2048-bit keys or more) and Ed25519. The signature counter must grow when
+  either side is non-zero; a regression refuses the sign-in and flags the
+  passkey. Attestation is not trusted (format `none` requested). Tests drive
+  every ceremony with a software authenticator.
+- **Discord.** Authorization code with PKCE (S256) and state; the state is
+  single use, expires after 10 minutes and is bound to an HttpOnly cookie, so
+  a callback URL stolen or planted in another browser does nothing. The
+  verifier stays on the server; the access token is revoked right after the
+  profile is read. A Discord email counts as verified only when Discord says
+  so, and never links an existing account by itself (an email collision
+  refuses the signup). `returnTo` is a same-site path only.
+- **Privilege escalation.** Roles are checked on the server for every admin
+  route (moderators: approve, reject, ban and unban plain users, view users
+  with masked emails; admins: everything). Nobody changes their own role,
+  bans or deletes themselves, and the last active admin cannot be demoted or
+  delete their account. The first admin is made outside the web API
+  (`tools/promote-admin.mjs`). The test-only promote route needs a variable
+  that is never configured for deploys, plain HTTP and a local host, all
+  three (tested). Every admin action is in the audit log with actor, target,
+  before and after.
+- **Injection.** Every SQL statement binds its values; dynamic SQL is built
+  only from fixed column names and whitelisted sort keys. Usernames follow the
+  lobby name rules (NFC, no control, bidi or invisible characters), may not
+  mix Latin with Cyrillic or Greek letters (homoglyph impersonation), are
+  unique after compatibility folding and lower casing, and exclude reserved
+  names. Emails are ASCII only. Clients show account text with `textContent`.
+- **Online play.** The Worker authenticates the WebSocket upgrade by the
+  session cookie and passes its verdict to the session object in a header it
+  always sets itself (a client's copy is replaced; the object is reachable
+  only through the Worker; a missing or malformed verdict counts as refused).
+  Signed-in members play under their username, hold one place per session,
+  and rejoin keys only work for the account they were issued to (wrong ones
+  count toward the existing per-IP lockout). Lobbies mark account names
+  without publishing account ids.
+- **Bans.** Account bans (reason, expiry, author) and IP bans for addresses
+  and CIDR ranges (IPv4 and IPv6, IPv4-mapped addresses count as IPv4, no
+  range wider than /8 or /16, an admin cannot ban their own address) are
+  checked at sign-in, signup, on every authenticated request, for session
+  creation, map uploads, WebSocket hellos and the content relay. A ban signs
+  the account out and drops it from running lobbies and games for good
+  through the `game_presence` table and the session object's `evict`.
+- **Content relay.** Only active accounts with the `content_autoinstall`
+  flag (or admins), only while the site setting allows it, on top of the
+  relay's existing header, origin and rate limit checks.
+- **Abuse of the API.** Rate limits per IP and per account (section 9 of the
+  accounts API), body size caps, strict schemas that refuse unknown fields,
+  versioned writes (`If-Match`) for settings documents and site settings.
+
+**Privacy.** IP addresses are personal data: only the last 20 per account are
+kept raw, for admins only, and deleted 90 days after they were last seen;
+sessions and rate limits keep salted hashes only. The daily retention job
+also removes expired sessions, links and challenges, presence rows after a
+day, expired IP bans after 90 days, audit entries after 365 days, and
+accounts deleted more than 30 days ago (their audit entries keep only that an
+action happened). Users export everything stored about them as JSON and can
+delete their account. `apps/website/privacy.html` says all of this to players.
+
+**Accepted:** no attestation trust (any authenticator can register);
+usernames in non-Latin scripts can still resemble each other within one
+script; moderators see usernames and masked emails of every account; the
+first admin needs shell access to wrangler. Email verification is off while
+the email binding is missing (Workers Free plan).
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
@@ -221,6 +341,8 @@ cross-origin isolated page, so the headers changed:
   engine (`apply_frame`); the engine re-checks unit ownership.
 - Host privileges need a high-entropy host key, stored hashed; passwords are
   salted PBKDF2 with per-IP lockout; comparisons are constant time.
+- Online play needs an active, unbanned account (site setting, on by
+  default); the session object learns who connects only from the Worker.
 - Maps are identified by the SHA-256 of their canonical JSON, validated by the
   protocol package and by the engine itself (WebAssembly inside the Worker)
   before they are stored, and re-checked by every client after download. The

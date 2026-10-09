@@ -1,15 +1,17 @@
-// WebRA Worker entry: the HTTP API (docs/contracts.md, section 4). Static
-// files (website and game) are served by Workers Assets; only /api/* reaches
-// this handler first.
+// WebRA Worker entry: the HTTP API (docs/contracts.md, section 4, and
+// docs/accounts-api.md). Static files (website and game) are served by
+// Workers Assets; only /api/* reaches this handler first. The daily cron
+// trigger runs the accounts retention job.
 
 import { PROTOCOL_VERSION, SESSION_ID_RE } from '@webra/protocol';
 import pkg from '../package.json' with { type: 'json' };
-import { clientIp, checkOrigin, errorResponse, HttpError, json, readJson } from './http.js';
+import { checkCsrf, checkOrigin, errorResponse, HttpError, json, readJson, withCookies } from './http.js';
 import { listSessions, pruneSessions } from './directory.js';
 import { getMap, listMaps, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
+import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
 
 export { Session } from './session.js';
 
@@ -18,11 +20,13 @@ const SESSION_LIMIT = 20;
 const SESSION_WINDOW_MS = 60 * 60 * 1000;
 const SESSION_BODY_MAX = 1024;
 
-async function createSession(request, env, ip) {
+async function createSession(ctx) {
+  const { request, env } = ctx;
   const { value } = await readJson(request, SESSION_BODY_MAX);
   const input = validateCreateSession(value);
-  if (!(await takeQuota(env.DB, 'sessions', ip, SESSION_LIMIT, SESSION_WINDOW_MS))) {
-    throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' });
+  await requirePlay(ctx);
+  if (!(await takeQuota(env.DB, 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const id = env.SESSION.newUniqueId();
   const stub = env.SESSION.get(id);
@@ -30,7 +34,14 @@ async function createSession(request, env, ip) {
   return json({ id: id.toString(), hostKey }, 201);
 }
 
-async function connectSession(request, env, id) {
+/**
+ * WebSocket upgrade into the session's Durable Object. The Worker decides
+ * who the connection is (session cookie) and whether it may play, and tells
+ * the object in a header it sets itself (any client copy is replaced); the
+ * object answers `hello` with the refusal, so the player sees why.
+ */
+async function connectSession(ctx, id) {
+  const { request, env } = ctx;
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     throw new HttpError(426, 'bad_message', 'Expected a WebSocket upgrade.');
   }
@@ -41,17 +52,21 @@ async function connectSession(request, env, id) {
   } catch {
     throw new HttpError(404, 'not_found', 'No such session.');
   }
-  return env.SESSION.get(doId).fetch(request);
+  const verdict = await playVerdict(ctx);
+  const headers = new Headers(request.headers);
+  headers.delete('Cookie');
+  headers.set(AUTH_HEADER, JSON.stringify({ account: verdict.account, refuse: verdict.refuse ? { code: verdict.refuse.code, message: verdict.refuse.message } : null }));
+  return env.SESSION.get(doId).fetch(new Request(request, { headers }));
 }
 
-async function route(request, env, ctx) {
-  const url = new URL(request.url);
-  const path = url.pathname;
+async function route(ctx) {
+  const { request, env, exec } = ctx;
+  const path = ctx.url.pathname;
   const method = request.method;
-  const ip = clientIp(request);
   const mutating = method !== 'GET' && method !== 'HEAD';
   const upgrade = request.headers.get('Upgrade') !== null;
-  checkOrigin(request, { required: mutating || upgrade });
+  if (mutating) checkCsrf(request);
+  else if (!isNavigationRoute(method, path)) checkOrigin(request, { required: upgrade });
 
   if (path === '/api/version') {
     if (method !== 'GET') throw methodNotAllowed('GET');
@@ -59,34 +74,39 @@ async function route(request, env, ctx) {
   }
   if (path === '/api/sessions') {
     if (method === 'GET') {
-      if (Math.random() < 0.02) ctx.waitUntil(pruneSessions(env.DB).catch(() => {}));
+      if (Math.random() < 0.02) exec.waitUntil(pruneSessions(env.DB).catch(() => {}));
       return json(await listSessions(env.DB));
     }
-    if (method === 'POST') return createSession(request, env, ip);
+    if (method === 'POST') return createSession(ctx);
     throw methodNotAllowed('GET, POST');
   }
   let m = /^\/api\/sessions\/([^/]+)\/ws$/.exec(path);
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
-    return connectSession(request, env, m[1]);
+    return connectSession(ctx, m[1]);
   }
   if (path === '/api/maps') {
     if (method === 'GET') return listMaps(env);
     if (method === 'POST') {
-      if (Math.random() < 0.05) ctx.waitUntil(pruneQuotas(env.DB, SESSION_WINDOW_MS).catch(() => {}));
-      return uploadMap(request, env, ip);
+      if (Math.random() < 0.05) exec.waitUntil(pruneQuotas(env.DB).catch(() => {}));
+      const account = await requirePlay(ctx);
+      return uploadMap(request, env, ctx.ip, ctx.now, account?.id ?? null);
     }
     throw methodNotAllowed('GET, POST');
   }
   if (path === '/api/content/ra-quickinstall') {
     // EA's freeware Red Alert files from OpenRA's mirrors, streamed, never stored (content.js).
-    return quickInstall(request, env, ip);
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    await requireRelay(ctx);
+    return quickInstall(request, env, ctx.ip);
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
-    return getMap(env, ctx, m[1]);
+    return getMap(env, exec, m[1]);
   }
+  const res = await handleAccountApi(ctx);
+  if (res) return res;
   throw new HttpError(404, 'not_found', 'No such API endpoint.');
 }
 
@@ -95,16 +115,18 @@ function methodNotAllowed(allow) {
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, exec) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    const ctx = newContext(request, env, exec);
     try {
-      return await route(request, env, ctx);
+      return await route(ctx);
     } catch (err) {
-      if (err instanceof HttpError) return errorResponse(err.status, err.code, err.message, err.headers);
+      if (err instanceof HttpError) return withCookies(errorResponse(err.status, err.code, err.message, err.headers, err.extra), ctx.cookies);
       // Never echo internals or request data; log only the error type and message.
       console.error('api error', err?.name, err?.message);
-      return errorResponse(500, 'internal', 'Internal error.');
+      return withCookies(errorResponse(500, 'internal', 'Internal error.'), ctx.cookies);
     }
   },
+  scheduled,
 };

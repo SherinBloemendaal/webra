@@ -17,8 +17,14 @@ Storage:
 
 - **Durable Objects (SQLite)**: one object per multiplayer session (lobby,
   lockstep relay, password hash).
-- **D1 database `webra`**: community maps and the public session directory.
-  Schema changes live in `apps/server/migrations` and are applied on deploy.
+- **D1 database `webra`**: community maps, the public session directory,
+  accounts, sign-in sessions, passkeys, bans, site settings and the audit log
+  ([accounts API](accounts-api.md)). Schema changes live in
+  `apps/server/migrations` and are applied on deploy.
+- **Cron trigger** (`triggers.crons`, daily at 03:17 UTC): the accounts
+  retention job (`apps/server/src/accounts/cron.js`): expired sessions, links
+  and challenges, IP history after 90 days, accounts deleted more than 30
+  days ago, audit entries after 365 days.
 
 What `apps/server/wrangler.jsonc` (owned by the server code) has to provide for
 this layout:
@@ -31,6 +37,8 @@ this layout:
   `dist/404.html`.
 - The Durable Object binding with its SQLite migration, and the D1 binding for
   the database named `webra`.
+- The daily cron trigger and the `DISCORD_CLIENT_ID` variable (see
+  [Accounts](#accounts)).
 
 ## Build
 
@@ -143,10 +151,9 @@ npx wrangler deploy
 
 Then check <https://webra.sherin.dev/version.json> for the deployed commit and
 <https://webra.sherin.dev/api/version> for the API. The end-to-end smoke test
-also runs against the live site (`node test/e2e/smoke.mjs
-https://webra.sherin.dev` in `apps/server`); it uploads maps named
-`Smoke <timestamp>` by `Tester`, so delete those from the `maps` table
-afterwards.
+runs only against a local `wrangler dev` (see Local development): it creates
+its admin through a test-only route that exists only there, and online play
+needs approved accounts.
 
 ### Rolling back
 
@@ -166,7 +173,128 @@ write migrations so that the previous Worker version still works with them.
   <http://localhost:8080/>. The maps and multiplayer pages show a notice that
   the API is unavailable.
 - Everything, including the API and Durable Objects: `npm run build`, then
-  `npx wrangler dev` from `apps/server` (local D1 and Durable Objects).
+  from `apps/server`:
+
+  ```bash
+  npx wrangler d1 migrations apply webra --local
+  npx wrangler dev --port 8799 --local-upstream localhost:8799
+  ```
+
+  `--local-upstream` keeps the request host `localhost`. Without it wrangler
+  dev presents every request as `webra.sherin.dev`: the session cookie then
+  gets `Secure` and the `__Host-` prefix (browsers refuse it over plain HTTP)
+  and passkeys are unavailable. Open <http://localhost:8799/> (passkeys need
+  `localhost`, not `127.0.0.1`).
+- End-to-end smoke test: start wrangler dev as above with
+  `--var WEBRA_DEV_ROUTES:1` added, then `node test/e2e/smoke.mjs
+  http://localhost:8799`. The variable enables the test-only
+  `POST /api/dev/promote` route, which also requires plain HTTP to a local
+  host; it is never in `wrangler.jsonc` and never set for deploys.
+
+## Accounts
+
+Everything below is optional except the first admin; without it the site
+works with password and passkey sign-in, and email and Discord are reported
+unavailable (`GET /api/site`, the admin stats).
+
+### First admin
+
+1. Sign up on the site (or on local wrangler dev) with the username you want.
+2. Run, from the repository root:
+
+   ```bash
+   # local wrangler dev database
+   node tools/promote-admin.mjs <username> --local
+   # production (asks for nothing else; the confirmation must repeat the name)
+   export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
+   node tools/promote-admin.mjs <username> --remote --confirm <username>
+   ```
+
+   It sets the role `admin` and the status `active`, signs that account out
+   (sign in again) and writes an audit entry. `--role moderator` makes a
+   moderator instead. No personal data goes into the repository. Further
+   admins and moderators are made in the admin API.
+
+New sites start as a closed beta: registration open, approval required,
+email verification required (in effect only once email works), every login
+method on, online play requires an account. Change this in the admin site
+settings.
+
+### Variables and secrets
+
+| Name | Kind | Purpose |
+|------|------|---------|
+| `DISCORD_CLIENT_ID` | variable in `wrangler.jsonc` | Discord application id (public); empty means Discord is unavailable |
+| `DISCORD_CLIENT_SECRET` | secret | Discord application secret |
+| `PASSWORD_PEPPER` | secret, optional | At least 16 characters; HMAC key applied to passwords before PBKDF2 |
+| `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 60,000, sized for the Workers Free plan's 10 ms CPU per request) |
+| `IP_HASH_SALT` | secret, optional | Salt for the address hashes stored with sessions |
+
+Secrets are set by the owner, never committed:
+
+```bash
+cd apps/server
+npx wrangler secret put DISCORD_CLIENT_SECRET
+npx wrangler secret put PASSWORD_PEPPER      # optional
+```
+
+Notes:
+
+- **Pepper:** once set, never change or remove it. Each hash records whether
+  it was peppered; hashes made before the pepper keep working and are
+  upgraded at the next sign-in, but peppered hashes cannot be checked without
+  it (those accounts would need a reset link).
+- **Iterations:** raising `PASSWORD_ITERATIONS` (for example to 100,000 on the
+  Workers Paid plan) upgrades each hash at its next successful sign-in.
+
+### Discord
+
+1. Create an application at <https://discord.com/developers/applications>.
+2. OAuth2: add the redirect `https://webra.sherin.dev/api/auth/discord/callback`
+   (and `http://localhost:8799/api/auth/discord/callback` for local tests).
+   The Worker requests the scopes `identify email` with PKCE.
+3. Put the application id into `vars.DISCORD_CLIENT_ID` in
+   `apps/server/wrangler.jsonc` (commit) and set the secret
+   `DISCORD_CLIENT_SECRET` as above.
+
+### Email (needs the Workers Paid plan)
+
+Email verification and password reset links are sent with Cloudflare Email
+Service (Email Sending). It requires the Workers Paid plan, so the binding is
+not configured yet: a deploy with it would fail on the Free plan. Until then
+the Worker detects the missing `env.EMAIL`, reports email as unavailable, and
+signup does not require email verification. To enable it:
+
+1. Upgrade the account to the Workers Paid plan.
+2. Dashboard: Compute, Email Service, Email Sending, **Onboard Domain**, pick
+   `sherin.dev`. Cloudflare adds the records on the `cf-bounce` subdomain (MX
+   for bounces, SPF and DKIM TXT records) and a DMARC TXT record on
+   `_dmarc.sherin.dev`; review them against existing mail records of the zone
+   (an existing DMARC record stays; merge rather than duplicate). Wait until
+   the domain shows as verified.
+3. Add the binding to `apps/server/wrangler.jsonc` (top level), restricted to
+   the one sender the Worker uses:
+
+   ```jsonc
+   "send_email": [
+     { "name": "EMAIL", "allowed_sender_addresses": ["noreply@webra.sherin.dev"] }
+   ],
+   ```
+
+   and remove the `send_email` assertion in
+   `apps/server/test/accounts-misc.test.mjs` ("no email binding yet").
+4. Deploy. `GET /api/site` then reports `services.email: true`, and email
+   verification is in effect while the site setting is on (existing accounts
+   keep their status; ask unverified users to confirm from their account page).
+
+Under `wrangler dev` the binding is simulated (messages are written to local
+files, nothing is sent) unless `"remote": true` is added to it.
+
+### Retention job
+
+The cron trigger runs `apps/server/src/accounts/cron.js` once a day. To run
+it locally: `npx wrangler dev --test-scheduled`, then
+`curl "http://localhost:8787/__scheduled?cron=17+3+*+*+*"`.
 
 ## Turning automatic deploys on
 

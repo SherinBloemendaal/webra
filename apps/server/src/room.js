@@ -77,6 +77,8 @@ export class Room {
     r.startMsg = null;
     /** Game player index -> seat state (see the header), null for AI. */
     r.seatStates = null;
+    /** Client id -> account id of members who joined signed in (never published). */
+    r.accounts = {};
     return r;
   }
 
@@ -91,6 +93,7 @@ export class Room {
     r.rejoins ??= {};
     r.startMsg ??= null;
     r.seatStates ??= null;
+    r.accounts ??= {};
     return r;
   }
 
@@ -110,6 +113,7 @@ export class Room {
       rejoins: this.rejoins,
       startMsg: this.startMsg,
       seatStates: this.seatStates,
+      accounts: this.accounts,
     };
   }
 
@@ -153,7 +157,8 @@ export class Room {
    * (`spectate`) join the lobby or a running game while places are free.
    * Returns { client, slot (-1 for spectators), role }.
    */
-  join(name, { host = false, spectate = false } = {}) {
+  join(name, { host = false, spectate = false, account = null } = {}) {
+    if (account !== null && this.hasAccountMember(account)) fail('You are already in this session with this account.', 'bad_state');
     if (spectate) {
       if (this.spectators.length >= this.maxSpectators) {
         fail(this.maxSpectators === 0 ? 'This session has no spectator places.' : 'The spectator places are taken.', 'full');
@@ -165,6 +170,7 @@ export class Room {
     if (slot < 0 && !spectate) fail('The session is full.', 'full');
     const client = this.nextClient++;
     this.names[client] = name;
+    if (account !== null) this.accounts[client] = account;
     if (spectate) this.spectators.push({ client, name });
     else this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
     this.pruneNames();
@@ -182,7 +188,10 @@ export class Room {
     if (slot >= 0 && this.phase === 'lobby') this.slots[slot] = { type: 'open' };
     this.spectators = this.spectators.filter((s) => s.client !== client);
     // Leaving a lobby is final: joining again goes through the password check.
-    if (this.phase === 'lobby') this.forgetKey(client);
+    if (this.phase === 'lobby') {
+      this.forgetKey(client);
+      delete this.accounts[client];
+    }
     if (this.hostId !== client) return null;
     // The longest-seated human (lowest slot) inherits the host role, else the first spectator.
     const next = this.phase === 'lobby' ? (this.slots.find((s) => s.type === 'human') ?? this.spectators[0]) : null;
@@ -495,14 +504,35 @@ export class Room {
     return this.seats ? this.seats.indexOf(client) : -1;
   }
 
-  /** Lobby message fields as published to clients. */
+  /** The account a member joined with, or null. */
+  accountOf(client) {
+    return Object.hasOwn(this.accounts, client) ? this.accounts[client] : null;
+  }
+
+  /**
+   * Whether an account already holds a place: a slot, a spectator place, or
+   * a seat in the running game that is not gone (an away seat comes back
+   * with its rejoin key, never as a second member).
+   */
+  hasAccountMember(account) {
+    return Object.entries(this.accounts).some(([id, a]) => {
+      if (a !== account) return false;
+      const client = Number(id);
+      if (this.slotOf(client) >= 0 || this.isSpectator(client)) return true;
+      const seat = this.seatOf(client);
+      return this.phase === 'game' && seat >= 0 && this.seatState(seat) !== 'gone';
+    });
+  }
+
+  /** Lobby message fields as published to clients (`account: true` marks names from accounts). */
   lobbyView() {
+    const mark = (entry) => (this.accountOf(entry.client) !== null ? { ...entry, account: true } : { ...entry });
     return {
-      slots: this.slots.map((s) => ({ ...s })),
+      slots: this.slots.map((s) => (s.type === 'human' ? mark(s) : { ...s })),
       options: { ...this.options },
       map: this.map,
       hostId: this.hostId,
-      spectators: this.spectators.map((s) => ({ ...s })),
+      spectators: this.spectators.map(mark),
       maxSpectators: this.maxSpectators,
     };
   }
@@ -521,6 +551,7 @@ export class Room {
       delete this.names[id];
       delete this.keys[id];
       delete this.rejoins[id];
+      delete this.accounts[id];
     }
   }
 
