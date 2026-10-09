@@ -25,10 +25,13 @@ impl World {
         }
     }
 
-    /// Mobile.PauseOnCondition of the dog: it stays put while it eats or reloads.
+    /// Mobile.PauseOnCondition: the dog stays put while it eats or reloads,
+    /// and a vehicle while a thief takes it over (^Vehicle: being-captured).
     pub(crate) fn movement_paused(&self, i: usize) -> bool {
         let a = &self.actors[i];
-        a.inf.eat > 0 || (self.leaps(i) && a.reload.iter().any(|&r| r > 0))
+        a.inf.eat > 0
+            || (self.leaps(i) && a.reload.iter().any(|&r| r > 0))
+            || (a.kind == crate::rules::Kind::Vehicle && self.being_captured(i))
     }
 
     /// The dog is in weapon range of `t` (LeapAttack.Tick): leap when the

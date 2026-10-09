@@ -25,9 +25,18 @@ fn flat_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
-    for b in 0..w.building_at.len() {
-        if w.building_at[b] != crate::world::NONE {
-            w.pass.set_blocked(b, true);
+    // Structures block their solid cells (bibs stay passable, as in the game).
+    for i in 0..w.actors.len() {
+        let a = &w.actors[i];
+        if !a.alive || a.kind != Kind::Building {
+            continue;
+        }
+        let b = w.rules.actors[a.ty as usize].building.clone().unwrap();
+        for &(dx, dy, c) in &b.footprint {
+            if c == crate::rules::FootCell::Occupied {
+                let ci = w.map.idx(a.cx + dx, a.cy + dy);
+                w.pass.set_blocked(ci, true);
+            }
         }
     }
     w.pass.refresh(&w.map);
@@ -661,4 +670,55 @@ fn thieves_cloak_standing_still_and_show_up_when_they_move() {
     unit(&mut w, "E1", 1, 37, 30);
     run(&mut w, 3);
     assert!(!w.is_cloaked_from(thf, 1), "detected");
+}
+
+#[test]
+fn the_radar_shows_a_disguised_spy_in_its_disguise_colour_to_enemies() {
+    let mut w = flat_world();
+    building(&mut w, "DOME", 1, 10, 10);
+    building(&mut w, "POWR", 1, 14, 10);
+    building(&mut w, "DOME", 0, 50, 50);
+    building(&mut w, "POWR", 0, 54, 50);
+    let spy = passive(&mut w, "SPY.England", 0, 30, 30);
+    let e1 = passive(&mut w, "E1", 1, 31, 30);
+    w.update_vision();
+    w.disguise_as(spy, e1);
+    let (sx, sy) = w.cell_of(w.actors[spy].x, w.actors[spy].y);
+    let blip = |w: &World, player: u8| {
+        let mut out = Vec::new();
+        w.minimap_blips(player, &mut out);
+        out.chunks(crate::minimap::BLIP_INTS).find(|b| b[0] == sx && b[1] == sy && b[2] == 1).map(|b| b[4])
+    };
+    assert_eq!(blip(&w, 1), Some(1), "the enemy's radar shows one of its own");
+    assert_eq!(blip(&w, 0), Some(0), "the owner's radar shows the spy");
+    w.on_fire(spy);
+    assert_eq!(blip(&w, 1), Some(0), "revealed");
+}
+
+#[test]
+fn being_captured_shuts_exits_pauses_the_yard_and_stops_vehicles() {
+    let mut w = flat_world();
+    let yard = (0..w.actors.len())
+        .find(|&i| w.actors[i].alive && w.actors[i].owner == 1 && w.rules.actors[w.actors[i].ty as usize].id == "FACT")
+        .unwrap();
+    let (yx, yy) = (w.actors[yard].cx, w.actors[yard].cy);
+    let e6 = unit(&mut w, "E6", 0, yx + 1, yy + 6);
+    let truck = passive(&mut w, "3TNK", 1, 10, 50);
+    let thf = unit(&mut w, "THF", 0, 10, 53);
+    w.update_vision();
+    assert!(w.can_deploy(yard));
+    assert!(w.order_enter(e6, yard, EnterKind::Capture));
+    assert!(w.order_enter(thf, truck, EnterKind::Capture));
+    let mut held = false;
+    for _ in 0..80 {
+        w.step();
+        if w.being_captured(truck) {
+            assert!(w.movement_paused(truck), "Mobile PauseOnCondition being-captured");
+            held = true;
+        }
+    }
+    assert!(held, "the thief took the tank over");
+    assert!(w.being_captured(yard));
+    assert!(!w.can_deploy(yard), "Transforms paused");
+    assert!(!w.can_place(1, ty(&w, "POWR"), yx + 4, yy), "BaseProvider paused");
 }

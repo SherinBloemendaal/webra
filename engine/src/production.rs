@@ -435,7 +435,8 @@ impl World {
     }
 
     fn spawn_produced(&mut self, player: u8, ty: u16) -> bool {
-        let Some(&b) = self.producers_of(player, ty).first() else { return false };
+        // A producer being captured has its exits shut (Exit RequiresCondition !being-captured, infantry.rs).
+        let Some(&b) = self.producers_of(player, ty).iter().find(|&&b| !self.being_captured(b)) else { return false };
         let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
         let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
         let exits = binfo.exits.clone();
@@ -554,12 +555,13 @@ impl World {
         let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
         let mut adjacent = false;
         let mut provider = !(self.options.build_radius && b.requires_base_provider);
-        for a in &self.actors {
+        for (k, a) in self.actors.iter().enumerate() {
             if !a.alive || a.owner != player || a.kind != Kind::Building {
                 continue;
             }
             let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-            if ob.base_provider_range > 0 {
+            // BaseProvider PauseOnCondition being-captured (infantry.rs).
+            if ob.base_provider_range > 0 && !self.being_captured(k) {
                 let center = (cx * CELL + b.width * CELL / 2, cy * CELL + b.height * CELL / 2);
                 if dist(center.0, center.1, a.x, a.y) <= ob.base_provider_range {
                     provider = true;
@@ -696,6 +698,10 @@ impl World {
 
     /// Whether actor `i` can deploy (MCV) or pack up (Construction Yard) right now.
     pub fn can_deploy(&self, i: usize) -> bool {
+        // A Construction Yard being captured cannot pack up (Transforms PauseOnCondition being-captured).
+        if self.actors[i].kind == Kind::Building && self.being_captured(i) {
+            return false;
+        }
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let a = &self.actors[i];
         match &self.rules.actors[into as usize].building {
