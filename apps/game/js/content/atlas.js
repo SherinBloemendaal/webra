@@ -162,6 +162,50 @@ export function bibImage(tiles, lookup, width, height) {
   return { width: w, height: h, color, mask: null, offset, scale: 1 };
 }
 
+/**
+ * A bridge template (OpenRA LegacyBridgeLayer: bridges are terrain tiles) as
+ * an atlas image over the bridge's box: tile i of the template lies in
+ * column i % width and row i / width of the template, which starts at the
+ * box's top-left cell; `box` is the actor's footprint size in cells. Drawn
+ * with the theater's terrain palette. Null when the template is empty.
+ */
+export function templateImage(tiles, lookup, [width, height], [boxW, boxH]) {
+  const w = width * CELL_PX;
+  const h = height * CELL_PX;
+  const color = new Uint8ClampedArray(w * h * 4);
+  let any = false;
+  for (let i = 0; i < width * height && i < tiles.length; i++) {
+    const t = tiles[i];
+    if (!t || t.width !== CELL_PX || t.height !== CELL_PX) continue;
+    const ox = (i % width) * CELL_PX;
+    const oy = Math.floor(i / width) * CELL_PX;
+    for (let y = 0; y < CELL_PX; y++) {
+      for (let x = 0; x < CELL_PX; x++) {
+        const v = t.data[y * CELL_PX + x];
+        if (v === 0) continue;
+        color.set(lookup.color.subarray(v * 4, v * 4 + 4), ((oy + y) * w + ox + x) * 4);
+        any = true;
+      }
+    }
+  }
+  if (!any) return null;
+  // Centre of the template relative to the centre of the actor's box.
+  const offset = [w / 2 - (boxW * CELL_PX) / 2, h / 2 - (boxH * CELL_PX) / 2];
+  return { width: w, height: h, color, mask: null, offset, scale: 1 };
+}
+
+/** A pose table of single still images (bridge states): `images[k]` for pose name `names[k]`. */
+function stillPoses(images, names) {
+  const have = {};
+  names.forEach((name, k) => {
+    if (!images[k]) return;
+    const d = { frames: [k], length: 1, facings: 1, fps: 1, classic: false, interpolatedFacings: 0, rotate: false };
+    have[name] = { loop: { ...d, mode: MODE.LOOP }, once: { ...d, mode: MODE.ONCE }, still: { ...d, mode: MODE.STILL }, index: { ...d, mode: MODE.INDEX } };
+  });
+  const poses = poseTable(have);
+  return poses ? { images: images.map((img) => img ?? images.find(Boolean)), poses } : null;
+}
+
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
 function descriptor(resolved, frames, mode, def) {
   return {
@@ -217,6 +261,7 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
     const def = seqs[seqName];
     if (!def) continue;
     const file = sequenceFile(def, tileset);
+    if (!file) continue; // no original on this tileset: WebRA art
     const { sprite, error } = files.get(file);
     if (!sprite) {
       problems.push(`${image}.${seqName}: ${file} ${error}`);
@@ -239,6 +284,11 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
         const shadow = shadowFrame >= 0 ? sprite.frames[shadowFrame] : null;
         imageIndex.set(key, images.length);
         const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
+        // OpenRA sequence Scale (the snow hut): drawn smaller, around its offset.
+        if (def.scale) {
+          img.scale = def.scale;
+          img.offset = [img.offset[0] * def.scale, img.offset[1] * def.scale];
+        }
         images.push(under ? compositeUnder(img, under) : img);
       }
       return imageIndex.get(key);
@@ -301,19 +351,54 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       const def = SEQUENCES[image]?.[seqName];
       if (def && terrainLookup) {
         const file = sequenceFile(def, tileset);
-        const { sprite, error } = files.get(file);
+        const { sprite, error } = file ? files.get(file) : { sprite: null, error: null };
         if (sprite) img = bibImage(sprite.frames, terrainLookup, a.width ?? 1, a.height ?? 1);
-        else out.problems.push(`${image}.${seqName}: ${file} ${error}`);
+        else if (file) out.problems.push(`${image}.${seqName}: ${file} ${error}`);
       }
       bibs.set(key, img);
     }
     return bibs.get(key);
   };
   const shared = new Map(); // image + slot kind + offset -> art (aliases share one copy)
+  // Bridges: the body shows the healthy and damaged templates (poses idle and
+  // damaged), the second slot the destroyed ones (engine bridges.rs
+  // bridge_sprite: idle destroyed, move with the north span, attack with
+  // the south span, harvest both).
+  const bridgeArt = (a, entry) => {
+    const rec = entry.bridge?.[tileset];
+    if (!rec || !terrainLookup) return null;
+    const image = (state) => {
+      const file = rec[state];
+      if (!file) return null;
+      const { sprite, error } = files.get(file);
+      if (!sprite) {
+        out.problems.push(`${a.id}: ${file} ${error}`);
+        return null;
+      }
+      return templateImage(sprite.frames, terrainLookup, rec.size, [a.width ?? 1, a.height ?? 1]);
+    };
+    const body = stillPoses([image('healthy'), image('damaged')], ['idle', 'damaged']);
+    const second = stillPoses(
+      [image('destroyed'), image('destroyed_north'), image('destroyed_south'), image('destroyed_both')],
+      ['idle', 'move', 'attack', 'harvest'],
+    );
+    return body ? { body, second } : null;
+  };
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
     if (!entry) {
       if (a.kind !== 'mine') out.missing.push(a.id);
+      return;
+    }
+    if (entry.bridge) {
+      const art = bridgeArt(a, entry);
+      if (!art) {
+        out.missing.push(a.id);
+        return;
+      }
+      out.slots.set(2 * t, art.body);
+      out.slots.set(2 * t + 1, art.second);
+      out.actors.push(a.id);
       return;
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];

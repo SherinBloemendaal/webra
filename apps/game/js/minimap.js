@@ -32,7 +32,8 @@ const BLIP_INTS = 5;
 const NEUTRAL_OWNER = 255;
 
 // Terrain colours by engine Terrain index (map.rs: Clear, Rough, Rock, Water,
-// Tree, Ford), per biome (the same as the engine's lobby preview, weather.rs).
+// Tree, Ford, Road, Bridge, Beach, River, Wall), per biome (the same as the
+// engine's lobby preview, weather.rs).
 export const BIOME_TERRAIN_RGB = {
   temperate: [
     [62, 88, 44],
@@ -41,6 +42,11 @@ export const BIOME_TERRAIN_RGB = {
     [36, 70, 102],
     [28, 54, 24],
     [74, 112, 118],
+    [118, 104, 82],
+    [140, 116, 80],
+    [176, 160, 112],
+    [44, 82, 112],
+    [96, 96, 92],
   ],
   snow: [
     [206, 214, 222],
@@ -49,6 +55,11 @@ export const BIOME_TERRAIN_RGB = {
     [34, 62, 96],
     [40, 66, 58],
     [110, 150, 182],
+    [150, 150, 150],
+    [132, 112, 86],
+    [176, 180, 176],
+    [46, 78, 110],
+    [92, 94, 102],
   ],
   desert: [
     [200, 168, 110],
@@ -57,8 +68,20 @@ export const BIOME_TERRAIN_RGB = {
     [38, 116, 138],
     [92, 122, 58],
     [112, 168, 158],
+    [170, 136, 92],
+    [124, 96, 64],
+    [226, 204, 150],
+    [52, 124, 140],
+    [128, 100, 76],
   ],
 };
+/**
+ * Blip owner codes of actors the radar shows in a terrain colour (engine
+ * neutral.rs RADAR_*: OpenRA RadarColorFromTerrain): trees, walls, ore and gem mines.
+ */
+export const RADAR_TERRAIN = 1000;
+export const RADAR_ORE = 1100;
+export const RADAR_GEMS = 1101;
 export const TERRAIN_RGB = BIOME_TERRAIN_RGB.temperate;
 const UNKNOWN_TERRAIN_RGB = [62, 88, 44];
 export const ORE_RGB = [200, 160, 50];
@@ -141,7 +164,12 @@ export function composeRadar(out, terrain, fog, blips, colors, mapW, mapH, biome
   const team = colors.map((c) => c.map((v) => Math.round(v * 255)));
   for (let k = 0; k + BLIP_INTS <= blips.length; k += BLIP_INTS) {
     const owner = blips[k + 4];
-    const rgb = owner === NEUTRAL_OWNER ? NEUTRAL_RGB : (team[owner % team.length] ?? NEUTRAL_RGB);
+    const rgb =
+      owner === RADAR_ORE ? ORE_RGB
+      : owner === RADAR_GEMS ? GEM_RGB
+      : owner >= RADAR_TERRAIN ? (palette[owner - RADAR_TERRAIN] ?? UNKNOWN_TERRAIN_RGB)
+      : owner === NEUTRAL_OWNER ? NEUTRAL_RGB
+      : (team[owner % team.length] ?? NEUTRAL_RGB);
     const x0 = Math.max(0, blips[k]);
     const y0 = Math.max(0, blips[k + 1]);
     const x1 = Math.min(mapW, blips[k] + blips[k + 2]);

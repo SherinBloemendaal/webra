@@ -45,7 +45,8 @@ export const HELP = Object.freeze({
   explored: 'The black shroud is lifted at the start, so the whole map is known. With fog of war on, enemies still hide outside your sight.',
   buildRadius: 'Structures must be placed within range of one of your Construction Yards, as well as next to your other structures. Off: next to your structures is enough.',
   redeployableMcv: 'A Construction Yard can pack up into an MCV again and drive to a new spot.',
-  oreRegrowth: 'Harvested ore grows back and spreads onto free clear ground. Gems never grow back.',
+  oreRegrowth:
+    'Ore mines grow a bale of ore every 3 s in their field and gem mines a bale of gems, so harvested fields grow back. Off: the mines stay dormant and harvested fields are gone for good.',
   cheats:
     'Every player gets the debug menu (` key or the Debug button): instant building, building anywhere, free cash, unlimited power, a revealed map and more. Good for testing, not for a fair game.',
 

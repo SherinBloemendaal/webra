@@ -540,6 +540,11 @@ kbd {
   min-height: 70px;
 }
 
+/* Actors of another biome (editor.js filterPaletteByBiome). */
+.palette-item[hidden] {
+  display: none;
+}
+
 .palette-item canvas {
   width: 48px;
   height: 40px;

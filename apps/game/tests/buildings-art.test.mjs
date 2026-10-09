@@ -9,16 +9,24 @@ import { fileURLToPath } from 'node:url';
 import { buildAtlas, animationPlan, spriteList, drawCameo, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM } from '../js/art/animated.js';
+import { worldDraw } from '../js/art/world.js';
+import init, { Game } from '../pkg/webra_sim.js';
 
-const rules = JSON.parse(readFileSync(fileURLToPath(new URL('../../../engine/rules.json', import.meta.url)), 'utf8'));
-// The wasm rules export flattens the building block into width/height.
-const actors = rules.actors.map((a) => ({ ...a, width: a.building?.width, height: a.building?.height }));
+// The rules as the game gets them (Game.rules_json: width/height, footprint cells, world traits).
+await init({ module_or_path: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
+const actors = JSON.parse(new Game(7, 'england', 'russia', 64).rules_json()).actors;
 const buildings = actors.filter((a) => a.kind === 'building');
+/** The neutral world's structures (trees, houses, tech buildings, bridges) draw with art/world.js. */
+const isWorld = (a) => !BUILDING_DRAW[keyOf(a.id)] && !!worldDraw(a);
+const drawOf = (a) => BUILDING_DRAW[keyOf(a.id)] ?? worldDraw(a);
+const BIOMES = ['temperate', 'snow', 'desert'];
 
 const isShadow = (style) => typeof style === 'string' && style.startsWith('rgba(0,0,0,');
 const WALLS = new Set(['SBAG', 'FENC', 'BRIK']); // neutral, no team colour
 const ALIAS = { FPWR: 'POWR', TENF: 'TENT', SYRF: 'SYRD', SPEF: 'SPEN', WEAF: 'WEAP', DOMF: 'DOME', FIXF: 'FIX', FAPW: 'APWR', ATEF: 'ATEK', PDOF: 'PDOX', MSLF: 'MSLO', FACF: 'FACT', 'AFLD.UKRAINE': 'AFLD' };
-const keyOf = (id) => ALIAS[id.toUpperCase()] ?? id.toUpperCase();
+function keyOf(id) {
+  return ALIAS[id.toUpperCase()] ?? id.toUpperCase();
+}
 
 /** A recording Canvas2D stub that validates every number it is given. */
 function fakeContext(log, bounds) {
@@ -95,29 +103,30 @@ function fakeContext(log, bounds) {
   return ctx;
 }
 
-/** Colour passes as the atlas uses them, counting team calls. */
-function passes(counter) {
+/** Colour passes as the atlas uses them, counting team calls (`biome` as buildAtlas passes it). */
+function passes(counter, biome = 'temperate') {
   const grey = (s) => {
     counter.team++;
     const v = Math.round(Math.max(0, Math.min(1, s)) * 255);
     return `rgb(${v},${v},${v})`;
   };
   return {
-    colour: { team: grey, c: (col) => col },
-    mask: { team: () => { counter.team++; return '#fff'; }, c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000') },
+    colour: { team: grey, c: (col) => col, biome },
+    mask: { team: () => { counter.team++; return '#fff'; }, c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome },
   };
 }
 
 test('every building type in the rules has art, including fakes and variants', () => {
   assert.ok(buildings.length >= 40, `expected the full building roster, got ${buildings.length}`);
   for (const a of buildings) {
-    assert.equal(typeof BUILDING_DRAW[keyOf(a.id)], 'function', `no art for building ${a.id}`);
+    assert.equal(typeof drawOf(a), 'function', `no art for building ${a.id}`);
     assert.ok(a.width >= 1 && a.height >= 1, `${a.id} has no footprint size`);
   }
 });
 
 test('the footprint table matches the rules for every building art key', () => {
   for (const a of buildings) {
+    if (isWorld(a)) continue; // world art draws from the rules' footprint
     const key = keyOf(a.id);
     assert.deepEqual(BUILDING_SIZE[key], [a.width, a.height], `${a.id} footprint in BUILDING_SIZE`);
   }
@@ -159,25 +168,31 @@ for (const a of buildings) {
     const key = keyOf(a.id);
     const w = a.width * 24;
     const h = a.height * 24;
-    const runs = [];
-    for (let run = 0; run < 2; run++) {
-      for (const pass of ['colour', 'mask']) {
-        const log = [];
-        const bounds = [];
-        const counter = { team: 0 };
-        const ctx = fakeContext(log, bounds);
-        BUILDING_DRAW[key](ctx, passes(counter)[pass]);
-        assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
-        for (const b of bounds) {
-          const margin = isShadow(b.style) ? 8 : 1.5;
-          assert.ok(
-            b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,
-            `${a.id} draws outside its ${w}x${h} box: ${JSON.stringify(b)}`,
-          );
+    const draw = drawOf(a);
+    // The neutral world needs no team colour (OpenRA draws it with fixed palettes; captured
+    // tech buildings show their owner's stripe) and looks like the map's biome.
+    const world = isWorld(a);
+    for (const biome of world ? BIOMES : ['temperate']) {
+      const runs = [];
+      for (let run = 0; run < 2; run++) {
+        for (const pass of ['colour', 'mask']) {
+          const log = [];
+          const bounds = [];
+          const counter = { team: 0 };
+          const ctx = fakeContext(log, bounds);
+          draw(ctx, passes(counter, biome)[pass]);
+          assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
+          for (const b of bounds) {
+            const margin = isShadow(b.style) ? 8 : 1.5;
+            assert.ok(
+              b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,
+              `${a.id} draws outside its ${w}x${h} box: ${JSON.stringify(b)}`,
+            );
+          }
+          if (!WALLS.has(key) && !world) assert.ok(counter.team > 0, `${a.id} has no team colour area`);
+          if (run === 0) runs.push(log.join('|'));
+          else assert.equal(log.join('|'), runs[pass === 'colour' ? 0 : 1], `${a.id} ${pass} pass is not deterministic (${biome})`);
         }
-        if (!WALLS.has(key)) assert.ok(counter.team > 0, `${a.id} has no team colour area`);
-        if (run === 0) runs.push(log.join('|'));
-        else assert.equal(log.join('|'), runs[pass === 'colour' ? 0 : 1], `${a.id} ${pass} pass is not deterministic`);
       }
     }
   });
@@ -295,7 +310,9 @@ test('the frame table matches the Frame struct of the sprite shader', () => {
 
 // ---- Cameos ---------------------------------------------------------------------------
 
-const cameoActors = actors.filter((a) => a.kind !== 'mine');
+// The neutral world's structures have no cameo art (OpenRA gives them no icon):
+// js/cameo.js draws their sprite icon (drawIcon with the rules record) instead.
+const cameoActors = actors.filter((a) => a.kind !== 'mine' && !(a.kind === 'building' && isWorld(a)));
 
 /** One recorded cameo: [drawn, log]. */
 function recordCameo(id, kind, size = 64, opts = {}) {

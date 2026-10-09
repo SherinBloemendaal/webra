@@ -11,7 +11,7 @@ import { MiniYamlError, parseMiniYaml, parseWDist } from '../js/oramap/miniyaml.
 import { MapBinError, readMapBin } from '../js/oramap/mapbin.js';
 import { cleanText, convertOramap, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES } from '../js/oramap/convert.js';
 import { importOramap, isOramapFile } from '../js/oramap/index.js';
-import { DECORATIONS, ORA_TERRAIN_LETTERS, PICK_ANY, TILESETS } from '../js/oramap/tables.js';
+import { BRIDGES, ORA_TERRAIN_LETTERS, PICK_ANY, TILESETS } from '../js/oramap/tables.js';
 import { decodeLayers, TERRAIN } from '../editor/js/mapformat.js';
 import { parseMap as protocolParseMap } from '../js/protocol.js';
 
@@ -228,8 +228,11 @@ test('tables: every RA tileset is present and every terrain letter maps onto Web
   assert.equal(TILESETS.TEMPERAT[T.WATER], 'w');
   assert.equal(TILESETS.TEMPERAT[T.ROCK], 'k');
   assert.equal(TILESETS.TEMPERAT[T.CLEAR], 'c16');
-  assert.deepEqual(DECORATIONS.T01, { kind: 'tree', cells: [[0, 1]] });
-  assert.equal(DECORATIONS.V01.kind, 'block');
+  // Bridge templates of every state lead to their bridge actor (OpenRA LegacyBridgeLayer).
+  assert.deepEqual(BRIDGES.TEMPERAT['131'], ['BRIDGE1', 5]);
+  assert.deepEqual(BRIDGES.TEMPERAT['132'], ['BRIDGE1', 5]);
+  assert.deepEqual(BRIDGES.DESERT['620'], ['BRIDGE3', 4]);
+  assert.equal(BRIDGES.DESERT['131'], undefined);
   assert.equal(RESOURCE_TYPES[2].webra, 'gems');
 });
 
@@ -237,7 +240,7 @@ test('tables: every RA tileset is present and every terrain letter maps onto Web
 
 const parse = (bytes) => importOramap(bytes, { baseRules: BASE_RULES, fileName: 'valley.oramap' });
 
-test('convert: terrain, crop, resources, decorations, spawns and actors', async () => {
+test('convert: terrain, crop, resources, the neutral world, spawns and actors', async () => {
   const { map, report } = await parse(sampleOramap());
   assert.equal(map.format, 2, 'gems make a format 2 map');
   assert.equal(map.width, 44);
@@ -249,10 +252,9 @@ test('convert: terrain, crop, resources, decorations, spawns and actors', async 
   assert.equal(at(terrain, 22, 22), TERRAIN.WATER);
   assert.equal(at(terrain, 30, 5), TERRAIN.ROCK);
   assert.equal(at(terrain, 5, 5), TERRAIN.CLEAR);
-  // t01 at 15,15 occupies 15,16; v01 at 15,40 is 2x2.
-  assert.equal(at(terrain, 15, 16), TERRAIN.TREE);
-  assert.equal(at(terrain, 15, 15), TERRAIN.CLEAR);
-  assert.equal(at(terrain, 16, 41), TERRAIN.ROCK);
+  // Trees and civilian buildings are actors (engine neutral.rs), the ground under them stays.
+  assert.equal(at(terrain, 15, 16), TERRAIN.CLEAR);
+  assert.equal(at(terrain, 16, 41), TERRAIN.CLEAR);
   // A 3x3 ore field: the centre has 9 neighbours (density 12), a corner 4 (12*4/9 = 5).
   assert.equal(at(ore, 11, 31), 12);
   assert.equal(at(ore, 10, 30), 5);
@@ -262,7 +264,9 @@ test('convert: terrain, crop, resources, decorations, spawns and actors', async 
   // mpspawn at 8,8: yard top-left one up and left, minus the crop.
   assert.deepEqual(map.spawns, [[5, 5], [35, 35]]);
   const types = map.actors.map((a) => a.type).sort();
-  assert.deepEqual(types, ['E1', 'PBOX']);
+  assert.deepEqual(types, ['C1', 'E1', 'PBOX', 'T01', 'V01']);
+  const tree = map.actors.find((a) => a.type === 'T01');
+  assert.deepEqual([tree.owner, tree.x, tree.y], [-1, 13, 13], 'neutral, at the crop-shifted location');
   const e1 = map.actors.find((a) => a.type === 'E1');
   assert.deepEqual([e1.owner, e1.x, e1.y], [0, 8, 10]);
   // OpenRA facing 256 (west, counter-clockwise) is WebRA 768 (west, clockwise).
@@ -270,10 +274,39 @@ test('convert: terrain, crop, resources, decorations, spawns and actors', async 
   assert.equal(map.rules, null);
   assert.equal(report.modded, false);
   assert.ok(report.validation.ok, report.validation.errors.join('; '));
-  assert.ok(report.skipped.some((s) => s.includes('c1')));
+  assert.ok(report.skipped.some((s) => s.includes('brl3') && s.includes('outside')));
   assert.ok(report.skipped.some((s) => s.includes('waypoint')));
   assert.ok(report.converted.some((s) => s.includes('gems 4 cells')));
   assert.ok(protocolParseMap(JSON.stringify(map)).ok);
+});
+
+test('convert: bridge templates become bridge actors over their terrain, roads and rivers keep their types', async () => {
+  // BRIDGE1 (template 131, 5x3: .kggk / kggkk / ..k..) at 20,10 over a river row, a road to it.
+  const rows = ['.kggk', 'kggkk', '..k..'];
+  const tile = (x, y) => {
+    const dx = x - 20;
+    const dy = y - 10;
+    if (dx >= 0 && dx < 5 && dy >= 0 && dy < 3 && rows[dy][dx] !== '.') return [131, dy * 5 + dx];
+    if (y === 11) return [113, 7]; // a river tile (temperat template 113 index 7: v)
+    if (x === 22 && y < 10) return [173, 1]; // a road piece (template 173 index 1: d)
+    return [T.CLEAR, 255];
+  };
+  const bytes = buildZip([
+    { name: 'map.yaml', data: mapYaml({ actors: [{ type: 'mpspawn', x: 8, y: 30 }, { type: 'mpspawn', x: 38, y: 38 }] }) },
+    { name: 'map.bin', data: buildMapBin(48, 48, tile) },
+  ]);
+  const { map, report } = await parse(bytes);
+  const bridges = map.actors.filter((a) => a.type === 'BRIDGE1');
+  assert.equal(bridges.length, 1, 'one actor for the whole template');
+  assert.deepEqual([bridges[0].owner, bridges[0].x, bridges[0].y], [-1, 18, 8]);
+  const { terrain } = decodeLayers(map);
+  const at = (x, y) => terrain[(y - 2) * 44 + (x - 2)];
+  assert.equal(at(22, 10), TERRAIN.BRIDGE);
+  assert.equal(at(21, 10), TERRAIN.ROCK);
+  assert.equal(at(5, 11), TERRAIN.RIVER);
+  assert.equal(at(22, 5), TERRAIN.ROAD);
+  assert.ok(report.converted.some((s) => s.includes('Bridges (1)')));
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
 });
 
 test('convert: maps without gems stay format 1', async () => {
@@ -380,17 +413,19 @@ test('convert: refuses maps for other mods, unknown tilesets, too few spawns and
 });
 
 test('convert: small maps are padded, blocked spawns move, more than 8 spawns are capped', async () => {
-  // 24x24 playable area, a tree right on spawn 1's yard.
-  const spawns = [{ type: 'mpspawn', x: 5, y: 5 }, { type: 'mpspawn', x: 18, y: 16 }, { type: 't08', x: 5, y: 5 }];
+  // 24x24 playable area, rock right on spawn 1's yard and a tree (an actor) on spawn 2's.
+  const spawns = [{ type: 'mpspawn', x: 5, y: 5 }, { type: 'mpspawn', x: 18, y: 16 }, { type: 't08', x: 18, y: 16 }];
   const small = buildZip([
     { name: 'map.yaml', data: mapYaml({ actors: spawns, size: [26, 26], bounds: [1, 1, 24, 24] }) },
-    { name: 'map.bin', data: buildMapBin(26, 26, () => [T.CLEAR, 255]) },
+    { name: 'map.bin', data: buildMapBin(26, 26, (x, y) => (x === 5 && y === 5 ? [T.ROCK, 0] : [T.CLEAR, 255])) },
   ]);
   const { map, report } = await parse(small);
   assert.equal(map.width, 32);
   assert.equal(map.height, 32);
   assert.ok(report.warnings.some((w) => w.includes('rock was added')));
   assert.ok(report.warnings.some((w) => w.includes('Start position 1 was moved')));
+  assert.ok(!map.actors.some((a) => a.type === 'T08'), 'the tree on the yard is left out');
+  assert.ok(report.skipped.some((w) => w.includes('overlap a start position') && w.includes('T08')), report.skipped.join('; '));
   assert.ok(report.validation.ok, report.validation.errors.join('; '));
   const { terrain } = decodeLayers(map);
   assert.equal(terrain[31 * 32 + 31], TERRAIN.ROCK);

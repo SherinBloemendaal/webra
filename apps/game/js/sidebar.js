@@ -733,7 +733,7 @@ export class Sidebar {
     this.selHpFill.classList.toggle('mid', frac <= 0.5 && frac > 0.25);
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
-    if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    if (info.owner !== undefined && info.owner !== this.playerId) detail += info.neutral ? '  (neutral)' : '  (enemy)';
     // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
     const vet = veterancyText(info, info.owner === this.playerId);
     if (vet) detail += `   ${vet}`;
@@ -748,6 +748,8 @@ export class Sidebar {
       if (ab.cloaked) detail += '   Cloaked';
       if (ab.deployed) detail += `   Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`;
     }
+    // Tech buildings: what capturing gives (OpenRA TooltipDescription, picked by main.js selectionInfo).
+    if (info.description) detail += `   ${info.description}`;
     setText(this.selDetailEl, detail);
   }
 

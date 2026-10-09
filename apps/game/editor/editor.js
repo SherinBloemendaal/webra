@@ -45,21 +45,52 @@ const MATERIALS = [
   { t: TERRAIN.WATER, key: '4', color: '#244666' },
   { t: TERRAIN.TREE, key: '5', color: '#1c3618' },
   { t: TERRAIN.FORD, key: '6', color: '#4a7076' },
+  { t: TERRAIN.ROAD, key: '7', color: '#766852' },
+  { t: TERRAIN.BEACH, key: '8', color: '#b0a070' },
+  { t: TERRAIN.RIVER, key: '9', color: '#2c5270' },
+  { t: TERRAIN.WALL, key: '0', color: '#60605c' },
 ];
 
-const WALLS = new Set(['SBAG', 'FENC', 'BRIK']);
-const PALETTE_GROUPS = [
-  { name: 'Structures', test: (a) => a.kind === 'building' && a.queue === 0 },
-  { name: 'Defenses', test: (a) => a.kind === 'building' && a.queue === 1 && !WALLS.has(a.id) && !a.name.startsWith('Fake') },
-  { name: 'Walls', test: (a) => WALLS.has(a.id) },
-  { name: 'Fakes', test: (a) => a.kind === 'building' && a.name.startsWith('Fake') },
-  { name: 'Infantry', test: (a) => a.kind === 'infantry' },
-  { name: 'Vehicles', test: (a) => a.kind === 'vehicle' },
+/**
+ * The neutral world of OpenRA maps (engine/src/neutral.rs) by its OpenRA
+ * map editor category (rules_json world.category); bridges by their own.
+ */
+const WORLD_GROUPS = [
+  { name: 'Tech buildings', category: 'Tech building' },
+  { name: 'Civilian buildings', category: 'Civilian building' },
+  { name: 'Civilians', category: 'Civilian infantry' },
+  { name: 'Trees', category: 'Tree' },
+  { name: 'Decorations', category: 'Decoration' },
+  { name: 'Ore and gem mines', category: 'Resource spawn' },
 ];
+const isWorld = (a) => !!a.world?.bridge || !!a.world?.bridgeHut || WORLD_GROUPS.some((g) => g.category === a.world?.category);
+const isWall = (a) => a.world?.category === 'Wall';
+const PALETTE_GROUPS = [
+  { name: 'Structures', test: (a) => a.kind === 'building' && a.queue === 0 && !isWorld(a) },
+  { name: 'Defenses', test: (a) => a.kind === 'building' && a.queue === 1 && !isWall(a) && !a.name.startsWith('Fake') && !isWorld(a) },
+  { name: 'Walls', test: (a) => isWall(a) },
+  { name: 'Fakes', test: (a) => a.kind === 'building' && a.name.startsWith('Fake') },
+  { name: 'Infantry', test: (a) => a.kind === 'infantry' && !isWorld(a) },
+  { name: 'Vehicles', test: (a) => a.kind === 'vehicle' },
+  ...WORLD_GROUPS.map((g) => ({ name: g.name, test: (a) => a.world?.category === g.category })),
+  // Bridges bring their template's terrain when placed (js/edits.js stampBridge).
+  { name: 'Bridges', test: (a) => !!a.world?.bridge },
+];
+
+/** Hide palette actors that do not belong to the map's biome (OpenRA MapEditorData tilesets). */
+function filterPaletteByBiome() {
+  const biome = doc.meta.biome ?? 'temperate';
+  document.querySelectorAll('.palette-item').forEach((b) => {
+    const a = catalog[b.dataset.actor];
+    const biomes = a?.world?.biomes;
+    const bridge = a?.world?.bridge;
+    b.hidden = (Array.isArray(biomes) && !biomes.includes(biome)) || (!!bridge && !bridge[biome]);
+  });
+}
 
 const SHORTCUTS = [
   ['B F R O C E S A V', 'Brush, fill, rectangle, ore, gems (crystals), eraser, spawns, actor, select'],
-  ['1 to 6', 'Terrain: clear, rough, rock, water, trees, ford'],
+  ['1 to 0', 'Terrain: clear, rough, rock, water, trees, ford, road, beach, river, wall'],
   ['[ and ]', 'Brush size (1, 3, 5, 9)'],
   ['- and =', 'Ore or gem density'],
   ['M', 'Cycle symmetry mode'],
@@ -526,6 +557,7 @@ function syncMetaFields() {
   }
   const biome = $('#meta-biome');
   if (biome && biome.value !== (doc.meta.biome ?? 'temperate')) biome.value = doc.meta.biome ?? 'temperate';
+  filterPaletteByBiome();
 }
 
 // ---- Actors pane ----------------------------------------------------------------------------
@@ -580,6 +612,7 @@ function buildActorsPane() {
   );
   renderOwnerOptions();
   renderPaletteIcons();
+  filterPaletteByBiome();
 }
 
 function renderOwnerOptions() {

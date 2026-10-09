@@ -101,7 +101,7 @@ fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
         if (a >= WATER_ALPHA && a < WATER_ALPHA + WATER_COLORS) {
             col = water_color(a - WATER_ALPHA);
         }
-    } else if (t == 3u || t == 5u) {
+    } else if (t == 3u || t == 5u || t == 7u || t == 9u) {
         let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
         col = col * (0.97 + 0.04 * wave);
     }
@@ -230,7 +230,8 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     let decal = u32(cell.g * 255.0 + 0.5);
     let shadow = u32(cell.a * 255.0 + 0.5);
     var col = tile_px(tile, local).rgb;
-    let wet = t == 3u || t == 5u;
+    // Water, fords, rivers and the river under a bridge (engine map.rs Terrain).
+    let wet = t == 3u || t == 5u || t == 7u || t == 9u;
     if (t == 0u || t == 1u) {
         col = soft_ground(col, t, c, local, w);
     }
@@ -244,7 +245,7 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     }
     if (wet) {
         // Deeper water further from the shore; waves and glints drift with time.
-        if (t == 3u) {
+        if (t == 3u || t == 9u) {
             col = col * (1.0 - water_depth(cf) * 0.35);
         }
         let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);

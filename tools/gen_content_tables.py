@@ -28,7 +28,11 @@ Output:
   the engine's body slot (2t) and second slot (2t + 1: turret, prone for
   infantry, or the layer drawn over a structure: `overlay` names its kind,
   "door" for OpenRA WithProductionDoorOverlay) uses; `bib` is the
-  WithBuildingBib sequence drawn under the structure.
+  WithBuildingBib sequence drawn under the structure. Bridges (OpenRA
+  LegacyBridgeLayer: their art is terrain templates) have `bridge` instead:
+  per tileset the template files of each state (healthy, damaged,
+  destroyed, and the long bridge spans' destroyed_north, destroyed_south,
+  destroyed_both) and the template size.
 - TERRAIN[tileset] = { palette, rotation, images: [file], templates: [[image,
   width, height, role, cells]] }: the templates the tile terrain uses, by role
   (TERRAIN_ROLES), with the cells of the template that have a tile.
@@ -69,7 +73,8 @@ WATER_ROTATION = {'TEMPERAT': [96, 7], 'SNOW': [96, 7], 'DESERT': [32, 7]}
 # plain ground variants; water: open water; shore: beaches (the runtime
 # matches their tiles to the coastline by their pixels); rough: loose stones
 # on open ground; rock: boulders on open ground (impassable); water-rock:
-# rocks standing in water. Templates made by OpenRA (bits.txt) are left out.
+# rocks standing in water; road: plain road pieces. Templates made by OpenRA
+# (bits.txt) are left out.
 TERRAIN_ROLES = {
     'TEMPERAT': {
         'clear': ['clear1'],
@@ -78,6 +83,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
+        'road': ['d44', 'd45'],
     },
     'SNOW': {
         'clear': ['clear1'],
@@ -86,6 +92,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
+        'road': ['d44', 'd45'],
     },
     'DESERT': {
         'clear': ['clear1'],
@@ -94,6 +101,7 @@ TERRAIN_ROLES = {
         'rough': ['p01', 'p02', 'p03', 'p07'],
         'rock': ['p04'],
         'water-rock': [],
+        'road': ['d03'],
     },
 }
 
@@ -128,6 +136,13 @@ ORIGINAL_SEQUENCES = {
 NO_ORIGINAL = {
     'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
     'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp',
+    # The neutral world's art OpenRA drew itself (it keeps WebRA art): ammo
+    # boxes, huts, the hospital icon, make animations of tech buildings, the
+    # oil derrick, ore and gem mines on some tilesets, poles, traps and more.
+    'ammobox1.shp', 'ammobox2.shp', 'ammobox3.shp', 'asianhut.shp', 'c11.shp', 'ctflag.shp', 'fcommake.shp',
+    'gmine.des', 'gmine.sno', 'gmine.tem', 'hospicon.shp', 'lhus.shp', 'mine.des', 'mine.int', 'missmake.shp', 'oilb.shp',
+    'railmine.des', 'railmine.sno', 'railmine.tem', 'rushouse.shp', 'snowhut.shp', 'tanktrap1.shp', 'tanktrap2.shp',
+    'rice.tem', 'tc01.des', 'utilpol1.shp', 'utilpol2.shp', 'v19.des', 'windmill.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
@@ -142,7 +157,7 @@ import parse  # noqa: E402 (data/source/parse.py: MiniYaml parser and inheritanc
 # Sequence fields this tool understands; anything else on a used sequence is an error.
 KNOWN_FIELDS = {
     'Filename', 'TilesetFilenames', 'Start', 'Length', 'Stride', 'Facings', 'Tick', 'ZOffset', 'ShadowStart', 'Frames',
-    'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint',
+    'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint', 'Scale',
 }
 
 
@@ -203,7 +218,7 @@ def normalize(image, name, tree):
             raise SystemExit(f'{image}.{name}: unsupported sequence field {key}')
     out = {}
     fn = field(data, defaults, 'Filename')
-    out['file'] = (fn[0] or '').lower()
+    out['file'] = ((fn or [''])[0] or '').lower()
     ts = field(data, defaults, 'TilesetFilenames')
     if ts and ts[1]:
         out['tilesets'] = {k: v.lower() for k, (v, _) in ts[1].items() if v}
@@ -244,6 +259,9 @@ def normalize(image, name, tree):
         parts = [int(float(x)) for x in offset[0].split(',')]
         if parts[:2] != [0, 0]:
             out['offset'] = parts[:2]
+    sc = field(data, defaults, 'Scale')
+    if sc and sc[0] and float(sc[0]) != 1:
+        out['scale'] = float(sc[0])
     if out['facings'] == 0 or abs(out['facings']) & (abs(out['facings']) - 1):
         raise SystemExit(f'{image}.{name}: Facings must be a power of two')
     return to_original(image, name, out)
@@ -264,7 +282,10 @@ def to_original(image, name, out):
         for tid, tfn in out['tilesets'].items():
             o = original_file(tfn, f'{image}.{name}')
             if o is None:
-                return None
+                # No original on this tileset (OpenRA drew it, like the ore
+                # mine of the desert): no file there, the actor keeps WebRA art.
+                tilesets[tid] = ''
+                continue
             if o != fn:
                 tilesets[tid] = o
         if tilesets:
@@ -302,10 +323,51 @@ def trait(tree, name):
     return None
 
 
+# Bridge states (OpenRA BridgeInfo template fields) as ACTOR_ART bridge keys.
+BRIDGE_STATES = [('healthy', 'Template'), ('damaged', 'DamagedTemplate'), ('destroyed', 'DestroyedTemplate'),
+                 ('destroyed_north', 'DestroyedPlusNorthTemplate'), ('destroyed_south', 'DestroyedPlusSouthTemplate'),
+                 ('destroyed_both', 'DestroyedPlusBothTemplate')]
+
+
+def template_files():
+    """Template id -> (image file, [width, height]) per tileset id."""
+    out = {}
+    for tid, info in TILESETS.items():
+        with open(os.path.join(SRC, 'tilesets', info['file'] + '.yaml')) as f:
+            root = parse.parse_miniyaml(f.read())
+        out[tid] = {}
+        for _key, (_v, ch) in root['Templates'][1].items():
+            img = ch['Images'][0].split(',')[0].strip().lower()
+            out[tid][int(ch['Id'][0])] = (img, [int(x) for x in ch['Size'][0].split(',')])
+    return out
+
+
+def bridge_art(aid, templates):
+    """The template files of a bridge's states per tileset (the bridge art is terrain tiles)."""
+    b = trait(rules_of(aid), 'Bridge') or {}
+    out = {}
+    for tid in TILESETS:
+        healthy = templates[tid].get(int(b.get('Template', ['0'])[0] or 0))
+        if healthy is None:
+            continue
+        rec = {'size': healthy[1]}
+        for state, key in BRIDGE_STATES:
+            t = templates[tid].get(int(b.get(key, ['0'])[0] or 0))
+            if t is None:
+                continue
+            rec[state] = t[0]
+        # Templates OpenRA made (the desert and small bridges): WebRA art there.
+        if any(v in BITS for k, v in rec.items() if k != 'size'):
+            continue
+        out[tid] = rec
+    return out
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
     art = {}
+    templates = template_files()
 
     def use(image, name):
         if image not in seqs or name not in seqs[image]:
@@ -328,6 +390,11 @@ def actor_art(actors, seqs):
         aid = a['id']
         kind = a['kind']
         if kind == 'mine':
+            continue
+        if a.get('bridge'):
+            bridge = bridge_art(aid, templates)
+            if bridge:
+                art[aid] = {'image': aid.lower(), 'bridge': bridge}
             continue
         image = images.get(aid.upper(), aid.lower())
         if image not in seqs:
@@ -430,6 +497,7 @@ def main():
             'turret': a.get('turret_turn_speed') is not None,
             'harvester': bool(a.get('unit') and a['unit'].get('harvester')),
             '_wall': a['id'].upper() in walls,
+            'bridge': bool(a.get('world', {}).get('bridge')),
         })
     art, used = actor_art(actors, seqs)
 
@@ -462,6 +530,9 @@ def main():
     for image in used.values():
         for rec in image.values():
             add_seq(rec)
+    for entry in art.values():
+        for rec in entry.get('bridge', {}).values():
+            files.update(v for k, v in rec.items() if k != 'size')
     for rec in trees.values():
         add_seq(rec)
     for rec in resources['ore'] + resources['gems']:

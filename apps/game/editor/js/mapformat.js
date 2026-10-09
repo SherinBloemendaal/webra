@@ -11,8 +11,10 @@ export const MAP_FORMAT = 2;
 export const MAP_FORMAT_ORE_ONLY = 1;
 export const MAP_FILE_SUFFIX = '.webra-map.json';
 
-export const TERRAIN = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4, FORD: 5 });
-export const TERRAIN_NAMES = ['Clear', 'Rough', 'Rock', 'Water', 'Tree', 'Ford'];
+export const TERRAIN = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4, FORD: 5, ROAD: 6, BRIDGE: 7, BEACH: 8, RIVER: 9, WALL: 10 });
+export const TERRAIN_NAMES = ['Clear', 'Rough', 'Rock', 'Water', 'Tree', 'Ford', 'Road', 'Bridge', 'Beach', 'River', 'Wall'];
+/** Largest terrain value (engine/src/map.rs Terrain). */
+export const MAX_TERRAIN = TERRAIN.WALL;
 /** Map biomes (engine/src/weather.rs); a map without `biome` is temperate. */
 export const BIOMES = ['temperate', 'snow', 'desert'];
 
@@ -40,6 +42,11 @@ export const BIOME_PREVIEW_COLORS = {
     [36, 70, 102],
     [28, 54, 24],
     [74, 112, 118],
+    [118, 104, 82],
+    [140, 116, 80],
+    [176, 160, 112],
+    [44, 82, 112],
+    [96, 96, 92],
   ],
   snow: [
     [206, 214, 222],
@@ -48,6 +55,11 @@ export const BIOME_PREVIEW_COLORS = {
     [34, 62, 96],
     [40, 66, 58],
     [110, 150, 182],
+    [150, 150, 150],
+    [132, 112, 86],
+    [176, 180, 176],
+    [46, 78, 110],
+    [92, 94, 102],
   ],
   desert: [
     [200, 168, 110],
@@ -56,18 +68,24 @@ export const BIOME_PREVIEW_COLORS = {
     [38, 116, 138],
     [92, 122, 58],
     [112, 168, 158],
+    [170, 136, 92],
+    [124, 96, 64],
+    [226, 204, 150],
+    [52, 124, 140],
+    [128, 100, 76],
   ],
 };
 export const PREVIEW_COLORS = BIOME_PREVIEW_COLORS.temperate;
 export const PREVIEW_ORE = [200, 160, 50];
 export const PREVIEW_GEMS = [190, 70, 150];
 
-/** Cells ground units can cross (engine/src/map.rs Terrain::passable): fords too. */
-export const isPassable = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH || t === TERRAIN.FORD;
+/** Cells ground units can cross (engine/src/map.rs Terrain::passable): fords, roads, bridges and beaches too. */
+export const isPassable = (t) =>
+  t === TERRAIN.CLEAR || t === TERRAIN.ROUGH || t === TERRAIN.FORD || t === TERRAIN.ROAD || t === TERRAIN.BRIDGE || t === TERRAIN.BEACH;
 /** Cells that can hold ore or gems (engine/src/map.rs Terrain::holds_ore). */
-export const holdsResource = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH;
-/** Cells structures can stand on (engine/src/map.rs Terrain::buildable). */
-export const isBuildable = (t) => t === TERRAIN.CLEAR;
+export const holdsResource = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH || t === TERRAIN.ROAD;
+/** Cells structures can stand on (engine/src/map.rs Terrain::buildable: OpenRA's Clear and Road). */
+export const isBuildable = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROAD;
 
 // ---- Base64 -------------------------------------------------------------------
 
@@ -247,7 +265,7 @@ export function reachableFrom(terrain, width, height, x, y) {
   return seen;
 }
 
-/** Footprint cells `[dx, dy, kind]` (kind 1 occupied, 2 passable) of a catalog actor, or a single cell. */
+/** Footprint cells `[dx, dy, kind]` (kind 1 occupied, 2 passable, 3 over the cell without taking it: bridges and their huts) of a catalog actor, or a single cell. */
 export function footprintOf(info) {
   if (info?.kind === 'building' && Array.isArray(info.footprint)) {
     return info.footprint.filter((c) => c[2] !== 0);
@@ -347,18 +365,18 @@ export function validateMap(map, opts = {}) {
     let gemsOnBlocked = 0;
     let both = 0;
     for (let i = 0; i < layers.terrain.length; i++) {
-      if (layers.terrain[i] > TERRAIN.FORD) badTerrain++;
+      if (layers.terrain[i] > MAX_TERRAIN) badTerrain++;
       if (layers.ore[i] > LIMITS.maxOre) badOre++;
       else if (layers.ore[i] > 0 && !holdsResource(layers.terrain[i])) oreOnBlocked++;
       if (layers.gems[i] > LIMITS.maxGems) badGems++;
       else if (layers.gems[i] > 0 && !holdsResource(layers.terrain[i])) gemsOnBlocked++;
       if (layers.ore[i] > 0 && layers.gems[i] > 0) both++;
     }
-    if (badTerrain) error(`terrain has ${badTerrain} cells with values outside 0..5.`);
+    if (badTerrain) error(`terrain has ${badTerrain} cells with values outside 0..${MAX_TERRAIN}.`);
     if (badOre) error(`ore has ${badOre} cells with density above ${LIMITS.maxOre}.`);
-    if (oreOnBlocked) error(`${oreOnBlocked} ore cells lie on other terrain; ore can only lie on clear or rough ground.`);
+    if (oreOnBlocked) error(`${oreOnBlocked} ore cells lie on other terrain; ore can only lie on clear or rough ground or roads.`);
     if (badGems) error(`gems has ${badGems} cells with density above ${LIMITS.maxGems}.`);
-    if (gemsOnBlocked) error(`${gemsOnBlocked} gem cells lie on other terrain; gems can only lie on clear or rough ground.`);
+    if (gemsOnBlocked) error(`${gemsOnBlocked} gem cells lie on other terrain; gems can only lie on clear or rough ground or roads.`);
     if (both) error(`${both} cells hold both ore and gems; a cell holds one or the other.`);
   }
 
@@ -460,6 +478,8 @@ export function validateMap(map, opts = {}) {
       if (layers) {
         const bad = cells.some(([dx, dy, c]) => {
           const t = layers.terrain[(a.y + dy) * w + a.x + dx];
+          // Bridges lie over their template's cells, whatever they are (engine bridges.rs).
+          if (c === 3) return false;
           return info.kind === 'building' && c === 1 ? !isBuildable(t) : !isPassable(t);
         });
         if (bad) warn(`${label} at ${a.x},${a.y} stands on terrain it cannot occupy.`, a.x, a.y);
