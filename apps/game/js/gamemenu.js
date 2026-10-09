@@ -13,6 +13,22 @@
 import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
+import { closeOpenTip, infoTip } from './infotip.js';
+
+/** Settings of the Settings page with a "?" (tests check each one has help in js/help.js). */
+export const MENU_HELP_KEYS = ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'pixelRatioCap', 'lowQuality', 'fullscreen'];
+
+let rowId = 0;
+
+/** The name cell of a settings row: a label for `control` and its "?" help. */
+function settingName(key, text, control) {
+  const name = el('span', 'game-menu-name');
+  const label = el('label', null, text);
+  if (!control.id) control.id = `game-menu-${++rowId}`;
+  label.htmlFor = control.id;
+  name.append(label, infoTip(`settings.${key}`, { label: text, describes: control }).root);
+  return name;
+}
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -195,6 +211,8 @@ export class GameMenu {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopImmediatePropagation();
+      // An open help tip closes first.
+      if (closeOpenTip()) return;
       if (this.view === 'main') this.close();
       else this.show('main');
       return;
@@ -301,8 +319,7 @@ export class GameMenu {
     c.append(el('h1', null, 'Settings'));
     const slider = (key, text) => {
       const spec = SCHEMA[key];
-      const row = el('label', 'game-menu-row');
-      const name = el('span', null, text);
+      const row = el('div', 'game-menu-row');
       const input = el('input', 'game-menu-range');
       input.type = 'range';
       input.min = String(spec.min);
@@ -314,20 +331,20 @@ export class GameMenu {
         const v = s.set(key, Number(input.value));
         out.textContent = speedLabel(v);
       });
-      row.append(name, input, out);
+      row.append(settingName(key, text, input), input, out);
       return row;
     };
     const check = (key, text) => {
-      const row = el('label', 'game-menu-row');
+      const row = el('div', 'game-menu-row');
       const input = el('input', 'game-menu-check');
       input.type = 'checkbox';
       input.checked = !!s.get(key);
       input.addEventListener('change', () => s.set(key, input.checked));
-      row.append(el('span', null, text), input);
+      row.append(settingName(key, text, input), input);
       return row;
     };
     const choice = (key, text, labels) => {
-      const row = el('label', 'game-menu-row');
+      const row = el('div', 'game-menu-row');
       const select = el('select', 'game-menu-select');
       for (const option of SCHEMA[key].options) {
         const o = el('option', null, labels[option] ?? option);
@@ -338,7 +355,7 @@ export class GameMenu {
       select.addEventListener('change', () => {
         select.value = s.set(key, select.value);
       });
-      row.append(el('span', null, text), select);
+      row.append(settingName(key, text, select), select);
       return row;
     };
     c.append(
@@ -353,7 +370,7 @@ export class GameMenu {
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());
     fsButton.disabled = !fs.available();
-    fsRow.append(el('span', null, `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    fsRow.append(settingName('fullscreen', `Fullscreen (${formatCombo('Alt+Enter')})`, fsButton), fsButton);
     c.append(fsRow);
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(

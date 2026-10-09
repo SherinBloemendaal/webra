@@ -51,7 +51,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
   assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'extra']);
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), ['edgeScrollSpeed', 'graphics', 'healthBars', 'hotkeys', 'keyScrollSpeed', 'lowQuality', 'pixelRatioCap', 'showUnitPaths']);
   assert.deepEqual(Object.keys(GROUPS.debug.settings), [...VIEWS.map((v) => v.key), 'cpuInstances']);
-  assert.deepEqual(Object.keys(GROUPS.lobby.settings), ['name', 'faction', 'color', 'lastOptions']);
+  assert.deepEqual(Object.keys(GROUPS.lobby.settings), ['name', 'faction', 'color', 'lastOptions', 'presets']);
   // settings.js and audio/prefs.js are views on the registry.
   for (const [name, [group, key]] of Object.entries(SETTINGS_KEYS)) assert.equal(SETTINGS_SCHEMA[name], specOf(group, key));
   assert.deepEqual(DEFAULT_PREFS, defaultValues().audio);
