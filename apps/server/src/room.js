@@ -1,7 +1,7 @@
 // Online lobby state and slot rules (pure, no I/O; serializable to storage).
 //
-// Slots: { type: 'human', client, name, faction, color, team, ready }
-//        { type: 'ai', difficulty, faction, color, team }
+// Slots: { type: 'human', client, name, faction, color, team, handicap, ready }
+//        { type: 'ai', difficulty, faction, color, team, handicap }
 //        { type: 'open' } | { type: 'closed' }
 //
 // Rules:
@@ -183,7 +183,7 @@ export class Room {
     this.names[client] = name;
     if (account !== null) this.accounts[client] = account;
     if (spectate) this.spectators.push({ client, name });
-    else this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
+    else this.slots[slot] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, handicap: 0, ready: false };
     this.pruneNames();
     if (this.phase === 'lobby' && (host || this.hostId === null)) this.hostId = client;
     return { client, slot, role: spectate ? 'spectator' : 'player' };
@@ -247,7 +247,7 @@ export class Room {
     if (open < 0) fail('No player slot is open.', 'full');
     const name = this.names[client] ?? this.spectators.find((s) => s.client === client).name;
     this.spectators = this.spectators.filter((s) => s.client !== client);
-    this.slots[open] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, ready: false };
+    this.slots[open] = { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, handicap: 0, ready: false };
   }
 
   /**
@@ -276,9 +276,16 @@ export class Room {
           faction: msg.faction ?? (cur.type === 'ai' ? cur.faction : 'random'),
           color,
           team: msg.team ?? (cur.type === 'ai' ? cur.team : 0),
+          handicap: msg.handicap ?? (cur.type === 'ai' ? (cur.handicap ?? 0) : 0),
         };
       } else {
-        if (msg.faction !== undefined || msg.color !== undefined || msg.team !== undefined || msg.difficulty !== undefined) {
+        if (
+          msg.faction !== undefined ||
+          msg.color !== undefined ||
+          msg.team !== undefined ||
+          msg.difficulty !== undefined ||
+          msg.handicap !== undefined
+        ) {
           fail('Empty slots have no settings.');
         }
         this.slots[target] = { type: msg.type };
@@ -322,6 +329,8 @@ export class Room {
     }
     if (msg.faction !== undefined) s.faction = msg.faction;
     if (msg.team !== undefined) s.team = msg.team;
+    // OpenRA handicap: a player's own, or an AI's set by the host (protocol HANDICAPS).
+    if (msg.handicap !== undefined) s.handicap = msg.handicap;
   }
 
   setOptions(client, options) {
@@ -383,12 +392,12 @@ export class Room {
       const pool = RANDOM_FACTIONS[s.faction];
       const faction = pool ? pool[pick(pool.length)] : s.faction;
       if (s.type === 'human') {
-        players.push({ slot: index, type: 'human', name: s.name, faction, color: s.color, team: s.team });
+        players.push({ slot: index, type: 'human', name: s.name, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
         startPlayers.push({ player: index, slot, client: s.client, name: s.name, type: 'human' });
         seats.push(s.client);
       } else {
         const name = AI_NAMES[s.difficulty];
-        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, faction, color: s.color, team: s.team });
+        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
         startPlayers.push({ player: index, slot, client: null, name, type: 'ai' });
         seats.push(null);
       }
