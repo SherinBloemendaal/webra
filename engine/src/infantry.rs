@@ -475,6 +475,10 @@ impl World {
             captor.and_then(|c| self.capture_with(c, t).map(|ci| ci.experience)).filter(|_| self.are_enemies(new_owner, old)).unwrap_or(0);
         self.change_owner(t, new_owner, cancel);
         self.note_player_experience(new_owner, experience);
+        // TransformOnCapture: a husk becomes its vehicle again for the captor.
+        if let Some(tr) = self.rules.actors[ty as usize].abilities.capturable.as_ref().and_then(|c| c.transform.clone()) {
+            self.transform_actor(t, &tr.into, tr.health);
+        }
         let building = kind == Kind::Building;
         let (won, lost) = if building {
             (InfantryEvent::StructureCaptured, InfantryEvent::StructureLost)
@@ -600,6 +604,11 @@ impl World {
                         }
                     }
                 }
+                "transform" => {
+                    // InfiltrateForTransform: an allied husk is repaired into its vehicle, for its owner.
+                    self.note_player_experience(owner, e.experience);
+                    self.transform_actor(t, &e.into, e.health);
+                }
                 "decoration" => {
                     self.note_player_experience(owner, e.experience);
                     if owner < 32 {
@@ -610,6 +619,25 @@ impl World {
             }
         }
         self.infantry_event(InfantryEvent::BuildingInfiltrated, x, y, owner, tty as i32);
+    }
+
+    /// OpenRA Transform (TransformOnCapture, InfiltrateForTransform): actor
+    /// `i` is replaced by a unit of type `into` for the same owner, where it
+    /// stands and facing the same way, with `health` percent of its health
+    /// (ForceHealthPercentage; 0 keeps the new actor's full health).
+    pub fn transform_actor(&mut self, i: usize, into: &str, health: i32) -> Option<usize> {
+        let ty = self.rules.actor_index(into)?;
+        if self.rules.actors[ty].unit.is_none() || !self.actors[i].alive {
+            return None;
+        }
+        let (x, y, facing, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].facing, self.actors[i].owner);
+        self.remove(i);
+        let n = self.spawn_unit(ty as u16, owner, x, y, facing);
+        if health > 0 {
+            let max = self.rules.actors[ty].hp;
+            self.actors[n].hp = (max as i64 * health.min(100) as i64 / 100).max(1) as i32;
+        }
+        Some(n)
     }
 
     // ---- Instant repair, C4, bridges ----------------------------------------------------

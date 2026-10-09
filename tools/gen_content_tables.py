@@ -25,6 +25,7 @@ Output:
   apps/game/js/content/sequences.js).
 - ACTOR_ART[actor id] = { image, body: {pose: sequence}, second: {pose:
   sequence} | null, wall?, overlay?, bib?, cameo }: which sequence each pose of
+  (infantry: stand variants, idle animations and deaths too) of
   the engine's body slot (2t) and second slot (2t + 1: turret, prone for
   infantry, or the layer drawn over a structure: `overlay` names its kind,
   "door" for OpenRA WithProductionDoorOverlay) uses; `bib` is the
@@ -134,6 +135,8 @@ NO_ORIGINAL = {
 SAME_LAYOUT = {
     'fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp',
     'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp',
+    # OpenRA's engineer only adds team colours to the original's frames.
+    'e6.shp',
 }
 
 sys.path.insert(0, SRC)
@@ -302,6 +305,49 @@ def trait(tree, name):
     return None
 
 
+def infantry_body(tree):
+    """The infantry body trait the actor stands and walks with (WithInfantryBody,
+    or the Spy's WithDisguisingInfantryBody), without @suffix (the parachute
+    and the dog's run are other instances)."""
+    for name in ('WithInfantryBody', 'WithDisguisingInfantryBody'):
+        if name in tree:
+            return tree[name][1]
+    return {}
+
+
+def infantry_poses(tree):
+    """Pose -> sequence of an infantry body (engine/src/render.rs Pose): its
+    StandSequences (stand, stand2), IdleSequences (idle1, idle2), MoveSequence,
+    DefaultAttackSequence (or the first primary AttackSequences entry), and
+    the WithDeathAnimation sequences die1..die6 and CrushedSequence."""
+    body = infantry_body(tree)
+    val = lambda key, default: (body.get(key, [default])[0] or default)
+    names = lambda key, default: [x.strip() for x in val(key, default).split(',') if x.strip()]
+    stands = names('StandSequences', 'stand')
+    idles = names('IdleSequences', '')
+    attack = val('DefaultAttackSequence', '')
+    seqs = body.get('AttackSequences', ['', {}])[1]
+    if not attack and 'primary' in seqs:
+        attack = [x.strip() for x in seqs['primary'][0].split(',')][0]
+    out = {'idle': stands[0], 'move': val('MoveSequence', 'run')}
+    if attack:
+        out['attack'] = attack
+
+    if len(stands) > 1:
+        out['stand2'] = stands[1]
+    for k, name in enumerate(idles[:2]):
+        out[f'idle{k + 1}'] = name
+    death = trait(tree, 'WithDeathAnimation')
+    if death is not None:
+        prefix = death.get('DeathSequence', ['die'])[0] or 'die'
+        for _type, (n, _ch) in death.get('DeathTypes', ['', {}])[1].items():
+            out[f'die{n}'] = f'{prefix}{n}'
+        crushed = death.get('CrushedSequence', [''])[0]
+        if crushed:
+            out['crushed'] = crushed
+    return out
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
@@ -353,7 +399,11 @@ def actor_art(actors, seqs):
                 if got:
                     entry['bib'] = got
         elif kind == 'infantry':
-            entry['body'] = poses(image, {'idle': 'stand', 'move': 'run', 'attack': 'shoot'})
+            mapping = infantry_poses(rules_of(aid))
+            # Sequences assembled from parts of a file (Combine: Tanya's shoot-left
+            # with per-facing offsets) are not supported: she fires standing.
+            mapping = {p: n for p, n in mapping.items() if 'Combine' not in seqs.get(image, {}).get(n, ['', {}])[1]}
+            entry['body'] = poses(image, mapping)
             entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-shoot'})
         else:
             mapping = {'idle': 'idle'}

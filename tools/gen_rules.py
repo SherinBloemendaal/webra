@@ -416,7 +416,8 @@ INFILTRATE_TYPES = ['SpyInfiltrate', 'ThiefInfiltrate', 'Husk']
 # Traits/Infiltration) and the effect names the engine knows (infantry.rs).
 INFILTRATE_EFFECTS = {'InfiltrateForCash': 'cash', 'InfiltrateForExploration': 'exploration',
                       'InfiltrateForPowerOutage': 'power_outage', 'InfiltrateForSupportPower': 'support_power',
-                      'InfiltrateForSupportPowerReset': 'power_reset', 'InfiltrateForDecoration': 'decoration'}
+                      'InfiltrateForSupportPowerReset': 'power_reset', 'InfiltrateForDecoration': 'decoration',
+                      'InfiltrateForTransform': 'transform'}
 # OpenRA trait defaults of the infantry abilities (infantry.rs).
 INFILTRATE_CASH_PERCENT = 100       # InfiltrateForCashInfo.Percentage
 POWER_OUTAGE_DURATION = 500         # InfiltrateForPowerOutageInfo.Duration
@@ -491,6 +492,9 @@ def infiltrated_info(t, ids_lower):
             e['duration'] = int(v.get('Duration', POWER_OUTAGE_DURATION))
         if base == 'InfiltrateForSupportPower':
             e['proxy'] = ids_lower[v['Proxy'].lower()]
+        if base == 'InfiltrateForTransform':
+            e['into'] = ids_lower[v['IntoActor'].lower()]
+            e['health'] = int(v.get('ForceHealthPercentage', 0))
         out.append(e)
     return out
 
@@ -669,6 +673,10 @@ def main():
             c = c if isinstance(c, dict) else {}
             ab['capturable'] = {'types': sorted({x for v in trait(t, 'Capturable').values() if isinstance(v, dict) for x in tokens(v.get('Types'))}),
                                 'cancel_activity': str(c.get('CancelActivity', 'False')).lower() == 'true'}
+            # TransformOnCapture (husks): the captured actor turns into IntoActor.
+            if isinstance(t.get('TransformOnCapture'), dict):
+                tc = t['TransformOnCapture']
+                ab['capturable']['transform'] = {'into': ids_lower[tc['IntoActor'].lower()], 'health': int(tc.get('ForceHealthPercentage', 0))}
         if 'InstantlyRepairs' in t:
             ab['instantly_repairs'] = {}
         if 'InstantlyRepairable' in t:

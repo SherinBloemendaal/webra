@@ -582,3 +582,83 @@ fn standing_soldiers_use_both_stand_sequences_and_idle_now_and_then() {
         assert!(seen.contains(&(p as u32)), "{p:?} shows up");
     }
 }
+
+// ---- Husks (the world objects add them; tested with a stand-in) -----------------------
+
+/// Rules with a stand-in husk of the Medium Tank, as OpenRA's ^Husk has it:
+/// Capturable husk with TransformOnCapture, Targetable Husk with InfiltrateForTransform.
+fn rules_with_husk() -> crate::rules::Rules {
+    let mut v: serde_json::Value = serde_json::from_str(crate::rules::RULES_JSON).unwrap();
+    let actors = v["actors"].as_array_mut().unwrap();
+    let mut husk = actors.iter().find(|a| a["id"] == "2TNK").unwrap().clone();
+    husk["id"] = "2TNK.Husk".into();
+    husk["weapons"] = serde_json::json!([]);
+    husk["fire_delays"] = serde_json::json!([]);
+    husk["stance"] = serde_json::Value::Null;
+    husk["infiltrate_types"] = serde_json::json!(["Husk"]);
+    husk["abilities"] = serde_json::json!({
+        "capturable": { "types": ["husk"], "cancel_activity": false, "transform": { "into": "2TNK", "health": 15 } },
+        "infiltrated": [{ "kind": "transform", "types": ["Husk"], "experience": 0, "into": "2TNK", "health": 15 }],
+    });
+    actors.push(husk);
+    crate::rules::Rules::from_json(v).unwrap()
+}
+
+fn husk_world() -> World {
+    let mut w = flat_world();
+    let fresh = World::empty(rules_with_husk(), w.map.clone(), 7);
+    let players = std::mem::take(&mut w.players);
+    let mut w2 = fresh;
+    w2.pass = w.pass.clone();
+    w2.pass_water = w.pass_water.clone();
+    for p in &players {
+        w2.add_player(p.faction, false, p.start);
+        let k = w2.players.len() - 1;
+        w2.players[k].explored.iter_mut().for_each(|e| *e = 1);
+    }
+    w2.refresh_tokens();
+    w2
+}
+
+#[test]
+fn mechanics_capture_enemy_husks_and_repair_allied_ones_into_tanks() {
+    let mut w = husk_world();
+    let husk_ty = ty(&w, "2TNK.Husk");
+    let tank_ty = ty(&w, "2TNK");
+    let enemy_husk = w.spawn_unit(husk_ty, 1, cell_center(30), cell_center(30), 256);
+    let own_husk = w.spawn_unit(husk_ty, 0, cell_center(20), cell_center(30), 0);
+    let m1 = unit(&mut w, "MECH", 0, 30, 34);
+    let m2 = unit(&mut w, "MECH", 0, 20, 34);
+    assert!(w.can_capture(m1, enemy_husk), "Captures husk");
+    assert!(w.can_infiltrate(m2, own_husk), "Infiltrates Husk, ValidRelationships Ally");
+    assert!(!w.can_infiltrate(m1, enemy_husk));
+    w.order_enter(m1, enemy_husk, EnterKind::Capture);
+    w.order_enter(m2, own_husk, EnterKind::Infiltrate);
+    run(&mut w, 200);
+    let tanks: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == tank_ty).collect();
+    assert_eq!(tanks.len(), 2, "both husks are tanks again");
+    let max = w.rules.actors[tank_ty as usize].hp;
+    for &t in &tanks {
+        assert_eq!(w.actors[t].owner, 0);
+        assert_eq!(w.actors[t].hp, max * 15 / 100, "ForceHealthPercentage 15");
+    }
+    assert!(!w.actors[m1].alive && !w.actors[m2].alive);
+}
+
+#[test]
+fn thieves_cloak_standing_still_and_show_up_when_they_move() {
+    let mut w = flat_world();
+    let thf = unit(&mut w, "THF", 0, 30, 30);
+    run(&mut w, 260);
+    assert!(w.actors[thf].ab.cloaked, "InitialDelay 250");
+    assert!(w.is_cloaked_from(thf, 1));
+    w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(thf)], x: cell_center(36), y: cell_center(30), attack_move: false });
+    run(&mut w, 3);
+    assert!(!w.actors[thf].ab.cloaked, "UncloakOn Move");
+    // Every soldier detects a cloaked thief next to it (^Infantry DetectCloaked 1c512).
+    run(&mut w, 300);
+    assert!(w.actors[thf].ab.cloaked);
+    unit(&mut w, "E1", 1, 37, 30);
+    run(&mut w, 3);
+    assert!(!w.is_cloaked_from(thf, 1), "detected");
+}

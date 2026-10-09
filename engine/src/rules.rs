@@ -268,6 +268,17 @@ pub struct CapturableInfo {
     pub types: Vec<String>,
     /// CancelActivity: the captured actor stops what it was doing.
     pub cancel_activity: bool,
+    /// TransformOnCapture (husks): what it turns into for its captor.
+    #[serde(default)]
+    pub transform: Option<TransformInto>,
+}
+
+/// OpenRA TransformOnCapture and InfiltrateForTransform: the actor id it
+/// turns into, and ForceHealthPercentage (0: the new actor's full health).
+#[derive(Deserialize, Clone, Debug)]
+pub struct TransformInto {
+    pub into: String,
+    pub health: i32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -300,6 +311,11 @@ pub struct InfiltratedInfo {
     /// Proxy actor id granted to the infiltrator's owner (support_power).
     #[serde(default)]
     pub proxy: String,
+    /// transform (InfiltrateForTransform, husks): the actor it turns into and its health percentage.
+    #[serde(default)]
+    pub into: String,
+    #[serde(default)]
+    pub health: i32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -1113,6 +1129,16 @@ impl Rules {
         Ok(rules)
     }
 
+    /// Rules from a whole rules.json document (tests that add actors the
+    /// built-in rules do not have yet).
+    #[cfg(test)]
+    pub(crate) fn from_json(v: serde_json::Value) -> Result<Rules, String> {
+        let raw: RawRules = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        let rules = Rules::from_raw(raw)?;
+        rules.validate()?;
+        Ok(rules)
+    }
+
     /// Semantic checks that keep the simulation panic-free and bounded, whatever
     /// a modded map sets: value ranges, table lengths and cross references.
     /// Every field an override can reach is covered: indices into the weapon
@@ -1482,6 +1508,14 @@ impl Rules {
         }
         if let Some(c) = &ab.capturable {
             count(&n("abilities.capturable.types"), c.types.len(), 8)?;
+            if let Some(t) = &c.transform {
+                self.actor_id_ref(
+                    &n("abilities.capturable.transform.into"),
+                    &t.into,
+                    &[Kind::Infantry, Kind::Vehicle, Kind::Ship, Kind::Aircraft],
+                )?;
+                within(&n("abilities.capturable.transform.health"), t.health, 0, 100)?;
+            }
         }
         if let Some(i) = &ab.infiltrates {
             count(&n("abilities.infiltrates.types"), i.types.len(), 8)?;
@@ -1490,7 +1524,10 @@ impl Rules {
             count(&n("abilities.infiltrated"), list.len(), 8)?;
             for e in list {
                 let m = |f: &str| n(&format!("abilities.infiltrated.{f}"));
-                if !matches!(e.kind.as_str(), "cash" | "exploration" | "power_outage" | "support_power" | "power_reset" | "decoration") {
+                if !matches!(
+                    e.kind.as_str(),
+                    "cash" | "exploration" | "power_outage" | "support_power" | "power_reset" | "decoration" | "transform"
+                ) {
                     return Err(m("kind: unknown effect"));
                 }
                 count(&m("types"), e.types.len(), 8)?;
@@ -1502,6 +1539,10 @@ impl Rules {
                 within(&m("duration"), e.duration, 0, TIMER)?;
                 if e.kind == "support_power" {
                     self.actor_id_ref(&m("proxy"), &e.proxy, &[Kind::Proxy])?;
+                }
+                if e.kind == "transform" {
+                    self.actor_id_ref(&m("into"), &e.into, &[Kind::Infantry, Kind::Vehicle, Kind::Ship, Kind::Aircraft])?;
+                    within(&m("health"), e.health, 0, 100)?;
                 }
             }
         }

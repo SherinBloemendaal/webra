@@ -70,6 +70,10 @@ impl World {
             if self.actors[i].alive {
                 self.tick_abilities(i);
             }
+            // Cloak UncloakOn: Move (the thief shows itself while it moves).
+            if self.actors[i].alive && self.actors[i].moved && self.actors[i].ab.cloaked {
+                self.uncloak_on(i, "Move");
+            }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
                 // Prone countdown and elite self repair (veterancy.rs).
