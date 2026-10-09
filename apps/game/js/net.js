@@ -65,10 +65,11 @@ async function request(path, init = {}) {
   return { body, text };
 }
 
+// Every state-changing API request carries the CSRF header (docs/accounts-api.md, section 1.1).
 const postJson = (path, value, raw = false) =>
   request(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-WebRA-CSRF': '1' },
     body: raw ? value : JSON.stringify(value),
   });
 
