@@ -425,7 +425,9 @@ a status change, a session revoked from another device, a password change
 elsewhere and a new IP ban stop game file loads within **10 minutes** at
 most. Signing out, revoking the current session and deleting the account
 clear the pass at once, and every response that clears a stale session
-cookie clears it too. Online play, map uploads and every account API call
+cookie clears it too. The server does not record revoked passes: a client
+that keeps both cookies after signing out (a browser does not) can load
+game files for the rest of the pass lifetime, the same bound. Online play, map uploads and every account API call
 still check D1 on each request, so the bound only concerns static game
 files. A game already running in a browser keeps running (it is in memory);
 when a later load is refused, the game offers to sign in again

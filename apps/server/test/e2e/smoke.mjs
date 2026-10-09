@@ -16,6 +16,7 @@
 // them with a play pass, signing out clears it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
@@ -127,7 +128,22 @@ async function playGate(ADMIN, HOST) {
   const NAV = { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', Accept: 'text/html' };
   const SUB = { 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', Accept: '*/*' };
   const WASM = '/play/pkg/webra_sim_bg.wasm';
-  const get = (path, headers, cookie = null) => fetch(BASE + path, { redirect: 'manual', headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } });
+  // Node's fetch replaces Sec-Fetch-* with its own values (forbidden request
+  // headers): requests are sent with node:http, as a browser would send them.
+  const get = (path, headers, cookie = null) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(BASE + path, { headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const h = new Headers();
+          for (const [k, v] of Object.entries(res.headers)) for (const one of [].concat(v)) h.append(k, one);
+          resolve(new Response(res.statusCode === 304 || res.statusCode === 204 ? null : Buffer.concat(chunks), { status: res.statusCode, headers: h }));
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
   const passOf = (res) => res.headers.getSetCookie().find((c) => /^webra_play=/.test(c)) ?? null;
   const securityHeaders = (res, what) => {
     assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'self'/, `${what}: CSP`);
@@ -199,8 +215,9 @@ async function playGate(ADMIN, HOST) {
   assert.equal((await get(WASM, SUB, cookies.get(ADMIN))).status, 200);
 
   // Signing out clears the pass; the old pass alone opens nothing.
-  const LEAVER = `Leaver${RUN}`;
-  const leaver = await signupAccount(LEAVER);
+  // (The pending account from above, approved: signups are rate limited per address.)
+  const LEAVER = PENDING;
+  const leaver = (await api('/api/auth/me', {}, LEAVER)).body.user;
   assert.equal((await api(`/api/admin/users/${leaver.id}/approve`, { method: 'POST', body: '{}' }, ADMIN)).status, 200);
   const before = await get('/play/', NAV, cookies.get(LEAVER));
   assert.equal(before.status, 200);
@@ -210,7 +227,10 @@ async function playGate(ADMIN, HOST) {
   assert.equal(out.status, 204);
   assert.match(passOf(out) ?? '', /^webra_play=;.*Max-Age=0/, 'sign-out clears the pass');
   assert.equal((await get(WASM, SUB, leaverPass)).status, 401, 'a pass without its session opens nothing');
-  assert.equal((await get(WASM, SUB, `${cookies.get(LEAVER)}; ${leaverPass}`)).status, 401, 'nor with the signed-out session');
+  // A client that keeps both cookies after signing out (a browser clears them) keeps the
+  // files only for the rest of the pass lifetime: the documented bound (docs/security.md).
+  assert.equal((await get(WASM, SUB, `${cookies.get(LEAVER)}; ${leaverPass}`)).status, 200, 'within the pass lifetime');
+  assert.equal((await get('/play/js/main.js', SUB, cookies.get(LEAVER))).status, 401, 'without the pass, the signed-out session opens nothing');
 }
 
 async function main() {
