@@ -17,14 +17,17 @@
 //! Water radiates from the map centre along spokes that run between the bases
 //! (the angular midpoints of neighbouring bases seen from the centre), so a
 //! river never runs through a base. Features are drawn on the left half and
-//! mirrored like the rest of the map (four players in two rows: also top to
-//! bottom, so both rows see the same water). In the naval styles every base
-//! gets a harbour: two players a bay along the map edge behind the base, 3 to
-//! 8 players water moats north and south of the pocket, of which the one
-//! nearer the centre is dug through to the water network and the other one
-//! becomes the usual rock wall. Ground routes that have to cross water become
-//! fords (`Terrain::Ford`), which ships still sail over, so the ground network
-//! and the water network are both connected.
+//! mirrored like the rest of the map (four players in two rows and rings of
+//! six or eight: also top to bottom, so the bases above and below the middle
+//! see the same water). In the naval styles every base gets a harbour: two
+//! players a bay along the map edge behind the base, 3 to 8 players water
+//! moats north and south of the pocket, of which the one with the cheapest
+//! channel to the water network (the one facing the hub on ties) is dug
+//! through and the other one becomes the usual rock wall; with the top to
+//! bottom mirror a base below the middle gets the mirror image of its
+//! partner's channel. Ground routes that have to cross water become fords
+//! (`Terrain::Ford`), which ships still sail over, so the ground network and
+//! the water network are both connected; roads are mirrored like the map.
 
 use crate::map::{Map, Terrain};
 use crate::math::facing_vec;
@@ -752,9 +755,10 @@ pub(crate) fn dig_channel(m: &mut Map, path: &[usize], zone: &[bool]) {
 
 /// Make `b` reachable from `a` (yard top-left cells) by ground: carve the
 /// cheapest road three cells wide, clearing rock and trees and turning water
-/// into fords, mirrored left to right. Cells in `keep` (base walls, moats,
-/// harbours) never change. Returns false when no road exists.
-pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[bool]) -> bool {
+/// into fords, mirrored left to right (with `flip_y` also top to bottom, as
+/// the rest of the map is). Cells in `keep` (base walls, moats, harbours)
+/// never change. Returns false when no road exists.
+pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[bool], flip_y: bool) -> bool {
     if m.connected(a, b) {
         return true;
     }
@@ -774,7 +778,7 @@ pub(crate) fn connect_ground(m: &mut Map, a: (i32, i32), b: (i32, i32), keep: &[
         }
     };
     let Some((_, path)) = cheapest_path(w, h, &[from], &|j| j == to, &cost) else { return false };
-    carve_road(m, &path, keep);
+    carve_road(m, &path, keep, flip_y);
     m.connected(a, b)
 }
 
@@ -787,7 +791,7 @@ pub(crate) const MAINLAND_REGION: usize = 60;
 /// could then reach. Each region of at least `MAINLAND_REGION` cells gets
 /// the cheapest road to the bases (fords over water, mirrored). Small
 /// islands stay islands.
-pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool]) {
+pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool], flip_y: bool) {
     for _ in 0..16 {
         let (w, h) = (m.width, m.height);
         let label = land_components(m);
@@ -820,7 +824,7 @@ pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool])
         };
         let sources: Vec<usize> = (0..m.cells()).filter(|&i| label[i] == region).collect();
         let Some((_, path)) = cheapest_path(w, h, &sources, &|j| label[j] == main, &cost) else { return };
-        carve_road(m, &path, keep);
+        carve_road(m, &path, keep, flip_y);
         let _ = size;
     }
 }
@@ -854,13 +858,15 @@ fn land_components(m: &Map) -> Vec<u32> {
 
 /// A road three cells wide along `path`, and its mirror image: rock and trees
 /// cleared, water turned into fords; `keep` cells never change.
-fn carve_road(m: &mut Map, path: &[usize], keep: &[bool]) {
-    let w = m.width;
+fn carve_road(m: &mut Map, path: &[usize], keep: &[bool], flip_y: bool) {
+    let (w, h) = (m.width, m.height);
     for &p in path {
         let (x, y) = ((p as i32) % w, (p as i32) / w);
         for oy in -1..=1 {
             for ox in -1..=1 {
-                for (cx, cy) in [(x + ox, y + oy), (w - 1 - x - ox, y + oy)] {
+                let (mx, my) = (w - 1 - x - ox, h - 1 - y - oy);
+                let mirrored = [(x + ox, y + oy), (mx, y + oy), (x + ox, my), (mx, my)];
+                for &(cx, cy) in &mirrored[..if flip_y { 4 } else { 2 }] {
                     if !m.contains(cx, cy) {
                         continue;
                     }

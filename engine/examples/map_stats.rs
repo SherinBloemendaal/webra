@@ -4,7 +4,9 @@
 //! can be compared before and after a change. `MAP_ASCII=1` also draws each map.
 //!
 //! Usage: cargo run -p webra-sim --release --example map_stats -- [players] [seeds] [map size] [style]
-//! `style` is random (default), land, rivers, lakes or islands.
+//! `seeds` is a count (seeds 0 to n - 1) or a comma separated list of seeds
+//! (a single seed ends with a comma: `1706698519,`). `style` is random
+//! (default), land, rivers, lakes or islands.
 use webra_sim::map::{Map, Terrain};
 use webra_sim::mapgen::metrics::measure;
 use webra_sim::mapgen::MapStyle;
@@ -12,14 +14,21 @@ use webra_sim::mapgen::MapStyle;
 fn main() {
     let arg = |k: usize| std::env::args().nth(k);
     let players: usize = arg(1).map_or(2, |s| s.parse().expect("players is a number"));
-    let seeds: u64 = arg(2).map_or(16, |s| s.parse().expect("seeds is a number"));
+    let seed_list: Vec<u64> = match arg(2) {
+        Some(s) if s.contains(',') => {
+            s.split(',').filter(|x| !x.trim().is_empty()).map(|x| x.trim().parse().expect("seeds are numbers")).collect()
+        }
+        Some(s) => (0..s.parse::<u64>().expect("seeds is a number")).collect(),
+        None => (0..16).collect(),
+    };
+    let seeds = seed_list.len() as u64;
     let size: i32 = arg(3).map_or(if players <= 4 { 96 } else { 128 }, |s| s.parse().expect("size is a number"));
     let style = MapStyle::from_name(&arg(4).unwrap_or_else(|| "random".into())).expect("style: random, land, rivers, lakes or islands");
     let ascii = std::env::var("MAP_ASCII").is_ok();
     // Largest relative spread (max - min) / max of a per-base number, over all seeds.
     let mut worst = [0f64; 3];
     let mut sums = [0u64; 5];
-    for seed in 0..seeds {
+    for &seed in &seed_list {
         let m = Map::generate_styled(size, size, seed, 12, players, style);
         let s = measure(&m);
         let rel = |v: Option<(u32, u32)>| v.map_or(0.0, |(lo, hi)| if hi == 0 { 0.0 } else { (hi - lo) as f64 / hi as f64 });

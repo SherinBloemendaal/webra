@@ -258,8 +258,8 @@ impl Map {
             }
         }
         let (a, b) = (m.spawns[0], m.spawns[1]);
-        crate::mapgen::connect_ground(&mut m, a, b, &bay);
-        crate::mapgen::connect_land_regions(&mut m, a, &bay);
+        crate::mapgen::connect_ground(&mut m, a, b, &bay, false);
+        crate::mapgen::connect_land_regions(&mut m, a, &bay, false);
         m
     }
 
@@ -279,9 +279,13 @@ impl Map {
     /// two on top, one below between them). Five to eight players sit on a
     /// ring around the centre, so every base has exactly two nearest
     /// neighbours; in rows of three or four the middle bases would have more
-    /// and lose most free for alls. Contested ore lies halfway between
-    /// neighbouring bases, with gems in its dense middle, so every pair of
-    /// neighbours shares the same gems. Spawns are listed by column, top first, so the
+    /// and lose most free for alls. Rings of six and eight are mirrored top
+    /// to bottom as well (bases, terrain, water, harbour channels and roads),
+    /// so no pair of neighbours is closer than its mirror image. Contested
+    /// ore lies halfway between neighbouring bases, with gems in its dense
+    /// middle, so every pair of neighbours shares the same gems, and at the
+    /// end every base gets as many ore cells within `REACH` as the richest
+    /// (`equalise_ore`). Spawns are listed by column, top first, so the
     /// common split of the first half of the slots against the second half
     /// puts mirror images against each other. The AI makes up for the rest:
     /// its rally point and defences face the enemy, not a map side.
@@ -298,6 +302,11 @@ impl Map {
         centres.sort_by_key(|&(x, y)| (x, y));
         let r = pocket_radius(&centres);
         let half = r - 2;
+        // Terrain and water mirrored top to bottom as well where the bases
+        // are: four players in two rows, and rings of six or eight. Then the
+        // top and the bottom neighbours of a base see the same ground between
+        // them, and no pair of bases is closer than its mirror images.
+        let flip_y = players == 4 || (!rows && players.is_multiple_of(2));
         // Pocket rectangles (clearing, ore, walls and moats); features stay out.
         // (A base on the middle column is widened by a cell when the map is
         // mirrored, so the areas are mirrored too.)
@@ -323,9 +332,13 @@ impl Map {
             let copies: Vec<(i32, i32, i32)> = land_spots.iter().filter(|s| s.1 < band).map(|&(x, y, r)| (x, y + band, r)).collect();
             land_spots.retain(|s| s.1 < band);
             land_spots.extend(copies);
+        } else if flip_y {
+            m.mirror_y();
+            let band = height / 2;
+            let copies: Vec<(i32, i32, i32)> = land_spots.iter().filter(|s| s.1 < band).map(|&(x, y, r)| (x, height - 1 - y, r)).collect();
+            land_spots.retain(|s| s.1 < band);
+            land_spots.extend(copies);
         }
-        // Water mirrored top to bottom only where the bases are too (four players).
-        let flip_y = players == 4;
         let layout = Layout { bases: centres.clone(), zone: zone.clone(), flip_y };
         let water = crate::mapgen::draw_water(width, height, &mut rng, style, &layout);
         crate::mapgen::apply_water(&mut m, &water, style, &mut rng);
@@ -392,20 +405,119 @@ impl Map {
             }
         }
         if style.naval() {
-            m.connect_moats(&centres, r, &zone, water.hub);
+            m.connect_moats(&centres, r, &zone, water.hub, flip_y);
         }
         let spawns = m.spawns.clone();
         for &s in &spawns[1..] {
-            crate::mapgen::connect_ground(&mut m, spawns[0], s, &keep);
+            crate::mapgen::connect_ground(&mut m, spawns[0], s, &keep, flip_y);
         }
-        crate::mapgen::connect_land_regions(&mut m, spawns[0], &keep);
+        crate::mapgen::connect_land_regions(&mut m, spawns[0], &keep, flip_y);
+        m.equalise_ore(&zone, ore_max);
         m
+    }
+
+    /// Ore within `REACH` of each yard (what the AI harvests close to home,
+    /// and what map_stats compares) differs between bases with the contested
+    /// fields and the style's fields around them. Grow ore at the poorer
+    /// bases until each has as many ore cells nearby as the richest: on open
+    /// ground outside the pockets that the base reaches by land and that is
+    /// near no other yard, next to ore already there where possible, nearest
+    /// to the yard first, mirrored left to right like the rest of the map.
+    fn equalise_ore(&mut self, zone: &[bool], ore_max: u8) {
+        let reach = crate::mapgen::metrics::REACH;
+        let (w, h) = (self.width, self.height);
+        let yards: Vec<(i32, i32)> = self.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
+        let near = |(x, y): (i32, i32), (cx, cy): (i32, i32)| (x - cx).abs() <= reach && (y - cy).abs() <= reach;
+        let ore_near = |m: &Map, c: (i32, i32)| {
+            (c.1 - reach..=c.1 + reach)
+                .flat_map(|y| (c.0 - reach..=c.0 + reach).map(move |x| (x, y)))
+                .filter(|&(x, y)| m.contains(x, y) && m.ore[m.idx(x, y)] > 0)
+                .count()
+        };
+        // Land each yard reaches on foot.
+        let ground: Vec<Vec<bool>> = yards
+            .iter()
+            .map(|&(cx, cy)| {
+                let mut seen = vec![false; self.cells()];
+                let start = self.idx(cx.clamp(0, w - 1), cy.clamp(0, h - 1));
+                let mut stack = vec![start];
+                seen[start] = true;
+                while let Some(i) = stack.pop() {
+                    let (x, y) = ((i as i32) % w, (i as i32) / w);
+                    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        if self.contains(x + dx, y + dy) {
+                            let j = self.idx(x + dx, y + dy);
+                            if !seen[j] && self.terrain[j].passable() {
+                                seen[j] = true;
+                                stack.push(j);
+                            }
+                        }
+                    }
+                }
+                seen
+            })
+            .collect();
+        let value = (ore_max as i32 * 2 / 3).max(1) as u8;
+        // Each round tops up every base that is short; mirrored cells can
+        // reach other bases' counts, so repeat until nothing changes.
+        for _ in 0..8 {
+            let counts: Vec<usize> = yards.iter().map(|&c| ore_near(self, c)).collect();
+            let target = counts.iter().copied().max().unwrap_or(0);
+            let mut grew = false;
+            for (k, &c) in yards.iter().enumerate() {
+                // Right-half bases follow their mirror image on the left.
+                if 2 * c.0 > w - 1 {
+                    continue;
+                }
+                // The mirror image of this base (itself on the middle column).
+                let mk = (0..yards.len()).min_by_key(|&o| ((yards[o].0 - (w - 1 - c.0)).abs() + (yards[o].1 - c.1).abs(), o)).unwrap_or(k);
+                let mut have = ore_near(self, c);
+                while have < target {
+                    // Open ground near base `b` only, that `b` reaches by land.
+                    let free = |m: &Map, b: usize, x: i32, y: i32| {
+                        if !m.contains(x, y) {
+                            return false;
+                        }
+                        let i = m.idx(x, y);
+                        !zone[i]
+                            && m.terrain[i].holds_ore()
+                            && !m.has_resource(i)
+                            && ground[b][i]
+                            && yards.iter().enumerate().all(|(o, &oc)| o == b || o == k || o == mk || !near((x, y), oc))
+                    };
+                    let best = (c.1 - reach..=c.1 + reach)
+                        .flat_map(|y| (c.0 - reach..=c.0 + reach).map(move |x| (x, y)))
+                        .filter(|&(x, y)| free(self, k, x, y) && free(self, mk, w - 1 - x, y))
+                        .min_by_key(|&(x, y)| {
+                            let by_ore = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                                .iter()
+                                .any(|&(dx, dy)| self.contains(x + dx, y + dy) && self.ore[self.idx(x + dx, y + dy)] > 0);
+                            (!by_ore, (x - c.0) * (x - c.0) + (y - c.1) * (y - c.1), y, x)
+                        });
+                    let Some((x, y)) = best else { break };
+                    self.put_ore(x, y, value, ore_max, false);
+                    self.put_ore(w - 1 - x, y, value, ore_max, false);
+                    have = ore_near(self, c);
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
     }
 
     /// Naval styles: dig each base's harbour moat that is nearer the water
     /// network through to it (mirrored), and wall the other moat up again
     /// with rock, so every base has exactly one harbour on the network.
-    fn connect_moats(&mut self, centres: &[(i32, i32)], r: i32, zone: &[bool], hub: (i32, i32)) {
+    ///
+    /// With `flip_y` (the map is mirrored top to bottom as well) a base below
+    /// the middle with a partner above (`height - y`) gets the mirror image
+    /// of its partner's channel and moat, so the channels never cut the
+    /// ground between two bases below differently from the two above it.
+    /// (Pockets face south either way, so the mirrored channel ends on the
+    /// other moat of the lower base, next to it.)
+    fn connect_moats(&mut self, centres: &[(i32, i32)], r: i32, zone: &[bool], hub: (i32, i32), flip_y: bool) {
         let half = r - 2;
         let (w, h) = (self.width, self.height);
         let near = crate::mapgen::grow(w, h, zone, 2);
@@ -432,25 +544,49 @@ impl Map {
                 .map(|(x, y)| m.idx(x, y))
                 .collect()
         };
+        // The base below that mirrors one above (`flip_y`), if any.
+        let partner = |cx: i32, cy: i32| -> Option<(i32, i32)> {
+            (flip_y && cy < h - cy).then(|| centres.iter().copied().find(|&(x, y)| x == cx && y == h - cy)).flatten()
+        };
+        let mirrored = |cx: i32, cy: i32| flip_y && cy > h - cy && centres.contains(&(cx, h - cy));
         // Plan every channel against the same network, then dig: no base
         // profits from another's channel being dug first.
         let mut plans = Vec::new();
-        for &(cx, cy) in centres.iter().filter(|c| 2 * c.0 < w) {
-            // (cost, north first on ties, path, north) of each moat's channel.
+        for &(cx, cy) in centres.iter().filter(|c| 2 * c.0 < w && !mirrored(c.0, c.1)) {
+            // (cost, the moat facing the hub first on ties, path, north) of
+            // each moat's channel: bases above and below the hub break ties
+            // alike, so mirrored bases dig mirrored moats.
             let best = [true, false]
                 .into_iter()
                 .filter_map(|north| {
                     let cells = moat(self, cx, cy, north);
                     // The own moat may be left; every other base cell is closed.
                     let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !cells.contains(&i)).collect();
-                    crate::mapgen::plan_channel(self, &cells, &target, &blocked, &near, 3).map(|(cost, path)| (cost, !north, path, north))
+                    let away = north != (cy > hub.1);
+                    crate::mapgen::plan_channel(self, &cells, &target, &blocked, &near, 3).map(|(cost, path)| (cost, away, path, north))
                 })
                 .min_by_key(|o| (o.0, o.1));
             if let Some((_, _, path, north)) = best {
                 plans.push((cx, cy, north, path));
             }
         }
+        let mut digs = Vec::new();
+        let mut below = Vec::new();
         for (cx, cy, north, path) in plans {
+            // Row y of the channel's two-cell band maps onto row h - 2 - y.
+            let flipped: Vec<usize> = path.iter().map(|&p| self.idx(p as i32 % w, h - 2 - p as i32 / w)).collect();
+            if let Some((px, py)) = partner(cx, cy) {
+                digs.push((px, py, !north, flipped));
+                below.push((px, py, !north));
+            } else if flip_y && cy == h - cy {
+                // A base on the middle row is its own mirror image: its
+                // channel is dug mirrored too (the copy ends at the walled-up
+                // moat), so it cuts the land above and below it alike.
+                digs.push((cx, cy, north, flipped));
+            }
+            digs.push((cx, cy, north, path));
+        }
+        for (cx, cy, north, path) in digs {
             let open = moat(self, cx, cy, north);
             let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !open.contains(&i)).collect();
             crate::mapgen::dig_channel(self, &path, &blocked);
@@ -463,6 +599,19 @@ impl Map {
                         self.clear_resource(j);
                     }
                 }
+            }
+        }
+        // A mirrored channel that missed its lower base's moat (a pocket in
+        // the way): join that moat to the network directly.
+        for (cx, cy, north) in below {
+            let Some(network) = crate::mapgen::network_from(self, hub) else { break };
+            let open = moat(self, cx, cy, north);
+            if open.iter().any(|&i| network[i]) {
+                continue;
+            }
+            let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !open.contains(&i)).collect();
+            if let Some((_, path)) = crate::mapgen::plan_channel(self, &open, &network, &blocked, &near, 3) {
+                crate::mapgen::dig_channel(self, &path, &blocked);
             }
         }
     }
@@ -611,6 +760,19 @@ impl Map {
             self.ore_field(&mut Rng::new(field_seed), x, y, r, ore_max, gems);
             if let Some(b) = band {
                 self.ore_field(&mut Rng::new(field_seed), x, y + b, r, ore_max, gems);
+            }
+        }
+    }
+
+    /// Mirror the top half of the map onto the bottom half (row y onto row
+    /// height - 1 - y).
+    fn mirror_y(&mut self) {
+        for y in 0..self.height / 2 {
+            for x in 0..self.width {
+                let (i, j) = (self.idx(x, y), self.idx(x, self.height - 1 - y));
+                self.terrain[j] = self.terrain[i];
+                self.ore[j] = self.ore[i];
+                self.gems[j] = self.gems[i];
             }
         }
     }
@@ -884,13 +1046,23 @@ fn ring_layout(width: i32, height: i32, players: usize) -> Vec<(i32, i32)> {
     let ry = (height / 2 - 15).max(10);
     let rx = (width / 2 - 12).max(10);
     let mut centres = Vec::new();
-    for k in 0..n {
+    let at = |k: i32| {
         // Angles (1024 = full turn, 0 = north) symmetric around the north-south axis.
         let a = (1024 * (2 * k + 1) / (2 * n)) % 1024;
         let (vx, vy) = crate::math::facing_vec(a);
-        let x = width / 2 + vx * rx / 1024;
-        let y = height / 2 + vy * ry / 1024;
-        centres.push((x, y));
+        (width / 2 + vx * rx / 1024, height / 2 + vy * ry / 1024, vy)
+    };
+    for k in 0..n {
+        let (x, y, vy) = at(k);
+        // An even count is symmetric top to bottom as well: a base below the
+        // middle is the mirror image (row height - y) of its partner above,
+        // and `generate_pockets` mirrors the terrain the same way.
+        if n % 2 == 0 && vy > 0 {
+            let (px, py, _) = at((n / 2 - 1 - k).rem_euclid(n));
+            centres.push((px, height - py));
+        } else {
+            centres.push((x, y));
+        }
     }
     // Exact mirror pairs: rebuild the right half from the left half.
     let left: Vec<(i32, i32)> = centres.iter().copied().filter(|&(x, _)| 2 * x < width - 1).collect();
