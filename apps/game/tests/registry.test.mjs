@@ -76,7 +76,7 @@ test('registry: lenient normalization clamps, trims and falls back; strict check
   assert.equal(normalizeValue(speed, '2'), 1, 'text is not a number');
   assert.match(checkValue(speed, 9), /between 0 and 3/);
   assert.equal(normalizeValue(specOf('lobby', 'color'), 2.6), 3, 'integers round');
-  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'off');
+  assert.equal(normalizeValue(specOf('game', 'healthBars'), 'sometimes'), 'damaged');
   // Lobby names follow the protocol's text rules (spaces collapsed, no control characters).
   const name = specOf('lobby', 'name');
   assert.equal(normalizeValue(name, '  Tanya   Adams '), 'Tanya Adams');
@@ -218,7 +218,7 @@ test('registry: every old key migrates once, and the old keys are removed after 
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
   assert.deepEqual(v.game, { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: true, uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', graphics: 'original', hotkeys: { stop: ['Z'] } }, 'settings the old key did not have get their default');
-  assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false });
+  assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, musicOn: true, musicShuffle: true, musicRepeat: 'all' });
   assert.equal(v.debug.stats, true);
   assert.equal(v.debug.cpuInstances, true);
   assert.equal(v.lobby.lastOptions.seed, 5, 'the newest lobby key wins');

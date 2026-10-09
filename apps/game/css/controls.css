@@ -1,0 +1,617 @@
+/* Themed form controls: toggle switch, segmented choice, checkbox, range
+   slider, select and text field, in the gunmetal style of css/theme.css.
+   Built by js/ui/controls.js (the website links this sheet too, with its
+   palette mapped onto the --ui-* names in apps/website/assets/site.css).
+
+   Everything is sized in em from --ctl-size (rem based, so it follows the UI
+   scale and the root font size) and every state has a visible, non-colour
+   cue: ON/OFF text on switches, a check mark on checkboxes, a lit LED dot on
+   the chosen segment. Loaded after css/style.css, before the screen sheets. */
+
+:root {
+  --ctl-size: 0.875rem;
+  --ctl-row: 2.25rem; /* least row height: a comfortable click target */
+}
+
+/* Touch screens and phones: bigger parts, 44 px rows. */
+@media (pointer: coarse), (max-width: 600px) {
+  :root {
+    --ctl-size: 1rem;
+    --ctl-row: 2.75rem;
+  }
+}
+
+/* ---- Rows: label, control, optional hint --------------------------------- */
+
+.ui-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.2em 0.9em;
+  min-height: var(--ctl-row);
+  font-size: var(--ctl-size);
+}
+
+.ui-row > .ui-label {
+  display: block;
+  margin: 0;
+  color: var(--ui-text);
+  font: var(--ui-fs-m) / 1.35 var(--ui-font);
+  font-size: 0.95em;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.ui-row > span.ui-label {
+  cursor: default;
+}
+
+.ui-row > .ui-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.ui-row.ui-row-check {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.ui-row.ui-row-check > .ui-hint {
+  grid-column: 2;
+}
+
+.ui-row.ui-row-slider {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.4em;
+}
+
+.ui-row.ui-row-choice {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* A narrow card: the label takes a line of its own above the control. */
+@media (max-width: 480px) {
+  .ui-row.ui-row-slider {
+    grid-template-columns: minmax(0, 1fr) 3.4em;
+  }
+
+  .ui-row.ui-row-slider > .ui-label {
+    grid-column: 1 / -1;
+  }
+
+  .ui-row.ui-row-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ui-value {
+  min-width: 3.4em;
+  color: var(--ui-muted);
+  font: 0.9em / 1 var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ui-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+/* ---- Toggle switch: <input type="checkbox" role="switch" class="ui-switch"> */
+
+input.ui-switch {
+  --sw-w: 4em;
+  --sw-h: 1.75em;
+  --sw-pad: 0.2em;
+  --sw-thumb: 1.7em;
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--sw-w);
+  height: var(--sw-h);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font-size: var(--ctl-size);
+  background:
+    var(--ui-brushed),
+    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* The sliding plate with its rivet. */
+input.ui-switch::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: var(--sw-pad);
+  width: var(--sw-thumb);
+  height: calc(var(--sw-h) - 2 * var(--sw-pad) - 2px);
+  background:
+    var(--ui-rivet) center / 0.85em 0.85em no-repeat,
+    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  transform: translateY(-50%);
+  transition: transform 0.15s ease;
+}
+
+/* The state in words. */
+input.ui-switch::after {
+  content: 'OFF';
+  position: absolute;
+  top: 50%;
+  right: 0.6em;
+  color: var(--ui-dim);
+  font: 700 0.62em / 1 var(--ui-font-mono);
+  letter-spacing: 0.1em;
+  transform: translateY(-50%);
+}
+
+input.ui-switch:checked {
+  background:
+    var(--ui-brushed),
+    linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 70%, #000), var(--ui-accent-lo));
+  border-color: var(--ui-accent);
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 0.7em -0.15em var(--ui-accent-glow);
+}
+
+input.ui-switch:checked::before {
+  transform: translate(calc(var(--sw-w) - var(--sw-thumb) - 2 * var(--sw-pad) - 4px), -50%);
+}
+
+input.ui-switch:checked::after {
+  content: 'ON';
+  right: auto;
+  left: 0.65em;
+  color: var(--ui-accent-hi);
+  text-shadow: 0 0 0.6em var(--ui-accent-glow);
+}
+
+input.ui-switch:hover:not(:disabled)::before {
+  background:
+    var(--ui-rivet) center / 0.85em 0.85em no-repeat,
+    linear-gradient(180deg, #4a535f, var(--ui-metal-3));
+}
+
+input.ui-switch:active:not(:disabled)::before {
+  box-shadow: var(--ui-bevel-in);
+}
+
+/* Compact variant for dense lists such as the debug menu. */
+input.ui-switch.ui-sm {
+  font-size: calc(var(--ctl-size) * 0.8);
+}
+
+/* ---- Checkbox: <input type="checkbox" class="ui-check"> ------------------- */
+
+input.ui-check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 1.4em;
+  height: 1.4em;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font-size: var(--ctl-size);
+  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+input.ui-check::after {
+  content: '';
+  position: absolute;
+  left: 0.42em;
+  top: 0.1em;
+  width: 0.38em;
+  height: 0.74em;
+  border: solid var(--ui-accent-hi);
+  border-width: 0 0.18em 0.18em 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.12s ease;
+}
+
+input.ui-check:checked {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 70%, #000), var(--ui-accent-lo));
+  border-color: var(--ui-accent);
+}
+
+input.ui-check:checked::after {
+  transform: rotate(45deg) scale(1);
+}
+
+/* Select all with only some rows chosen. */
+input.ui-check:indeterminate {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 70%, #000), var(--ui-accent-lo));
+  border-color: var(--ui-accent);
+}
+
+input.ui-check:indeterminate::after {
+  left: 0.25em;
+  top: 0.5em;
+  width: 0.7em;
+  height: 0;
+  border-width: 0.18em 0 0;
+  transform: none;
+}
+
+input.ui-check:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+
+/* ---- Switch and checkbox: shared states ---------------------------------- */
+
+input.ui-switch:focus-visible,
+input.ui-check:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+input.ui-switch:disabled,
+input.ui-check:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-row:has(> input:disabled) > .ui-label {
+  color: var(--ui-muted);
+  cursor: not-allowed;
+}
+
+/* ---- Segmented choice: radios drawn as connected metal buttons -------------
+   <div class="ui-segmented" role="radiogroup"> (input + label.ui-segment)*  */
+
+.ui-segmented {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px;
+  font-size: var(--ctl-size);
+  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+/* The radio stays in the page for the keyboard and screen readers. */
+.ui-segmented > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ui-segmented > .ui-segment {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55em;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: calc(var(--ctl-row) - 0.5em);
+  margin: 0;
+  padding: 0.4em 1em;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-right-width: 0;
+  border-radius: 0;
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-muted);
+  font: 700 0.86em / 1.2 var(--ui-font);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s ease;
+}
+
+.ui-segmented > .ui-segment:last-of-type {
+  border-right-width: 1px;
+  border-radius: 0 var(--ui-radius) var(--ui-radius) 0;
+}
+
+.ui-segmented > input:first-child + .ui-segment {
+  border-radius: var(--ui-radius) 0 0 var(--ui-radius);
+}
+
+.ui-segmented > input:first-child + .ui-segment:last-of-type {
+  border-radius: var(--ui-radius);
+}
+
+/* The LED: dark when the segment is not chosen, lit when it is. */
+.ui-segmented > .ui-segment::before {
+  content: '';
+  flex: none;
+  width: 0.5em;
+  height: 0.5em;
+  background: #0b0e11;
+  border: 1px solid var(--ui-edge);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.ui-segmented > input:hover:not(:disabled):not(:checked) + .ui-segment {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+  color: var(--ui-text);
+}
+
+.ui-segmented > input:checked + .ui-segment {
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  box-shadow:
+    var(--ui-bevel-in),
+    inset 0 0 0.8em -0.2em var(--ui-accent-glow);
+  color: #fff;
+  cursor: default;
+}
+
+.ui-segmented > input:checked + .ui-segment::before {
+  background: var(--ui-accent-hi);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0.6em var(--ui-accent-glow);
+}
+
+.ui-segmented > input:focus-visible + .ui-segment {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.ui-segmented > input:disabled + .ui-segment {
+  opacity: 0.45;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  cursor: not-allowed;
+}
+
+/* A group that fills its line (the cell is as wide as the card). */
+.ui-segmented.ui-block {
+  display: flex;
+  width: 100%;
+}
+
+/* ---- Range slider: <input type="range" class="ui-slider"> ------------------
+   js/ui/controls.js keeps --ui-fill (a percentage) in step with the value.  */
+
+input.ui-slider {
+  --track: 0.6em;
+  --thumb-w: 0.95em;
+  --thumb-h: 1.6em;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  height: 1.9em;
+  margin: 0;
+  padding: 0;
+  font-size: var(--ctl-size);
+  background: transparent;
+  cursor: pointer;
+}
+
+input.ui-slider::-webkit-slider-runnable-track {
+  box-sizing: border-box;
+  height: var(--track);
+  background:
+    linear-gradient(90deg, var(--ui-accent) 0 var(--ui-fill, 0%), transparent var(--ui-fill, 0%)),
+    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+input.ui-slider::-moz-range-track {
+  box-sizing: border-box;
+  height: var(--track);
+  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+input.ui-slider::-moz-range-progress {
+  height: calc(var(--track) - 2px);
+  background: var(--ui-accent);
+  border-radius: var(--ui-radius);
+}
+
+input.ui-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--thumb-w);
+  height: var(--thumb-h);
+  margin-top: calc((var(--track) - 2px - var(--thumb-h)) / 2);
+  background:
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(0, 0, 0, 0.65) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+}
+
+input.ui-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--thumb-w);
+  height: var(--thumb-h);
+  background:
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(0, 0, 0, 0.65) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+}
+
+input.ui-slider:hover:not(:disabled)::-webkit-slider-thumb {
+  border-color: var(--ui-accent);
+}
+
+input.ui-slider:hover:not(:disabled)::-moz-range-thumb {
+  border-color: var(--ui-accent);
+}
+
+input.ui-slider:active:not(:disabled)::-webkit-slider-thumb {
+  box-shadow: var(--ui-bevel-in);
+}
+
+input.ui-slider:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+input.ui-slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- Select and text fields ------------------------------------------------
+   Also the base look of every select and text-like input inside a menu card. */
+
+.ui-select,
+.ui-input,
+.menu-card select,
+.menu-card input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color'])) {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.45em 0.7em;
+  background-color: var(--ui-metal-0);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  font: inherit;
+}
+
+.menu-card select,
+.menu-card input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color'])) {
+  width: calc(200 * var(--ui-px, 1px));
+}
+
+.ui-select,
+.menu-card select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2em;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ui-accent-hi) 50%),
+    linear-gradient(135deg, var(--ui-accent-hi) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.1em) 52%,
+    calc(100% - 0.75em) 52%;
+  background-size: 0.4em 0.4em;
+  background-repeat: no-repeat;
+}
+
+.ui-select option,
+.menu-card select option {
+  background: var(--ui-metal-0);
+  color: var(--ui-text);
+}
+
+.ui-select:hover:not(:disabled),
+.ui-input:hover:not(:disabled),
+.menu-card select:hover:not(:disabled),
+.menu-card input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color'])):hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+
+.ui-select:focus-visible,
+.ui-input:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 0;
+}
+
+.ui-input[aria-invalid='true'] {
+  border-color: var(--ui-bad);
+}
+
+.ui-select:disabled,
+.ui-input:disabled,
+.menu-card select:disabled,
+.menu-card input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Compact metal button for rows (order buttons, remove) ----------------- */
+
+.menu-card button.ui-mini,
+button.ui-mini {
+  width: auto;
+  min-width: 2.2em;
+  margin: 0;
+  padding: 0.3em 0.7em;
+  font-size: calc(var(--ctl-size) * 0.9);
+  letter-spacing: 0.06em;
+}
+
+/* ---- Motion, contrast ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  input.ui-switch,
+  input.ui-switch::before,
+  input.ui-check,
+  input.ui-check::after,
+  .ui-segmented > .ui-segment {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  input.ui-switch,
+  input.ui-check,
+  .ui-segmented,
+  .ui-segmented > .ui-segment {
+    border-color: ButtonText;
+  }
+
+  input.ui-switch::before {
+    background: ButtonText;
+  }
+
+  input.ui-switch:checked,
+  input.ui-check:checked,
+  .ui-segmented > input:checked + .ui-segment {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  input.ui-check::after {
+    border-color: HighlightText;
+  }
+}

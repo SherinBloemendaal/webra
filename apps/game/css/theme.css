@@ -102,7 +102,26 @@
   --ui-fs-s: calc(11 * var(--ui-px));
   --ui-fs-m: calc(13 * var(--ui-px));
   --ui-fs-l: calc(15 * var(--ui-px));
+  /* The themed controls (css/controls.css) are sized from these. */
+  --ctl-size: calc(14 * var(--ui-px));
+  --ctl-row: calc(36 * var(--ui-px));
   font-size: calc(14 * var(--ui-px));
+}
+
+/* Touch screens and phones: bigger controls, never below 44 px rows. */
+@media (pointer: coarse), (max-width: 600px) {
+  #app,
+  #game-menu,
+  #gameover,
+  #toast,
+  #audio-button,
+  #audio-panel,
+  #content-button,
+  #content-panel,
+  #release-notes {
+    --ctl-size: max(16px, calc(16 * var(--ui-px)));
+    --ctl-row: max(44px, calc(44 * var(--ui-px)));
+  }
 }
 
 /* ---- Shared metal parts --------------------------------------------------

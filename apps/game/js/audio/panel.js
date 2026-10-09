@@ -9,6 +9,7 @@
 import { installedSummary } from './install.js';
 import { DEFAULT_PREFS } from './prefs.js';
 import { GROUPS } from '../registry.js';
+import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -19,6 +20,8 @@ const VOLUMES = [
 
 /** Repeat choices of the music (registry audio.musicRepeat). */
 export const REPEAT_LABELS = GROUPS.audio.settings.musicRepeat.labels;
+/** Their short names on the segmented control (the long ones are its tooltips). */
+const REPEAT_SHORT = { all: 'All', one: 'One', off: 'Off' };
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -76,33 +79,36 @@ export function mountAudioSettings(root, audio, opts = {}) {
   root.classList.add('audio-settings');
   const prefs = audio.prefs;
 
+  // On/off settings: themed switches (css/controls.css).
   const check = (key, label, { disabled = false } = {}) => {
-    const input = el('input', { type: 'checkbox', id: id(key) });
-    input.disabled = disabled;
-    input.addEventListener('change', () => prefs.set({ [key]: input.checked }));
-    const row = el('div', { class: 'audio-row audio-check' }, input, el('label', { for: id(key), text: label }));
-    return { key, input, row, sync: (p) => (input.checked = !!p[key]) };
+    const c = toggle({ id: id(key), label, disabled, rowClass: 'audio-row', onChange: (on) => prefs.set({ [key]: on }) });
+    return { key, input: c.input, row: c.row, sync: (p) => c.set(!!p[key]) };
   };
 
   const enabled = check('enabled', 'Sound on');
   // Volumes apply while the slider moves, also to the playing music track (mixer buses).
   const sliders = VOLUMES.map(([key, label]) => {
-    const input = el('input', { type: 'range', min: '0', max: '100', step: '1', id: id(key) });
-    const out = el('output', { for: id(key) });
-    input.addEventListener('input', () => {
-      out.textContent = volumeText(Number(input.value) / 100);
-      prefs.set({ [key]: Number(input.value) / 100 });
+    const c = slider({
+      id: id(key),
+      label,
+      min: 0,
+      max: 100,
+      value: Math.round(prefs.get()[key] * 100),
+      format: (v) => volumeText(v / 100),
+      rowClass: 'audio-row audio-volume',
+      onInput: (v) => prefs.set({ [key]: v / 100 }),
     });
-    const reset = el('button', { type: 'button', class: 'audio-reset', text: 'Reset', 'aria-label': `Reset ${label.toLowerCase()}` });
+    const reset = el('button', { type: 'button', class: 'ui-mini audio-reset', text: 'Reset', 'aria-label': `Reset ${label.toLowerCase()}` });
     reset.addEventListener('click', () => prefs.set({ [key]: DEFAULT_PREFS[key] }));
-    const row = el('div', { class: 'audio-row audio-volume' }, el('label', { for: id(key), text: label }), input, out, reset);
+    c.row.append(reset);
     return {
       key,
-      input,
-      row,
+      input: c.input,
+      row: c.row,
       sync: (p) => {
-        input.value = String(Math.round(p[key] * 100));
-        out.textContent = volumeText(p[key]);
+        // Not while the player drags it: the value is already the one set.
+        if (Number(c.input.value) !== Math.round(p[key] * 100)) c.set(Math.round(p[key] * 100));
+        else syncSliderFill(c.input);
         reset.disabled = p[key] === DEFAULT_PREFS[key];
       },
     };
@@ -125,10 +131,15 @@ export function mountAudioSettings(root, audio, opts = {}) {
   // ---- Music --------------------------------------------------------------------
   const musicOn = check('musicOn', 'Music on');
   const shuffle = check('musicShuffle', 'Shuffle');
-  const repeat = el('select', { id: id('musicRepeat') });
-  for (const [value, label] of Object.entries(REPEAT_LABELS)) repeat.append(el('option', { value, text: label }));
-  repeat.addEventListener('change', () => prefs.set({ musicRepeat: repeat.value }));
-  const repeatRow = el('div', { class: 'audio-row audio-choice' }, el('label', { for: id('musicRepeat'), text: 'Repeat' }), repeat);
+  // Repeat: an exclusive choice, so a segmented control.
+  const repeat = segmented({
+    name: id('musicRepeat'),
+    label: 'Repeat',
+    value: prefs.get().musicRepeat,
+    options: Object.entries(REPEAT_SHORT).map(([value, label]) => ({ value, label, title: REPEAT_LABELS[value] })),
+    onChange: (v) => prefs.set({ musicRepeat: v }),
+  });
+  const repeatRow = el('div', { class: 'ui-row ui-row-choice audio-row' }, el('span', { class: 'ui-label', text: 'Repeat' }), repeat.root);
   const nowPlaying = el('p', { class: 'audio-note audio-now', role: 'status', 'aria-live': 'polite' });
   const nextTrack = el('button', { type: 'button', text: 'Next track' });
   nextTrack.addEventListener('click', () => audio.nextTrack());
@@ -143,7 +154,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
     nextTrack.hidden = !box.available;
     nextTrack.disabled = !(box.playing || (box.finished && audio.musicWanted()));
     musicContent.hidden = box.available || !opts.onContent;
-    repeat.value = p.musicRepeat;
+    repeat.set(p.musicRepeat);
   };
 
   // ---- Original content -------------------------------------------------------

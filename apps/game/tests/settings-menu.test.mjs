@@ -111,6 +111,8 @@ test('settings page: UI scale shows Auto with its value, previews live while dra
   const row = slider.closest('.game-menu-scale');
   const out = row.querySelector('output');
   const [auto] = row.querySelectorAll('input[type="checkbox"]');
+  assert.equal(auto.getAttribute('role'), 'switch', 'Auto is a themed switch');
+  assert.ok(slider.classList.contains('ui-slider'), 'a themed slider');
   const reset = row.querySelectorAll('button').find((b) => b.textContent === 'Reset');
   assert.equal(out.textContent, 'Auto (85%)');
   assert.equal(slider.value, '0.85');
@@ -212,11 +214,17 @@ test('audio section: every sound control, bound to the settings; the Sound dialo
   const { root, audio } = setup({ onContent: () => opened++ });
   const buses = runMixer(audio);
   const box = root.querySelector('.game-menu-audio');
-  for (const key of ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle', 'musicRepeat']) {
+  for (const key of ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'musicOn', 'musicShuffle']) {
     const input = box.querySelector(`#menu-audio-${key}`);
     assert.ok(input, key);
     assert.ok(box.querySelector(`label[for="menu-audio-${key}"]`), `${key} has a label`);
   }
+  // The shared themed controls (js/ui/controls.js): switches for on/off, sliders, a segmented repeat choice.
+  for (const key of ['enabled', 'speech', 'original', 'musicOn', 'musicShuffle']) assert.equal(box.querySelector(`#menu-audio-${key}`).getAttribute('role'), 'switch', key);
+  for (const key of ['master', 'effects', 'voices', 'music']) assert.ok(box.querySelector(`#menu-audio-${key}`).classList.contains('ui-slider'), key);
+  const repeatGroup = box.querySelector('#menu-audio-musicRepeat');
+  assert.equal(repeatGroup.getAttribute('role'), 'radiogroup');
+  assert.deepEqual(repeatGroup.querySelectorAll('input').map((r) => r.getAttribute('value')), ['all', 'one', 'off']);
   assert.ok(box.querySelectorAll('h3').length >= 2, 'section titles under the page\'s Audio heading');
   // The Sound dialog: the same component, its own ids.
   const button = doc.createElement('button');
@@ -250,11 +258,12 @@ test('audio section: every sound control, bound to the settings; the Sound dialo
   // Music settings.
   check(box.querySelector('#menu-audio-musicOn'), false);
   check(box.querySelector('#menu-audio-musicShuffle'), false);
-  typeInto(box.querySelector('#menu-audio-musicRepeat'), 'one');
+  check(box.querySelector('#menu-audio-musicRepeat-one'), true);
   assert.equal(audio.prefs.get().musicOn, false);
   assert.equal(audio.prefs.get().musicShuffle, false);
   assert.equal(audio.prefs.get().musicRepeat, 'one');
-  assert.equal(panel.querySelector('#audio-musicRepeat').value, 'one');
+  assert.equal(panel.querySelector('#audio-musicRepeat-one').checked, true, 'the dialog follows');
+  assert.equal(panel.querySelector('#audio-musicRepeat-all').checked, false);
   assert.equal(panel.querySelector('#audio-musicShuffle').checked, false);
   // No music installed: clear text and the way to install it.
   assert.match(textOf(box), /No music installed\. Music comes from your own copy of Red Alert/);
@@ -277,6 +286,8 @@ test('audio section: now playing, next track, music on and off with installed mu
   // Two pack tracks (texture pack music): the playlist.
   const tracks = MUSIC.slice(0, 2);
   audio.bank.pack = new Map(tracks.map((t) => [t.file, { duration: 60, file: t.file }]));
+  // The constructor's first look at the installed content finishes first.
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   await audio.jukebox.refresh();
   audio.changed();
   audio.inGame = true;

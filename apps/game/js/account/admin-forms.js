@@ -5,6 +5,7 @@
 // account accepts. DOM only through createElement and textContent.
 
 import { GROUPS, checkValue, specOf } from '../registry.js';
+import { switchInput } from '../ui/controls.js';
 
 /** How a setting is edited: the control kind and its attributes. */
 export function controlFor(spec) {
@@ -163,10 +164,11 @@ export function buildSettingsForm(doc, { onInput = () => {}, groups = Object.key
       } else if (c.kind === 'textarea') {
         input = mk('textarea', { id, rows: String(c.rows), spellcheck: 'false' });
         input.value = formatValue(spec, current);
+      } else if (c.kind === 'checkbox') {
+        input = switchInput({ id, checked: formatValue(spec, current) });
       } else {
         input = mk('input', { id, ...c.attrs });
-        if (c.kind === 'checkbox') input.checked = formatValue(spec, current);
-        else input.value = formatValue(spec, current);
+        input.value = formatValue(spec, current);
       }
       if (readOnly) input.setAttribute('disabled', '');
       const error = mk('p', { class: 'form-status form-status-error', id: `${id}-error`, hidden: '' });

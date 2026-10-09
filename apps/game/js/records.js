@@ -10,6 +10,7 @@
 import { formatTicks, recordFileName, REPLAY_SPEEDS } from './replay.js';
 import { downloadText, pickFile, readFileText, SaveStore } from './saves.js';
 import { MODDED_WARNING, parseReplay } from './protocol.js';
+import { styleSlider, syncSliderFill } from './ui/controls.js';
 
 export { ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 
@@ -243,6 +244,7 @@ export class ReplayBar {
     this.seek.max = String(controller.length);
     this.seek.step = '25';
     this.seek.setAttribute('aria-label', 'Position');
+    styleSlider(this.seek);
     this.seek.addEventListener('input', () => {
       this.dragging = true;
       this.time.textContent = `${formatTicks(Number(this.seek.value))} / ${formatTicks(this.c.length)}`;
@@ -269,6 +271,7 @@ export class ReplayBar {
     for (const [s, b] of this.speeds) b.setAttribute('aria-pressed', String(s === c.speed));
     if (!this.dragging) {
       this.seek.value = String(c.seeking ? c.target : c.ticks);
+      syncSliderFill(this.seek);
       this.time.textContent = `${formatTicks(c.ticks)} / ${formatTicks(c.length)}`;
     }
     this.note.textContent =

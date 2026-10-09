@@ -14,6 +14,7 @@
 // Text from files and the server only ever goes in through textContent.
 
 import { GRAPHICS_SETTING } from './index.js';
+import { segmented, toggle } from '../ui/controls.js';
 import { packSummary, PackError } from './packs.js';
 import {
   downloadQuickInstall,
@@ -171,17 +172,35 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   let running = false;
 
   // ---- Use ------------------------------------------------------------------------------
-  const radio = (value, label) => {
-    const input = el('input', { type: 'radio', name: 'content-graphics', id: `content-graphics-${value}`, value });
-    input.addEventListener('change', () => input.checked && settings.set(GRAPHICS_SETTING, value));
-    return [input, el('label', { for: input.id, text: label })];
-  };
-  const [webra, webraLabel] = radio('webra', 'WebRA');
-  const [original, originalLabel] = radio('original', 'Original Red Alert');
-  const graphicsNote = el('p', { class: 'audio-note' });
-  const sounds = el('input', { type: 'checkbox', id: 'content-sounds' });
-  sounds.disabled = !audio;
-  sounds.addEventListener('change', () => audio?.prefs.set({ original: sounds.checked }));
+  // Two exclusive choices drawn as segmented controls: WebRA's own art and
+  // sounds, or the installed originals. "Original" stays off until it exists.
+  const graphicsNote = el('p', { class: 'audio-note', id: 'content-graphics-note' });
+  const soundsNote = el('p', { class: 'audio-note', id: 'content-sounds-note' });
+  const ORIGINAL_NOT_INSTALLED = 'Install the original content below to use this.';
+  const graphics = segmented({
+    name: 'content-graphics',
+    label: 'Graphics',
+    describedBy: graphicsNote.id,
+    options: [
+      { value: 'webra', label: 'WebRA' },
+      { value: 'original', label: 'Original' },
+    ],
+    value: content.graphics,
+    onChange: (value) => settings.set(GRAPHICS_SETTING, value),
+  });
+  const sounds = segmented({
+    name: 'content-sounds',
+    label: 'Sounds',
+    describedBy: soundsNote.id,
+    disabled: !audio,
+    options: [
+      { value: 'webra', label: 'WebRA' },
+      { value: 'original', label: 'Original' },
+    ],
+    value: audio?.prefs.get().original ? 'original' : 'webra',
+    onChange: (value) => audio?.prefs.set({ original: value === 'original' }),
+  });
+  const choiceRow = (text, group) => el('div', { class: 'ui-row ui-row-choice' }, el('span', { class: 'ui-label', text }), group.root);
 
   // ---- Install --------------------------------------------------------------------------
   const status = el('p', { class: 'audio-status', role: 'status', 'aria-live': 'polite' });
@@ -240,12 +259,17 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   // The result of the last install: what came in, and the switch to use it.
   const resultTitle = el('h3', { id: 'content-result-title', text: 'Installed' });
   const resultLines = el('div', { class: 'content-result-lines' });
-  const useAll = el('input', { type: 'checkbox', id: 'content-use-all' });
-  useAll.addEventListener('change', () => {
-    settings.set(GRAPHICS_SETTING, useAll.checked && content.hasOriginalGraphics ? 'original' : 'webra');
-    audio?.prefs.set({ original: useAll.checked });
+  const useAllControl = toggle({
+    id: 'content-use-all',
+    label: 'Use the original graphics and sounds',
+    rowClass: 'audio-row',
+    onChange: (on) => {
+      settings.set(GRAPHICS_SETTING, on && content.hasOriginalGraphics ? 'original' : 'webra');
+      audio?.prefs.set({ original: on });
+    },
   });
-  const useAllRow = el('div', { class: 'audio-row audio-check' }, useAll, el('label', { for: 'content-use-all', text: 'Use the original graphics and sounds' }));
+  const useAll = useAllControl.input;
+  const useAllRow = useAllControl.row;
   const result = el('div', { class: 'content-result', role: 'region', 'aria-labelledby': 'content-result-title', hidden: true }, resultTitle, resultLines, useAllRow);
   const showResult = (title, lines, ok) => {
     resultTitle.textContent = title;
@@ -280,17 +304,23 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   };
 
   const sync = async () => {
-    const choice = content.graphics;
-    webra.checked = choice === 'webra';
-    original.checked = choice === 'original';
-    original.disabled = !content.hasOriginalGraphics;
+    graphics.set(content.graphics);
+    graphics.setDisabled('original', !content.hasOriginalGraphics);
+    graphics.setTitle('original', content.hasOriginalGraphics ? '' : ORIGINAL_NOT_INSTALLED);
     graphicsNote.textContent = content.hasOriginalGraphics
       ? 'Original graphics: units, structures, infantry animations, cameos and terrain from your files. Effects keep WebRA art. The choice applies at once, also in a running game.'
-      : 'Install the original content below to use the original graphics.';
-    sounds.checked = !!audio?.prefs.get().original;
+      : 'Original is off until the original content is installed: install it below to use the original graphics.';
+    sounds.set(audio?.prefs.get().original ? 'original' : 'webra');
     useAll.checked = content.graphics === 'original' && !!audio?.prefs.get().original;
     try {
       const s = await content.summary();
+      const haveSounds = s.byCategory.effects + s.byCategory.voices + s.byCategory.announcer + s.byCategory.music > 0;
+      // A chosen "Original" stays selectable so the group never shows a state it cannot leave.
+      sounds.setDisabled('original', !audio || (!haveSounds && !audio.prefs.get().original));
+      sounds.setTitle('original', haveSounds ? '' : ORIGINAL_NOT_INSTALLED);
+      soundsNote.textContent = haveSounds
+        ? 'Original sounds: effects, unit voices, announcer lines and music from your files. WebRA keeps its own sounds for anything missing.'
+        : 'Original is off until the original content is installed: install it below to hear the original sounds.';
       status.textContent = summaryText(s);
       remove.hidden = s.total === 0;
       if (content.storeError) status.textContent += ` (Browser storage is unavailable: ${content.storeError}. Installed content lasts until you leave this page.)`;
@@ -449,29 +479,33 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     packList.replaceChildren(
       ...packs.map((p, i) => {
         const r = p.record;
-        const id = `content-pack-${i}`;
-        const on = el('input', { type: 'checkbox', id });
-        on.checked = !!r.enabled;
-        on.disabled = !p.manifest;
-        on.addEventListener('change', () => content.setPackEnabled(r.id, on.checked).then(sync));
-        const up = el('button', { type: 'button', text: 'Up', title: 'Higher priority' });
-        const down = el('button', { type: 'button', text: 'Down', title: 'Lower priority' });
-        const del = el('button', { type: 'button', class: 'danger', text: 'Remove' });
+        const info = `${r.name} ${r.version} by ${r.author} (${r.license}, ${formatBytes(r.size ?? 0)})`;
+        const on = toggle({
+          id: `content-pack-${i}`,
+          label: info,
+          checked: !!r.enabled,
+          disabled: !p.manifest,
+          rowClass: 'content-pack-main',
+          onChange: (enabled) => content.setPackEnabled(r.id, enabled).then(sync),
+        });
+        const up = el('button', { type: 'button', class: 'ui-mini', text: 'Up', title: 'Higher priority', 'aria-label': `Move ${r.name} up (higher priority)` });
+        const down = el('button', { type: 'button', class: 'ui-mini', text: 'Down', title: 'Lower priority', 'aria-label': `Move ${r.name} down (lower priority)` });
+        const del = el('button', { type: 'button', class: 'ui-mini danger', text: 'Remove', 'aria-label': `Remove ${r.name}` });
         up.disabled = i === 0;
         down.disabled = i === packs.length - 1;
         up.addEventListener('click', () => content.movePack(r.id, -1).then(sync));
         down.addEventListener('click', () => content.movePack(r.id, 1).then(sync));
         del.addEventListener('click', () => content.removePack(r.id).then(sync));
-        const info = `${r.name} ${r.version} by ${r.author} (${r.license}, ${formatBytes(r.size ?? 0)})`;
         const problems = p.problems.length ? el('p', { class: 'audio-note', text: `Not used: ${p.problems.slice(0, 2).join('; ')}` }) : null;
-        return el('li', { class: 'content-pack' }, el('div', { class: 'audio-row audio-check' }, on, el('label', { for: id, text: info })), problems, el('div', { class: 'audio-buttons' }, up, down, del));
+        const rank = el('span', { class: 'content-pack-rank', text: `Priority ${i + 1} of ${packs.length}` });
+        return el('li', { class: 'content-pack' }, on.row, problems, el('div', { class: 'content-pack-actions' }, rank, up, down, del));
       }),
     );
   };
 
   content.onChange(() => sync());
   audio?.prefs.subscribe((v) => {
-    sounds.checked = !!v.original;
+    sounds.set(v.original ? 'original' : 'webra');
     useAll.checked = content.graphics === 'original' && !!v.original;
   });
 
@@ -498,9 +532,10 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       'section',
       { class: 'audio-content', 'aria-labelledby': 'content-use-title' },
       el('h2', { id: 'content-use-title', text: 'Use' }),
-      el('div', { class: 'content-choice', role: 'radiogroup', 'aria-label': 'Graphics' }, el('span', { text: 'Graphics:' }), webra, webraLabel, original, originalLabel),
+      choiceRow('Graphics', graphics),
       graphicsNote,
-      el('div', { class: 'audio-row audio-check' }, sounds, el('label', { for: 'content-sounds', text: 'Use original sounds and music' })),
+      choiceRow('Sounds', sounds),
+      soundsNote,
     ),
     el(
       'section',

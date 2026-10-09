@@ -137,20 +137,7 @@ body {
   margin: calc(10 * var(--ui-px)) 0;
 }
 
-.menu-card input.game-menu-range {
-  width: calc(180 * var(--ui-px));
-  padding: 0;
-  accent-color: var(--ui-accent);
-}
-
-.menu-card input.game-menu-check {
-  width: calc(18 * var(--ui-px));
-  height: calc(18 * var(--ui-px));
-  padding: 0;
-  accent-color: var(--ui-accent);
-}
-
-/* Choice settings span the slider and value columns (base look: .menu-card select). */
+/* Choice settings span the slider and value columns (look: css/controls.css). */
 .menu-card select.game-menu-select {
   grid-column: 2 / span 2;
   min-width: calc(180 * var(--ui-px));
@@ -224,10 +211,6 @@ body {
   margin-bottom: calc(2 * var(--ui-px));
 }
 
-.menu-card .game-menu-scale label {
-  margin: 0;
-}
-
 .game-menu-scale-tools {
   display: flex;
   justify-content: flex-end;
@@ -236,10 +219,11 @@ body {
   margin-bottom: calc(8 * var(--ui-px));
 }
 
+/* "Auto" names the switch beside it. */
 .menu-card .game-menu-scale-tools label.game-menu-auto {
-  justify-content: flex-start;
-  gap: calc(6 * var(--ui-px));
+  margin: 0;
   color: var(--ui-muted);
+  font-size: var(--ui-fs-m);
 }
 
 .game-menu-explain {
@@ -388,17 +372,7 @@ body {
   margin: calc(8 * var(--ui-px)) 0;
 }
 
-.menu-card select,
-.menu-card input {
-  width: calc(200 * var(--ui-px));
-  padding: calc(6 * var(--ui-px)) calc(8 * var(--ui-px));
-  background: var(--ui-metal-0);
-  color: var(--ui-text);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel-in);
-  font: inherit;
-}
+/* Selects and text fields in a card: the look is in css/controls.css. */
 
 /* Bevelled metal button; .primary is the side's colour. */
 .menu-card button {

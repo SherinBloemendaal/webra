@@ -55,52 +55,6 @@
   gap: calc(8 * var(--ui-px));
 }
 
-.audio-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.2em;
-  align-items: center;
-  gap: calc(10 * var(--ui-px));
-}
-
-.audio-row output {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.audio-check {
-  grid-template-columns: auto 1fr;
-}
-
-/* Volume: label, slider, value, Reset. */
-.audio-row.audio-volume {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.2em auto;
-}
-
-.audio-choice {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-}
-
-.menu-card .audio-choice select {
-  width: 100%;
-}
-
-.menu-card button.audio-reset {
-  width: auto;
-  margin: 0;
-  padding: calc(3 * var(--ui-px)) calc(8 * var(--ui-px));
-  font-size: calc(11 * var(--ui-px));
-}
-
-.menu-card .audio-check label {
-  margin: 0;
-}
-
-.menu-card .audio-row input[type='range'] {
-  width: 100%;
-  padding: 0;
-}
-
 .audio-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -159,29 +113,17 @@
   display: none;
 }
 
-button.danger {
-  color: var(--ui-bad);
+/* Volume rows (css/controls.css slider rows) end with a Reset button. */
+.ui-row.ui-row-slider.audio-volume {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.4em auto;
 }
 
 @media (max-width: 480px) {
-  .audio-row,
-  .audio-row.audio-volume {
-    grid-template-columns: 1fr 3.2em auto;
+  .ui-row.ui-row-slider.audio-volume {
+    grid-template-columns: minmax(0, 1fr) 3.4em auto;
   }
+}
 
-  .audio-choice {
-    grid-template-columns: 1fr;
-  }
-
-  .audio-row label {
-    grid-column: 1 / -1;
-  }
-
-  .audio-check {
-    grid-template-columns: auto 1fr;
-  }
-
-  .audio-check label {
-    grid-column: auto;
-  }
+button.danger {
+  color: var(--ui-bad);
 }

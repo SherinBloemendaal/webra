@@ -2,6 +2,8 @@
 // createElement and textContent: the site's CSP allows no inline scripts or
 // style attributes, and text from the server is never parsed as HTML.
 
+import { checkInput, switchInput } from '/play/js/ui/controls.js';
+
 export function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -33,19 +35,28 @@ export const nextId = (prefix) => `${prefix}-${++uid}`;
 export function field(label, input, { help, wide = false } = {}) {
   const control = typeof input === 'string' ? el(input) : input;
   if (!control.id) control.id = nextId('f');
+  if (control.localName === 'select') control.classList.add('ui-select');
   const helpEl = help ? el('p', { class: 'form-help', id: nextId('h'), text: help }) : null;
   if (helpEl) control.setAttribute('aria-describedby', helpEl.id);
   const row = el('div', { class: wide ? 'field field-wide' : 'field' }, el('label', { for: control.id, text: label }), control, helpEl);
   return { row, input: control };
 }
 
-/** A checkbox with its label after it. */
-export function checkbox(label, { checked = false, help } = {}) {
-  const input = el('input', { type: 'checkbox', id: nextId('c'), checked });
+function checkRow(input, label, help) {
   const helpEl = help ? el('p', { class: 'form-help', id: nextId('h'), text: help }) : null;
   if (helpEl) input.setAttribute('aria-describedby', helpEl.id);
   const row = el('div', { class: 'check' }, input, el('label', { for: input.id, text: label }), helpEl);
   return { row, input };
+}
+
+/** A themed checkbox with its label after it: for things to tick in a list or agree to. */
+export function checkbox(label, { checked = false, help } = {}) {
+  return checkRow(checkInput({ id: nextId('c'), checked }), label, help);
+}
+
+/** A toggle switch with its label after it: for a setting that is on or off. */
+export function toggle(label, { checked = false, help } = {}) {
+  return checkRow(switchInput({ id: nextId('c'), checked }), label, help);
 }
 
 /**
