@@ -54,9 +54,24 @@ fn events(w: &mut World, kind: SoundEventKind) -> Vec<[i32; EVENT_STRIDE]> {
 fn spawns_follow_the_slots_without_teams_or_without_the_option() {
     let spawns = [(4, 4), (40, 40), (40, 4), (4, 40)];
     let ffa = [setup("england", 0), setup("russia", 0), setup("france", 0), setup("ukraine", 0)];
-    assert_eq!(assign_spawns(&spawns, &ffa, true), vec![0, 1, 2, 3], "free for all: each slot its spawn");
+    assert_eq!(assign_spawns(&spawns, &ffa, true, false), vec![0, 1, 2, 3], "free for all: each slot its spawn");
     let teams = [setup("england", 1), setup("russia", 1), setup("france", 2), setup("ukraine", 2)];
-    assert_eq!(assign_spawns(&spawns, &teams, false), vec![0, 1, 2, 3], "option off");
+    assert_eq!(assign_spawns(&spawns, &teams, false, false), vec![0, 1, 2, 3], "option off");
+}
+
+/// The cases packages/protocol's `assignSpawns` runs too (the lobby markers).
+#[test]
+fn spawn_assignment_matches_the_protocol_package() {
+    let cases: serde_json::Value = serde_json::from_str(include_str!("../../packages/protocol/test/fixtures/spawn-cases.json")).unwrap();
+    for c in cases["cases"].as_array().unwrap() {
+        let spawns: Vec<(i32, i32)> =
+            c["spawns"].as_array().unwrap().iter().map(|p| (p[0].as_i64().unwrap() as i32, p[1].as_i64().unwrap() as i32)).collect();
+        let players: Vec<PlayerSetup> =
+            c["teams"].as_array().unwrap().iter().map(|t| setup("england", t.as_u64().unwrap() as u8)).collect();
+        let want: Vec<usize> = c["want"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as usize).collect();
+        let generated = c["generated"].as_bool().unwrap_or(false);
+        assert_eq!(assign_spawns(&spawns, &players, c["separate"].as_bool().unwrap(), generated), want, "{c}");
+    }
 }
 
 #[test]
@@ -65,7 +80,7 @@ fn separate_team_spawns_keep_teams_together_and_apart() {
     let spawns = [(4, 4), (40, 40), (40, 4), (4, 40)];
     // Slots 0 and 1 are a team: by slot they would start in opposite corners.
     let teams = [setup("england", 1), setup("germany", 1), setup("russia", 2), setup("ukraine", 2)];
-    let got = assign_spawns(&spawns, &teams, true);
+    let got = assign_spawns(&spawns, &teams, true, false);
     let d2 = |a: usize, b: usize| {
         let (p, q) = (spawns[got[a]], spawns[got[b]]);
         (p.0 - q.0).pow(2) + (p.1 - q.1).pow(2)
@@ -76,12 +91,27 @@ fn separate_team_spawns_keep_teams_together_and_apart() {
     assert_eq!(sorted, vec![0, 1, 2, 3], "every spawn used once");
     // A player without a team keeps its slot's spawn.
     let mixed = [setup("england", 0), setup("germany", 1), setup("russia", 1)];
-    assert_eq!(assign_spawns(&spawns[..3], &mixed, true)[0], 0);
+    assert_eq!(assign_spawns(&spawns[..3], &mixed, true, false)[0], 0);
+    assert_eq!(assign_spawns(&spawns[..3], &mixed, true, true)[0], 0);
     // The world starts players where the assignment says.
     let w = world(&teams, GameOptions { separate_team_spawns: true, ..GameOptions::default() });
     for (p, &s) in got.iter().enumerate() {
         assert_eq!(w.players[p].start, spawns[s]);
     }
+}
+
+#[test]
+fn separate_team_spawns_on_generated_maps_split_the_spawn_list_by_team() {
+    // A generated 4 player map lists its spawns by column, top first: the
+    // halves of the list are the mirrored left and right sides.
+    let options = GameOptions { separate_team_spawns: true, ..GameOptions::default() };
+    let teams = [setup("england", 1), setup("germany", 2), setup("russia", 1), setup("ukraine", 2)];
+    let w = World::with_options(5, 64, &teams, options);
+    let spawns = &w.map.spawns;
+    assert_eq!(assign_spawns(spawns, &teams, true, true), vec![0, 2, 1, 3]);
+    let half = |p: usize| spawns.iter().position(|&s| s == w.players[p].start).unwrap() / 2;
+    assert_eq!((half(0), half(2)), (0, 0), "team 1 on the first side");
+    assert_eq!((half(1), half(3)), (1, 1), "team 2 on the mirrored side");
 }
 
 // ---- Starting units ---------------------------------------------------------------------------

@@ -463,3 +463,24 @@ fn nukes_clear_ore_flash_and_shake_the_screen() {
     w.apply_effect(gun, 0, cell_center(25), cell_center(25), 1024);
     assert_eq!(w.smudges.cells[w.map.idx(25, 25)], NO_SMUDGE);
 }
+
+#[test]
+fn maps_place_crates_and_husks_in_their_cells() {
+    let mut m = crate::map::Map::generate_for(64, 64, 4, 12, 2);
+    for i in 0..m.cells() {
+        m.terrain[i] = Terrain::Clear;
+        m.ore[i] = 0;
+        m.gems[i] = 0;
+    }
+    let mut data = crate::mapdata::MapData::from_map(&m, "Leftovers", "Tester", "");
+    data.actors.push(crate::mapdata::MapActor { ty: "WCRATE".into(), owner: -1, x: 30, y: 30, facing: 0 });
+    data.actors.push(crate::mapdata::MapActor { ty: "3TNK.Husk".into(), owner: -1, x: 31, y: 30, facing: 256 });
+    let players = [setup("england"), setup("russia")];
+    let w = World::from_map(&data, 1, &players, GameOptions::default()).unwrap();
+    let c = w.crate_at(w.map.idx(30, 30)).expect("the map's crate");
+    assert_eq!(w.rules.actors[w.actors[c].ty as usize].id, "WCRATE");
+    assert_eq!(w.crates.count, 1);
+    let h = w.husk_at(w.map.idx(31, 30)).expect("the map's husk");
+    assert!(w.pass.blocked[w.map.idx(31, 30)]);
+    assert_eq!(w.actors[h].facing, 256);
+}

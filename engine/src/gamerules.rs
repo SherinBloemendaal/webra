@@ -23,59 +23,76 @@ pub const HANDICAP_STEP: u8 = 5;
 /// on the map preview, like a spawn point a player picked in OpenRA, so
 /// without the option (and in free for alls) slot `k` starts at spawn `k`.
 /// With "Separate team spawns" in a team game the players without a team
-/// mate keep their own spawn and team members take the free spawns, in slot
-/// order, as far as possible from their enemies (the most squared distance to
-/// the spawns enemies took so far, OpenRA's measure), then as close as
-/// possible to their team mates, then the lowest spawn: teams start together
-/// and apart. apps/game (protocol `assignSpawns`) computes the same for the
-/// lobby markers; tests_gamerules.rs and packages/protocol share test cases.
-pub fn assign_spawns(spawns: &[(i32, i32)], players: &[PlayerSetup], separate: bool) -> Vec<usize> {
-    let n = players.len().min(spawns.len());
+/// keep their own spawn and the team members take the free spawns:
+/// - on generated maps team by team (in the order of each team's first slot,
+///   members in slot order) in the order the generator lists its spawns (by
+///   column, top first: consecutive spawns are neighbours, and splitting the
+///   list in halves is a mirror match, docs/contracts.md section 3), so teams
+///   start together on fair, mirrored sides;
+/// - on map files in slot order, each as far as possible from the enemies
+///   placed so far (the most squared distance to their spawns, OpenRA's
+///   measure), then as close as possible to team mates, then the lowest spawn.
+///
+/// packages/protocol `assignSpawns` computes the same for the lobby markers;
+/// both run the cases of packages/protocol/test/fixtures/spawn-cases.json.
+pub fn assign_spawns(spawns: &[(i32, i32)], players: &[PlayerSetup], separate: bool, generated: bool) -> Vec<usize> {
     let identity: Vec<usize> = (0..players.len()).collect();
-    if !separate || n < players.len() || !players.iter().any(|p| p.team != 0) {
+    if !separate || players.len() > spawns.len() || !players.iter().any(|p| p.team != 0) {
         return identity;
     }
-    let allied = |a: usize, b: usize| a == b || (players[a].team != 0 && players[a].team == players[b].team);
     let mut out = vec![usize::MAX; players.len()];
     let mut taken = vec![false; spawns.len()];
-    // Players without a team keep their slot's spawn; team players are placed next.
+    // Players without a team keep their slot's spawn.
     for (k, p) in players.iter().enumerate() {
         if p.team == 0 {
             out[k] = k;
             taken[k] = true;
         }
     }
+    // Team members: on generated maps team by team, in the order of each
+    // team's first slot; on map files in slot order.
+    let mut order: Vec<usize> = Vec::new();
+    for (k, p) in players.iter().enumerate() {
+        if p.team == 0 || order.contains(&k) {
+            continue;
+        }
+        if generated {
+            order.extend((k..players.len()).filter(|&j| players[j].team == p.team));
+        } else {
+            order.push(k);
+        }
+    }
     let d2 = |a: (i32, i32), b: (i32, i32)| {
         let (dx, dy) = ((a.0 - b.0) as i64, (a.1 - b.1) as i64);
         dx * dx + dy * dy
     };
-    for k in 0..players.len() {
-        if out[k] != usize::MAX {
-            continue;
-        }
-        let mut best: Option<(i64, i64, usize)> = None;
-        for (s, &cell) in spawns.iter().enumerate() {
-            if taken[s] {
-                continue;
-            }
-            let (mut enemy, mut ally) = (0i64, 0i64);
-            for (o, &os) in out.iter().enumerate() {
-                if os == usize::MAX {
+    for k in order {
+        let s = if generated {
+            (0..spawns.len()).find(|&s| !taken[s]).expect("a free spawn for every player")
+        } else {
+            let mut best: Option<(i64, i64, usize)> = None;
+            for (s, &cell) in spawns.iter().enumerate() {
+                if taken[s] {
                     continue;
                 }
-                if allied(k, o) {
-                    ally += d2(cell, spawns[os]);
-                } else {
-                    enemy += d2(cell, spawns[os]);
+                let (mut enemy, mut ally) = (0i64, 0i64);
+                for (o, &os) in out.iter().enumerate() {
+                    if os == usize::MAX {
+                        continue;
+                    }
+                    if players[o].team == players[k].team {
+                        ally += d2(cell, spawns[os]);
+                    } else {
+                        enemy += d2(cell, spawns[os]);
+                    }
+                }
+                // Most distance to enemies, least to team mates, lowest spawn.
+                if best.is_none_or(|(be, ba, _)| enemy > be || (enemy == be && ally < ba)) {
+                    best = Some((enemy, ally, s));
                 }
             }
-            // Most distance to enemies, least to team mates, lowest spawn.
-            let key = (enemy, -ally, s);
-            if best.is_none_or(|(be, ba, bs)| (key.0, key.1) > (be, ba) || ((key.0, key.1) == (be, ba) && s < bs)) {
-                best = Some(key);
-            }
-        }
-        let (_, _, s) = best.expect("a free spawn for every player");
+            best.expect("a free spawn for every player").2
+        };
         out[k] = s;
         taken[s] = true;
     }

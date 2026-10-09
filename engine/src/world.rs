@@ -934,7 +934,7 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        World::setup(rules, map, seed, players, options, &[], biome)
+        World::setup(rules, map, seed, players, options, &[], biome, true)
     }
 
     /// World on a prepared map with the default rules: players start at the
@@ -943,7 +943,7 @@ impl World {
     /// temperate, so no snow or heat waves change a scenario.
     pub fn on_map(seed: u64, map: Map, players: &[PlayerSetup], options: GameOptions) -> World {
         let biome = options.biome.unwrap_or(crate::weather::Biome::Temperate);
-        World::setup(Rules::load(), map, seed, players, options, &[], biome)
+        World::setup(Rules::load(), map, seed, players, options, &[], biome, false)
     }
 
     /// World from a map file; rules overrides (modded maps) apply.
@@ -957,7 +957,7 @@ impl World {
         }
         let rules = Rules::load_with(data.rules())?;
         let map = data.to_map()?;
-        Ok(World::setup(rules, map, seed, players, options, &data.actors, data.biome))
+        Ok(World::setup(rules, map, seed, players, options, &data.actors, data.biome, false))
     }
 
     fn setup(
@@ -968,13 +968,15 @@ impl World {
         options: GameOptions,
         actors: &[crate::mapdata::MapActor],
         biome: crate::weather::Biome,
+        // A generated map: its spawns are listed for fair team splits (gamerules.rs `assign_spawns`).
+        generated: bool,
     ) -> World {
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
         w.env = crate::weather::Environment::new(biome, options.weather, seed);
         let spawns = w.map.spawns.clone();
         // OpenRA MapStartingLocations: which spawn each player starts at (gamerules.rs).
-        let order = crate::gamerules::assign_spawns(&spawns, players, options.separate_team_spawns);
+        let order = crate::gamerules::assign_spawns(&spawns, players, options.separate_team_spawns, generated);
         for (slot, p) in players.iter().enumerate() {
             let fi = w.rules.faction_index(&p.faction).unwrap_or_else(|| panic!("unknown faction {}", p.faction));
             w.add_player(fi, p.ai.is_some(), spawns[order[slot]]);
@@ -1015,10 +1017,22 @@ impl World {
                 continue;
             }
             let Some(ty) = w.rules.actor_index(&a.ty) else { continue };
-            if w.rules.actors[ty].kind == Kind::Building {
-                w.spawn_building(ty as u16, owner, a.x, a.y);
-            } else {
-                w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+            match w.rules.actors[ty].kind {
+                Kind::Building => {
+                    w.spawn_building(ty as u16, owner, a.x, a.y);
+                }
+                // Crates and husks keep their cell (crates.rs, husks.rs).
+                Kind::Crate => {
+                    if w.crate_at(w.map.idx(a.x, a.y)).is_none() {
+                        w.place_crate(ty, owner, a.x, a.y, 0);
+                    }
+                }
+                Kind::Husk => {
+                    w.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0);
+                }
+                _ => {
+                    w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+                }
             }
         }
         w.refresh_tokens();

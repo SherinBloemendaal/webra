@@ -99,6 +99,14 @@ impl World {
         });
         let (x, y, facing, victim) = (a.x, a.y, a.facing, a.owner);
         let owner = if self.players[victim as usize].defeated { self.neutral_player().unwrap_or(victim) } else { victim };
+        let h = self.place_husk(husk, owner, x, y, facing, speed);
+        let ci = self.cell_index(self.actors[h].leftover.drag.0, self.actors[h].leftover.drag.1);
+        self.husk_crush(h, ci);
+    }
+
+    /// A husk of type `ty` at (x, y) that slides to its cell's centre at
+    /// `speed` (0: at once), blocking the cell (also for husks a map places).
+    pub(crate) fn place_husk(&mut self, ty: usize, owner: u8, x: i32, y: i32, facing: i32, speed: i32) -> usize {
         let (cx, cy) = self.cell_of(x, y);
         let ci = self.map.idx(cx, cy);
         // One husk per cell: an older wreck there makes room.
@@ -106,21 +114,21 @@ impl World {
             self.remove(old);
             self.husk_cell_freed(old);
         }
-        let h = self.spawn_unit(husk as u16, owner, x, y, facing);
+        let h = self.spawn_unit(ty as u16, owner, x, y, facing);
         let end = (cell_center(cx), cell_center(cy));
         let distance = dist(x, y, end.0, end.1);
         self.actors[h].leftover =
             Leftover { ticks: 0, drag: end, drag_ticks: if speed > 0 && distance > 0 { distance / speed } else { 0 } };
         if self.actors[h].leftover.drag_ticks == 0 {
-            self.actors[h].x = end.0;
-            self.actors[h].y = end.1;
+            let a = &mut self.actors[h];
+            (a.x, a.y, a.px, a.py) = (end.0, end.1, end.0, end.1);
         }
         self.leftover_at.husk[ci] = self.make_ref(h);
         self.pass.set_blocked(ci, true);
         self.pass_water.set_blocked(ci, true);
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
-        self.husk_crush(h, ci);
+        h
     }
 
     /// OpenRA DragAndCrush (first run): what the husk's locomotor crushes in
