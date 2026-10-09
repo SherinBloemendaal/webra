@@ -1,12 +1,14 @@
 // "Install original Red Alert content", like OpenRA: the player picks files
 // from their own copy of Red Alert (the 2008 freeware release or a disc:
-// main.mix and redalert.mix, or the archives inside them, or loose files).
+// the CD image itself, main.mix and redalert.mix, or the archives inside
+// them, or loose files).
 // We read them in the browser, keep only what WebRA uses (the sounds of
 // js/audio/catalog.js and the graphics of content/tables.js), check that
 // each file decodes, and store them in this browser (content/store.js).
 // Nothing is uploaded and nothing is shipped with WebRA.
 
 import { MixArchive, MixError, blobSource } from '../audio/mix.js';
+import { IsoImage, IsoError } from './iso.js';
 import { looksLikeAud, decodeAud } from '../audio/aud.js';
 import { allOriginalNames, ARCHIVES as SOUND_ARCHIVES, EVA, MUSIC_FILES } from '../audio/catalog.js';
 import { ACTOR_PALETTE, GRAPHICS_FILES, TERRAIN } from './tables.js';
@@ -16,6 +18,12 @@ import { kindOf } from './store.js';
 import { openZip, looksLikeZip, ZipError } from '../oramap/zip.js';
 
 const MAX_DEPTH = 3;
+/**
+ * The archives on a Red Alert CD (OpenRA's ra-content installer, allies95
+ * and soviet95: MAIN.MIX holds the game and music archives, scores.mix
+ * among them; INSTALL/REDALERT.MIX the interface, speech and cameos).
+ */
+export const CD_ARCHIVES = Object.freeze(['MAIN.MIX', 'INSTALL/REDALERT.MIX']);
 const VOICE_EXT = /\.[vr]0\d$/;
 const ANNOUNCER = new Set(Object.values(EVA).flatMap((e) => e.originals));
 
@@ -59,8 +67,8 @@ export function checkFile(name, bytes) {
 }
 
 /**
- * Find wanted files in what the player picked: MIX archives (nested ones
- * too, encrypted indexes included) and loose files.
+ * Find wanted files in what the player picked: Red Alert CD images (.iso),
+ * MIX archives (nested ones too, encrypted indexes included) and loose files.
  * @param {Iterable<File | Blob & { name: string }>} files
  * @param {{ wanted: Set<string>, onProgress?(text: string): void, publicKey?: { n: bigint, e: bigint }, check?: typeof checkFile }} o
  * @returns {Promise<{ found: Map<string, { bytes: Uint8Array, from: string }>, archives: string[], skipped: string[], errors: string[] }>}
@@ -105,9 +113,39 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
     }
   }
 
+  /** A CD image: only its directory and the archives in CD_ARCHIVES are read, by slices. */
+  async function scanIso(source, label) {
+    let iso;
+    const archives = [];
+    try {
+      iso = await IsoImage.open(source);
+      for (const path of CD_ARCHIVES) {
+        const src = await iso.fileSource(path);
+        if (src) archives.push([path, src]);
+      }
+    } catch (err) {
+      if (err instanceof IsoError) {
+        report.errors.push(`${label}: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    if (!archives.length) {
+      report.errors.push(`${label}: no MAIN.MIX or INSTALL/REDALERT.MIX on this image (it is not a Red Alert CD)`);
+      return;
+    }
+    for (const [path, src] of archives) {
+      onProgress(`Reading ${label} / ${path.toLowerCase()}`);
+      await scanMix(src, `${label}/${path.toLowerCase()}`, 0);
+    }
+  }
+
   for (const file of files) {
     const name = baseName(file.webkitRelativePath || file.name || '');
-    if (name.endsWith('.mix')) {
+    if (name.endsWith('.iso')) {
+      onProgress(`Reading ${name}`);
+      await scanIso(blobSource(file), name);
+    } else if (name.endsWith('.mix')) {
       onProgress(`Reading ${name}`);
       await scanMix(blobSource(file), name, 0);
     } else if (wanted.has(name)) {

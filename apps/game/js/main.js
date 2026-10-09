@@ -344,7 +344,7 @@ function setupContent() {
 }
 
 /**
- * Drag and drop of Red Alert files (ra-quickinstall.zip, .mix files) and
+ * Drag and drop of Red Alert files (ra-quickinstall.zip, CD images, .mix files) and
  * texture packs onto the lobby or the game: they go to the Original content
  * dialog. Other drops are left alone.
  */
@@ -377,7 +377,7 @@ function setupContentDrop() {
 /** Install dropped or picked files through the Original content dialog (progress and result show there). */
 async function dropContent(files) {
   try {
-    if (!(await contentPanel?.drop(files))) showToast('Drop ra-quickinstall.zip, Red Alert .mix files or a texture pack here.');
+    if (!(await contentPanel?.drop(files))) showToast('Drop ra-quickinstall.zip, a freeware Red Alert CD image (.iso), Red Alert .mix files or a texture pack here.');
   } catch (err) {
     showToast(`Could not read the files: ${err.message ?? err}`);
   }

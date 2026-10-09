@@ -31,6 +31,35 @@ export const QUICKINSTALL_MIRRORS = Object.freeze([
 ]);
 
 /**
+ * The player-facing error for a refused relay answer (both relays, the
+ * package and the music): the account gate (401 unauthenticated, 403
+ * relay_forbidden and friends), the budgets (429) and upstream trouble.
+ * @param {Response} res
+ */
+export async function relayProblem(res) {
+  let error = {};
+  try {
+    error = (await res.json()).error ?? {};
+  } catch {
+    // not JSON
+  }
+  const code = error.code ?? '';
+  if (res.status === 429) {
+    return new Error(code === 'rate_limited' && error.message ? `${error.message.replace(/\.$/, '')}; or install the files yourself` : 'too many downloads from this network; try again in an hour or install the files yourself');
+  }
+  // The relay needs a signed-in account (401 unauthenticated) with the content_autoinstall flag or the admin role (403 relay_forbidden).
+  if (res.status === 401) return new Error('sign in first: the one-click download is only for selected accounts; or install the files yourself with the steps below');
+  if (res.status === 403) {
+    if (code === 'relay_forbidden' || code === 'forbidden') return new Error('the one-click download is only for selected accounts; install the files yourself with the steps below');
+    if (code === 'banned') return new Error('this account is banned');
+    if (code === 'account_inactive') return new Error('your account is not active yet');
+    if (code === 'ip_banned') return new Error('downloads are blocked from your network');
+    return new Error('the one-click download is not allowed; install the files yourself with the steps below');
+  }
+  return new Error(error.message ?? `the server answered ${res.status}`);
+}
+
+/**
  * Download the package with progress. Returns a File named
  * ra-quickinstall.zip; throws with a readable message on any problem.
  * @param {{ onProgress?(received: number, total: number): void, fetchImpl?: typeof fetch, signal?: AbortSignal }} [o]
@@ -42,31 +71,7 @@ export async function downloadQuickInstall({ onProgress = () => {}, fetchImpl = 
   } catch (err) {
     throw new Error(`the download could not start (${err.message ?? err})`);
   }
-  if (res.status === 429) throw new Error('too many downloads from this network; try again in an hour or install the files yourself');
-  // The relay needs a signed-in account (401 unauthenticated) with the content_autoinstall flag or the admin role (403 relay_forbidden).
-  if (res.status === 401) throw new Error('sign in first: the one-click download is only for selected accounts; or install the files yourself with the steps below');
-  if (res.status === 403) {
-    let code = '';
-    try {
-      code = (await res.json()).error?.code ?? '';
-    } catch {
-      // not JSON
-    }
-    if (code === 'relay_forbidden' || code === 'forbidden') throw new Error('the one-click download is only for selected accounts; install the files yourself with the steps below');
-    if (code === 'banned') throw new Error('this account is banned');
-    if (code === 'account_inactive') throw new Error('your account is not active yet');
-    if (code === 'ip_banned') throw new Error('downloads are blocked from your network');
-    throw new Error('the one-click download is not allowed; install the files yourself with the steps below');
-  }
-  if (!res.ok || !res.body) {
-    let message = `the server answered ${res.status}`;
-    try {
-      message = (await res.json()).error?.message ?? message;
-    } catch {
-      // not JSON
-    }
-    throw new Error(message);
-  }
+  if (!res.ok || !res.body) throw await relayProblem(res);
   const out = new Uint8Array(QUICKINSTALL_BYTES);
   const reader = res.body.getReader();
   let received = 0;
@@ -131,4 +136,4 @@ export const DOWNLOAD_NOTICE =
 
 /** The notice for the manual steps: what the files are and where they stay. */
 export const LEGAL_NOTICE =
-  "Red Alert belongs to Electronic Arts, who released it as freeware in 2008. WebRA does not host or distribute it: the mirrors are run by OpenRA's community. Your files are read in this browser and stored on this device only; nothing is uploaded.";
+  "Red Alert belongs to Electronic Arts, who released it as freeware in 2008. WebRA does not host or distribute it: the mirrors are run by OpenRA's community and the Internet Archive. Your files are read in this browser and stored on this device only; nothing is uploaded.";

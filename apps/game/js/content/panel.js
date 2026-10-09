@@ -5,8 +5,10 @@
 // content (sounds and graphics in one flow) in three steps (download
 // ra-quickinstall.zip from a mirror, drop or pick it, done) with live
 // progress and a summary; the one-click download through WebRA's server
-// for accounts allowed to use it (content/download.js canAutoInstall);
-// other ways (own Red Alert files, a folder); the texture pack manager.
+// for accounts allowed to use it (content/download.js canAutoInstall),
+// with the music from the freeware CDs (content/cdmusic.js) next to it;
+// other ways (a freeware CD image, own Red Alert files, a folder); the
+// texture pack manager.
 //
 // The notice: a dismissible card on the start screen (dismissal is a synced
 // setting) with the same steps, shown until something is installed.
@@ -24,15 +26,16 @@ import {
   QUICKINSTALL_BYTES,
   QUICKINSTALL_MIRRORS,
 } from './download.js';
+import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, SCORES_BYTES } from './cdmusic.js';
 
 export { QUICKINSTALL_MIRRORS };
 
-const ACCEPT_CONTENT = '.zip,.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03,.shp,.pal,.tem,.sno,.des';
+const ACCEPT_CONTENT = '.zip,.iso,.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03,.shp,.pal,.tem,.sno,.des';
 const ACCEPT_PACK = '.webrapack,.zip';
 /** Largest pack file read for the preview (content/packs.js PACK_LIMITS.maxArchiveBytes). */
 const MAX_PACK_FILE = 64 * 1024 * 1024;
 /** Red Alert files the installer takes besides ZIPs. */
-const CONTENT_FILE = /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i;
+const CONTENT_FILE = /\.(iso|mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i;
 
 const THEATER_NAMES = { TEMPERAT: 'temperate', SNOW: 'snow', DESERT: 'desert (from Tiberian Dawn)' };
 
@@ -143,6 +146,15 @@ function mirrorList() {
     ...QUICKINSTALL_MIRRORS.map((url) =>
       el('li', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', download: 'ra-quickinstall.zip', text: new URL(url).hostname })),
     ),
+  );
+}
+
+/** The freeware CD images (plain links to the Internet Archive). */
+function cdList() {
+  return el(
+    'ul',
+    { class: 'content-cds' },
+    ...FREEWARE_CDS.map((cd) => el('li', {}, el('a', { href: cd.url, target: '_blank', rel: 'noopener noreferrer', text: `${cd.label} (ISO, ${formatBytes(cd.bytes)})` }))),
   );
 }
 
@@ -281,12 +293,17 @@ export function mountContentSettings(root, content, audio, opts = {}) {
 
   // The one-click download, only for accounts allowed to use it.
   const download = el('button', { type: 'button', class: 'primary', text: `Download and install (${formatBytes(QUICKINSTALL_BYTES)})` });
+  // The music is not in that package: it comes from the freeware CDs, by range (content/cdmusic.js).
+  const MUSIC_LABEL = `Music (from the freeware Red Alert CDs, ${formatBytes(SCORES_BYTES)})`;
+  const music = el('button', { type: 'button', text: MUSIC_LABEL });
+  const cancelMusic = el('button', { type: 'button', text: 'Cancel', hidden: true });
   const autoBox = el(
     'div',
     { class: 'content-auto', hidden: !opts.autoInstall },
     el('p', { class: 'audio-note', text: 'Your account may use the one-click install:' }),
-    el('div', { class: 'audio-buttons' }, download),
+    el('div', { class: 'audio-buttons' }, download, music, cancelMusic),
     el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
+    el('p', { class: 'audio-note', text: MUSIC_NOTICE }),
   );
 
   // ---- Packs ----------------------------------------------------------------------------
@@ -299,7 +316,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
 
   const busy = (on) => {
     running = on;
-    for (const b of [pickFiles, pickFolder, remove, pickPack, download, dropzone]) b.disabled = on;
+    for (const b of [pickFiles, pickFolder, remove, pickPack, download, music, dropzone]) b.disabled = on;
     root.setAttribute('aria-busy', String(on));
   };
 
@@ -378,6 +395,56 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     return install([file]);
   };
   download.addEventListener('click', fetchAndInstall);
+
+  // The music: pieces of scores.mix through the relay, kept as they arrive,
+  // so Cancel, a failure or a closed tab lose nothing; the same button goes on.
+  let musicAbort = null;
+  const fetchMusic = async () => {
+    if (running) return null;
+    busy(true);
+    result.hidden = true;
+    musicAbort = new AbortController();
+    cancelMusic.hidden = false;
+    cancelMusic.disabled = false;
+    showProgress('Starting the music download...', 0);
+    let file;
+    let store;
+    try {
+      store = await content.store();
+      file = await downloadScores({
+        store,
+        fetchImpl: opts.fetchImpl,
+        signal: musicAbort.signal,
+        onProgress: (n, total) => showProgress(`Downloading the music: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total),
+      });
+    } catch (err) {
+      hideProgress();
+      const cancelled = err instanceof CancelledError;
+      music.textContent = `Resume the music download (${formatBytes(SCORES_BYTES)})`;
+      showResult(cancelled ? 'Music download cancelled' : 'Music download failed', [
+        `${err.message ?? err}.`,
+        cancelled
+          ? 'Click the music button to go on where it stopped.'
+          : 'Click the music button to try again: the parts already downloaded are kept. Or download a freeware CD image yourself (Other ways) and drop it here.',
+      ], false);
+      return null;
+    } finally {
+      musicAbort = null;
+      cancelMusic.hidden = true;
+      busy(false);
+    }
+    const report = await install([file]);
+    if (report) {
+      music.textContent = MUSIC_LABEL;
+      await forgetScoresDownload(store).catch(() => {});
+    }
+    return report;
+  };
+  music.addEventListener('click', fetchMusic);
+  cancelMusic.addEventListener('click', () => {
+    cancelMusic.disabled = true;
+    musicAbort?.abort();
+  });
 
   files.addEventListener('change', () => handleFiles([...files.files]));
   folder.addEventListener('change', () => install([...folder.files]));
@@ -511,14 +578,14 @@ export function mountContentSettings(root, content, audio, opts = {}) {
 
   /**
    * Files dropped or picked: texture packs get the install preview, Red
-   * Alert files (ra-quickinstall.zip, .mix, loose files) the install.
+   * Alert files (ra-quickinstall.zip, a CD image, .mix, loose files) the install.
    * Returns false when nothing in `list` is content. `classified` skips
    * reading the files again (classifyFiles).
    */
   async function handleFiles(list, classified = null) {
     const { packs, content: rest } = classified ?? (await classifyFiles(list));
     if (!packs.length && !rest.length) {
-      showResult('Not Red Alert content', ['Choose ra-quickinstall.zip, Red Alert .mix files or a texture pack (.webrapack).'], false);
+      showResult('Not Red Alert content', ['Choose ra-quickinstall.zip, a freeware Red Alert CD image (.iso), Red Alert .mix files or a texture pack (.webrapack).'], false);
       return false;
     }
     if (rest.length) await install(rest);
@@ -555,7 +622,12 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       el(
         'details',
         { class: 'content-other' },
-        el('summary', { text: 'Other ways: your own copy of Red Alert' }),
+        el('summary', { text: 'Other ways: the freeware CDs, or your own copy of Red Alert' }),
+        el('p', {
+          class: 'audio-note',
+          text: 'With music: download the Allied or the Soviet CD image of the freeware release from the Internet Archive and drop the .iso here (or choose it below). WebRA reads only the parts it needs straight from the file, never the whole image, and installs the music, sounds and graphics on the disc.',
+        }),
+        cdList(),
         el('p', {
           class: 'audio-note',
           text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix), or loose files. desert.mix from Tiberian Dawn adds desert terrain. Sounds and graphics are installed in one go.',
@@ -588,6 +660,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     handleFiles,
     inspectPackFile,
     download: fetchAndInstall,
+    downloadMusic: fetchMusic,
     get busy() {
       return running;
     },
@@ -683,7 +756,7 @@ async function isPackZip(bytes) {
  */
 export function mountContentNotice(host, { registry, onFiles, onOpen, onDownload, autoInstall = false }) {
   const touch = isTouchDevice();
-  const file = el('input', { type: 'file', accept: '.zip,.mix', multiple: true, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
+  const file = el('input', { type: 'file', accept: '.zip,.iso,.mix', multiple: true, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
   const pick = el('button', { type: 'button', class: 'primary', text: 'Choose ra-quickinstall.zip...' });
   pick.addEventListener('click', () => file.click());
   file.addEventListener('change', () => {

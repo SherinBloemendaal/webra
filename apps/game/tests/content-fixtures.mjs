@@ -328,3 +328,103 @@ export function pixelDocument() {
     },
   };
 }
+
+// ---- ISO 9660 images ------------------------------------------------------------------
+
+/** A directory record (ECMA-119 9.1) for `name` at block `extent` with `size` bytes. */
+function isoRecord(name, extent, size, dir) {
+  const nameBytes = typeof name === 'string' ? new TextEncoder().encode(name) : name;
+  const len = 33 + nameBytes.length + ((33 + nameBytes.length) % 2);
+  const r = new Uint8Array(len);
+  const dv = new DataView(r.buffer);
+  r[0] = len;
+  dv.setUint32(2, extent, true);
+  dv.setUint32(6, extent, false);
+  dv.setUint32(10, size, true);
+  dv.setUint32(14, size, false);
+  r[25] = dir ? 2 : 0;
+  dv.setUint16(28, 1, true);
+  dv.setUint16(30, 1, false);
+  r[32] = nameBytes.length;
+  r.set(nameBytes, 33);
+  return r;
+}
+
+/**
+ * A synthetic ISO 9660 image: `files` maps paths ("MAIN.MIX",
+ * "INSTALL/REDALERT.MIX", at most one directory deep) to bytes. File names
+ * get the ";1" version suffix as on real discs. `padTo` grows the image with
+ * zeros (to check that readers do not read the whole of it); `fillDirs` adds
+ * that many dummy records to the root so it spans more than one sector.
+ */
+export function buildIso(files, { padTo = 0, fillDirs = 0 } = {}) {
+  const SECTOR = 2048;
+  const tree = new Map([['', []]]);
+  for (const [path, data] of Object.entries(files)) {
+    const parts = path.split('/');
+    const dir = parts.length > 1 ? parts[0] : '';
+    if (!tree.has(dir)) {
+      tree.set(dir, []);
+      tree.get('').push({ name: dir, dir: true });
+    }
+    tree.get(dir).push({ name: `${parts.at(-1)};1`, data });
+  }
+  for (let i = 0; i < fillDirs; i++) tree.get('').push({ name: `FILLER${String(i).padStart(3, '0')}.TXT;1`, data: new Uint8Array(1) });
+  // Directory sizes: records never cross a sector.
+  const dirSectors = new Map();
+  for (const [dir, entries] of tree) {
+    let sectors = 1;
+    let used = 34 * 2;
+    for (const e of entries) {
+      const len = isoRecord(e.name, 0, 0, false).length;
+      if (used + len > SECTOR) {
+        sectors++;
+        used = 0;
+      }
+      used += len;
+    }
+    dirSectors.set(dir, sectors);
+  }
+  let next = 18;
+  const dirAt = new Map();
+  for (const [dir, n] of dirSectors) {
+    dirAt.set(dir, next);
+    next += n;
+  }
+  const fileAt = new Map();
+  for (const entries of tree.values()) {
+    for (const e of entries) {
+      if (e.dir) continue;
+      fileAt.set(e, next);
+      next += Math.max(1, Math.ceil(e.data.length / SECTOR));
+    }
+  }
+  const size = Math.max(next * SECTOR, padTo);
+  const out = new Uint8Array(size);
+  // Primary volume descriptor and terminator.
+  const pvd = 16 * SECTOR;
+  out[pvd] = 1;
+  out.set(new TextEncoder().encode('CD001'), pvd + 1);
+  out[pvd + 6] = 1;
+  new DataView(out.buffer).setUint16(pvd + 128, SECTOR, true);
+  new DataView(out.buffer).setUint16(pvd + 130, SECTOR, false);
+  out.set(isoRecord(new Uint8Array([0]), dirAt.get(''), dirSectors.get('') * SECTOR, true), pvd + 156);
+  out[17 * SECTOR] = 255;
+  out.set(new TextEncoder().encode('CD001'), 17 * SECTOR + 1);
+  for (const [dir, entries] of tree) {
+    const base = dirAt.get(dir) * SECTOR;
+    const self = isoRecord(new Uint8Array([0]), dirAt.get(dir), dirSectors.get(dir) * SECTOR, true);
+    const parent = isoRecord(new Uint8Array([1]), dirAt.get(''), dirSectors.get('') * SECTOR, true);
+    out.set(self, base);
+    out.set(parent, base + self.length);
+    let o = self.length + parent.length;
+    for (const e of entries) {
+      const rec = e.dir ? isoRecord(e.name, dirAt.get(e.name), dirSectors.get(e.name) * SECTOR, true) : isoRecord(e.name, fileAt.get(e), e.data.length, false);
+      if ((o % SECTOR) + rec.length > SECTOR) o = (Math.floor(o / SECTOR) + 1) * SECTOR;
+      out.set(rec, base + o);
+      o += rec.length;
+    }
+  }
+  for (const [e, at] of fileAt) out.set(e.data, at * SECTOR);
+  return out;
+}

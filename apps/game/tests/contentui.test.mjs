@@ -395,3 +395,62 @@ test('dialog: pack rows have an on/off switch, a priority line, order buttons an
   assert.deepEqual(moved, [['a', 1]]);
   assert.equal(rows[1].querySelectorAll('button')[1].disabled, true, 'the last pack cannot move down');
 });
+
+test('dialog: the music from the freeware CDs sits with the one-click install; Cancel and failures keep what came and offer to resume', async () => {
+  const { MemoryStore } = await import('../js/content/store.js');
+  const store = new MemoryStore();
+  const content = fakeContent();
+  content.store = async () => store;
+  const calls = [];
+  // The relay hangs until the request is aborted.
+  const fetchImpl = (url, init) => {
+    calls.push({ url, init });
+    return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+  };
+  const { root, view } = mount(content, fakeAudio(), { autoInstall: true, fetchImpl });
+  await settle();
+  const auto = root.querySelector('.content-auto');
+  const [, music, cancel] = auto.querySelectorAll('button');
+  assert.match(textOf(music), /^Music \(from the freeware Red Alert CDs, 61\.2 MB\)$/);
+  assert.match(textOf(auto), /freeware Red Alert CD images on the Internet Archive/);
+  assert.equal(cancel.hidden, true);
+  click(music);
+  await settle();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/api/content/ra-scores');
+  assert.equal(calls[0].init.headers.Range, 'bytes=0-8388607');
+  assert.equal(cancel.hidden, false, 'Cancel shows while it downloads');
+  assert.equal(music.disabled, true);
+  assert.match(textOf(root.querySelector('.content-progress')), /Downloading the music: 0 bytes of 61\.2 MB/);
+  click(cancel);
+  await settle(20);
+  assert.equal(cancel.hidden, true);
+  assert.equal(music.disabled, false);
+  assert.match(textOf(root.querySelector('.content-result')), /Music download cancelled.*go on where it stopped/);
+  assert.match(textOf(music), /Resume the music download/);
+  assert.deepEqual(content.calls, [], 'nothing was installed');
+  // A refusal: the reason, and the manual way.
+  const refused = mount(content, fakeAudio(), {
+    autoInstall: true,
+    fetchImpl: async () => new Response(JSON.stringify({ error: { code: 'relay_forbidden', message: 'x' } }), { status: 403 }),
+  });
+  await settle();
+  click(refused.root.querySelector('.content-auto').querySelectorAll('button')[1]);
+  await settle(20);
+  assert.match(textOf(refused.root.querySelector('.content-result')), /Music download failed.*selected accounts.*CD image yourself/);
+  assert.equal(typeof view.downloadMusic, 'function');
+});
+
+test('dialog: everyone gets the freeware CD images as plain links, and an .iso is content', async () => {
+  const { root } = mount();
+  await settle();
+  const links = root.querySelectorAll('.content-cds a');
+  assert.equal(links.length, 2);
+  for (const a of links) {
+    assert.match(a.getAttribute('href'), /^https:\/\/archive\.org\/download\/command-conquer-red-alert_202309\/.+\.ISO$/);
+    assert.equal(a.getAttribute('rel'), 'noopener noreferrer');
+  }
+  assert.match(textOf(root.querySelector('.content-other')), /drop the \.iso here.*never the whole image/);
+  const r = await classifyFiles([new File([new Uint8Array(4)], 'CD1_ALLIED_DISC.ISO'), new File(['x'], 'notes.txt')]);
+  assert.deepEqual(r.content.map((f) => f.name), ['CD1_ALLIED_DISC.ISO']);
+});

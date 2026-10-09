@@ -10,12 +10,18 @@
 //   is installed without reading every file.
 // - packs: texture packs, { id, name, author, version, license, description,
 //   manifest, files: { path: ArrayBuffer }, size, enabled, order, installedAt }.
+// - partials: pieces of a download that is not finished yet, { id
+//   ("<download>:<index>"), key, index, bytes (ArrayBuffer) }, so a download
+//   cut off (closed tab, lost network) goes on where it stopped. They are
+//   removed once the download is installed or found to be wrong; they are
+//   never content the game uses.
 
 const DB_NAME = 'webra-content';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const FILES = 'files';
 const META = 'meta';
 const PACKS = 'packs';
+const PARTIALS = 'partials';
 
 const GRAPHICS_EXT = /\.(shp|pal|tem|sno|des|int)$/i;
 
@@ -77,6 +83,7 @@ export class IdbStore {
       const tx = req.transaction;
       if (!db.objectStoreNames.contains(FILES)) db.createObjectStore(FILES, { keyPath: 'name' });
       if (!db.objectStoreNames.contains(PACKS)) db.createObjectStore(PACKS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(PARTIALS)) db.createObjectStore(PARTIALS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(META)) {
         const meta = db.createObjectStore(META, { keyPath: 'name' });
         // Version 1 stored sounds only: index them.
@@ -179,13 +186,45 @@ export class IdbStore {
     tx.objectStore(PACKS).delete(id);
     await finished(tx);
   }
+
+  // ---- Unfinished downloads ---------------------------------------------------------
+
+  /** Keep piece `index` of the download `key` (StorageError when the browser cannot). */
+  async putPartial(key, index, bytes) {
+    let tx;
+    try {
+      tx = this.db.transaction(PARTIALS, 'readwrite');
+      tx.objectStore(PARTIALS).put({ id: partialId(key, index), key, index, bytes });
+    } catch (err) {
+      throw storageProblem(err);
+    }
+    await finished(tx);
+  }
+
+  /** The kept pieces of `key`: Map(index -> ArrayBuffer). */
+  async partials(key) {
+    const tx = this.db.transaction(PARTIALS, 'readonly');
+    const all = await done(tx.objectStore(PARTIALS).getAll(partialRange(key)));
+    return new Map(all.filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+
+  /** Forget the pieces of `key`. */
+  async clearPartials(key) {
+    const tx = this.db.transaction(PARTIALS, 'readwrite');
+    tx.objectStore(PARTIALS).delete(partialRange(key));
+    await finished(tx);
+  }
 }
+
+const partialId = (key, index) => `${key}:${String(index).padStart(6, '0')}`;
+const partialRange = (key) => globalThis.IDBKeyRange.bound(`${key}:`, `${key}:\uffff`);
 
 /** Same interface in memory (tests, or when IndexedDB is blocked: content lasts for this page). */
 export class MemoryStore {
   constructor() {
     this.map = new Map();
     this.packMap = new Map();
+    this.partialMap = new Map();
   }
   async putAll(records) {
     for (const r of records) this.map.set(r.name, { ...r, kind: r.kind ?? kindOf(r.name) });
@@ -213,6 +252,15 @@ export class MemoryStore {
   }
   async deletePack(id) {
     this.packMap.delete(id);
+  }
+  async putPartial(key, index, bytes) {
+    this.partialMap.set(partialId(key, index), { key, index, bytes });
+  }
+  async partials(key) {
+    return new Map([...this.partialMap.values()].filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+  async clearPartials(key) {
+    for (const [id, r] of [...this.partialMap]) if (r.key === key) this.partialMap.delete(id);
   }
 }
 

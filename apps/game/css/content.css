@@ -122,13 +122,15 @@
   color: var(--ui-text);
 }
 
-.content-mirrors {
+.content-mirrors,
+.content-cds {
   margin: calc(4 * var(--ui-px)) 0 0;
   padding-left: calc(18 * var(--ui-px));
   font-size: var(--ui-fs-m);
 }
 
-.content-mirrors a {
+.content-mirrors a,
+.content-cds a {
   color: var(--ui-accent-hi);
   overflow-wrap: anywhere;
 }
