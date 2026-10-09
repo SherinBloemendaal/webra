@@ -215,6 +215,20 @@ test('command_state counts units, weapons and stances of own actors only', () =>
   assert.equal(g.are_allies(0, 9), false, 'out of range');
 });
 
+test('move_hint: a plain move of armed units past visible enemies (attack-move tip)', () => {
+  const g = game([
+    { type: '2TNK', owner: 0, x: 10, y: 20, facing: 0 },
+    { type: 'HARV', owner: 0, x: 10, y: 24, facing: 0 },
+    { type: 'E1', owner: 1, x: 25, y: 22, facing: 0 },
+  ]);
+  const [tank, harv] = [at(g, 10, 20), at(g, 10, 24)];
+  assert.equal(g.move_hint(0, ids(tank), px(40), px(20)), true, 'the way east passes the rifleman');
+  assert.equal(g.move_hint(0, ids(tank, harv), px(40), px(20)), true);
+  assert.equal(g.move_hint(0, ids(harv), px(40), px(20)), false, 'nothing armed');
+  assert.equal(g.move_hint(0, ids(tank), px(10), px(45)), false, 'the way south stays clear');
+  assert.equal(g.move_hint(1, ids(tank), px(40), px(20)), false, 'not your unit');
+});
+
 test('waypoints, scatter and guard through the API', () => {
   const g = game([
     { type: '1TNK', owner: 0, x: 20, y: 20, facing: 0 },

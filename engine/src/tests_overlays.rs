@@ -237,3 +237,189 @@ fn damaged_units_buildings_and_walls_show_health_bars_by_default() {
     let (x, _, s, _) = w.selection_box(wall, 1.0);
     assert!(bar_frames(&render(&w, &[]).1).iter().all(|b| b[0] != x - s / 2.0 - 1.0), "no bar on a whole wall piece");
 }
+
+/// Rects of a control group number: the dark plate and the white glyph runs.
+fn group_rects(buf: &[f32]) -> (Vec<[f32; 4]>, Vec<[f32; 4]>) {
+    let plate = |r: &&[f32]| r[4..8] == GROUP_PLATE && r[2] == GROUP_GLYPH_W as f32 + 2.0 && r[3] == GROUP_GLYPH_H as f32 + 2.0;
+    let plates = rects(buf).into_iter().filter(plate).map(|r| [r[0], r[1], r[2], r[3]]).collect();
+    let glyph = rects(buf).into_iter().filter(|r| r[4..8] == GROUP_COLOR).map(|r| [r[0], r[1], r[2], r[3]]).collect();
+    (plates, glyph)
+}
+
+/// The 3x5 pixel grid `push_group_number` lit for a plate at (x, y).
+fn lit_pixels(glyph: &[[f32; 4]], x: f32, y: f32) -> [u8; GROUP_GLYPH_H] {
+    let mut rows = [0u8; GROUP_GLYPH_H];
+    for r in glyph {
+        assert_eq!(r[3], 1.0, "one row per rect");
+        let row = (r[1] - y - 1.0) as usize;
+        for c in 0..r[2] as usize {
+            let col = (r[0] - x - 1.0) as usize + c;
+            rows[row] |= 1 << (GROUP_GLYPH_W - 1 - col);
+        }
+    }
+    rows
+}
+
+#[test]
+fn group_numbers_draw_every_digit_as_its_glyph_inside_the_top_left_corner() {
+    for g in 0..=9u8 {
+        let mut out = Vec::new();
+        push_group_number(10.0, 20.0, g, &mut out);
+        let (plates, glyph) = group_rects(&out);
+        assert_eq!(plates.len(), 1);
+        let p = plates[0];
+        assert_eq!((p[0], p[1]), (10.0 + GROUP_INSET.0, 20.0 + GROUP_INSET.1), "inside the box, clear of the bracket arms");
+        assert_eq!((p[2], p[3]), (GROUP_GLYPH_W as f32 + 2.0, GROUP_GLYPH_H as f32 + 2.0));
+        assert_eq!(lit_pixels(&glyph, p[0], p[1]), GROUP_GLYPHS[g as usize], "digit {g}");
+        for r in &glyph {
+            assert!(r[0] > p[0] && r[0] + r[2] < p[0] + p[2] && r[1] > p[1] && r[1] + r[3] < p[1] + p[3], "on the plate");
+        }
+    }
+    // Every digit differs from the others.
+    for (a, ga) in GROUP_GLYPHS.iter().enumerate() {
+        for (b, gb) in GROUP_GLYPHS.iter().enumerate().skip(a + 1) {
+            assert_ne!(ga, gb, "{a} and {b}");
+        }
+    }
+    let mut none = Vec::new();
+    push_group_number(0.0, 0.0, 10, &mut none);
+    assert!(none.is_empty(), "only the ten group keys");
+}
+
+#[test]
+fn control_group_numbers_show_on_selected_grouped_units_and_buildings_only() {
+    let mut w = world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    let rifle = unit(&mut w, "E1", 0, 24, 20);
+    let pp = w.spawn_building(ty(&w, "POWR"), 0, 30, 30).expect("room for a power plant");
+    w.update_vision();
+    let (rt, rr, rp) = (w.make_ref(tank), w.make_ref(rifle), w.make_ref(pp));
+    w.render_opts.set_control_groups(&[rt, rp], &[3, 0]);
+    assert_eq!(w.render_opts.control_group(rt), Some(3));
+    assert_eq!(w.render_opts.control_group(rp), Some(0));
+    assert_eq!(w.render_opts.control_group(rr), None);
+
+    // OpenRA's group decoration RequiresSelection: none while unselected.
+    assert!(group_rects(&render(&w, &[]).1).0.is_empty());
+    // Selected: one number per grouped actor, at its box's top left corner.
+    let (_, r) = render(&w, &[rt, rr, rp]);
+    let (plates, glyph) = group_rects(&r);
+    assert_eq!(plates.len(), 2, "the tank and the power plant, not the ungrouped rifleman");
+    for (i, g) in [(tank, 3usize), (pp, 0)] {
+        let (x, y, bw, bh) = w.selection_box(i, 1.0);
+        let (l, t) = (x - bw / 2.0, y - bh / 2.0);
+        let p = *plates.iter().find(|p| p[0] == l + GROUP_INSET.0 && p[1] == t + GROUP_INSET.1).expect("plate at the corner");
+        let mine: Vec<[f32; 4]> =
+            glyph.iter().copied().filter(|q| q[0] > p[0] && q[0] < p[0] + p[2] && q[1] > p[1] && q[1] < p[1] + p[3]).collect();
+        assert_eq!(lit_pixels(&mine, p[0], p[1]), GROUP_GLYPHS[g]);
+        // Below the health bar, inside the box.
+        assert!(p[1] > bar_top(t) + BAR_HEIGHT && p[0] + p[2] <= l + bw && p[1] + p[3] <= t + bh);
+    }
+    // Moving to another group, and an actor listed twice keeps its last group.
+    w.render_opts.set_control_groups(&[rt, rt, rr, NONE], &[3, 7, 12, 1]);
+    assert_eq!(w.render_opts.control_groups, vec![(rt, 7)], "group 12 and NONE are dropped");
+    // A destroyed actor's number goes with it, also when its slot is reused.
+    w.render_opts.set_control_groups(&[rt], &[5]);
+    w.kill(tank);
+    let again = unit(&mut w, "2TNK", 0, 20, 20);
+    let (_, r) = render(&w, &[rt, w.make_ref(again)]);
+    assert!(group_rects(&r).0.is_empty(), "the stale ref matches no live actor");
+}
+
+#[test]
+fn control_groups_are_ui_state_outside_the_state_hash() {
+    let mut w = world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    w.rebuild_hash();
+    let r = w.make_ref(tank);
+    let mut g = crate::Game::wrap(w);
+    let before = g.state_hash();
+    g.set_control_groups(vec![r], vec![1]);
+    g.set_selection(vec![r]);
+    g.build_render(0, 1.0, 0.0, 0.0, 64.0 * 24.0, 64.0 * 24.0);
+    assert_eq!(g.state_hash(), before);
+    assert_eq!(g.world.render_opts.control_group(r), Some(1));
+}
+
+/// Every structure that produces units, by type id.
+fn factory_types(w: &World) -> Vec<u16> {
+    (0..w.rules.actors.len())
+        .filter(|&t| w.rules.actors[t].building.as_ref().is_some_and(|b| b.produces.iter().any(|q| !q.is_structure())))
+        .map(|t| t as u16)
+        .collect()
+}
+
+#[test]
+fn rally_points_show_a_line_from_the_nearest_exit_while_the_factory_is_selected() {
+    let mut w = world();
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let types = factory_types(&w);
+    assert!(types.len() >= 5, "barracks, kennel, war factory, helipad, airfield, yards: {}", types.len());
+    let lines = |w: &World, player: u8, selected: &[u32]| {
+        let mut out = Vec::new();
+        w.build_rally_lines(player, selected, &mut out);
+        out
+    };
+    for &t in &types {
+        // Each factory on the first free spot, its rally point to the south east.
+        let (b, cx, cy) = (0..64 * 64)
+            .map(|k| (4 + (k % 50), 4 + (k / 50)))
+            .find_map(|(cx, cy)| w.spawn_building(t, 0, cx, cy).map(|b| (b, cx, cy)))
+            .unwrap_or_else(|| panic!("room for {}", w.rules.actors[t as usize].id));
+        w.update_vision();
+        let rally = (cell_center(cx + 7), cell_center(cy + 8));
+        w.actors[b].rally = Some(rally);
+        let r = w.make_ref(b);
+        let name = &w.rules.actors[t as usize].id;
+
+        assert!(lines(&w, 0, &[]).is_empty(), "{name}: nothing while not selected");
+        assert!(!render(&w, &[]).0.chunks(SPRITE_FLOATS).any(|s| s[3] == ids.rally), "{name}: no flag while not selected");
+
+        let l = lines(&w, 0, &[r]);
+        assert_eq!(l.len(), crate::paths::LINE_FLOATS, "{name}: one segment");
+        let info = w.rules.actors[t as usize].building.as_ref().unwrap();
+        let from = info
+            .exits
+            .iter()
+            .map(|&(ex, ey)| (cell_center(cx + ex), cell_center(cy + ey)))
+            .min_by_key(|&(x, y)| crate::math::dist_sq(x, y, rally.0, rally.1))
+            .unwrap_or((w.actors[b].x, w.actors[b].y));
+        assert_eq!((l[0], l[1]), (crate::render::px(from.0), crate::render::px(from.1)), "{name}: from the exit nearest the rally point");
+        assert_eq!((l[2], l[3]), (crate::render::px(rally.0), crate::render::px(rally.1)), "{name}: to the rally point");
+        assert_eq!(l[4..8], team_color(0, 1.0, 1.0), "{name}: in the owner's colour");
+
+        // The flag at the point and a marker at both ends, in the owner's colour.
+        let (sprites, rects_buf) = render(&w, &[r]);
+        let flag = sprites.chunks(SPRITE_FLOATS).find(|s| s[3] == ids.rally).expect("the rally flag");
+        assert_eq!((flag[0], flag[1], flag[4]), (l[2], l[3], 0.0));
+        let markers: Vec<&[f32]> =
+            rects(&rects_buf).into_iter().filter(|q| q[2] == 2.0 * RALLY_MARKER && q[3] == 2.0 * RALLY_MARKER && q[4] == -1.0).collect();
+        for (x, y) in [(l[0], l[1]), (l[2], l[3])] {
+            assert!(markers.iter().any(|q| q[0] + RALLY_MARKER == x && q[1] + RALLY_MARKER == y), "{name}: marker at ({x}, {y})");
+        }
+        // The enemy, also with it selected, sees none of it.
+        assert!(lines(&w, 1, &[r]).is_empty(), "{name}: hidden from the enemy");
+    }
+    // Without a rally point there is nothing to draw.
+    let t = types[0];
+    let b = w.actors.iter().position(|a| a.alive && a.ty == t).unwrap();
+    w.actors[b].rally = None;
+    assert!(lines(&w, 0, &[w.make_ref(b)]).is_empty());
+}
+
+#[test]
+fn rally_lines_reach_the_line_buffer_and_skip_spectators() {
+    let mut w = world();
+    let weap = w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).expect("room for a war factory");
+    w.update_vision();
+    w.actors[weap].rally = Some((cell_center(30), cell_center(30)));
+    let r = w.make_ref(weap);
+    let mut g = crate::Game::wrap(w);
+    g.set_selection(vec![r]);
+    assert_eq!(g.build_lines(0, 1.0, false), 1, "the rally line without unit paths");
+    assert_eq!(g.build_lines(0, 1.0, true), 1, "no unit routes to add");
+    assert_eq!(g.build_lines(1, 1.0, false), 0, "not the enemy's");
+    assert_eq!(g.build_lines(crate::observer::OBSERVER, 1.0, false), 0, "spectators have no player");
+    g.set_selection(vec![]);
+    assert_eq!(g.build_lines(0, 1.0, false), 0, "deselected: gone");
+}

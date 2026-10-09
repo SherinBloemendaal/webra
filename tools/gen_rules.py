@@ -192,6 +192,17 @@ def target_mask(v):
 UNKNOWN_TARGETS = set()
 
 
+def opportunity_fire(t):
+    """AttackTurreted fires at targets of opportunity while moving (OpportunityFire, default true)."""
+    return any(not isinstance(v, dict) or str(v.get('OpportunityFire', 'true')).lower() == 'true'
+               for v in trait(t, 'AttackTurreted').values())
+
+
+def target_types(t):
+    """Every target type of an actor's Targetable traits (any condition)."""
+    return {x for v in trait(t, 'Targetable').values() if isinstance(v, dict) for x in tokens(v.get('TargetTypes'))}
+
+
 def locomotor_info(name, locos):
     """Speeds per terrain class and the movement domain (ground, water or air)."""
     if name == AIR_LOCOMOTOR:
@@ -464,6 +475,9 @@ def main():
             'turret_turn_speed': int(first(t, 'Turreted').get('TurnSpeed', 512)) if has(t, 'Turreted') else None,
             'reload_override': int(t['AttackTesla']['ReloadDelay']) if 'AttackTesla' in t and isinstance(t['AttackTesla'], dict) and 'ReloadDelay' in t['AttackTesla'] else None,
             'requires_power': has(t, 'GrantConditionOnPowerState'),
+            # Targetable as Defense: auto-targeted under every stance (AutoTargetPriority@DEFAULT).
+            'defense': 'Defense' in target_types(t),
+            'opportunity_fire': opportunity_fire(t),
             # BaseBuilding (Construction Yard, MCV): what the base hotkey cycles through.
             'base_building': 'BaseBuilding' in t,
             'death_weapon': None,

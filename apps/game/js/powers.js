@@ -4,11 +4,31 @@
 // on the map (Input.startPowerTargeting): click the target, or drag from the
 // target to choose the direction aircraft fly in. Escape or right click cancels.
 // The support power hotkeys pick the n-th power (js/gamekeys.js; OpenRA has no default keys).
+// Each button has the shared tooltip (js/ui/tooltip.js, OpenRA's
+// SUPPORT_POWER_TOOLTIP): name, its key, the charge state and the description.
+
+import { boundKey } from './hotkeys.js';
+import { attachTooltip } from './ui/tooltip.js';
+
+/**
+ * Tooltip of a support power button.
+ * @param {{ name: string, description: string, ready: boolean, charging: boolean, remainingTicks: number }} p player_json power
+ * @param {string | null} hotkey
+ * @param {number} ticksPerSecond
+ */
+export function powerTip(p, hotkey, ticksPerSecond) {
+  let state;
+  if (p.ready) state = { text: 'Ready: click it, then the target.', tone: 'hint' };
+  else if (p.charging) state = { text: `Charging: ${clock(p.remainingTicks / ticksPerSecond)} left.`, tone: 'hint' };
+  else state = { text: 'Paused: not enough power.', tone: 'warn' };
+  return { title: p.name, hotkey, desc: p.description, notes: [state] };
+}
 
 export class PowerBar {
   /**
    * @param {HTMLElement} parent element the bar is placed in (the battlefield)
-   * @param {{ ticksPerSecond: number, onSelect(power): void, onTargetLost?(): void }} hooks
+   * @param {{ ticksPerSecond: number, onSelect(power): void, onTargetLost?(): void, hotkeys?: import('./hotkeys.js').HotkeyRegistry }} hooks
+   *   `hotkeys`: the registry, for the support power keys in the tooltips
    */
   constructor(parent, hooks) {
     this.hooks = hooks;
@@ -40,10 +60,11 @@ export class PowerBar {
       b.el.classList.toggle('paused', !p.ready && !p.charging);
       b.el.classList.toggle('targeting', this.targeting === p.key);
       b.el.disabled = !p.ready;
-      b.el.title = `${p.name}: ${p.description}${p.ready ? '' : ` (${b.time.textContent})`}`;
+      b.tip.refresh();
     });
     for (const [key, b] of this.buttons) {
       if (!seen.has(key)) {
+        b.tip.detach();
         b.el.remove();
         this.buttons.delete(key);
       }
@@ -93,7 +114,14 @@ export class PowerBar {
       const b = this.buttons.get(p.key);
       if (b?.power.ready) this.hooks.onSelect(b.power);
     });
-    return { el, fill, time, power: p };
+    const rec = { el, fill, time, power: p };
+    // The hotkey of the button's place in the bar (SupportPower01.., js/gamekeys.js).
+    const key = () => {
+      const index = [...this.root.children].indexOf(el);
+      return index >= 0 ? boundKey(this.hooks.hotkeys, `supportPower${String(index + 1).padStart(2, '0')}`) : null;
+    };
+    rec.tip = attachTooltip(el, () => powerTip(rec.power, key(), this.hooks.ticksPerSecond));
+    return rec;
   }
 }
 

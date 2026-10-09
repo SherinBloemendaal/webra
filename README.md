@@ -26,6 +26,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Game modes
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
+- [x] **Fair AI target choice** in free for alls: each AI attacks the nearest base (measured to the starting yard, so an expansion does not draw attacks), and among equally near ones first a player that recently hit its structures, then the one the fewest other AIs already attack, then the next base around the map in a direction the seed picks; strength no longer matters, so two AIs do not gang up on the weakest neighbour (often you, early on). An AI keeps its target until another is clearly better instead of switching every minute
 - [x] The AI uses the whole arsenal: helicopters and planes (away from heavy anti-air), naval yards and warships where water reaches the enemy, minefields, chrono tanks, MAD tanks and demolition trucks, radar jammers, and on Hard (Normal after 15 minutes) the Iron Curtain, Chronosphere and Atom Bomb, never where allies would be hit
 - [x] **Online multiplayer**: anyone can host a session, public (listed in the server browser) or private, optionally password protected; deterministic lockstep over WebSockets on Cloudflare Durable Objects, with desync detection
 - [x] **Accounts**: sign in with a password, a passkey or Discord (email verification and password reset links once email sending is enabled); online play under your username, settings synchronized across devices, sessions you can see and revoke, data export and account deletion. Admins and moderators approve sign-ups (closed or open beta), ban accounts and IP ranges, edit accounts and site settings, with an audit log ([accounts API](docs/accounts-api.md), [privacy notice](https://webra.sherin.dev/privacy.html))
@@ -56,6 +57,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
 - [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
+- [x] **Fair fights like OpenRA**: shots of one tick land together, so mirrored armies are not decided by which side the engine processes first; tanks and other turreted units fire at enemies they pass on a plain move (infantry and artillery do not); an attack follows its target to where it was last seen; Defend and Return Fire only take on defences among structures. Use attack-move (A + click) to make units fight their way; a one-time tip says so the first time a plain move passes enemies
 - [x] **Command bar** at the bottom left like OpenRA: attack move, force move (Alt + click), force attack and attack ground (Ctrl + click), guard (D), scatter (Ctrl + X), stop, deploy and queued waypoints (Shift + click), plus OpenRA's **fire stances** per unit (attack anything, defend, return fire, hold fire; Alt + A/S/D/F); idle units return fire, and the health of what your units attack or what is under the mouse is shown
 - [x] **Sidebar buttons and hotkeys like OpenRA's Red Alert**: beacon, sell, power down and repair modes in the top row with their own cursors; repairing structures (with allies, at OpenRA's rates), switching structures off to free power, beacons with radar pings; every OpenRA Red Alert hotkey (production slots F1..F12, cycling bases, harvesters and facilities, jump to the last radar event, status bars, mute, screenshot, quick save, interface hiding, music, team chat, observer statistics), rebindable
 - [x] OpenRA style overlays: selection corner brackets in the owner's colour, thin segmented health bars (green, yellow, red) for the selection, what it attacks and the unit under the mouse, optionally for all damaged or all units (Settings), rank chevrons next to the bar
@@ -230,6 +232,9 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Run the simulation tests | `cargo test -p webra-sim --release` |
 | Headless AI vs AI match (seed 7) | `cargo run -p webra-sim --release --example ai_vs_ai -- 7` |
 | Fairness of generated maps (4-player FFA, 48 seeds) | `cargo run -p webra-sim --release --example fairness_n -- 0000 48` |
+| Map fairness numbers per base (rush distance, ore nearby, harbours), e.g. 8 players on one seed | `cargo run -p webra-sim --release --example map_stats -- 8 1706698519, 96` |
+| Who the AIs gang up on: 8-player FFAs with one passive slot, 6 seeds x 8 slots | `cargo run -p webra-sim --release --example target_sweep` |
+| Equal mirrored armies under different orders (tick shift with `PRE_STEPS`) | `cargo run -p webra-sim --release --example mirror_fight -- am_vs_am 25` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
 | Render data cost per frame: simulation in a worker or not, CPU or GPU instance path, 60 and 144 fps (after `npm run build:wasm`) | `node tools/sim-bench.mjs 20000` |
 | Make an existing account an admin (local wrangler dev or production) | `node tools/promote-admin.mjs <username> --local` |
@@ -250,7 +255,7 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Double click | Select all units of that type on screen |
 | Ctrl + double click | Select all units of that type on the map |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
-| Factory selected + left click on the ground | Set its rally point |
+| Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |
 | Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Radar: left click or drag, right click | Move the camera there; order the selected units there |
 | Mouse wheel | Zoom |
@@ -309,7 +314,7 @@ Camera, control groups, chat, music and spectators:
 | Alt + Shift + Q, Alt + Shift + W, Ctrl + E, Ctrl + R | Record camera bookmark 1..4 (OpenRA: Ctrl + Q/W/E/R) |
 | Shift + = | Hide the interface (again: show it); Alt + Shift + = also hides the cursor |
 | 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
-| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time) |
+| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time; selected units and structures show their group number in the top left corner of their selection box, like OpenRA) |
 | Ctrl + Shift + 1..9, 0 | Add the selection to a control group |
 | Shift + 1..9, 0 | Add a control group to the selection |
 | Alt + 1..9, 0 | Jump to a control group |
@@ -320,6 +325,8 @@ Camera, control groups, chat, music and spectators:
 | F9 / F10 | Replays: slow / regular speed (fast and maximum from the replay bar) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
+
+Every icon button (the command bar, the sidebar's buttons, tabs and cameos, the support powers, the HUD buttons) has a Red Alert style tooltip with its current key: hover it a moment, focus it with the keyboard, or long press it on a touch screen. The cameos show OpenRA's production tooltip: cost, build time, power, what is still missing and the description.
 
 ### Touch (phones and tablets)
 

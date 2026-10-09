@@ -33,7 +33,7 @@ import { AudioSystem } from './audio/index.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { mountMusicPanel } from './audio/musicplayer.js';
 import { CURSORS } from './cursors.js';
-import { hotkeys } from './hotkeys.js';
+import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
@@ -41,11 +41,14 @@ import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
+import { AttackMoveTip, TipView } from './hints.js';
 import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { attachHudTooltips } from './hudtips.js';
+import { hideTooltip } from './ui/tooltip.js';
 import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
@@ -792,6 +795,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let powerBar = null;
   let commandBar = null;
   let touch = null;
+  // One-time attack-move tip (js/hints.js); spectators give no orders.
+  let attackMoveTip = null;
   const placementEnded = () => {
     sidebar?.setPlacing(null);
     layout.setPlacing(false);
@@ -837,6 +842,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
     cancelCommand: () => commandBar?.cancel() ?? false,
     queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
+    onPlainMove: (units, at) => {
+      attackMoveTip?.plainMove(units, at).catch((err) => console.warn('attack-move tip:', err));
+    },
     onPlaced: placementEnded,
     onCancelPlace: placementEnded,
     onMode: (mode) => sidebar?.setMode(mode),
@@ -881,12 +889,26 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
   // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
   notices = new NotificationView($('field'));
+  if (!viewer) {
+    const tipView = new TipView($('field'));
+    attackMoveTip = new AttackMoveTip({
+      registry: defaultRegistry(),
+      ask: input.ask,
+      player,
+      keyLabel: () => {
+        const key = hotkeys.bindingsFor('attackMove')[0];
+        return key ? formatCombo(key) : null;
+      },
+      show: (text) => tipView.show(text),
+    });
+  }
   audio?.onAnnounce((key) => notices.announce(key));
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
     onSelect: (power) => input.startPowerTargeting(power),
     onTargetLost: () => input.cancelPower(),
+    hotkeys,
   });
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
   commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
@@ -1048,9 +1070,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     mouseCapture: { available: () => !!mouseCapture },
     onChange: (open, isPaused) => {
       input.setSuspended(open);
-      // The menu needs the OS cursor (sliders, lists): the mouse is let go.
-      if (open) mouseCapture?.setBlocked(true);
-      if (open) touch.reset();
+      if (open) {
+        // The menu needs the OS cursor (sliders, lists): the mouse is let go.
+        mouseCapture?.setBlocked(true);
+        touch.reset();
+        // A tooltip of the HUD would stay over the menu.
+        hideTooltip();
+      }
       menuPaused = isPaused;
       updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
@@ -1072,6 +1098,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A click on Menu opens the menu, which lets go of the mouse: it does not capture it first.
   $('menu-button').dataset.noCapture = '';
   $('menu-button').addEventListener('click', () => menu.toggle());
+  // Tooltips of the HUD buttons, with their current keys (js/hudtips.js); the page reloads to leave the game.
+  attachHudTooltips({
+    hotkeys,
+    menuButton: $('menu-button'),
+    debugButton: debug.button,
+    cheats: debug.cheats,
+    toggle: $('sidebar-toggle'),
+    isMenuOpen: () => menu.isOpen,
+    isCollapsed: () => layout.collapsed,
+  });
   // OpenRA DisableUserInterface / DisableAllUserInterface: only the battlefield
   // (and without the cursor), pressed again: everything back.
   let interfaceHidden = false;

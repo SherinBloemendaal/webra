@@ -241,11 +241,23 @@ mirrored left to right too, and every base gets the same surroundings,
 shifted and never rotated (a clearing with its ore fields south of the yard,
 walls of three rows north and south, open sides): 3 and 4 players in two
 rows (the bottom half repeats the top half; with four players the water is
-also mirrored top to bottom), 5 to 8 on a ring. On the water styles the walls
-are harbour moats; the moat nearer the hub is dug through to it, nearly
-straight, and the other one becomes rock, so every base has exactly one
-harbour on the network and every harbour is about as far from the hub as its
-base is. Ground routes that would be cut by water get fords. Their spawns are
+also mirrored top to bottom), 5 to 8 on a ring. Rings of six and eight are
+mirrored top to bottom as well: a base below the middle sits on row
+`height - y` of its partner above, and the terrain, the water, the harbour
+channels and the roads over water are mirrored with them, so two neighbours
+below are never closer by ground than their mirror images above (on the
+8-player lakes map of seed 1706698519 one pair used to be 25 steps apart and
+every other pair 37). On the water styles the walls are harbour moats; the
+moat with the cheapest channel to the hub (the one facing the hub on ties) is
+dug through to it, nearly straight, and the other one becomes rock, so every
+base has exactly one harbour on the network and every harbour is about as far
+from the hub as its base is; a base below the middle gets the mirror image of
+its partner's channel and moat, a base on the middle row its own channel
+mirrored too. Ground routes that would be cut by water get fords. Last, every
+base of a 3 to 8 player map gets as many ore cells within 14 cells of its yard
+(`mapgen::metrics::REACH`) as the richest one: ore grows next to existing
+fields on open ground that only that base (and its mirror image) is near and
+reaches by land, nearest to the yard first (`Map::equalise_ore`). Their spawns are
 listed by column, top first, so slots 0 and 1 (the left column of a 4-player
 map) against slots 2 and 3 is a mirror match. Gems lie only in contested
 fields, as the dense middle of an ore field: on 2-player maps in the two
@@ -260,7 +272,13 @@ every style and player count is mirrored, ground connected and has no
 resources on water; two-player bases get identical numbers; on the water
 styles every base has a naval yard site on the network, and for 3 to 8
 players the water distance from the hub to each harbour stays within 1.5
-times the nearest plus 8 cells.
+times the nearest plus 8 cells. For 3 to 8 players the ore cells within
+`REACH` differ by at most 5 % between bases, and on layouts mirrored top to
+bottom a base and its mirror image are within 10 % (or 4 steps) as far from
+their nearest neighbour by ground, for all but one mirrored pair in fifty
+(pockets face south and are not mirrored, so a channel or road next to one
+can still differ). `map_stats` prints these numbers per seed (`seeds` takes a
+count or a comma separated list).
 
 ### Biomes and weather (`engine/src/weather.rs`)
 
@@ -570,6 +588,10 @@ queue, structures included (no extra order types):
   `start_production` and `place` are refused for such items.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`.
+- `player_json().buildable[].buildTicks` is the time the item takes with the
+  player's current factories (BuildTimeSpeedReduction), before the low power
+  slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
+  sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
 
 ## 5. Domains for units
 
@@ -587,6 +609,76 @@ it can unload now and 2 when no free cell is next to it. `Game.actor_json`
 reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
 transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
 out of the world: not pickable, not box-selectable, dropped from the selection.
+
+### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
+
+Close to OpenRA, and the same for every player whatever its slot:
+
+- **Simultaneous shots.** Hitscan weapons and Tesla bolts land when fired,
+  but their damage applies after every actor has acted in that tick (with
+  the delayed warheads, in `tick_projectiles`), and range checks, aiming and
+  chasing read where targets stood when the tick began (`Actor.px`, `py`).
+  So the actor processed first in a tick never kills its target before the
+  target fires back.
+- **Scan delays.** An actor that picks its own targets (idle under Defend
+  and AttackAnything, on attack-move, guarding, or firing on the move) scans
+  after a random 3 to 7 ticks from the shared game random, like OpenRA's
+  `AutoTarget` (MinimumScanTimeInterval 3, MaximumScanTimeInterval 8); a new
+  unit's first scan comes after 1 to 7. Before, a fixed 8 ticks per actor
+  slot decided mirrored fights by which side's scan came first.
+- **Priorities.** Under AttackAnything auto-targeting takes structures;
+  under Defend and ReturnFire (also on attack-move, as in OpenRA without
+  assault-move) only defences (`defense` in rules.json: Targetable `Defense`,
+  OpenRA `^Defense`) among them, never other structures
+  (`AutoTargetPriority@DEFAULT`). Units always come first, walls never.
+- **Opportunity fire.** Turreted units (`opportunity_fire` in rules.json:
+  OpenRA `AttackTurreted` with `OpportunityFire`: tanks, Ranger, Flak Truck,
+  Tesla Tank, Phase Transport, turreted ships) on a plain move shoot at
+  enemies in range under Defend or AttackAnything without leaving the move:
+  the turret aims, the hull drives on. Infantry, artillery, V2 and the APC
+  (`AttackFrontal`) hold their fire on a plain move.
+- **Lost targets.** An attack whose target goes out of sight (or cloaks)
+  keeps the target and heads for where it was last seen (`Actor.target_seen`,
+  OpenRA's last visible target); seen again, it is attacked again; within
+  weapon range of that spot without seeing it, the attack ends (attack-move
+  resumes its way). Attacks that may not move (Defend, ReturnFire) end at
+  once. An order to attack an actor the owner does not see has no spot to
+  head for.
+- After a clicked attack target dies, units go idle and only take on enemies
+  that come into weapon range (OpenRA AutoTarget). The client's one-time tip
+  points players at attack-move (`move_hint` above).
+
+`examples/mirror_fight.rs` plays equal mirrored armies under different order
+styles: `am_vs_am` (6 riflemen and 4 Medium Tanks a side) over tick shifts 0
+to 3 with 25 seeds each now ends 48 against 52 wins, where every shift used
+to be decided 25 of 25 by one side (75 against 25).
+
+### Skirmish AI target choice (`engine/src/ai.rs`)
+
+In free for alls each AI attacks one enemy player at a time. Candidates are
+the live enemies whose base is within 8 cells of the nearest one, measured to
+the starting yard while the player has structures (an expansion does not
+bring a base nearer), else to its nearest unit. They are ranked by:
+
+1. a grudge: the player damaged one of this AI's structures in the last two
+   minutes;
+2. fewest other AIs already attacking it (AIs on the same team excepted:
+   teammates attack their leader's target on purpose);
+3. a seeded tie break: the next base around the map centre in a direction
+   picked by the game seed (on a ring each AI then takes a different
+   neighbour), then a seeded hash;
+4. strength (armed units and defences by cost), weakest first; it only
+   decides exact ties.
+
+Every minute the AI reconsiders, but keeps its current target unless the
+best candidate is clearly better (a grudge where the current one has none,
+or fewer attackers). `examples/target_sweep.rs` measures the result: 8-player
+games (6 seeds, each slot once a passive Easy AI that never attacks, like a
+human who turtles, 20 minutes) count how often a player in the game is the
+target of two or more AIs. While all eight are in, the passive slot now has
+two attackers in 0.8 % of samples against 7.8 % for the others (was 14 % and
+22 %); over whole games 20 % against 10 % (was 30 % and 21 %): late in a game
+the turtling slot is often the last near enemy of the AIs left.
 
 ### Veterancy and prone infantry (`engine/src/veterancy.rs`)
 
@@ -717,8 +809,12 @@ on an actor is `attack`, which may target own and allied actors. Wasm:
 `order_attack_ground`, `order_guard`, `order_scatter`, `order_waypoint`,
 `set_stance` (false for an unknown name), `command_state(player, ids)` (JSON
 `{ units, armed, attackGround, guard, scatter, queued, stances: { name: count } }`),
-`can_guard`, `can_attack_ground`, `are_allies` and `set_hover(id)` (that
-actor and the targets of the selection get health bars). Target class 256 is
+`can_guard`, `can_attack_ground`, `are_allies`, `move_hint(player, ids, x, y)`
+(true when a plain move of the armed units among `ids` to (x, y) passes within
+6 cells of a visible enemy unit or armed structure: the client then shows its
+one-time attack-move tip, `game.attackMoveTipSeen` in the settings document)
+and `set_hover(id)` (that actor and the targets of the selection get health
+bars). Target class 256 is
 `ground` (terrain for force-fire; no actor has it). Return fire uses the shooter that every shot
 carries for veterancy (`Shot.source`), so shells in flight count too.
 
@@ -893,7 +989,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
@@ -1083,14 +1179,14 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | Methods | Used by | Across the boundary |
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
-| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_paths`, `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
-| `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
+| `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).

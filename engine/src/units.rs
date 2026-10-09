@@ -146,21 +146,30 @@ impl World {
     }
 
     fn tick_move(&mut self, i: usize) {
-        if self.actors[i].attack_move && self.try_auto_target(i) {
-            return;
+        if self.actors[i].attack_move {
+            if self.try_auto_target(i) {
+                self.actors[i].opportunity = NONE;
+                return;
+            }
+        } else {
+            // Turrets shoot at what they pass (combat.rs); the move goes on.
+            self.opportunity_fire(i);
         }
         if !self.keep_goal_reachable(i) {
+            self.actors[i].opportunity = NONE;
             return;
         }
         let goal = self.actors[i].goal;
         if goal == NONE {
             self.actors[i].activity = Activity::Idle;
+            self.actors[i].opportunity = NONE;
             return;
         }
         let r = self.arrive_radius(i);
         if self.goal_reached(i, goal, r, true) {
             self.actors[i].activity = Activity::Idle;
             self.actors[i].attack_move = false;
+            self.actors[i].opportunity = NONE;
             return;
         }
         self.move_toward(i, goal);
@@ -402,19 +411,22 @@ impl World {
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
         let a = &mut self.actors[i];
         let has_turret = turret_speed.is_some();
+        // The turret follows the hull unless it aims at an attack target or
+        // at a target of opportunity fire.
+        let turret_free = a.opportunity == NONE || a.activity != Activity::Move;
         if unit.turn_in_place {
             a.facing = desired;
         } else {
             a.facing = turn_toward(a.facing, desired, turn_speed);
             // On snow the vehicle keeps sliding while it turns (coast in tick_vehicle_weather).
             if angle_diff(a.facing, desired).abs() > MOVE_WHILE_TURNING {
-                if has_turret && a.target == NONE {
+                if has_turret && a.target == NONE && turret_free {
                     a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
                 }
                 return;
             }
         }
-        if has_turret && (a.target == NONE || a.activity != Activity::Attack) {
+        if has_turret && (a.target == NONE || a.activity != Activity::Attack) && turret_free {
             a.turret = turn_toward(a.turret, a.facing, turret_speed.unwrap());
         }
         // Momentum: speed builds up and drops off gradually.

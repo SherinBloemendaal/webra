@@ -2,13 +2,18 @@
 // command buttons, the radar slot, money and game clock, then the power
 // meter, a column of production tabs and the build grid of cameos, and the
 // selection panel. The DOM is built once; update() only patches text, classes
-// and CSS variables so it is cheap to call ~10x per second.
+// and CSS variables so it is cheap to call ~10x per second. Every button has
+// the shared tooltip (js/ui/tooltip.js): the top row and the tabs OpenRA's
+// button tooltip, the cameos its production tooltip (production.js
+// `productionTip`), all with the current hotkey.
 
 import { heatText } from './weather-fx.js';
 import { TEAM_COLORS } from './renderer.js';
 import { cameoPainter } from './cameo.js';
 import { icon } from './ui-icons.js';
 import { formatCombo } from './hotkeys.js';
+import { attachTooltip } from './ui/tooltip.js';
+import { menuKeys } from './hudtips.js';
 import { CashCounter } from './cashcounter.js';
 import {
   BuildEta,
@@ -17,13 +22,15 @@ import {
   formatClock,
   isStructureQueue,
   placementLost,
-  SHIFT_COUNT,
+  productionTip,
   summarizeQueues,
 } from './production.js';
 
 // Must match QueueType in engine/src/rules.rs.
 const QUEUE_NAMES = ['Buildings', 'Defense', 'Infantry', 'Vehicles', 'Aircraft', 'Naval'];
 const QUEUE_ICONS = ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval'];
+// The tab hotkeys (js/gamekeys.js, OpenRA ProductionType*), in queue order.
+const QUEUE_ACTIONS = ['productionTabBuildings', 'productionTabDefense', 'productionTabInfantry', 'productionTabVehicles', 'productionTabAircraft', 'productionTabNaval'];
 const QUEUE_BUILDINGS = 0;
 
 // Cameo canvas size in CSS pixels (square, see js/cameo.js); the backing
@@ -52,11 +59,6 @@ function setVar(node, name, value) {
   if (node.style.getPropertyValue(name) !== s) node.style.setProperty(name, s);
 }
 
-function formatPower(power) {
-  if (power > 0) return `+${power}`;
-  return String(power);
-}
-
 export class Sidebar {
   /**
    * @param {HTMLElement} root the <aside id="sidebar"> element
@@ -77,6 +79,12 @@ export class Sidebar {
     this.ticksPerSecond = options.ticksPerSecond || 25;
     this.hotkeys = options.hotkeys ?? null;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
+    /** Production takes this percentage of its time while power is low (the tooltips' build time). */
+    this.lowPowerModifier = rules.lowPowerModifier;
+    /** player_json `buildable` entries by id (requirements, build time). */
+    this.buildable = new Map();
+    /** Every tooltip of the sidebar, refreshed with each update (the open one re-renders). */
+    this.tips = [];
 
     this.actors = new Map();
     for (const a of rules.actors) this.actors.set(a.id, a);
@@ -100,29 +108,33 @@ export class Sidebar {
 
   // ---- DOM construction (once) -----------------------------------------
 
-  /** Square icon button of the top row. */
-  toolButton(name, label, title, onClick) {
+  /** Square icon button of the top row, with a tooltip of `spec()`. */
+  toolButton(name, label, spec, onClick) {
     const b = el('button', `sb-tool sb-tool-${name}`);
     b.type = 'button';
     b.setAttribute('aria-label', label);
-    b.title = title;
     b.append(icon(name));
     b.addEventListener('click', onClick);
+    this.tip(b, spec);
     return b;
+  }
+
+  /** The shared tooltip on `target` (left of the sidebar where there is room). */
+  tip(target, spec) {
+    const t = attachTooltip(target, spec, { side: 'left' });
+    this.tips.push(t);
+    return t;
+  }
+
+  /** Re-render the open tooltip, if it is one of ours (the state or a key changed). */
+  refreshTips() {
+    for (const t of this.tips) t.refresh();
   }
 
   /** Current key of a hotkey action ("Z", "Ctrl+X" or "Cmd+X"), or null. */
   keyOf(action) {
     const combo = this.hotkeys?.bindingsFor(action)[0];
     return combo ? formatCombo(combo) : null;
-  }
-
-  /** Tooltips of the top row with the current keys (also after rebinding in the game menu). */
-  updateToolTitles() {
-    for (const t of this.tools) {
-      const key = t.action ? this.keyOf(t.action) : null;
-      t.btn.title = `${t.label}${key ? ` (${key})` : ''}: ${t.help}`;
-    }
   }
 
   build() {
@@ -135,11 +147,15 @@ export class Sidebar {
     // Command buttons, OpenRA's Red Alert top row: Beacon, Sell, Power down
     // and Repair modes (js/input.js), then WebRA's Deploy and the Options menu.
     const tools = el('div', 'sb-tools');
-    this.tools = [];
     this.modeButtons = new Map();
-    const tool = (name, label, action, help, onClick) => {
-      const btn = this.toolButton(name, label, help, onClick);
-      this.tools.push({ btn, label, action, help });
+    const tool = (name, label, action, help, onClick, hotkey = () => this.keyOf(action)) => {
+      const spec = () => ({
+        title: label,
+        hotkey: hotkey(),
+        desc: help,
+        notes: btn.disabled ? [{ text: 'Select an MCV, a Construction Yard or a loaded transport.', tone: 'hint' }] : [],
+      });
+      const btn = this.toolButton(name, label, spec, onClick);
       tools.append(btn);
       return btn;
     };
@@ -161,13 +177,13 @@ export class Sidebar {
       () => this.callbacks.onDeploy?.(),
     );
     if (this.callbacks.onMenu) {
-      this.menuBtn = tool('options', 'Options', null, 'Game menu: settings, controls, leave (Esc).', () => this.callbacks.onMenu());
+      this.menuBtn = tool('options', 'Options', null, 'Game menu: settings, controls, leave the game.', () => this.callbacks.onMenu(), () => menuKeys(this.hotkeys));
       this.menuBtn.classList.add('sb-tool-end');
     }
-    this.updateToolTitles();
+    // Tooltips and cameo keys follow rebinding in the game menu.
     this.hotkeys?.onChange(() => {
-      this.updateToolTitles();
       this.slotKeys = null;
+      this.refreshTips();
     });
 
     // Radar slot: the minimap draws in here. Empty, it shows "radar offline".
@@ -184,7 +200,7 @@ export class Sidebar {
     money.append(this.creditsEl);
     this.moneyEl = money;
     this.clockEl = el('time', 'sb-clock-text', formatClock(0));
-    this.clockEl.title = 'Game time';
+    this.tip(this.clockEl, () => ({ title: 'Game time', desc: 'Time played in this game.' }));
     status.append(money, this.clockEl);
     const silo = el('div', 'sb-silo');
     this.siloFill = el('div', 'sb-silo-fill');
@@ -192,6 +208,9 @@ export class Sidebar {
     this.oreEl = el('span', 'ui-sr-only', 'Ore 0 / 0');
     silo.append(this.oreEl);
     this.siloEl = silo;
+    const creditsTip = () => this.creditsTip();
+    this.tip(money, creditsTip);
+    this.tip(silo, creditsTip);
 
     // Power meter: a vertical bar of the power used against the produced
     // capacity (the marker), like Red Alert's.
@@ -208,6 +227,7 @@ export class Sidebar {
     this.powerMeterEl = meter;
     this.powerRootEl = power;
     power.append(meter, bolt);
+    this.tip(power, () => this.powerTip());
 
     // Production tabs: a column of icon buttons.
     const tabs = el('div', 'sb-tabs');
@@ -221,7 +241,6 @@ export class Sidebar {
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-controls', 'sb-grid');
       btn.setAttribute('aria-label', name);
-      btn.title = name;
       const badge = el('span', 'sb-tab-badge');
       badge.hidden = true;
       btn.append(icon(QUEUE_ICONS[q]), badge);
@@ -229,7 +248,9 @@ export class Sidebar {
         this.openTab(q);
       });
       tabs.append(btn);
-      return { btn, badge, name, state: '' };
+      const tab = { btn, badge, name, state: '', activity: 0, ready: false };
+      this.tip(btn, () => tabTip(tab, this.keyOf(QUEUE_ACTIONS[q])));
+      return tab;
     });
 
     // Card grid.
@@ -240,19 +261,6 @@ export class Sidebar {
 
     const main = el('div', 'sb-main');
     main.append(power, tabs, this.gridEl);
-
-    // Hover tooltip (fixed positioned next to the hovered card).
-    this.tipEl = el('div', 'sb-tip');
-    this.tipEl.setAttribute('role', 'tooltip');
-    this.tipEl.id = 'sb-tip';
-    this.tipEl.hidden = true;
-    this.tipName = el('div', 'sb-tip-name');
-    this.tipStats = el('div', 'sb-tip-stats');
-    this.tipDesc = el('div', 'sb-tip-desc');
-    this.tipWarn = el('div', 'sb-tip-warn', 'Unavailable: requirements not met');
-    this.tipHint = el('div', 'sb-tip-hint');
-    this.tipEl.append(this.tipName, this.tipStats, this.tipDesc, this.tipWarn, this.tipHint);
-    this.tipCard = null;
 
     // Selection panel.
     const sel = el('div', 'sb-sel');
@@ -267,7 +275,7 @@ export class Sidebar {
     this.selEl = sel;
     sel.classList.add('empty');
 
-    root.append(tools, this.radarEl, status, silo, main, sel, this.tipEl);
+    root.append(tools, this.radarEl, status, silo, main, sel);
     this.selectTab(this.activeTab);
   }
 
@@ -279,7 +287,6 @@ export class Sidebar {
     const btn = el('button', 'sb-card');
     btn.type = 'button';
     btn.dataset.id = id;
-    btn.setAttribute('aria-describedby', 'sb-tip');
 
     const canvas = el('canvas', 'sb-icon');
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -316,10 +323,8 @@ export class Sidebar {
         this.onCardCancel(id);
       }
     });
-    btn.addEventListener('mouseenter', () => this.showTip(id));
-    btn.addEventListener('mouseleave', () => this.hideTip(id));
-    btn.addEventListener('focus', () => this.showTip(id));
-    btn.addEventListener('blur', () => this.hideTip(id));
+    // OpenRA's production tooltip; a long press on touch screens also cancels one (js/touch.js).
+    this.tip(btn, () => this.cardTip(id));
 
     c = {
       id,
@@ -409,45 +414,33 @@ export class Sidebar {
     if (this.state) this.update(this.state);
   }
 
-  // ---- Tooltip ---------------------------------------------------------
+  // ---- Tooltips --------------------------------------------------------
 
-  showTip(id) {
-    const c = this.cards.get(id);
-    if (!c) return;
-    const a = c.actor;
-    this.tipCard = id;
-    setText(this.tipName, a.name);
-    let stats = `Cost $${a.cost}`;
-    if (a.kind === 'building' && a.power) stats += `   Power ${formatPower(a.power)}`;
-    setText(this.tipStats, stats);
-    setText(this.tipDesc, a.description || '');
-    this.tipDesc.hidden = !a.description;
-    this.updateTipWarning(c);
+  /** The production tooltip of the cameo of `id` (production.js `productionTip`). */
+  cardTip(id) {
+    const actor = this.actors.get(id);
+    if (!actor) return null;
     const slot = this.visibleIds?.indexOf(id) ?? -1;
-    const key = slot >= 0 ? this.keyOf(`production${String(slot + 1).padStart(2, '0')}`) : null;
-    const hint =
-      (isStructureQueue(a.queue)
-        ? `Left click: build / place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
-        : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`) + (key ? ` Hotkey: ${key}.` : '');
-    setText(this.tipHint, hint);
-    this.tipEl.hidden = false;
-
-    // Place the panel beside the card, on whichever side has room.
-    const r = c.btn.getBoundingClientRect();
-    const tw = this.tipEl.offsetWidth;
-    const th = this.tipEl.offsetHeight;
-    let x = r.left - tw - 8;
-    if (x < 4) x = r.right + 8;
-    let y = r.top;
-    y = Math.max(4, Math.min(y, window.innerHeight - th - 4));
-    this.tipEl.style.left = `${Math.round(x)}px`;
-    this.tipEl.style.top = `${Math.round(y)}px`;
+    const hotkey = slot >= 0 ? this.keyOf(`production${String(slot + 1).padStart(2, '0')}`) : null;
+    return productionTip(actor, this.buildable.get(id), this.state, { hotkey, ticksPerSecond: this.ticksPerSecond, lowPowerModifier: this.lowPowerModifier });
   }
 
-  hideTip(id) {
-    if (this.tipCard !== id) return;
-    this.tipCard = null;
-    this.tipEl.hidden = true;
+  /** Credits and the ore in the silos. */
+  creditsTip() {
+    const s = this.state;
+    const ore = Math.round(s?.resources ?? 0);
+    const storage = Math.round(s?.storage ?? 0);
+    const funds = Math.max(0, Math.round(s?.funds ?? (s?.cash ?? 0) + (s?.resources ?? 0)));
+    return { title: `Credits: $${funds}`, desc: `Ore in silos: ${ore} / ${storage}.${storage > 0 && ore >= storage ? ' The silos are full: build more to store more ore.' : ''}` };
+  }
+
+  /** Power produced and used (OpenRA's power bar tooltip). */
+  powerTip() {
+    const s = this.state;
+    const gen = Math.max(0, s?.powerGenerated ?? 0);
+    const used = Math.max(0, s?.powerUsed ?? 0);
+    const notes = s?.lowPower ? [{ text: 'Low power: production is slower and defences need power.', tone: 'warn' }] : [];
+    return { title: `Power: ${used} / ${gen}`, desc: `${used} used of ${gen} produced.`, notes };
   }
 
   // ---- Per-tick update ---------------------------------------------------
@@ -483,6 +476,8 @@ export class Sidebar {
       t.badge.hidden = n === 0;
       if (n) setText(t.badge, ready ? '!' : String(n));
       t.badge.classList.toggle('ready', ready);
+      t.activity = n;
+      t.ready = ready;
       let label = t.name;
       if (look === 'no-producer') label += ', no production building';
       if (ready) label += ', ready';
@@ -494,6 +489,7 @@ export class Sidebar {
     // order), then the other side's items, each with what is still missing.
     const enabled = new Map();
     const info = new Map();
+    this.buildable = new Map(state.buildable.map((b) => [b.id, b]));
     for (const b of state.buildable) {
       if (b.queue !== this.activeTab) continue;
       enabled.set(b.id, b.enabled);
@@ -520,8 +516,8 @@ export class Sidebar {
       this.updateRequirements(c, info.get(id), i);
       this.updateLabel(c);
     });
-    // Refresh an open tooltip in case availability changed.
-    if (this.tipCard) this.updateTipWarning(this.cards.get(this.tipCard));
+    // An open tooltip follows availability, cash and power.
+    this.refreshTips();
   }
 
   updateCard(c, enabled, s, tick = 0) {
@@ -600,20 +596,6 @@ export class Sidebar {
     }
   }
 
-  updateTipWarning(c) {
-    if (!c) return;
-    if (c.enabled !== false) {
-      this.tipWarn.hidden = true;
-      return;
-    }
-    let text;
-    if (c.exclusive) text = c.exclusive;
-    else if (c.requires && c.requires.length) text = `Requires: ${c.requires.join(', ')}`;
-    else text = 'Unavailable';
-    setText(this.tipWarn, text);
-    this.tipWarn.hidden = false;
-  }
-
   /**
    * The short key shown on the n-th card (0-based): its production slot
    * hotkey (OpenRA Production01..: F1..F12) when that is one plain key.
@@ -666,11 +648,7 @@ export class Sidebar {
     setText(this.oreEl, `Ore ${ore} / ${storage}`);
     setVar(this.siloFill, '--silo', (storage > 0 ? Math.min(1, ore / storage) : 0).toFixed(4));
     this.siloEl.classList.toggle('full', storage > 0 && ore >= storage);
-    const tip = `Credits ${target}. Ore in silos: ${ore} / ${storage}`;
-    if (this.moneyEl.title !== tip) {
-      this.moneyEl.title = tip;
-      this.siloEl.title = tip;
-    }
+    // The credits and silo tooltip (`creditsTip`) reads the state when it opens or refreshes.
     if (!this.credits) {
       // First update: show the real value immediately.
       this.credits = new CashCounter(target);
@@ -719,10 +697,7 @@ export class Sidebar {
     this.powerRootEl.classList.toggle('low', low);
     this.powerRootEl.classList.toggle('tight', tight);
     const text = `Power: ${used} used of ${gen} produced${low ? ' (low power)' : ''}`;
-    if (this.powerRootEl.title !== text) {
-      this.powerRootEl.title = text;
-      this.powerMeterEl.setAttribute('aria-valuetext', text);
-    }
+    if (this.powerMeterEl.getAttribute('aria-valuetext') !== text) this.powerMeterEl.setAttribute('aria-valuetext', text);
     this.powerMeterEl.setAttribute('aria-valuenow', String(used));
     this.powerMeterEl.setAttribute('aria-valuemax', String(Math.max(gen, used)));
   }
@@ -802,4 +777,19 @@ export function veterancyText(info, own) {
   }
   if (info?.prone) parts.push('Prone');
   return parts.join('  ');
+}
+
+/**
+ * Tooltip of a production tab (OpenRA ProductionTypeButton): its name and
+ * key, and what is going on in it.
+ * @param {{ name: string, state: string, activity: number, ready: boolean }} tab
+ * @param {string | null} hotkey
+ */
+export function tabTip(tab, hotkey) {
+  let desc;
+  if (tab.state === 'no-producer') desc = 'No production building for this tab yet.';
+  else if (tab.ready) desc = 'Something is ready.';
+  else if (tab.activity) desc = `${tab.activity} in production.`;
+  else desc = tab.state === 'locked' ? 'Nothing can be built here yet.' : 'Open this production tab.';
+  return { title: tab.name, hotkey, desc };
 }

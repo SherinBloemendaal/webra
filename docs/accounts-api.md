@@ -704,6 +704,7 @@ Serialized size at most 32 KiB.
     "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
+    "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
     "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
     "mouseCaptureEscMenu": false   // true: Esc releases the mouse and opens the menu at once

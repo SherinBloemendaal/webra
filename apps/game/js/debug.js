@@ -214,7 +214,6 @@ export class DebugMenu {
     this.ctx2d = this.overlay.getContext('2d');
     this.button = el('button', 'hud-button debug-button', this.cheats ? 'Debug (cheats on)' : 'Debug');
     this.button.type = 'button';
-    this.button.title = 'Debug menu (`)';
     this.button.classList.toggle('debug-button-cheats', this.cheats);
     this.button.classList.toggle('debug-button-online', !!ctx.online);
     this.button.addEventListener('click', () => this.toggle());

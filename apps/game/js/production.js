@@ -125,3 +125,46 @@ export function formatClock(seconds) {
   const ss = String(s % 60).padStart(2, '0');
   return `${h > 0 ? `${h}:` : ''}${String(m).padStart(2, '0')}:${ss}`;
 }
+
+/** Power with a sign for gains ("+100", "-40"). */
+export function formatPower(power) {
+  return power > 0 ? `+${power}` : String(power);
+}
+
+/**
+ * The production tooltip of a sidebar cameo (OpenRA ProductionTooltipLogic,
+ * mods/common/chrome/tooltips.yaml PRODUCTION_TOOLTIP): the name and its
+ * hotkey, what is still missing, cost, build time and power in a column, the
+ * description, and how the mouse works on it. Cost turns red when the player
+ * cannot afford it, the time red while low power slows production, the power
+ * red when building it would overload the grid, like OpenRA.
+ * @param {{ name: string, description?: string, cost: number, power?: number, kind?: string, queue: number }} actor rules_json actor
+ * @param {{ enabled?: boolean, requires?: string[], exclusive?: string | null, buildTicks?: number } | undefined} item player_json `buildable` entry
+ * @param {{ funds?: number, cash?: number, resources?: number, powerGenerated?: number, powerUsed?: number, lowPower?: boolean } | null} state player_json
+ * @param {{ hotkey?: string | null, ticksPerSecond?: number, lowPowerModifier?: number }} [o]
+ */
+export function productionTip(actor, item, state, { hotkey = null, ticksPerSecond = 25, lowPowerModifier = 100 } = {}) {
+  const stats = [];
+  const funds = state ? (state.funds ?? (state.cash ?? 0) + (state.resources ?? 0)) : Infinity;
+  stats.push({ kind: 'cost', label: 'cost', text: `$${actor.cost}`, bad: funds < actor.cost });
+  if (item && Number.isFinite(item.buildTicks)) {
+    const slow = !!state?.lowPower && lowPowerModifier > 100;
+    const ticks = slow ? (item.buildTicks * lowPowerModifier) / 100 : item.buildTicks;
+    stats.push({ kind: 'time', label: 'build time', text: formatClock(ticks / ticksPerSecond), bad: slow });
+  }
+  const power = actor.power ?? 0;
+  if (power !== 0) {
+    const spare = (state?.powerGenerated ?? 0) - (state?.powerUsed ?? 0);
+    stats.push({ kind: 'power', label: 'power', text: formatPower(power), bad: power < 0 && spare < -power });
+  }
+  let requires = '';
+  if (item && item.enabled === false) {
+    if (item.exclusive) requires = item.exclusive;
+    else if (item.requires?.length) requires = `Requires ${item.requires.join(', ')}`;
+    else requires = 'Unavailable';
+  }
+  const hint = isStructureQueue(actor.queue)
+    ? `Left click: build, then place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
+    : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
+  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes: [{ text: hint, tone: 'hint' }] };
+}

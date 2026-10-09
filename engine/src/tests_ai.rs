@@ -623,3 +623,44 @@ fn waiting_ore_trucks_find_ore_they_have_not_seen() {
         a.y / CELL
     );
 }
+
+// ---- Target choice in free for alls -------------------------------------------------
+
+/// Eight players on a ring (seed and map of the reported game), seven AIs and
+/// a human in slot 0 who stays the weakest (no army at all, while every AI
+/// gets tanks): the AIs pick their targets in their usual order, and at most
+/// one of the human's two neighbours goes for it, through the opening and
+/// across retargets. Before, every AI took the weakest of its two equally
+/// near neighbours, so both of the human's neighbours attacked it.
+#[test]
+fn weakest_player_on_a_ring_is_attacked_by_at_most_one_neighbour() {
+    for seed in [1706698519, 11, 22] {
+        let players: Vec<PlayerSetup> =
+            (0..8).map(|k| PlayerSetup { faction: "allies".into(), ai: (k != 0).then_some(AiDifficulty::Normal), team: 0 }).collect();
+        let mut w = World::with_options(seed, 96, &players, GameOptions::default());
+        for p in 1..8u8 {
+            let (sx, sy) = w.players[p as usize].start;
+            for k in 0..4 {
+                w.spawn_unit(ty(&w, "2TNK"), p, cell_center(sx - 1 + k), cell_center(sy + 6), 512);
+            }
+        }
+        // Slot 0's two neighbours: the bases nearest to its yard.
+        let yard = |p: usize| (w.players[p].start.0 + 1, w.players[p].start.1 + 2);
+        let d = |p: usize| dist(yard(0).0, yard(0).1, yard(p).0, yard(p).1);
+        let mut by_distance: Vec<usize> = (1..8).collect();
+        by_distance.sort_by_key(|&p| d(p));
+        let neighbours = [by_distance[0] as u8, by_distance[1] as u8];
+        let mut picked = false;
+        for t in 0..25 * 60 * 4 {
+            w.step();
+            if t % 25 != 0 {
+                continue;
+            }
+            let on_human: Vec<u8> = (1..8u8).filter(|&p| w.ai[p as usize].target_player == Some(0)).collect();
+            assert!(on_human.len() <= 1, "seed {seed}, tick {t}: AIs {on_human:?} all attack the weakest player");
+            assert!(on_human.iter().all(|p| neighbours.contains(p)), "seed {seed}: only a neighbour attacks slot 0, not {on_human:?}");
+            picked |= !on_human.is_empty();
+        }
+        assert!(picked || (1..8).all(|p| w.ai[p].target_player.is_some()), "seed {seed}: the AIs chose targets");
+    }
+}

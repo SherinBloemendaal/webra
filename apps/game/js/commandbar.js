@@ -14,7 +14,8 @@
 // and the fire stances (OpenRA keys Alt+A, Alt+S, Alt+D, Alt+F; cycling them
 // has no default key): Attack anything, Defend, Return fire, Hold fire. A
 // stance shared by part of the selection shows as mixed. Keys go through the
-// hotkey registry (js/hotkeys.js), so tooltips show the current bindings.
+// hotkey registry (js/hotkeys.js), so the tooltips (js/ui/tooltip.js, OpenRA's
+// button tooltip: name, key in yellow, description) show the current bindings.
 //
 // Buttons enable and disable with the selection (`Game.command_state`). The
 // armed modes (force move, force attack, guard) act on the next left click on
@@ -25,6 +26,7 @@
 import { CURSORS } from './cursors.js';
 import { formatCombo } from './hotkeys.js';
 import { actorInfo, askOf } from './sim/methods.js';
+import { attachTooltip } from './ui/tooltip.js';
 
 const NONE = 0xffffffff;
 const OUTLINE = '#101010';
@@ -210,6 +212,36 @@ export function commandClick(c) {
   return null;
 }
 
+// ---- Tooltips ------------------------------------------------------------------------
+
+/**
+ * Tooltip of an order button: its name, its key (or the modifier click that
+ * gives it, "Alt+click"), what it does, and why it is dark.
+ * @param {{ label: string, hint?: string, help: string }} c an entry of COMMANDS
+ * @param {string | null} key the bound key, formatted, or null
+ * @param {boolean} enabled
+ */
+export function commandTip(c, key, enabled = true) {
+  const notes = enabled ? [] : [{ text: 'Select units that can do this.', tone: 'hint' }];
+  return { title: c.label, hotkey: key ?? c.hint ?? null, desc: c.help, notes };
+}
+
+/**
+ * Tooltip of a fire stance button.
+ * @param {{ label: string, help: string }} s an entry of STANCES
+ * @param {string | null} key the stance's key
+ * @param {'all' | 'some' | 'none' | undefined} share how much of the selection has it
+ * @param {string | null} cycle the key that cycles the stances
+ * @param {boolean} enabled
+ */
+export function stanceTip(s, key, share, cycle, enabled = true) {
+  const notes = [];
+  if (share === 'some') notes.push({ text: 'Some of the selection has this stance.', tone: 'hint' });
+  if (cycle) notes.push({ text: `${cycle} cycles the stances.`, tone: 'hint' });
+  if (!enabled) notes.push({ text: 'Select units with weapons to set their stance.', tone: 'hint' });
+  return { title: s.label, hotkey: key, desc: s.help, notes };
+}
+
 // ---- The bar --------------------------------------------------------------------------
 
 export class CommandBar {
@@ -231,14 +263,23 @@ export class CommandBar {
     this.root.setAttribute('role', 'toolbar');
     this.root.setAttribute('aria-label', 'Unit commands');
     this.buttons = new Map();
+    this.tips = [];
     const orders = document.createElement('div');
     orders.className = 'cb-group';
     const stances = document.createElement('div');
     stances.className = 'cb-group cb-stances';
     stances.setAttribute('role', 'group');
     stances.setAttribute('aria-label', 'Fire stance');
-    for (const c of COMMANDS) orders.appendChild(this.button(c.id, ICONS[c.id], () => this.run(c.id)));
-    for (const s of STANCES) stances.appendChild(this.button(s.id, ICONS[s.id], () => this.setStance(s.id)));
+    for (const c of COMMANDS) {
+      const b = orders.appendChild(this.button(c.id, ICONS[c.id], () => this.run(c.id)));
+      this.tips.push(attachTooltip(b, () => commandTip(c, this.keyOf(c.action), this.state?.commands[c.id]?.enabled ?? false)));
+    }
+    for (const s of STANCES) {
+      const b = stances.appendChild(this.button(s.id, ICONS[s.id], () => this.setStance(s.id)));
+      this.tips.push(
+        attachTooltip(b, () => stanceTip(s, this.keyOf(s.action), this.state?.stances[s.id], this.keyOf('stanceCycle'), this.state?.stancesEnabled ?? false)),
+      );
+    }
     this.root.append(orders, stances);
     // Keep clicks and keys on the bar away from the map: a mousedown would
     // deselect, Space would also jump to the last radar event.
@@ -270,6 +311,7 @@ export class CommandBar {
   destroy() {
     this.offKeys.forEach((off) => off());
     this.offChange();
+    this.tips.forEach((t) => t.detach());
     this.root.remove();
   }
 
@@ -337,11 +379,8 @@ export class CommandBar {
       el.classList.toggle('active', st.active);
       if (c.id !== 'deploy' && c.id !== 'stop' && c.id !== 'scatter') el.setAttribute('aria-pressed', String(st.active));
       const key = this.keyOf(c.action) ?? c.hint;
-      const text = key ? `${c.label} (${key})` : c.label;
-      el.title = `${text}: ${c.help}`;
-      el.setAttribute('aria-label', text);
+      el.setAttribute('aria-label', key ? `${c.label} (${key})` : c.label);
     }
-    const cycle = this.keyOf('stanceCycle');
     for (const s of STANCES) {
       const el = this.buttons.get(s.id);
       const st = this.state.stances[s.id];
@@ -351,9 +390,10 @@ export class CommandBar {
       el.setAttribute('aria-pressed', st === 'all' ? 'true' : st === 'some' ? 'mixed' : 'false');
       const mixed = st === 'some' ? ' (some of the selection)' : '';
       const key = this.keyOf(s.action);
-      el.title = `${s.label}${key ? ` (${key})` : ''}${mixed}: ${s.help}${cycle ? ` ${cycle} cycles the stances.` : ''}`;
-      el.setAttribute('aria-label', `Stance: ${s.label}${mixed}`);
+      el.setAttribute('aria-label', `Stance: ${s.label}${key ? ` (${key})` : ''}${mixed}`);
     }
+    // An open tooltip follows the selection and rebinding.
+    this.tips.forEach((t) => t.refresh());
   }
 
   run(id) {

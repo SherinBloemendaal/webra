@@ -226,6 +226,11 @@ export class RemoteGame extends StaticFacts {
     this.link.post({ t: 'call', method: 'set_hover', args: [id] });
   }
 
+  /** Control groups for the numbers on selection boxes: `ids[k]` is in group `groups[k]`. */
+  set_control_groups(ids, groups) {
+    this.link.post({ t: 'call', method: 'set_control_groups', args: [Uint32Array.from(ids), Uint8Array.from(groups)] });
+  }
+
   /** The queries to ask with the next step. */
   collectQueries() {
     return this.cache.collect();

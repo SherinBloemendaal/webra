@@ -209,3 +209,50 @@ fn the_bases_reach_all_large_land_and_enough_ore() {
         }
     }
 }
+
+/// Three to eight players (map_stats numbers): every base has as many ore
+/// cells within `REACH` as the others (the generator grows ore at the poorer
+/// bases), and where the layout is symmetric top to bottom (four players in
+/// two rows, rings of six and eight) a base and its mirror image below are
+/// about as far from their nearest neighbour by ground (within 10 %), so no
+/// pair of bases is closer than its mirror image. Pockets face south and are
+/// not mirrored, so channels and roads near them can still differ a little:
+/// at most one mirrored pair in fifty may differ by more. Seed 1706698519 is
+/// the eight player lakes map whose bottom pair used to be uniquely close
+/// (25 steps, 37 for the others) and whose bases had 117 to 139 ore cells
+/// nearby.
+#[test]
+fn bases_get_equal_ore_and_no_pair_is_uniquely_close() {
+    let mut cases: Vec<(MapStyle, usize, i32, u64)> = vec![(MapStyle::Random, 8, 96, 1706698519)];
+    for style in MapStyle::CONCRETE {
+        for players in 3..=8 {
+            for &size in &sizes(players)[..2] {
+                for seed in 0..4 {
+                    cases.push((style, players, size, seed));
+                }
+            }
+        }
+    }
+    let (mut pairs, mut uneven) = (0, Vec::new());
+    for (style, players, size, seed) in cases {
+        let m = Map::generate_styled(size, size, seed, 12, players, style);
+        let s = measure(&m);
+        let what = format!("{style:?}, {players} players, size {size}, seed {seed}");
+        let (lo, hi) = s.spread(|b| Some(b.ore_cells)).unwrap();
+        assert!(20 * (hi - lo) <= hi, "{what}: ore cells near the bases {:?}", s.bases.iter().map(|b| b.ore_cells).collect::<Vec<_>>());
+        if !matches!(players, 4 | 6 | 8) {
+            continue;
+        }
+        let yards: Vec<(i32, i32)> = m.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
+        for (k, &(cx, cy)) in yards.iter().enumerate().filter(|(_, c)| c.1 < size - c.1) {
+            let below = yards.iter().position(|&y| y == (cx, size - cy)).unwrap_or_else(|| panic!("{what}: no mirror image of base {k}"));
+            let (a, b) = (s.bases[k].rush.unwrap(), s.bases[below].rush.unwrap());
+            pairs += 1;
+            if a.abs_diff(b) > 4.max(a.max(b) / 10) {
+                uneven.push(format!("{what}: base {k} is {a} steps from its nearest neighbour, its mirror image {below} {b}"));
+            }
+        }
+    }
+    assert!(!uneven.iter().any(|u| u.contains("1706698519")), "the reported map is uneven again:\n{}", uneven.join("\n"));
+    assert!(50 * uneven.len() <= pairs, "{} of {pairs} mirrored pairs differ:\n{}", uneven.len(), uneven.join("\n"));
+}

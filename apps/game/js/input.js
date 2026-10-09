@@ -87,7 +87,8 @@ export class Input {
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
     // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text) },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
-    // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) }
+    // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
+    // tips (js/hints.js): { onPlainMove(units, worldPoint) }
     this.hooks = hooks;
     this.hotkeys = hotkeys;
     this.settings = settings;
@@ -102,6 +103,8 @@ export class Input {
     this.selection = [];
     this.ownUnits = null;
     this.groups = new ControlGroups();
+    /** `groups.version` the engine last got (`syncGroups`). */
+    this.groupsSent = 0;
     this.bookmarks = new Map(); // slot -> { x, y, zoom } (view centre)
     this.edgeScroll = null; // { dx, dy, blocked } while the mouse scrolls the view
     this.suspended = false; // game menu open: no input, no scrolling
@@ -206,6 +209,9 @@ export class Input {
   }
 
   refreshSelection() {
+    // Grouped actors that died (or changed owner) leave their group, and their number goes.
+    this.groups.prune((list) => this.ownAlive(list));
+    this.syncGroups();
     const alive = Array.from(this.game.selection());
     if (alive.length !== this.selection.length) {
       this.selection = alive;
@@ -634,6 +640,8 @@ export class Input {
     if (intent.kind === 'order') {
       this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
       this.flashOrder(b, intent.action);
+      // A plain move: the attack-move tip may apply (js/hints.js).
+      if (intent.action === ACTION.MOVE) this.hooks.onPlainMove?.(intent.units, b);
     } else if (intent.kind === 'deploy') {
       this.game.deploy(this.player, Uint32Array.from([intent.id]));
     } else if (intent.kind === 'blocked') {
@@ -732,9 +740,21 @@ export class Input {
 
   // ---- Control groups (OpenRA ControlGroupsWidget, js/controlgroups.js) -------------
 
+  /**
+   * Hand the groups to the engine when they changed, for the numbers on the
+   * selection boxes (engine/src/overlays.rs). Local UI state, like the selection.
+   */
+  syncGroups() {
+    if (this.groups.version === this.groupsSent) return;
+    this.groupsSent = this.groups.version;
+    const { ids, groups } = this.groups.entries();
+    this.game.set_control_groups(ids, groups);
+  }
+
   /** Select group `key`; pressed twice quickly, also centre the camera on it. */
   groupSelect(key) {
     const { ids, center } = this.groups.recall(key, performance.now(), (list) => this.ownAlive(list));
+    this.syncGroups();
     this.setSelection(ids);
     if (center) this.centerOnUnits(ids);
   }
@@ -748,23 +768,27 @@ export class Input {
   groupCreate(key) {
     const ids = this.selectedOwn();
     if (ids.length) this.groups.assign(key, ids);
+    this.syncGroups();
   }
 
   /** Add the selection to group `key`. */
   groupAddTo(key) {
     const ids = this.selectedOwn();
     if (ids.length) this.groups.add(key, ids);
+    this.syncGroups();
   }
 
   /** Add group `key` to the selection. */
   groupCombine(key) {
     const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    this.syncGroups();
     if (ids.length) this.setSelection(this.selection.concat(ids));
   }
 
   /** Centre the camera on group `key` without selecting it. */
   groupJump(key) {
     const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    this.syncGroups();
     if (ids.length) this.centerOnUnits(ids);
   }
 
@@ -941,7 +965,10 @@ export class Input {
       reg(`controlGroupCombineWith${nn}`, `ControlGroupCombineWith${nn}`, () => this.groupCombine(key));
       reg(`controlGroupJumpTo${nn}`, `ControlGroupJumpTo${nn}`, () => this.groupJump(key));
     }
-    reg('removeFromControlGroup', 'RemoveFromControlGroup', () => this.groups.remove(this.selectedOwn()));
+    reg('removeFromControlGroup', 'RemoveFromControlGroup', () => {
+      this.groups.remove(this.selectedOwn());
+      this.syncGroups();
+    });
     return () => offs.forEach((off) => off());
   }
 

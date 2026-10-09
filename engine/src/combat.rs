@@ -11,7 +11,13 @@ use crate::sound_events::{SoundEventKind, DAMAGE_EVENT_QUIET_TICKS};
 use crate::veterancy::Shot;
 use crate::world::{cell_center, Activity, Effect, EffectKind, PendingImpact, Projectile, World, MAX_WEAPONS, NONE};
 
-const SCAN_INTERVAL: i32 = 8;
+/// Ticks between two auto-target scans of an actor: a fresh random number
+/// from MIN up to (not including) MAX after every scan, like OpenRA
+/// AutoTarget (MinimumScanTimeInterval 3, MaximumScanTimeInterval 8). With
+/// a fixed interval the side whose scans happen to come first would win
+/// every mirrored fight.
+pub(crate) const MIN_SCAN_TICKS: i32 = 3;
+pub(crate) const MAX_SCAN_TICKS: i32 = 8;
 
 /// What a weapon fires at: an actor, or a point on the ground (force-fire).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -56,10 +62,13 @@ impl World {
 
     /// Closest visible enemy that one of this actor's weapons can hit within
     /// range. Units are preferred over structures and walls are ignored, like
-    /// OpenRA's default auto-target priorities.
+    /// OpenRA's auto-target priorities: below AttackAnything (Defend and
+    /// ReturnFire, also while attack-moving) only defences count among the
+    /// structures (AutoTargetPriority@DEFAULT has Defense but not Structure).
     pub(crate) fn scan_for_target(&self, i: usize) -> Option<usize> {
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
+        let any_structure = a.stance == Stance::AttackAnything || !self.has_stance(i);
         let range = info.max_range(&self.rules);
         if range == 0 {
             return None;
@@ -89,7 +98,7 @@ impl World {
                     {
                         continue;
                     }
-                    let d = dist_sq(a.x, a.y, t.x, t.y);
+                    let d = dist_sq(a.x, a.y, t.px, t.py);
                     if d <= range_sq && best_unit.is_none_or(|(bd, bi)| d < bd || (d == bd && u < bi)) {
                         best_unit = Some((d, u));
                     }
@@ -98,13 +107,15 @@ impl World {
                 if b != NONE && best_unit.is_none() {
                     let b = b as usize;
                     let t = &self.actors[b];
+                    let tinfo = &self.rules.actors[t.ty as usize];
                     if t.alive
                         && self.are_enemies(a.owner, t.owner)
                         && !self.is_cloaked_from(b, a.owner)
-                        && !self.rules.actors[t.ty as usize].is_wall()
+                        && !tinfo.is_wall()
+                        && (any_structure || tinfo.defense)
                         && info.can_attack(&self.rules, Kind::Building)
                     {
-                        let d = self.hit_distance(b, a.x, a.y);
+                        let d = self.target_distance(b, a.x, a.y);
                         if d <= range && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi)) {
                             best_building = Some((d, b));
                         }
@@ -123,9 +134,28 @@ impl World {
 
     // ---- Fire targets -------------------------------------------------------------
 
+    /// Where actor `t` stood when this tick began. Units processed earlier in
+    /// a tick have moved already; range checks, aiming and chasing read this
+    /// instead, so every shooter of a tick sees the same picture whatever
+    /// order the units are processed in (mirrored fights stay mirrored).
+    pub(crate) fn tick_start_pos(&self, t: usize) -> (i32, i32) {
+        (self.actors[t].px, self.actors[t].py)
+    }
+
+    /// `hit_distance` from (x, y) to `t` where it stood when the tick began
+    /// (`tick_start_pos`). Structures and mines never move.
+    pub(crate) fn target_distance(&self, t: usize, x: i32, y: i32) -> i32 {
+        let a = &self.actors[t];
+        if matches!(a.kind, Kind::Building | Kind::Mine) {
+            return self.hit_distance(t, x, y);
+        }
+        let r = self.rules.actors[a.ty as usize].unit.as_ref().map_or(0, |u| u.radius);
+        (dist(x, y, a.px, a.py) - r / 2).max(0)
+    }
+
     pub(crate) fn fire_target_pos(&self, ft: FireTarget) -> (i32, i32) {
         match ft {
-            FireTarget::Actor(t) => (self.actors[t].x, self.actors[t].y),
+            FireTarget::Actor(t) => self.tick_start_pos(t),
             FireTarget::Ground(x, y) => (x, y),
         }
     }
@@ -140,12 +170,23 @@ impl World {
     /// Distance from (x, y) to the target's hit shape.
     pub(crate) fn fire_target_distance(&self, ft: FireTarget, x: i32, y: i32) -> i32 {
         match ft {
-            FireTarget::Actor(t) => self.hit_distance(t, x, y),
+            FireTarget::Actor(t) => self.target_distance(t, x, y),
             FireTarget::Ground(gx, gy) => dist(x, y, gx, gy),
         }
     }
 
     // ---- Automatic targeting (OpenRA AutoTarget) -----------------------------------
+
+    /// Count down to actor `i`'s next auto-target scan; true when it is due
+    /// (the next one is then `MIN_SCAN_TICKS` to `MAX_SCAN_TICKS` away).
+    fn scan_due(&mut self, i: usize) -> bool {
+        self.actors[i].scan_cooldown -= 1;
+        if self.actors[i].scan_cooldown > 0 {
+            return false;
+        }
+        self.actors[i].scan_cooldown = self.rng.range(MIN_SCAN_TICKS, MAX_SCAN_TICKS);
+        true
+    }
 
     /// Attack-move and guard scan: pick the closest enemy in range whatever the
     /// stance (OpenRA scans on attack-move regardless of it). Actors without
@@ -154,12 +195,9 @@ impl World {
         if !self.has_stance(i) {
             return false;
         }
-        let a = &mut self.actors[i];
-        a.scan_cooldown -= 1;
-        if a.scan_cooldown > 0 {
+        if !self.scan_due(i) {
             return false;
         }
-        a.scan_cooldown = SCAN_INTERVAL;
         if let Some(t) = self.scan_for_target(i) {
             self.engage(i, t, false);
             return true;
@@ -186,12 +224,9 @@ impl World {
         if stance < Stance::Defend {
             return false;
         }
-        let a = &mut self.actors[i];
-        a.scan_cooldown -= 1;
-        if a.scan_cooldown > 0 {
+        if !self.scan_due(i) {
             return false;
         }
-        a.scan_cooldown = SCAN_INTERVAL;
         if let Some(t) = self.scan_for_target(i) {
             self.engage(i, t, hold);
             return true;
@@ -212,7 +247,7 @@ impl World {
         }
         let range =
             info.weapons.iter().filter(|&&w| self.rules.weapons[w].can_target_class(tclass)).map(|&w| self.rules.weapons[w].range).max()?;
-        if hold && self.hit_distance(t, self.actors[i].x, self.actors[i].y) > range {
+        if hold && self.target_distance(t, self.actors[i].x, self.actors[i].y) > range {
             return None;
         }
         if self.actors[i].stance > Stance::ReturnFire {
@@ -226,8 +261,10 @@ impl World {
     /// Attack `t` on the actor's own initiative; `hold`: without moving.
     fn engage(&mut self, i: usize, t: usize, hold: bool) {
         let tref = self.make_ref(t);
+        let seen = self.tick_start_pos(t);
         let a = &mut self.actors[i];
         a.target = tref;
+        a.target_seen = Some(seen);
         a.forced = false;
         a.hold = hold;
         a.chase_cell = NONE;
@@ -250,7 +287,11 @@ impl World {
 
     pub(crate) fn tick_attack(&mut self, i: usize) {
         let Some(t) = self.live_target(i) else {
+            if self.chase_last_seen(i) {
+                return;
+            }
             self.actors[i].target = NONE;
+            self.actors[i].target_seen = None;
             if self.resume_guard(i) {
                 return;
             }
@@ -269,6 +310,7 @@ impl World {
             }
             return;
         };
+        self.actors[i].target_seen = Some(self.tick_start_pos(t));
         let info = &self.rules.actors[self.actors[i].ty as usize];
         let tclass = self.target_class(t);
         let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target_class(tclass)).collect();
@@ -280,7 +322,7 @@ impl World {
         let range = usable.iter().map(|&w| self.rules.weapons[w].range).max().unwrap();
         let min_range = usable.iter().map(|&w| self.rules.weapons[w].min_range).min().unwrap();
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let d = self.hit_distance(t, x, y);
+        let d = self.target_distance(t, x, y);
         if d <= range && d >= min_range {
             self.aim_and_fire(i, t);
             return;
@@ -293,7 +335,7 @@ impl World {
             a.activity = Activity::Idle;
             return;
         }
-        let (tx, ty) = (self.actors[t].x, self.actors[t].y);
+        let (tx, ty) = self.tick_start_pos(t);
         if d < min_range {
             // Artillery: back away until the target is outside minimum range.
             self.back_away_from(i, tx, ty);
@@ -309,6 +351,79 @@ impl World {
         }
     }
 
+    /// The target of `i` is alive but out of sight (or cloaked): head for
+    /// where it was last seen, like OpenRA's Attack activity with its last
+    /// visible target, and pick it up again once it shows. False when there
+    /// is nothing to look for: the target died, changed sides or sits in a
+    /// transport, the attack may not move (`hold`), nobody saw where it went,
+    /// or the unit got within weapon range of that spot without seeing it.
+    fn chase_last_seen(&mut self, i: usize) -> bool {
+        let a = &self.actors[i];
+        let (owner, forced) = (a.owner, a.forced);
+        let Some((lx, ly)) = a.target_seen.filter(|_| !a.hold) else { return false };
+        let Some(t) = self.resolve(a.target) else { return false };
+        if t == i
+            || !self.actors[t].in_world()
+            || self.untargetable_aircraft(t)
+            || !(forced || self.are_enemies(owner, self.actors[t].owner))
+        {
+            return false;
+        }
+        let tclass = self.target_class(t);
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        let Some(range) =
+            info.weapons.iter().filter(|&&w| self.rules.weapons[w].can_target_class(tclass)).map(|&w| self.rules.weapons[w].range).max()
+        else {
+            return false;
+        };
+        if dist(self.actors[i].x, self.actors[i].y, lx, ly) <= range {
+            return false;
+        }
+        // While attack-moving, an enemy in sight on the way comes first.
+        if !forced && self.actors[i].attack_move && self.try_auto_target(i) {
+            return true;
+        }
+        self.approach(i, lx, ly)
+    }
+
+    // ---- Opportunity fire (OpenRA AttackTurreted) -------------------------------
+
+    /// A turreted unit on a plain move (OpenRA AttackFollow OpportunityFire:
+    /// tanks, the Ranger, ships with turrets) shoots at enemies in range
+    /// without leaving its move: the turret aims, the hull drives on. It
+    /// scans like an idle unit under its stance (Defend and up), every few
+    /// ticks (`scan_due`), and keeps a target while it stays in range.
+    /// Units that aim with their body (infantry, artillery, V2) do not.
+    pub(crate) fn opportunity_fire(&mut self, i: usize) {
+        let info = &self.rules.actors[self.actors[i].ty as usize];
+        if !info.opportunity_fire || !self.has_stance(i) || self.actors[i].stance < Stance::Defend {
+            self.actors[i].opportunity = NONE;
+            return;
+        }
+        let range = info.max_range(&self.rules);
+        let (x, y, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+        let keep = self.resolve(self.actors[i].opportunity).filter(|&t| {
+            t != i
+                && self.actors[t].in_world()
+                && self.are_enemies(owner, self.actors[t].owner)
+                && self.targetable(t, owner)
+                && self.target_distance(t, x, y) <= range
+        });
+        let t = match keep {
+            Some(t) => Some(t),
+            None => {
+                self.actors[i].opportunity = NONE;
+                if !self.scan_due(i) {
+                    return;
+                }
+                self.scan_for_target(i)
+            }
+        };
+        let Some(t) = t else { return };
+        self.actors[i].opportunity = self.make_ref(t);
+        self.aim_and_fire(i, t);
+    }
+
     // ---- Structures -----------------------------------------------------------
 
     /// Defences: keep a target, aim the turret and fire. Unpowered ones idle.
@@ -318,7 +433,7 @@ impl World {
         }
         let info = &self.rules.actors[self.actors[i].ty as usize];
         let range = info.max_range(&self.rules);
-        let keep = self.live_target(i).filter(|&t| self.hit_distance(t, self.actors[i].x, self.actors[i].y) <= range);
+        let keep = self.live_target(i).filter(|&t| self.target_distance(t, self.actors[i].x, self.actors[i].y) <= range);
         let t = match keep {
             Some(t) => t,
             None => {
@@ -445,6 +560,8 @@ impl World {
         let shot = self.shot_of(i);
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
         let (mut tx, mut ty) = match ft {
+            // Units are aimed at where they stood when the tick began (`tick_start_pos`).
+            FireTarget::Actor(t) if !matches!(self.actors[t].kind, Kind::Building) => self.tick_start_pos(t),
             FireTarget::Actor(t) => self.aim_point(t, sx, sy),
             FireTarget::Ground(x, y) => (x, y),
         };
@@ -459,10 +576,12 @@ impl World {
             }
         }
         match wi.projectile {
-            ProjKind::Instant => self.impact_shot(w, tx, ty, owner, shot),
+            // Hitscan shots and Tesla bolts land at once, but their damage
+            // waits until every actor has acted this tick (see `land_shot`).
+            ProjKind::Instant => self.land_shot(w, tx, ty, owner, shot, true),
             ProjKind::Tesla => {
                 self.effects.push(Effect { x: sx, y: sy, tx, ty, kind: EffectKind::TeslaBolt, ttl: 6, max: 6 });
-                self.impact_shot(w, tx, ty, owner, shot);
+                self.land_shot(w, tx, ty, owner, shot, true);
             }
             ProjKind::Bullet | ProjKind::Missile => {
                 // Shots at the ground fly to the point; missiles home on actors only.
@@ -550,6 +669,15 @@ impl World {
     /// A weapon lands at a point: each warhead applies now or after its delay.
     /// `shot` credits kills to the shooter and carries its firepower.
     pub(crate) fn impact_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot) {
+        self.land_shot(w, x, y, owner, shot, false);
+    }
+
+    /// `impact_shot`; with `end_of_tick`, warheads without a delay apply
+    /// with the delayed ones in `tick_projectiles`, after every actor has
+    /// acted this tick. Shots fired in the same tick then resolve together:
+    /// the actor processed first does not kill its target before the target
+    /// fires back, so mirrored fights do not depend on processing order.
+    fn land_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot, end_of_tick: bool) {
         let max_damage = self.rules.weapons[w].max_damage();
         let (kind, ttl) = if max_damage >= 20000 {
             (EffectKind::NukeExplosion, 40)
@@ -565,7 +693,7 @@ impl World {
         self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
         for h in 0..self.rules.weapons[w].warheads.len() {
             let delay = self.rules.weapons[w].warheads[h].delay;
-            if delay > 0 {
+            if delay > 0 || end_of_tick {
                 self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
             } else {
                 self.apply_warhead(w, h, x, y, owner, shot);
@@ -679,6 +807,12 @@ impl World {
             self.sound.push(kind, ty, x, y, owner, 0);
         }
         self.note_damage(u, dealt);
+        // An AI remembers who hits its structures (ai.rs target choice).
+        if self.actors[u].kind == Kind::Building {
+            if let Some(by) = self.observer.source {
+                crate::ai::note_structure_damage(self, self.actors[u].owner, by);
+            }
+        }
         self.take_cover(u, types);
         if self.actors[u].hp <= 0 {
             self.award_kill(u, source);

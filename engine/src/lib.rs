@@ -52,6 +52,8 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_combat;
+#[cfg(test)]
 mod tests_commands;
 #[cfg(test)]
 mod tests_debug;
@@ -468,6 +470,8 @@ impl Game {
             "weapons": r.weapons.iter().map(|w| &w.name).collect::<Vec<_>>(),
             "factions": r.factions,
             "pxPerCell": PX_PER_CELL,
+            // Production takes this percentage of its time while power is low (OpenRA LowPowerModifier).
+            "lowPowerModifier": r.player.low_power_modifier,
             // Teams (0: none, equal non-zero teams are allies) and neutral owners:
             // the client's relationship colours and radar pings follow them.
             "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai, "team": p.team, "neutral": p.neutral})).collect::<Vec<_>>(),
@@ -615,6 +619,22 @@ impl Game {
         self.paths.len() / paths::LINE_FLOATS
     }
 
+    /// Every line the map shows this frame: the rally lines of the selected
+    /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
+    /// `paths` ("Show unit paths"), the routes `build_paths` draws. Returns
+    /// the segment count; read them through `path_ptr`. A rally line's red
+    /// channel below zero selects its owner's team colour (shaders/line.wgsl).
+    pub fn build_lines(&mut self, player: u8, alpha: f32, paths: bool) -> usize {
+        let mut route = Vec::new();
+        if paths {
+            self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut route);
+        }
+        self.paths.clear();
+        self.world.build_rally_lines(player, &self.selection, &mut self.paths);
+        self.paths.extend_from_slice(&route);
+        self.paths.len() / paths::LINE_FLOATS
+    }
+
     pub fn path_ptr(&self) -> *const f32 {
         self.paths.as_ptr()
     }
@@ -650,6 +670,14 @@ impl Game {
     /// reads it, so the state hash is the same either way.
     pub fn set_sprite_poses(&mut self, on: bool) {
         self.world.render_opts.poses = on;
+    }
+
+    /// The local player's control groups, for the numbers on their selection
+    /// boxes (overlays.rs): `ids[k]` is in group `groups[k]` (0..=9). Local
+    /// UI state like the selection: the simulation never reads it, so the
+    /// state hash is the same either way.
+    pub fn set_control_groups(&mut self, ids: Vec<u32>, groups: Vec<u8>) {
+        self.world.render_opts.set_control_groups(&ids, &groups);
     }
 
     /// Selected ids that are still alive.
@@ -872,6 +900,15 @@ impl Game {
         ids.iter()
             .filter_map(|&r| w.resolve(r))
             .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_guard(player, i, t))
+    }
+
+    /// Whether a plain move of `ids` to (x, y) (world pixels) passes visible
+    /// enemies the armed units among them would ignore: the client offers the
+    /// attack-move tip then (World::move_hint).
+    pub fn move_hint(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> bool {
+        let w = &self.world;
+        let actors: Vec<usize> = ids.iter().filter_map(|&r| w.resolve(r)).collect();
+        w.move_hint(player, &actors, to_wu(x), to_wu(y))
     }
 
     /// Whether players `a` and `b` are on the same side (the same player too).
@@ -1145,7 +1182,10 @@ impl Game {
                     .collect::<Vec<_>>()
             })
             .collect();
-        // Every item that can be built in this game mode, with what is still missing.
+        // Every item that can be built in this game mode, with what is still
+        // missing and its build time with the player's factories (before the
+        // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
+        let factories = w.factories(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
             .map(|t| {
@@ -1156,6 +1196,7 @@ impl Game {
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
+                    "buildTicks": w.build_time_with(t as u16, w.producer_count_in(&factories, t as u16)),
                 })
             })
             .collect();
