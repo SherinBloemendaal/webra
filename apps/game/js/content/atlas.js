@@ -176,6 +176,46 @@ function descriptor(resolved, frames, mode, def) {
   };
 }
 
+/** A frame mirrored left to right and/or top to bottom (OpenRA FlipX, FlipY). */
+export function flipFrame(frame, flipX, flipY) {
+  if (!frame || (!flipX && !flipY)) return frame;
+  const { width: w, height: h } = frame;
+  const data = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) data[y * w + x] = frame.data[(flipY ? h - 1 - y : y) * w + (flipX ? w - 1 - x : x)];
+  }
+  return { ...frame, data };
+}
+
+/**
+ * The frames a sequence indexes, as `{ frames: [{ frame, offset, scale, key }] }`
+ * or `{ error }`: the frames of its file, or for an OpenRA Combine the frames
+ * of every part one after the other (each part a file's listed frames, or
+ * all of them), with the part's offset, flips and scale applied. The
+ * sequence's Start, Length, Facings and Frames then index this list
+ * (OpenRA DefaultSpriteSequence: a virtual sprite file).
+ */
+export function sequenceFrames(def, files, tileset) {
+  const parts = def.parts ?? [{ file: def.file, tilesets: def.tilesets }];
+  const frames = [];
+  for (const part of parts) {
+    const file = sequenceFile(part, tileset);
+    const { sprite, error } = files.get(file);
+    if (!sprite) return { error: `${file} ${error}` };
+    const list = part.frames ?? sprite.frames.map((_, i) => i);
+    for (const f of list) {
+      if (f < 0 || f >= sprite.frames.length) return { error: `${file} has no frame ${f}` };
+      frames.push({
+        frame: flipFrame(sprite.frames[f], part.flipX, part.flipY),
+        offset: part.offset ?? [0, 0],
+        scale: part.scale ?? 1,
+        key: `${file}#${f}#${part.flipX ? 1 : 0}${part.flipY ? 1 : 0}#${part.scale ?? 1}`,
+      });
+    }
+  }
+  return { frames };
+}
+
 /**
  * Fill a pose table from the poses a slot has: every POSE gets a descriptor,
  * falling back to the idle pose (damaged still falls back to still).
@@ -225,29 +265,31 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
   for (const [pose, seqName] of Object.entries(mapping)) {
     const def = seqs[seqName];
     if (!def) continue;
-    const file = sequenceFile(def, tileset);
-    const { sprite, error } = files.get(file);
-    if (!sprite) {
-      problems.push(`${image}.${seqName}: ${file} ${error}`);
+    // The frames the sequence indexes: one file's, or a Combine's parts one after the other.
+    const source = sequenceFrames(def, files, tileset);
+    if (source.error) {
+      problems.push(`${image}.${seqName}: ${source.error}`);
       continue;
     }
     let resolved;
     try {
-      resolved = resolveSequence(def, sprite.frames.length);
+      resolved = resolveSequence(def, source.frames.length);
     } catch (err) {
       problems.push(`${image}.${seqName}: ${err.message}`);
       continue;
     }
     const seqOffset = def.offset ?? [0, 0];
-    const at = [seqOffset[0] + offset[0], seqOffset[1] + offset[1]];
     const frames = resolved.fileFrames.map((f, k) => {
       const shadowFrame = resolved.shadowFrames ? resolved.shadowFrames[k] : -1;
-      const key = `${file}#${f}#${shadowFrame}#${at[0]},${at[1]}`;
+      const src = source.frames[f];
+      const at = [seqOffset[0] + offset[0] + src.offset[0], seqOffset[1] + offset[1] + src.offset[1]];
+      const key = `${src.key}#${shadowFrame}#${at[0]},${at[1]}`;
       if (!imageIndex.has(key)) {
-        const frame = sprite.frames[f];
-        const shadow = shadowFrame >= 0 ? sprite.frames[shadowFrame] : null;
+        const frame = src.frame;
+        const shadow = shadowFrame >= 0 ? source.frames[shadowFrame]?.frame : null;
         imageIndex.set(key, images.length);
         const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
+        if (src.scale !== 1) img.scale = src.scale;
         images.push(under ? compositeUnder(img, under) : img);
       }
       return imageIndex.get(key);

@@ -146,7 +146,11 @@ import parse  # noqa: E402 (data/source/parse.py: MiniYaml parser and inheritanc
 KNOWN_FIELDS = {
     'Filename', 'TilesetFilenames', 'Start', 'Length', 'Stride', 'Facings', 'Tick', 'ZOffset', 'ShadowStart', 'Frames',
     'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint',
+    'Combine',
 }
+# Fields of one part of a Combine (OpenRA DefaultSpriteSequence.ParseCombineFilenames
+# and the sub-fields Combine reads: Offset, FlipX, FlipY, Frames; Scale per part).
+COMBINE_FIELDS = {'Filename', 'TilesetFilenames', 'Start', 'Length', 'Frames', 'Offset', 'FlipX', 'FlipY', 'Scale'}
 
 
 def load_bits():
@@ -207,6 +211,14 @@ def normalize(image, name, tree):
     out = {}
     fn = field(data, defaults, 'Filename')
     out['file'] = (fn[0] or '').lower()
+    if 'Combine' in data:
+        # A virtual file: the parts' frames one after the other; the sequence's
+        # own Start, Length, Facings and Frames index into it.
+        parts = combine_parts(image, name, data['Combine'][1])
+        if parts is None:
+            return None
+        out['parts'] = parts
+        out['file'] = parts[0]['file']
     ts = field(data, defaults, 'TilesetFilenames')
     if ts and ts[1]:
         out['tilesets'] = {k: v.lower() for k, (v, _) in ts[1].items() if v}
@@ -252,8 +264,59 @@ def normalize(image, name, tree):
     return to_original(image, name, out)
 
 
+def combine_parts(image, name, combine):
+    """The parts of an OpenRA Combine: file (original files only, see
+    `original_file`), the frames it adds (`frames`, or all of the file when
+    absent: Length *), offset, flips and scale. None when a part has no
+    original file."""
+    parts = []
+    for key in sorted(combine, key=int):
+        sub = combine[key][1]
+        for k in sub:
+            if k not in COMBINE_FIELDS:
+                raise SystemExit(f'{image}.{name}: unsupported Combine field {k}')
+        where = f'{image}.{name}.Combine.{key}'
+        fn = original_file((sub.get('Filename', [''])[0] or '').lower(), where)
+        if fn is None:
+            return None
+        part = {'file': fn}
+        ts = sub.get('TilesetFilenames')
+        if ts and ts[1]:
+            tilesets = {}
+            for tid, (v, _) in ts[1].items():
+                o = original_file(v.lower(), where) if v else None
+                if v and o is None:
+                    return None
+                if o and o != fn:
+                    tilesets[tid] = o
+            if tilesets:
+                part['tilesets'] = tilesets
+        frames = sub.get('Frames', [''])[0]
+        length = sub.get('Length', ['1'])[0]
+        if frames:
+            part['frames'] = [int(x) for x in frames.split(',')]
+        elif length != '*':
+            start = int(sub.get('Start', ['0'])[0] or 0)
+            part['frames'] = list(range(start, start + int(length or 1)))
+        offset = sub.get('Offset', [''])[0]
+        if offset:
+            xy = [int(float(x)) for x in offset.split(',')][:2]
+            if xy != [0, 0]:
+                part['offset'] = xy
+        for k, flag in [('FlipX', 'flipX'), ('FlipY', 'flipY')]:
+            if sub.get(k, [''])[0].lower() == 'true':
+                part[flag] = True
+        scale = sub.get('Scale', [''])[0]
+        if scale and float(scale) != 1:
+            part['scale'] = float(scale)
+        parts.append(part)
+    return parts
+
+
 def to_original(image, name, out):
     """The sequence on the original files (see ORIGINAL_FILES), or None when they cannot draw it."""
+    if 'parts' in out:
+        return out  # the parts are already original files
     if (image, name) in ORIGINAL_SEQUENCES:
         out.update(ORIGINAL_SEQUENCES[(image, name)])
         out.pop('tilesets', None)
@@ -399,12 +462,10 @@ def actor_art(actors, seqs):
                 if got:
                     entry['bib'] = got
         elif kind == 'infantry':
-            mapping = infantry_poses(rules_of(aid))
-            # Sequences assembled from parts of a file (Combine: Tanya's shoot-left
-            # with per-facing offsets) are not supported: she fires standing.
-            mapping = {p: n for p, n in mapping.items() if 'Combine' not in seqs.get(image, {}).get(n, ['', {}])[1]}
-            entry['body'] = poses(image, mapping)
-            entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-shoot'})
+            entry['body'] = poses(image, infantry_poses(rules_of(aid)))
+            # Prone: OpenRA's TakeCover plays "prone-" plus the standing sequence.
+            attack = infantry_poses(rules_of(aid)).get('attack', 'shoot')
+            entry['second'] = poses(image, {'idle': 'prone-stand', 'move': 'prone-run', 'attack': 'prone-' + attack})
         else:
             mapping = {'idle': 'idle'}
             if a.get('harvester'):
@@ -508,6 +569,8 @@ def main():
         for tid, fn in rec.get('tilesets', {}).items():
             if tid in TILESETS:
                 files.add(fn)
+        for part in rec.get('parts', []):
+            add_seq(part)
 
     for image in used.values():
         for rec in image.values():

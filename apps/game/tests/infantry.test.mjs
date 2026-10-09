@@ -164,3 +164,26 @@ test('the reusable engineers option is a lobby option, off by default', () => {
   assert.throws(() => validateLobbyOptions(rest), /reusableEngineers/);
   assert.equal(validateLobbyOptions({ ...DEFAULT_OPTIONS, reusableEngineers: true }).reusableEngineers, true);
 });
+
+test('composed sequences (OpenRA Combine) index the parts one after the other, offsets and flips applied', async () => {
+  const { sequenceFrames, flipFrame } = await import('../js/content/atlas.js');
+  const { resolveSequence } = await import('../js/content/sequences.js');
+  const { SEQUENCES, ACTOR_ART } = await import('../js/content/tables.js');
+  // Tanya fires both pistols: her shoot-left is made of five parts of e7.shp.
+  const def = SEQUENCES.e7['shoot-left'];
+  assert.equal(ACTOR_ART.E7.body.attack, 'shoot-left');
+  assert.equal(def.parts.length, 5);
+  const frame = (n) => ({ width: 2, height: 1, data: Uint8Array.from([n, 0]) });
+  const sprite = { frames: Array.from({ length: 240 }, (_, n) => frame(n)) };
+  const files = { get: (name) => (name === 'e7.shp' ? { sprite } : { sprite: null, error: 'missing' }) };
+  const src = sequenceFrames(def, files, 'TEMPERAT');
+  assert.equal(src.frames.length, 16, '8 + 2 + 2 + 2 + 2 frames');
+  const r = resolveSequence(def, src.frames.length);
+  assert.equal(r.facings, 8);
+  // Facing 0 is the first part's first two frames, facing 4 the second part (offset 1, 0).
+  assert.deepEqual([0, 1].map((k) => src.frames[r.fileFrames[k]].frame.data[0]), [58, 56]);
+  assert.deepEqual(src.frames[r.fileFrames[4 * 2]].frame.data[0], 85);
+  assert.deepEqual(src.frames[r.fileFrames[4 * 2]].offset, [1, 0]);
+  assert.deepEqual(Array.from(flipFrame(frame(7), true, false).data), [0, 7], 'FlipX mirrors');
+  assert.ok(sequenceFrames(def, { get: () => ({ sprite: null, error: 'missing' }) }, 'TEMPERAT').error);
+});

@@ -13,6 +13,9 @@
  * @typedef {object} SequenceDef  one entry of content/tables.js SEQUENCES
  * @property {string} file  default file name
  * @property {Record<string, string>} [tilesets]  file name per OpenRA tileset id
+ * @property {object[]} [parts]  OpenRA Combine: `{ file, tilesets?, frames?, offset?,
+ *   flipX?, flipY?, scale? }` per part; their frames one after the other make the
+ *   virtual file the other fields index (js/content/atlas.js sequenceFrames)
  * @property {number} start
  * @property {number} length  frames per facing, -1 for "*" (all frames from start)
  * @property {number} [stride]
