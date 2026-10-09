@@ -84,7 +84,8 @@ the new paths are guarded like this:
   (`welcome.key`). The server stores only its SHA-256 and compares in constant
   time; an unknown client id still costs a hash, so timing does not tell ids
   apart. Wrong keys count toward the per-IP lockout like wrong passwords. A
-  key only works for its own client id, only while the game runs, at most 10
+  key only works for its own client id, only while the game runs (and, since
+  protocol 6, once to come back into the lobby after a rematch), at most 10
   times per member and game, and never after leaving, being kicked or being
   removed for a protocol violation (the key is forgotten). A rejoin replaces
   an open connection of the same member (it leaves lockstep first), so two
@@ -548,6 +549,72 @@ see a note instead of the art. The game is GPL software in a public
 repository: the gate controls who gets this site's running copy, not the
 source code.
 
+## Map sharing and rematches (2026-10-09)
+
+Protocol 6 lets a host share its own map files (map editor maps, `.oramap`
+imports, maps from earlier lobbies) with an online lobby, and lets a finished
+game go back to its lobby for a rematch.
+
+- **Who can see a shared map: the least public option that works.** A map
+  the host shares is stored *unlisted* in D1 (`maps.listed = 0`): it is not
+  in the community list, `GET /api/maps/<id>` answers 404 for it, and the
+  `map` lobby message cannot pick it by id (only published maps can be
+  picked by id). The only way to read it is
+  `GET /api/sessions/<id>/map?hash=` of a session whose lobby or running
+  game uses it, by a member of that session. So a shared map reaches exactly
+  the players and spectators of the lobbies its host shared it with, who need
+  it to play. The public session list names a shared map but carries neither
+  its id, hash nor author. Publishing stays a separate, explicit step (the
+  map editor's Publish, `POST /api/maps`), which lists the map for good.
+- **Member credential.** Both session map endpoints take
+  `X-WebRA-Member: <client>.<rejoin key>`, the 32-byte key every member gets
+  in `welcome.key`. The session object compares it against the stored
+  SHA-256 in constant time (an unknown client still costs a hash), requires
+  the account it was issued to (from the Worker's verdict, as for the
+  WebSocket; a stolen key is useless from another account), counts wrong
+  keys toward the per-IP lockout (5 failures, 60 s), and requires the member
+  to be in the lobby or the running game now: a member who left, was
+  removed or kicked has no key any more. The key travels in a header, never
+  in the URL, and same-origin rules apply (the custom header forces a CORS
+  preflight that cross-origin pages cannot pass). Sharing also needs the
+  host role, checked again after the database write.
+- **Same gates as uploads.** Sharing goes through the account gate (with
+  `onlineRequiresAccount`, an active unbanned account; IP bans always), the
+  upload quota (10 per hour per network, shared with public uploads), the
+  1 MiB limit, the protocol package and the engine (in the Worker) before
+  anything is stored. Downloads have their own quota (120 per hour per
+  network) and are sent with `Cache-Control: private, no-store`.
+- **Hash pinning.** A lobby announces the map's hash (and name, author,
+  players, size and file bytes, looked up by the server, never taken from the
+  host); downloads name that hash and the server refuses a different one
+  (409). Every client parses the map with the protocol package, checks it
+  with its own engine, compares both hashes with the lobby's, recomputes the
+  modded flag from the content and shows the modded warning before
+  installing; a map that fails any check is not installed. Ready and the
+  game start need every player and spectator to have reported that exact
+  hash installed (ready itself carries the hash, as before).
+- **No new content sinks.** Map names and authors are shown with
+  `textContent` only (a test renders markup names and finds no elements);
+  the server validates them as display text (no control or bidi characters).
+  No URLs are taken from anyone: clients only ever call the fixed session
+  endpoints.
+- **Retention and accounts.** Unlisted maps no session used for 30 days are
+  deleted by the daily job (`used_at` moves on every share and download).
+  Purging an account deletes the maps it shared; its published maps stay,
+  without the uploader. The data export lists both kinds.
+- **Rematch.** Only the host proposes; every player still in the game must
+  accept (one decline, the host leaving or 2 minutes end it, then 10 s
+  before the next proposal), so a host cannot end a game others are playing.
+  Spectators do not vote. Back in the lobby, the members of the finished
+  game come back with their existing rejoin keys within 60 s
+  (`hello` with `rejoin`, the same constant-time, account-bound check and
+  lockout as a game rejoin). It works only for a member that is returning
+  and only until its deadline (a newer connection replaces an older one, so a
+  second reload during the return keeps the place); after the deadline a
+  connected member simply stays and one that is not connected loses its
+  place. Places of players who did not accept open at once (their keys are
+  forgotten). The order log is deleted from storage.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
@@ -571,6 +638,8 @@ source code.
   before they are stored, and re-checked by every client after download. The
   MODDED flag is recomputed from content everywhere, never trusted from the
   wire, and players must accept the modded-map warning before installing.
+  Maps shared in a lobby reach only that session's members (see "Map
+  sharing and rematches").
 - Rate limits per connection and per IP (`CF-Connecting-IP`), message size
   limits, strict message schemas, no `innerHTML` sinks for user text.
 - Rejoin keys are high-entropy tokens stored as SHA-256 and compared in

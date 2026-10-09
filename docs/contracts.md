@@ -340,12 +340,14 @@ travel over the network. The server never runs the simulation.
 | Method | Path | Body / result |
 |--------|------|---------------|
 | `GET` | `/api/version` | `{ version, protocol }` |
-| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded }, version, state }]` (public, open lobbies only) |
+| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded } \| { name, modded, shared: true }, version, state }]` (public, open lobbies only; a map shared with the session shows only its name) |
 | `POST` | `/api/sessions` | `{ name, password?, public, maxPlayers, version }` -> `{ id, hostKey }` |
 | `GET` | `/api/sessions/:id/ws` | WebSocket upgrade into the session's Durable Object |
-| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` |
-| `GET` | `/api/maps/:id` | the map JSON |
-| `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited) |
+| `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash }`; shares a map file with this session only (see "Lobby maps") |
+| `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
+| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps only) |
+| `GET` | `/api/maps/:id` | the map JSON (published maps only) |
+| `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited); publishes it to the community list |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
@@ -412,8 +414,11 @@ Client to server:
 | `resume` | | rejoining player, after catching up |
 | `synced` | | spectator joining a running game, after catching up |
 | `options` | `options` (host only) | lobby |
-| `map` | `{ id, hash, name, modded }` (host only) | lobby |
-| `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
+| `map` | `{ id, hash, name, modded }` (host only; a published map, or `null` for a generated one; a map shared with the session goes through `POST /api/sessions/:id/map`) | lobby |
+| `mapstate` | `hash, state: installed \| declined` (for the lobby map with that hash) | lobby |
+| `kick` | `client` (host only: remove a spectator; players are removed through `slot`) | lobby |
+| `ready` | `ready: bool, mapHash` | lobby (must have the map installed; ready with the hash counts as installed) |
+| `rematch` | `accept: bool` (host: propose, then withdraw with `false`; players: accept or decline) | in game |
 | `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
 | `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
@@ -422,9 +427,12 @@ Client to server:
 | `leave` | | any time |
 
 Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {slots,
-options, map, hostId, spectators: [{client, name, account?}], maxSpectators}`
+options, map, hostId, spectators: [{client, name, account?, mapState?}], maxSpectators}`
 (human slots and spectators carry `account: true` when the name comes from a
-signed-in account), `chat
+signed-in account, and `mapState` while the lobby has a map; `map` is null or
+`{ id, hash, name, modded, players, author, width, height, bytes, shared }`,
+looked up by the server, also in `start`), `rematch {state, by, accepted,
+waiting, msLeft?, reason?}` (see "Rematch"), `chat
 {from, text, team?}` (with `team: true` the line went to the sender's team
 only: the players of its non-zero team, the sender alone without a team, the
 spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
@@ -432,13 +440,15 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 5
+{player, client, name, tick}`, `error {code, message}`. Protocol version 6
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
 at `hello`. Version 5 added accounts: the optional hello `name`, the welcome
 `name`, the `account` marks, one place per account and session, rejoin keys
 bound to their account, and the error codes `account_required`,
 `account_inactive`, `banned` and `ip_banned` (sent in answer to `hello`, or
-when a ban drops a connected member with left reason `removed`).
+when a ban drops a connected member with left reason `removed`). Version 6
+added lobby maps (the map details, `mapState`, `mapstate`, `kick`) and the
+rematch (`rematch` both ways, rejoining the lobby).
 
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
@@ -499,6 +509,69 @@ keeps `{ id, client, key, name }` per tab in sessionStorage (`webra.rejoin.v1`).
   minute). Refused ones get `rate_limited` and retry.
 - Chat: one line a second per connection, bursts of five; flooding closes
   the connection.
+
+### Lobby maps
+
+The host plays a generated map (`map: null`), a published map from the
+community list (`map` with its id and hash; the server looks up its details
+in D1) or a map file of its own (the map editor, an `.oramap` import, a map
+from an earlier lobby; the game keeps them in its map library,
+`apps/game/js/maplibrary.js`, IndexedDB keyed by hash). Its own map is
+**shared with this session only**: `POST /api/sessions/:id/map` with the map
+JSON and the header `X-WebRA-Member: <client>.<rejoin key>` (the key from
+`welcome.key`). The Worker checks the account gate (as for the WebSocket),
+the upload quota (10 per hour per network, shared with `POST /api/maps`), the
+size (1 MiB) and the map (protocol package and engine, as for uploads); the
+session object checks the member key (constant time, bound to the account it
+was issued to, wrong keys count toward the per-IP lockout) and that the
+member is the host, stores the map **unlisted** (deduplicated by hash) and
+makes it the lobby map. Unlisted maps are not in `GET /api/maps`, not served
+by `GET /api/maps/:id` and cannot be picked by id with `map`; publishing the
+same map with `POST /api/maps` lists it. See security.md "Map sharing".
+
+Every lobby message with a map gives each member a `mapState`: `installed`,
+`missing` (the default) or `declined`. A player without the map sees
+"Custom map: <name> by <author>. Install?" (map details: players, size,
+file bytes, modded) with Install and Decline. Install downloads it with
+`GET /api/sessions/:id/map?hash=<sha256>` and the member header (members of
+the lobby or the running game only; 409 when the session's map has another
+hash; `Cache-Control: private, no-store`; 120 per hour per network), checks
+it like any map (protocol package and engine, the hash must match), shows the
+modded warning when it carries rules, keeps it in the map library and sends
+`mapstate installed`. Decline sends `mapstate declined`: the player cannot be
+ready, and the host sees who lacks the map (and may remove a spectator with
+`kick`). `ready` with the map's hash counts as installed. The game starts
+only when every player and every spectator has the exact map installed; the
+host has it. A map already in the library is installed at once (checked by
+the engine again). Members joining a running game (a reload, a late
+spectator) get the game's map the same way. Names and authors are shown as
+text only.
+
+### Rematch
+
+Like OpenRA's way back to the lobby with everyone: in a running game the
+host sends `rematch { accept: true }`. Everyone gets `rematch { state: 'open',
+by, accepted, waiting, msLeft }`; `waiting` lists the players still in the
+game (seats that are not gone, also one whose connection is away) that have
+not accepted. Players answer with `rematch { accept }` (from the in-game
+overlay, the end of game dialog, the statistics screen or the game menu);
+spectators do not vote. One decline, the host withdrawing (`accept: false`)
+or leaving, or 2 minutes without everyone (`REMATCH_VOTE_MS`) end it:
+`rematch { state: 'cancelled', reason: declined | withdrawn | left | expired }`,
+and the host can propose again after 10 s. When every player accepted, the
+session goes back to its lobby with the same slots (factions, colours,
+teams), options (seed included: the same map) and map, ready flags cleared,
+and sends `rematch { state: 'lobby' }`. The relay and the order log are
+dropped. The players who accepted and the spectators keep their places and
+must come back within `REMATCH_RETURN_MS` (60 s): the client reloads the page
+(a finished game is not torn down in place) and sends `hello` with `rejoin`
+and its key, answered with `welcome` and `lobby`. Until that deadline a lost
+connection (closing the old page, a second reload) does not give up the
+place, and a newer connection replaces an older one; `leave` does give it up.
+At the deadline connected members stay and the others lose their places.
+Other places open at once. A client that missed `rematch { state: 'lobby' }`
+(its connection was away) reconnects into the lobby and reloads the same way.
+The host starts the next game as usual.
 
 ### Spectators
 
