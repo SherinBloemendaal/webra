@@ -37,10 +37,13 @@ import {
 // ---- HTTP API ---------------------------------------------------------------
 
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  /** @param {object} [detail] the whole error object of the answer (field, status, ban, retryAfter, current) */
+  constructor(status, code, message, detail = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.field = detail?.field ?? null;
+    this.detail = detail;
   }
 }
 
@@ -60,15 +63,18 @@ async function request(path, init = {}) {
   }
   if (!res.ok || body === null) {
     const err = body && body.error && typeof body.error.message === 'string' ? body.error : null;
-    throw new ApiError(res.status, err ? String(err.code) : 'unavailable', err ? err.message : 'The multiplayer server is not available.');
+    throw new ApiError(res.status, err ? String(err.code) : 'unavailable', err ? err.message : 'The multiplayer server is not available.', err);
   }
   return { body, text };
 }
 
+/** Every write to the API carries this header (docs/accounts-api.md 1.1: CSRF). */
+export const CSRF_HEADER = Object.freeze({ 'X-WebRA-CSRF': '1' });
+
 const postJson = (path, value, raw = false) =>
   request(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADER },
     body: raw ? value : JSON.stringify(value),
   });
 

@@ -5,10 +5,11 @@
 import { canonicalJson, mapHash, parseMap } from './mapformat.js';
 
 export class ApiError extends Error {
-  constructor(message, { status = 0, unavailable = false } = {}) {
+  constructor(message, { status = 0, unavailable = false, code = null } = {}) {
     super(message);
     this.status = status;
     this.unavailable = unavailable;
+    this.code = code;
   }
 }
 
@@ -38,20 +39,39 @@ async function request(url, init) {
     throw new ApiError(`The map service sent invalid JSON (HTTP ${res.status}).`, { status: res.status });
   }
   if (!res.ok) {
-    const msg = body?.message ?? body?.error ?? (Array.isArray(body?.errors) ? body.errors.join('; ') : null);
-    throw new ApiError(
-      res.status === 429 ? 'Too many uploads. Please wait a moment and try again.' : `The map service refused the request (HTTP ${res.status})${msg ? `: ${msg}` : '.'}`,
-      { status: res.status },
-    );
+    const err = body?.error && typeof body.error === 'object' ? body.error : null;
+    const msg = err?.message ?? body?.message ?? (typeof body?.error === 'string' ? body.error : null) ?? (Array.isArray(body?.errors) ? body.errors.join('; ') : null);
+    throw new ApiError(accountProblem(err?.code) ?? (res.status === 429 ? 'Too many uploads. Please wait a moment and try again.' : `The map service refused the request (HTTP ${res.status})${msg ? `: ${msg}` : '.'}`), {
+      status: res.status,
+      code: err?.code ?? null,
+    });
   }
   return body;
+}
+
+/** Why an account problem stops an upload (docs/accounts-api.md 7), or null. */
+export function accountProblem(code) {
+  switch (code) {
+    case 'unauthenticated':
+    case 'account_required':
+      return 'Publishing maps needs a WebRA account. Sign in at /account/ and try again.';
+    case 'account_inactive':
+      return 'Your account is not active yet (email verification or approval). See /account/.';
+    case 'banned':
+      return 'Your account is banned, so it cannot publish maps.';
+    case 'ip_banned':
+      return 'Publishing is blocked from your network.';
+    default:
+      return null;
+  }
 }
 
 /** Publish a map. Returns `{ id, hash, localHash }`; `hash` is the server's. */
 export async function publishMap(map) {
   const body = canonicalJson(map);
   const localHash = await mapHash(map);
-  const out = await request(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  // X-WebRA-CSRF: every API write carries it (docs/accounts-api.md 1.1).
+  const out = await request(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WebRA-CSRF': '1' }, body });
   if (typeof out?.id !== 'string' && typeof out?.id !== 'number') throw new ApiError('The map service did not return a map id.');
   return { id: String(out.id), hash: out.hash ?? null, localHash };
 }
