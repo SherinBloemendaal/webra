@@ -18,6 +18,9 @@ import {
   validNewPassword,
   validUsername,
   validateSettingsDocument,
+  UI_SCALE_LIMITS,
+  GAME_SCALE_LIMITS,
+  MUSIC_REPEAT_MODES,
 } from '../src/index.js';
 
 const throwsField = (fn, field) =>
@@ -84,6 +87,30 @@ test('settings document: every section optional, strict keys, free-form extra wi
   throwsField(() => validateSettingsDocument({ content: { packs: [{ id: 'x\u0007', enabled: true }] } }), 'settings.content.packs[0].id');
   const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`a${i}`, []]));
   throwsField(() => validateSettingsDocument({ game: { hotkeys: many } }), 'settings.game.hotkeys');
+});
+
+test('settings document: UI and game scale take "auto" or a factor in their limits; music settings', () => {
+  const doc = {
+    game: { uiScale: 'auto', gameScale: 1.5 },
+    audio: { musicOn: false, musicShuffle: true, musicRepeat: 'one' },
+  };
+  assert.deepEqual(validateSettingsDocument(doc), doc);
+  for (const [key, limits] of [
+    ['uiScale', UI_SCALE_LIMITS],
+    ['gameScale', GAME_SCALE_LIMITS],
+  ]) {
+    assert.deepEqual(validateSettingsDocument({ game: { [key]: limits.min } }), { game: { [key]: limits.min } });
+    assert.deepEqual(validateSettingsDocument({ game: { [key]: limits.max } }), { game: { [key]: limits.max } });
+    for (const bad of [limits.min - 0.01, limits.max + 0.01, 'Auto', '1', null, NaN, Infinity, true]) {
+      throwsField(() => validateSettingsDocument({ game: { [key]: bad } }), `settings.game.${key}`);
+    }
+  }
+  assert.deepEqual(UI_SCALE_LIMITS, { min: 0.5, max: 2, step: 0.05 });
+  assert.deepEqual(GAME_SCALE_LIMITS, { min: 0.5, max: 3, step: 0.05 });
+  for (const mode of MUSIC_REPEAT_MODES) assert.doesNotThrow(() => validateSettingsDocument({ audio: { musicRepeat: mode } }));
+  throwsField(() => validateSettingsDocument({ audio: { musicRepeat: 'never' } }), 'settings.audio.musicRepeat');
+  throwsField(() => validateSettingsDocument({ audio: { musicOn: 1 } }), 'settings.audio.musicOn');
+  throwsField(() => validateSettingsDocument({ audio: { musicShuffle: 'yes' } }), 'settings.audio.musicShuffle');
 });
 
 test('site settings: merge, validation, stored values over defaults', () => {
