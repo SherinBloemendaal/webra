@@ -274,28 +274,41 @@ export function powerSound(code) {
 
 // ---- Music ------------------------------------------------------------------------------
 
-/** Red Alert soundtrack (scores.mix), installed content only. */
+/**
+ * Red Alert soundtrack (scores.mix), installed content only: the tracks of
+ * OpenRA's music player, with its titles (mods/ra/audio/music.yaml, without
+ * the hidden intro, map and score tracks), in its order.
+ */
 export const MUSIC = [
+  ['await_r', 'Afterlife (Await)'],
   ['bigf226m', 'Bigfoot'],
   ['crus226m', 'Crush'],
-  ['fac1226m', 'Face the Enemy 1'],
-  ['fac2226m', 'Face the Enemy 2'],
-  ['hell226m', 'Hell March'],
-  ['run1226m', 'Run for Your Life'],
-  ['smsh226m', 'Smash'],
-  ['tren226m', 'Trenches'],
-  ['work226m', 'Workmen'],
-  ['await', 'Await'],
   ['dense_r', 'Dense'],
+  ['fac1226m', 'Face to the Enemy 1'],
+  ['fac2226m', 'Face to the Enemy 2'],
   ['fogger1a', 'Fogger'],
+  ['hell226m', 'Hell March'],
   ['mud1a', 'Mud'],
   ['radio2', 'Radio 2'],
+  ['credits', 'Reload Fire (Credits)'],
   ['rollout', 'Roll Out'],
+  ['run1226m', 'Run (For Your Life)'],
+  ['smsh226m', 'Smash'],
   ['snake', 'Snake'],
   ['terminat', 'Terminate'],
-  ['twin', 'Twin'],
+  ['tren226m', 'Trenches'],
+  ['twin', 'Twin Cannon'],
   ['vector1a', 'Vector'],
+  ['work226m', 'Workmen'],
 ].map(([base, title]) => ({ file: fileName(base), title }));
+
+/**
+ * Where music comes from, for the music player and the content dialog. The
+ * OpenRA quick install package (ra-quickinstall.zip) has no music: OpenRA too
+ * takes it from a Red Alert disc, the Steam or Origin release or C&C Remastered.
+ */
+export const MUSIC_SOURCE_HINT =
+  'The OpenRA quick install package (ra-quickinstall.zip) has no music: OpenRA itself also needs a Red Alert disc, the Steam or Origin release, or C&C Remastered for it. Add scores.mix (or main.mix or redalert.mix, which contain it) from such a copy by dropping it on this page or in the Original content dialog.';
 
 /** MIX archives that may hold the files above, possibly nested in main.mix or redalert.mix. */
 export const ARCHIVES = [

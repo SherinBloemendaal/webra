@@ -63,6 +63,10 @@ export class AudioSystem {
     this.director = null;
     this.game = null;
     this.inGame = false;
+    /** The music player started music: it plays outside a game too (js/audio/musicplayer.js). */
+    this.listening = false;
+    /** A track the music player picked before music could play (audio still locked): played once it can. */
+    this.pendingTrack = null;
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
@@ -374,14 +378,20 @@ export class AudioSystem {
 
   // ---- Music ------------------------------------------------------------------------
 
-  /** Whether music should play now: in a game, sound and music on, a track to play, audio unlocked. */
+  /** Whether music should play now: in a game (or started from the music player), sound and music on, a track to play, audio unlocked. */
   musicWanted() {
     const p = this.prefs.get();
     // The playlist holds pack music, plus the installed originals when they are on (music.js).
-    return this.inGame && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
+    return (this.inGame || this.listening) && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
   }
 
   syncMusic() {
+    if (this.pendingTrack !== null && this.musicWanted()) {
+      const index = this.pendingTrack;
+      this.pendingTrack = null;
+      this.jukebox.playIndex(index);
+      return;
+    }
     // The music hotkeys may have stopped or paused it: it stays so until the player starts it again.
     const want = this.musicWanted() && !this.jukebox.stoppedByUser && !this.jukebox.paused;
     // A playlist that ended (repeat off) stays quiet until the player asks for the next track.
@@ -392,6 +402,67 @@ export class AudioSystem {
   /** "Next track" (Settings, Sound): skips the playing track, or starts a finished playlist again. */
   nextTrack() {
     if (this.musicWanted()) this.jukebox.next();
+  }
+
+  // ---- Music player (js/audio/musicplayer.js) ------------------------------------------
+
+  /**
+   * The music player's controls are a request for music, also outside a
+   * game: they unlock audio and switch music on. Returns whether it can play now.
+   */
+  wantMusic() {
+    this.mixer.unlock?.();
+    this.listening = true;
+    if (!this.prefs.get().musicOn) this.prefs.set({ musicOn: true });
+    return this.musicWanted();
+  }
+
+  /** Play track `index` of the playlist (jukebox.tracks) now, or as soon as music can play. */
+  playTrack(index) {
+    if (!this.jukebox.tracks[index]) return;
+    this.pendingTrack = index;
+    this.wantMusic();
+    this.syncMusic();
+    this.changed();
+  }
+
+  /** Play or pause: pause what plays, resume what was paused, or play the selected (or first) track. */
+  playPause() {
+    const j = this.jukebox;
+    if (j.handle) {
+      j.togglePause();
+    } else if (j.paused && this.wantMusic()) {
+      j.togglePause();
+    } else {
+      const index = j.paused?.index ?? (j.current >= 0 ? j.current : (j.order[0] ?? 0));
+      this.playTrack(index);
+      return;
+    }
+    this.changed();
+  }
+
+  /** Stop: music stays off (also in games) until the player starts it again. */
+  stopMusic() {
+    this.pendingTrack = null;
+    this.listening = false;
+    this.jukebox.userStop();
+    this.changed();
+  }
+
+  /** The previous (-1) or next (+1) track. */
+  skipTrack(direction) {
+    const j = this.jukebox;
+    if (!j.available) return;
+    if (this.wantMusic()) {
+      if (direction < 0) j.prev();
+      else j.next();
+      this.changed();
+      return;
+    }
+    // Music cannot play yet (audio still locked, sound or music volume off): that track plays once it can.
+    const n = j.order.length;
+    const at = j.order.indexOf(j.current);
+    this.playTrack(j.order[at < 0 ? 0 : (at + direction + n) % n] ?? 0);
   }
 
   // ---- Hotkeys (js/gamekeys.js) ----------------------------------------------------

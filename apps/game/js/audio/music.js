@@ -4,7 +4,7 @@
 // or none (Settings: audio.musicShuffle, audio.musicRepeat); WebRA ships no
 // music of its own.
 
-import { decodeAud } from './aud.js';
+import { audDuration, decodeAud } from './aud.js';
 import { MUSIC } from './catalog.js';
 
 /** A shuffled order of `n` items that does not start with `avoid`. */
@@ -56,6 +56,8 @@ export class Jukebox {
     /** Paused (OpenRA PauseMusic): { index, buffer, at } to resume from, or null. */
     this.paused = null;
     this.buffer = null;
+    /** Seconds per track file, once known (the AUD header, a texture pack track's length, a played track). */
+    this.lengths = new Map();
   }
 
   /** Refresh the installed track list from the store. */
@@ -69,6 +71,8 @@ export class Jukebox {
     this.pos = 0;
     this.current = -1;
     this.finished = false;
+    // A texture pack may have brought another version of a track.
+    this.lengths.clear();
     return this.tracks.length;
   }
 
@@ -191,6 +195,38 @@ export class Jukebox {
       return;
     }
     this.current = index;
+    await this.startTrack(index, token);
+  }
+
+  /**
+   * Play track `index` now (the music player's track list). The playlist goes
+   * on from there: in order with the tracks after it, shuffled with the
+   * others in a new random order.
+   */
+  async playIndex(index) {
+    const n = this.tracks.length;
+    if (!this.tracks[index] || !this.mixer.ready) return;
+    this.stoppedByUser = false;
+    this.paused = null;
+    this.finished = false;
+    const token = ++this.token;
+    const old = this.handle;
+    this.handle = null;
+    old?.stop();
+    if (this.mode().shuffle) {
+      this.order = [index, ...playOrder(n, true, this.random).filter((i) => i !== index)];
+      this.pos = 1;
+    } else {
+      this.order = playOrder(n, false);
+      this.pos = index + 1;
+    }
+    this.current = index;
+    this.onChange();
+    await this.startTrack(index, token);
+  }
+
+  /** Load and play track `index` unless another request (`token`) came in meanwhile. */
+  async startTrack(index, token) {
     const track = this.tracks[index];
     // A texture pack's version of the track first, then the installed original.
     const pack = this.packTracks();
@@ -207,7 +243,53 @@ export class Jukebox {
       }
     }
     if (!buffer || token !== this.token) return;
+    if (buffer.duration) this.lengths.set(track.file, buffer.duration);
     this.play(track, buffer, token);
+  }
+
+  /** Seconds into the playing or paused track (0 when none). */
+  elapsed() {
+    if (this.handle) return Math.max(0, this.handle.position?.() ?? 0);
+    return this.paused?.at ?? 0;
+  }
+
+  /** Length in seconds of track `index`, or null while unknown. */
+  length(index) {
+    const track = this.tracks[index];
+    return track ? (this.lengths.get(track.file) ?? null) : null;
+  }
+
+  /**
+   * Find the length of every track (the music player lists them): a texture
+   * pack track's duration, or the AUD header of the installed file. Stops
+   * early when the playlist changes meanwhile.
+   * @returns {Promise<boolean>} whether a length was found
+   */
+  async measure() {
+    const tracks = this.tracks;
+    const pack = this.packTracks();
+    let store = null;
+    let found = false;
+    for (const track of tracks) {
+      if (this.tracks !== tracks) return found;
+      if (this.lengths.has(track.file)) continue;
+      const packed = pack.get(track.file) ?? pack.get(track.file.replace(/\.aud$/, ''));
+      let seconds = packed?.duration ?? null;
+      if (seconds === null) {
+        store ??= await this.getStore();
+        const rec = await store.get(track.file);
+        if (!rec) continue;
+        try {
+          seconds = audDuration(new Uint8Array(rec.bytes));
+        } catch {
+          continue; // a broken file: its length stays unknown
+        }
+      }
+      if (this.tracks !== tracks) return found;
+      this.lengths.set(track.file, seconds);
+      found = true;
+    }
+    return found;
   }
 
   /** Play `buffer` of `track` from `offset` seconds; when it ends, the next track follows. */

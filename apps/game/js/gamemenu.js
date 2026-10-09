@@ -5,6 +5,9 @@
 // local player watches: spectators, replays, after a defeat or at the end).
 // Phones get the same menu from the HUD's Menu button.
 //
+// The Music page is the music player (js/audio/musicplayer.js), like OpenRA's
+// in-game menu Music button.
+//
 // The Settings page has three parts: Display (UI scale, game scale, render
 // resolution, fullscreen; js/scale.js), Scrolling and health bars, and Audio
 // (the Sound dialog's controls, js/audio/panel.js).
@@ -24,6 +27,7 @@ import { touchControls } from './touch.js';
 import { segmented, slider as createSlider, switchInput, toggle as createToggle } from './ui/controls.js';
 import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
+import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
 import { closeOpenTip, labelWithHelp } from './infotip.js';
 
@@ -140,7 +144,7 @@ export class GameMenu {
    *   uiScale?: import('./scale.js').UiScale,  the page's UI scale (live preview while its slider moves)
    *   renderRatio?(): number,  the battlefield's render pixel ratio (game scale: Auto and sharp steps)
    *   win?: Window,  the window the scales are picked for (tests)
-   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings
+   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings and the Music page
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
@@ -276,6 +280,7 @@ export class GameMenu {
     c.replaceChildren();
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'controls') this.renderControls(c);
+    else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
     else this.renderMain(c);
@@ -306,6 +311,7 @@ export class GameMenu {
       ...actions,
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
+      ...(this.opts.audio ? [button('Music', null, () => this.show('music'))] : []),
       ...(this.opts.onContent ? [button('Original content', null, () => this.opts.onContent())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
@@ -371,6 +377,15 @@ export class GameMenu {
       }),
       button('Back', null, () => this.show('main')),
     );
+  }
+
+  /** The music player (OpenRA's in-game Music panel). */
+  renderMusic(c) {
+    c.append(el('h1', null, 'Music'));
+    const list = el('div', 'game-menu-scroll game-menu-music');
+    const player = mountMusicPlayer(list, this.opts.audio, { idPrefix: 'menu-music', heading: 2, onContent: this.opts.onContent });
+    this.pageOffs.push(() => player.dispose());
+    c.append(list, button('Back', 'primary', () => this.show('main')));
   }
 
   renderSettings(c) {
@@ -446,7 +461,7 @@ export class GameMenu {
     if (audio) {
       const box = el('div', 'game-menu-audio');
       list.append(el('h2', null, 'Audio'), box);
-      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, idPrefix: 'menu-audio', heading: 3, help: true });
+      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, onMusicPlayer: () => this.show('music'), idPrefix: 'menu-audio', heading: 3, help: true });
       this.pageOffs.push(() => mount.dispose());
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));

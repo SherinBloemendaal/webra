@@ -127,3 +127,164 @@
 button.danger {
   color: var(--ui-bad);
 }
+
+/* ---- Music player (js/audio/musicplayer.js): the Music dialog and the game
+   menu's Music page. */
+
+#music-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: calc(16 * var(--ui-px));
+  background: var(--ui-scan), rgba(0, 0, 0, 0.62);
+}
+
+#music-panel[hidden] {
+  display: none;
+}
+
+.music-player,
+.music-main,
+.music-empty,
+.music-options {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--ui-px));
+}
+
+.music-main[hidden],
+.music-empty[hidden] {
+  display: none;
+}
+
+.music-now {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--ui-px));
+}
+
+.music-status {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.music-clock {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--ui-px));
+}
+
+.music-bar {
+  flex: 1;
+  height: calc(6 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.music-bar-fill {
+  display: block;
+  width: var(--music-progress, 0%);
+  height: 100%;
+  background: var(--ui-accent);
+}
+
+.music-time {
+  min-width: 7.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.music-transport {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: calc(6 * var(--ui-px));
+}
+
+.music-transport button {
+  width: auto;
+  margin: 0;
+  min-height: var(--ctl-row);
+  padding: calc(6 * var(--ui-px)) calc(8 * var(--ui-px));
+}
+
+.music-list h2,
+.music-list h3 {
+  margin: 0 0 calc(6 * var(--ui-px));
+}
+
+.music-tracks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: calc(260 * var(--ui-px));
+  overflow-y: auto;
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.music-track {
+  display: flex;
+  justify-content: space-between;
+  gap: calc(10 * var(--ui-px));
+  width: 100%;
+  margin: 0;
+  min-height: var(--ctl-row);
+  padding: calc(4 * var(--ui-px)) calc(10 * var(--ui-px));
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-line);
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.music-tracks li:last-child .music-track {
+  border-bottom: 0;
+}
+
+.music-track:hover,
+.music-track:focus-visible {
+  background: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+}
+
+.music-track.current {
+  background: color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  color: var(--ui-accent-hi);
+  font-weight: 700;
+}
+
+.music-track-title {
+  overflow-wrap: anywhere;
+}
+
+.music-track-length {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.music-track.current .music-track-length {
+  color: inherit;
+}
+
+/* Phones: the transport buttons go two by two. */
+@media (max-width: 420px) {
+  .music-transport {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .music-tracks {
+    max-height: none;
+  }
+}
