@@ -34,6 +34,12 @@ fn coast() -> World {
     for p in w.players.iter_mut() {
         p.cash = 20000;
     }
+    // A power plant each on land keeps both players in the game (OpenRA
+    // MustBeDestroyed: ships alone do not; a defeated player's ships sink).
+    let powr = ty(&w, "POWR");
+    for (p, (x, y)) in [(2, 2), (2, 30)].into_iter().enumerate() {
+        w.spawn_building(powr, p as u8, x, y).expect("room on land");
+    }
     w.refresh_tokens();
     w.update_power();
     w.update_vision();

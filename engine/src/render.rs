@@ -184,12 +184,17 @@ impl World {
             if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
+            // Bridge huts have no art (OpenRA LegacyBridgeHut: no RenderSprites).
+            if self.rules.actors[a.ty as usize].world.bridge_hut {
+                continue;
+            }
             let (x, y) = (px(a.x), px(a.y));
             let Some(at) = sink.group([x, y], [x, y], 96.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
             let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            let body = self.body_sprite(i, a.ty as u32 * 2);
+            // Bridges show the template of their state (bridges.rs).
+            let body = self.bridge_sprite(i).unwrap_or_else(|| self.body_sprite(i, a.ty as u32 * 2));
             sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, alpha, flash));
             // Disabled (low power, switched off): darkened like OpenRA's
             // WithColoredOverlay@IDISABLE (black at 70 percent) over every layer.
@@ -307,6 +312,8 @@ impl World {
         self.render_veterancy(player, sink, ids.veterancy_base, sprites);
         // Repair wrenches and power off icons on structures (repair.rs).
         self.render_building_decorations(player, sink, ids.decorations_base, sprites);
+        // Burning trees and the hospital's red cross (neutral.rs).
+        self.render_world_decorations(player, sink, ids.decorations_base, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));

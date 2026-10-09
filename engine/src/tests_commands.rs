@@ -19,6 +19,7 @@ fn run(w: &mut World, ticks: u32) {
 /// 64x64 open, clear map, everything explored, no ore growth.
 fn flat_world() -> World {
     let mut w = World::new(7, 64, &[("allies", false), ("soviet", false)]);
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;

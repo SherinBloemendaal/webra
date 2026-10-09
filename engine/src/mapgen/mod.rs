@@ -36,6 +36,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 pub mod metrics;
+pub mod sites;
 #[cfg(test)]
 mod tests;
 

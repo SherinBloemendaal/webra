@@ -35,6 +35,10 @@ impl World {
     /// use their kind's class; submarines switch between surfaced and
     /// submerged classes (naval.rs).
     pub fn target_class(&self, i: usize) -> u32 {
+        // Trees, bridges and untargetable actors (neutral.rs).
+        if let Some(c) = self.world_target_class(i) {
+            return c;
+        }
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
@@ -93,6 +97,7 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
+                        || self.never_auto_targeted(u)
                         || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
@@ -111,9 +116,10 @@ impl World {
                     if t.alive
                         && self.are_enemies(a.owner, t.owner)
                         && !self.is_cloaked_from(b, a.owner)
-                        && !tinfo.is_wall()
+                        // Walls, barrels and the like only when ordered (NoAutoTarget, neutral.rs).
+                        && !self.never_auto_targeted(b)
                         && (any_structure || tinfo.defense)
-                        && info.can_attack(&self.rules, Kind::Building)
+                        && info.can_attack_class(&self.rules, self.target_class(b))
                     {
                         let d = self.target_distance(b, a.x, a.y);
                         if d <= range && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi)) {
@@ -518,6 +524,8 @@ impl World {
             self.actors[i].env.fired = true;
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
             self.on_fire(i);
+            // Armed civilians may panic when they shoot (neutral.rs).
+            self.on_world_fired(i);
             if !self.actors[i].alive {
                 return;
             }
@@ -601,7 +609,8 @@ impl World {
 
     pub(crate) fn aim_point(&self, t: usize, sx: i32, sy: i32) -> (i32, i32) {
         let a = &self.actors[t];
-        if a.kind != Kind::Building {
+        // Bridges are aimed at their centre (bridges.rs).
+        if a.kind != Kind::Building || self.rules.actors[a.ty as usize].world.bridge.is_some() {
             return (a.x, a.y);
         }
         let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
@@ -699,6 +708,10 @@ impl World {
                 self.apply_warhead(w, h, x, y, owner, shot);
             }
         }
+        // FireCluster warheads fire their weapon at the cells around (neutral.rs).
+        for (cw, cx, cy) in self.cluster_targets(w, x, y) {
+            self.land_shot(cw, cx, cy, owner, shot, end_of_tick);
+        }
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
@@ -748,6 +761,15 @@ impl World {
                 }
             }
         }
+        // Bridges lie over cells without claiming them (bridges.rs).
+        for b in self.bridges_near(cx, cy, r_cells) {
+            if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
+                let d = self.hit_distance(b, x, y);
+                if d <= radius {
+                    hits.push((b, d));
+                }
+            }
+        }
         let damages: Vec<(usize, i32)> = hits
             .iter()
             .map(|&(u, d)| {
@@ -782,7 +804,11 @@ impl World {
     /// prone modifiers apply, a trigger type throws infantry prone, and a kill
     /// gives `source` experience (veterancy.rs).
     pub(crate) fn damage_from(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
-        if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick {
+        if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick || !self.has_health(u) {
+            return;
+        }
+        // A destroyed bridge stays but takes no more damage (bridges.rs).
+        if self.actors[u].hp <= 0 {
             return;
         }
         let dmg = self.modified_damage(u, dmg, types);
@@ -798,6 +824,7 @@ impl World {
         let report = a.kind == Kind::Building && quiet;
         let report_unit = a.is_unit() && quiet && attacker.is_some_and(|o| o != a.owner);
         let dealt = dmg.min(a.hp.max(0));
+        let old_hp = a.hp;
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
@@ -814,6 +841,12 @@ impl World {
             }
         }
         self.take_cover(u, types);
+        // Damage states, panics, burning trees and the hospital (neutral.rs).
+        self.on_world_damaged(u, old_hp, dmg, types);
+        // Bridges change their template instead of dying (bridges.rs).
+        if self.bridge_damaged(u) {
+            return;
+        }
         if self.actors[u].hp <= 0 {
             self.award_kill(u, source);
             self.kill(u);
@@ -841,19 +874,10 @@ impl World {
         // FireWarheadsOnDeath: the dying actor's firepower, nobody to credit (DamageSource Self).
         let shot = Shot { source: NONE, firepower: self.firepower_modifier(i) };
         if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
-            // One tick later, so chain reactions ripple outward instead of recursing.
-            for h in 0..self.rules.weapons[w].warheads.len() {
-                let delay = self.rules.weapons[w].warheads[h].delay.max(1);
-                self.pending.push(PendingImpact {
-                    tick: self.tick + delay as u32,
-                    weapon: w as u16,
-                    warhead: h as u8,
-                    x: a.x,
-                    y: a.y,
-                    owner: a.owner,
-                    shot,
-                });
-            }
+            // One tick later, so chain reactions (barrels, neutral.rs) ripple
+            // outward instead of recursing.
+            let (x, y, owner) = (a.x, a.y, a.owner);
+            self.queue_weapon(w, x, y, owner, shot, 1);
         }
     }
 }

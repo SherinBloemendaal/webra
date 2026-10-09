@@ -113,6 +113,18 @@ impl World {
                 continue;
             }
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            // Bridges are terrain on the radar; trees, mines and walls of the
+            // map show in their terrain colour on the cells they stand on (neutral.rs).
+            let world = &self.rules.actors[a.ty as usize].world;
+            if world.bridge.is_some() || world.bridge_hut {
+                continue;
+            }
+            if let Some(code) = self.radar_terrain_code(i) {
+                for (dx, dy) in b.cells() {
+                    out.extend_from_slice(&[a.cx + dx, a.cy + dy, 1, 1, code]);
+                }
+                continue;
+            }
             out.extend_from_slice(&[a.cx, a.cy, b.width, b.height, owner_of(a.owner)]);
         }
         // Enemy structures last seen under fog (the same ghosts the battlefield draws).
@@ -128,6 +140,13 @@ impl World {
             let b = self.rules.actors[g.ty as usize].building.as_ref().unwrap();
             let (x, y) = (g.cx * CELL + b.width * CELL / 2, g.cy * CELL + b.height * CELL / 2);
             if !unjammed(g.owner, x, y) {
+                continue;
+            }
+            // Remembered walls keep their terrain colour (neutral.rs).
+            if let Some(code) = crate::neutral::radar_terrain_code_of(&self.rules.actors[g.ty as usize].world) {
+                for (dx, dy) in b.cells() {
+                    out.extend_from_slice(&[g.cx + dx, g.cy + dy, 1, 1, code]);
+                }
                 continue;
             }
             out.extend_from_slice(&[g.cx, g.cy, b.width, b.height, owner_of(g.owner)]);

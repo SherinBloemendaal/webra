@@ -20,6 +20,7 @@ fn run(w: &mut World, ticks: u32) {
 /// game is not over, no AI, no ore; player 0 has plenty of power.
 fn world(allied: bool) -> World {
     let mut w = World::new(7, 64, &[("allies", false), ("soviet", false), ("soviet", false)]);
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.ore[i] = 0;
     }

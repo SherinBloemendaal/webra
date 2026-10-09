@@ -310,6 +310,14 @@ fn check_no_leaks(w: &World, player: u8) {
         }
     }
     for b in &list {
+        // Trees, mines and walls in their terrain colour (neutral.rs): only on cells the player explored.
+        if b[4] >= crate::neutral::RADAR_TERRAIN {
+            assert!(
+                w.players[player as usize].explored[w.map.idx(b[0], b[1])] != 0,
+                "player {player} sees terrain blip {b:?} it never explored"
+            );
+            continue;
+        }
         if b[4] != NEUTRAL_OWNER && w.are_allies(b[4] as u8, player) {
             continue;
         }

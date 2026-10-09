@@ -42,10 +42,44 @@ EXTRA_ACTORS = [
     'E1R1', 'E3R1',            # paratroopers (ParatroopersPower DropItems)
     'U2', 'BADR', 'BADR.Bomber',  # spy plane, paratrooper transport, parabomb bomber
     'MINV', 'MINP',            # Minelayer mines (data/source/rules/misc.yaml)
+    'SPEF',                    # France's fake Sub Pen: map-only (OpenRA Prerequisites ~disabled)
 ]
-# Reveal range of OpenRA's support power camera actors. They live in
-# mods/ra/rules/misc.yaml, of which data/source only has the mines; OpenRA's CAMERA
-# actor reveals 10c0 and the power cameras inherit it.
+# The neutral world of OpenRA maps (data/source/rules/civilian.yaml,
+# decoration.yaml, husks.yaml, misc.yaml and the map-only walls of
+# structures.yaml): civilians, civilian and tech buildings, barrels, bridges,
+# trees, rocks and ore mines. Never built (`~disabled`); maps place them, and
+# the engine spawns some (tree husks, bridge huts). See engine/src/neutral.rs.
+WORLD_ACTORS = [
+    # Civilians
+    'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'TECN', 'TECN2',
+    # Tech buildings
+    'FCOM', 'HOSP', 'BIO', 'MISS', 'OILB',
+    # Civilian buildings, fields and huts
+    'V01', 'V02', 'V03', 'V04', 'V05', 'V06', 'V07', 'V08', 'V09', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16',
+    'V17', 'V18', 'V19', 'V19.Husk', 'V20', 'V21', 'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'V29', 'V30',
+    'V31', 'V32', 'V33', 'V34', 'V35', 'V36', 'V37', 'RICE', 'RUSHOUSE', 'ASIANHUT', 'SNOWHUT', 'LHUS', 'WINDMILL',
+    'RAILMINE', 'CTFLAG',
+    # Barrels and ammo boxes
+    'BARL', 'BRL3', 'AMMOBOX1', 'AMMOBOX2', 'AMMOBOX3',
+    # Bridges (OpenRA LegacyBridgeLayer) and their huts
+    'BRIDGE1', 'BRIDGE2', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BR1', 'BR2', 'BR3',
+    'BRIDGEHUT', 'BRIDGEHUT.small',
+    # Trees, their husks and other decorations
+    'T01', 'T02', 'T03', 'T04', 'T05', 'T06', 'T07', 'T08', 'T09', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16',
+    'T17', 'TC01', 'TC02', 'TC03', 'TC04', 'TC05',
+    'T01.Husk', 'T02.Husk', 'T03.Husk', 'T04.Husk', 'T05.Husk', 'T06.Husk', 'T07.Husk', 'T08.Husk', 'T09.Husk',
+    'T10.Husk', 'T11.Husk', 'T12.Husk', 'T13.Husk', 'T14.Husk', 'T15.Husk', 'T16.Husk', 'T17.Husk', 'TC01.Husk',
+    'TC02.Husk', 'TC03.Husk', 'TC04.Husk', 'TC05.Husk',
+    'BOXES01', 'BOXES02', 'BOXES03', 'BOXES04', 'BOXES05', 'BOXES06', 'BOXES07', 'BOXES08', 'BOXES09',
+    'ICE01', 'ICE02', 'ICE03', 'ICE04', 'ICE05', 'ROCK1', 'ROCK2', 'ROCK3', 'ROCK4', 'ROCK5', 'ROCK6', 'ROCK7',
+    'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2',
+    # Ore and gem mines (SeedsResource)
+    'MINE', 'GMINE',
+    # Walls only maps place
+    'CYCL', 'BARB', 'WOOD',
+]
+# Reveal range of OpenRA's support power camera actors: OpenRA's CAMERA actor
+# (mods/ra/rules/misc.yaml) reveals 10c0 and the power cameras inherit it.
 CAMERA_RANGE = 10 * 1024
 # OpenRA defaults of AirstrikePowerInfo / ParatroopersPowerInfo.
 AIRSTRIKE_UNIT = 'badr.bomber'
@@ -53,8 +87,10 @@ PARATROOPERS_UNIT = 'badr'
 POWER_SQUAD_OFFSET = [-1536, 1536]
 POWER_CAMERA_REMOVE_DELAY = 25
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
-ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete']
-TERRAIN_TYPES = ['Clear', 'Rough', 'Ore', 'Water']
+ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete', 'Tree']
+# Locomotor speed columns (engine map.rs SPEED_*); Gems move like Ore. River,
+# Rock, Tree and Wall cells are impassable for every locomotor.
+TERRAIN_TYPES = ['Clear', 'Rough', 'Ore', 'Water', 'Road', 'Bridge', 'Beach']
 DEFAULT_FALLOFF = [100, 37, 14, 5]  # OpenRA SpreadDamageWarhead default
 DEFAULT_BURST_DELAY = 5             # OpenRA WeaponInfo default
 BUILD_DURATION_MODIFIER = 60        # OpenRA BuildableInfo default (percent)
@@ -169,7 +205,10 @@ def parse_locomotors():
 # Target classes, as bit flags shared with the simulation (rules.rs).
 # 'Ground' is terrain (force-fire on the ground, engine TARGET_GROUND); no actor carries it.
 TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure': 4, 'AirborneActor': 8,
-               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 256, 'Trees': 0, 'Underwater': 64, 'Bridge': 0,
+               'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 256, 'Underwater': 64, 'Bridge': 0,
+               # Trees (and boxes, ice floes, utility poles: ^Tree) are only
+               # hit by warheads that list Trees (fire, V2, nukes, barrels).
+               'Trees': 512,
                # Submarine is its own class (surfaced and submerged subs): depth charge
                # warheads hit it, while Underwater only matches submerged subs.
                'Ship': 16, 'Submarine': 128,
@@ -215,23 +254,57 @@ def locomotor_info(name, locos):
     return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
 
 
-def weapon_info(name, weapons):
+def spread_and_falloff(name, v):
+    """SpreadDamage Spread and Falloff, or its explicit Range list (equally
+    spaced from 0, e.g. CivPanicExplosion's `0, 128`) as the same spread."""
+    falloff = ints(v['Falloff']) if 'Falloff' in v else DEFAULT_FALLOFF
+    if 'Range' not in v:
+        return wdist(v.get('Spread', 43)), falloff
+    ranges = [wdist(x) for x in tokens(v['Range'])]
+    step = ranges[1] - ranges[0] if len(ranges) > 1 else 0
+    if ranges[0] != 0 or step <= 0 or any(b - a != step for a, b in zip(ranges, ranges[1:])) or len(ranges) != len(falloff):
+        raise SystemExit(f'weapon {name}: Range {v["Range"]} is not equally spaced from 0 with one Falloff each')
+    return step, falloff
+
+
+def cluster_info(name, v, weapon_index):
+    """OpenRA FireClusterWarhead: `Weapon` fired at the X cells of a
+    footprint centred on the impact cell (as cell offsets); x cells are
+    picked at random RandomClusterCount times (-1: once per x cell)."""
+    dims = ints(v['Dimensions'])
+    rows = v['Footprint'].split()
+    if len(rows) != dims[1] or any(len(r) != dims[0] for r in rows):
+        raise SystemExit(f'weapon {name}: cluster footprint does not match its dimensions')
+    ox, oy = (dims[0] - 1) // 2, (dims[1] - 1) // 2
+    cells = [[x - ox, y - oy] for y, r in enumerate(rows) for x, c in enumerate(r) if c == 'X']
+    random_cells = [[x - ox, y - oy] for y, r in enumerate(rows) for x, c in enumerate(r) if c == 'x']
+    count = int(v.get('RandomClusterCount', -1))
+    return {'weapon': weapon_index(v['Weapon']), 'cells': cells, 'random_cells': random_cells,
+            'random_count': len(random_cells) if count < 0 else count}
+
+
+def weapon_info(name, weapons, weapon_index):
     w = weapons[name]
     proj = w.get('Projectile', {})
     ptype = proj.get('_') if isinstance(proj, dict) else proj
     warheads = []
+    clusters = []
     for k, v in w.items():
         if not (k.startswith('Warhead') and isinstance(v, dict)):
             continue
         kind = v.get('_')
+        if kind == 'FireCluster':
+            clusters.append(cluster_info(name, v, weapon_index))
+            continue
         if kind not in ('SpreadDamage', 'TargetDamage', 'HealthPercentageDamage'):
             continue
         versus = v.get('Versus', {})
+        spread, falloff = spread_and_falloff(name, v)
         warheads.append({
             'kind': {'SpreadDamage': 'spread', 'TargetDamage': 'target', 'HealthPercentageDamage': 'percent'}[kind],
             'damage': int(v.get('Damage', 0)),
-            'spread': wdist(v.get('Spread', 43)),
-            'falloff': ints(v['Falloff']) if 'Falloff' in v else DEFAULT_FALLOFF,
+            'spread': spread,
+            'falloff': falloff,
             'versus': [int(versus.get(a, 100)) for a in ARMOR_TYPES],
             'delay': int(v.get('Delay', 0)),
             'valid': target_mask(v.get('ValidTargets', 'Ground, Water')) or (1 | 2 | 4 | 16),
@@ -263,6 +336,7 @@ def weapon_info(name, weapons):
         'valid': target_mask(w.get('ValidTargets', 'Ground, Water')),
         'invalid': target_mask(w.get('InvalidTargets', '')),
         'warheads': warheads,
+        'clusters': clusters,
     }
 
 
@@ -415,12 +489,22 @@ def extra_actor(src, aid):
     """An actors.json-style record for a non-buildable actor, from the OpenRA YAML."""
     tree = src.rules[aid]
     t = src.to_json(tree)
-    name = src.tr(src.g(tree, 'Tooltip/Name')) or aid
+    # Haystacks and igloos only have Tooltip@SUMMER and Tooltip@WINTER (on the
+    # SNOW tileset): the one without a tileset condition (`!winter`) names them.
+    conditional = [v for v in trait(t, 'Tooltip').values() if isinstance(v, dict)]
+    tooltip = src.g(tree, 'Tooltip/Name') or next((v.get('Name') for v in conditional if v.get('RequiresCondition', '').startswith('!')),
+                                                  conditional[0].get('Name') if conditional else None)
+    name = src.tr(tooltip) or aid
+    # TooltipDescription@ally / @other (tech buildings): what capturing gives.
+    tips = {k.split('@')[-1]: src.tr(v['Description']) for k, v in trait(t, 'TooltipDescription').items()
+            if isinstance(v, dict) and v.get('Description')}
     return {
         'id': aid,
         'name': name,
-        'description': '',
-        'queue': 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t else 'Vehicle',
+        'description': src.tr(src.g(tree, 'Buildable/Description')) or '',
+        'tooltipDescriptions': tips,
+        'queue': 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t
+        else 'Building' if 'Building' in t else 'Vehicle',
         'cost': int(src.g(tree, 'Valued/Cost') or 0),
         'buildDuration': None,
         'buildDurationModifier': None,
@@ -433,11 +517,235 @@ def extra_actor(src, aid):
     }
 
 
+def hurts(w):
+    """Whether a weapon deals damage: a damage warhead with Damage, or cluster warheads (BarrelExplode)."""
+    return any(k.startswith('Warhead') and isinstance(v, dict) and (
+        (v.get('_') in ('SpreadDamage', 'TargetDamage', 'HealthPercentageDamage') and int(v.get('Damage', 0)) != 0)
+        or v.get('_') == 'FireCluster') for k, v in w.items())
+
+
+# OpenRA RA tilesets of the WebRA biomes (bridge templates differ per tileset).
+BIOME_TILESETS = {'temperate': 'TEMPERAT', 'snow': 'SNOW', 'desert': 'DESERT'}
+TILESET_FILES = {'TEMPERAT': 'temperat', 'SNOW': 'snow', 'DESERT': 'desert'}
+# One letter per OpenRA terrain type, as in tools/gen_oramap_tables.py; the
+# engine reads them in bridge templates (map.rs Terrain::from_letter).
+TERRAIN_LETTERS = {'Clear': 'c', 'ClearNoSmudges': 'c', 'Rough': 'r', 'Road': 'd', 'Rock': 'k', 'Water': 'w', 'River': 'v',
+                   'Tree': 't', 'Beach': 'b', 'Bridge': 'g', 'Wall': 'l', 'Ore': 'o', 'Gems': 'm'}
+# OpenRA BridgeInfo defaults.
+BRIDGE_REPAIR_PROPAGATION_DELAY = 20
+BRIDGE_SHORE_PIECES = 'br1, br2'
+BRIDGE_DEMOLISH_WEAPON = 'Demolish'
+# OpenRA ScaredyCatInfo, WandersInfo, SeedsResourceInfo and CashTricklerInfo defaults.
+PANIC_CHANCE, PANIC_DURATION, PANIC_SPEED, ATTACK_PANIC_CHANCE = 100, 250, 200, 20
+WANDER_RADIUS, WANDER_REDUCE_DELAY = 1, 5
+SEED_INTERVAL, SEED_MAX_RANGE = 75, 100
+TRICKLE_INTERVAL, TRICKLE_AMOUNT = 50, 15
+
+
+def load_tilesets(src):
+    """Template id -> (size, terrain letter rows) per tileset id."""
+    out = {}
+    for tid, fn in TILESET_FILES.items():
+        root = src.parse_miniyaml(open(os.path.join(DATA, 'source', 'tilesets', fn + '.yaml')).read())
+        templates = {}
+        for _k, (_v, ch) in root['Templates'][1].items():
+            w, h = (int(x) for x in ch['Size'][0].split(','))
+            tiles = {int(k): v for k, (v, _) in ch.get('Tiles', ['', {}])[1].items()}
+            rows = [''.join(TERRAIN_LETTERS[tiles[y * w + x]] if y * w + x in tiles else '.' for x in range(w)) for y in range(h)]
+            templates[int(ch['Id'][0])] = {'size': [w, h], 'rows': rows}
+        out[tid] = templates
+    return out
+
+
+def tileset_conditions(t):
+    """Conditions of GrantConditionOnTileSet traits -> the tilesets that grant them."""
+    return {v['Condition']: set(tokens(v.get('TileSets'))) for v in trait(t, 'GrantConditionOnTileSet').values() if isinstance(v, dict)}
+
+
+def biomes_of(cond, conds):
+    """WebRA biomes where a RequiresCondition on tileset conditions holds (None: all)."""
+    if not cond:
+        return None
+    neg = cond.startswith('!')
+    name = cond.lstrip('!')
+    if name not in conds:
+        raise SystemExit(f'unsupported condition {cond!r} on a bridge')
+    return [b for b, ts in BIOME_TILESETS.items() if (ts in conds[name]) != neg]
+
+
+def bridge_info(t, ids_lower, tilesets, weapon_index):
+    """OpenRA Bridge (LegacyBridgeLayer bridges): the template of every state
+    per biome (terrain letter rows, '.' = not part of the bridge), long bridge
+    links, the huts it spawns (FreeActor) and its demolition weapon."""
+    b = t['Bridge'] if isinstance(t['Bridge'], dict) else {}
+    states = [('healthy', 'Template'), ('damaged', 'DamagedTemplate'), ('destroyed', 'DestroyedTemplate'),
+              ('destroyed_north', 'DestroyedPlusNorthTemplate'), ('destroyed_south', 'DestroyedPlusSouthTemplate'),
+              ('destroyed_both', 'DestroyedPlusBothTemplate')]
+    templates = {}
+    for biome, ts in BIOME_TILESETS.items():
+        known = tilesets[ts]
+        healthy = known.get(int(b.get('Template', 0)))
+        if healthy is None:
+            continue
+        rec = {'size': healthy['size']}
+        for state, key in states:
+            tpl = known.get(int(b.get(key, 0)))
+            if tpl is None:
+                continue
+            if tpl['size'] != healthy['size']:
+                raise SystemExit(f'bridge template {b.get(key)} on {ts} is not the size of {b.get("Template")}')
+            rec[state] = tpl['rows']
+        templates[biome] = rec
+    if not templates:
+        raise SystemExit(f'bridge template {b.get("Template")} is on no WebRA tileset')
+    conds = tileset_conditions(t)
+    huts = []
+    for v in trait(t, 'FreeActor').values():
+        if isinstance(v, dict):
+            huts.append({'actor': ids_lower[v['Actor'].lower()], 'offset': ints(v.get('SpawnOffset', '0,0'))[:2],
+                         'biomes': biomes_of(v.get('RequiresCondition'), conds)})
+    off = lambda k: ints(b[k])[:2] if k in b else None  # noqa: E731
+    return {
+        'long': str(b.get('Long', 'false')).lower() == 'true',
+        'repair_delay': int(b.get('RepairPropagationDelay', BRIDGE_REPAIR_PROPAGATION_DELAY)),
+        'shore_pieces': [ids_lower[x.lower()] for x in tokens(b.get('ShorePieces', BRIDGE_SHORE_PIECES))],
+        'north': off('NorthOffset'),
+        'south': off('SouthOffset'),
+        'templates': templates,
+        'huts': huts,
+        'demolish_weapon': weapon_index(b.get('DemolishWeapon', BRIDGE_DEMOLISH_WEAPON)),
+    }
+
+
+def hospital_heal(t):
+    """ChangesHealth switched on by a prerequisite (RA's ^Infantry: owning a
+    Hospital, `hosp`, heals damaged infantry): GrantConditionOnPrerequisite ->
+    GrantCondition (with `damaged`) -> ChangesHealth."""
+    for g in trait(t, 'GrantConditionOnPrerequisite').values():
+        if not isinstance(g, dict) or g.get('Condition') == 'global-bounty':
+            continue
+        cond, prereqs = g['Condition'], tokens(g.get('Prerequisites'))
+        for gc in trait(t, 'GrantCondition').values():
+            if not (isinstance(gc, dict) and cond in re.split(r'[\s&|!()]+', gc.get('RequiresCondition', ''))):
+                continue
+            for ch in trait(t, 'ChangesHealth').values():
+                if isinstance(ch, dict) and ch.get('RequiresCondition') == gc['Condition'] and len(prereqs) == 1:
+                    return {'prerequisite': prereqs[0], 'step': int(ch.get('Step', 0)), 'delay': int(ch.get('Delay', CHANGES_HEALTH_DELAY)),
+                            'start_if_below': int(ch.get('StartIfBelow', CHANGES_HEALTH_START_IF_BELOW)),
+                            'damage_cooldown': int(ch.get('DamageCooldown', 0))}
+    return None
+
+
+def editor_info(t):
+    """MapEditorData: the editor category and the WebRA biomes allowed (None: all)."""
+    m = t.get('MapEditorData') if isinstance(t.get('MapEditorData'), dict) else {}
+    cats = tokens(m.get('Categories'))
+    need = set(tokens(m.get('RequireTilesets')))
+    skip = set(tokens(m.get('ExcludeTilesets')))
+    biomes = [b for b, ts in BIOME_TILESETS.items() if (not need or ts in need) and ts not in skip]
+    return (cats[0] if cats else None), (None if len(biomes) == len(BIOME_TILESETS) else biomes)
+
+
+def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
+    """Traits of the neutral world (engine/src/neutral.rs), with OpenRA defaults.
+    `neutral`: one of WORLD_ACTORS."""
+    types = target_types(t)
+    tg = first(t, 'Targetable')
+    if not has(t, 'Targetable'):
+        target = 0                        # husks, fields, rocks: nothing can aim at them
+    elif 'Trees' in types and not types & {'GroundActor', 'WaterActor', 'AirborneActor'}:
+        target = TARGET_BITS['Trees']     # ^Tree: only hit by warheads that list Trees
+    elif 'Bridge' in types:
+        target = TARGET_BITS['Structure'] | TARGET_BITS['WaterActor']
+    elif 'BridgeHut' in types:
+        target = 0                        # entered by engineers, never shot at
+    else:
+        target = None                     # the actor kind's target class
+    death = [weapon_index(v['Weapon']) for k, v in sorted(trait(t, 'FireWarheadsOnDeath').items())
+             if k != 'FireWarheadsOnDeath' and isinstance(v, dict) and v.get('Weapon')]
+    spawn = t.get('SpawnActorOnDeath')
+    # ExplosionOnDamageTransition: BridgeExplode only makes fire and a splash
+    # (weapon null: the engine shows the explosion without damage).
+    explosions = [{'weapon': damaging(v['Weapon']), 'state': v.get('DamageState', 'Heavy').lower()}
+                  for k, v in sorted(trait(t, 'ExplosionOnDamageTransition').items()) if isinstance(v, dict)]
+    cap = first(t, 'Capturable') if has(t, 'Capturable') else None
+    trickle = None
+    if has(t, 'CashTrickler'):
+        c = next(iter(trait(t, 'CashTrickler').values()))
+        c = c if isinstance(c, dict) else {}
+        combatant = {g['Condition'] for g in trait(t, 'GrantConditionOnCombatantOwner').values() if isinstance(g, dict)}
+        req = c.get('RequiresCondition', '')
+        if req and req not in combatant:
+            raise SystemExit(f'unsupported CashTrickler condition {req!r}')
+        trickle = {'interval': int(c.get('Interval', TRICKLE_INTERVAL)), 'initial_delay': int(c.get('InitialDelay', 0)),
+                   'amount': int(c.get('Amount', TRICKLE_AMOUNT)), 'combatant_only': bool(req)}
+    scared = None
+    if 'ScaredyCat' in t:
+        c = t['ScaredyCat'] if isinstance(t['ScaredyCat'], dict) else {}
+        scared = {'panic_chance': int(c.get('PanicChance', PANIC_CHANCE)), 'duration': int(c.get('PanicDuration', PANIC_DURATION)),
+                  'speed_modifier': int(c.get('PanicSpeedModifier', PANIC_SPEED)),
+                  'attack_panic_chance': int(c.get('AttackPanicChance', ATTACK_PANIC_CHANCE))}
+    wanders = None
+    if 'Wanders' in t:
+        c = t['Wanders'] if isinstance(t['Wanders'], dict) else {}
+        wanders = {'radius': int(c.get('WanderMoveRadius', WANDER_RADIUS)), 'reduce_delay': int(c.get('ReduceMoveRadiusDelay', WANDER_REDUCE_DELAY)),
+                   'min_delay': int(c.get('MinMoveDelay', 0)), 'max_delay': int(c.get('MaxMoveDelay', 0))}
+    seeds = None
+    if 'SeedsResource' in t:
+        c = t['SeedsResource'] if isinstance(t['SeedsResource'], dict) else {}
+        seeds = {'resource': c.get('ResourceType', 'Ore').lower(), 'interval': int(c.get('Interval', SEED_INTERVAL)),
+                 'max_range': int(c.get('MaxRange', SEED_MAX_RANGE))}
+    lost = first(t, 'OwnerLostAction')
+    category, biomes = editor_info(t)
+    gives = first(t, 'GivesCashOnCapture') if has(t, 'GivesCashOnCapture') else {}
+    return {
+        'target': target,
+        'no_auto_target': 'NoAutoTarget' in types,
+        'force_fire': str(tg.get('RequiresForceFire', 'false')).lower() == 'true',
+        # No Health trait: nothing damages it (rocks, fields, husks of trees).
+        'indestructible': kind == 'building' and 'Health' not in t,
+        # HiddenUnderShroud: seen once explored, also under the fog (trees, rocks, mines).
+        'shroud_only': 'HiddenUnderShroud' in t,
+        'must_be_destroyed': has(t, 'MustBeDestroyed'),
+        'owner_lost': (lost.get('Action') or 'Kill').lower() if has(t, 'OwnerLostAction') else None,
+        'death_weapons': death,
+        # Husks of the neutral world (trees, V19); unit husks are not part of it.
+        'spawn_on_death': ids_lower[spawn['Actor'].lower()] if isinstance(spawn, dict) and neutral else None,
+        'damage_explosions': explosions,
+        'capturable': tokens(cap.get('Types')) if cap is not None else None,
+        'cash_on_capture': int(gives.get('Amount', 0)),
+        'cash_trickler': trickle,
+        'hospital_heal': hospital_heal(t) if kind == 'infantry' else None,
+        'scaredy_cat': scared,
+        'wanders': wanders,
+        'seeds': seeds,
+        'bridge': bridge_info(t, ids_lower, tilesets, weapon_index) if 'Bridge' in t else None,
+        'bridge_hut': 'LegacyBridgeHut' in t,
+        'selectable': has(t, 'Selectable'),
+        # RadarColorFromTerrain: the radar shows it in a terrain colour (trees, mines, walls).
+        'radar_terrain': (t['RadarColorFromTerrain'].get('Terrain') if isinstance(t.get('RadarColorFromTerrain'), dict) else None),
+        'category': category,
+        'biomes': biomes,
+    }
+
+
+def tooltip_descriptions(a):
+    """OpenRA TooltipDescription@ally and @other of a world actor (tech
+    buildings): the text owners and their allies see, and the text everyone
+    else sees."""
+    tips = a.get('tooltipDescriptions') or {}
+    unknown = set(tips) - {'ally', 'other'}
+    if unknown:
+        raise SystemExit(f"{a['id']}: unsupported TooltipDescription {sorted(unknown)}")
+    return {'ally_description': (tips.get('ally') or '').strip(), 'other_description': (tips.get('other') or '').strip()}
+
+
 def main():
     actors = {a['id']: a for a in json.load(open(os.path.join(DATA, 'actors.json')))}
     src = load_source_rules()
-    for aid in EXTRA_ACTORS:
-        actors[aid] = extra_actor(src, aid)
+    for aid in EXTRA_ACTORS + WORLD_ACTORS:
+        if aid not in actors:
+            actors[aid] = extra_actor(src, aid)
     weapons = json.load(open(os.path.join(DATA, 'weapons.json')))
     wl = {k.lower(): k for k in weapons}
     locos = parse_locomotors()
@@ -451,7 +759,12 @@ def main():
             used_weapons.append(wn)
         return used_weapons.index(wn)
 
-    for aid in ACTORS + EXTRA_ACTORS:
+    def damaging(wname):
+        """weapon_index of a weapon that deals damage, else None (visual only)."""
+        return weapon_index(wname) if hurts(weapons[wl[wname.lower()]]) else None
+
+    tilesets = load_tilesets(src)
+    for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS:
         a = actors[aid]
         t = a['traits']
         kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
@@ -491,14 +804,23 @@ def main():
             'experience': experience_info(t),
             'gives_experience': gives_experience_info(t),
             'take_cover': take_cover_info(t) if kind == 'infantry' else None,
+            # The neutral world's traits (engine/src/neutral.rs).
+            'world': {**world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, aid in WORLD_ACTORS), **tooltip_descriptions(a)},
         }
+        if e['world'].get('indestructible'):
+            e['hp'] = 1  # no Health trait: never damaged (the engine needs a positive value)
+        # Only what differs from the engine's defaults (neutral.rs WorldTraits):
+        # most actors have none of these traits.
+        e['world'] = {k: v for k, v in e['world'].items() if (k == 'target' and v is not None) or (k != 'target' and v not in (None, False, [], 0))}
         for slot, arm in trait(t, 'Armament').items():
             # Garrison weapons belong to the soldier inside, not the vehicle or building.
             if isinstance(arm, dict) and arm.get('Name') != 'garrisoned':
                 e['weapons'].append(weapon_index(arm['Weapon']))
         death = t.get('FireWarheadsOnDeath')
         # Death explosions that only make visual effects (BuildingExplode) deal no damage: skip them.
-        if kind != 'building' and isinstance(death, dict) and death.get('Weapon') and has_damage(weapons[wl[death['Weapon'].lower()]]):
+        # Structures keep the ones that hurt (barrels and oil derricks: BarrelExplode).
+        if isinstance(death, dict) and death.get('Weapon') and (has_damage(weapons[wl[death['Weapon'].lower()]]) if kind != 'building'
+                                                                else hurts(weapons[wl[death['Weapon'].lower()]])):
             e['death_weapon'] = weapon_index(death['Weapon'])
         heal = first(t, 'ChangesHealth')
         if heal and int(heal.get('Step', 0)) > 0:
@@ -650,6 +972,15 @@ def main():
             w, h = ints(b['Dimensions'])
             rows = footprint_rows(b['Footprint'])
             assert len(rows) == h and all(len(r) == w for r in rows), aid
+            bridge = e['world'].get('bridge')
+            if bridge:
+                # A bridge covers its template (the first tileset that has it);
+                # OpenRA's Building footprint of a bridge is all `_`.
+                w, h = next(iter(bridge['templates'].values()))['size']
+                rows = ['-' * w] * h
+            elif e['world'].get('bridge_hut'):
+                # Bridge huts stand on the bridge's cells without occupying them.
+                rows = [r.replace('_', '-') for r in rows]
             e['building'] = {
                 'width': w,
                 'height': h,
@@ -829,7 +1160,8 @@ def main():
         'factions': FACTIONS,
         'player': player,
         'actors': out_actors,
-        'weapons': [weapon_info(w, weapons) for w in used_weapons],
+        # Cluster warheads add the weapons they fire while this runs.
+        'weapons': [weapon_info(w, weapons, weapon_index) for w in used_weapons],
         'locomotors': [locomotor_info(l, locos) for l in used_locos],
     }
     with open(OUT, 'w') as fh:

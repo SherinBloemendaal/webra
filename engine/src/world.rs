@@ -1,6 +1,6 @@
 //! World state, actor storage, orders and the fixed-step tick loop.
 
-use crate::flowfield::{nearest_in_component, FlowCache, Passability};
+use crate::flowfield::{FlowCache, Passability};
 use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
@@ -15,7 +15,6 @@ const IDX_BITS: u32 = 22;
 const IDX_MASK: u32 = (1 << IDX_BITS) - 1;
 const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
 pub const MAX_WEAPONS: usize = 4;
-const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
 /// Queued waypoints a unit keeps at most (Shift+click moves); later ones are dropped.
 pub const MAX_WAYPOINTS: usize = 16;
@@ -198,6 +197,9 @@ pub struct Actor {
     pub repair_active: bool,
     /// Switched off with the power down button (OpenRA `powerdown` condition).
     pub powered_off: bool,
+    /// State of the neutral world's traits (neutral.rs): panic, wandering,
+    /// hospital heal, oil derrick and ore mine timers.
+    pub world: crate::neutral::ActorWorld,
 }
 
 impl Actor {
@@ -278,6 +280,7 @@ impl Actor {
             repair_ticks: 0,
             repair_active: false,
             powered_off: false,
+            world: crate::neutral::ActorWorld::default(),
         }
     }
 
@@ -865,6 +868,8 @@ pub struct World {
     pub render_combined: bool,
     /// Map beacons players placed for their allies (beacons.rs).
     pub beacons: crate::beacons::Beacons,
+    /// The neutral world: bridges, husks to spawn, the neutral player (neutral.rs, bridges.rs).
+    pub neutral: crate::neutral::NeutralState,
 }
 
 impl World {
@@ -878,7 +883,9 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        World::setup(rules, map, seed, players, options, &[], biome)
+        // Ore mines in the fields (mapgen/sites.rs).
+        let actors = crate::mapgen::sites::world_actors(&map);
+        World::setup(rules, map, seed, players, options, &actors, biome)
     }
 
     /// World on a prepared map with the default rules: players start at the
@@ -938,14 +945,17 @@ impl World {
             w.spawn_start(slot as u8);
         }
         // Pre-placed map actors. Those of empty spawns are skipped; neutral
-        // ones belong to an extra, passive player.
-        if actors.iter().any(|a| a.owner < 0) {
+        // ones (and the trees of tree terrain, neutral.rs) belong to an
+        // extra, passive player.
+        let trees = w.map.terrain.contains(&crate::map::Terrain::Tree);
+        if actors.iter().any(|a| a.owner < 0) || trees {
             let fi = w.rules.faction_index("allies").unwrap();
             w.add_player(fi, false, (0, 0));
             let n = w.players.len() - 1;
             w.players[n].neutral = true;
             w.players[n].cash = 0;
             w.ai.push(crate::ai::AiState::new(n as u32, AiDifficulty::Easy));
+            w.neutral.player = Some(n as u8);
         }
         let neutral = w.players.len() as u8 - 1;
         for a in actors {
@@ -960,6 +970,8 @@ impl World {
                 w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
             }
         }
+        // Trees from tree terrain, bridges (neutral.rs, bridges.rs).
+        w.setup_neutral();
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
@@ -1038,6 +1050,7 @@ impl World {
             render_all: false,
             render_combined: false,
             beacons: Default::default(),
+            neutral: Default::default(),
             map,
         }
     }
@@ -1150,6 +1163,7 @@ impl World {
         a.born = self.tick;
         self.actors[i] = a;
         self.init_abilities(i);
+        self.init_world_traits(i);
         i
     }
 
@@ -1185,10 +1199,13 @@ impl World {
         a.born = self.tick;
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
+        let crush = info.abilities.crushable.as_ref().map_or(0, crate::flowfield::crush_bits);
         self.actors[i] = a;
         self.init_abilities(i);
+        self.init_world_traits(i);
         for (dx, dy, c) in footprint {
-            if c == FootCell::Empty {
+            // Overlay cells (bridges and their huts) are not claimed.
+            if matches!(c, FootCell::Empty | FootCell::Overlay) {
                 continue;
             }
             // Checked by `fits` above.
@@ -1197,6 +1214,8 @@ impl World {
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);
                 self.pass_water.set_blocked(ci, true);
+                // Walls tanks may drive over (neutral.rs).
+                self.pass.set_crush(ci, crush);
             }
         }
         self.pass.refresh(&self.map);
@@ -1240,6 +1259,8 @@ impl World {
             self.ship_death_effect(i);
         }
         self.death_explosion(i);
+        // Further death weapons and husks (neutral.rs).
+        self.on_world_killed(i);
         // Passengers die with their transport, or get out (Cargo.EjectOnDeath).
         self.cargo_on_death(i);
     }
@@ -1272,6 +1293,7 @@ impl World {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
                         self.pass_water.set_blocked(ci, !self.map.terrain[ci].ship_passable());
+                        self.pass.set_crush(ci, 0);
                     }
                 }
                 self.tokens_dirty = true;
@@ -1321,9 +1343,8 @@ impl World {
         if d == crate::rules::Domain::Air {
             return self.map.idx(gx, gy) as u32;
         }
-        let pass = self.pass_for(d);
-        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci], from).unwrap_or(NONE)
+        // Crushers reach what lies behind walls they may crush (neutral.rs).
+        self.nearest_reachable(i, (gx, gy), from).unwrap_or(NONE)
     }
 
     // ---- Geometry helpers --------------------------------------------------
@@ -1355,6 +1376,10 @@ impl World {
         }
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            // Bridges are hit around their centre (bridges.rs).
+            if self.rules.actors[a.ty as usize].world.bridge.is_some() {
+                return self.bridge_hit_distance(i, x, y);
+            }
             let mut best = i32::MAX;
             for &(dx, dy) in &b.hit_cells {
                 let x0 = (a.cx + dx) * CELL;
@@ -1381,7 +1406,10 @@ impl World {
         }
         let vis = &self.players[player as usize].visible;
         if a.kind == Kind::Building {
-            let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            let info = &self.rules.actors[a.ty as usize];
+            let b = info.building.as_ref().unwrap();
+            // HiddenUnderShroud (trees, rocks, bridges): seen once explored (neutral.rs).
+            let vis = if info.world.shroud_only { &self.players[player as usize].explored } else { vis };
             b.footprint.iter().any(|&(dx, dy, c)| c != FootCell::Empty && vis[self.map.idx(a.cx + dx, a.cy + dy)] != 0)
         } else {
             // Passengers are inside their transport; submerged submarines need a detector.
@@ -1664,8 +1692,8 @@ impl World {
         let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
         let from = self.cell_of(cx, cy);
         let (gx, gy) = self.cell_toward(x, y, cx, cy);
-        // Reachable goals per (domain, component), shared by the group.
-        let mut goals: Vec<((crate::rules::Domain, u32), u32)> = Vec::new();
+        // Reachable goals per (domain, component, crushed walls), shared by the group.
+        let mut goals: Vec<((crate::rules::Domain, u32, u8), u32)> = Vec::new();
         for &i in units {
             if !self.actors[i].in_world() {
                 continue;
@@ -1677,11 +1705,12 @@ impl World {
             } else {
                 self.pass_for(d).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
             };
-            let goal = match goals.iter().find(|(k, _)| *k == (d, comp)) {
+            let crush = self.crush_mask(i);
+            let goal = match goals.iter().find(|(k, _)| *k == (d, comp, crush)) {
                 Some(&(_, g)) => g,
                 None => {
                     let g = self.path_goal_from(i, gx, gy, from);
-                    goals.push(((d, comp), g));
+                    goals.push(((d, comp, crush), g));
                     g
                 }
             };
@@ -1761,6 +1790,14 @@ impl World {
         if let Some(m) = self.mine_at(self.map.idx(cx, cy)) {
             if self.is_visible_to(m, player) && !self.is_cloaked_from(m, player) {
                 return Some(m);
+            }
+        }
+        // A bridge under the cursor (force fire on it, bridges.rs).
+        if let Some(b) = self.neutral.bridges.bridge_at(self.map.idx(cx, cy)) {
+            if let Some(i) = self.resolve(self.neutral.bridges.bridges[b].actor) {
+                if self.is_visible_to(i, player) {
+                    return Some(i);
+                }
             }
         }
         None
@@ -1936,14 +1973,11 @@ impl World {
         self.tick_projectiles();
         self.tick_crashes();
         self.cleanup_dead();
+        // Husks, the hospital, oil derricks, ore mines (with the "Ore
+        // regrowth" option), panics and bridge repairs (neutral.rs).
+        self.tick_neutral();
         if self.tokens_dirty {
             self.refresh_tokens();
-        }
-        if self.options.ore_regrowth && self.tick.is_multiple_of(ORE_GROWTH_INTERVAL) {
-            let max = self.rules.player.ore_max_density;
-            if self.map.grow_ore(&mut self.rng, max, &self.pass.blocked) {
-                self.terrain_dirty = true;
-            }
         }
         if self.tick.is_multiple_of(VISION_INTERVAL) {
             self.update_vision();
@@ -1964,19 +1998,21 @@ impl World {
             return;
         }
         let mut alive_count = vec![0u32; self.players.len()];
-        for (i, a) in self.actors.iter().enumerate() {
-            // OpenRA MustBeDestroyed: mines, walls (^Wall has none) and
-            // submarines (^Submarine: -MustBeDestroyed) alone do not keep a
-            // player in the game; a fleet of submarines hiding in a harbour
-            // would otherwise hold up the end forever.
-            if a.alive && a.kind != Kind::Mine && !self.rules.actors[a.ty as usize].is_wall() && !self.is_submarine(i) {
+        for a in self.actors.iter() {
+            // OpenRA MustBeDestroyed: mines, walls, silos, fakes, submarines,
+            // civilians and captured tech buildings alone do not keep a player
+            // in the game; a fleet of submarines hiding in a harbour would
+            // otherwise hold up the end forever.
+            if a.alive && self.rules.actors[a.ty as usize].world.must_be_destroyed {
                 alive_count[a.owner as usize] += 1;
             }
         }
         for (p, &n) in alive_count.iter().enumerate() {
-            if n == 0 && !self.players[p].neutral {
+            if n == 0 && !self.players[p].neutral && !self.players[p].defeated {
                 self.players[p].defeated = true;
                 self.note_defeated(p as u8);
+                // OpenRA OwnerLostAction (neutral.rs).
+                self.owner_lost(p as u8);
             }
         }
         // The game ends when every remaining player is on the same side.
@@ -2031,8 +2067,12 @@ impl World {
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
+                // The neutral world's traits (neutral.rs).
+                a.world.mix(&mut mix);
             }
         }
+        // Bridges and husks to spawn (bridges.rs, neutral.rs).
+        self.neutral.mix(&mut mix);
         mix(self.env.weather as i64);
         for p in &self.players {
             mix(p.cash as i64);

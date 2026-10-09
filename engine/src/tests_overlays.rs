@@ -14,6 +14,7 @@ fn ty(w: &World, id: &str) -> u16 {
 fn world() -> World {
     let players = [PlayerSetup::new("russia", None), PlayerSetup::new("england", None)];
     let mut w = World::with_options(5, 64, &players, GameOptions { ore_regrowth: false, ..GameOptions::default() });
+    w.clear_neutral_world();
     for p in w.players.iter_mut() {
         p.explored.iter_mut().for_each(|e| *e = 1);
     }

@@ -24,6 +24,7 @@ fn flat_world(factions: [&str; 2]) -> World {
 }
 
 fn flatten(w: &mut World) {
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;

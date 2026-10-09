@@ -360,7 +360,10 @@ impl World {
         let mut shown: Vec<usize> = selected.iter().filter_map(|&r| self.resolve(r)).collect();
         let mut rel: Vec<f32> = Vec::new();
         let mut bar = |i: usize, shown: &mut Vec<usize>, sink: &mut Sink| {
-            if shown.contains(&i) || !self.shows_overlay_to(i, player) {
+            // Trees, barrels, husks and bridges have no selection decorations
+            // (OpenRA: not Selectable); walls keep theirs.
+            let info = &self.rules.actors[self.actors[i].ty as usize];
+            if shown.contains(&i) || !self.shows_overlay_to(i, player) || (!info.world.selectable && !info.is_wall()) {
                 return;
             }
             shown.push(i);

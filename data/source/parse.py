@@ -88,7 +88,7 @@ for line in open(os.path.join(D, 'rules.ftl')):
 def tr(key):
     return ftl.get(key, key) if key else key
 
-rules = resolve_all(load('rules', ['defaults', 'infantry', 'vehicles', 'aircraft', 'ships', 'structures', 'fakes', 'misc']))
+rules = resolve_all(load('rules', ['defaults', 'infantry', 'vehicles', 'aircraft', 'ships', 'structures', 'fakes', 'misc', 'civilian', 'decoration', 'husks']))
 weapons = resolve_all(load('weapons', ['ballistics', 'explosions', 'missiles', 'other', 'smallcaliber', 'superweapons']))
 weapons_json = {k: to_json(v) for k, v in weapons.items() if not k.startswith('^')}
 

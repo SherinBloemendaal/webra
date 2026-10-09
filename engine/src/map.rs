@@ -15,7 +15,18 @@ pub enum Terrain {
     /// Shallow water: ground units wade through at rough speed and ships
     /// sail over it, so a river crossing never cuts the water network.
     Ford = 5,
+    /// OpenRA terrain types of the Red Alert tilesets (world.yaml locomotors):
+    /// roads and bridges are faster than clear ground, beaches are sand that
+    /// slows wheels, rivers and walls stop everything.
+    Road = 6,
+    Bridge = 7,
+    Beach = 8,
+    River = 9,
+    Wall = 10,
 }
+
+/// Number of terrain values (map files store `Terrain as u8` below this).
+pub const TERRAIN_COUNT: u8 = 11;
 
 impl Terrain {
     pub fn from_u8(v: u8) -> Option<Terrain> {
@@ -26,23 +37,67 @@ impl Terrain {
             3 => Terrain::Water,
             4 => Terrain::Tree,
             5 => Terrain::Ford,
+            6 => Terrain::Road,
+            7 => Terrain::Bridge,
+            8 => Terrain::Beach,
+            9 => Terrain::River,
+            10 => Terrain::Wall,
             _ => return None,
         })
     }
 
+    /// The terrain of an OpenRA terrain letter (tools/gen_oramap_tables.py
+    /// ORA_TERRAIN_LETTERS; bridge templates in rules.json use them). Ore and
+    /// gem ground are clear.
+    pub fn from_letter(c: char) -> Option<Terrain> {
+        Some(match c {
+            'c' | 'o' | 'm' => Terrain::Clear,
+            'r' => Terrain::Rough,
+            'k' => Terrain::Rock,
+            'w' => Terrain::Water,
+            't' => Terrain::Tree,
+            'd' => Terrain::Road,
+            'g' => Terrain::Bridge,
+            'b' => Terrain::Beach,
+            'v' => Terrain::River,
+            'l' => Terrain::Wall,
+            _ => return None,
+        })
+    }
+
+    /// OpenRA's terrain type name (Minelayer and aircraft terrain lists).
+    pub fn name(self) -> &'static str {
+        match self {
+            Terrain::Clear => "Clear",
+            Terrain::Rough => "Rough",
+            Terrain::Rock => "Rock",
+            Terrain::Water => "Water",
+            Terrain::Tree => "Tree",
+            Terrain::Ford => "Ford",
+            Terrain::Road => "Road",
+            Terrain::Bridge => "Bridge",
+            Terrain::Beach => "Beach",
+            Terrain::River => "River",
+            Terrain::Wall => "Wall",
+        }
+    }
+
     pub fn passable(self) -> bool {
-        matches!(self, Terrain::Clear | Terrain::Rough | Terrain::Ford)
+        matches!(self, Terrain::Clear | Terrain::Rough | Terrain::Ford | Terrain::Road | Terrain::Bridge | Terrain::Beach)
     }
+    /// OpenRA Building.TerrainTypes `Clear, Road`.
     pub fn buildable(self) -> bool {
-        self == Terrain::Clear
+        matches!(self, Terrain::Clear | Terrain::Road)
     }
-    /// Open to ships: water and fords.
+    /// Open to ships: water and fords. (OpenRA's landing craft also beach;
+    /// WebRA's Transport unloads from the water instead.)
     pub fn ship_passable(self) -> bool {
         matches!(self, Terrain::Water | Terrain::Ford)
     }
-    /// Ore (and anything harvested) only lies on clear or rough ground.
+    /// Ore (and anything harvested) lies on clear ground and roads (OpenRA
+    /// ResourceLayer AllowedTerrainTypes `Clear, Road`) and on rough ground.
     pub fn holds_ore(self) -> bool {
-        matches!(self, Terrain::Clear | Terrain::Rough)
+        matches!(self, Terrain::Clear | Terrain::Rough | Terrain::Road)
     }
 }
 
@@ -63,6 +118,11 @@ pub const SPEED_CLEAR: usize = 0;
 pub const SPEED_ROUGH: usize = 1;
 pub const SPEED_ORE: usize = 2;
 pub const SPEED_WATER: usize = 3;
+pub const SPEED_ROAD: usize = 4;
+pub const SPEED_BRIDGE: usize = 5;
+pub const SPEED_BEACH: usize = 6;
+/// Length of a locomotor's speed table.
+pub const SPEED_CLASSES: usize = 7;
 
 #[derive(Clone)]
 pub struct Map {
@@ -133,16 +193,17 @@ impl Map {
 
     /// Movement class of cell `i` for ground units (fords count as rough).
     /// Gems slow units like ore (OpenRA's locomotors give the Gems and Ore
-    /// terrain types the same speeds).
+    /// terrain types the same speeds); ore on a road is ore (OpenRA's
+    /// resource layer turns the cell's terrain type into Ore).
     pub fn speed_class(&self, i: usize) -> usize {
-        if self.terrain[i] == Terrain::Water {
-            SPEED_WATER
-        } else if self.has_resource(i) {
-            SPEED_ORE
-        } else if matches!(self.terrain[i], Terrain::Rough | Terrain::Ford) {
-            SPEED_ROUGH
-        } else {
-            SPEED_CLEAR
+        match self.terrain[i] {
+            Terrain::Water => SPEED_WATER,
+            _ if self.has_resource(i) => SPEED_ORE,
+            Terrain::Rough | Terrain::Ford => SPEED_ROUGH,
+            Terrain::Road => SPEED_ROAD,
+            Terrain::Bridge => SPEED_BRIDGE,
+            Terrain::Beach => SPEED_BEACH,
+            _ => SPEED_CLEAR,
         }
     }
 
@@ -932,39 +993,6 @@ impl Map {
         }
         false
     }
-
-    /// Ore growth: dense fields slowly regrow and spread to neighbouring clear
-    /// cells. Gems neither regrow nor spread (Red Alert), and ore never
-    /// spreads onto them.
-    pub fn grow_ore(&mut self, rng: &mut Rng, max: u8, blocked: &[bool]) -> bool {
-        let mut changed = false;
-        let n = self.cells();
-        let mut spread = Vec::new();
-        for i in 0..n {
-            let d = self.ore[i];
-            if d == 0 {
-                continue;
-            }
-            if d < max {
-                self.ore[i] = d + 1;
-                changed = true;
-            } else if rng.chance(4) {
-                spread.push(i);
-            }
-        }
-        for i in spread {
-            let (x, y) = ((i as i32) % self.width, (i as i32) / self.width);
-            let (nx, ny) = (x + rng.range(-1, 2), y + rng.range(-1, 2));
-            if self.contains(nx, ny) {
-                let j = self.idx(nx, ny);
-                if !self.has_resource(j) && self.terrain[j].buildable() && !blocked[j] {
-                    self.ore[j] = 1;
-                    changed = true;
-                }
-            }
-        }
-        changed
-    }
 }
 
 /// Ore and gem cells, per mille of the map, that a generated map holds at
@@ -1232,38 +1260,6 @@ mod tests {
                 assert!(gems > 0 && gem_d * ore > ore_d * gems, "size {size} seed {seed}: gems farther out than ore on average");
             }
         }
-    }
-
-    #[test]
-    fn gems_do_not_grow_or_spread_and_ore_does_not_spread_onto_them() {
-        let mut m = Map::filled(32, 32, Terrain::Clear);
-        let blocked = vec![false; m.cells()];
-        for i in 0..m.cells() {
-            if i % 2 == 0 {
-                m.ore[i] = ORE_MAX_DENSITY;
-            } else {
-                m.gems[i] = 1;
-            }
-        }
-        let gems = m.gems.clone();
-        let mut rng = Rng::new(7);
-        for _ in 0..50 {
-            m.grow_ore(&mut rng, ORE_MAX_DENSITY, &blocked);
-        }
-        assert_eq!(m.gems, gems, "gems stay as they were");
-        assert!((0..m.cells()).all(|i| m.ore[i] == 0 || m.gems[i] == 0));
-        // Ore grows back and spreads onto free ground.
-        let mut m = Map::filled(32, 32, Terrain::Clear);
-        let blocked = vec![false; m.cells()];
-        let c = m.idx(16, 16);
-        m.ore[c] = ORE_MAX_DENSITY;
-        let g = m.idx(8, 8);
-        m.gems[g] = 2;
-        for _ in 0..200 {
-            m.grow_ore(&mut rng, ORE_MAX_DENSITY, &blocked);
-        }
-        assert!(m.ore.iter().filter(|&&o| o > 0).count() > 1, "ore spreads");
-        assert_eq!((m.gems[g], m.gems.iter().filter(|&&x| x > 0).count()), (2, 1), "gems neither grow nor spread");
     }
 
     #[test]

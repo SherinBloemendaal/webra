@@ -240,6 +240,7 @@ fn stats_world() -> World {
         .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;

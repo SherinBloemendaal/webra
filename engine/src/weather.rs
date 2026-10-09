@@ -272,6 +272,21 @@ pub fn preview_color(biome: Biome, t: crate::map::Terrain) -> [u8; 3] {
         (Biome::Desert, T::Water) => [38, 116, 138],
         (Biome::Desert, T::Tree) => [92, 122, 58],
         (Biome::Desert, T::Ford) => [112, 168, 158],
+        (Biome::Temperate, T::Road) => [118, 104, 82],
+        (Biome::Temperate, T::Bridge) => [140, 116, 80],
+        (Biome::Temperate, T::Beach) => [176, 160, 112],
+        (Biome::Temperate, T::River) => [44, 82, 112],
+        (Biome::Temperate, T::Wall) => [96, 96, 92],
+        (Biome::Snow, T::Road) => [150, 150, 150],
+        (Biome::Snow, T::Bridge) => [132, 112, 86],
+        (Biome::Snow, T::Beach) => [176, 180, 176],
+        (Biome::Snow, T::River) => [46, 78, 110],
+        (Biome::Snow, T::Wall) => [92, 94, 102],
+        (Biome::Desert, T::Road) => [170, 136, 92],
+        (Biome::Desert, T::Bridge) => [124, 96, 64],
+        (Biome::Desert, T::Beach) => [226, 204, 150],
+        (Biome::Desert, T::River) => [52, 124, 140],
+        (Biome::Desert, T::Wall) => [128, 100, 76],
     }
 }
 

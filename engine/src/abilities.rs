@@ -123,14 +123,7 @@ pub struct Nuke {
 /// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
 /// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
 fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
-    let name = match t {
-        Terrain::Clear => "Clear",
-        Terrain::Rough => "Rough",
-        Terrain::Rock => "Rock",
-        Terrain::Water => "Water",
-        Terrain::Tree => "Tree",
-        Terrain::Ford => "Ford",
-    };
+    let name = t.name();
     let res = match resource {
         Some(Resource::Ore) => "Ore",
         Some(Resource::Gems) => "Gems",

@@ -62,6 +62,9 @@ struct RawActor {
     take_cover: Option<RawTakeCover>,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
+    /// The neutral world's traits (neutral.rs).
+    #[serde(default)]
+    world: crate::neutral::WorldTraits,
 }
 
 #[derive(Deserialize, Clone)]
@@ -472,6 +475,19 @@ struct RawWeapon {
     valid: u32,
     invalid: u32,
     warheads: Vec<RawWarhead>,
+    #[serde(default)]
+    clusters: Vec<Cluster>,
+}
+
+/// OpenRA `FireClusterWarhead`: on impact, `weapon` is fired at the impact
+/// cell plus each of `cells`, and at `random_count` cells picked from
+/// `random_cells` (cell offsets).
+#[derive(Deserialize, Clone, Debug)]
+pub struct Cluster {
+    pub weapon: usize,
+    pub cells: Vec<Vec<i32>>,
+    pub random_cells: Vec<Vec<i32>>,
+    pub random_count: i32,
 }
 
 #[derive(Deserialize)]
@@ -629,6 +645,10 @@ pub enum FootCell {
     Occupied,
     /// Part of the building but units may drive over it (bib, depot pad).
     Passable,
+    /// The cell belongs to the structure (hits, visibility) without claiming
+    /// it: bridges and their huts, which lie over cells units cross (OpenRA
+    /// footprint `_` of a Bridge or LegacyBridgeHut). Footprint letter `-`.
+    Overlay,
 }
 
 #[derive(Clone, Debug)]
@@ -677,16 +697,22 @@ pub struct BuildingInfo {
 }
 
 impl BuildingInfo {
-    /// Footprint cells that belong to the structure (not `_`), as offsets
+    /// Footprint cells the structure claims (not `_` or `-`), as offsets
     /// from its top-left cell. Placement, spawning and map validation all use
     /// these, so a structure only ever covers cells that were checked.
     pub fn cells(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+        self.footprint.iter().filter(|c| matches!(c.2, FootCell::Occupied | FootCell::Passable)).map(|c| (c.0, c.1))
+    }
+
+    /// Every footprint cell that belongs to the structure (not `_`),
+    /// including `Overlay` cells: what it is seen and hit by.
+    pub fn area_cells(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         self.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1))
     }
 
     /// Whether the structure fits inside `map` with its top-left at (cx, cy).
     pub fn fits(&self, map: &crate::map::Map, cx: i32, cy: i32) -> bool {
-        self.cells().all(|(dx, dy)| map.contains(cx + dx, cy + dy))
+        self.area_cells().all(|(dx, dy)| map.contains(cx + dx, cy + dy))
     }
 }
 
@@ -741,6 +767,8 @@ pub struct ActorInfo {
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
     pub transforms_into: Option<usize>,
+    /// The neutral world's traits (neutral.rs).
+    pub world: crate::neutral::WorldTraits,
 }
 
 impl ActorInfo {
@@ -849,6 +877,8 @@ pub struct WeaponInfo {
     pub valid: u32,
     pub invalid: u32,
     pub warheads: Vec<Warhead>,
+    /// FireCluster warheads (BarrelExplode's burning barrels around it).
+    pub clusters: Vec<Cluster>,
 }
 
 impl WeaponInfo {
@@ -880,6 +910,8 @@ pub struct Locomotor {
     pub speeds: Vec<i32>,
     /// OpenRA `Crushes: infantry`: drives over enemy soldiers.
     pub crushes_infantry: bool,
+    /// Every crush class of OpenRA `Crushes` (walls: `wall`, `heavywall`).
+    pub crushes: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -965,11 +997,21 @@ impl Rules {
                 // Impacts scan every cell within this radius.
                 within(&n("warheads: spread times falloff steps"), h.damage_radius(), 0, 64 * CELLS)?;
             }
+            count(&n("clusters"), w.clusters.len(), 4)?;
+            for c in &w.clusters {
+                self.weapon_ref(&n("clusters.weapon"), c.weapon)?;
+                count(&n("clusters.cells"), c.cells.len() + c.random_cells.len(), 64)?;
+                within(&n("clusters.random_count"), c.random_count, 0, 64)?;
+                if c.cells.iter().chain(&c.random_cells).any(|o| o.len() != 2 || o.iter().any(|v| !(-8..=8).contains(v))) {
+                    return Err(n("clusters: cells must be [x, y] within 8 cells"));
+                }
+            }
         }
         for l in &self.locomotors {
-            if l.speeds.len() < 4 || l.speeds.iter().any(|&v| !(0..=1000).contains(&v)) {
-                return Err(format!("locomotors.{}: speeds must be 4 values between 0 and 1000", l.name));
+            if l.speeds.len() != crate::map::SPEED_CLASSES || l.speeds.iter().any(|&v| !(0..=1000).contains(&v)) {
+                return Err(format!("locomotors.{}: speeds must be {} values between 0 and 1000", l.name, crate::map::SPEED_CLASSES));
             }
+            count(&format!("locomotors.{}.crushes", l.name), l.crushes.len(), 16)?;
         }
         Ok(())
     }
@@ -1012,6 +1054,7 @@ impl Rules {
             self.validate_building(a, b)?;
         }
         self.validate_veterancy(a)?;
+        a.world.validate(&n, self.weapons.len(), &self.actors)?;
         self.validate_abilities(a)
     }
 
@@ -1129,8 +1172,12 @@ impl Rules {
         if b.footprint.len() != (b.width * b.height) as usize || b.footprint.iter().any(|&(x, y, _)| !inside(x, y)) {
             return Err(n("footprint does not match its size"));
         }
-        if b.cells().next().is_none() {
+        if b.area_cells().next().is_none() {
             return Err(n("footprint needs at least one cell"));
+        }
+        // Overlay cells belong to bridges and their huts only.
+        if b.footprint.iter().any(|c| c.2 == FootCell::Overlay) && a.world.bridge.is_none() && !a.world.bridge_hut {
+            return Err(n("footprint: `-` cells are for bridges and bridge huts"));
         }
         within(&n("power"), b.power, -100_000, 100_000)?;
         within(&n("storage"), b.storage, 0, 10_000_000)?;
@@ -1364,6 +1411,10 @@ impl Rules {
                 }
             }
         }
+        // Burning trees (neutral.rs) look for Incendiary hits.
+        if !damage_types.iter().any(|t| t == crate::neutral::INCENDIARY) {
+            damage_types.push(crate::neutral::INCENDIARY.to_string());
+        }
         if damage_types.len() > 32 {
             return Err(format!("take_cover: at most 32 different damage types, found {}", damage_types.len()));
         }
@@ -1405,7 +1456,8 @@ impl Rules {
                                 '_' => FootCell::Empty,
                                 'x' | 'X' => FootCell::Occupied,
                                 '=' | '+' => FootCell::Passable,
-                                _ => return Err(n("building.footprint: cells must be one of _ x X = +")),
+                                '-' => FootCell::Overlay,
+                                _ => return Err(n("building.footprint: cells must be one of _ x X = + -")),
                             };
                             footprint.push((x as i32, y as i32, cell));
                         }
@@ -1469,6 +1521,23 @@ impl Rules {
             }
             let queue = QueueType::parse(&a.queue).ok_or_else(|| n("queue: unsupported queue"))?;
             let transforms_into = a.abilities.transforms.as_ref().and_then(|t| index_of(&t.into));
+            let mut world = a.world;
+            if let Some(id) = &world.spawn_on_death {
+                world.spawn_ty = Some(index_of(id).ok_or_else(|| n("world.spawn_on_death: unknown actor"))?);
+            }
+            if let Some(h) = &world.hospital_heal {
+                world.hospital_token = Some(intern(&h.prerequisite));
+            }
+            if let Some(b) = world.bridge.as_mut() {
+                for h in b.huts.iter_mut() {
+                    h.ty = index_of(&h.actor).ok_or_else(|| n("world.bridge.huts.actor: unknown actor"))?;
+                }
+                let mut shore = Vec::new();
+                for id in &b.shore_pieces {
+                    shore.push(index_of(id).ok_or_else(|| n("world.bridge.shore_pieces: unknown actor"))?);
+                }
+                b.shore_tys = shore;
+            }
             let take_cover = a.take_cover.map(|tc| TakeCoverInfo {
                 duration: tc.duration,
                 speed_modifier: tc.speed_modifier,
@@ -1507,6 +1576,7 @@ impl Rules {
                 building,
                 unit: a.unit,
                 transforms_into,
+                world,
             });
         }
         for w in &raw.weapons {
@@ -1555,6 +1625,7 @@ impl Rules {
                         damage_types: h.damage_types.iter().fold(0, |m, t| m | type_bit(t)),
                     })
                     .collect(),
+                clusters: w.clusters,
             })
             .collect();
         let locomotor_crushes_mines = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "mine")).collect();
@@ -1563,6 +1634,7 @@ impl Rules {
             .into_iter()
             .map(|l| Locomotor {
                 crushes_infantry: l.crushes.iter().any(|c| c == "infantry"),
+                crushes: l.crushes,
                 domain: match l.domain.as_str() {
                     "water" => Domain::Water,
                     "air" => Domain::Air,
@@ -1645,6 +1717,11 @@ impl Rules {
 
     pub fn faction_index(&self, name: &str) -> Option<usize> {
         self.factions.iter().position(|f| f == name)
+    }
+
+    /// The bit of a damage type in warhead damage type masks (0 when no rule refers to it).
+    pub fn damage_type_bit(&self, name: &str) -> u32 {
+        self.damage_types.iter().position(|d| d == name).map_or(0, |k| 1u32 << k)
     }
 
     pub fn token(&self, name: &str) -> Option<u16> {
