@@ -842,7 +842,8 @@ impl Game {
     /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock,
     /// 5 repair, 6 load (enter a transport), 7 deliver cash, 8 capture, 9
     /// infiltrate, 10 C4, 11 engineer repair, 12 heal, 13 mechanic repair, 14
-    /// disguise, 15 blocked enter, 16 blocked engineer repair (world.rs SmartAction).
+    /// disguise, 15 blocked enter, 16 blocked engineer repair, 17 capture from
+    /// outside (reusable engineers) (world.rs SmartAction).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()

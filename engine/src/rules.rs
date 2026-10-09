@@ -241,6 +241,13 @@ pub struct Abilities {
     pub attack_leap: Option<AttackLeapInfo>,
     /// A proxy (OpenRA InfiltrateForSupportPower.Proxy): the prerequisites it provides.
     pub proxy: Option<ProxyInfo>,
+    /// OpenRA `AnnounceOnKill` (Tanya): a voice line after a kill, at most every `interval` ticks.
+    pub announce_on_kill: Option<AnnounceOnKillInfo>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct AnnounceOnKillInfo {
+    pub interval: i32,
 }
 
 /// One OpenRA `Captures` trait.
@@ -1517,6 +1524,9 @@ impl Rules {
                     2 * CELLS,
                 )?;
             }
+        }
+        if let Some(k) = &ab.announce_on_kill {
+            within(&n("abilities.announce_on_kill.interval"), k.interval, 0, TIMER)?;
         }
         if let Some(p) = &ab.proxy {
             if a.kind != Kind::Proxy {

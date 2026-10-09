@@ -427,6 +427,7 @@ DEMOLITION_FLASH_DELAY = 4          # DemolitionInfo.FlashesDelay
 DEMOLITION_FLASH_INTERVAL = 4       # DemolitionInfo.FlashInterval
 LEAP_SPEED = '426'                  # AttackLeapInfo.Speed
 SPAWN_ACTOR_LIFETIME = 250          # SpawnActorPowerInfo.LifeTime
+ANNOUNCE_ON_KILL_INTERVAL = 750     # AnnounceOnKillInfo.Interval
 # The reusable engineers lobby option (player.yaml LobbyPrerequisiteCheckbox@REUSABLEENGINEERS)
 # grants this prerequisite; Captures traits switch on it.
 REUSABLE_ENGINEERS = 'global-reusable-engineers'
@@ -686,6 +687,9 @@ def main():
             ab['disguise'] = {}
         if 'IgnoresDisguise' in t:
             ab['ignores_disguise'] = {}
+        if 'AnnounceOnKill' in t:
+            k = t['AnnounceOnKill'] if isinstance(t['AnnounceOnKill'], dict) else {}
+            ab['announce_on_kill'] = {'interval': int(k.get('Interval', ANNOUNCE_ON_KILL_INTERVAL))}
         if 'Demolition' in t:
             d = t['Demolition'] if isinstance(t['Demolition'], dict) else {}
             ab['demolition'] = {'delay': int(d.get('DetonationDelay', DEMOLITION_DELAY)),

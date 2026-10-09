@@ -184,6 +184,8 @@ impl World {
     /// OpenRA GivesExperience.Killed: the actor behind `source` killed `victim`.
     /// Allies (and the victim itself) give nothing; passengers gain nothing.
     pub(crate) fn award_kill(&mut self, victim: usize, source: u32) {
+        // Tanya's AnnounceOnKill (infantry.rs).
+        self.announce_kill(source, victim);
         let Some(killer) = self.resolve(source) else { return };
         if killer == victim || !self.actors[killer].in_world() || self.are_allies(self.actors[killer].owner, self.actors[victim].owner) {
             return;

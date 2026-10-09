@@ -135,6 +135,7 @@ fn reusable_engineers_capture_from_outside_and_stay() {
     w.options.reusable_engineers = true;
     let powr = building(&mut w, "POWR", 1, 30, 30);
     let e6 = unit(&mut w, "E6", 0, 30, 36);
+    assert_eq!(cursor(&mut w, 0, &[e6], powr), SmartAction::CaptureOutside, "EnterCursor ability");
     smart(&mut w, 0, &[e6], powr);
     run(&mut w, 700);
     assert_eq!(w.actors[powr].owner, 0, "captured");

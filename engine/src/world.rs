@@ -833,6 +833,8 @@ pub enum SmartAction {
     EnterBlocked = 15,
     /// Engineer over an undamaged own structure (cursor `goldwrench-blocked`).
     RepairBlocked = 16,
+    /// Reusable engineer captures from outside (Captures@REUSABLE EnterCursor `ability`).
+    CaptureOutside = 17,
 }
 
 #[derive(Clone)]
@@ -1931,6 +1933,7 @@ impl World {
                 self.order_load(units, t);
             }
             act @ (SmartAction::Capture
+            | SmartAction::CaptureOutside
             | SmartAction::Infiltrate
             | SmartAction::Demolish
             | SmartAction::InstantRepair

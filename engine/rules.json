@@ -6950,6 +6950,9 @@
     "attack_anything"
    ],
    "abilities": {
+    "announce_on_kill": {
+     "interval": 750
+    },
     "demolition": {
      "delay": 45,
      "flashes": 3,

@@ -121,6 +121,8 @@ pub struct InfantryState {
     pub infiltrated_by: u32,
     /// Death sequence picked by the killing hit (death animations; presentation).
     pub death: u8,
+    /// Tick of the last AnnounceOnKill line (presentation: it only gates a sound event).
+    pub announced: u32,
 }
 
 /// A dying soldier (OpenRA WithDeathAnimation's SpriteEffect). Presentation
@@ -313,6 +315,22 @@ impl World {
             }
         }
         self.inf.captures = self.captures_in_progress();
+    }
+
+    /// OpenRA AnnounceOnKill: `killer` (an actor reference) killed an enemy;
+    /// its owner hears it (Tanya), at most every Interval ticks.
+    pub(crate) fn announce_kill(&mut self, killer: u32, victim: usize) {
+        let Some(k) = self.resolve(killer) else { return };
+        let Some(info) = self.rules.actors[self.actors[k].ty as usize].abilities.announce_on_kill.clone() else { return };
+        let a = &self.actors[k];
+        if !self.are_enemies(a.owner, self.actors[victim].owner)
+            || (a.inf.announced > 0 && self.tick < a.inf.announced + info.interval.max(0) as u32)
+        {
+            return;
+        }
+        let (x, y, owner, ty) = (a.x, a.y, a.owner, a.ty);
+        self.actors[k].inf.announced = self.tick;
+        self.infantry_event(InfantryEvent::Kill, x, y, owner, ty as i32);
     }
 
     // ---- Proxies (InfiltrateForSupportPower) -------------------------------------------
@@ -980,7 +998,8 @@ impl World {
             return Some(SmartAction::Demolish);
         }
         if any(&|u| self.can_capture(u, t)) {
-            return Some(SmartAction::Capture);
+            let outside = units.iter().any(|&u| self.capture_with(u, t).is_some_and(|c| !c.consumed));
+            return Some(if outside { SmartAction::CaptureOutside } else { SmartAction::Capture });
         }
         if any(&|u| self.can_repair_bridge(u, t)) {
             return Some(SmartAction::InstantRepair);
@@ -1024,7 +1043,7 @@ impl World {
                     ok
                 }
                 SmartAction::Demolish => self.order_enter(u, t, EnterKind::Demolish),
-                SmartAction::Capture => self.order_enter(u, t, EnterKind::Capture),
+                SmartAction::Capture | SmartAction::CaptureOutside => self.order_enter(u, t, EnterKind::Capture),
                 SmartAction::InstantRepair => {
                     self.order_enter(u, t, EnterKind::InstantRepair) || self.order_enter(u, t, EnterKind::RepairBridge)
                 }
