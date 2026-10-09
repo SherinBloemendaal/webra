@@ -242,6 +242,12 @@ test('plain HTTP (local development) uses a cookie without __Host- and Secure', 
   assert.match(cookie, /^webra_session=/);
   assert.ok(!cookie.includes('Secure'));
   assert.equal((await b.get('/api/auth/me')).body.user.username, 'Local');
+  // Plain HTTP to any other host still gets Secure __Host- cookies (browsers drop them: fails closed).
+  const insecure = new Browser(env, { origin: 'http://webra.sherin.dev', ip: '198.51.100.250' });
+  const r2 = await insecure.post('/api/auth/signup', { username: 'Plaintext', password: PASSWORD, acceptPrivacy: true });
+  const c2 = r2.res.headers.getSetCookie()[0];
+  assert.match(c2, /^__Host-webra_session=/);
+  assert.ok(c2.includes('Secure'));
 });
 
 test('password reset by email: generic answer, single use, sessions revoked, verifies the email', async () => {

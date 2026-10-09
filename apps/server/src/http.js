@@ -81,9 +81,18 @@ export function parseCookies(request) {
   return out;
 }
 
-/** Whether the request came over HTTPS (production) rather than local plain HTTP. */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Whether cookies get `Secure` and the `__Host-` prefix: always, except for
+ * plain HTTP to a local development host. A plain-HTTP request to any other
+ * host (a misconfigured zone) still gets Secure cookies, which browsers
+ * refuse to store over HTTP: sign-in fails closed instead of leaking a
+ * session cookie.
+ */
 export function isSecure(request) {
-  return new URL(request.url).protocol === 'https:';
+  const url = new URL(request.url);
+  return url.protocol === 'https:' || !LOCAL_HOSTS.has(url.hostname);
 }
 
 /** Cookie name with the `__Host-` prefix on HTTPS. */
