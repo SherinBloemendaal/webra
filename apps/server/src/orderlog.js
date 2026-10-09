@@ -120,6 +120,21 @@ export class OrderLog {
     }
   }
 
+  /**
+   * Forget the log (a rematch went back to the lobby): waits for pending
+   * chunk writes, then deletes every stored chunk.
+   */
+  async clear() {
+    this.full = true;
+    await this.writing;
+    for (let i = 0; i < this.sealed; i++) await this.storage.delete(chunkKey(i));
+    this.sealed = 0;
+    this.unwritten.clear();
+    this.buffer = [];
+    this.bufferBytes = 0;
+    this.bytes = 0;
+  }
+
   /** Every recorded frame, in order: `[[tick, orders], ...]`. */
   async read() {
     const out = [];

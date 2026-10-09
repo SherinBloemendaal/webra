@@ -27,6 +27,21 @@
 // resume until `until`) and gone (left, removed, or did not come back).
 // `record` keeps the seat's lockstep stall budget while it is away, so a
 // rejoin never gets a fresh one (lockstep.js `suspend` / `rejoin`).
+//
+// Lobby maps (docs/security.md "Map sharing"): with a map, every member has
+// a map state (`mapStates`, default missing): installed or declined, as the
+// member reports it; ready implies installed. The game starts only when every
+// player and spectator has the exact map installed. The host has it (it
+// picked or shared it).
+//
+// Rematch: in a running game the host proposes playing again with the same
+// settings. Every active seat
+// still in the game must accept within REMATCH_VOTE_MS (an away seat answers
+// once it is back, or stops counting once it is gone); one decline cancels it. Then the room goes back to its lobby with the same slots,
+// options and map: the accepting players and the spectators keep their
+// places and come back with their rejoin keys within REMATCH_RETURN_MS
+// (`returning`: while it runs, a lost connection does not cost the place);
+// everyone else's place opens.
 
 import {
   COLOR_COUNT,
@@ -37,6 +52,9 @@ import {
   MIN_PLAYERS,
   ORDER_DELAY,
   RANDOM_FACTIONS,
+  REMATCH_COOLDOWN_MS,
+  REMATCH_RETURN_MS,
+  REMATCH_VOTE_MS,
 } from '@webra/protocol';
 
 export class RoomError extends Error {
@@ -79,6 +97,14 @@ export class Room {
     r.seatStates = null;
     /** Client id -> account id of members who joined signed in (never published). */
     r.accounts = {};
+    /** Client id -> 'installed' | 'declined' for the lobby's map (missing when absent). */
+    r.mapStates = {};
+    /** Open rematch proposal: { by, accepted: client ids, until } or null. */
+    r.rematch = null;
+    /** No new proposal before this time (after one ended without a rematch). */
+    r.rematchCooldown = 0;
+    /** Client id -> deadline: members of the finished game coming back into the lobby. */
+    r.returning = {};
     return r;
   }
 
@@ -94,6 +120,10 @@ export class Room {
     r.startMsg ??= null;
     r.seatStates ??= null;
     r.accounts ??= {};
+    r.mapStates ??= {};
+    r.rematch ??= null;
+    r.rematchCooldown ??= 0;
+    r.returning ??= {};
     return r;
   }
 
@@ -114,6 +144,10 @@ export class Room {
       startMsg: this.startMsg,
       seatStates: this.seatStates,
       accounts: this.accounts,
+      mapStates: this.mapStates,
+      rematch: this.rematch,
+      rematchCooldown: this.rematchCooldown,
+      returning: this.returning,
     };
   }
 
@@ -202,6 +236,8 @@ export class Room {
     if (this.phase === 'lobby') {
       this.forgetKey(client);
       delete this.accounts[client];
+      delete this.mapStates[client];
+      delete this.returning[client];
     }
     if (this.hostId !== client) return null;
     // The longest-seated human (lowest slot) inherits the host role, else the first spectator.
@@ -336,7 +372,41 @@ export class Room {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     if (!this.isHost(client)) fail('Only the host can change the map.', 'not_host');
     this.map = map ? { ...map } : null;
+    // Map states belong to one map; the host has the one it picked.
+    this.mapStates = map ? { [client]: 'installed' } : {};
     this.resetReady();
+  }
+
+  /** Whether `client` is in the lobby: a slot or a spectator place. */
+  isMember(client) {
+    return this.slotOf(client) >= 0 || this.isSpectator(client);
+  }
+
+  /** A member installed or declined the lobby's map with `hash` (lobby only). */
+  setMapState(client, hash, state) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!this.isMember(client)) fail('You are not in this lobby.', 'bad_state');
+    if (!this.map) fail('The lobby has no map file.', 'bad_state');
+    if (hash !== this.map.hash) fail('The lobby map changed.', 'bad_state');
+    this.mapStates[client] = state;
+    const slot = this.slotOf(client);
+    if (state !== 'installed' && slot >= 0) this.slots[slot].ready = false;
+  }
+
+  /** The member's state for the lobby's map, or undefined without a map. */
+  mapStateOf(client) {
+    if (!this.map) return undefined;
+    return Object.hasOwn(this.mapStates, client) ? this.mapStates[client] : 'missing';
+  }
+
+  /** Host: remove a spectator from the lobby. Returns its client id. */
+  kickSpectator(client, target) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!this.isHost(client)) fail('Only the host can remove spectators.', 'not_host');
+    if (target === client) fail('You cannot remove yourself.');
+    if (!this.isSpectator(target)) fail('That member is not a spectator.', 'not_found');
+    this.leave(target);
+    return target;
   }
 
   setReady(client, ready, mapHash) {
@@ -346,6 +416,8 @@ export class Room {
     if (ready && mapHash !== (this.map ? this.map.hash : null)) {
       fail('You do not have the selected map installed.', 'not_ready');
     }
+    // Ready with the map's hash means the map is installed.
+    if (ready && this.map) this.mapStates[client] = 'installed';
     this.slots[slot].ready = ready;
   }
 
@@ -360,6 +432,11 @@ export class Room {
     const players = this.participants();
     if (players.length < MIN_PLAYERS) return 'At least two players are needed.';
     if (this.map && players.length > this.map.players) return `This map has room for ${this.map.players} players.`;
+    if (this.map) {
+      // Every player and spectator needs the exact map (the host has it).
+      const lacking = [...this.humans(), ...this.spectators].find((m) => this.mapStateOf(m.client) !== 'installed');
+      if (lacking) return `${lacking.name} does not have the map installed.`;
+    }
     if (this.slots.some((s) => s.type === 'human' && s.client !== this.hostId && !s.ready)) return 'Not everyone is ready.';
     const sides = new Set(players.map((s, i) => (s.team === 0 ? `ffa${i}` : `team${s.team}`)));
     if (sides.size < 2) return 'At least two opposing sides are needed.';
@@ -394,6 +471,9 @@ export class Room {
       }
     });
     this.phase = 'game';
+    this.rematch = null;
+    this.rematchCooldown = 0;
+    this.returning = {};
     this.seats = seats;
     this.seatStates = seats.map((c) => (c === null ? null : { state: 'active', until: 0, record: null }));
     this.startMsg = {
@@ -404,6 +484,134 @@ export class Room {
       delay: ORDER_DELAY,
     };
     return structuredClone(this.startMsg);
+  }
+
+  // ---- Rematch ---------------------------------------------------------------------
+
+  /**
+   * Clients whose answer a rematch needs: every seat still in the game
+   * (active, or away and allowed to rejoin: it answers once it is back).
+   */
+  rematchVoters() {
+    return (this.seatStates ?? []).flatMap((s, seat) => (s && s.state !== 'gone' ? [this.seats[seat]] : []));
+  }
+
+
+  /**
+   * Propose a rematch (game only). The proposer accepts it at once when it
+   * holds a seat. Throws RoomError when it cannot be proposed now.
+   */
+  proposeRematch(client, now) {
+    if (this.phase !== 'game') fail('There is no game to play again.', 'bad_state');
+    if (this.rematch) fail('A rematch is already proposed.', 'bad_state');
+    if (!this.isHost(client)) fail('Only the host can propose a rematch.', 'not_host');
+    if (now < this.rematchCooldown) fail('Wait a moment before proposing again.', 'rate_limited');
+    this.rematch = { by: client, accepted: this.rematchVoters().includes(client) ? [client] : [], until: now + REMATCH_VOTE_MS };
+  }
+
+  /**
+   * An answer to the open proposal. A voter accepts or declines (a decline
+   * cancels it); the proposer may withdraw it. Returns null, or the cancel
+   * reason when the proposal ended.
+   */
+  answerRematch(client, accept, now) {
+    const r = this.rematch;
+    if (!r) fail('No rematch is proposed.', 'bad_state');
+    const voter = this.rematchVoters().includes(client);
+    if (!accept) {
+      if (!voter && client !== r.by) fail('Only players answer a rematch.', 'forbidden');
+      return this.cancelRematch(client === r.by ? 'withdrawn' : 'declined', now);
+    }
+    if (!voter) fail('Only players answer a rematch.', 'forbidden');
+    if (!r.accepted.includes(client)) r.accepted.push(client);
+    return null;
+  }
+
+  cancelRematch(reason, now) {
+    this.rematch = null;
+    this.rematchCooldown = now + REMATCH_COOLDOWN_MS;
+    return reason;
+  }
+
+  /** The `rematch` message fields for the open proposal (accepted and waiting among the current voters). */
+  rematchStatus(now) {
+    const r = this.rematch;
+    const voters = this.rematchVoters();
+    return {
+      state: 'open',
+      by: r.by,
+      accepted: r.accepted.filter((c) => voters.includes(c)),
+      waiting: voters.filter((c) => !r.accepted.includes(c)),
+      msLeft: Math.max(0, r.until - now),
+    };
+  }
+
+  /** Every voter accepted (and the proposer is still here to host). */
+  rematchAgreed() {
+    return !!this.rematch && this.rematchVoters().every((c) => this.rematch.accepted.includes(c));
+  }
+
+  /**
+   * Back to the lobby with the same slots, options and map. `present`: the
+   * clients that keep their places (the accepting players and the connected
+   * spectators); they must come back by `now + REMATCH_RETURN_MS`. Every
+   * other place opens. Returns the returning clients.
+   */
+  backToLobby(present, now) {
+    if (!this.rematchAgreed()) fail('Not everyone accepted the rematch.', 'bad_state');
+    const by = this.rematch.by;
+    const keep = new Set(present.filter((c) => this.slotOf(c) >= 0 || this.isSpectator(c)));
+    this.slots = this.slots.map((s) => {
+      if (s.type !== 'human') return s;
+      return keep.has(s.client) ? { ...s, ready: false } : { type: 'open' };
+    });
+    this.spectators = this.spectators.filter((s) => keep.has(s.client));
+    for (const id of Object.keys(this.keys)) if (!keep.has(Number(id))) delete this.keys[id];
+    for (const id of Object.keys(this.accounts)) if (!keep.has(Number(id))) delete this.accounts[id];
+    this.phase = 'lobby';
+    this.seats = null;
+    this.seatStates = null;
+    this.startMsg = null;
+    this.rejoins = {};
+    this.rematch = null;
+    this.rematchCooldown = 0;
+    // Everyone coming back played (or watched) this map: they have it.
+    this.mapStates = this.map ? Object.fromEntries([...keep].map((c) => [c, 'installed'])) : {};
+    this.hostId = keep.has(by) ? by : (this.slots.find((s) => s.type === 'human')?.client ?? this.spectators[0]?.client ?? null);
+    this.returning = Object.fromEntries([...keep].map((c) => [c, now + REMATCH_RETURN_MS]));
+    return [...keep];
+  }
+
+  /** Whether `client` is on its way back from the finished game into the lobby. */
+  isReturning(client) {
+    return this.phase === 'lobby' && Object.hasOwn(this.returning, client);
+  }
+
+  /**
+   * A returning member connected again (its rejoin key was checked by the
+   * caller). It stays returning until its deadline: a page that reloads once
+   * more (or a connection that dropped meanwhile) can come back again
+   * without losing the place.
+   */
+  returned(client, now) {
+    if (!this.isReturning(client)) fail('You are not coming back from a game.', 'forbidden');
+    if (this.returning[client] <= now) fail('You came back too late.', 'forbidden');
+  }
+
+  /** The return window ended with the member connected: it is simply in the lobby now. */
+  settleReturn(client) {
+    delete this.returning[client];
+  }
+
+  /** Returning members whose deadline passed. */
+  expiredReturns(now) {
+    return Object.entries(this.returning).flatMap(([c, until]) => (until <= now ? [Number(c)] : []));
+  }
+
+  /** The earliest return deadline, or null. */
+  nextReturnDeadline() {
+    const all = Object.values(this.returning);
+    return all.length ? Math.min(...all) : null;
   }
 
   // ---- Seats in a running game ------------------------------------------------------
@@ -537,7 +745,11 @@ export class Room {
 
   /** Lobby message fields as published to clients (`account: true` marks names from accounts). */
   lobbyView() {
-    const mark = (entry) => (this.accountOf(entry.client) !== null ? { ...entry, account: true } : { ...entry });
+    const mark = (entry) => {
+      const out = this.accountOf(entry.client) !== null ? { ...entry, account: true } : { ...entry };
+      if (this.map) out.mapState = this.mapStateOf(entry.client);
+      return out;
+    };
     return {
       slots: this.slots.map((s) => (s.type === 'human' ? mark(s) : { ...s })),
       options: { ...this.options },

@@ -23,6 +23,19 @@
 // can rejoin only as the same account. A refused connection gets the reason
 // in answer to `hello`. Members are recorded in D1 `game_presence`, so a ban
 // can drop them (`evict`).
+//
+// Map sharing (docs/security.md "Map sharing"): the host shares a map file
+// with this session only (`shareMap`, from POST /api/sessions/<id>/map); it
+// is stored unlisted and served to the session's members only (`memberMap`,
+// from GET /api/sessions/<id>/map, checked with the member's rejoin key and
+// account). Members report whether they installed or declined the lobby map
+// (`mapstate`); the game starts only when everyone has it.
+//
+// Rematch: the host proposes playing again (`rematch`), every active player
+// accepts, and the session goes back to its lobby (room.js `backToLobby`).
+// The members reload their page and come back with their rejoin keys
+// (`rejoinLobby`); a lost connection does not cost a returning member its
+// place until its return deadline.
 
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -55,7 +68,7 @@ import {
 } from './crypto.js';
 import { HEARTBEAT_MS, removeSession, upsertSession } from './directory.js';
 import { Lockstep, LockstepError } from './lockstep.js';
-import { lookupMap } from './maps.js';
+import { lookupMap, mapTextByHash, storeMap } from './maps.js';
 import { OrderLog } from './orderlog.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
@@ -99,6 +112,9 @@ const RESUME_MS_PER_TICK = 5;
 const RESUME_MAX_MS = 15 * 60 * 1000;
 /** Reasons after which a member can never come back. */
 const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
+
+/** An RPC answer the Worker turns into an HTTP error. */
+const rpcError = (status, code, message) => ({ ok: false, status, code, message });
 
 const CLOSE_NORMAL = 1000;
 const CLOSE_POLICY = 1008;
@@ -178,6 +194,77 @@ export class Session extends DurableObject {
     await this.ctx.storage.put({ meta: this.meta, room: this.room.toJSON() });
     await this.ctx.storage.setAlarm(Date.now() + UNUSED_TTL_MS);
     return { hostKey };
+  }
+
+  /**
+   * Who a map request comes from: a member's `{ client, key }` (its rejoin
+   * key), checked like a rejoin (constant time, bound to the account it was
+   * issued to, failures count toward the per-IP lockout). Returns the client
+   * id, or an RPC error.
+   */
+  async checkMember(member, account, ip) {
+    const now = Date.now();
+    const fail = this.failures.get(ip);
+    if (fail && fail.until > now) return rpcError(429, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.');
+    const client = member?.client;
+    const stored = Number.isInteger(client) && Object.hasOwn(this.room.keys, client) ? this.room.keys[client] : null;
+    // Unknown clients still pay for a hash, so timing does not tell them apart.
+    const valid = await verifySeatKey(String(member?.key ?? ''), stored ?? '00'.repeat(32));
+    if (!this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    if (!valid || stored === null || this.room.accountOf(client) !== (account?.id ?? null)) {
+      this.noteFailure(ip, now);
+      return rpcError(403, ERRORS.FORBIDDEN, 'You are not a member of this session.');
+    }
+    const room = this.room;
+    const seat = room.seatOf(client);
+    const present = room.phase === 'lobby' ? room.isMember(client) : room.isSpectator(client) || (seat >= 0 && room.seatState(seat) !== 'gone');
+    if (!present) return rpcError(403, ERRORS.FORBIDDEN, 'You are not a member of this session.');
+    return client;
+  }
+
+  /**
+   * RPC from the Worker (POST /api/sessions/<id>/map): the host shares a map
+   * file with this session. `prepared` was validated by the Worker (protocol
+   * package and engine, prepareMap in maps.js). It is stored unlisted and
+   * becomes the lobby map. Returns { ok, id, hash } or an RPC error.
+   */
+  async shareMap({ member, account = null, ip = 'unknown', prepared }) {
+    if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const client = await this.checkMember(member, account, ip);
+    if (typeof client !== 'number') return client;
+    const problem = () => {
+      if (!this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+      if (this.room.phase !== 'lobby') return rpcError(409, ERRORS.STATE, 'The game has already started.');
+      if (!this.room.isHost(client)) return rpcError(403, ERRORS.NOT_HOST, 'Only the host can change the map.');
+      return null;
+    };
+    if (problem()) return problem();
+    const { created, ...summary } = await storeMap(this.env.DB, prepared, { listed: false, uploaderId: account?.id ?? null });
+    // Re-checked after the await: the host or the phase may have changed.
+    if (problem()) return problem();
+    this.room.setMap(client, summary);
+    await this.saveRoom();
+    this.broadcastLobby();
+    await this.syncDirectory();
+    return { ok: true, id: summary.id, hash: summary.hash, created };
+  }
+
+  /**
+   * RPC from the Worker (GET /api/sessions/<id>/map?hash=): the canonical
+   * text of the lobby's map, or of the running game's, for a member. `hash`
+   * pins it: a map that changed meanwhile is refused (409).
+   */
+  async memberMap({ member, account = null, ip = 'unknown', hash }) {
+    if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const client = await this.checkMember(member, account, ip);
+    if (typeof client !== 'number') return client;
+    if (!this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const current = this.room.phase === 'lobby' ? this.room.map : (this.room.startMsg?.map ?? null);
+    if (!current) return rpcError(404, ERRORS.NOT_FOUND, 'This session plays on a generated map.');
+    if (current.hash !== hash) return rpcError(409, ERRORS.STATE, 'The session has another map now.');
+    const textValue = await mapTextByHash(this.env.DB, hash);
+    if (textValue === null) return rpcError(404, ERRORS.NOT_FOUND, 'The map is no longer stored. The host can share it again.');
+    return { ok: true, text: textValue };
   }
 
   // ---- WebSocket upgrade ---------------------------------------------------------
@@ -399,6 +486,7 @@ export class Session extends DurableObject {
     const now = Date.now();
     const fail = this.failures.get(att.ip);
     if (fail && fail.until > now) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.', true);
+    if (this.room.phase === 'lobby') return this.rejoinLobby(ws, att, msg, now);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
     const client = msg.rejoin.client;
     const stored = Object.hasOwn(this.room.keys, client) ? this.room.keys[client] : null;
@@ -463,6 +551,55 @@ export class Session extends DurableObject {
     await this.notePresence(client, att);
     this.send(ws, { t: S2C.WELCOME, you: client, name: this.clientName(client) ?? 'Player', hostId: this.room.hostId, session: this.sessionInfo(), role: att.role });
     await this.catchUp(ws, client, att.role);
+  }
+
+  /**
+   * `hello` with `rejoin` in the lobby: a member of the finished game comes
+   * back after a rematch (its page reloaded). Same key checks as a game
+   * rejoin; possible again until the return deadline (a newer connection
+   * replaces an older one), so a reload or a dropped connection during the
+   * return never costs the place.
+   */
+  async rejoinLobby(ws, att, msg, now) {
+    const client = msg.rejoin.client;
+    const stored = Object.hasOwn(this.room.keys, client) ? this.room.keys[client] : null;
+    att.busy = true;
+    ws.serializeAttachment(att);
+    let valid;
+    try {
+      valid = await verifySeatKey(msg.rejoin.key, stored ?? '00'.repeat(32));
+    } finally {
+      att.busy = false;
+    }
+    if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
+    if (!valid || stored === null || this.room.accountOf(client) !== (att.account?.id ?? null)) {
+      this.noteFailure(att.ip, now);
+      return this.reject(ws, ERRORS.FORBIDDEN, 'Invalid rejoin key.', true);
+    }
+    if (!this.room.isReturning(client)) return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
+    try {
+      this.room.returned(client, now);
+    } catch (err) {
+      if (err instanceof RoomError) return this.reject(ws, err.code, err.message, true);
+      throw err;
+    }
+    // A connection of the member that is still open (the old page) is replaced.
+    const old = this.socketOf(client);
+    if (old && old !== ws) {
+      const oldAtt = this.attachment(old);
+      oldAtt.gone = true;
+      old.serializeAttachment(oldAtt);
+      this.send(old, { t: S2C.ERROR, code: ERRORS.STATE, message: 'You joined from another connection.' });
+      this.close(old, CLOSE_NORMAL, 'replaced');
+    }
+    att.client = client;
+    att.role = this.room.slotOf(client) >= 0 ? 'player' : 'spectator';
+    ws.serializeAttachment(att);
+    await this.saveRoom();
+    await this.notePresence(client, att);
+    this.send(ws, { t: S2C.WELCOME, you: client, name: this.clientName(client) ?? 'Player', hostId: this.room.hostId, session: this.sessionInfo(), role: att.role });
+    this.broadcastLobby();
+    await this.syncDirectory();
   }
 
   /**
@@ -577,6 +714,20 @@ export class Session extends DurableObject {
         this.broadcastLobby();
         await this.syncDirectory();
         return;
+      case C2S.MAPSTATE:
+        room.setMapState(client, msg.hash, msg.state);
+        await this.saveRoom();
+        this.broadcastLobby();
+        return;
+      case C2S.KICK: {
+        const target = room.kickSpectator(client, msg.client);
+        await this.saveRoom();
+        this.kick(target);
+        await this.forgetPresence(target);
+        this.broadcastLobby();
+        await this.syncDirectory();
+        return;
+      }
       case C2S.LEAVE:
         await this.disconnect(ws, 'left');
         this.close(ws, CLOSE_NORMAL, 'bye');
@@ -585,6 +736,7 @@ export class Session extends DurableObject {
       case C2S.HASH:
       case C2S.RESUME:
       case C2S.SYNCED:
+      case C2S.REMATCH:
         throw new RoomError('The game has not started.', ERRORS.STATE);
       default:
         throw new RoomError('Unexpected message.', ERRORS.BAD_MESSAGE);
@@ -665,6 +817,17 @@ export class Session extends DurableObject {
         this.broadcast({ t: S2C.BACK, player: seat, client, name: this.clientName(client) ?? 'Player', tick });
         // With nobody else to wait for, frames up to the join tick go out now.
         this.emitFrames(this.lockstep.flush());
+        // A proposed rematch now waits for this player too.
+        if (this.room.rematch) this.broadcast({ t: S2C.REMATCH, ...this.room.rematchStatus(Date.now()) });
+        return;
+      }
+      case C2S.REMATCH: {
+        const now = Date.now();
+        const room = this.room;
+        const reason = msg.accept && !room.rematch ? (room.proposeRematch(client, now), null) : room.answerRematch(client, msg.accept, now);
+        await this.saveRoom();
+        if (reason) this.broadcastRematchEnd(reason);
+        else await this.rematchProgress(now);
         return;
       }
       case C2S.DEFEATED:
@@ -734,6 +897,8 @@ export class Session extends DurableObject {
     const name = this.clientName(client);
     const final = FINAL_REASONS.includes(reason);
     if (room.phase === 'lobby') {
+      // Coming back from a rematch: the old page closed its connection; the place waits for the return.
+      if (room.isReturning(client) && !final) return;
       room.leave(client);
       await this.saveRoom();
       await this.forgetPresence(client);
@@ -752,6 +917,7 @@ export class Session extends DurableObject {
       await this.saveRoom();
       if (final) await this.forgetPresence(client);
       if (name) this.broadcast({ t: S2C.LEFT, player: null, client, name, reason });
+      await this.rematchAfterLoss(client, now);
       return;
     }
     const seat = room.seatOf(client);
@@ -779,6 +945,75 @@ export class Session extends DurableObject {
     if (tell && name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: final || rejoinable ? reason : 'expired' });
     this.emitFrames(frames);
     await this.endIfOver();
+    await this.rematchAfterLoss(client, now);
+  }
+
+  // ---- Rematch -------------------------------------------------------------------------------
+
+  /** Everyone answered yes: back to the lobby; otherwise tell everyone where the proposal stands. */
+  async rematchProgress(now = Date.now()) {
+    const room = this.room;
+    if (!room?.rematch || room.phase !== 'game') return;
+    if (room.rematchAgreed()) {
+      await this.backToLobby(now);
+      return;
+    }
+    this.broadcast({ t: S2C.REMATCH, ...room.rematchStatus(now) });
+  }
+
+  /** A proposal ended without a rematch. */
+  broadcastRematchEnd(reason) {
+    this.broadcast({ t: S2C.REMATCH, state: 'cancelled', by: null, accepted: [], waiting: [], reason });
+  }
+
+  /** A member of the running game is gone (for now): the proposal may end, or be agreed by everyone left. */
+  async rematchAfterLoss(client, now) {
+    const room = this.room;
+    if (!room?.rematch || room.phase !== 'game') return;
+    if (room.rematch.by === client) {
+      room.cancelRematch('left', now);
+      await this.saveRoom();
+      this.broadcastRematchEnd('left');
+      return;
+    }
+    await this.rematchProgress(now);
+  }
+
+  /**
+   * The rematch was agreed: the room goes back to its lobby (room.js
+   * `backToLobby`), the relay and the order log are dropped, and every
+   * connected member is told to come back (its client reloads and rejoins
+   * the lobby with its key).
+   */
+  async backToLobby(now) {
+    const room = this.room;
+    const by = room.rematch.by;
+    const accepted = room.rematch.accepted.filter((c) => room.rematchVoters().includes(c));
+    const before = new Set([...(room.seats ?? []).filter((c) => c !== null), ...room.spectators.map((s) => s.client)]);
+    // The players who accepted (also one whose connection is away right now:
+    // it comes back with its key) and the spectators watching now.
+    const present = [...accepted];
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = this.attachment(ws);
+      if (att.client !== null && !att.gone && room.isSpectator(att.client)) present.push(att.client);
+    }
+    const back = new Set(room.backToLobby(present, now));
+    const log = this.log;
+    this.lockstep = null;
+    this.log = null;
+    this.syncing.clear();
+    this.catching.clear();
+    await this.saveRoom();
+    try {
+      await log?.clear();
+    } catch (err) {
+      console.error('order log clear failed', err?.message);
+    }
+    for (const c of before) if (!back.has(c)) await this.forgetPresence(c);
+    this.broadcast({ t: S2C.REMATCH, state: 'lobby', by, accepted, waiting: [] });
+    await this.syncDirectory();
+    const next = room.nextReturnDeadline();
+    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, next ?? Infinity));
   }
 
   /** The game ends when no seat can play or come back any more. */
@@ -849,9 +1084,28 @@ export class Session extends DurableObject {
         await this.memberLost(client, 'expired', now);
         if (!this.room) return;
       }
-      if (this.meta) await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
+      // A rematch proposal nobody completed in time.
+      if (this.room.rematch && this.room.rematch.until <= now) {
+        this.room.cancelRematch('expired', now);
+        await this.saveRoom();
+        this.broadcastRematchEnd('expired');
+      }
+      if (this.meta && this.room?.phase === 'game') await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
       return;
     }
+    // The return window after a rematch ended: members who are connected
+    // stay, the others did not come back in time and lose their places.
+    let returnsChanged = false;
+    for (const client of this.room.expiredReturns(now)) {
+      if (this.socketOf(client)) {
+        this.room.settleReturn(client);
+        returnsChanged = true;
+        continue;
+      }
+      await this.memberLost(client, 'expired', now);
+      if (!this.room) return;
+    }
+    if (returnsChanged) await this.saveRoom();
     if (this.room.memberCount() === 0) {
       const expires = this.meta.createdAt + UNUSED_TTL_MS;
       if (!this.meta.everJoined && now < expires) {
@@ -862,7 +1116,8 @@ export class Session extends DurableObject {
       return;
     }
     await this.syncDirectory(true);
-    await this.ctx.storage.setAlarm(now + HEARTBEAT_MS);
+    const back = this.room.nextReturnDeadline();
+    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, back ?? Infinity));
   }
 
   async ensureAlarm(at) {

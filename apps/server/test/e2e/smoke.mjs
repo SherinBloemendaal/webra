@@ -13,11 +13,14 @@
 // refused for sending orders, a player reconnecting with its rejoin key
 // (order log, sync, resume), leaving, and the stall drop. The play gate:
 // anonymous and pending visitors get no game files, an active account gets
-// them with a play pass, signing out clears it.
+// them with a play pass, signing out clears it. A second, two-player lobby
+// shares the host's custom map with the session only: the guest installs it
+// by hash (checked with the protocol package), the game starts on it, and a
+// rematch brings both back into the lobby with their rejoin keys.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
+import { encodeClient, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, sha256Hex } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -304,6 +307,110 @@ async function playGate(ADMIN, HOST) {
   assert.equal((await get('/play/js/main.js', SUB, cookies.get(LEAVER))).status, 401, 'without the pass, the signed-out session opens nothing');
 }
 
+/**
+ * Map sharing (docs/contracts.md section 4, "Lobby maps") and the rematch:
+ * the host shares a custom map with a two-player lobby only, the guest
+ * installs it by hash and the game starts on it; then both go back to the
+ * lobby and return with their keys.
+ */
+async function sharedMapLobby(HOST, GUEST, WATCHER) {
+  // Three places, so the public list shows the lobby (full lobbies are not listed).
+  const created = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Shared map', public: true, maxPlayers: 3, version: VERSION }) }, HOST);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const { id, hostKey } = created.body;
+  const host = new Client('map-host', HOST);
+  await host.open(id);
+  host.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, hostKey });
+  const hw = await host.type('welcome');
+  const guest = new Client('map-guest', GUEST);
+  await guest.open(id);
+  guest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  const gw = await guest.type('welcome');
+  await host.type('lobby', (m) => m.slots[1].type === 'human');
+  const member = (w) => ({ [MEMBER_HEADER]: `${w.you}.${w.key}` });
+
+  // The host shares a map made for this run (a custom map nobody else has).
+  const w = 48;
+  const terrain = Buffer.alloc(w * w).toString('base64');
+  const custom = { format: 1, name: `Custom <b>${RUN}</b>`, author: `Host ${RUN}`, width: w, height: w, terrain, ore: terrain, spawns: [[3, 3], [44, 44]] };
+  const path = `/api/sessions/${id}/map`;
+  assert.equal((await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(gw) }, GUEST)).body.error.code, 'not_host');
+  assert.equal((await api(path, { method: 'POST', body: JSON.stringify(custom) }, HOST)).status, 403, 'the member header is required');
+  const shared = await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(hw) }, HOST);
+  assert.equal(shared.status, 201, JSON.stringify(shared.body));
+  const announced = await guest.type('lobby', (m) => m.map !== null);
+  const { id: mapId, bytes, ...details } = announced.map;
+  assert.equal(mapId, shared.body.id);
+  assert.ok(bytes > 0 && bytes < 64 * 1024, `file bytes ${bytes}`);
+  assert.deepEqual(details, { hash: shared.body.hash, name: custom.name, modded: false, players: 2, author: custom.author, width: w, height: w, shared: true });
+  assert.deepEqual(announced.slots.map((x) => x.mapState), ['installed', 'missing', undefined]);
+  // Not public: not listed, not served by id, the session list shows its name only.
+  assert.equal((await api('/api/maps')).body.some((m) => m.hash === shared.body.hash), false);
+  assert.equal((await api(`/api/maps/${shared.body.id}`)).status, 404);
+  const listing = (await api('/api/sessions')).body.find((x) => x.id === id);
+  assert.deepEqual(listing.map, { name: custom.name, modded: false, shared: true });
+  host.send({ t: 'map', map: { id: shared.body.id, hash: shared.body.hash, name: 'x', modded: false } });
+  assert.equal((await host.type('error')).code, 'not_found', 'a shared map cannot be picked by id');
+
+  // The guest cannot be ready or let the game start without the map.
+  guest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === true && m.slots[1].mapState === 'installed');
+  guest.send({ t: 'ready', ready: false, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === false);
+  guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'declined' });
+  await host.type('lobby', (m) => m.slots[1].mapState === 'declined');
+
+  // Install: download from the session by hash, as this member, and check it.
+  const get = (who, w2, hash = shared.body.hash) => fetch(`${BASE}${path}?hash=${hash}`, { headers: { Origin: ORIGIN, Cookie: cookies.get(who), ...member(w2) } });
+  assert.equal((await get(WATCHER, gw)).status, 403, "another account cannot use the guest's key");
+  assert.equal((await get(GUEST, gw, 'f'.repeat(64))).status, 409, 'pinned to the lobby map');
+  const dl = await get(GUEST, gw);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.headers.get('cache-control'), 'private, no-store');
+  const text = await dl.text();
+  const parsed = parseMap(text);
+  assert.ok(parsed.ok, parsed.errors?.join('; '));
+  assert.equal(await mapHash(parsed.map), shared.body.hash);
+  assert.equal(await sha256Hex(text), shared.body.hash, 'the canonical text');
+  guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'installed' });
+  await host.type('lobby', (m) => m.slots[1].mapState === 'installed');
+  guest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
+  await host.type('lobby', (m) => m.slots[1].ready === true);
+  host.send({ t: 'start' });
+  const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
+  assert.deepEqual(hs, gs);
+  assert.equal(hs.map.hash, shared.body.hash, 'the game runs on the shared map');
+  for (let t = 0; t < 3; t++) await Promise.all([host.type('frame', (f) => f.tick === t), guest.type('frame', (f) => f.tick === t)]);
+  // In the game the map stays available to its members (a reload rejoins with it).
+  assert.equal((await get(GUEST, gw)).status, 200);
+
+  // Rematch: the host proposes, the guest accepts, both go back to the lobby.
+  host.send({ t: 'rematch', accept: true });
+  const open = await guest.type('rematch', (m) => m.state === 'open');
+  assert.deepEqual(open.waiting, [gw.you]);
+  guest.send({ t: 'rematch', accept: true });
+  await Promise.all([host.type('rematch', (m) => m.state === 'lobby'), guest.type('rematch', (m) => m.state === 'lobby')]);
+  // The pages reload: new connections with the same keys bring both back.
+  host.ws.close();
+  guest.ws.close();
+  const back = [];
+  for (const [who, w2] of [[HOST, hw], [GUEST, gw]]) {
+    const c = new Client(`${who}-back`, who);
+    await c.open(id);
+    c.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, rejoin: { client: w2.you, key: w2.key } });
+    assert.equal((await c.type('welcome')).you, w2.you);
+    back.push(c);
+  }
+  const lobby = await back[1].type('lobby');
+  assert.equal(lobby.map.hash, shared.body.hash, 'the same map');
+  assert.deepEqual(
+    lobby.slots.filter((x) => x.type === 'human').map((x) => [x.client, x.ready, x.mapState]),
+    [[hw.you, false, 'installed'], [gw.you, false, 'installed']],
+  );
+  for (const c of back) c.send({ t: 'leave' });
+  console.log('  shared map lobby and rematch passed');
+}
+
 async function main() {
   // ---- Accounts ------------------------------------------------------------------
   const v = await api('/api/version');
@@ -345,6 +452,7 @@ async function main() {
     assert.equal(r.body.user.canPlayOnline, true);
   }
   await playGate(ADMIN, HOST);
+  await sharedMapLobby(HOST, GUEST, WATCHER);
 
   const stats = await api('/api/admin/stats', {}, ADMIN);
   assert.equal(stats.status, 200);
@@ -496,6 +604,11 @@ async function main() {
   assert.equal((await guest.type('error')).code, 'not_ready');
   guest.send({ t: 'ready', ready: true, mapHash: up.body.hash });
   await host.type('lobby', (m) => m.slots[1].ready === true);
+  // Spectators need the map too (protocol 6): the start waits for the watcher.
+  host.send({ t: 'start' });
+  assert.match((await host.type('error')).message, /does not have the map/);
+  watcher2.send({ t: 'mapstate', hash: up.body.hash, state: 'installed' });
+  await host.type('lobby', (m) => m.spectators[0].mapState === 'installed');
   host.send({ t: 'start' });
   const [hs, gs, ws] = await Promise.all([host.type('start'), guest.type('start'), watcher2.type('start')]);
   assert.deepEqual(hs, gs);

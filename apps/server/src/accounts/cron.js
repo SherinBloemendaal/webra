@@ -2,6 +2,7 @@
 // accounts data (docs/accounts-api.md, sections 6 and 8; apps/website/privacy.html).
 
 import { pruneSessions } from '../directory.js';
+import { UNLISTED_RETENTION_MS } from '../maps.js';
 import { pruneQuotas } from '../quota.js';
 import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
 import { purgeStatements } from './routes-admin.js';
@@ -36,6 +37,8 @@ export async function runRetention(env, now = Date.now()) {
       'UPDATE users SET email = NULL, email_set_at = NULL WHERE email IS NOT NULL AND email_verified = 0 AND (email_set_at IS NULL OR email_set_at < ?1)',
       now - UNVERIFIED_EMAIL_MS,
     ),
+    // Maps shared with an online session only (unlisted): kept while sessions use them.
+    sharedMaps: await run('DELETE FROM maps WHERE listed = 0 AND COALESCE(used_at, created_at) < ?1', now - UNLISTED_RETENTION_MS),
     purged: 0,
   };
   const { results } = await db
