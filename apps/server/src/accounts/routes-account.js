@@ -29,7 +29,7 @@ import {
   passkeyView,
   PASSKEYS_MAX,
 } from './passkeys.js';
-import { clearSessionCookie, listSessions, revokeAllSessions, sessionView } from './sessions.js';
+import { listSessions, revokeAllSessions, sessionView, signOutCookies } from './sessions.js';
 import { getSettingsDoc, ifMatchVersion, putSettingsDoc, readSettingsBody, settingsResponse } from './settings-doc.js';
 import { hasPassword, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
 import { evictFromGames } from './bans.js';
@@ -290,7 +290,7 @@ async function revokeSession(ctx, { id }) {
   const row = await ownSession(ctx, user, id);
   await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1').bind(row.id_hash).run();
   const { session } = await ctx.auth();
-  if (row.id_hash === session.id_hash) ctx.cookies.push(clearSessionCookie(ctx.request));
+  if (row.id_hash === session.id_hash) ctx.cookies.push(...signOutCookies(ctx.request));
   return noContent();
 }
 
@@ -386,7 +386,7 @@ async function deleteAccount(ctx) {
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(user.id),
     ctx.db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(user.id),
   ]);
-  ctx.cookies.push(clearSessionCookie(ctx.request));
+  ctx.cookies.push(...signOutCookies(ctx.request));
   await evictFromGames(ctx.env, { userIds: [user.id] }, ctx.now);
   return noContent();
 }

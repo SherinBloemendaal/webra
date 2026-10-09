@@ -75,6 +75,18 @@ export function canPlayOnline(row, eff) {
   return status === 'active' || !eff.onlineRequiresAccount;
 }
 
+/**
+ * Whether the account may load the game (/play, the play gate in
+ * src/playgate.js): an active account, or anyone not banned while the site
+ * does not require accounts for the game. The gate also refuses banned
+ * addresses, which this verdict does not know about.
+ */
+export function canPlay(row, eff) {
+  const status = effectiveStatus(row);
+  if (status === 'banned' || status === 'deleted') return false;
+  return status === 'active' || !eff.gameRequiresAccount;
+}
+
 export function canUseContentRelay(row, eff) {
   if (!eff.contentRelay || effectiveStatus(row) !== 'active') return false;
   return row.role === 'admin' || maskToFlags(row.flags).includes('content_autoinstall');
@@ -103,6 +115,7 @@ export function selfUser(row, eff, pendingEmail = null) {
       passkeys: Number(row.passkey_count ?? 0),
     },
     ban: ban ? { reason: ban.reason, expiresAt: ban.expiresAt, createdAt: ban.createdAt } : null,
+    canPlay: canPlay(row, eff),
     canPlayOnline: canPlayOnline(row, eff),
     canUseContentRelay: canUseContentRelay(row, eff),
   };

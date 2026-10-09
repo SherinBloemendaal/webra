@@ -167,6 +167,17 @@ export async function readJson(request, maxBytes) {
   }
 }
 
+/**
+ * A path on this site to send a browser back to after sign-in: one leading
+ * slash (never `//`, so never another host), URL characters only, at most
+ * 200 characters, no backslash.
+ */
+export const RETURN_PATH_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]{0,199}$/;
+
+export function isReturnPath(value) {
+  return typeof value === 'string' && RETURN_PATH_RE.test(value) && !value.includes('\\');
+}
+
 /** Client IP as Cloudflare reports it (never logged, only hashed for rate limits). */
 export function clientIp(request) {
   return request.headers.get('CF-Connecting-IP') || 'unknown';

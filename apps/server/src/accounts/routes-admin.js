@@ -485,7 +485,7 @@ async function getSite(ctx) {
 async function patchSite(ctx) {
   const actor = await ctx.requireRole('admin');
   const expected = ifMatchVersion(ctx.request);
-  const body = await ctx.body(['registration', 'login', 'onlineRequiresAccount', 'contentRelay', 'motd']);
+  const body = await ctx.body(['registration', 'login', 'onlineRequiresAccount', 'gameRequiresAccount', 'contentRelay', 'motd']);
   const site = await loadSite(ctx.db);
   if (site.version !== expected) {
     throw new HttpError(412, 'version_conflict', 'The site settings changed meanwhile. Reload and try again.', { etag: `"v${site.version}"` }, {
