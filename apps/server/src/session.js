@@ -560,7 +560,7 @@ export class Session extends DurableObject {
         this.broadcastLobby();
         return;
       case C2S.CHAT:
-        this.chatFrom(ws, client, msg.text);
+        this.chatFrom(ws, client, msg.text, !!msg.team);
         return;
       case C2S.START:
         await this.startGame(client);
@@ -672,7 +672,7 @@ export class Session extends DurableObject {
         if (!this.catching.delete(ws)) throw new RoomError('Nothing to confirm.', ERRORS.STATE);
         return;
       case C2S.CHAT:
-        this.chatFrom(ws, client, msg.text);
+        this.chatFrom(ws, client, msg.text, !!msg.team);
         return;
       case C2S.LEAVE:
         await this.disconnect(ws, 'left');
@@ -1016,32 +1016,44 @@ export class Session extends DurableObject {
   }
 
   /** Chat from a connection, with its own rate limit (spectators cannot flood every socket). */
-  chatFrom(ws, client, textValue) {
+  chatFrom(ws, client, textValue, team = false) {
     let bucket = this.chatBuckets.get(ws);
     if (!bucket) {
       bucket = new TokenBucket(CHAT_RATE, CHAT_BURST);
       this.chatBuckets.set(ws, bucket);
     }
-    if (bucket.take()) return this.chat(client, textValue);
+    if (bucket.take()) return this.chat(client, textValue, team);
     if (bucket.refused > CHAT_FLOOD_LIMIT) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many chat messages.', true);
     if (bucket.refused % 5 === 1) this.send(ws, { t: S2C.ERROR, code: ERRORS.RATE_LIMITED, message: 'Chat is limited to one line a second.' });
   }
 
-  chat(client, textValue) {
+  /**
+   * A chat line to everyone, or with `team` only to the sender's team
+   * (OpenRA team chat: players of the same team, a player without a team
+   * alone, spectators among themselves).
+   */
+  chat(client, textValue, team = false) {
     const name = this.clientName(client);
     if (!name) return;
-    this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue });
+    if (!team) {
+      this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue });
+      return;
+    }
+    const side = this.room.chatTeamOf(client);
+    this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue, team: true }, (to) => this.room.chatTeamOf(to) === side);
   }
 
   broadcastLobby() {
     this.broadcast({ t: S2C.LOBBY, ...this.room.lobbyView() });
   }
 
-  broadcast(msg) {
+  /** Send to every member (or those `to(client)` accepts). */
+  broadcast(msg, to = null) {
     const raw = encodeServer(msg);
     for (const ws of this.ctx.getWebSockets()) {
       const att = this.attachment(ws);
       if (att.client === null || att.gone) continue;
+      if (to && !to(att.client)) continue;
       const queue = this.syncing.get(ws);
       if (queue) {
         // Catching up: frames follow the log, other news is not needed.

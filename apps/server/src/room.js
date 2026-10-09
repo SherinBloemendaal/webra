@@ -125,6 +125,17 @@ export class Room {
     return this.slots.filter((s) => s.type === 'human');
   }
 
+  /**
+   * Who sees `client`'s team chat: its team ('team:N'), the client alone when
+   * it has no team, or the spectators ('spectators').
+   */
+  chatTeamOf(client) {
+    const seat = this.slotOf(client);
+    if (seat < 0) return this.isSpectator(client) ? 'spectators' : `client:${client}`;
+    const team = this.slots[seat].team;
+    return team ? `team:${team}` : `client:${client}`;
+  }
+
   isSpectator(client) {
     return this.spectators.some((s) => s.client === client);
   }

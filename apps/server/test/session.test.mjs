@@ -326,6 +326,32 @@ test('catch-ups count until the client confirms; the byte budget follows the log
   assert.equal(g.take('error')[0].code, 'rate_limited');
 });
 
+test('team chat reaches the team only; spectators chat among themselves', async () => {
+  const { s, host, guest, watchers } = await started({ spectators: 1, start: false });
+  const w = watchers[0].ws;
+  const room = s.session.room;
+  const slotOf = (ws) => room.slots.findIndex((x) => x.type === 'human' && x.name === (ws === host ? 'Host' : 'Guest'));
+  await s.send(host, { t: 'slot', slot: slotOf(host), team: 1 });
+  await s.send(guest, { t: 'slot', slot: slotOf(guest), team: 2 });
+  for (const ws of [host, guest, w]) ws.take('chat');
+  await s.send(host, { t: 'chat', text: 'flank right', team: true });
+  assert.deepEqual(host.take('chat').map((m) => [m.text, m.team]), [['flank right', true]], 'the sender sees it');
+  assert.equal(guest.take('chat').length, 0, 'another team does not');
+  assert.equal(w.take('chat').length, 0, 'spectators do not');
+  await s.send(guest, { t: 'slot', slot: slotOf(guest), team: 1 });
+  await s.send(host, { t: 'chat', text: 'together', team: true });
+  assert.equal(guest.take('chat').length, 1, 'a team mate does');
+  assert.equal(host.take('chat').length, 1);
+  assert.equal(w.take('chat').length, 0);
+  await s.send(w, { t: 'chat', text: 'nice', team: true });
+  assert.equal(w.take('chat').length, 1);
+  assert.equal(host.take('chat').length + guest.take('chat').length, 0, 'spectator team chat stays with the spectators');
+  await s.send(host, { t: 'chat', text: 'gl hf' });
+  assert.equal(guest.take('chat')[0].team, undefined, 'all chat reaches everyone');
+  assert.equal(w.take('chat').length, 1);
+  for (const ws of [host, guest, w]) assertValid(ws);
+});
+
 test('chat has its own rate limit and a flood closes the connection', async () => {
   const { s, host, guest, watchers } = await started({ spectators: 1 });
   const w = watchers[0].ws;
