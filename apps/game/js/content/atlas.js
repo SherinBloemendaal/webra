@@ -16,10 +16,11 @@
 //   of the footprint) is painted under every frame of the body;
 // - a layer drawn over the body (OpenRA WithProductionDoorOverlay: the War
 //   Factory's roof and door) takes the second slot and is listed in
-//   `layers`: the engine draws it over the structure with the body's pose
-//   (engine/src/overlays.rs), hides it while the structure is being built,
-//   and plays the MAKE pose (the door opening and closing) when a unit has
-//   just been produced.
+//   `layers`: the engine draws it over the structure (engine/src/overlays.rs),
+//   hides it while the structure is being built and otherwise names the door
+//   frame (engine/src/doors.rs) in the age of the idle or damaged pose, so
+//   those poses show frame `age` of the door sequence (MODE.INDEX) instead of
+//   looping it.
 
 import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES, TERRAIN } from './tables.js';
 import { decodeSprite, trimFrame } from './shp.js';
@@ -34,8 +35,6 @@ const SHADOW_INDEX = ACTOR_SHADOW[0];
 const CELL_PX = 24;
 /** Rows of the footprint a bib covers (OpenRA WithBuildingBib without a mini bib). */
 const BIB_ROWS = 2;
-/** Ticks the production door stays fully open between opening and closing. */
-export const DOOR_HOLD_TICKS = 10;
 
 /** A cache of decoded sprite files over `getFile(name) -> Uint8Array | null`. */
 export function spriteFiles(getFile) {
@@ -163,20 +162,6 @@ export function bibImage(tiles, lookup, width, height) {
   return { width: w, height: h, color, mask: null, offset, scale: 1 };
 }
 
-/**
- * The door of a production structure opening and closing (OpenRA
- * WithProductionDoorOverlay plays its sequence to the last frame when a unit
- * leaves, then back): the frames of `idle` forward, held open for
- * DOOR_HOLD_TICKS frames, then backward. Played once (MODE.ONCE) from the
- * produced unit's age; the closed idle frame follows.
- */
-export function doorDescriptor(idle) {
-  const n = idle.length;
-  const open = idle.frames.slice(0, n);
-  const frames = [...open, ...new Array(DOOR_HOLD_TICKS).fill(open[n - 1]), ...open.slice().reverse()];
-  return { ...idle, frames, length: frames.length, facings: 1, mode: MODE.ONCE, fps: idle.fps || 25 };
-}
-
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
 function descriptor(resolved, frames, mode, def) {
   return {
@@ -195,14 +180,16 @@ function descriptor(resolved, frames, mode, def) {
  * Fill a pose table from the poses a slot has: every POSE gets a descriptor,
  * falling back to the idle pose (damaged still falls back to still).
  * `have` maps pose names (idle, move, attack, damaged, make, harvest, dock)
- * to { looping, still } descriptor pairs; walls index their frames.
+ * to { loop, once, still, index } descriptors. Walls and production doors
+ * index their frames: the engine names the frame in the age (a wall's
+ * connections, the door frame of OpenRA WithProductionDoorOverlay).
  */
-export function poseTable(have, { wall = false } = {}) {
+export function poseTable(have, { wall = false, door = false } = {}) {
   const idle = have.idle;
   if (!idle) return null;
   const pick = (name) => have[name] ?? idle;
   const poses = new Array(POSE_COUNT);
-  const main = (p) => (wall ? p.index : p.loop);
+  const main = (p) => (wall || door ? p.index : p.loop);
   poses[POSE.IDLE] = main(idle);
   poses[POSE.MOVE] = main(pick('move'));
   poses[POSE.ATTACK] = main(pick('attack'));
@@ -263,12 +250,7 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
       index: descriptor(resolved, frames, MODE.INDEX, def),
     };
   }
-  if (door && have.idle && have.idle.loop.facings === 1) {
-    // The door cycle: the MAKE pose of the layer (the engine hides the layer while the structure is built).
-    const cycle = doorDescriptor(have.idle.loop);
-    have.make = { once: cycle };
-  }
-  const poses = poseTable(have, { wall });
+  const poses = poseTable(have, { wall, door });
   return { art: poses ? { images, poses } : null, problems };
 }
 

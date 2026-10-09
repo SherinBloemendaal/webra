@@ -403,6 +403,8 @@ impl World {
         }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
         let (ux, uy) = (self.actors[u].x, self.actors[u].y);
+        // OpenRA INotifyProduction: the factory's door opens for it (doors.rs).
+        self.door_unit_produced(b, u);
         self.sound.push(SoundEventKind::UnitProduced, ty as i32, ux, uy, player, 0);
         // Helicopters start landed on their helipad (helicopter.rs).
         self.heli_produced(u, b);
