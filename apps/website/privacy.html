@@ -73,7 +73,13 @@
             address. The address is stored only as a keyed hash (HMAC with a secret key, so it cannot be turned back into
             the address), never as such, and counters are deleted after two days.
           </li>
-          <li>Maps you upload are public: their name, author field and content are shown to everyone.</li>
+          <li>Maps you publish (the map editor's Publish) are public: their name, author field and content are shown to everyone.</li>
+          <li>
+            A map you share in an online lobby is not published: it is stored on the server unlisted and only the players
+            and spectators of the lobbies you shared it with can download it (a public lobby's listing shows its name only).
+            It is deleted when no game used it for 30 days, and with your account. Maps you install, including ones from
+            a lobby, are kept in your browser's map library.
+          </li>
         </ul>
 
         <h2>Your account</h2>
@@ -118,6 +124,7 @@
           <li>IP history: 90 days after an address was last seen.</li>
           <li>Unconfirmed email addresses: 7 days.</li>
           <li>Failed sign-in counters: one day.</li>
+          <li>Maps shared in online lobbies (not published): 30 days after a game last used them.</li>
           <li>Expired IP bans: 90 days after they end.</li>
           <li>The admin audit log (what admins and moderators changed): 365 days.</li>
           <li>
