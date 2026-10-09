@@ -4,17 +4,22 @@
 // before PBKDF2 (recorded per hash, so turning it on later keeps old hashes
 // valid until they are upgraded at the next sign-in).
 //
-// Iterations: Workers allow at most 100,000 for PBKDF2, and the free plan
-// gives a request 10 ms of CPU. Measured under workerd (wrangler dev, 2026-10):
-// 50,000 iterations take about 3 to 4 ms and 100,000 about 6 to 8 ms, so the
-// default of 60,000 leaves room for the rest of a sign-in. The
-// PASSWORD_ITERATIONS variable (10,000 to 100,000) raises it later, for
-// example on the Paid plan; hashes with fewer iterations are upgraded at the
-// next successful sign-in.
+// CPU budget: the Workers Free plan gives a request 10 ms of CPU, and every
+// request does at most ONE key derivation (sign-in, re-authentication,
+// signup, setting or resetting a password; never verify-and-rehash in one
+// request). Measured under workerd (wrangler dev 4.148, Apple M-series,
+// 2026-10-09), per derivation: 30,000 iterations 2.2 ms, 40,000 2.8 ms,
+// 50,000 3.6 ms, 60,000 4.2 ms, 100,000 7.2 ms. Edge machines can be up to
+// about twice as slow, so the default of 40,000 (about 3 to 6 ms) leaves
+// room for the rest of the request. PASSWORD_ITERATIONS (10,000 to 100,000,
+// the Workers maximum for PBKDF2) raises it: keep it at or below 50,000 on
+// the Free plan; on the Paid plan (30 s of CPU) 100,000 is fine. Hashes are
+// upgraded to the current count and pepper whenever the password is set
+// (change or reset), never at sign-in.
 
 import { fromHex, hmacSha256, pbkdf2, randomBytes, timingSafeEqual, toHex } from '../crypto.js';
 
-export const DEFAULT_ITERATIONS = 60_000;
+export const DEFAULT_ITERATIONS = 40_000;
 export const MIN_ITERATIONS = 10_000;
 export const MAX_ITERATIONS = 100_000;
 const SALT_BYTES = 16;
@@ -66,11 +71,6 @@ export async function verifyAccountPassword(password, row, env) {
   }
   const hash = await derive(password, fromHex(row.password_salt), row.password_iterations, row.password_peppered === 1 ? pepper : null);
   return timingSafeEqual(hash, fromHex(row.password_hash));
-}
-
-/** Whether a verified hash should be replaced (fewer iterations, or the pepper state changed). */
-export function needsRehash(row, env) {
-  return row.password_iterations < targetIterations(env) || row.password_peppered !== (pepperOf(env) ? 1 : 0);
 }
 
 /** Burn the time of one verification (unknown logins). */

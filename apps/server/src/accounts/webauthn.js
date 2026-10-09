@@ -80,10 +80,8 @@ export function decodeCbor(bytes, offset = 0, depth = 0) {
     let big = 0n;
     for (let i = 0; i < 8; i++) big = (big << 8n) | BigInt(bytes[offset + i]);
     offset += 8;
-    if (major === 7) {
-      const view = new DataView(bytes.buffer, bytes.byteOffset + offset - 8, 8);
-      return { value: view.getFloat64(0), offset };
-    }
+    // Floats never occur in WebAuthn structures.
+    if (major === 7) fail('cbor: floats are not supported');
     if (big > BigInt(Number.MAX_SAFE_INTEGER)) fail('cbor: integer too large');
     arg = Number(big);
   } else {
@@ -272,6 +270,10 @@ export function derToRaw(der, size = 32) {
     if (len < 1 || len > size + 1 || offset + len > der.length) bad();
     let int = der.subarray(offset, offset + len);
     offset += len;
+    // Strict DER: positive, minimal (a leading zero only before a high bit), never zero.
+    if (int[0] & 0x80) bad();
+    if (int.length > 1 && int[0] === 0 && (int[1] & 0x80) === 0) bad();
+    if (int.every((b) => b === 0)) bad();
     if (int.length > size) {
       if (int[0] !== 0) bad();
       int = int.subarray(1);

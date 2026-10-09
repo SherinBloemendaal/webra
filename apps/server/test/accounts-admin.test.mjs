@@ -15,6 +15,8 @@ async function cast(opts = {}) {
   const mod = await signup(env, 'Moddy', { ip: '198.51.100.2' });
   const user = await signup(env, 'Plain', { ip: '198.51.100.3' });
   const target = await signup(env, 'Target', { ip: '198.51.100.4' });
+  // Addresses as an admin would have set them (this server has no email binding); Target's stays unverified.
+  env.DB.sqlite.exec("UPDATE users SET email = lower(replace(username, ' ', '.')) || '@example.com'");
   promote(env, admin.user.id, 'admin');
   promote(env, mod.user.id, 'moderator');
   promote(env, user.user.id, 'user');

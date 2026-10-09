@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { Browser, call, Clock, makeEnv, PASSWORD, promote, scheduled, signup } from './accounts-harness.mjs';
 import { inRange, ipRecord, parseCidr, parseIp } from '../src/accounts/ip.js';
 import { summarizeUserAgent } from '../src/accounts/useragent.js';
-import { DEFAULT_ITERATIONS, hashAccountPassword, needsRehash, targetIterations, verifyAccountPassword } from '../src/accounts/password.js';
+import { DEFAULT_ITERATIONS, hashAccountPassword, targetIterations, verifyAccountPassword } from '../src/accounts/password.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -93,6 +93,8 @@ test('wrangler.jsonc: daily cron, Discord client id variable, no email binding y
   assert.deepEqual(config.triggers.crons, ['17 3 * * *']);
   assert.equal(typeof config.vars.DISCORD_CLIENT_ID, 'string');
   assert.equal(config.send_email, undefined, 'needs the Workers Paid plan: enabled later (docs/deploy.md)');
+  assert.deepEqual(config.ratelimits, [{ name: 'AUTH_LIMITER', namespace_id: '1001', simple: { limit: 20, period: 60 } }]);
+  assert.equal(JSON.stringify(config).includes('IP_HASH_SALT'), false, 'the IP hash secret is a secret, never a variable');
   assert.equal(/SECRET|PEPPER/.test(JSON.stringify(config.vars)), false);
 });
 
@@ -137,7 +139,6 @@ test('password hashes: iterations stored per hash, pepper per hash, rehash rules
   const row = { password_hash: h.hash, password_salt: h.salt, password_iterations: h.iterations, password_peppered: h.peppered };
   assert.equal(await verifyAccountPassword('secret passphrase', row, plain), true);
   assert.equal(await verifyAccountPassword('secret passphrase', row, peppered), true, 'unpeppered hashes still verify after the pepper is set');
-  assert.equal(needsRehash(row, peppered), true, 'and are upgraded');
   const hp = await hashAccountPassword('secret passphrase', peppered);
   const prow = { password_hash: hp.hash, password_salt: hp.salt, password_iterations: hp.iterations, password_peppered: hp.peppered };
   assert.equal(prow.password_peppered, 1);

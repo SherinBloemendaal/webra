@@ -98,7 +98,9 @@ test('signup with Discord: verified email stored as verified, username from Disc
 
 test('unverified Discord email is not used; taken usernames get a number; taken emails refuse', async () => {
   const env = makeEnv({ email: true, discord: true });
-  await signup(env, 'nelly', { email: 'someone@example.com' });
+  const holder = await signup(env, 'nelly', { email: 'someone@example.com' });
+  // Only a verified address is taken.
+  await holder.post('/api/auth/email/verify', { token: env.EMAIL.token('someone@example.com', 'verify') });
   const mock = mockDiscord({ ...PROFILE, verified: false });
   const b = new Browser(env, { ip: '203.0.113.80' });
   assert.equal((await flow(b, mock, { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
@@ -149,6 +151,8 @@ test('link, reauth and unlink; already linked; bans; Discord as the last method'
   const b = await signup(env, 'Linker');
   promote(env, b.user.id);
   await b.post('/api/auth/login', { login: 'linker', password: PASSWORD });
+  assert.equal((await b.post('/api/auth/discord/start', { mode: 'link' })).body.error.code, 'reauth_required', 'linking needs a fresh proof');
+  await b.post('/api/auth/reauth', { password: PASSWORD });
   const linked = await flow(b, mock, { mode: 'link' });
   assert.equal(linked.fragment, 'discord=ok');
   const me = (await b.get('/api/account')).body.user;
@@ -156,6 +160,7 @@ test('link, reauth and unlink; already linked; bans; Discord as the last method'
   assert.equal((await b.post('/api/auth/discord/start', { mode: 'link' })).status, 409, 'already linked');
   // Another account cannot take the same Discord account.
   const other = await signup(env, 'Second');
+  await other.post('/api/auth/reauth', { password: PASSWORD });
   assert.equal((await flow(other, mock, { mode: 'link' })).fragment, 'discord=error&code=already_linked');
   // Re-authenticate through Discord.
   clock.advance(11 * 60 * 1000);

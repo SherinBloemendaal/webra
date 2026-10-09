@@ -1,16 +1,20 @@
-// Fixed-window counters for HTTP rate limits and sign-in lockouts, stored in
+// Fixed-window counters for HTTP rate limits and sign-in failures, stored in
 // D1. The subject (a client IP, a login name, an account id) is kept only as
-// a SHA-256 hash scoped to the purpose. `win` holds the start of the window
-// (unix milliseconds), so counters of different window lengths live side by
-// side and one prune removes them all.
+// an HMAC under IP_HASH_SALT (src/ipkey.js). `win` holds the start of the
+// window (unix milliseconds), so counters of different window lengths live
+// side by side and one prune removes them all.
+//
+// Writes are the scarce resource (the D1 Free plan allows 100,000 row writes
+// a day), so a counter is read first and a request that is already over its
+// limit costs no write at all.
 
-import { sha256, toHex } from './crypto.js';
+import { keyedHash } from './ipkey.js';
 
 /** Counters older than this are removed (longer than the longest window, one day). */
 export const QUOTA_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 
-async function quotaKey(purpose, subject) {
-  return `${purpose}:${toHex(await sha256(`webra-quota:${purpose}:${subject}`))}`;
+async function quotaKey(salt, purpose, subject) {
+  return `${purpose}:${await keyedHash(salt, 'quota', `${purpose}:${subject}`)}`;
 }
 
 const windowStart = (now, windowMs) => Math.floor(now / windowMs) * windowMs;
@@ -20,13 +24,12 @@ export function windowRemaining(windowMs, now = Date.now()) {
   return Math.ceil((windowStart(now, windowMs) + windowMs - now) / 1000);
 }
 
-/**
- * Count one attempt for `purpose` from `subject`. Returns true while the
- * caller is within `limit` attempts per `windowMs`.
- */
-export async function takeQuota(db, purpose, subject, limit, windowMs, now = Date.now()) {
-  const win = windowStart(now, windowMs);
-  const key = await quotaKey(purpose, subject);
+async function current(db, key, win) {
+  const row = await db.prepare('SELECT win, count FROM rate_limits WHERE key = ?1').bind(key).first();
+  return row && row.win === win ? Number(row.count) : 0;
+}
+
+async function bump(db, key, win) {
   const row = await db
     .prepare(
       `INSERT INTO rate_limits (key, win, count) VALUES (?1, ?2, 1)
@@ -37,19 +40,34 @@ export async function takeQuota(db, purpose, subject, limit, windowMs, now = Dat
     )
     .bind(key, win)
     .first();
-  return Number(row?.count ?? limit + 1) <= limit;
+  return Number(row?.count ?? Number.MAX_SAFE_INTEGER);
 }
 
-/** Attempts counted so far in the current window (without counting one). */
-export async function peekQuota(db, purpose, subject, windowMs, now = Date.now()) {
-  const key = await quotaKey(purpose, subject);
-  const row = await db.prepare('SELECT count FROM rate_limits WHERE key = ?1 AND win = ?2').bind(key, windowStart(now, windowMs)).first();
-  return Number(row?.count ?? 0);
+/**
+ * Count one attempt for `purpose` from `subject`. Returns true while the
+ * caller is within `limit` attempts per `windowMs`. A caller already at the
+ * limit is refused after one read, without a write.
+ */
+export async function takeQuota(db, salt, purpose, subject, limit, windowMs, now = Date.now()) {
+  const win = windowStart(now, windowMs);
+  const key = await quotaKey(salt, purpose, subject);
+  if ((await current(db, key, win)) >= limit) return false;
+  return (await bump(db, key, win)) <= limit;
+}
+
+/** Attempts counted so far in the current window (a read only). */
+export async function peekQuota(db, salt, purpose, subject, windowMs, now = Date.now()) {
+  return current(db, await quotaKey(salt, purpose, subject), windowStart(now, windowMs));
+}
+
+/** Count one event (a failure) without a limit check: one write. */
+export async function countQuota(db, salt, purpose, subject, windowMs, now = Date.now()) {
+  return bump(db, await quotaKey(salt, purpose, subject), windowStart(now, windowMs));
 }
 
 /** Forget a counter (a successful sign-in clears its failures). */
-export async function clearQuota(db, purpose, subject) {
-  await db.prepare('DELETE FROM rate_limits WHERE key = ?1').bind(await quotaKey(purpose, subject)).run();
+export async function clearQuota(db, salt, purpose, subject) {
+  await db.prepare('DELETE FROM rate_limits WHERE key = ?1').bind(await quotaKey(salt, purpose, subject)).run();
 }
 
 /** Remove counters from old windows (called opportunistically and by the daily job). */

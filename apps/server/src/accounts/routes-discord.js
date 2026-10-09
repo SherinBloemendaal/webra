@@ -30,7 +30,7 @@ async function start(ctx) {
   if (!MODES.includes(body.mode)) throw invalid('mode', 'Mode must be login, signup, link or reauth.');
   const returnTo = body.returnTo ?? DEFAULT_RETURN;
   if (typeof returnTo !== 'string' || !RETURN_RE.test(returnTo) || returnTo.includes('\\')) throw invalid('returnTo', 'returnTo must be a path on this site.');
-  await ctx.limit('discord-ip', ctx.ip, ...LIMITS.discordIp);
+  await ctx.burst('discord', LIMITS.discordBurst);
   let userId = null;
   let sessionHash = null;
   if (body.mode === 'signup') {
@@ -87,6 +87,23 @@ async function freeUsername(db, discordName, now) {
   return `Commander${randomInt(1_000_000)}`;
 }
 
+/**
+ * A Discord-verified address equal to the account's unverified one verifies
+ * it (and claims its key). When another account verified that address first,
+ * nothing changes.
+ */
+async function verifyByDiscord(ctx, user, verifiedEmail, eff) {
+  if (!verifiedEmail || !user.email || user.email_verified === 1 || emailKey(verifiedEmail) !== emailKey(user.email)) return;
+  try {
+    await ctx.db
+      .prepare('UPDATE users SET email_verified = 1, email_key = ?2, status = ?3 WHERE id = ?1')
+      .bind(user.id, emailKey(user.email), statusAfterVerification(user, eff))
+      .run();
+  } catch (err) {
+    if (uniqueViolation(err) !== 'email') throw err;
+  }
+}
+
 async function callback(ctx) {
   const url = ctx.url;
   const outcome = (returnTo, code = null) => {
@@ -140,19 +157,16 @@ async function callback(ctx) {
     if (!hasRecentReauth(session, ctx.now)) return back('invalid_state');
     const owner = await userByDiscord(ctx.db, discord.id, ctx.now);
     if (owner && owner.id !== user.id) return back('already_linked');
-    const verifies = verifiedEmail !== null && user.email !== null && emailKey(verifiedEmail) === user.email_key;
     try {
       await ctx.db
-        .prepare(
-          `UPDATE users SET discord_id = ?2, discord_username = ?3, discord_linked_at = ?4,
-             email_verified = CASE WHEN ?5 = 1 THEN 1 ELSE email_verified END, status = ?6 WHERE id = ?1`,
-        )
-        .bind(user.id, discord.id, discord.username, ctx.now, verifies ? 1 : 0, verifies ? statusAfterVerification(user, eff) : user.status)
+        .prepare('UPDATE users SET discord_id = ?2, discord_username = ?3, discord_linked_at = ?4 WHERE id = ?1')
+        .bind(user.id, discord.id, discord.username, ctx.now)
         .run();
     } catch (err) {
       if (uniqueViolation(err) === 'discord') return back('already_linked');
       throw err;
     }
+    await verifyByDiscord(ctx, user, verifiedEmail, eff);
     await rotate(ctx);
     return back(null);
   }
@@ -162,9 +176,7 @@ async function callback(ctx) {
   if (user) {
     if (user.status === 'deleted') return back('account_inactive');
     if (banOf(user)) return back('banned');
-    if (verifiedEmail && user.email && emailKey(verifiedEmail) === user.email_key && user.email_verified !== 1) {
-      await ctx.db.prepare('UPDATE users SET email_verified = 1, status = ?2 WHERE id = ?1').bind(user.id, statusAfterVerification(user, eff)).run();
-    }
+    await verifyByDiscord(ctx, user, verifiedEmail, eff);
     await ctx.db.prepare('UPDATE users SET discord_username = ?2 WHERE id = ?1').bind(user.id, discord.username).run();
   } else {
     if (row.mode !== 'signup') return back('no_account');

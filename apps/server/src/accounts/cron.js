@@ -9,6 +9,8 @@ import { IP_RETENTION_MS, SESSION_IDLE_MS } from './sessions.js';
 import { DELETED_RETENTION_MS } from './users.js';
 
 export const PRESENCE_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** Unverified email addresses are removed after this long. */
+export const UNVERIFIED_EMAIL_MS = 7 * 24 * 60 * 60 * 1000;
 export const EXPIRED_IP_BAN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const PURGE_BATCH = 100;
 
@@ -25,6 +27,15 @@ export async function runRetention(env, now = Date.now()) {
     presence: await run('DELETE FROM game_presence WHERE updated_at < ?1', now - PRESENCE_RETENTION_MS),
     ipBans: await run('DELETE FROM ip_bans WHERE expires_at IS NOT NULL AND expires_at < ?1', now - EXPIRED_IP_BAN_RETENTION_MS),
     audit: await run('DELETE FROM audit_log WHERE at < ?1', now - AUDIT_RETENTION_MS),
+    loginFailures: await run(
+      'UPDATE users SET login_failures = 0, login_failed_at = NULL, login_delay_until = NULL WHERE login_failed_at IS NOT NULL AND login_failed_at < ?1',
+      now - 24 * 60 * 60 * 1000,
+    ),
+    // Unverified addresses expire: they never claimed the address, and now they are gone.
+    unverifiedEmails: await run(
+      'UPDATE users SET email = NULL, email_set_at = NULL WHERE email IS NOT NULL AND email_verified = 0 AND (email_set_at IS NULL OR email_set_at < ?1)',
+      now - UNVERIFIED_EMAIL_MS,
+    ),
     purged: 0,
   };
   const { results } = await db

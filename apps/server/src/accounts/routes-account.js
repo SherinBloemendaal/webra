@@ -3,7 +3,6 @@
 import {
   DEVICE_LABEL_MAX,
   emailKey,
-  loginPassword,
   PASSKEY_NAME_MAX,
   usernameKey,
   validAvatarColor,
@@ -18,7 +17,7 @@ import { check, invalid } from './context.js';
 import { pendingEmailOf, rotate, selfView } from './common.js';
 import { accountBanView } from './bans.js';
 import { auditView } from './audit.js';
-import { hashAccountPassword, verifyAccountPassword } from './password.js';
+import { hashAccountPassword } from './password.js';
 import {
   consumeChallenge,
   createChallenge,
@@ -32,9 +31,9 @@ import {
 } from './passkeys.js';
 import { clearSessionCookie, listSessions, revokeAllSessions, sessionView } from './sessions.js';
 import { getSettingsDoc, ifMatchVersion, putSettingsDoc, readSettingsBody, settingsResponse } from './settings-doc.js';
-import { hasPassword, loginMethodCount, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
+import { hasPassword, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
 import { evictFromGames } from './bans.js';
-import { DAY, HOUR, LIMITS, requirePasskeys, sendVerification, verifyPasskeyRegistration } from './routes-auth.js';
+import { DAY, emailTaken, HOUR, requirePasskeys, sendVerification, verifyPasskeyRegistration } from './routes-auth.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const lastMethod = () => new HttpError(409, 'conflict', 'Keep at least one way to sign in.');
@@ -85,21 +84,17 @@ async function patchAccount(ctx) {
   return json({ user: await selfView(ctx, user.id) });
 }
 
+/**
+ * Set or change the password. Needs a fresh re-authentication (POST
+ * /api/auth/reauth): this request then does exactly one key derivation (the
+ * new hash), which also upgrades the iteration count and pepper.
+ */
 async function changePassword(ctx) {
-  const body = await ctx.body(['currentPassword', 'newPassword']);
+  const body = await ctx.body(['newPassword']);
   const user = await ctx.requireUser();
   if (!(await ctx.eff()).login.password) throw new HttpError(403, 'method_disabled', 'Signing in with a password is switched off.');
   if (typeof body.newPassword !== 'string') throw invalid('newPassword', 'Choose a new password.');
-  if (body.currentPassword !== undefined && hasPassword(user)) {
-    await ctx.assertNotLocked('reauth-fail', user.id, ...LIMITS.reauthFail);
-    const ok = await verifyAccountPassword(check(() => loginPassword(body.currentPassword, 'currentPassword')), user, ctx.env);
-    if (!ok) {
-      await ctx.countFailure('reauth-fail', user.id, LIMITS.reauthFail[1]);
-      throw new HttpError(401, 'bad_credentials', 'The current password is wrong.', {}, { field: 'currentPassword' });
-    }
-  } else {
-    await ctx.requireReauth();
-  }
+  await ctx.requireReauth();
   const pw = check(() => validNewPassword(body.newPassword, { username: user.username, email: user.email }, 'newPassword'));
   const h = await hashAccountPassword(pw, ctx.env);
   await ctx.db
@@ -112,15 +107,25 @@ async function changePassword(ctx) {
   return json({ user: await selfView(ctx, user.id) });
 }
 
+/** SQL condition: the account keeps a way to sign in besides `except` ('password', 'discord' or a passkey id). */
+const OTHER_METHOD = {
+  password: '(u.discord_id IS NOT NULL OR EXISTS (SELECT 1 FROM passkeys p WHERE p.user_id = u.id))',
+  discord: '(u.password_hash IS NOT NULL OR EXISTS (SELECT 1 FROM passkeys p WHERE p.user_id = u.id))',
+};
+
 async function removePassword(ctx) {
   const user = await ctx.requireUser();
   await ctx.requireReauth();
   if (!hasPassword(user)) throw new HttpError(409, 'conflict', 'This account has no password.');
-  if (loginMethodCount(user) <= 1) throw lastMethod();
-  await ctx.db
-    .prepare('UPDATE users SET password_hash = NULL, password_salt = NULL, password_iterations = NULL, password_peppered = 0, password_changed_at = ?2 WHERE id = ?1')
+  // One conditional statement: two concurrent removals can never leave the account without a method.
+  const r = await ctx.db
+    .prepare(
+      `UPDATE users AS u SET password_hash = NULL, password_salt = NULL, password_iterations = NULL, password_peppered = 0, password_changed_at = ?2
+       WHERE u.id = ?1 AND u.password_hash IS NOT NULL AND ${OTHER_METHOD.password}`,
+    )
     .bind(user.id, ctx.now)
     .run();
+  if (r.meta.changes !== 1) throw lastMethod();
   await rotate(ctx);
   return json({ user: await selfView(ctx, user.id) });
 }
@@ -130,24 +135,14 @@ async function changeEmail(ctx) {
   const user = await ctx.requireUser();
   await ctx.requireReauth();
   const email = check(() => validEmail(body.email));
+  // Addresses are only taken through a confirmation link: none while email cannot be sent.
+  if (!(await ctx.eff()).login.email) throw new HttpError(503, 'unavailable', 'Email addresses can be changed once this server can confirm them.');
   await ctx.limit('email-change', user.id, 5, DAY);
-  const owner = await ctx.db.prepare('SELECT id FROM users WHERE email_key = ?1').bind(emailKey(email)).first();
-  if (owner && owner.id !== user.id) throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
-  if (owner && owner.id === user.id && user.email_verified === 1) return json({ user: await selfView(ctx, user.id) }, 202);
-  const eff = await ctx.eff();
-  if (eff.login.email) {
-    if (!(await sendVerification(ctx, user.id, user.username, email, 'change'))) {
-      await ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'change'").bind(user.id).run();
-      throw new HttpError(503, 'unavailable', 'The email could not be sent. Try again later.');
-    }
-  } else {
-    if (eff.emailVerificationRequired) throw new HttpError(503, 'unavailable', 'Email is not available on this server.');
-    try {
-      await ctx.db.prepare('UPDATE users SET email = ?2, email_key = ?3, email_verified = 0 WHERE id = ?1').bind(user.id, email, emailKey(email)).run();
-    } catch (err) {
-      if (uniqueViolation(err) === 'email') throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
-      throw err;
-    }
+  if (await emailTaken(ctx.db, email, user.id)) throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
+  if (user.email_key === emailKey(email)) return json({ user: await selfView(ctx, user.id) }, 202);
+  if (!(await sendVerification(ctx, user.id, user.username, email, 'change'))) {
+    await ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'change'").bind(user.id).run();
+    throw new HttpError(503, 'unavailable', 'The email could not be sent. Try again later.');
   }
   return json({ user: await selfView(ctx, user.id) }, 202);
 }
@@ -239,8 +234,15 @@ async function deletePasskey(ctx, { id }) {
   const user = await ctx.requireUser();
   await ctx.requireReauth();
   await ownPasskey(ctx, user, id);
-  if (loginMethodCount(user) <= 1) throw lastMethod();
-  await ctx.db.prepare('DELETE FROM passkeys WHERE id = ?1 AND user_id = ?2').bind(id, user.id).run();
+  const r = await ctx.db
+    .prepare(
+      `DELETE FROM passkeys WHERE id = ?1 AND user_id = ?2 AND EXISTS (
+         SELECT 1 FROM users u WHERE u.id = ?2 AND (u.password_hash IS NOT NULL OR u.discord_id IS NOT NULL
+           OR (SELECT COUNT(*) FROM passkeys q WHERE q.user_id = ?2) > 1))`,
+    )
+    .bind(id, user.id)
+    .run();
+  if (r.meta.changes !== 1) throw lastMethod();
   await rotate(ctx);
   return noContent();
 }
@@ -249,8 +251,11 @@ async function unlinkDiscord(ctx) {
   const user = await ctx.requireUser();
   await ctx.requireReauth();
   if (!user.discord_id) throw new HttpError(409, 'conflict', 'No Discord account is linked.');
-  if (loginMethodCount(user) <= 1) throw lastMethod();
-  await ctx.db.prepare('UPDATE users SET discord_id = NULL, discord_username = NULL, discord_linked_at = NULL WHERE id = ?1').bind(user.id).run();
+  const r = await ctx.db
+    .prepare(`UPDATE users AS u SET discord_id = NULL, discord_username = NULL, discord_linked_at = NULL WHERE u.id = ?1 AND u.discord_id IS NOT NULL AND ${OTHER_METHOD.discord}`)
+    .bind(user.id)
+    .run();
+  if (r.meta.changes !== 1) throw lastMethod();
   await rotate(ctx);
   return json({ user: await selfView(ctx, user.id) });
 }

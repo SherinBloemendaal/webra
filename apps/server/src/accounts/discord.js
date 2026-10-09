@@ -2,6 +2,7 @@
 // id is a wrangler var (DISCORD_CLIENT_ID), the secret a Worker secret
 // (DISCORD_CLIENT_SECRET); without both, Discord sign-in is unavailable.
 
+import { text } from '@webra/protocol';
 import { sha256Bytes, toBase64Url } from '../crypto.js';
 
 export const DISCORD_AUTHORIZE = 'https://discord.com/oauth2/authorize';
@@ -16,6 +17,15 @@ const TIMEOUT_MS = 10_000;
 export const discordApi = { fetch: (...args) => fetch(...args) };
 
 export class DiscordError extends Error {}
+
+/** A Discord username through the protocol's text rules (NFC, no control or bidi characters), or a fallback. */
+export function discordName(v) {
+  try {
+    return text(v, 1, 64, 'Discord username');
+  } catch {
+    return 'Discord user';
+  }
+}
 
 export function redirectUri(origin) {
   return `${origin}/api/auth/discord/callback`;
@@ -76,7 +86,7 @@ export async function fetchDiscordUser(env, origin, code, verifier) {
     const hasEmail = scopes.includes('email') && typeof me.email === 'string' && me.email.length > 0;
     return {
       id: me.id,
-      username: me.username.slice(0, 64),
+      username: discordName(me.username),
       email: hasEmail ? me.email : null,
       emailVerified: hasEmail && me.verified === true,
     };

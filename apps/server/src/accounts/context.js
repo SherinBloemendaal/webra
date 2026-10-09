@@ -4,7 +4,8 @@
 
 import { FieldError, ProtocolError } from '@webra/protocol';
 import { clientIp, HttpError, rateLimited, readJson, withCookies } from '../http.js';
-import { peekQuota, takeQuota, windowRemaining } from '../quota.js';
+import { clearQuota, countQuota, peekQuota, takeQuota, windowRemaining } from '../quota.js';
+import { ipSalt, keyedHash } from '../ipkey.js';
 import { findIpBan } from './bans.js';
 import { effective, loadSite } from './site.js';
 import { clearSessionCookie, hasRecentReauth, loadSession } from './sessions.js';
@@ -117,8 +118,9 @@ export class RequestContext {
     return user;
   }
 
+  /** Staff routes: the role and an active account (pending or deactivated staff have no powers). */
   async requireRole(role) {
-    const user = await this.requireUser();
+    const user = await this.requireUser({ active: true });
     if (ROLE_RANK[user.role] < ROLE_RANK[role]) throw new HttpError(403, 'forbidden', 'You do not have permission for this.');
     return user;
   }
@@ -138,27 +140,54 @@ export class RequestContext {
     return value;
   }
 
-  /** Count one request against a limit; 429 when over it. */
+  /** The HMAC key for address hashes (503 when the secret is missing in production). */
+  salt() {
+    return ipSalt(this.env, this.request);
+  }
+
+  /** Count one request against a D1 limit; 429 when over it (a refused request costs no write). */
   async limit(purpose, subject, limit, windowMs, message = 'Too many requests. Try again later.') {
-    if (!(await takeQuota(this.db, purpose, subject, limit, windowMs, this.now))) {
+    if (!(await takeQuota(this.db, this.salt(), purpose, subject, limit, windowMs, this.now))) {
       throw rateLimited(windowRemaining(windowMs, this.now), message);
     }
   }
 
-  /** Count one request against a limit; false when over it (no error). */
+  /** Count one request against a D1 limit; false when over it (no error). */
   async limitSoft(purpose, subject, limit, windowMs) {
-    return takeQuota(this.db, purpose, subject, limit, windowMs, this.now);
+    return takeQuota(this.db, this.salt(), purpose, subject, limit, windowMs, this.now);
   }
 
-  /** 429 `locked` when `purpose` already has `limit` failures for `subject`. */
+  /**
+   * Per-IP burst limit for unauthenticated endpoints. With the Workers Rate
+   * Limiting binding AUTH_LIMITER (wrangler.jsonc `ratelimits`: 20 per minute
+   * per purpose and address) it costs no D1 access at all; without it the
+   * D1 fallback below applies (`fallback`: [limit, windowMs]).
+   */
+  async burst(purpose, fallback) {
+    const limiter = this.env.AUTH_LIMITER;
+    if (limiter && typeof limiter.limit === 'function') {
+      const key = `${purpose}:${await keyedHash(this.salt(), 'burst', this.ip)}`;
+      const { success } = await limiter.limit({ key });
+      if (!success) throw rateLimited(60, 'Too many requests from your network. Try again in a minute.');
+      return;
+    }
+    await this.limit(`${purpose}-ip`, this.ip, ...fallback, 'Too many requests from your network. Try again later.');
+  }
+
+  /** 429 `locked` when `purpose` already has `limit` failures for `subject` (a read only). */
   async assertNotLocked(purpose, subject, limit, windowMs) {
-    if ((await peekQuota(this.db, purpose, subject, windowMs, this.now)) >= limit) {
+    if ((await peekQuota(this.db, this.salt(), purpose, subject, windowMs, this.now)) >= limit) {
       throw rateLimited(windowRemaining(windowMs, this.now), 'Too many failed attempts. Try again later.', 'locked');
     }
   }
 
+  /** Count one failure (one write). */
   async countFailure(purpose, subject, windowMs) {
-    await takeQuota(this.db, purpose, subject, Number.MAX_SAFE_INTEGER, windowMs, this.now);
+    await countQuota(this.db, this.salt(), purpose, subject, windowMs, this.now);
+  }
+
+  async clearFailures(purpose, subject) {
+    await clearQuota(this.db, this.salt(), purpose, subject);
   }
 
   respond(response) {

@@ -67,7 +67,7 @@ test('signup with email verification: pending_email, then approval, then active'
   assert.equal((await b.post('/api/auth/email/verify', { token })).status, 401, 'single use');
   const me = await b.get('/api/auth/me');
   assert.equal(me.body.user.status, 'pending_approval');
-  assert.ok(me.body.session.reauthUntil > clock.now);
+  assert.equal(me.body.session.reauthUntil, 0, 'signing up or in is not a re-authentication');
 });
 
 test('signup validation, uniqueness and closed registration', async () => {
@@ -92,7 +92,14 @@ test('signup validation, uniqueness and closed registration', async () => {
   await bad({ username: 'Good', password: undefined }, 'password');
   await bad({ username: 'Good', admin: true }, 'admin');
   assert.equal((await b.post('/api/auth/signup', { username: 'Good', email: 'g@example.com', password: PASSWORD, acceptPrivacy: true })).status, 201);
+  // An unverified address claims nothing: someone else may sign up with it too.
   const c = new Browser(env, { ip: '203.0.113.9' });
+  const claim = await c.post('/api/auth/signup', { username: 'Claimer', email: 'G@example.com', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(claim.status, 201, 'unverified addresses never block a signup');
+  // Once one account verifies it, the address is taken.
+  assert.equal((await b.post('/api/auth/email/verify', { token: env.EMAIL.token('g@example.com', 'verify') })).status, 200);
+  const late = await c.post('/api/auth/email/verify', { token: env.EMAIL.token('G@example.com', 'verify') });
+  assert.equal(late.status, 409, 'the second verification of the same address conflicts');
   const dupName = await c.post('/api/auth/signup', { username: 'ＧＯＯＤ', email: 'h@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(dupName.status, 409, 'usernames are unique after folding');
   assert.equal(dupName.body.error.field, 'username');
@@ -151,43 +158,97 @@ test('CSRF: Origin, Sec-Fetch-Site and the custom header on every state change',
   assert.equal(plain.status, 415);
 });
 
-test('password sign-in: generic errors, lockout per login name, rehash, rotation', async () => {
+test('password sign-in: generic errors, one key derivation, rotation, no rehash at sign-in', async () => {
   const env = makeEnv({ email: false, vars: { PASSWORD_ITERATIONS: '20000' } });
   const t = await signup(env, 'Boris');
   promote(env, t.user.id);
-  const stored = env.DB.rows('SELECT password_iterations FROM users')[0];
-  assert.equal(stored.password_iterations, 20000);
+  env.DB.sqlite.prepare("UPDATE users SET email = 'boris@example.com', email_key = 'boris@example.com', email_verified = 1 WHERE id = ?").run(t.user.id);
+  assert.equal(env.DB.rows('SELECT password_iterations FROM users')[0].password_iterations, 20000);
   const b = new Browser(env, { ip: '192.0.2.1' });
   const wrong = await b.post('/api/auth/login', { login: 'boris', password: 'nope nope nope' });
   const unknown = await b.post('/api/auth/login', { login: 'nobody', password: 'nope nope nope' });
   assert.equal(wrong.status, 401);
   assert.equal(unknown.status, 401);
   assert.deepEqual(wrong.body, unknown.body, 'same answer for a wrong password and an unknown name');
-  // Case-insensitive username, then by email; raising the iterations upgrades the hash.
+  // Raising the iterations does not rehash at sign-in (that would be a second derivation in one request).
   env.PASSWORD_ITERATIONS = '30000';
   const ok = await b.post('/api/auth/login', { login: 'BORIS', password: PASSWORD });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  assert.equal(env.DB.rows('SELECT password_iterations FROM users')[0].password_iterations, 30000, 'rehashed');
+  assert.equal(env.DB.rows('SELECT password_iterations FROM users')[0].password_iterations, 20000, 'upgraded only when the password is next set');
   const first = b.jar.get('__Host-webra_session');
   const again = await b.post('/api/auth/login', { login: 'boris@example.com', password: PASSWORD });
   assert.equal(again.status, 200);
   assert.notEqual(b.jar.get('__Host-webra_session'), first, 'a new session id on every sign-in');
   assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id = ?', t.user.id)[0].n, 2, 'the old cookie session was replaced');
-  // 10 failures lock the name for the window, whatever the IP; existing and unknown names alike.
-  for (const name of ['boris', 'ghost']) {
-    for (let i = 0; i < 10; i++) {
-      const ip = `192.0.2.${100 + i}`;
-      const r = await new Browser(env, { ip }).post('/api/auth/login', { login: name, password: 'wrong password!' });
-      assert.equal(r.status, 401);
-    }
-    const locked = await new Browser(env, { ip: '192.0.2.250' }).post('/api/auth/login', { login: name, password: PASSWORD });
-    assert.equal(locked.status, 429, name);
-    assert.equal(locked.body.error.code, 'locked');
-    assert.ok(locked.body.error.retryAfter > 0);
-    assert.equal(locked.res.headers.get('retry-after'), String(locked.body.error.retryAfter));
+  // Setting the password (after a re-authentication) upgrades the hash.
+  assert.equal((await b.post('/api/auth/reauth', { password: PASSWORD })).status, 200);
+  assert.equal((await b.post('/api/account/password', { newPassword: 'a stronger passphrase' })).status, 200);
+  assert.equal(env.DB.rows('SELECT password_iterations FROM users')[0].password_iterations, 30000);
+});
+
+test('lockout: username and email share one budget per account and address; the owner is never kept out', async () => {
+  const env = makeEnv({ email: false });
+  const victim = await signup(env, 'Victim', { ip: '198.51.100.50' });
+  promote(env, victim.user.id);
+  env.DB.sqlite.prepare("UPDATE users SET email = 'victim@example.com', email_key = 'victim@example.com', email_verified = 1 WHERE id = ?").run(victim.user.id);
+  const attacker = new Browser(env, { ip: '203.0.113.1' });
+  const fail = async (b, login) => (await b.post('/api/auth/login', { login, password: 'wrong password 1' })).body.error.code;
+  // 5 failures by username and 5 by email from one address: the 11th try is locked (one budget).
+  for (let i = 0; i < 5; i++) assert.equal(await fail(attacker, 'Victim'), 'bad_credentials');
+  for (let i = 0; i < 5; i++) assert.equal(await fail(attacker, 'victim@example.com'), 'bad_credentials');
+  assert.equal(await fail(attacker, 'victim@example.com'), 'locked', 'username and email share the budget');
+  // The owner, from an address the account used before, signs in right away.
+  const owner = new Browser(env, { ip: '198.51.100.50' });
+  const r = await owner.post('/api/auth/login', { login: 'victim@example.com', password: PASSWORD });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(env.DB.rows('SELECT login_failures FROM users WHERE id = ?', victim.user.id)[0].login_failures, 0, 'success clears the count');
+});
+
+test('lockout: a day of spread-out failures (the review repro) never locks the owner for long', async () => {
+  const env = makeEnv({ email: false });
+  clock.now = Date.UTC(2026, 9, 10, 0, 30, 0);
+  const victim = await signup(env, 'Victim', { ip: '198.51.100.51' });
+  promote(env, victim.user.id);
+  for (let w = 0; w < 5; w++) {
+    const att = new Browser(env, { ip: `203.0.113.${10 + w}` });
+    for (let i = 0; i < 10; i++) await att.post('/api/auth/login', { login: 'Victim', password: 'wrong password 1' });
+    clock.advance(15 * 60 * 1000);
   }
-  clock.advance(16 * 60 * 1000);
-  assert.equal((await new Browser(env, { ip: '192.0.2.251' }).post('/api/auth/login', { login: 'boris', password: PASSWORD })).status, 200, 'unlocked after the window');
+  clock.advance(60 * 60 * 1000);
+  // A new address of the owner waits at most the capped delay, never the rest of the day.
+  const fresh = new Browser(env, { ip: '192.0.2.200' });
+  const r = await fresh.post('/api/auth/login', { login: 'Victim', password: PASSWORD });
+  if (r.status === 429) assert.ok(r.body.error.retryAfter <= 15 * 60, `retryAfter ${r.body.error.retryAfter}`);
+  clock.advance(15 * 60 * 1000);
+  assert.equal((await fresh.post('/api/auth/login', { login: 'Victim', password: PASSWORD })).status, 200);
+  // The known address was never delayed.
+  const known = new Browser(env, { ip: '198.51.100.51' });
+  for (let i = 0; i < 12; i++) await new Browser(env, { ip: '203.0.113.99' }).post('/api/auth/login', { login: 'Victim', password: 'wrong password 1' });
+  assert.equal((await known.post('/api/auth/login', { login: 'Victim', password: PASSWORD })).status, 200);
+});
+
+test('lockout: escalating account delay from new addresses, per-address daily budget', async () => {
+  const env = makeEnv({ email: false });
+  const victim = await signup(env, 'Target', { ip: '198.51.100.52' });
+  promote(env, victim.user.id);
+  // 10 failures from 10 addresses: no delay yet; then each failure doubles it (capped at 15 minutes).
+  for (let i = 0; i < 10; i++) await new Browser(env, { ip: `192.0.2.${i + 1}` }).post('/api/auth/login', { login: 'Target', password: 'wrong password 1' });
+  const row = env.DB.rows('SELECT login_failures, login_delay_until FROM users WHERE id = ?', victim.user.id)[0];
+  assert.equal(row.login_failures, 10);
+  assert.ok(row.login_delay_until > clock.now && row.login_delay_until <= clock.now + 2000);
+  const delayed = await new Browser(env, { ip: '192.0.2.50' }).post('/api/auth/login', { login: 'Target', password: PASSWORD });
+  assert.equal(delayed.status, 429);
+  assert.equal(delayed.body.error.code, 'locked');
+  // Per address: 100 failures a day across all names, then that address is locked (reads only).
+  const flood = new Browser(env, { ip: '203.0.113.77' });
+  for (let i = 0; i < 100; i++) {
+    clock.advance(61 * 1000);
+    await flood.post('/api/auth/login', { login: `ghost${i}`, password: 'wrong password 1' });
+  }
+  const writes = env.DB.rows('SELECT COUNT(*) AS n FROM rate_limits')[0].n;
+  const locked = await flood.post('/api/auth/login', { login: 'someone', password: 'wrong password 1' });
+  assert.equal(locked.body.error.code, 'locked');
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM rate_limits')[0].n, writes, 'refused attempts write nothing');
 });
 
 test('per-IP sign-in limit', async () => {
@@ -253,6 +314,10 @@ test('plain HTTP (local development) uses a cookie without __Host- and Secure', 
 test('password reset by email: generic answer, single use, sessions revoked, verifies the email', async () => {
   const env = makeEnv();
   const owner = await signup(env, 'Yuri');
+  // Only verified addresses get reset links.
+  await owner.post('/api/auth/password/forgot', { email: 'yuri@example.com' });
+  assert.equal(env.EMAIL.token('yuri@example.com', 'reset'), null, 'no reset link to an unverified address');
+  await owner.post('/api/auth/email/verify', { token: env.EMAIL.token('yuri@example.com', 'verify') });
   const other = new Browser(env, { ip: '203.0.113.50' });
   const f = await other.post('/api/auth/password/forgot', { email: 'yuri@example.com' });
   assert.equal(f.status, 202);
@@ -278,7 +343,8 @@ test('password reset by email: generic answer, single use, sessions revoked, ver
   const late = env.EMAIL.token('yuri@example.com', 'reset');
   clock.advance(61 * 60 * 1000);
   assert.equal((await other.post('/api/auth/password/reset', { token: late, password: 'another new passphrase' })).status, 401);
-  // Per-address limit: 3 per hour.
+  // Per-address limit: 3 per hour (the first window already counted the request above).
+  clock.advance(60 * 60 * 1000);
   const statuses = [];
   for (let i = 0; i < 4; i++) statuses.push((await new Browser(env, { ip: `203.0.113.${60 + i}` }).post('/api/auth/password/forgot', { email: 'yuri@example.com' })).status);
   assert.deepEqual(statuses, [202, 202, 202, 429]);
@@ -287,8 +353,8 @@ test('password reset by email: generic answer, single use, sessions revoked, ver
 test('re-authentication: needed for sensitive actions, rotates the session, locks after failures', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Gradenko');
-  clock.advance(11 * 60 * 1000);
-  const r = await b.post('/api/account/email', { email: 'new@example.com' });
+  // Signing up (or in) is not a re-authentication: sensitive actions ask for one.
+  const r = await b.get('/api/account/export');
   assert.equal(r.status, 403);
   assert.equal(r.body.error.code, 'reauth_required');
   const before = b.jar.get('__Host-webra_session');
@@ -296,7 +362,9 @@ test('re-authentication: needed for sensitive actions, rotates the session, lock
   assert.equal(ok.status, 200);
   assert.ok(ok.body.reauthUntil > clock.now);
   assert.notEqual(b.jar.get('__Host-webra_session'), before, 'rotated');
-  assert.equal((await b.post('/api/account/email', { email: 'new@example.com' })).status, 202);
+  assert.equal((await b.get('/api/account/export')).status, 200);
+  clock.advance(11 * 60 * 1000);
+  assert.equal((await b.get('/api/account/export')).body.error.code, 'reauth_required', 'the proof lasts 10 minutes');
   for (let i = 0; i < 10; i++) assert.equal((await b.post('/api/auth/reauth', { password: 'wrong wrong wrong' })).status, 401);
   const locked = await b.post('/api/auth/reauth', { password: PASSWORD });
   assert.equal(locked.status, 429);

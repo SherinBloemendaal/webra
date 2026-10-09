@@ -14,7 +14,7 @@ import { randomToken, sha256Hex } from '../crypto.js';
 import { bannedError, check, invalid } from './context.js';
 import { rotate, selfView, signIn, statusAfterVerification } from './common.js';
 import { accountLink, consumeEmailToken, createEmailToken, resetMessage, sendEmail, TOKEN_TTL_MS, verifyMessage } from './email.js';
-import { dummyVerify, hashAccountPassword, needsRehash, verifyAccountPassword } from './password.js';
+import { dummyVerify, hashAccountPassword, verifyAccountPassword } from './password.js';
 import {
   consumeChallenge,
   createChallenge,
@@ -29,24 +29,45 @@ import { publicSite } from './site.js';
 import { clearSessionCookie, reauthUntil, sessionToken } from './sessions.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByEmail, userById, userByUsername } from './users.js';
 import { assertionIds, rpIdFor, verifyAuthentication, verifyRegistration, WebAuthnError } from './webauthn.js';
-import { clearQuota } from '../quota.js';
+import { ipRecord } from './ip.js';
+import { rateLimited } from '../http.js';
 
 export const MIN15 = 15 * 60 * 1000;
 export const HOUR = 60 * 60 * 1000;
 export const DAY = 24 * HOUR;
 
+/**
+ * Rate limits (docs/accounts-api.md section 9). `*Burst` limits are per IP
+ * and go through the AUTH_LIMITER binding when it exists (no D1 access);
+ * the values here are the D1 fallback.
+ */
 export const LIMITS = {
   signup: [10, HOUR],
-  loginIp: [30, MIN15],
+  loginBurst: [30, MIN15],
+  /** Failures per account (or unknown name) from one address: a short lock for that address only. */
   loginFail: [10, MIN15],
-  loginFailDay: [50, DAY],
-  passkeyIp: [30, MIN15],
+  /** Failures per address across all accounts, per day. */
+  loginFailIp: [100, DAY],
+  passkeyBurst: [30, MIN15],
   reauthFail: [10, MIN15],
   forgotIp: [5, HOUR],
   forgotEmail: [3, HOUR],
-  tokenIp: [20, MIN15],
-  discordIp: [20, MIN15],
+  tokenBurst: [20, MIN15],
+  discordBurst: [20, MIN15],
 };
+
+/**
+ * Account-wide escalating delay (all addresses together): after this many
+ * failures within a day, each further failure doubles a wait, up to the
+ * maximum. Addresses the account signed in from before are exempt, so a
+ * third party cannot keep the owner out; there is no hard lock.
+ */
+export const ACCOUNT_DELAY = { after: 10, maxMs: 15 * 60 * 1000, resetMs: DAY };
+
+export function accountDelayMs(failures) {
+  if (failures < ACCOUNT_DELAY.after) return 0;
+  return Math.min(ACCOUNT_DELAY.maxMs, 1000 * 2 ** Math.min(20, failures - ACCOUNT_DELAY.after + 1));
+}
 
 const badCredentials = (message = 'Wrong sign-in details.') => new HttpError(401, 'bad_credentials', message);
 
@@ -66,14 +87,24 @@ export async function requirePasskeys(ctx) {
   return requireRpId(ctx);
 }
 
-/** Key for sign-in lockouts: the normalized login name (existing or not). */
+/** Key for an unknown login name (so unknown and existing names cost the same). */
 function loginKey(login) {
   const s = login.trim();
   if (s.includes('@')) return `e:${emailKey(s)}`;
   return `u:${usernameKey(s.normalize('NFC').replace(/\s+/g, ' '))}`;
 }
 
-/** Verify an assertion against the stored passkey; returns the user row. Generic 401 on failure. */
+/** Whether the account signed in from this address before (its IP history). */
+async function knownAddress(db, userId, ip) {
+  const rec = ipRecord(ip);
+  if (!rec) return false;
+  return (await db.prepare('SELECT 1 AS ok FROM user_ips WHERE user_id = ?1 AND ip = ?2').bind(userId, rec.ip).first()) !== null;
+}
+
+/**
+ * Verify an assertion against the stored passkey; returns { user, uv }.
+ * Generic 401 on failure.
+ */
 export async function verifyPasskeyAssertion(ctx, challenge, credential, { userId = null } = {}) {
   const rpId = requireRpId(ctx);
   try {
@@ -97,7 +128,7 @@ export async function verifyPasskeyAssertion(ctx, challenge, credential, { userI
       .prepare('UPDATE passkeys SET sign_count = ?2, last_used_at = ?3, uv = ?4, backed_up = ?5 WHERE id = ?1')
       .bind(pk.id, r.signCount, ctx.now, r.uv ? 1 : 0, r.backedUp ? 1 : 0)
       .run();
-    return user;
+    return { user, uv: r.uv };
   } catch (err) {
     if (err instanceof WebAuthnError) throw badCredentials('The passkey could not be verified.');
     throw err;
@@ -142,12 +173,15 @@ async function signup(ctx) {
   let email = null;
   if (body.email !== undefined && body.email !== null && body.email !== '') email = check(() => validEmail(body.email));
   if (!email && eff.emailVerificationRequired) throw invalid('email', 'An email address is required.');
+  // Addresses are only taken when they can be confirmed (no unverified claims while email is off).
+  if (email && !eff.login.email) throw invalid('email', 'Email addresses can be added once this server can confirm them. Leave it empty for now.');
   const hasPassword = body.password !== undefined && body.password !== null;
   const hasPasskey = body.passkey !== undefined && body.passkey !== null;
   if (hasPassword === hasPasskey) throw invalid('password', 'Choose a password or a passkey.');
 
   // Counted once the request is well formed, before any expensive work or lookups.
   await ctx.limit('signup', ctx.ip, ...LIMITS.signup, 'Too many signups from your network. Try again later.');
+  if (email && (await emailTaken(ctx.db, email))) throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
   let password = null;
   let registration = null;
   let userHandle;
@@ -182,6 +216,12 @@ async function signup(ctx) {
   return signIn(ctx, id, 201);
 }
 
+/** Whether a verified address belongs to an account (unverified ones claim nothing). */
+export async function emailTaken(db, email, exceptUserId = null) {
+  const row = await db.prepare('SELECT id FROM users WHERE email_key = ?1').bind(emailKey(email)).first();
+  return row !== null && row.id !== exceptUserId;
+}
+
 /** Create and mail a verification (or change) link. Returns whether it was sent. */
 export async function sendVerification(ctx, userId, username, email, purpose) {
   const { token } = await createEmailToken(ctx.db, userId, purpose, email, TOKEN_TTL_MS[purpose], ctx.now);
@@ -194,10 +234,9 @@ async function login(ctx) {
   if (!(await ctx.eff()).login.password) throw methodDisabled('a password');
   if (typeof body.login !== 'string' || body.login.trim() === '' || body.login.length > 300) throw invalid('login', 'Enter your username or email.');
   const password = check(() => loginPassword(body.password));
-  await ctx.limit('login-ip', ctx.ip, ...LIMITS.loginIp, 'Too many sign-in attempts from your network. Try again later.');
-  const key = loginKey(body.login);
-  await ctx.assertNotLocked('login-fail', key, ...LIMITS.loginFail);
-  await ctx.assertNotLocked('login-fail-day', key, ...LIMITS.loginFailDay);
+  await ctx.burst('login', LIMITS.loginBurst);
+  await ctx.assertNotLocked('login-fail-ip', ctx.ip, ...LIMITS.loginFailIp);
+  // Resolve the account first: username and email share one failure budget.
   const name = body.login.trim();
   let row = null;
   try {
@@ -205,22 +244,31 @@ async function login(ctx) {
   } catch {
     row = null; // malformed names match nobody
   }
-  const ok = row && row.status !== 'deleted' ? await verifyAccountPassword(password, row, ctx.env) : await dummyVerify(password, ctx.env);
+  if (row && row.status === 'deleted') row = null;
+  const subject = `${row ? `a:${row.id}` : `n:${loginKey(name)}`}|${ctx.ip}`;
+  await ctx.assertNotLocked('login-fail', subject, ...LIMITS.loginFail);
+  if (row && row.login_delay_until !== null && row.login_delay_until > ctx.now && !(await knownAddress(ctx.db, row.id, ctx.ip))) {
+    throw rateLimited((row.login_delay_until - ctx.now) / 1000, 'Too many failed sign-ins for this account. Wait a moment, or use a passkey, Discord or a reset link.', 'locked');
+  }
+  // Exactly one key derivation per request (CPU budget); hashes are upgraded when the password is next set.
+  const ok = row ? await verifyAccountPassword(password, row, ctx.env) : await dummyVerify(password, ctx.env);
   if (!ok) {
-    await ctx.countFailure('login-fail', key, LIMITS.loginFail[1]);
-    await ctx.countFailure('login-fail-day', key, LIMITS.loginFailDay[1]);
+    await ctx.countFailure('login-fail', subject, LIMITS.loginFail[1]);
+    await ctx.countFailure('login-fail-ip', ctx.ip, LIMITS.loginFailIp[1]);
+    if (row) {
+      const recent = row.login_failed_at !== null && row.login_failed_at > ctx.now - ACCOUNT_DELAY.resetMs;
+      const failures = (recent ? row.login_failures : 0) + 1;
+      const delay = accountDelayMs(failures);
+      await ctx.db
+        .prepare('UPDATE users SET login_failures = ?2, login_failed_at = ?3, login_delay_until = ?4 WHERE id = ?1')
+        .bind(row.id, failures, ctx.now, delay > 0 ? ctx.now + delay : null)
+        .run();
+    }
     throw badCredentials('Wrong username, email or password.');
   }
   const ban = banOf(row);
   if (ban) throw bannedError(ban);
-  await clearQuota(ctx.db, 'login-fail', key);
-  if (needsRehash(row, ctx.env)) {
-    const h = await hashAccountPassword(password, ctx.env);
-    await ctx.db
-      .prepare('UPDATE users SET password_hash = ?2, password_salt = ?3, password_iterations = ?4, password_peppered = ?5 WHERE id = ?1')
-      .bind(row.id, h.hash, h.salt, h.iterations, h.peppered)
-      .run();
-  }
+  await ctx.clearFailures('login-fail', subject);
   return signIn(ctx, row.id);
 }
 
@@ -245,7 +293,8 @@ async function forgot(ctx) {
   await ctx.limit('forgot-ip', ctx.ip, ...LIMITS.forgotIp);
   await ctx.limit('forgot-email', emailKey(email), ...LIMITS.forgotEmail);
   const row = await userByEmail(ctx.db, email, ctx.now);
-  if (row && row.status !== 'deleted') {
+  // Only verified addresses get reset links (an address someone merely typed proves nothing).
+  if (row && row.status !== 'deleted' && row.email_verified === 1) {
     const { token } = await createEmailToken(ctx.db, row.id, 'reset', row.email, TOKEN_TTL_MS.reset, ctx.now);
     await sendEmail(ctx.env, row.email, resetMessage(row.username, accountLink(ctx.origin, 'reset', token), 1));
   }
@@ -255,7 +304,7 @@ async function forgot(ctx) {
 async function reset(ctx) {
   const body = await ctx.body(['token', 'password']);
   await ctx.assertIpAllowed();
-  await ctx.limit('token-ip', ctx.ip, ...LIMITS.tokenIp);
+  await ctx.burst('token', LIMITS.tokenBurst);
   if (typeof body.password !== 'string') throw invalid('password', 'Choose a new password.');
   const t = await consumeEmailToken(ctx.db, body.token, ['reset'], ctx.now);
   const row = t ? await userById(ctx.db, t.user_id, ctx.now) : null;
@@ -263,7 +312,7 @@ async function reset(ctx) {
   const pw = check(() => validNewPassword(body.password, { username: row.username, email: row.email }));
   const h = await hashAccountPassword(pw, ctx.env);
   const eff = await ctx.eff();
-  const verified = t.email !== null && row.email !== null;
+  const verified = t.email !== null && row.email !== null && row.email_verified === 1;
   const status = verified ? statusAfterVerification(row, eff) : row.status;
   await ctx.db.batch([
     ctx.db
@@ -283,25 +332,22 @@ async function reset(ctx) {
 async function verifyEmail(ctx) {
   const body = await ctx.body(['token']);
   await ctx.assertIpAllowed();
-  await ctx.limit('token-ip', ctx.ip, ...LIMITS.tokenIp);
+  await ctx.burst('token', LIMITS.tokenBurst);
   const t = await consumeEmailToken(ctx.db, body.token, ['verify', 'change'], ctx.now);
   const row = t ? await userById(ctx.db, t.user_id, ctx.now) : null;
   if (!row || row.status === 'deleted' || !t.email) throw badCredentials('This link is invalid or has expired.');
   const eff = await ctx.eff();
   const status = statusAfterVerification(row, eff);
-  if (t.purpose === 'verify') {
-    if (t.email !== row.email) throw badCredentials('This link is invalid or has expired.');
-    await ctx.db.prepare('UPDATE users SET email_verified = 1, status = ?2 WHERE id = ?1').bind(row.id, status).run();
-  } else {
-    try {
-      await ctx.db
-        .prepare('UPDATE users SET email = ?2, email_key = ?3, email_verified = 1, status = ?4 WHERE id = ?1')
-        .bind(row.id, t.email, emailKey(t.email), status)
-        .run();
-    } catch (err) {
-      if (uniqueViolation(err) === 'email') throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
-      throw err;
-    }
+  if (t.purpose === 'verify' && t.email !== row.email) throw badCredentials('This link is invalid or has expired.');
+  // Verifying claims the address (email_key); someone who verified it first keeps it.
+  try {
+    await ctx.db
+      .prepare('UPDATE users SET email = ?2, email_key = ?3, email_verified = 1, email_set_at = ?5, status = ?4 WHERE id = ?1')
+      .bind(row.id, t.email, emailKey(t.email), status, ctx.now)
+      .run();
+  } catch (err) {
+    if (uniqueViolation(err) === 'email') throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
+    throw err;
   }
   const { user } = await ctx.auth();
   return json({ user: user && user.id === row.id ? await selfView(ctx, row.id) : null });
@@ -313,7 +359,7 @@ async function passkeyOptions(ctx) {
   const rpId = await requirePasskeys(ctx);
   const purpose = body.purpose ?? 'login';
   if (purpose !== 'login' && purpose !== 'reauth') throw invalid('purpose', 'Purpose must be login or reauth.');
-  await ctx.limit('passkey-ip', ctx.ip, ...LIMITS.passkeyIp);
+  await ctx.burst('passkey', LIMITS.passkeyBurst);
   if (purpose === 'login') {
     const c = await createChallenge(ctx.db, 'login', {}, ctx.now);
     return json({ challengeId: c.id, publicKey: requestOptions({ rpId, challenge: c.challenge }) });
@@ -322,17 +368,18 @@ async function passkeyOptions(ctx) {
   const allow = await listPasskeys(ctx.db, user.id);
   if (allow.length === 0) throw new HttpError(409, 'conflict', 'This account has no passkeys.');
   const c = await createChallenge(ctx.db, 'reauth', { userId: user.id }, ctx.now);
-  return json({ challengeId: c.id, publicKey: requestOptions({ rpId, challenge: c.challenge, allow }) });
+  // Re-authentication for sensitive changes needs user verification (PIN or biometrics).
+  return json({ challengeId: c.id, publicKey: requestOptions({ rpId, challenge: c.challenge, allow, userVerification: 'required' }) });
 }
 
 async function passkeyLogin(ctx) {
   const body = await ctx.body(['challengeId', 'credential']);
   await ctx.assertIpAllowed();
   await requirePasskeys(ctx);
-  await ctx.limit('passkey-ip', ctx.ip, ...LIMITS.passkeyIp);
+  await ctx.burst('passkey', LIMITS.passkeyBurst);
   const c = await consumeChallenge(ctx.db, body.challengeId, 'login', {}, ctx.now);
   if (!c) throw badCredentials('The passkey request expired. Try again.');
-  const user = await verifyPasskeyAssertion(ctx, c.challenge, body.credential);
+  const { user } = await verifyPasskeyAssertion(ctx, c.challenge, body.credential);
   if (user.status === 'deleted') throw badCredentials('The passkey could not be verified.');
   const ban = banOf(user);
   if (ban) throw bannedError(ban);
@@ -345,7 +392,7 @@ async function passkeySignupOptions(ctx) {
   const eff = await ctx.eff();
   if (!eff.registrationOpen) throw new HttpError(403, 'registration_closed', 'Signup is closed right now.');
   const rpId = await requirePasskeys(ctx);
-  await ctx.limit('passkey-ip', ctx.ip, ...LIMITS.passkeyIp);
+  await ctx.burst('passkey', LIMITS.passkeyBurst);
   const username = check(() => validUsername(body.username));
   const displayName = body.displayName === undefined || body.displayName === null || body.displayName === '' ? username : check(() => validDisplayName(body.displayName));
   if (await userByUsername(ctx.db, username, ctx.now)) throw new HttpError(409, 'conflict', 'This username is taken.', {}, { field: 'username' });
@@ -359,6 +406,7 @@ async function reauth(ctx) {
   const user = await ctx.requireUser();
   await ctx.assertNotLocked('reauth-fail', user.id, ...LIMITS.reauthFail);
   let ok = false;
+  let uvMissing = false;
   try {
     if (body.password !== undefined && body.passkey === undefined) {
       ok = await verifyAccountPassword(check(() => loginPassword(body.password)), user, ctx.env);
@@ -366,7 +414,12 @@ async function reauth(ctx) {
       const pk = body.passkey;
       if (pk === null || typeof pk !== 'object' || Array.isArray(pk)) throw invalid('passkey', 'Passkey is malformed.');
       const c = await consumeChallenge(ctx.db, pk.challengeId, 'reauth', { userId: user.id }, ctx.now);
-      if (c) ok = (await verifyPasskeyAssertion(ctx, c.challenge, pk.credential, { userId: user.id })).id === user.id;
+      if (c) {
+        const r = await verifyPasskeyAssertion(ctx, c.challenge, pk.credential, { userId: user.id });
+        // A re-authentication must be a real one: the authenticator verified the user (PIN or biometrics).
+        uvMissing = !r.uv;
+        ok = r.user.id === user.id && r.uv;
+      }
     } else {
       throw invalid('password', 'Send a password or a passkey.');
     }
@@ -376,6 +429,7 @@ async function reauth(ctx) {
   }
   if (!ok) {
     await ctx.countFailure('reauth-fail', user.id, LIMITS.reauthFail[1]);
+    if (uvMissing) throw badCredentials('Confirm with your passkey\'s PIN or biometrics (user verification).');
     throw badCredentials('That did not match. Try again.');
   }
   await rotate(ctx, { reauth: true });

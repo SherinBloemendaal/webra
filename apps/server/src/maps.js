@@ -7,6 +7,7 @@ import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { randomHex } from './crypto.js';
 import { engine, EngineTrap } from './engine.js';
 import { HttpError, json, jsonText, readText } from './http.js';
+import { ipSalt } from './ipkey.js';
 import { takeQuota } from './quota.js';
 
 export const UPLOAD_LIMIT = 10;
@@ -43,10 +44,10 @@ export async function prepareMap(textValue, judge = engine()) {
 }
 
 /** `uploaderId`: the signed-in account (stored with the map), or null. */
-export async function uploadMap(request, env, ip, now = Date.now(), uploaderId = null) {
+export async function uploadMap(request, env, ip, now = Date.now(), uploaderId = null, salt = ipSalt(env, request)) {
   const type = request.headers.get('Content-Type') || '';
   if (!/^application\/json\s*(;|$)/i.test(type)) throw new HttpError(415, 'bad_message', 'Content-Type must be application/json.');
-  if (!(await takeQuota(env.DB, 'maps', ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt, 'maps', ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map uploads. Try again later.', { 'retry-after': '3600' });
   }
   const p = await prepareMap(await readText(request, MAP_MAX_BYTES));

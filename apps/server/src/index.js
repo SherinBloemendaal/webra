@@ -25,7 +25,7 @@ async function createSession(ctx) {
   const { value } = await readJson(request, SESSION_BODY_MAX);
   const input = validateCreateSession(value);
   await requirePlay(ctx);
-  if (!(await takeQuota(env.DB, 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
+  if (!(await takeQuota(env.DB, ctx.salt(), 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const id = env.SESSION.newUniqueId();
@@ -90,7 +90,7 @@ async function route(ctx) {
     if (method === 'POST') {
       if (Math.random() < 0.05) exec.waitUntil(pruneQuotas(env.DB).catch(() => {}));
       const account = await requirePlay(ctx);
-      return uploadMap(request, env, ctx.ip, ctx.now, account?.id ?? null);
+      return uploadMap(request, env, ctx.ip, ctx.now, account?.id ?? null, ctx.salt());
     }
     throw methodNotAllowed('GET, POST');
   }
@@ -98,7 +98,7 @@ async function route(ctx) {
     // EA's freeware Red Alert files from OpenRA's mirrors, streamed, never stored (content.js).
     if (method !== 'GET') throw methodNotAllowed('GET');
     await requireRelay(ctx);
-    return quickInstall(request, env, ctx.ip);
+    return quickInstall(request, env, ctx.ip, { salt: ctx.salt() });
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

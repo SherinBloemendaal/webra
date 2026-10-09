@@ -17,7 +17,8 @@ async function passkeySignup(env, username, alg = 'ES256', { ip } = {}) {
   assert.equal(o.status, 200, JSON.stringify(o.body));
   const auth = await Authenticator.create(alg);
   const credential = await auth.register(o.body.publicKey, ORIGIN);
-  const r = await b.post('/api/auth/signup', { username, email: `${username.toLowerCase()}@example.com`, passkey: { challengeId: o.body.challengeId, credential }, acceptPrivacy: true });
+  const email = env.EMAIL ? `${username.toLowerCase()}@example.com` : null;
+  const r = await b.post('/api/auth/signup', { username, email, passkey: { challengeId: o.body.challengeId, credential }, acceptPrivacy: true });
   return { b, auth, r, options: o.body };
 }
 
@@ -176,6 +177,8 @@ test('registration refusals: wrong origin, wrong rp id, username mismatch, dupli
 test('managing passkeys: re-authentication, exclude list, rename, last method, reauth by passkey', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Manager');
+  assert.equal((await b.post('/api/account/passkeys/options', {})).body.error.code, 'reauth_required', 'adding a passkey needs a fresh proof');
+  await b.post('/api/auth/reauth', { password: PASSWORD });
   const o = await b.post('/api/account/passkeys/options', {});
   assert.equal(o.status, 200, JSON.stringify(o.body));
   assert.equal(o.body.publicKey.user.name, 'Manager');

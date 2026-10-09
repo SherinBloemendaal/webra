@@ -40,6 +40,7 @@ import {
   REJOINABLE_REASONS,
   RESUME_TIMEOUT_MS,
   S2C,
+  usernameKey,
 } from '@webra/protocol';
 import {
   hashHostKey,
@@ -277,6 +278,10 @@ export class Session extends DurableObject {
     // Signed in: the username, whatever the client sent. Anonymous: its chosen name.
     const name = att.account ? att.account.username : msg.name;
     if (name === undefined) return this.reject(ws, ERRORS.INVALID, 'Choose a name.', true);
+    // Anonymous players (accounts not required) cannot pose as an account.
+    if (!att.account && (await this.nameBelongsToAccount(name))) {
+      return this.reject(ws, ERRORS.INVALID, 'That name belongs to an account. Sign in, or choose another name.', true);
+    }
     const spectate = msg.spectate === true;
     const phaseProblem = () => {
       if (this.room.phase === 'lobby') return null;
@@ -882,6 +887,16 @@ export class Session extends DurableObject {
   }
 
   // ---- Accounts and bans ---------------------------------------------------------------------------
+
+  /** Whether `name` is (after folding) the username of an account; true when that cannot be checked. */
+  async nameBelongsToAccount(name) {
+    try {
+      return (await this.env.DB.prepare('SELECT 1 AS taken FROM users WHERE username_key = ?1').bind(usernameKey(name)).first()) !== null;
+    } catch (err) {
+      console.error('username check failed', err?.message);
+      return true;
+    }
+  }
 
   /** Record a member in D1 game_presence (account and address), so bans can find it. */
   async notePresence(client, att) {

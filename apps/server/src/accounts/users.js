@@ -43,6 +43,7 @@ export async function userByUsername(db, username, now = Date.now()) {
   return db.prepare(userSelect('u.username_key = ?2')).bind(now, usernameKey(username)).first();
 }
 
+/** The account whose VERIFIED address this is (unverified addresses are not looked up). */
 export async function userByEmail(db, email, now = Date.now()) {
   return db.prepare(userSelect('u.email_key = ?2')).bind(now, emailKey(email)).first();
 }
@@ -65,11 +66,6 @@ export function effectiveStatus(row) {
 
 export function hasPassword(row) {
   return typeof row.password_hash === 'string' && row.password_hash.length > 0;
-}
-
-/** Number of ways the account can sign in. */
-export function loginMethodCount(row) {
-  return (hasPassword(row) ? 1 : 0) + (row.discord_id ? 1 : 0) + Number(row.passkey_count ?? 0);
 }
 
 /** Whether the account may play online, given the effective site switches. */
@@ -156,8 +152,8 @@ export function insertUser(db, fields, now = Date.now()) {
     .prepare(
       `INSERT INTO users (id, username, username_key, display_name, email, email_key, email_verified, avatar_color, role, status,
          flags, password_hash, password_salt, password_iterations, password_peppered, password_changed_at, user_handle,
-         discord_id, discord_username, discord_linked_at, created_at, last_seen_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'user', ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)`,
+         discord_id, discord_username, discord_linked_at, created_at, last_seen_at, email_set_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'user', ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20)`,
     )
     .bind(
       id,
@@ -165,7 +161,8 @@ export function insertUser(db, fields, now = Date.now()) {
       usernameKey(fields.username),
       fields.displayName ?? fields.username,
       fields.email ?? null,
-      fields.email ? emailKey(fields.email) : null,
+      // Only a verified address claims its key (unverified ones block nobody).
+      fields.email && fields.emailVerified ? emailKey(fields.email) : null,
       fields.emailVerified ? 1 : 0,
       randomAvatarColor(),
       fields.status,
@@ -179,6 +176,7 @@ export function insertUser(db, fields, now = Date.now()) {
       fields.discord?.username ?? null,
       fields.discord ? now : null,
       now,
+      fields.email ? now : null,
     );
   return { id, statement };
 }

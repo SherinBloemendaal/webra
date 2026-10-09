@@ -32,5 +32,9 @@
   // unavailable. Email sending (send_email) needs the Workers Paid plan and is
   // added later, see docs/deploy.md.
   "vars": { "DISCORD_CLIENT_ID": "" },
+  // Per-IP burst limits for the sign-in endpoints without D1 writes
+  // (src/accounts/context.js `burst`): 20 requests per minute per purpose and
+  // address. The Worker falls back to D1 counters when the binding is absent.
+  "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
   "observability": { "enabled": true }
 }

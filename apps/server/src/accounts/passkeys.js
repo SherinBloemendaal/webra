@@ -52,12 +52,12 @@ export function creationOptions({ rpId, challenge, userHandle, username, display
   };
 }
 
-export function requestOptions({ rpId, challenge, allow = [] }) {
+export function requestOptions({ rpId, challenge, allow = [], userVerification = 'preferred' }) {
   return {
     challenge,
     rpId,
     timeout: CHALLENGE_TTL_MS,
-    userVerification: 'preferred',
+    userVerification,
     allowCredentials: allow.map((p) => ({ type: 'public-key', id: p.id, transports: parseTransports(p.transports) })),
   };
 }

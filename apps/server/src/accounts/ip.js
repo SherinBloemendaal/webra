@@ -6,6 +6,11 @@
 
 /** Shortest prefixes an IP ban may use. */
 export const MIN_PREFIX = { 4: 8, 6: 16 };
+/**
+ * Prefix for an IPv6 address given without one: /64, the block a single
+ * network (one home, one phone) gets, where privacy addresses rotate within.
+ */
+export const DEFAULT_V6_PREFIX = 64;
 
 function parseV4(s) {
   const parts = s.split('.');
@@ -123,7 +128,7 @@ export function parseCidr(text, { minPrefix = MIN_PREFIX } = {}) {
   const p = parseIp(addr);
   if (!p) return { error: 'Not an IP address or CIDR range.' };
   const bits = BITS[p.v];
-  let prefix = Number(bits);
+  let prefix = p.v === 6 ? DEFAULT_V6_PREFIX : Number(bits);
   if (len !== undefined) {
     if (!/^(0|[1-9][0-9]{0,2})$/.test(len)) return { error: 'The prefix length is malformed.' };
     prefix = Number(len);

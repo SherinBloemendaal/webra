@@ -15,6 +15,7 @@
 // docs/security.md and docs/contracts.md section 4 describe the route.
 
 import { HttpError } from './http.js';
+import { ipSalt } from './ipkey.js';
 import { takeQuota } from './quota.js';
 
 /** OpenRA's quick install mirrors (mods/ra/installer), tried in this order. */
@@ -34,24 +35,48 @@ export const TRANSFER_TIMEOUT_MS = 240_000;
 export const CONTENT_HEADER = 'X-WebRA-Content';
 
 /**
- * A stream that passes `expected` bytes through (chunk by chunk, nothing is
- * held back) and errors on any more or less; `done` runs when it ends.
+ * A stream of exactly `expected` bytes read from `upstream` (chunk by chunk,
+ * nothing is held back): it errors on any more or less. `done` runs once
+ * when it ends for any reason: finished, failed, or cancelled by the reader
+ * (a player closing the page), so the transfer deadline never outlives it.
  */
-function exactly(expected, done = () => {}) {
+export function exactly(upstream, expected, done = () => {}) {
+  const reader = upstream.getReader();
   let seen = 0;
-  return new TransformStream({
-    transform(chunk, controller) {
-      seen += chunk.byteLength;
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    done();
+  };
+  return new ReadableStream({
+    async pull(controller) {
+      let r;
+      try {
+        r = await reader.read();
+      } catch (err) {
+        finish();
+        controller.error(err);
+        return;
+      }
+      if (r.done) {
+        finish();
+        if (seen !== expected) controller.error(new Error('upstream sent less than the expected size'));
+        else controller.close();
+        return;
+      }
+      seen += r.value.byteLength;
       if (seen > expected) {
-        done();
+        finish();
+        reader.cancel().catch(() => {});
         controller.error(new Error('upstream sent more than the expected size'));
         return;
       }
-      controller.enqueue(chunk);
+      controller.enqueue(r.value);
     },
-    flush(controller) {
-      done();
-      if (seen !== expected) controller.error(new Error('upstream sent less than the expected size'));
+    cancel(reason) {
+      finish();
+      return reader.cancel(reason).catch(() => {});
     },
   });
 }
@@ -60,12 +85,12 @@ function exactly(expected, done = () => {}) {
  * Handle the route. `fetchImpl` and `mirrors` are replaceable for tests
  * (tests never reach the real mirrors).
  */
-export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirrors = QUICKINSTALL_MIRRORS, now = Date.now() } = {}) {
+export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirrors = QUICKINSTALL_MIRRORS, now = Date.now(), salt = null } = {}) {
   if (request.method !== 'GET') throw new HttpError(405, 'bad_message', 'Method not allowed.', { allow: 'GET' });
   if (request.headers.get(CONTENT_HEADER) !== '1') throw new HttpError(403, 'forbidden', 'This download is for the WebRA game page only.');
   const site = request.headers.get('Sec-Fetch-Site');
   if (site !== null && site !== 'same-origin') throw new HttpError(403, 'forbidden', 'Cross-site requests are not allowed.');
-  if (!(await takeQuota(env.DB, 'content', ip, CONTENT_LIMIT, CONTENT_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt ?? ipSalt(env, request), 'content', ip, CONTENT_LIMIT, CONTENT_WINDOW_MS, now))) {
     const retry = Math.ceil((CONTENT_WINDOW_MS - (now % CONTENT_WINDOW_MS)) / 1000);
     throw new HttpError(429, 'rate_limited', 'Too many content downloads. Try again later.', { 'retry-after': String(retry) });
   }
@@ -87,7 +112,11 @@ export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirror
     }
     // The transfer has a deadline of its own; the stream ends with an error after it.
     timer = setTimeout(() => controller.abort(), TRANSFER_TIMEOUT_MS);
-    const out = upstream.body.pipeThrough(exactly(QUICKINSTALL_BYTES, () => clearTimeout(timer)));
+    // The deadline is cleared however the stream ends (also when the reader cancels it).
+    const out = exactly(upstream.body, QUICKINSTALL_BYTES, () => {
+      clearTimeout(timer);
+      controller.abort();
+    });
     return new Response(out, {
       status: 200,
       headers: {

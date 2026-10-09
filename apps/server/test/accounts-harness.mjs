@@ -93,6 +93,7 @@ export function makeEnv({ email = true, discord = false, vars = {} } = {}) {
     EMAIL: email ? new FakeEmail() : undefined,
     SESSION: new FakeSessions(),
     ASSETS: { fetch: async () => new Response('asset') },
+    IP_HASH_SALT: 'test-ip-hash-salt-not-a-real-secret',
     ...(discord ? { DISCORD_CLIENT_ID: '123456789', DISCORD_CLIENT_SECRET: 'test-secret-not-real' } : {}),
     ...vars,
   };
@@ -203,7 +204,8 @@ export async function setSite(env, patch) {
 export const PASSWORD = 'correct horse battery';
 
 /** Sign up and return the browser (signed in). */
-export async function signup(env, username, { email = `${username.toLowerCase().replace(/\s+/g, ".")}@example.com`, ip, password = PASSWORD } = {}) {
+/** `email` defaults to <username>@example.com while email works, else none (addresses need confirmation). */
+export async function signup(env, username, { email = env.EMAIL ? `${username.toLowerCase().replace(/\s+/g, '.')}@example.com` : null, ip, password = PASSWORD } = {}) {
   const b = new Browser(env, { ip: ip ?? `198.51.100.${Math.floor(Math.random() * 200) + 10}` });
   const r = await b.post('/api/auth/signup', { username, email, password, acceptPrivacy: true });
   if (r.status !== 201) throw new Error(`signup ${username}: ${r.status} ${JSON.stringify(r.body)}`);
@@ -213,5 +215,7 @@ export async function signup(env, username, { email = `${username.toLowerCase().
 
 /** Make a user active with a role directly in D1. */
 export function promote(env, userId, role = 'user') {
-  env.DB.sqlite.prepare("UPDATE users SET role = ?, status = 'active', email_verified = 1 WHERE id = ?").run(role, userId);
+  env.DB.sqlite
+    .prepare("UPDATE users SET role = ?, status = 'active', email_verified = CASE WHEN email IS NULL THEN 0 ELSE 1 END, email_key = lower(email) WHERE id = ?")
+    .run(role, userId);
 }

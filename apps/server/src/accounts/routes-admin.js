@@ -58,9 +58,23 @@ function assertCanModerate(actor, row) {
   if (actor.role !== 'admin' && row.role !== 'user') throw forbidden('Only admins can do this to moderators and admins.');
 }
 
-async function activeAdminCount(db, exceptId) {
-  const r = await db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active' AND id != ?1").bind(exceptId).first();
+/** Admins that are active and not banned, other than `exceptId`. */
+async function activeAdminCount(db, exceptId, now) {
+  const r = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM users u WHERE u.role = 'admin' AND u.status = 'active' AND u.id != ?1
+         AND NOT EXISTS (SELECT 1 FROM account_bans b WHERE b.user_id = u.id AND b.revoked_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > ?2))`,
+    )
+    .bind(exceptId, now)
+    .first();
   return r.n;
+}
+
+/** 409 when taking `row` out of service would leave no active, unbanned admin. */
+async function assertKeepsAnAdmin(ctx, row) {
+  if (row.role === 'admin' && (await activeAdminCount(ctx.db, row.id, ctx.now)) === 0) {
+    throw new HttpError(409, 'conflict', 'This is the last active admin. Make someone else an admin first.');
+  }
 }
 
 function expiry(ctx, v, field = 'expiresAt') {
@@ -165,27 +179,23 @@ async function patchUser(ctx, { id }) {
   }
   if (body.displayName !== undefined) set('display_name', check(() => validDisplayName(body.displayName)));
   if (body.avatarColor !== undefined) set('avatar_color', check(() => validAvatarColor(body.avatarColor)));
-  if (body.email !== undefined) {
-    if (body.email === null) {
-      set('email', null);
-      set('email_key', null);
-      set('email_verified', 0);
-    } else {
-      const e = check(() => validEmail(body.email));
-      set('email', e);
-      set('email_key', emailKey(e));
-      if (body.emailVerified === undefined && e !== row.email) set('email_verified', 0);
-    }
-  }
-  if (body.emailVerified !== undefined) {
-    if (typeof body.emailVerified !== 'boolean') throw invalid('emailVerified', 'emailVerified must be true or false.');
-    set('email_verified', body.emailVerified ? 1 : 0);
+  if (body.emailVerified !== undefined && typeof body.emailVerified !== 'boolean') throw invalid('emailVerified', 'emailVerified must be true or false.');
+  if (body.email !== undefined || body.emailVerified !== undefined) {
+    const email = body.email === undefined ? row.email : body.email === null ? null : check(() => validEmail(body.email));
+    const sameAddress = email !== null && email === row.email;
+    const verified = email !== null && (body.emailVerified ?? (sameAddress && row.email_verified === 1));
+    set('email', email);
+    // Only a verified address claims its key (unverified ones block nobody).
+    set('email_key', verified ? emailKey(email) : null);
+    set('email_verified', verified ? 1 : 0);
+    if (!sameAddress) set('email_set_at', email === null ? null : ctx.now);
   }
   if (body.status !== undefined) {
     if (!['pending_email', 'pending_approval', 'active'].includes(body.status)) {
       throw invalid('status', 'Status must be pending_email, pending_approval or active (bans and deletion have their own actions).');
     }
     if (row.id === actor.id && body.status !== 'active') throw forbidden('You cannot deactivate your own account.');
+    if (row.status === 'active' && body.status !== 'active') await assertKeepsAnAdmin(ctx, row);
     set('status', body.status);
     if (body.status === 'active' && row.approved_at === null) {
       set('approved_at', ctx.now);
@@ -197,7 +207,7 @@ async function patchUser(ctx, { id }) {
     if (!ACCOUNT_ROLES.includes(body.role)) throw invalid('role', 'Unknown role.');
     if (body.role !== row.role) {
       if (row.id === actor.id) throw forbidden('You cannot change your own role.');
-      if (row.role === 'admin' && (await activeAdminCount(ctx.db, row.id)) === 0) throw new HttpError(409, 'conflict', 'The last admin cannot be demoted.');
+      if (row.role === 'admin') await assertKeepsAnAdmin(ctx, row);
       set('role', body.role);
       roleChanged = true;
     }
@@ -205,7 +215,10 @@ async function patchUser(ctx, { id }) {
   if (body.flags !== undefined) set('flags', flagsToMask(check(() => validFlags(body.flags))));
   if (sets.length === 0) return json({ user: adminUser(row) });
   const statements = [ctx.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?1`).bind(row.id, ...args)];
-  if (roleChanged) statements.push(ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id));
+  // Privilege changes never happen under a live session: a role change or a
+  // status change away from active signs the account out everywhere.
+  const deactivated = body.status !== undefined && body.status !== 'active' && row.status === 'active';
+  if (roleChanged || deactivated) statements.push(ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id));
   try {
     await ctx.db.batch(statements);
   } catch (err) {
@@ -222,6 +235,7 @@ async function approve(ctx, { id }) {
   await ctx.body([]);
   const actor = await ctx.requireRole('moderator');
   const row = await target(ctx, id);
+  assertCanModerate(actor, row);
   if (row.status !== 'pending_approval' && row.status !== 'pending_email') throw new HttpError(409, 'conflict', 'This account is not waiting for approval.');
   await ctx.db.batch([
     ctx.db.prepare("UPDATE users SET status = 'active', approved_at = ?2, approved_by = ?3 WHERE id = ?1").bind(row.id, ctx.now, actor.id),
@@ -234,6 +248,7 @@ async function reject(ctx, { id }) {
   const body = await ctx.body(['reason']);
   const actor = await ctx.requireRole('moderator');
   const row = await target(ctx, id);
+  assertCanModerate(actor, row);
   if (row.status !== 'pending_approval' && row.status !== 'pending_email') throw new HttpError(409, 'conflict', 'This account is not waiting for approval.');
   const reason = body.reason === undefined || body.reason === null || body.reason === '' ? null : reasonOf(body.reason);
   await ctx.db.batch([
@@ -249,6 +264,7 @@ async function ban(ctx, { id }) {
   const actor = await ctx.requireRole('moderator');
   const row = await target(ctx, id);
   assertCanModerate(actor, row);
+  await assertKeepsAnAdmin(ctx, row);
   const reason = reasonOf(body.reason);
   const expiresAt = expiry(ctx, body.expiresAt);
   const before = banOf(row);
@@ -305,6 +321,7 @@ async function softDelete(ctx, { id }) {
   const row = await target(ctx, id);
   if (row.id === actor.id) throw forbidden('You cannot delete your own account here.');
   if (row.status === 'deleted') throw new HttpError(409, 'conflict', 'This account is already deleted.');
+  await assertKeepsAnAdmin(ctx, row);
   await ctx.db.batch([
     ctx.db.prepare("UPDATE users SET status = 'deleted', status_before_delete = status, deleted_at = ?2 WHERE id = ?1").bind(row.id, ctx.now),
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id),
@@ -364,7 +381,7 @@ async function resetLink(ctx, { id }) {
   const { token, expiresAt } = await createEmailToken(ctx.db, row.id, 'reset', null, TOKEN_TTL_MS.adminReset, ctx.now);
   const url = accountLink(ctx.origin, 'reset', token);
   const sent = body.send === true ? await sendEmail(ctx.env, row.email, resetMessage(row.username, url, 24)) : false;
-  await audit(ctx.db, { actor, action: 'user.password_reset_link', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { sent, expiresAt } }, ctx.now);
+  await audit(ctx.db, { actor, action: 'user.password_reset_link', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { displayed: true, sent, expiresAt } }, ctx.now);
   return json({ url, expiresAt, sent }, 201);
 }
 

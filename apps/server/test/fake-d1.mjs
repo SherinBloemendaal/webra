@@ -35,6 +35,11 @@ class Statement {
   }
 
   async first(column) {
+    if (/^\s*(INSERT|UPDATE|DELETE)\b/i.test(this.sql)) {
+      const row = this.exec().results[0];
+      if (row === undefined) return null;
+      return column === undefined ? row : (row[column] ?? null);
+    }
     const row = plain(this.stmt().get(...this.args));
     if (row === undefined) return null;
     return column === undefined ? row : (row[column] ?? null);
@@ -58,9 +63,11 @@ class Statement {
     const st = this.stmt();
     if (/\bRETURNING\b/i.test(this.sql)) {
       const results = st.all(...this.args).map(plain);
+      this.db.writes += results.length;
       return { success: true, results, meta: { changes: results.length } };
     }
     const r = st.run(...this.args);
+    this.db.writes += Number(r.changes);
     return { success: true, results: [], meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
   }
 }
@@ -70,6 +77,8 @@ export class FakeD1 {
     this.sqlite = new DatabaseSync(':memory:');
     this.sqlite.exec('PRAGMA foreign_keys = ON');
     this.queries = 0;
+    /** Rows written (changed) so far, like D1's rows_written. */
+    this.writes = 0;
     for (const f of readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql')).sort()) {
       this.sqlite.exec(readFileSync(new URL(f, MIGRATIONS), 'utf8'));
     }

@@ -30,19 +30,19 @@ test('profile: display name, avatar color, username once per 30 days', async () 
   assert.equal((await new Browser(env).post('/api/auth/login', { login: 'again', password: PASSWORD })).status, 200);
 });
 
-test('password change: current password or recent re-authentication; other sessions revoked', async () => {
+test('password change: needs a fresh re-authentication (no current password field); other sessions revoked', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Changer');
   const other = new Browser(env, { ip: '198.51.100.99' });
   assert.equal((await other.post('/api/auth/login', { login: 'changer', password: PASSWORD })).status, 200);
-  clock.advance(11 * 60 * 1000);
   assert.equal((await b.post('/api/account/password', { newPassword: 'an entirely new one' })).body.error.code, 'reauth_required');
-  const wrong = await b.post('/api/account/password', { currentPassword: 'not it at all', newPassword: 'an entirely new one' });
-  assert.equal(wrong.status, 401);
-  assert.equal(wrong.body.error.field, 'currentPassword');
-  const weak = await b.post('/api/account/password', { currentPassword: PASSWORD, newPassword: 'changer' });
+  const legacy = await b.post('/api/account/password', { currentPassword: PASSWORD, newPassword: 'an entirely new one' });
+  assert.equal(legacy.status, 400, 'the old currentPassword field is gone (it meant two key derivations in one request)');
+  assert.equal((await b.post('/api/auth/reauth', { password: 'not it at all' })).status, 401);
+  assert.equal((await b.post('/api/auth/reauth', { password: PASSWORD })).status, 200);
+  const weak = await b.post('/api/account/password', { newPassword: 'changer' });
   assert.equal(weak.status, 400);
-  const ok = await b.post('/api/account/password', { currentPassword: PASSWORD, newPassword: 'an entirely new one' });
+  const ok = await b.post('/api/account/password', { newPassword: 'an entirely new one' });
   assert.equal(ok.status, 200);
   assert.equal((await other.get('/api/auth/me')).body.user, null, 'the other session was revoked');
   assert.equal((await b.get('/api/auth/me')).body.user.username, 'Changer', 'this one continues (rotated)');
@@ -54,8 +54,14 @@ test('email change with verification links; resend; removal rules', async () => 
   const b = await signup(env, 'Mailer');
   await b.post('/api/auth/email/verify', { token: env.EMAIL.token('mailer@example.com', 'verify') });
   const taken = await signup(env, 'Holder');
-  const c = await b.post('/api/account/email', { email: 'holder@example.com' });
-  assert.equal(c.status, 409);
+  assert.equal((await b.post('/api/account/email', { email: 'new.mailer@example.com' })).body.error.code, 'reauth_required');
+  await b.post('/api/auth/reauth', { password: PASSWORD });
+  // Holder's address is unverified: it claims nothing, a change link may go out for it.
+  assert.equal((await b.post('/api/account/email', { email: 'holder@example.com' })).status, 202);
+  const verifiedOther = await signup(env, 'Verified');
+  await verifiedOther.post('/api/auth/email/verify', { token: env.EMAIL.token('verified@example.com', 'verify') });
+  const c = await b.post('/api/account/email', { email: 'verified@example.com' });
+  assert.equal(c.status, 409, 'a verified address of another account is taken');
   const r = await b.post('/api/account/email', { email: 'new.mailer@example.com' });
   assert.equal(r.status, 202);
   assert.equal(r.body.user.email, 'mailer@example.com', 'unchanged until confirmed');
@@ -175,6 +181,7 @@ test('data export holds everything about the account and nothing secret', async 
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Exporter', { ip: '198.51.100.70' });
   await b.put('/api/account/settings', { settings: { audio: { master: 0.2 } } }, { headers: { 'If-Match': '"v0"' } });
+  await b.post('/api/auth/reauth', { password: PASSWORD });
   const r = await b.get('/api/account/export');
   assert.equal(r.status, 200);
   assert.match(r.res.headers.get('content-disposition'), /attachment; filename="webra-account-Exporter.json"/);
@@ -195,6 +202,7 @@ test('data export holds everything about the account and nothing secret', async 
 test('account deletion: confirm, soft delete, sign-in refused, username reserved', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Leaver');
+  await b.post('/api/auth/reauth', { password: PASSWORD });
   assert.equal((await b.del('/api/account', { confirm: 'leaver' })).status, 400, 'exact username');
   assert.equal((await b.del('/api/account', { confirm: 'Leaver' })).status, 204);
   assert.equal(b.signedIn, false);
@@ -211,5 +219,6 @@ test('the last admin cannot delete their own account', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'OnlyAdmin');
   env.DB.sqlite.prepare("UPDATE users SET role = 'admin', status = 'active'").run();
+  await b.post('/api/auth/reauth', { password: PASSWORD });
   assert.equal((await b.del('/api/account', { confirm: 'OnlyAdmin' })).status, 409);
 });
