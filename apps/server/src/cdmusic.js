@@ -26,7 +26,8 @@
 //   setting is on (accounts/play.js requireRelay, checked in index.js).
 // - Budgets in the D1 quota table (keys are salted hashes): SCORES_DAILY_MIB
 //   megabytes per account per day and SCORES_IP_LIMIT requests per IP per
-//   hour. A request over a budget costs no upstream fetch.
+//   hour. A request over a budget costs no upstream fetch; a request whose
+//   upstream fails before anything streams (502) gets its bytes back.
 // - Nothing is stored or cached: `cache: 'no-store'` upstream and
 //   `Cache-Control: no-store` on the answer; no request header of the player
 //   (cookies, address) is passed upstream.
@@ -39,7 +40,7 @@
 
 import { HttpError } from './http.js';
 import { ipSalt } from './ipkey.js';
-import { takeQuota } from './quota.js';
+import { refundQuota, takeQuota } from './quota.js';
 import { CONTENT_HEADER, exactly } from './content.js';
 
 /** scores.mix as found in MAIN.MIX on both freeware discs (the same bytes on each). */
@@ -107,27 +108,42 @@ export function parseScoresRange(header) {
 }
 
 /**
- * Whether `location` (a redirect from `pinned`) is the same item and file on
- * one of the archive's https data nodes: https, a data node host, the
- * default port, no credentials, query or fragment, already in normal form,
- * and the path /<n>/items/<item>/<file> with the pinned item and file.
+ * One path segment, percent-decoded, or null when it does not decode or
+ * could reach outside its place (empty, "." or "..", a slash, a
+ * backslash or a control character after decoding).
  */
-export function allowedRedirect(pinned, location) {
-  let to;
+function segment(raw) {
+  let s;
   try {
-    to = new URL(location);
+    s = decodeURIComponent(raw);
   } catch {
     return null;
   }
-  const from = new URL(pinned);
-  const tail = from.pathname.replace(/^\/download\//, '');
-  if (to.protocol !== 'https:' || !ARCHIVE_NODE.test(to.hostname) || to.port !== '' || to.username || to.password) return null;
-  if (to.search !== '' || to.hash !== '' || location.includes('?') || location.includes('#')) return null;
-  // Taken as sent: a location the URL parser would rewrite (dot segments, case, escapes) is refused.
-  if (to.href !== location) return null;
-  const m = /^\/\d{1,4}\/items\/(.+)$/.exec(to.pathname);
-  if (!m || m[1] !== tail) return null;
-  return to.href;
+  if (s === '' || s === '.' || s === '..' || /[/\\\x00-\x1f\x7f]/.test(s)) return null;
+  return s;
+}
+
+/**
+ * Whether `location` (a redirect from `pinned`) is the same item and file on
+ * one of the archive's https data nodes, and where to fetch then. The
+ * location is checked as sent, by its structure: https, a data node host
+ * (no port, credentials or user info), the path /<n>/items/<item>/<file>
+ * with exactly those segments, no query, fragment or backslash. The item
+ * and the file are compared after percent-decoding both sides, so a
+ * redirector that leaves "[", "]" or "&" unescaped still matches (the
+ * archive sends them escaped: docs/security.md). The URL fetched next is
+ * built from the data node and the pinned, escaped item and file, never
+ * from the location's own path. Returns that URL or null.
+ */
+export function allowedRedirect(pinned, location) {
+  if (typeof location !== 'string' || location.length > 2048) return null;
+  const m = /^https:\/\/([a-z0-9.]+)\/(\d{1,4})\/items\/([^/?#\\]+)\/([^/?#\\]+)$/.exec(location);
+  const want = /^https:\/\/archive\.org\/download\/([^/]+)\/([^/]+)$/.exec(pinned);
+  if (!m || !want || !ARCHIVE_NODE.test(m[1])) return null;
+  const item = segment(m[3]);
+  const file = segment(m[4]);
+  if (item === null || file === null || item !== segment(want[1]) || file !== segment(want[2])) return null;
+  return `https://${m[1]}/${m[2]}/items/${want[1]}/${want[2]}`;
 }
 
 /** `bytes a-b/total` exactly. */
@@ -190,7 +206,8 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
     const retry = Math.ceil((SCORES_IP_WINDOW_MS - (now % SCORES_IP_WINDOW_MS)) / 1000);
     throw new HttpError(429, 'rate_limited', 'Too many music downloads from this network. Try again later.', { 'retry-after': String(retry) }, { retryAfter: retry });
   }
-  if (!(await takeQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAILY_MIB, SCORES_DAY_MS, now, Math.ceil(length / MIB)))) {
+  const mib = Math.ceil(length / MIB);
+  if (!(await takeQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAILY_MIB, SCORES_DAY_MS, now, mib))) {
     const retry = Math.ceil((SCORES_DAY_MS - (now % SCORES_DAY_MS)) / 1000);
     throw new HttpError(429, 'rate_limited', 'This account downloaded the music too often today. Try again tomorrow.', { 'retry-after': String(retry) }, { retryAfter: retry });
   }
@@ -219,5 +236,7 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
       });
     }
   }
+  // Nothing was streamed: the bytes go back to the account's daily budget (the IP request still counts).
+  await refundQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAY_MS, now, mib).catch(() => {});
   throw new HttpError(502, 'unavailable', 'The Internet Archive did not answer with the Red Alert music. Try again later or install it from the CD image yourself.');
 }

@@ -67,6 +67,20 @@ export async function countQuota(db, salt, purpose, subject, windowMs, now = Dat
   return bump(db, await quotaKey(salt, purpose, subject), windowStart(now, windowMs));
 }
 
+/**
+ * Give back `amount` units counted in the current window (a download that
+ * never started). Never below zero; a counter of an older window is left
+ * alone. One write.
+ */
+export async function refundQuota(db, salt, purpose, subject, windowMs, now = Date.now(), amount = 1) {
+  if (!Number.isSafeInteger(amount) || amount < 1) throw new RangeError('quota amount must be a positive integer');
+  const key = await quotaKey(salt, purpose, subject);
+  await db
+    .prepare('UPDATE rate_limits SET count = MAX(0, count - ?3) WHERE key = ?1 AND win = ?2')
+    .bind(key, windowStart(now, windowMs), amount)
+    .run();
+}
+
 /** Forget a counter (a successful sign-in clears its failures). */
 export async function clearQuota(db, salt, purpose, subject) {
   await db.prepare('DELETE FROM rate_limits WHERE key = ?1').bind(await quotaKey(salt, purpose, subject)).run();

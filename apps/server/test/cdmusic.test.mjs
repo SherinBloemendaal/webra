@@ -156,8 +156,12 @@ test('redirects: one hop, only to an archive data node with the same item and fi
   const d = SCORES_DISCS[0];
   const file = d.url.split('/').pop();
   const item = 'command-conquer-red-alert_202309';
+  // As the archive sends it (escaped, docs/security.md), and with "[", "]", "&" and spaces left literal: the same file.
   assert.equal(allowedRedirect(d.url, `https://dn721505.ca.archive.org/0/items/${item}/${file}`), `https://dn721505.ca.archive.org/0/items/${item}/${file}`);
-  assert.ok(allowedRedirect(d.url, NODE(d)));
+  assert.equal(allowedRedirect(d.url, NODE(d)), NODE(d));
+  for (const literal of ['Command%20&%20Conquer%20Red%20Alert%20[CD1].ISO', 'Command & Conquer Red Alert [CD1].ISO', 'Command%20%26%20Conquer%20Red%20Alert%20%5bCD1%5d.ISO']) {
+    assert.equal(allowedRedirect(d.url, `https://ia601402.us.archive.org/20/items/${item}/${literal}`), NODE(d), literal);
+  }
   for (const bad of [
     `http://ia601402.us.archive.org/20/items/${item}/${file}`,
     `https://evil.example/20/items/${item}/${file}`,
@@ -171,11 +175,31 @@ test('redirects: one hop, only to an archive data node with the same item and fi
     `https://ia601402.us.archive.org/20/items/${item}/other.ISO`,
     `https://ia601402.us.archive.org/20/items/another-item/${file}`,
     `https://ia601402.us.archive.org/20/items/${item}/x/../${file}`,
+    `https://ia601402.us.archive.org/20/items/${item}/%2e%2e`,
+    `https://ia601402.us.archive.org/20/items/%2E%2E/${file}`,
+    `https://ia601402.us.archive.org/20/items/${item}/..%2F${file}`,
+    `https://ia601402.us.archive.org/20/items/${item}/a%5C${file}`,
+    `https://ia601402.us.archive.org/20/items/${item}\\${file}`,
+    `https://ia601402.us.archive.org/20/items/${item}/${file}%00`,
+    `https://ia601402.us.archive.org/20/items/${item}/%E0%A4%A`,
+    `https://IA601402.us.archive.org/20/items/${item}/${file}`,
+    `https://ia601402.us.archive.org./20/items/${item}/${file}`,
+    `https://ia601402.us.archive.org@evil.example/20/items/${item}/${file}`,
     `/20/items/${item}/${file}`,
     '',
   ]) {
     assert.equal(allowedRedirect(d.url, bad), null, bad);
   }
+});
+
+test('a redirect with the file name unescaped is followed to the escaped pinned path on that node', async () => {
+  const calls = [];
+  const item = 'command-conquer-red-alert_202309';
+  const fetchImpl = archive({ allied: { location: `https://ia601402.us.archive.org/20/items/${item}/Command & Conquer Red Alert [CD1].ISO` } }, calls);
+  const res = await scoresRange(ask(), makeEnv(), 'ip', ACCOUNT, { fetchImpl });
+  assert.equal(res.status, 206);
+  await drain(res);
+  assert.deepEqual(calls.map((c) => c.url), [SCORES_DISCS[0].url, NODE(SCORES_DISCS[0])]);
 });
 
 test('a redirect elsewhere is not followed; the other disc is used', async () => {
@@ -197,6 +221,27 @@ test('a second redirect is refused', async () => {
   };
   await assert.rejects(scoresRange(ask(), makeEnv(), 'ip', ACCOUNT, { fetchImpl, discs: [d] }), (e) => e.status === 502);
   assert.equal(calls.length, 2 * SCORES_ROUNDS, 'one redirect per attempt, never a chain');
+});
+
+test('a 502 gives the bytes back to the daily budget (never below zero); the IP request still counts', async () => {
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 5, 0, 0);
+  const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
+  const ok = await scoresRange(ask(piece), env, '10.1.0.1', ACCOUNT, { fetchImpl: archive(), now });
+  await ok.body.cancel();
+  const counts = () => [...env.DB.rows.entries()].map(([k, v]) => [k.split(':')[0], v.count]).sort();
+  assert.deepEqual(counts(), [['scores-bytes', 8], ['scores-ip', 1]]);
+  for (let i = 0; i < 5; i++) {
+    await assert.rejects(scoresRange(ask(piece), env, '10.1.0.1', ACCOUNT, { fetchImpl: archive({ allied: 'down', soviet: 500 }), now }), (e) => e.status === 502);
+  }
+  assert.deepEqual(counts(), [['scores-bytes', 8], ['scores-ip', 6]], 'failed requests cost no bytes');
+  // The refund only touches the current window and never goes below zero.
+  const { refundQuota } = await import('../src/quota.js');
+  await refundQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now, 50);
+  assert.deepEqual(counts(), [['scores-bytes', 0], ['scores-ip', 6]]);
+  await refundQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now + 24 * 3600 * 1000, 1);
+  assert.deepEqual(counts(), [['scores-bytes', 0], ['scores-ip', 6]]);
+  await assert.rejects(refundQuota(env.DB, 's'.repeat(20), 'x', 'y', 1000, now, 0), RangeError);
 });
 
 test('another image (size), a 200 instead of 206, a 500 or a dead host fall through; none is a 502', async () => {
