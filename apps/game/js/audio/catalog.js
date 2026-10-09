@@ -112,7 +112,42 @@ export const deathSound = cached((actorId, kind) => {
   return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName) };
 });
 
-export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName) }));
+/**
+ * Placing a structure. OpenRA PlaceBuilding plays every Building.BuildSounds
+ * entry at once (placbldg and build5 together), so the sound is `layered`:
+ * the bank plays all of its originals instead of picking one. Our own
+ * place_building sound already holds both the thud and the clank.
+ */
+export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName), layered: true }));
+
+/**
+ * What an actor that transforms (OpenRA Transforms: an MCV deploying, a
+ * Construction Yard packing up) plays as it turns into its other form: a
+ * structure's Building.UndeploySounds (Building.cs BeforeTransform) and its
+ * TransformSounds (Activities/Transform.cs), every entry at once. Both are
+ * empty for actors whose rules name no sounds, as in OpenRA.
+ * @returns {{ synth: string, originals: string[], layered: true }[]}
+ */
+export const transformSounds = cached((actorId) => {
+  const a = ACTOR_SOUNDS[actorId] ?? {};
+  const out = [];
+  if (a.undeploy?.length) out.push({ synth: 'sell', originals: a.undeploy.map(fileName), layered: true });
+  if (a.transform?.length) out.push({ synth: 'place_building', originals: a.transform.map(fileName), layered: true });
+  return out;
+});
+
+/** Speech notifications (OpenRA mods/ra/audio/notifications.yaml) the rules name, as EVA keys. */
+export const NOTIFICATION_EVA = Object.freeze({ BuildingCannotPlaceAudio: 'cannotDeploy' });
+
+/**
+ * A refused deploy (OpenRA Transforms.DeployTransform): the NoTransformSounds
+ * and the EVA key of the NoTransformNotification, or null when the rules name neither.
+ */
+export const deployBlocked = cached((actorId) => {
+  const a = ACTOR_SOUNDS[actorId] ?? {};
+  const sound = a.noTransform?.length ? { synth: null, originals: a.noTransform.map(fileName), layered: true } : null;
+  return { sound, announce: NOTIFICATION_EVA[a.noTransformNotification] ?? null };
+});
 
 export const sellSound = cached((actorId) => ({ synth: 'sell', originals: (ACTOR_SOUNDS[actorId]?.sell ?? ['cashturn']).map(fileName) }));
 
@@ -178,6 +213,8 @@ export const EVA = {
   structureSold: { text: 'Structure sold', chime: 'eva_cash', originals: ['strusld1'], cooldown: 1 },
   // OpenRA RepairableBuilding RepairingNotification (the Repair button).
   repairing: { text: 'Repairing', chime: 'eva_info', originals: ['repair1'], cooldown: 1 },
+  // OpenRA Transforms NoTransformNotification of the MCV (BuildingCannotPlaceAudio).
+  cannotDeploy: { text: 'Cannot deploy here', chime: 'eva_warn', originals: ['nodeply1'], cooldown: 1 },
   selectTarget: { text: 'Select target', chime: 'eva_info', originals: ['slcttgt1'], cooldown: 1 },
   cancelled: { text: 'Cancelled', chime: 'eva_loss', originals: ['cancld1'], cooldown: 1 },
   powerReady: { text: 'Ready', chime: 'eva_ready', originals: [], cooldown: 0.5 },
@@ -279,6 +316,9 @@ export function allOriginalNames() {
     add(a.build ?? []);
     add(a.sell ?? []);
     add(a.death ?? []);
+    add(a.transform ?? []);
+    add(a.undeploy ?? []);
+    add(a.noTransform ?? []);
   }
   add(INFANTRY_DIE);
   add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);

@@ -304,8 +304,8 @@ export class AudioSystem {
 
   effect(sound, { gain = 1, pan = 0 } = {}) {
     if (!this.prefs.get().enabled) return;
-    const r = this.bank.resolve(sound);
-    if (r) this.mixer.play(r.buffer, { bus: 'effects', gain, pan, rate: r.rate });
+    // A layered sound (catalog.js placeSound) plays all of its parts at once.
+    for (const r of this.bank.resolveAll(sound)) this.mixer.play(r.buffer, { bus: 'effects', gain, pan, rate: r.rate });
   }
 
   /** A unit reply: original voice, or radio blip with an optional spoken line. */
