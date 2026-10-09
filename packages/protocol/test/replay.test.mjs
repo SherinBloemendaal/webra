@@ -182,3 +182,22 @@ test('frames and options digests depend on the validated content only', async ()
   assert.equal(await optionsDigest(OPTIONS), await optionsDigest(structuredClone(OPTIONS)));
   assert.notEqual(await optionsDigest({ ...OPTIONS, seed: OPTIONS.seed + 1 }), await optionsDigest(OPTIONS));
 });
+
+test('the frames digest chains frame by frame; files are bounded by bytes and by orders', async () => {
+  const { FramesDigest, framesDigest, sha256Hex } = await import('../src/index.js');
+  const frames = base().frames;
+  // The definition: h0 = SHA-256(''), h = SHA-256(h + JSON([tick, orders])).
+  let h = await sha256Hex('');
+  for (const f of frames) h = await sha256Hex(h + JSON.stringify(f));
+  assert.equal(await framesDigest(frames), h);
+  const d = new FramesDigest();
+  for (const f of frames) await d.add(f);
+  assert.equal(d.value(), h, 'incremental and whole agree');
+  await assert.rejects(d.add(frames[0]), /increase/);
+  // Size limits for an upload, and an orders budget counted while validating.
+  const text = JSON.stringify(onlineSave());
+  assert.match((await parseReplay(text, { maxBytes: 100 })).error, /larger/);
+  const r = await parseReplay(text, { maxFrameBytes: 60 });
+  assert.deepEqual([r.ok, r.code], [false, 'too_large']);
+  assert.ok((await parseReplay(text, { maxFrameBytes: 10_000 })).ok);
+});

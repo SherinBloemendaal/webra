@@ -36,7 +36,7 @@ const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title
  * Validate everything except the map hash (which needs async SHA-256).
  * Returns a fresh replay object or throws ProtocolError.
  */
-export function validateReplay(v) {
+export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
   object(v, KEYS, 'replay');
   if (v.format !== REPLAY_FORMAT) fail('not a WebRA replay or save file');
   if (v.version !== REPLAY_VERSION) fail(`unsupported replay format version ${int(v.version, 0, 0xffff, 'version')}`);
@@ -89,6 +89,8 @@ export function validateReplay(v) {
 
   if (!Array.isArray(v.frames) || v.frames.length > out.ticks) fail('frames must be a list with at most one frame per tick');
   let last = -1;
+  // Orders budget (an online save must fit the server's order log): counted while validating.
+  let frameBytes = 0;
   out.frames = v.frames.map((f, i) => {
     if (!Array.isArray(f) || f.length !== 2) fail(`frames[${i}] must be [tick, orders]`);
     const tick = int(f[0], 0, out.ticks - 1, `frames[${i}] tick`);
@@ -97,6 +99,8 @@ export function validateReplay(v) {
     const orders = validFrameOrders(f[1], `frames[${i}]`);
     if (orders.length === 0) fail(`frames[${i}] is empty (empty frames are left out)`);
     for (const [p] of orders) if (p >= players) fail(`frames[${i}] names player ${p} of ${players}`);
+    frameBytes += JSON.stringify(orders).length + 16;
+    if (frameBytes > maxFrameBytes) fail('the orders are too long', 'too_large');
     return [tick, orders];
   });
 
@@ -148,12 +152,11 @@ export function replayHeader(v) {
  * caller can say which version made it. Files of this build are validated
  * strictly.
  */
-export async function parseReplay(raw, { version = null } = {}) {
+export async function parseReplay(raw, { version = null, maxBytes = REPLAY_MAX_BYTES, maxFrameBytes = Infinity } = {}) {
   try {
     if (typeof raw !== 'string') fail('a replay file is JSON text');
-    if (raw.length > REPLAY_MAX_BYTES || utf8Length(raw) > REPLAY_MAX_BYTES) {
-      fail(`the file is larger than ${REPLAY_MAX_BYTES / 1024 / 1024} MiB`);
-    }
+    const limit = Math.min(maxBytes, REPLAY_MAX_BYTES);
+    if (raw.length > limit || utf8Length(raw) > limit) fail(`the file is larger than ${Math.floor(limit / 1024 / 1024)} MiB`);
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -165,22 +168,47 @@ export async function parseReplay(raw, { version = null } = {}) {
       const header = replayHeader(parsed);
       if (header.engine !== version) return { ok: true, replay: header, foreign: true };
     }
-    const replay = validateReplay(parsed);
+    const replay = validateReplay(parsed, { maxFrameBytes });
     if (replay.map !== null && (await sha256Hex(replay.map)) !== replay.mapHash) fail('the map does not match its hash');
     return { ok: true, replay };
   } catch (err) {
-    if (err instanceof ProtocolError) return { ok: false, error: err.message };
+    if (err instanceof ProtocolError) return { ok: false, error: err.message, code: err.code };
     throw err;
   }
 }
 
 /**
- * SHA-256 of a game's order frames in their validated form: the server
- * computes it from its order log, the Worker from an uploaded save; equal
- * digests mean the same orders.
+ * Digest of a game's order frames, frame by frame so it can be computed
+ * over a stream (the server reads its order log chunk by chunk): starting
+ * from the SHA-256 of the empty string, each frame in its validated form is chained as
+ * `h = SHA-256(h + JSON([tick, orders]))`. The server computes it from its
+ * order log, the Worker from an uploaded save; equal digests mean the same
+ * orders in the same order.
  */
+export class FramesDigest {
+  constructor() {
+    this.hash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    this.last = -1;
+  }
+
+  /** Add the next frame `[tick, orders]` (ticks increase). */
+  async add([tick, orders]) {
+    const t = int(tick, 0, REPLAY_MAX_TICKS, 'frame tick');
+    if (t <= this.last) fail('frame ticks must increase');
+    this.last = t;
+    this.hash = await sha256Hex(`${this.hash}${JSON.stringify([t, validFrameOrders(orders, `frame ${t}`)])}`);
+  }
+
+  value() {
+    return this.hash;
+  }
+}
+
+/** The FramesDigest of a list of frames. */
 export async function framesDigest(frames) {
-  return sha256Hex(JSON.stringify(frames.map(([tick, orders], i) => [int(tick, 0, REPLAY_MAX_TICKS, `frames[${i}] tick`), validFrameOrders(orders, `frames[${i}]`)])));
+  const d = new FramesDigest();
+  for (const f of frames) await d.add(f);
+  return d.value();
 }
 
 /** SHA-256 of a game's validated options (players, factions, seed and the rest). */

@@ -52,6 +52,7 @@ export {
 } from './map.js';
 export {
   encodeReplay,
+  FramesDigest,
   framesDigest,
   optionsDigest,
   parseReplay,
