@@ -920,94 +920,340 @@ export const ACTOR_SOUNDS = {
     ]
   },
   "E1": {
-    "voice": "GenericVoice"
+    "voice": "GenericVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "E3": {
-    "voice": "GenericVoice"
+    "voice": "GenericVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "E2": {
     "voice": "GenericVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "MEDI": {
-    "voice": "MedicVoice"
+    "voice": "MedicVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "DOG": {
-    "voice": "DogVoice"
+    "voice": "DogVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Attack"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "E6": {
-    "voice": "EngineerVoice"
+    "voice": "EngineerVoice",
+    "orders": {
+      "move": "Action",
+      "capture": "Action",
+      "repair": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "E4": {
     "voice": "GenericVoice",
     "death": [
       "firebl3"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "SPY": {
-    "voice": "SpyVoice"
+    "voice": "SpyVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Action",
+      "infiltrate": "Action",
+      "disguise": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "SPY.England": {
-    "voice": "SpyVoice"
+    "voice": "SpyVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Action",
+      "infiltrate": "Action",
+      "disguise": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "MECH": {
-    "voice": "MechanicVoice"
+    "voice": "MechanicVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Action",
+      "capture": "Action",
+      "infiltrate": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "THF": {
-    "voice": "ThiefVoice"
+    "voice": "ThiefVoice",
+    "orders": {
+      "move": "Move",
+      "capture": "Action",
+      "infiltrate": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "E7": {
-    "voice": "TanyaVoice"
+    "voice": "TanyaVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Action",
+      "demolish": "Demolish"
+    },
+    "produced": "Build",
+    "kill": "Kill",
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "SHOK": {
-    "voice": "ShokVoice"
+    "voice": "ShokVoice",
+    "orders": {
+      "move": "Move",
+      "attack": "Attack"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "Zombie": {
-    "voice": "AntVoice"
+    "voice": "AntVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "Ant": {
-    "voice": "AntVoice"
+    "voice": "AntVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "FireAnt": {
-    "voice": "AntVoice"
+    "voice": "AntVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "ScoutAnt": {
-    "voice": "AntVoice"
+    "voice": "AntVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "WarriorAnt": {
-    "voice": "AntVoice"
+    "voice": "AntVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    },
+    "screams": {
+      "1": "Die",
+      "2": "Die",
+      "3": "Die",
+      "4": "Die",
+      "5": "Burned",
+      "6": "Zapped"
+    }
   },
   "HARV": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom25"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "1TNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "APC": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "JEEP": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "FTRK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "MCV": {
     "voice": "VehicleVoice",
@@ -1018,92 +1264,146 @@ export const ACTOR_SOUNDS = {
     "noTransformNotification": "BuildingCannotPlaceAudio",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "2TNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "3TNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "V2RL": {
     "voice": "VehicleVoice",
     "death": [
       "firebl3"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "ARTY": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom22"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "MNLY": {
     "voice": "VehicleVoice",
     "death": [
       "mineblo1"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "4TNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "MRJ": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "MGG": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "TTNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "DTRK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom1",
       "kaboom22"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "CTNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "STNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "TRUK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "QTNK": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom15"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "TRAN": {
     "voice": "GenericVoice",
@@ -1145,31 +1445,54 @@ export const ACTOR_SOUNDS = {
     "voice": "VehicleVoice",
     "death": [
       "kaboom25"
-    ]
+    ],
+    "orders": {
+      "move": "Action"
+    }
   },
   "PT": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom25"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "SS": {
-    "voice": "VehicleVoice"
+    "voice": "VehicleVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "DD": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom25"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "CA": {
     "voice": "VehicleVoice",
     "death": [
       "kaboom25"
-    ]
+    ],
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "MSUB": {
-    "voice": "VehicleVoice"
+    "voice": "VehicleVoice",
+    "orders": {
+      "move": "Action",
+      "attack": "Action"
+    }
   },
   "FPWR": {
     "build": [
@@ -1326,5 +1649,524 @@ export const ACTOR_SOUNDS = {
       "kaboom22",
       "kaboom25"
     ]
+  }
+};
+
+// OpenRA voice sets (mods/ra/audio/voices.yaml): lines (lowercase) -> file
+// bases, per-faction file extensions, and lines that never use them.
+export const VOICE_SETS = {
+  "GenericVoice": {
+    "lines": {
+      "select": [
+        "await1",
+        "ready",
+        "report1",
+        "yessir1"
+      ],
+      "action": [
+        "ackno",
+        "affirm1",
+        "noprob",
+        "overout",
+        "ritaway",
+        "roger",
+        "ugotit"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {
+      "allies": [
+        ".v01",
+        ".v03"
+      ],
+      "england": [
+        ".v01",
+        ".v03"
+      ],
+      "france": [
+        ".v01",
+        ".v03"
+      ],
+      "germany": [
+        ".v01",
+        ".v03"
+      ],
+      "soviet": [
+        ".r01",
+        ".r03"
+      ],
+      "russia": [
+        ".r01",
+        ".r03"
+      ],
+      "ukraine": [
+        ".r01",
+        ".r03"
+      ]
+    },
+    "plain": [
+      "die",
+      "burned",
+      "zapped"
+    ]
+  },
+  "VehicleVoice": {
+    "lines": {
+      "select": [
+        "vehic1",
+        "yessir1",
+        "report1",
+        "await1"
+      ],
+      "action": [
+        "ackno",
+        "affirm1"
+      ]
+    },
+    "variants": {
+      "allies": [
+        ".v00",
+        ".v02"
+      ],
+      "england": [
+        ".v00",
+        ".v02"
+      ],
+      "france": [
+        ".v00",
+        ".v02"
+      ],
+      "germany": [
+        ".v00",
+        ".v02"
+      ],
+      "soviet": [
+        ".r00",
+        ".r02"
+      ],
+      "russia": [
+        ".r00",
+        ".r02"
+      ],
+      "ukraine": [
+        ".r00",
+        ".r02"
+      ]
+    },
+    "plain": []
+  },
+  "EngineerVoice": {
+    "lines": {
+      "select": [
+        "eengin1",
+        "eyessir1"
+      ],
+      "action": [
+        "eaffirm1",
+        "emovout1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "MedicVoice": {
+    "lines": {
+      "select": [
+        "mrespon1",
+        "myessir1"
+      ],
+      "action": [
+        "maffirm1",
+        "mmovout1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "MechanicVoice": {
+    "lines": {
+      "select": [
+        "mhuh1",
+        "mhowdy1",
+        "mlaff1"
+      ],
+      "move": [
+        "mboss1",
+        "mhear1",
+        "myes1",
+        "mrise1"
+      ],
+      "action": [
+        "mhotdig1",
+        "mwrench1",
+        "myeehaw1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "TanyaVoice": {
+    "lines": {
+      "select": [
+        "yo1",
+        "yes1",
+        "yeah1"
+      ],
+      "move": [
+        "onit1",
+        "cmon1",
+        "rokroll1"
+      ],
+      "action": [
+        "tuffguy1",
+        "bombit1"
+      ],
+      "die": [
+        "tandeth1"
+      ],
+      "burned": [
+        "tandeth1"
+      ],
+      "zapped": [
+        "tandeth1"
+      ],
+      "build": [
+        "laugh1"
+      ],
+      "kill": [
+        "gotit1",
+        "lefty1"
+      ],
+      "demolish": [
+        "keepem1",
+        "tuffguy1"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "DogVoice": {
+    "lines": {
+      "select": [
+        "dogw3px"
+      ],
+      "move": [
+        "dogy1"
+      ],
+      "attack": [
+        "dogg5p"
+      ],
+      "die": [
+        "dogw5",
+        "dogw7"
+      ],
+      "burned": [
+        "dogw6"
+      ],
+      "zapped": [
+        "dogw6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "SpyVoice": {
+    "lines": {
+      "select": [
+        "syessir1",
+        "scomnd1"
+      ],
+      "move": [
+        "sonway1",
+        "sindeed1"
+      ],
+      "action": [
+        "sking1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "ThiefVoice": {
+    "lines": {
+      "select": [
+        "swhat1",
+        "syeah1"
+      ],
+      "move": [
+        "saffirm1",
+        "smout1",
+        "sokay1"
+      ],
+      "action": [
+        "scandy",
+        "sclean1",
+        "ssteal1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "CivilianMaleVoice": {
+    "lines": {
+      "select": [
+        "guyyeah1"
+      ],
+      "action": [
+        "guyokay1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "CivilianFemaleVoice": {
+    "lines": {
+      "select": [
+        "girlyeah"
+      ],
+      "action": [
+        "girlokay"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "EinsteinVoice": {
+    "lines": {
+      "select": [
+        "einah1"
+      ],
+      "action": [
+        "einok1",
+        "einyes1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "ShokVoice": {
+    "lines": {
+      "select": [
+        "jjuice1",
+        "jjump1",
+        "jyes1"
+      ],
+      "move": [
+        "jdance1",
+        "jchrge1",
+        "jpower1"
+      ],
+      "attack": [
+        "jburn1",
+        "jcrisp1",
+        "jshock1",
+        "jlight1"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "AntVoice": {
+    "lines": {
+      "select": [
+        "antbite"
+      ],
+      "action": [
+        "antbite"
+      ],
+      "die": [
+        "antdie"
+      ],
+      "burned": [
+        "antdie"
+      ],
+      "zapped": [
+        "antdie"
+      ]
+    },
+    "variants": {},
+    "plain": []
+  },
+  "StavrosVoice": {
+    "lines": {
+      "select": [
+        "stavcmdr"
+      ],
+      "move": [
+        "stavcrse",
+        "stavyes",
+        "stavmov"
+      ],
+      "attack": [
+        "stavcrse",
+        "stavyes"
+      ],
+      "die": [
+        "dedman1",
+        "dedman2",
+        "dedman3",
+        "dedman4",
+        "dedman5",
+        "dedman7",
+        "dedman8"
+      ],
+      "burned": [
+        "dedman10"
+      ],
+      "zapped": [
+        "dedman6"
+      ]
+    },
+    "variants": {},
+    "plain": []
   }
 };

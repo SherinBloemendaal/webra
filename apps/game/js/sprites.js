@@ -34,6 +34,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
+import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
@@ -366,7 +367,8 @@ const UNIT_DRAW = {
 };
 
 // Ships, planes and helicopters are drawn in their own modules (art/*.js).
-Object.assign(UNIT_DRAW, NAVAL_DRAW, PLANE_DRAW, HELI_DRAW, ABILITY_DRAW);
+Object.assign(UNIT_DRAW, NAVAL_DRAW, PLANE_DRAW, HELI_DRAW, ABILITY_DRAW, INFANTRY_DRAW);
+const PRONE = { ...PRONE_DRAW, ...INFANTRY_PRONE };
 
 // Buildings are drawn in art/buildings.js.
 
@@ -376,6 +378,8 @@ const SPRITE_ALIAS = {
   // Paratroopers (support power) and the parabomb Badger look like their base actors.
   E1R1: 'E1',
   E3R1: 'E3',
+  // The British spy looks like every spy (OpenRA RenderSprites Image: spy).
+  'SPY.ENGLAND': 'SPY',
   'BADR.BOMBER': 'BADR',
   FPWR: 'POWR',
   TENF: 'TENT',
@@ -539,7 +543,10 @@ export function spriteList(actors) {
   const list = [];
   for (const a of actors) {
     const key = spriteKey(a.id);
-    if (a.kind === 'building') {
+    if (a.kind === 'proxy') {
+      // Proxies (engine/src/infantry.rs) have no body.
+      list.push(null, null);
+    } else if (a.kind === 'building') {
       const draw = BUILDING_DRAW[key];
       if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
       list.push([a.width * 24, a.height * 24, draw]);
@@ -549,7 +556,7 @@ export function spriteList(actors) {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(a.kind === 'infantry' ? (PRONE_DRAW[key] ?? d.body) : (d.turret ?? null));
+      list.push(a.kind === 'infantry' ? (PRONE[key] ?? d.body) : (d.turret ?? null));
     }
   }
   return list.concat(
@@ -560,6 +567,7 @@ export function spriteList(actors) {
     slots(ABILITY_SPECIALS),
     slots(VETERANCY_SPECIALS),
     slots(DECORATION_SPECIALS),
+    slots(INFANTRY_SPECIALS),
   );
 }
 
@@ -821,7 +829,10 @@ export function buildAtlas(actors, opts = {}) {
       );
     });
   }
-  return { color, mask, frames, overlays, filter: opts.filter ?? 'linear', width, height };
+  // Actor types whose body art has death sequences (Game.set_death_art).
+  const deaths = [];
+  for (const [slot, art] of slots) if (art?.deaths && slot % 2 === 0 && slot < actors.length * 2) deaths.push(slot / 2);
+  return { color, mask, frames, overlays, deaths, filter: opts.filter ?? 'linear', width, height };
 }
 
 /**

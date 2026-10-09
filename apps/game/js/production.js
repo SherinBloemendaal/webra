@@ -161,10 +161,14 @@ export function productionTip(actor, item, state, { hotkey = null, ticksPerSecon
   if (item && item.enabled === false) {
     if (item.exclusive) requires = item.exclusive;
     else if (item.requires?.length) requires = `Requires ${item.requires.join(', ')}`;
+    else if (actor.buildLimit > 0) requires = `Only ${actor.buildLimit} at a time`;
     else requires = 'Unavailable';
   }
   const hint = isStructureQueue(actor.queue)
     ? `Left click: build, then place. Shift: queue ${SHIFT_COUNT}. Right click: cancel one.`
     : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: cancel one.`;
-  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes: [{ text: hint, tone: 'hint' }] };
+  const notes = [{ text: hint, tone: 'hint' }];
+  // Buildable.BuildLimit (Tanya, superweapons): engine/src/infantry.rs at_build_limit.
+  if (actor.buildLimit > 0) notes.unshift({ text: `At most ${actor.buildLimit} at a time.`, tone: 'warn' });
+  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes };
 }

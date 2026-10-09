@@ -744,6 +744,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     game.set_building_overlays(atlas.overlays);
     // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
     game.set_sprite_poses(atlas.filter === 'nearest');
+    // Dying soldiers play the death sequences of art that has them (engine infantry_render.rs).
+    game.set_death_art(Uint32Array.from(atlas.deaths));
   };
   applyArt();
   const animClock = new AnimClock();
@@ -842,6 +844,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
     cancelCommand: () => commandBar?.cancel() ?? false,
     queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
+    onSmartOrder: (action) => audio?.smartOrder(action),
     onPlainMove: (units, at) => {
       attackMoveTip?.plainMove(units, at).catch((err) => console.warn('attack-move tip:', err));
     },

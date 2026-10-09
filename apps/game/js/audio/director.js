@@ -7,7 +7,26 @@
 // No Web Audio here: the director talks to a `sink` and reads a clock, so the
 // rules are unit tested in Node (tests/audio.test.mjs).
 
-import { fireSound, impactSound, deathSound, placeSound, sellSound, transformSounds, deployBlocked, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
+import {
+  fireSound,
+  impactSound,
+  deathSound,
+  placeSound,
+  sellSound,
+  transformSounds,
+  deployBlocked,
+  powerSound,
+  voiceLine,
+  orderVoice,
+  producedVoice,
+  killVoice,
+  KINDS,
+  EVA,
+  powerReadyLine,
+  POWER_KINDS,
+  BUTTON_SOUNDS,
+  INFANTRY_EVENT_EVA,
+} from './catalog.js';
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const EV = {
@@ -27,7 +46,29 @@ export const EV = {
   UNIT_DAMAGED: 14,
   TRANSFORMED: 15,
   DEPLOY_BLOCKED: 16,
+  INFANTRY: 40,
 };
+
+/** Infantry events (engine/src/infantry.rs InfantryEvent), the `a` of EV.INFANTRY. */
+export const INFANTRY_EV = {
+  STRUCTURE_CAPTURED: 1,
+  STRUCTURE_LOST: 2,
+  UNIT_STOLEN: 3,
+  UNIT_LOST: 4,
+  BUILDING_INFILTRATED: 5,
+  CREDITS_STOLEN: 6,
+  CREDITS_GAINED: 7,
+  DEMOLISH: 8,
+  DISGUISED: 9,
+  INSTANT_REPAIR: 10,
+  KILL: 11,
+  SONAR_PULSE: 12,
+};
+
+/** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
+const SMART_ORDERS = { 2: 'attack', 8: 'capture', 9: 'infiltrate', 10: 'demolish', 11: 'repair', 12: 'attack', 13: 'attack', 14: 'disguise', 17: 'capture' };
+/** The order of each order method (js/audio/index.js ORDER_METHODS); the rest are moves. */
+const METHOD_ORDERS = { order_attack: 'attack', order_attack_ground: 'attack' };
 export const STRIDE = 6;
 
 /** Positional effects started per frame, at most. */
@@ -130,10 +171,11 @@ export class Director {
   // ---- Unit replies ------------------------------------------------------------
 
   reply(actorType, kind, line) {
+    const voice = voiceLine(actorType, kind, this.side, line);
     const t = this.now();
-    if (t - this.lastVoice < VOICE_GAP) return false;
+    if (!voice || t - this.lastVoice < VOICE_GAP) return false;
     this.lastVoice = t;
-    this.sink.voice(voiceLine(actorType, kind, this.side, line));
+    this.sink.voice(voice);
     return true;
   }
 
@@ -148,10 +190,20 @@ export class Director {
     return null;
   }
 
-  /** A local order was given to `ids` (move, attack, ...): one reply per order. */
-  onOrder(ids) {
+  /** The next smart order does `action` (js/cursors.js ACTION). */
+  noteSmartAction(action) {
+    this.smartAction = action;
+  }
+
+  /**
+   * A local order was given to `ids` through Game method `method`: one reply
+   * per order, the voice line of the trait behind it (OpenRA IOrderVoice).
+   */
+  onOrder(ids, method = 'order_move') {
+    const order = method === 'order_smart' ? (SMART_ORDERS[this.smartAction] ?? 'move') : (METHOD_ORDERS[method] ?? 'move');
+    this.smartAction = null;
     const u = this.ownUnit(ids);
-    if (u) this.reply(u.type, u.kind, 'action');
+    if (u) this.reply(u.type, u.kind, orderVoice(u.type, order));
   }
 
   /**
@@ -226,8 +278,9 @@ export class Director {
           break;
         case EV.DEATH: {
           const actor = this.actor(a);
-          const kindName = KINDS[b] ?? actor.kind;
-          if (own || visible(x, y)) this.queue(deathSound(actor.id, kindName), x, y);
+          // b: kind code, the death sequence (infantry screams) in the bits above.
+          const kindName = KINDS[b & 0xff] ?? actor.kind;
+          if (own || visible(x, y)) this.queue(deathSound(actor.id, kindName, b >> 8), x, y);
           if (own && kindName !== 'building' && kindName !== 'mine') this.announce('unitLost');
           break;
         }
@@ -235,7 +288,15 @@ export class Director {
           if (own) this.announce('baseUnderAttack');
           break;
         case EV.UNIT_PRODUCED:
-          if (own) this.announce('unitReady');
+          if (own) {
+            this.announce('unitReady');
+            // VoiceAnnouncement (Tanya laughs as she leaves the barracks).
+            const line = producedVoice(this.actor(a).id);
+            if (line) this.reply(this.actor(a).id, this.actor(a).kind, line);
+          }
+          break;
+        case EV.INFANTRY:
+          this.onInfantryEvent(a, own, b);
           break;
         case EV.CONSTRUCTION_READY:
           if (own) this.announce('constructionComplete');
@@ -288,6 +349,19 @@ export class Director {
       }
     }
     this.flush(view);
+  }
+
+  /** Infantry notifications (engine/src/infantry.rs InfantryEvent). */
+  onInfantryEvent(ev, own, b) {
+    if (ev === INFANTRY_EV.KILL) {
+      // AnnounceOnKill: Tanya's quip after a kill.
+      const actor = this.actor(b);
+      const line = killVoice(actor.id);
+      if (own && line) this.reply(actor.id, actor.kind, line);
+      return;
+    }
+    const key = own && INFANTRY_EVENT_EVA[ev];
+    if (key) this.announce(key);
   }
 
   queue(sound, x, y) {

@@ -20,6 +20,20 @@
 // (`this.ask`, promises) and acts when they arrive.
 
 import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, scrollCursor } from './cursors.js';
+
+/** Smart orders that act on own actors (instead of selecting them). */
+const TARGETS_OWN = new Set([
+  ACTION.DOCK,
+  ACTION.REPAIR,
+  ACTION.LOAD,
+  ACTION.DELIVER_CASH,
+  ACTION.INSTANT_REPAIR,
+  ACTION.REPAIR_BLOCKED,
+  ACTION.HEAL,
+  ACTION.FIX,
+  ACTION.DISGUISE,
+  ACTION.INFILTRATE,
+]);
 import { hotkeys as defaultHotkeys } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
@@ -281,7 +295,7 @@ export class Input {
     if (units.length) {
       // Own units and buildings are selected, unless the order targets them (dock, repair, enter a transport).
       const ownHit = hitInfo && hitInfo.owner === this.player;
-      const targetsOwn = action === ACTION.DOCK || action === ACTION.REPAIR || action === ACTION.LOAD || action === ACTION.DELIVER_CASH;
+      const targetsOwn = TARGETS_OWN.has(action);
       if (ownHit && !targetsOwn) return { kind: 'select', id: hit };
       return { kind: 'order', action, units };
     }
@@ -638,6 +652,8 @@ export class Input {
     if (await this.hooks.commandClick?.(b, d)) return;
     const intent = d.shift ? { kind: 'select' } : await this.clickIntentNow(b);
     if (intent.kind === 'order') {
+      // The reply depends on what the order does (capture, C4, heal...).
+      this.hooks.onSmartOrder?.(intent.action);
       this.game.order_smart(this.player, Uint32Array.from(intent.units), b.x, b.y);
       this.flashOrder(b, intent.action);
       // A plain move: the attack-move tip may apply (js/hints.js).

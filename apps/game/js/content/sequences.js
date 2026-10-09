@@ -42,11 +42,23 @@ export const POSE = Object.freeze({
   DOCK: 6,
   STILL: 7,
   DAMAGED_STILL: 8,
+  // Standing infantry: the second stand sequence and the idle animations.
+  STAND2: 9,
+  IDLE1: 10,
+  IDLE2: 11,
+  // Dying infantry: die1..die6 and the crushed body (WithDeathAnimation).
+  DIE1: 12,
+  DIE2: 13,
+  DIE3: 14,
+  DIE4: 15,
+  DIE5: 16,
+  DIE6: 17,
+  CRUSHED: 18,
 });
-export const POSE_COUNT = 9;
+export const POSE_COUNT = 19;
 /** Sprite ids carry the pose: id = slot + POSE_STRIDE * (pose + POSE_CODES * age). */
 export const POSE_STRIDE = 4096;
-export const POSE_CODES = 16;
+export const POSE_CODES = 32;
 /** Largest age (ticks since the actor appeared, or a wall's connection mask) the engine reports. */
 export const MAX_AGE = 127;
 /** Simulation ticks per second (engine TICKS_PER_SECOND): ages are in ticks. */
@@ -62,6 +74,8 @@ export const MODE = Object.freeze({
   STILL: 2,
   /** The frame the engine names in the age field (wall connections). */
   INDEX: 3,
+  /** Play once from the age, then show nothing (death animations). */
+  VANISH: 4,
 });
 
 /** Split a sprite id into slot, pose and age (the shader does the same with u32 math). */

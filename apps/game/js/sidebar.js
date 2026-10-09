@@ -724,7 +724,11 @@ export class Sidebar {
       this.selHpBar.hidden = true;
       return;
     }
-    setText(this.selNameEl, info.name ?? 'Unknown');
+    // A spy's disguise (engine actor_json().disguise, infantry.rs): to others it
+    // is the soldier it pretends to be (OpenRA DisguiseTooltip).
+    const disguise = info.disguise && info.owner !== this.playerId ? info.disguise : null;
+    const shownOwner = disguise ? disguise.owner : info.owner;
+    setText(this.selNameEl, (disguise ? this.actors.get(disguise.type)?.name : null) ?? info.name ?? 'Unknown');
     const max = Math.max(1, info.maxHp || 1);
     const hp = Math.max(0, Math.min(max, info.hp ?? max));
     const frac = hp / max;
@@ -733,7 +737,7 @@ export class Sidebar {
     this.selHpFill.classList.toggle('mid', frac <= 0.5 && frac > 0.25);
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
-    if (info.owner !== undefined && info.owner !== this.playerId) detail += '  (enemy)';
+    if (shownOwner !== undefined && shownOwner !== this.playerId) detail += '  (enemy)';
     // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
     const vet = veterancyText(info, info.owner === this.playerId);
     if (vet) detail += `   ${vet}`;
@@ -748,6 +752,11 @@ export class Sidebar {
       if (ab.cloaked) detail += '   Cloaked';
       if (ab.deployed) detail += `   Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`;
     }
+    // Infantry (engine/src/infantry.rs): disguise, captures, C4, power outages.
+    if (info.disguise && info.owner === this.playerId) detail += `   Disguised as ${this.actors.get(info.disguise.type)?.name ?? info.disguise.type}`;
+    if (info.beingCaptured) detail += '   Being captured';
+    if (info.demolished) detail += '   C4 planted';
+    if (info.powerOutage > 0) detail += `   Power outage ${Math.ceil(info.powerOutage / 25)} s`;
     setText(this.selDetailEl, detail);
   }
 

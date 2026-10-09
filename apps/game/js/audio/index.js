@@ -232,7 +232,7 @@ export class AudioSystem {
           if (ORDER_METHODS.has(prop)) {
             fn = (...args) => {
               const r = value.apply(target, args);
-              audio.director?.onOrder(Array.from(args[1] ?? []));
+              audio.director?.onOrder(Array.from(args[1] ?? []), prop);
               return r;
             };
           } else if (prop === 'start_production') {
@@ -293,6 +293,11 @@ export class AudioSystem {
 
   selectTarget() {
     this.director?.onSelectTarget();
+  }
+
+  /** The next smart order (right click) does `action` (Game.cursor_action): its reply. */
+  smartOrder(action) {
+    this.director?.noteSmartAction(action);
   }
 
   gameOver(won) {

@@ -59,7 +59,26 @@ export const SPECIALS = Object.freeze([
   'nuke',
 ]);
 
-export const POSE_NAMES = Object.freeze(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock']);
+export const POSE_NAMES = Object.freeze([
+  'idle',
+  'move',
+  'attack',
+  'damaged',
+  'make',
+  'harvest',
+  'dock',
+  // Infantry (engine/src/infantry_render.rs): stand variant, idle animations, deaths.
+  'stand2',
+  'idle1',
+  'idle2',
+  'die1',
+  'die2',
+  'die3',
+  'die4',
+  'die5',
+  'die6',
+  'crushed',
+]);
 export const TERRAIN_CLASSES = Object.freeze(['clear', 'rough', 'rock', 'water', 'tree', 'ford']);
 export const PACK_BIOMES = Object.freeze(['temperate', 'snow', 'desert']);
 const TOP_KEYS = new Set(['format', 'formatVersion', 'name', 'author', 'version', 'license', 'description', 'sprites', 'cameos', 'terrain', 'sounds']);
@@ -507,14 +526,14 @@ export function packSlots(manifest, images, actors) {
         }
       }
       const desc = (mode) => ({ frames, length: s.frames, facings: s.facings, fps: s.fps, mode, classic: false, interpolatedFacings: 0, rotate: s.rotate });
-      have[s.pose ?? 'idle'] = { loop: desc(MODE.LOOP), once: desc(MODE.ONCE), still: desc(MODE.STILL), index: desc(MODE.INDEX) };
+      have[s.pose ?? 'idle'] = { loop: desc(MODE.LOOP), once: desc(MODE.ONCE), still: desc(MODE.STILL), index: desc(MODE.INDEX), vanish: desc(MODE.VANISH) };
     }
     if (!have.idle) {
       if (Object.keys(have).length) problems.push(`slot ${slot}: a pack sprite needs an idle pose`);
       continue;
     }
     const poses = poseTable(have);
-    if (poses && poses.length === POSE_COUNT) slots.set(slot, { images: all, poses });
+    if (poses && poses.length === POSE_COUNT) slots.set(slot, { images: all, poses, deaths: !!have.die1 });
   }
   return { slots, problems };
 }

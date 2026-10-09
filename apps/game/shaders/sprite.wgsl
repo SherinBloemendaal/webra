@@ -36,11 +36,12 @@ struct VsOut {
 
 const TURN: f32 = 6.28318530717958647692;
 const POSE_STRIDE: u32 = 4096u;
-const POSE_CODES: u32 = 16u;
+const POSE_CODES: u32 = 32u;
 const MODE_LOOP: u32 = 0u;
 const MODE_ONCE: u32 = 1u;
 const MODE_STILL: u32 = 2u;
 const MODE_INDEX: u32 = 3u;
+const MODE_VANISH: u32 = 4u;
 const FLAG_CLASSIC: u32 = 1u;
 const FLAG_ROTATE: u32 = 2u;
 // Simulation ticks per second: ages are in ticks (engine TICKS_PER_SECOND).
@@ -117,20 +118,26 @@ fn vs(@builtin(vertex_index) vi: u32,
     let phase = hash2(a.xy * 0.01);
     var index = slot;
     var angle = a.z;
+    // A finished VANISH pose (death animations) draws nothing.
+    var hidden = false;
     let head = frames[slot];
     if (head.seq.y > 0.5) {
         let base = u32(head.seq.x);
         var d = frames[base + min(pose, u32(head.seq.y) - 1u)];
         var mode = u32(d.anim.w);
         var k = 0u;
-        if (mode == MODE_ONCE) {
+        if (mode == MODE_ONCE || mode == MODE_VANISH) {
             let f = u32(floor(f32(age) * d.anim.z / TICKS_PER_SECOND));
-            if (f >= max(u32(d.anim.y), 1u)) {
+            let count = max(u32(d.anim.y), 1u);
+            if (f < count) {
+                k = f;
+            } else if (mode == MODE_VANISH) {
+                hidden = true;
+                k = count - 1u;
+            } else {
                 // Finished: the idle pose takes over.
                 d = frames[base];
                 mode = u32(d.anim.w);
-            } else {
-                k = f;
             }
         }
         let len = max(u32(d.anim.y), 1u);
@@ -163,7 +170,7 @@ fn vs(@builtin(vertex_index) vi: u32,
         index = u32(head.anim.x) + anim_frame(g.anim.x, g.anim.y, head.anim.z, u32(head.anim.y), phase);
     }
     let f = frames[index];
-    let local = ((corner - 0.5) * f.size.xy + f.size.zw) * b.y;
+    let local = ((corner - 0.5) * f.size.xy + f.size.zw) * select(b.y, 0.0, hidden);
     let c = cos(angle);
     let s = sin(angle);
     let rotated = vec2f(local.x * c - local.y * s, local.x * s + local.y * c);

@@ -9,6 +9,7 @@ import { lcwDecode, xorDeltaDecode, decodeShp, decodeTmp, decodeSprite, trimFram
 import { decodePalette, paletteLookup, REMAP_START, REMAP_END, SHADOW_ALPHA } from '../js/content/palette.js';
 import {
   POSE,
+  POSE_COUNT,
   POSE_STRIDE,
   POSE_CODES,
   MODE,
@@ -54,7 +55,7 @@ import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS } f
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
 import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
-import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS } from '../js/content/packs.js';
+import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
 import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
@@ -257,7 +258,7 @@ test('the sequences table covers the engine actors and names only files it lists
   // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert art: they keep WebRA's.
   const openraOnly = new Set(['FTRK', 'MH60']);
   for (const a of BASE.actors) {
-    if (a.kind === 'mine') continue;
+    if (a.kind === 'mine' || a.kind === 'proxy') continue;
     assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
@@ -265,7 +266,7 @@ test('the sequences table covers the engine actors and names only files it lists
     assert.ok(seqs, `${id}: image ${entry.image}`);
     for (const part of ['body', 'second']) {
       for (const [pose, name] of Object.entries(entry[part] ?? {})) {
-        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock'].includes(pose), `${id} pose ${pose}`);
+        assert.ok(POSE_NAMES.includes(pose), `${id} pose ${pose}`);
         const def = seqs[name];
         assert.ok(def, `${id}.${part}.${pose} -> ${name}`);
         assert.ok(files.has(def.file) || def.tilesets, `${def.file} is installed`);
@@ -278,8 +279,25 @@ test('the sequences table covers the engine actors and names only files it lists
   }
   assert.ok(files.has(ACTOR_PALETTE));
   for (const t of Object.values(TERRAIN)) assert.ok(files.has(t.palette));
-  // Infantry walk, fire and lie down; harvesters harvest and dock; structures are made and damaged.
-  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), ['attack', 'idle', 'move']);
+  // Infantry walk, fire, stand two ways, idle, die and lie down; harvesters
+  // harvest and dock; structures are made and damaged.
+  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), [
+    'attack',
+    'crushed',
+    'die1',
+    'die2',
+    'die3',
+    'die4',
+    'die5',
+    'die6',
+    'idle',
+    'idle1',
+    'idle2',
+    'move',
+    'stand2',
+  ]);
+  assert.equal(ACTOR_ART.MEDI.body.attack, 'heal', 'DefaultAttackSequence');
+  assert.equal(ACTOR_ART.DOG.body.move, 'walk', 'MoveSequence');
   assert.deepEqual(Object.keys(ACTOR_ART.E1.second).sort(), ['attack', 'idle', 'move']);
   assert.ok(ACTOR_ART.HARV.body.harvest && ACTOR_ART.HARV.body.dock);
   assert.ok(ACTOR_ART.POWR.body.make && ACTOR_ART.POWR.body.damaged);
@@ -426,7 +444,7 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
     const t = ACTORS.findIndex((a) => a.id === 'E1');
     const head = entry(2 * t);
     const base = head[12];
-    assert.ok(head[13] === 9, 'nine poses');
+    assert.ok(head[13] === POSE_COUNT, 'a descriptor per pose');
     // The shader's lookup: descriptor of the pose, then first + facing * length + frame.
     const desc = entry(base + POSE.MOVE);
     const [first, length, fps, mode, facings] = desc.slice(8, 13);
@@ -461,7 +479,7 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
       .split('\n')
       .filter((l) => l && !l.startsWith('#')),
   );
-  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp']);
+  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp', 'e6.shp']);
   for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f), `${f} is made by OpenRA`);
   // The War Factory: its roof and door from weap2.shp (four frames, then four damaged), a layer over the body.
   assert.equal(ACTOR_ART.WEAP.overlay, 'door');

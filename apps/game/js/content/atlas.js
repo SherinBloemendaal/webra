@@ -199,6 +199,15 @@ export function poseTable(have, { wall = false, door = false } = {}) {
   poses[POSE.DOCK] = main(pick('dock'));
   poses[POSE.STILL] = idle.still;
   poses[POSE.DAMAGED_STILL] = (have.damaged ?? idle).still;
+  // Standing infantry: stand2 loops, idle animations play once (then the idle pose).
+  poses[POSE.STAND2] = main(pick('stand2'));
+  poses[POSE.IDLE1] = have.idle1 ? have.idle1.once : main(idle);
+  poses[POSE.IDLE2] = have.idle2 ? have.idle2.once : poses[POSE.IDLE1];
+  // Deaths play once and vanish; a missing one falls back to die1 (the engine
+  // only asks for them when the art has die1, see `deathArt`).
+  const die1 = have.die1?.vanish ?? idle.vanish;
+  for (let n = 1; n <= 6; n++) poses[POSE.DIE1 + n - 1] = have[`die${n}`]?.vanish ?? die1;
+  poses[POSE.CRUSHED] = have.crushed?.vanish ?? die1;
   return poses;
 }
 
@@ -248,10 +257,12 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
       once: descriptor(resolved, frames, MODE.ONCE, def),
       still: descriptor(resolved, frames, MODE.STILL, def),
       index: descriptor(resolved, frames, MODE.INDEX, def),
+      vanish: descriptor(resolved, frames, MODE.VANISH, def),
     };
   }
   const poses = poseTable(have, { wall, door });
-  return { art: poses ? { images, poses } : null, problems };
+  // `deaths`: the art has death sequences (js/sprites.js buildAtlas `deaths`).
+  return { art: poses ? { images, poses, deaths: !!have.die1 } : null, problems };
 }
 
 /**
@@ -313,7 +324,7 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
     if (!entry) {
-      if (a.kind !== 'mine') out.missing.push(a.id);
+      if (a.kind !== 'mine' && a.kind !== 'proxy') out.missing.push(a.id);
       return;
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];

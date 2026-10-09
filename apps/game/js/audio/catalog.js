@@ -7,7 +7,9 @@
 // notifications and music follow mods/ra/audio). A name the player's files do
 // not contain simply falls back to the synthesized sound.
 
-import { WEAPON_SOUNDS, ACTOR_SOUNDS } from './catalog-data.js';
+import { WEAPON_SOUNDS, ACTOR_SOUNDS, VOICE_SETS } from './catalog-data.js';
+
+export { VOICE_SETS };
 
 /** "conscmp1" -> "conscmp1.aud"; names with an extension (voice variants like "ackno.v01") stay as they are. */
 export const fileName = (base) => (/\.[a-z0-9]{3}$/i.test(base) ? base : `${base}.aud`).toLowerCase();
@@ -70,6 +72,16 @@ export const WEAPON_SYNTH = {
   UnitExplodeSubmarine: [null, 'splash'],
   UnitExplodePlane: [null, 'explosion_large'],
   ArtilleryExplode: [null, 'explosion_large'],
+  // Infantry (engine/src/infantry.rs).
+  Grenade: [null, 'explosion_small'],
+  Flamer: ['flame', 'burn'],
+  Colt45: ['rifle', 'hit'],
+  SilencedPPK: [null, 'hit'],
+  DogJaw: [null, 'hit'],
+  PortaTesla: ['tesla', 'zap'],
+  // Healing and repairing make their own (original) sounds only.
+  Heal: [null, null],
+  Repair: [null, null],
 };
 
 /** Memoize a sound lookup: battles ask for the same few sounds thousands of times. */
@@ -104,9 +116,18 @@ export const KINDS = ['building', 'infantry', 'vehicle', 'ship', 'aircraft', 'mi
 /** Infantry death screams (sounds.mix). */
 const INFANTRY_DIE = ['dedman1', 'dedman2', 'dedman3', 'dedman4', 'dedman5', 'dedman6', 'dedman7', 'dedman8', 'dedman10'];
 
-/** Death sound of an actor (id from rules, kind name). */
-export const deathSound = cached((actorId, kind) => {
-  if (kind === 'infantry') return { synth: 'infantry_die', originals: INFANTRY_DIE.map(fileName) };
+/**
+ * Death sound of an actor (id from rules, kind name). Infantry scream the
+ * DeathSounds voice line of their death sequence (`sequence`, the engine's
+ * Death event: die1..die6): Die, Burned (fire) or Zapped (electricity).
+ */
+export const deathSound = cached((actorId, kind, sequence = 0) => {
+  if (kind === 'infantry') {
+    const set = VOICE_SETS[voiceSetFor(actorId, kind)];
+    const line = (ACTOR_SOUNDS[baseActor(actorId)]?.screams?.[sequence] ?? 'Die').toLowerCase();
+    const bases = set?.lines[line] ?? INFANTRY_DIE;
+    return { synth: 'infantry_die', originals: bases.map(fileName) };
+  }
   if (kind === 'mine') return { synth: null, originals: [] };
   const synth = kind === 'building' ? 'explosion_building' : kind === 'ship' ? 'explosion_ship' : 'explosion_large';
   return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName) };
@@ -153,45 +174,56 @@ export const sellSound = cached((actorId) => ({ synth: 'sell', originals: (ACTOR
 
 // ---- Unit voices -------------------------------------------------------------------
 
-/**
- * OpenRA voice sets of the units in this game. Unit lines live in allies.mix
- * and russian.mix with a per-side variant extension instead of ".aud".
- */
-export const VOICE_SETS = {
-  GenericVoice: {
-    select: ['await1', 'ready', 'report1', 'yessir1'],
-    action: ['ackno', 'affirm1', 'noprob', 'overout', 'ritaway', 'roger', 'ugotit'],
-    variants: { allies: ['.v01', '.v03'], soviet: ['.r01', '.r03'] },
-  },
-  VehicleVoice: {
-    select: ['vehic1', 'yessir1', 'report1', 'await1', 'unit1'],
-    action: ['ackno', 'affirm1'],
-    variants: { allies: ['.v00', '.v02'], soviet: ['.r00', '.r02'] },
-  },
-};
-
 /** Spoken lines (speech synthesis) for units without original voices. */
 export const SPOKEN = {
   select: ['Reporting', 'Yes sir', 'Awaiting orders', 'Ready'],
   action: ['Affirmative', 'Acknowledged', 'Moving out', 'Yes sir', 'On my way'],
 };
 
+/** The rules actor whose sounds an actor uses (paratroopers E1R1 sound like E1). */
+const baseActor = (actorId) => (ACTOR_SOUNDS[actorId] ? actorId : actorId?.replace(/R\d+$/, ''));
+
 export function voiceSetFor(actorId, kind) {
-  const named = ACTOR_SOUNDS[actorId]?.voice ?? ACTOR_SOUNDS[actorId?.replace(/R\d+$/, '')]?.voice;
+  const named = ACTOR_SOUNDS[baseActor(actorId)]?.voice;
   if (named && VOICE_SETS[named]) return named;
   return kind === 'vehicle' || kind === 'ship' ? 'VehicleVoice' : 'GenericVoice';
 }
 
 /**
- * A unit's reply: `line` is 'select' or 'action', `side` 'allies' or 'soviet'.
- * @returns {{ synth: string, originals: string[], spoken: string[] }}
+ * The voice line an order makes a unit say (OpenRA IOrderVoice: the Voice of
+ * the trait behind the order, Mobile for moves, the attack trait for
+ * attacks, Captures, Infiltrates, Demolition, InstantlyRepairs, Disguise).
+ * `order` is one of move, attack, capture, infiltrate, demolish, repair,
+ * disguise. Lowercase, as VOICE_SETS lines are.
+ */
+export function orderVoice(actorId, order) {
+  return (ACTOR_SOUNDS[baseActor(actorId)]?.orders?.[order] ?? 'Action').toLowerCase();
+}
+
+/** VoiceAnnouncement of a freshly produced unit (Tanya's laugh), or null. */
+export function producedVoice(actorId) {
+  return ACTOR_SOUNDS[baseActor(actorId)]?.produced?.toLowerCase() ?? null;
+}
+
+/** AnnounceOnKill voice line of an actor (Tanya), or null. */
+export function killVoice(actorId) {
+  return ACTOR_SOUNDS[baseActor(actorId)]?.kill?.toLowerCase() ?? null;
+}
+
+/**
+ * A unit's reply: `line` is a voice line of its set (select, action, move,
+ * attack, demolish, build, kill, ...), `side` 'allies' or 'soviet'. Null when
+ * the set has no such line (OpenRA then stays silent).
+ * @returns {{ synth: string, originals: string[], spoken: string[] } | null}
  */
 export function voiceLine(actorId, kind, side, line) {
   const set = VOICE_SETS[voiceSetFor(actorId, kind)];
-  const variants = set.variants[side] ?? set.variants.allies;
+  const bases = set.lines[line];
+  if (!bases) return null;
+  const variants = set.plain.includes(line) ? [''] : (set.variants[side] ?? set.variants.allies ?? ['']);
   const originals = [];
-  for (const base of set[line]) for (const v of variants) originals.push(fileName(base + v));
-  return { synth: line === 'select' ? 'radio_select' : 'radio_ack', originals, spoken: SPOKEN[line] };
+  for (const base of bases) for (const v of variants) originals.push(fileName(base + v));
+  return { synth: line === 'select' ? 'radio_select' : 'radio_ack', originals, spoken: SPOKEN[line] ?? SPOKEN.action };
 }
 
 // ---- Announcements (EVA) -------------------------------------------------------------
@@ -224,13 +256,36 @@ export const EVA = {
   nukeLaunched: { text: 'Nuclear missile launched', chime: 'eva_alarm', originals: ['alaunch1'], cooldown: 5 },
   missionAccomplished: { text: 'Mission accomplished', chime: 'eva_good', originals: ['misnwon1'], cooldown: 5 },
   missionFailed: { text: 'Mission failed', chime: 'eva_loss', originals: ['misnlst1'], cooldown: 5 },
+  // Infantry (engine/src/infantry.rs): OpenRA notifications.yaml BuildingInfiltrated,
+  // CreditsStolen, UnitStolen, UnitLost, SonarPulseReady; captured structures only
+  // get the text (CaptureNotification of ^BasicBuilding has no speech).
+  buildingInfiltrated: { text: 'Building infiltrated', chime: 'eva_info', originals: ['bldginf1'], cooldown: 1 },
+  creditsStolen: { text: 'Credits stolen', chime: 'eva_loss', originals: ['credit1'], cooldown: 1 },
+  unitStolen: { text: 'Unit stolen', chime: 'eva_good', originals: ['unitsto'], cooldown: 1 },
+  structureCaptured: { text: 'Structure captured', chime: 'eva_good', originals: [], cooldown: 1 },
+  sonarPulseReady: { text: 'Sonar pulse ready', chime: 'eva_ready', originals: ['pulse1'], cooldown: 0.5 },
 };
+
+/** EVA line per infantry event (engine/src/infantry.rs InfantryEvent), for the player it concerns. */
+export const INFANTRY_EVENT_EVA = Object.freeze({
+  1: 'structureCaptured',
+  3: 'unitStolen',
+  4: 'unitLost',
+  5: 'buildingInfiltrated',
+  6: 'creditsStolen',
+});
+
+/** The Sonar Pulse going off (SpawnActorPower DeploySound). */
+export const SONAR_SOUND = Object.freeze({ synth: 'radio_select', originals: [fileName('sonpulse')] });
 
 for (const e of Object.values(EVA)) e.originals = e.originals.map(fileName);
 
 /** EVA line for a support power becoming ready (engine power kinds, powers.rs). */
 export function powerReadyLine(kind) {
-  return { NukePower: 'nukeReady', ChronoshiftPower: 'chronoReady', GrantExternalConditionPower: 'ironCurtainReady' }[kind] ?? 'powerReady';
+  return (
+    { NukePower: 'nukeReady', ChronoshiftPower: 'chronoReady', GrantExternalConditionPower: 'ironCurtainReady', SpawnActorPower: 'sonarPulseReady' }[kind] ??
+    'powerReady'
+  );
 }
 
 /** Power kind codes of PowerActivated events (sound_events.rs power_code). */
@@ -242,6 +297,7 @@ export const POWER_KINDS = [
   'AirstrikePower',
   'ParatroopersPower',
   'GpsPower',
+  'SpawnActorPower',
 ];
 
 /** Sidebar button sounds (OpenRA notifications): power down and up, a beacon placed. */
@@ -269,6 +325,7 @@ export function powerSound(code) {
   if (kind === 'ChronoshiftPower') return { synth: 'chrono', originals: ['chrono2'].map(fileName) };
   if (kind === 'GrantExternalConditionPower') return { synth: 'iron_curtain', originals: ['ironcur9'].map(fileName) };
   if (kind === 'NukePower') return { synth: 'nuke_launch', originals: [] };
+  if (kind === 'SpawnActorPower') return SONAR_SOUND;
   return { synth: 'radio_select', originals: [] };
 }
 
@@ -347,11 +404,13 @@ export function allOriginalNames() {
   }
   add(INFANTRY_DIE);
   add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);
+  add(SONAR_SOUND.originals);
   for (const s of Object.values(BUTTON_SOUNDS)) add(s.originals);
   for (const s of Object.values(CASH_TICK_SOUNDS)) add(s.originals);
   for (const set of Object.values(VOICE_SETS)) {
-    for (const line of ['select', 'action']) {
-      for (const base of set[line]) for (const v of Object.values(set.variants).flat()) add([base + v]);
+    for (const [line, bases] of Object.entries(set.lines)) {
+      const variants = set.plain.includes(line) || !Object.keys(set.variants).length ? [''] : [...new Set(Object.values(set.variants).flat())];
+      for (const base of bases) for (const v of variants) add([base + v]);
     }
   }
   for (const e of Object.values(EVA)) add(e.originals);
