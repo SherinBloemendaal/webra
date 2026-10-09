@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { installDom, uninstallDom, FakeEvent } from './dom-fixtures.mjs';
-import { attachTooltip, hideTooltip, LONG_PRESS_MS, openTooltip, placeTooltip, TOOLTIP_DELAY_MS, TOUCH_HOLD_MS, tooltipText } from '../js/ui/tooltip.js';
+import { attachTooltip, hideTooltip, LONG_PRESS_MS, openTooltip, placeTooltip, TOOLTIP_DELAY_MS, TOOLTIP_WARM_MS, TOUCH_HOLD_MS, tooltipText } from '../js/ui/tooltip.js';
 import { commandTip, COMMANDS, stanceTip, STANCES } from '../js/commandbar.js';
 import { formatPower, productionTip } from '../js/production.js';
 import { powerTip } from '../js/powers.js';
@@ -85,7 +85,12 @@ test('tooltip: opens after the hover delay, closes on leave, points aria-describ
     assert.equal(openTooltip(doc), null);
     assert.equal(open.panel.hidden, true);
     assert.equal(button.getAttribute('aria-describedby'), null);
-    // Leaving before the delay: it never opens.
+    // Right after it closed, hovering again opens it at once (moving along a bar) ...
+    button.dispatchEvent(ev('pointerenter', { pointerType: 'mouse' }));
+    assert.ok(openTooltip(doc), 'warm: no second delay');
+    button.dispatchEvent(ev('pointerleave', { pointerType: 'mouse' }));
+    t.advance(TOOLTIP_WARM_MS);
+    // ... later the delay is back. Leaving before the delay: it never opens.
     button.dispatchEvent(ev('pointerenter', { pointerType: 'mouse' }));
     button.dispatchEvent(ev('pointerleave', { pointerType: 'mouse' }));
     t.advance(TOOLTIP_DELAY_MS * 2);
@@ -331,4 +336,69 @@ test('tooltip: the replaced title attributes are gone and the stylesheet is link
   assert.match(css, /#ffff00/i, 'the hotkey in OpenRA yellow');
   assert.match(css, /pointer-events: none/);
   assert.doesNotMatch(read('../js/ui/tooltip.js'), /innerHTML|setAttribute\('style'/);
+});
+
+test('tooltip under mouse capture: the virtual pointer hovers, waits the delay, presses through, and nothing is intercepted', async () => {
+  const { VirtualPointer } = await import('../js/mouselock.js');
+  const { doc, button } = setup();
+  try {
+    const t = clock();
+    const bar = doc.createElement('div');
+    const other = doc.createElement('button');
+    const map = doc.createElement('canvas');
+    doc.body.append(bar, map);
+    bar.append(button, other);
+    // Hit map: the tooltip panel is never hit (pointer-events: none in css/tooltip.css).
+    doc.elementFromPoint = (x) => (x < 100 ? button : x < 200 ? other : map);
+    attachTooltip(button, () => ({ title: 'Guard', hotkey: 'D' }), t);
+    attachTooltip(other, () => ({ title: 'Stop', hotkey: 'S' }), t);
+    // What the page's own listeners see of the replayed events.
+    const seen = [];
+    for (const [node, name] of [
+      [button, 'button'],
+      [bar, 'bar'],
+      [doc, 'doc'],
+    ]) {
+      for (const type of ['pointerenter', 'pointerleave', 'pointerdown', 'pointerup', 'mousedown', 'click']) {
+        node.addEventListener(type, (e) => seen.push(`${name}:${type}${e.defaultPrevented ? ':prevented' : ''}`));
+      }
+    }
+    const p = new VirtualPointer({ doc, win: globalThis.window, makeEvent: (type, init) => new FakeEvent(type, init), now: () => 0 });
+    p.place(500, 10);
+    p.moveBy(-450, 0, 1000, 700);
+    assert.equal(p.hovered, button);
+    assert.equal(button.getAttribute('data-vhover'), '', 'the :hover stand-in');
+    assert.ok(seen.includes('button:pointerenter') && seen.includes('bar:pointerenter'), 'the replayed enter reaches the page');
+    assert.equal(openTooltip(doc), null, 'the hover delay holds for the virtual pointer too');
+    t.advance(TOOLTIP_DELAY_MS);
+    assert.equal(openTooltip(doc)?.text, 'Guard (D)');
+    assert.ok(openTooltip(doc).panel !== doc.elementFromPoint(50, 10), 'the panel is not what the pointer hits');
+    // To the neighbour: switches at once; out to the map: closes.
+    p.moveBy(100, 0, 1000, 700);
+    assert.equal(openTooltip(doc)?.text, 'Stop (S)');
+    p.moveBy(-100, 0, 1000, 700);
+    assert.equal(openTooltip(doc)?.text, 'Guard (D)');
+    // A press goes through: the tooltip closes, the page gets every event, unprevented.
+    seen.length = 0;
+    p.down(0);
+    p.up(0);
+    assert.equal(openTooltip(doc), null, 'pressing closes it, like a real mouse');
+    for (const e of ['button:pointerdown', 'bar:pointerdown', 'doc:pointerdown', 'button:mousedown', 'button:pointerup', 'button:click', 'bar:click', 'doc:click']) {
+      assert.ok(seen.includes(e), `${e} reached the page (${seen.join(', ')})`);
+    }
+    assert.ok(!seen.some((e) => e.endsWith(':prevented')), 'no replayed event was cancelled');
+    // Leaving to the map: the leave reaches the page and no tooltip opens later.
+    seen.length = 0;
+    t.advance(TOOLTIP_WARM_MS);
+    p.moveBy(450, 0, 1000, 700);
+    assert.ok(seen.includes('button:pointerleave') && seen.includes('bar:pointerleave'));
+    t.advance(TOOLTIP_DELAY_MS * 2);
+    assert.equal(openTooltip(doc), null);
+    assert.equal(button.getAttribute('aria-describedby'), null);
+    // Keyboard focus still opens it while the mouse is captured.
+    button.dispatchEvent(ev('focus', { bubbles: false }));
+    assert.equal(openTooltip(doc)?.text, 'Guard (D)');
+  } finally {
+    uninstallDom();
+  }
 });

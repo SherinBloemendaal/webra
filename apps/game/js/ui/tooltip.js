@@ -13,7 +13,11 @@
 // Behaviour:
 // - Mouse: it opens after TOOLTIP_DELAY_MS over the target and closes when
 //   the pointer leaves, the target is pressed or the page scrolls. Moving to
-//   another tipped target while one shows switches at once (like OpenRA).
+//   another tipped target while one shows, or right after (TOOLTIP_WARM_MS),
+//   switches at once (like OpenRA). Under mouse capture (js/mouselock.js) the
+//   virtual pointer's replayed pointerenter / leave / down drive it the same
+//   way; the panel never takes the pointer and no listener here cancels or
+//   stops a mouse event.
 // - Keyboard: focus opens it at once, blur closes it, Esc closes it (the key
 //   still reaches the game, so Esc also cancels modes or opens the menu).
 // - Touch: a long press (LONG_PRESS_MS, finger held still) opens it and
@@ -32,6 +36,8 @@ import { icon } from '../ui-icons.js';
 
 /** Hover time before a tooltip opens (OpenRA's TooltipContainer waits a moment too). */
 export const TOOLTIP_DELAY_MS = 350;
+/** After a hover tooltip closes, the next target hovered this soon opens at once (moving along a bar). */
+export const TOOLTIP_WARM_MS = 300;
 /** Touch: how long a finger must rest on a target to open its tooltip. */
 export const LONG_PRESS_MS = 500;
 /** Touch: how long a long-press tooltip stays after the finger lifts. */
@@ -161,6 +167,8 @@ class TooltipLayer {
     /** Pending open: { tip, timer }. */
     this.pending = null;
     this.hideTimer = 0;
+    /** A hover tooltip closed a moment ago: { tip, timer } until TOOLTIP_WARM_MS passed. */
+    this.warm = null;
     doc.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.hide();
     }, true);
@@ -187,7 +195,7 @@ class TooltipLayer {
   /** Open `tip` after the hover delay (at once when another tooltip is showing). */
   schedule(tip, delay = TOOLTIP_DELAY_MS) {
     this.cancelPending();
-    if (this.current && this.current !== tip) delay = 0;
+    if ((this.current && this.current !== tip) || this.warm) delay = 0;
     if (delay <= 0) {
       this.show(tip);
       return;
@@ -233,6 +241,18 @@ class TooltipLayer {
     this.current = null;
     this.spec = null;
     if (this.panel) this.panel.hidden = true;
+  }
+
+  /** The pointer left `tip`'s target: close it, and open the next one hovered soon without a delay. */
+  leave(tip) {
+    const was = this.current === tip;
+    this.hide(tip);
+    if (!was) return;
+    if (this.warm) this.warm.tip.clearTimer(this.warm.timer);
+    const timer = tip.setTimer(() => {
+      this.warm = null;
+    }, TOOLTIP_WARM_MS);
+    this.warm = { tip, timer };
   }
 
   /** Close after `ms` (a touch tooltip after the finger lifts). */
@@ -337,7 +357,7 @@ class Attachment {
     on('pointerleave', (e) => {
       this.pressing = false;
       if (e.pointerType && e.pointerType !== 'mouse') return;
-      this.layer.hide(this);
+      this.layer.leave(this);
     });
     on('pointerdown', (e) => this.onPointerDown(e));
     on('pointermove', (e) => {
