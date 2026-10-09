@@ -44,10 +44,12 @@ impl World {
         }
     }
 
-    /// Structures that need power (Tesla Coil, AA, superweapons) shut down on low power.
+    /// Structures that need power (Tesla Coil, AA, superweapons) shut down on
+    /// low power, and so does a structure its owner switched off with the
+    /// power down button (repair.rs; OpenRA's `disabled` condition).
     pub fn is_powered_down(&self, i: usize) -> bool {
         let a = &self.actors[i];
-        self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power()
+        a.powered_off || (self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power())
     }
 
     // ---- Target acquisition ------------------------------------------------
@@ -660,15 +662,20 @@ impl World {
             return;
         }
         let tick = self.tick;
+        let attacker = self.observer.source;
         let a = &mut self.actors[u];
-        // One "under attack" event per burst of fire on a structure (sound_events.rs).
-        let report = a.kind == Kind::Building && (a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS);
+        // One "under attack" event per burst of fire on a structure, and one
+        // per burst of another player's fire on a unit (sound_events.rs).
+        let quiet = a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS;
+        let report = a.kind == Kind::Building && quiet;
+        let report_unit = a.is_unit() && quiet && attacker.is_some_and(|o| o != a.owner);
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
-        if report {
+        if report || report_unit {
             let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
-            self.sound.push(SoundEventKind::BuildingDamaged, ty, x, y, owner, 0);
+            let kind = if report { SoundEventKind::BuildingDamaged } else { SoundEventKind::UnitDamaged };
+            self.sound.push(kind, ty, x, y, owner, 0);
         }
         self.take_cover(u, types);
         if self.actors[u].hp <= 0 {

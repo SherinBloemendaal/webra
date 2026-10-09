@@ -103,6 +103,14 @@ fn script(w: &World, p: u8) -> Vec<Order> {
             out.push(Order::Sell { player: p, building: w.make_ref(b) });
         }
     }
+    // Sidebar buttons (repair.rs, beacons.rs): repair the Construction Yard
+    // once it is damaged, switch a structure off and on, mark a spot.
+    if t == 900 {
+        if let Some(b) = own_building(w, p, "FACT") {
+            out.push(Order::RepairBuilding { player: p, building: w.make_ref(b) });
+        }
+        out.push(Order::PlaceBeacon { player: p, x: cell_center(10), y: cell_center(12) });
+    }
     // Orders for things that do not exist are harmless and recorded too.
     if t == 333 {
         out.push(Order::Move { player: p, ids: vec![0xDEAD_BEEF], x: 5, y: 5, attack_move: false });
@@ -162,10 +170,12 @@ fn replay_of_recorded_frames_reproduces_every_tick() {
             Order::Move { .. } => "move",
             Order::Attack { .. } => "attack",
             Order::Sell { .. } => "sell",
+            Order::RepairBuilding { .. } => "repair",
+            Order::PlaceBeacon { .. } => "beacon",
             _ => "other",
         })
         .collect();
-    for k in ["place", "produce", "move", "attack", "sell"] {
+    for k in ["place", "produce", "move", "attack", "sell", "repair", "beacon"] {
         assert!(kinds.contains(&k), "script issued a {k} order");
     }
     let mut g = Game::wrap(replay_world());

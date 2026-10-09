@@ -70,7 +70,7 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
     };
     let player = r.range(0, 2) as u8;
     let keys = ["", "spyplane", "paratroopers", "parabombs", "NukePower", "chronoshift", "IRONCURTAIN", "GpsPower", "x\u{0}y"];
-    match r.range(0, 19) {
+    match r.range(0, 22) {
         0 => Order::Move { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r), attack_move: r.chance(50) },
         1 => Order::Smart { player, ids: ids(r), x: nasty_int(r), y: nasty_int(r) },
         2 => Order::Attack { player, ids: ids(r), target: id(r) },
@@ -97,6 +97,10 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
         15 => Order::DevFlag { player, flag: crate::debug::DevFlag::ALL[r.range(0, 6) as usize], on: r.chance(50) },
         16 => Order::DevCash { player },
         17 => Order::DevExperience { player, ids: ids(r) },
+        // Sidebar buttons (repair.rs, beacons.rs).
+        18 => Order::RepairBuilding { player, building: id(r) },
+        19 => Order::PowerDown { player, building: id(r) },
+        20 => Order::PlaceBeacon { player, x: nasty_int(r), y: nasty_int(r) },
         _ => Order::DevKill { player, ids: ids(r) },
     }
 }

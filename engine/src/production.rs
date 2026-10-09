@@ -76,7 +76,8 @@ impl World {
             p.power_use = 0;
         }
         for a in &self.actors {
-            if !a.alive || a.kind != Kind::Building {
+            // Switched off with the power down button: no drain (OpenRA PowerMultiplier@POWERDOWN: 0).
+            if !a.alive || a.kind != Kind::Building || a.powered_off {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];

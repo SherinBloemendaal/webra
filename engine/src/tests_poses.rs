@@ -50,7 +50,7 @@ fn pose_ids_pack_slot_pose_and_age_exactly() {
     // Every sprite slot of the built-in rules (actors, specials) fits below the stride.
     let w = world();
     let ids = SpriteIds::new(w.rules.actors.len());
-    assert!((ids.veterancy_base as u32 + 8) < POSE_STRIDE);
+    assert!((ids.decorations_base as u32 + 8) < POSE_STRIDE);
 }
 
 #[test]

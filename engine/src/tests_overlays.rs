@@ -202,7 +202,12 @@ fn animated_building_layers_follow_the_overlay_table_and_stop_on_low_power() {
     w.players[0].power_use = 500;
     assert!(w.players[0].low_power());
     assert_eq!(count(&w, head), 0);
-    assert_eq!(count(&w, 4321.0), 1, "the static frame instead");
+    // The static frame instead, and once more in black over it: a disabled
+    // structure is darkened (OpenRA WithColoredOverlay@IDISABLE, render.rs).
+    let still: Vec<Vec<f32>> = render(&w, &[]).0.chunks(SPRITE_FLOATS).filter(|c| c[3] == 4321.0).map(|c| c.to_vec()).collect();
+    assert_eq!(still.len(), 2, "the static frame instead");
+    assert_eq!((still[0][7], still[1][7]), (0.0, -1.0));
+    assert!((still[1][6] - crate::render::DISABLED_SHADE).abs() < 1e-6);
 
     // Buildings without an entry get nothing.
     w.players[0].power_use = 0;

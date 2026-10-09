@@ -127,6 +127,11 @@ impl World {
         self.type_listed(b, &self.heli_air(i).rearm_actors)
     }
 
+    /// Whether helicopter `i` is repaired at structure `b` (the repair cursor, repair.rs).
+    pub(crate) fn heli_repairs_at(&self, i: usize, b: usize) -> bool {
+        self.is_heli(i) && self.is_repair_depot_for(i, b)
+    }
+
     fn is_repair_depot_for(&self, i: usize, b: usize) -> bool {
         self.type_listed(b, &self.heli_air(i).repair_actors)
             && self.rules.actors[self.actors[b].ty as usize].building.as_ref().is_some_and(|bi| bi.repairs.is_some())

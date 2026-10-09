@@ -255,8 +255,7 @@ impl World {
         if still == 0 {
             return;
         }
-        let info = &self.rules.actors[a.ty as usize];
-        let stopped = info.requires_power && self.players[a.owner as usize].low_power();
+        let stopped = self.is_powered_down(i);
         let sprite = if stopped { still as f32 } else { (a.ty * 2 + 1) as f32 };
         sink.sprite(out, SpriteRec::at(x, y, 96.0).look(sprite, a.owner as f32, 1.0, alpha, flash));
     }

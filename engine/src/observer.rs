@@ -183,14 +183,14 @@ impl World {
     /// pips); never shown in the spectator view.
     #[inline]
     pub(crate) fn render_owns(&self, owner: u8, player: u8) -> bool {
-        !self.render_all && owner == player
+        !self.render_all && !self.render_combined && owner == player
     }
 
     /// Render paths: decorations for the owner and allies (mines, cloak
     /// shimmer, nuke beacons, cargo pips); all shown in the spectator view.
     #[inline]
     pub(crate) fn render_allied(&self, owner: u8, player: u8) -> bool {
-        self.render_all || self.are_allies(owner, player)
+        self.render_all || self.render_combined || self.are_allies(owner, player)
     }
 
     /// Fog bytes of the spectator view: every cell visible.
