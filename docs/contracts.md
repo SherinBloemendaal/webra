@@ -659,9 +659,11 @@ everything on `webra.sherin.dev`:
   only to accounts that may play while the site setting `gameRequiresAccount`
   is on (accounts API, section 7.1): page loads without access go to
   `/account/?returnTo=<path>`, other requests get 401 or 403
-- `/lib/*`: the game modules the website's account and admin pages import,
-  copied from `apps/game` with the same layout (`tools/shared-modules.mjs`
-  lists them from the website's `/lib/` imports); public
+- `/lib/*`: the game modules and stylesheets the website's account and admin
+  pages load, copied from `apps/game` with the same layout
+  (`tools/shared-modules.mjs` lists them from the website's `/lib/` imports
+  and links); public. No website page, script or stylesheet loads from
+  `/play` (the build fails otherwise)
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
 `wrangler.jsonc` runs the Worker first for `/api/*`, `/play` and `/play/*`;

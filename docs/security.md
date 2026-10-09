@@ -433,6 +433,27 @@ files. A game already running in a browser keeps running (it is in memory);
 when a later load is refused, the game offers to sign in again
 (`apps/game/js/account/gate.js`).
 
+**Path spellings.** `run_worker_first` matches the raw request path, so
+`/play` and `/play/*` catch the canonical spelling only. Workers Static
+Assets decodes a path before it looks a file up, and answers every
+non-canonical spelling (`/%70lay/js/main.js`, `/play%2Fjs/main.js`,
+`//play/`, `/pl%61y/`, double encoding) with a `307` to the canonical path,
+without a body; that path is gated. Its lookup is case-sensitive (`/PLAY/`
+is a 404), and dot segments are resolved before routing, so `/x/../play/`
+reaches the gate. No pattern list could name every encoding, so the Worker
+does not rely on it: whatever reaches it is matched after decoding
+(repeatedly), backslashes as slashes, empty and dot segments resolved,
+`;params` and trailing dots ignored and case folded
+(`normalizedSegments` in `apps/server/src/playgate.js`), so any spelling of
+a game path that reaches the Worker is gated. The end-to-end smoke test
+sends 39 spellings (percent-encoded letters and slashes, double encoding,
+double slashes, dot segments, case, trailing dots and semicolons,
+backslashes, overlong UTF-8, `/play/..%2f`) with GET, HEAD, OPTIONS and
+POST, with and without `Range` and as page loads, follows every redirect
+without cookies, and checks that none returns a game file. Cloudflare's
+edge URL normalization, when on for the zone, only makes more requests
+canonical before they arrive.
+
 **Caching.** Gated responses are `Cache-Control: private, max-age=0,
 must-revalidate` with `Vary: Cookie`: browsers may keep a copy and revalidate
 it through the gate, shared caches and the Cloudflare edge never store them
@@ -449,11 +470,16 @@ response, served, redirected or refused, plus
 
 **What stays public.** The website pages, `/release-notes.json`,
 `/version.json`, the API as documented, and `/lib/`: the modules the account
-and admin pages import (the account client, the settings registry and the map
-editor helpers it uses, the protocol checks), copied there by the build so a
+and admin pages load (the account client, the settings registry and the map
+editor helpers it uses, the protocol checks, the shared controls
+`js/ui/controls.js` and `css/controls.css`), copied there by the build so a
 signed-out visitor can sign in. `tools/shared-modules.mjs` computes that list
-from the website's imports and fails the build when a website script imports
-`/play/` directly; nothing that draws or runs the game is in it. The home
+from the website's script imports, stylesheet imports and page links
+(`<link>`, `<script>`, images) and fails the build when any website page,
+script or stylesheet loads from `/play` in any spelling; nothing that draws
+or runs the game is in it. The one exception is deliberate: the home page
+imports the game's sprite module from `/play/` for its unit gallery, and
+only after `/api/auth/me` says the visitor may play. The home
 page's unit gallery draws with the game's sprite code, so signed-out visitors
 see a note instead of the art. The game is GPL software in a public
 repository: the gate controls who gets this site's running copy, not the

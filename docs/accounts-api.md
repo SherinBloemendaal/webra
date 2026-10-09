@@ -830,11 +830,19 @@ never works without its own session cookie. The IP ban list is read only on
 the D1 path (one query), so a new IP ban has the same 10 minute bound.
 
 **What stays public:** the website, `/api/*` as documented,
-`/release-notes.json`, `/version.json`, and `/lib/`: the modules the account
-and admin pages import (the account client, the settings registry with the
-map editor helpers it uses, and the protocol checks; the exact list is
-computed by `tools/shared-modules.mjs` at build time). Nothing that draws or
-runs the game is under `/lib/`.
+`/release-notes.json`, `/version.json`, and `/lib/`: the modules and
+stylesheets the account and admin pages load (the account client, the
+settings registry with the map editor helpers it uses, the protocol checks
+and the shared controls; the exact list is computed by
+`tools/shared-modules.mjs` at build time). Nothing that draws or runs the
+game is under `/lib/`.
+
+**Path spellings.** The gate matches the path after percent-decoding,
+backslashes as slashes, dot and empty segments, `;params`, trailing dots and
+case are normalized, so `/%70lay/`, `//play/`, `/PLAY/` or `/x/../play/`
+are gated when they reach the Worker. Static Assets answers non-canonical
+spellings that do not reach it with a redirect to the canonical, gated path
+(docs/security.md, "The play gate").
 
 ### 7.2 Online sessions and map uploads
 
