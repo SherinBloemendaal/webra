@@ -11,7 +11,9 @@
 // password-protected lobby with two signed-in humans, an AI and a spectator,
 // start, the lockstep relay, hash checks, desync reporting, a spectator
 // refused for sending orders, a player reconnecting with its rejoin key
-// (order log, sync, resume), leaving, and the stall drop.
+// (order log, sync, resume), leaving, and the stall drop. The play gate:
+// anonymous and pending visitors get no game files, an active account gets
+// them with a play pass, signing out clears it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { encodeClient, parseServerMessage, PROTOCOL_VERSION } from '@webra/protocol';
@@ -118,6 +120,99 @@ class Client {
   }
 }
 
+/** The play gate (src/playgate.js): who gets /play, the pass, sign-out. */
+async function playGate(ADMIN, HOST) {
+  const site = await api('/api/site');
+  assert.equal(site.body.gameRequiresAccount, true, 'the game needs an account by default');
+  const NAV = { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', Accept: 'text/html' };
+  const SUB = { 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', Accept: '*/*' };
+  const WASM = '/play/pkg/webra_sim_bg.wasm';
+  const get = (path, headers, cookie = null) => fetch(BASE + path, { redirect: 'manual', headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } });
+  const passOf = (res) => res.headers.getSetCookie().find((c) => /^webra_play=/.test(c)) ?? null;
+  const securityHeaders = (res, what) => {
+    assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'self'/, `${what}: CSP`);
+    assert.equal(res.headers.get('cross-origin-opener-policy'), 'same-origin', `${what}: COOP`);
+    assert.equal(res.headers.get('cross-origin-embedder-policy'), 'require-corp', `${what}: COEP`);
+    assert.equal(res.headers.get('cross-origin-resource-policy'), 'same-origin', `${what}: CORP`);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff', `${what}: nosniff`);
+  };
+
+  // Anonymous: page loads go to sign in, files are refused without content.
+  for (const [path, target] of [
+    ['/play/', '/play/'],
+    ['/play', '/play'],
+    ['/play/editor/', '/play/editor/'],
+    ['/play/?join=abc', '/play/?join=abc'],
+  ]) {
+    const r = await get(path, NAV);
+    assert.equal(r.status, 302, path);
+    assert.equal(r.headers.get('location'), `/account/?returnTo=${encodeURIComponent(target)}`, path);
+    securityHeaders(r, `redirect ${path}`);
+  }
+  for (const path of [WASM, '/play/js/main.js', '/play/js/sim/worker.js', '/play/protocol/accounts.js', '/play/index.html']) {
+    const r = await get(path, SUB);
+    assert.equal(r.status, 401, path);
+    const body = await r.json();
+    assert.equal(body.error.code, 'unauthenticated', path);
+    assert.equal(r.headers.get('cache-control'), 'no-store', path);
+    securityHeaders(r, `refusal ${path}`);
+  }
+  // The account page's modules stay public (/lib/), the gated copies do not.
+  const lib = await get('/lib/js/account/api.js', SUB);
+  assert.equal(lib.status, 200, 'the account client is public under /lib/');
+  assert.match(lib.headers.get('content-type') ?? '', /javascript/);
+  assert.equal((await get('/lib/js/main.js', SUB)).status, 404, 'nothing of the game itself under /lib/');
+
+  // A pending account: refused.
+  const PENDING = `Pending${RUN}`;
+  await signupAccount(PENDING);
+  const pending = await get(WASM, SUB, cookies.get(PENDING));
+  assert.equal(pending.status, 403);
+  assert.equal((await pending.json()).error.code, 'account_inactive');
+  assert.equal((await get('/play/', NAV, cookies.get(PENDING))).status, 302);
+
+  // An active account: the page and the engine, private, with a pass that then serves without the D1 check.
+  const host = cookies.get(HOST);
+  const page = await get('/play/', NAV, host);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type') ?? '', /text\/html/);
+  assert.match(page.headers.get('cache-control') ?? '', /^private\b/);
+  assert.match(page.headers.get('vary') ?? '', /Cookie/i);
+  securityHeaders(page, 'game page');
+  const passCookie = passOf(page);
+  assert.ok(passCookie, 'a play pass is set');
+  assert.match(passCookie, /HttpOnly/);
+  assert.match(passCookie, /SameSite=Lax/);
+  assert.match(passCookie, /Max-Age=600/);
+  const pass = passCookie.split(';')[0];
+  const wasm = await get(WASM, SUB, `${host}; ${pass}`);
+  assert.equal(wasm.status, 200);
+  const bytes = new Uint8Array(await wasm.arrayBuffer());
+  assert.deepEqual([...bytes.slice(0, 4)], [0x00, 0x61, 0x73, 0x6d], 'the engine itself');
+  assert.equal(passOf(wasm), null, 'no new pass while the old one is valid');
+  assert.match(wasm.headers.get('cache-control') ?? '', /^private\b/);
+  securityHeaders(wasm, 'engine');
+  const worker = await get('/play/js/sim/worker.js', SUB, `${host}; ${pass}`);
+  assert.equal(worker.status, 200);
+  await worker.arrayBuffer();
+  // The admin passes too.
+  assert.equal((await get(WASM, SUB, cookies.get(ADMIN))).status, 200);
+
+  // Signing out clears the pass; the old pass alone opens nothing.
+  const LEAVER = `Leaver${RUN}`;
+  const leaver = await signupAccount(LEAVER);
+  assert.equal((await api(`/api/admin/users/${leaver.id}/approve`, { method: 'POST', body: '{}' }, ADMIN)).status, 200);
+  const before = await get('/play/', NAV, cookies.get(LEAVER));
+  assert.equal(before.status, 200);
+  await before.arrayBuffer();
+  const leaverPass = passOf(before).split(';')[0];
+  const out = await fetch(`${BASE}/api/auth/logout`, { method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-CSRF': '1', Cookie: `${cookies.get(LEAVER)}; ${leaverPass}` } });
+  assert.equal(out.status, 204);
+  assert.match(passOf(out) ?? '', /^webra_play=;.*Max-Age=0/, 'sign-out clears the pass');
+  assert.equal((await get(WASM, SUB, leaverPass)).status, 401, 'a pass without its session opens nothing');
+  assert.equal((await get(WASM, SUB, `${cookies.get(LEAVER)}; ${leaverPass}`)).status, 401, 'nor with the signed-out session');
+}
+
 async function main() {
   // ---- Accounts ------------------------------------------------------------------
   const v = await api('/api/version');
@@ -158,6 +253,8 @@ async function main() {
     assert.equal(r.status, 200);
     assert.equal(r.body.user.canPlayOnline, true);
   }
+  await playGate(ADMIN, HOST);
+
   const stats = await api('/api/admin/stats', {}, ADMIN);
   assert.equal(stats.status, 200);
   assert.equal(stats.body.services.email, false);
