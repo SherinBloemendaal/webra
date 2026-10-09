@@ -223,7 +223,7 @@ fn defeat_and_game_end_are_recorded_with_a_final_sample() {
     run(&mut w, 30);
     assert!(w.players[1].defeated && w.has_won(0));
     let at = w.defeated_at(1).expect("defeat tick");
-    assert!(at > 30 && at <= 60 && at % 25 == 0, "checked once a second: {at}");
+    assert!(at > 30 && at <= 60 && at.is_multiple_of(25), "checked once a second: {at}");
     assert_eq!(w.observer.end_tick, Some(at));
     assert_eq!(w.defeated_at(0), None);
     assert!(w.observer.history.ticks.contains(&at), "a sample on the tick the game ended");
