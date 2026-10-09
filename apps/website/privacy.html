@@ -150,10 +150,11 @@
         <p>
           The one-click music install works the same way: WebRA's server reads the soundtrack out of the freeware Red Alert
           CD images on the Internet Archive (archive.org) and streams it to your browser. The Internet Archive sees a
-          request from WebRA's server, never your address, cookies or account. To keep downloads within a daily budget,
-          WebRA counts how much music each account downloaded per day under a keyed hash of the account id; the counters
-          are deleted after two days. If you install from a CD image yourself, the file is read in your browser and
-          never uploaded.
+          request from WebRA's server, never your address, cookies or account. To keep downloads within a budget, WebRA
+          counts how much music each account asked for per day, rounded up to whole megabytes, under a keyed hash of the
+          account id, and the music requests per network address per hour, under a keyed hash of the address. Both
+          counters are deleted after two days. If you install from a CD image yourself, the file is read in your browser
+          and never uploaded.
         </p>
       </div>
     </main>

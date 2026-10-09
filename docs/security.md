@@ -217,8 +217,22 @@ cross-origin isolated page, so the headers changed:
   then `[CD2].ISO`) for exactly that window, so no other part of the discs
   can be read through it. Redirects are followed by hand (`redirect:
   'manual'`), once, and only to an https data node of the archive
-  (`ia<n>`/`dn<n>.<region>.archive.org`, default port, no query) with the
-  same item and file path. The answer must be `206` with `Content-Range` of
+  (`ia<n>`/`dn<n>.<region>.archive.org`, default port, no user info, query,
+  fragment or backslash) with the path `/<n>/items/<item>/<file>`, whose
+  item and file must equal the pinned ones after percent-decoding both
+  sides (a segment that does not decode, or decodes to `.`, `..`, a slash,
+  a backslash or a control character, is refused). The request after the
+  redirect goes to that node with the pinned, escaped item and file, never
+  the location's own path. Observed on 2026-10-09 with one `redirect:
+  'manual'` request per pinned URL (Location header only): the archive
+  answers `302` with the file name fully escaped, for example
+  `https://dn721505.ca.archive.org/0/items/command-conquer-red-alert_202309/Command%20%26%20Conquer%20Red%20Alert%20%5BCD1%5D.ISO`
+  (earlier probes also saw `https://ia601402.us.archive.org/20/items/...`);
+  a redirector that left `[`, `]` or `&` unescaped would match too. A
+  request whose upstream fails before anything streams (502) gives its
+  bytes back to the account's daily budget (`refundQuota`, never below
+  zero; the IP request still counts), and the game retries a 502 at most
+  once per click. The answer must be `206` with `Content-Range` of
   exactly the asked window and the pinned image size (a changed or other
   image is refused) and is streamed through cut to the asked length. Only
   `GET`, the game page (`X-WebRA-Content`, Origin, `Sec-Fetch-Site`), the
@@ -247,7 +261,10 @@ cross-origin isolated page, so the headers changed:
   those archives' indexes and the wanted entries, all bounds checked
   (`apps/game/js/content/iso.js`: directories capped at 1 MiB, depth at 8,
   records must stay inside their directory, files inside the image,
-  multi-extent files refused).
+  multi-extent files refused, records may not cross a sector). From any
+  archive or picked loose, a wanted file larger than its limit (32 MiB for
+  a music track, 8 MiB for anything else) is reported as too large from its
+  index size, before anything is read.
 
 ## Accounts and admin (2026-10-09)
 
