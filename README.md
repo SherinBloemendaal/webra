@@ -56,7 +56,8 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
 - [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
-- [x] **Command bar** at the bottom left like OpenRA: attack move, force move (Alt + click), force attack and attack ground (Ctrl + click), guard (D or G), scatter (X), stop, deploy and queued waypoints (Shift + click), plus OpenRA's **fire stances** per unit (attack anything, defend, return fire, hold fire; C cycles); idle units return fire, and the health of what your units attack or what is under the mouse is shown
+- [x] **Command bar** at the bottom left like OpenRA: attack move, force move (Alt + click), force attack and attack ground (Ctrl + click), guard (D), scatter (Ctrl + X), stop, deploy and queued waypoints (Shift + click), plus OpenRA's **fire stances** per unit (attack anything, defend, return fire, hold fire; Alt + A/S/D/F); idle units return fire, and the health of what your units attack or what is under the mouse is shown
+- [x] **Sidebar buttons and hotkeys like OpenRA's Red Alert**: beacon, sell, power down and repair modes in the top row with their own cursors; repairing structures (with allies, at OpenRA's rates), switching structures off to free power, beacons with radar pings; every OpenRA Red Alert hotkey (production slots F1..F12, cycling bases, harvesters and facilities, jump to the last radar event, status bars, mute, screenshot, quick save, interface hiding, music, team chat, observer statistics), rebindable
 - [x] OpenRA style overlays: selection corner brackets in the owner's colour, thin segmented health bars (green, yellow, red) for the selection, what it attacks and the unit under the mouse, optionally for all damaged or all units (Settings), rank chevrons next to the bar
 - [x] Animated buildings like Red Alert: turning radar dishes, chimney smoke, blinking beacons and runway lights, turbine fans, the construction yard's crane hook; they pause with the game and stand still for prefers-reduced-motion
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
@@ -228,7 +229,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 
 ## Controls
 
-Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, render resolution and low quality, fullscreen) and the full list of controls, where every hotkey can be rebound (saved in the browser). Hotkey defaults follow OpenRA's Red Alert set wherever WebRA has the feature.
+Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, health bars, relationship colours, render resolution and low quality, fullscreen) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
 
 | Input | Action |
 |-------|--------|
@@ -237,38 +238,73 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Shift + click / drag | Add to (or remove from) the selection |
 | Double click | Select all units of that type on screen |
 | Ctrl + double click | Select all units of that type on the map |
-| Right click | Clear the selection (or cancel placement / attack-move / targeting) |
+| Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
 | Factory selected + left click on the ground | Set its rally point |
-| A + left click | Attack-move |
-| S | Stop |
-| F (or D) | Deploy an MCV, pack up a Construction Yard, unload a transport, use a unit ability |
-| Z | Sell mode |
-| Q | Select all units on screen (press twice: on the whole map) |
-| W | Select units of the selected types on screen (press twice: on the whole map) |
-| Ctrl + 1..9, 0 (Cmd on macOS) | Store the selected units as a control group (a unit is in one group at a time) |
-| 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
-| Shift + 1..9, 0 | Add a control group to the selection |
-| E R T Y U I | Buildings, Defense, Infantry, Vehicles, Aircraft, Naval tab |
-| Tab / Shift + Tab | Next / previous sidebar tab |
-| Numpad 1..9 | Build that sidebar card (Shift: 5, Ctrl: cancel one) |
-| Numpad + / - / 0 | Next / previous sidebar tab |
-| Numpad . | Cancel building placement |
-| Arrow keys / screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
-| Alt + arrow keys | Jump to that map edge |
-| Middle mouse drag | Pan the camera |
+| Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Radar: left click or drag, right click | Move the camera there; order the selected units there |
-| Mouse wheel, ] and [, . | Zoom in, zoom out, reset zoom |
-| H or Space | Center on your base |
-| Home | Center on the selection |
-| F1..F4, Shift + F1..F4 | Jump to / save a camera bookmark |
-| Esc | Cancel placement, targeting, sell mode or attack-move; otherwise open the game menu |
-| F10 | Game menu |
-| P or Pause | Pause (single player; opens the menu) |
-| Alt + Enter | Fullscreen |
-| L | Show or hide unit paths: selected units draw their planned route (green move, orange attack-move, red chase, yellow ore truck); also in the game menu |
+| Mouse wheel | Zoom |
+| Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu |
 | Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
 | Sidebar right click | Cancel the last queued one (refunds what was paid) |
 | Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
+
+Game commands (OpenRA defaults):
+
+| Key | Action |
+|-----|--------|
+| Z / C / X | **Sell** / **Repair** / **Power down** mode (also the sidebar's top row). They stay on until right click, Esc or the key again. Repair: click your or an ally's damaged structure to start or stop repairing it (OpenRA's RA rates: 700 hit points every 24 ticks, 20% of its value for a full repair, faster with allies, it waits when you run out of money), or a damaged unit to send it to the repair depot. Power down: click your defences, radar, gap generator or superweapons to switch them off (they use no power and stop working, like on low power) or on again |
+| B | Place a **beacon** for your allies (shown for 30 seconds with a radar ping and a sound) |
+| H | Next Construction Yard (or MCV): select it and centre the camera |
+| Space | Jump to the last radar event (base or units under attack, a beacon, a superweapon) |
+| Home | Centre on the selection |
+| Q | Select all combat units on screen; again (nothing new on screen): on the whole map |
+| W | Add the units of the selected types on screen; again: on the whole map |
+| N | Next harvester |
+| Pause | Pause and resume (single player; replays: play and pause) |
+| , (comma) | Cycle the health bars: selected only, damaged, all |
+| M | Mute or unmute all sound |
+| Ctrl + P | Save a screenshot of the battlefield (PNG) |
+| Keypad Enter | Quick save (single player and skirmish) |
+| (none) | Relationship colours: you green, allies yellow, enemies red (also in Settings) |
+| \` (backquote), L, Alt + Enter | WebRA's own: debug menu, unit paths, fullscreen |
+
+Units, stances and production:
+
+| Key | Action |
+|-----|--------|
+| A | Attack-move (then click) |
+| S | Stop |
+| F | Deploy an MCV, pack up a Construction Yard, unload a transport, use a unit ability |
+| D | Guard (then click a unit) |
+| Ctrl + X | Scatter |
+| Alt + A / S / D / F | Fire stance: attack anything / defend / return fire / hold fire |
+| E R T Y U I | Buildings, Defense, Infantry, Vehicles, Aircraft, Naval tab (picks up a finished structure of that tab for placing) |
+| Tab | Select the facility of the current tab; again: centre the camera on it |
+| Shift + Tab | Next production facility (OpenRA: Ctrl + Tab) |
+| F1..F10, Ctrl + F1..F12 | Build the 1st..10th, 13th..24th item of the current tab (Shift: 5); F11 and F12 have no default |
+| Numpad 1..9, + / 0 / -, . | WebRA's own: build that card (Shift: 5, Ctrl: cancel one), next / previous tab, cancel placement |
+| (none) | Support powers 1..6 (bind them in Controls) |
+
+Camera, control groups, chat, music and spectators:
+
+| Key | Action |
+|-----|--------|
+| Arrow keys | Scroll the map |
+| Alt + arrow keys | Jump to that map edge |
+| ] and [, . | Zoom in, zoom out, reset zoom |
+| Alt + Q / W / E / R | Jump to camera bookmark 1..4 |
+| Alt + Shift + Q, Alt + Shift + W, Ctrl + E, Ctrl + R | Record camera bookmark 1..4 (OpenRA: Ctrl + Q/W/E/R) |
+| Shift + = | Hide the interface (again: show it); Alt + Shift + = also hides the cursor |
+| 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
+| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time) |
+| Ctrl + Shift + 1..9, 0 | Add the selection to a control group |
+| Shift + 1..9, 0 | Add a control group to the selection |
+| Alt + 1..9, 0 | Jump to a control group |
+| Enter / Shift + Enter | Online: team chat (all chat without a team mate) / all chat; in the chat line Shift + Tab switches, Tab completes a name |
+| Media keys | Stop, pause or resume, previous and next music track |
+| - / = | Spectators: all players' vision together / no shroud |
+| F1..F7 | Spectators: statistics off, basic, economy, production, support powers, combat, army (graphs from the panel menu) |
+| F9 / F10 | Replays: slow / regular speed (fast and maximum from the replay bar) |
 
 Every order type has its own cursor (move, attack, attack-move, harvest, dock, repair, rally, select, place).
 
@@ -297,16 +333,17 @@ Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over 
 
 Notes on browsers:
 
-- **Pause.** Single player and skirmish pause while the menu is open. Online games cannot pause: the lockstep server drops a player who holds the game up for more than 10 s (see [docs/contracts.md](docs/contracts.md)), so the menu opens over the running game and says so. A dropped player can rejoin (the tab reconnects by itself).
-- **Replays.** In the replay viewer, P plays and pauses; the bar at the bottom sets the speed and seeks.
-- **Ctrl/Cmd + number.** Some browsers switch tabs with these. WebRA holds them back while the game has focus wherever the browser lets a page do that. In fullscreen, Chromium browsers lock Esc, Tab, F1..F4 and the digit row to the game (Keyboard Lock API; hold Esc to leave fullscreen). On macOS, Ctrl + number works as well as Cmd + number.
+- **Pause.** Single player and skirmish pause while the menu is open, and Pause stops the game without it. Online games cannot pause: the lockstep server drops a player who holds the game up for more than 10 s (see [docs/contracts.md](docs/contracts.md)), so the menu opens over the running game and says so. A dropped player can rejoin (the tab reconnects by itself).
+- **Replays.** In the replay viewer, Pause plays and pauses; the bar at the bottom sets the speed (half to 8x) and seeks.
+- **Keys the browser keeps.** Ctrl + Tab switches tabs, so the next production facility is Shift + Tab; Ctrl + Q and Ctrl + W quit and close the tab, so bookmarks 1 and 2 are recorded with Alt + Shift + Q and Alt + Shift + W; F11 (full screen) and F12 (developer tools) have no game action (production slots 11 and 12, fast and maximum replay speed: bind other keys in Controls). WebRA holds back the other browser shortcuts it uses (Ctrl + P, Ctrl + R, Ctrl + E, F5, Ctrl + number) wherever the browser lets a page do that. In fullscreen, Chromium browsers lock Esc, Tab, the F keys and the digit row to the game (Keyboard Lock API; hold Esc to leave fullscreen). On macOS, Ctrl + number works as well as Cmd + number.
+- **Saved hotkeys.** Hotkeys changed in older versions keep working; the ones that were never changed (and keys an older version took away from an action when another one was rebound) move to OpenRA's defaults.
 - **Fullscreen.** F11 belongs to the browser, so the game uses Alt + Enter (or the button in the menu). Without the Fullscreen API the menu says so.
-- **Camera bookmarks.** OpenRA saves them with Ctrl + Q/W/E/R, but browsers keep Ctrl + Q and Ctrl + W (quit, close tab), so WebRA uses Shift + F1..F4 to save and F1..F4 to jump.
+- **Screenshots** are of the battlefield (without the sidebar).
 - **Leaving.** Closing or reloading the tab during a game asks first.
 
 ## Data
 
-[data/CATALOG.md](data/CATALOG.md) is the full Red Alert catalog extracted from OpenRA's `mods/ra` rules: 94 buildable actors and 77 weapons, with inheritance resolved and the tech tree solved per faction. The machine-readable versions are [data/actors.json](data/actors.json) and [data/weapons.json](data/weapons.json); the original YAML and the scripts that produced them (`parse.py`, `gen_md.py`) live in [data/source](data/source).
+[data/CATALOG.md](data/CATALOG.md) is the full Red Alert catalog extracted from OpenRA's `mods/ra` rules: 94 buildable actors and 77 weapons, with inheritance resolved and the tech tree solved per faction. The machine-readable versions are [data/actors.json](data/actors.json) and [data/weapons.json](data/weapons.json); the original YAML and the scripts that produced them (`parse.py`, `gen_md.py`) live in [data/source](data/source). OpenRA's Red Alert hotkey definitions and their descriptions are in [data/source/hotkeys](data/source/hotkeys); `python3 tools/gen_hotkeys.py` turns them into `apps/game/js/openra-hotkeys.js`.
 
 `tools/gen_rules.py` picks the actors needed for the current milestone and writes `engine/rules.json`, which is embedded in the WebAssembly module.
 

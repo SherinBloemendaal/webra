@@ -358,7 +358,7 @@ Client to server:
 | `options` | `options` (host only) | lobby |
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
-| `chat` | `text` (<= 200 chars) | any time |
+| `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
 | `start` | (host only, everyone ready) | lobby |
 | `orders` | `tick, orders: [...]` | in game, every tick (may be empty) |
 | `hash` | `tick, hash` | in game, every 25 ticks |
@@ -368,7 +368,9 @@ Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {sl
 options, map, hostId, spectators: [{client, name, account?}], maxSpectators}`
 (human slots and spectators carry `account: true` when the name comes from a
 signed-in account), `chat
-{from, text}`, `start {seed, options, map, players, delay}`, `frame {tick,
+{from, text, team?}` (with `team: true` the line went to the sender's team
+only: the players of its non-zero team, the sender alone without a team, the
+spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
 orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
@@ -463,7 +465,14 @@ all); `player_json` has `won`, `defeated` and `team`.
 
 Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
 `build_render`, `build_render_records` and `fog_ptr` renders the whole map with every actor live (no
-ghosts, no owner-only decorations); `Game.observer_stats()` returns `[{
+ghosts, no owner-only decorations); 254 (engine/src/combined.rs, OpenRA's "All
+players" view) renders what every non-neutral player sees together: cells any
+of them sees, structures any of them remembers, fog where any explored, gap
+generator shroud only where it hides a cell from all, cloaked and submerged
+units shown and no owner-only decorations (render only: slot 0's vision is
+swapped for the union during the call and restored). `Game.army_counts(player)`
+lists `[actor type index, count, ...]` of the units that count for the army
+value (the observer's army panel). `Game.observer_stats()` returns `[{
 player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
 buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
 for the non-neutral players (kills credited to the owner of the weapon that
@@ -644,6 +653,59 @@ on an actor is `attack`, which may target own and allied actors. Wasm:
 actor and the targets of the selection get health bars). Target class 256 is
 `ground` (terrain for force-fire; no actor has it). Return fire uses the shooter that every shot
 carries for veterancy (`Shot.source`), so shells in flight count too.
+
+Sidebar buttons (engine/src/repair.rs, engine/src/beacons.rs,
+apps/game/js/input.js modes, js/sidebar.js top row): orders
+`{"o": "repair_building", player, building}` (start or stop repairing an own
+or allied structure with `building.repairable`; starting needs it damaged; at
+most `bonuses.len() - 1` repairers), `{"o": "power_down", player, building}`
+(switch an own structure with `building.power_down` off or on) and
+`{"o": "place_beacon", player, x, y}` (world units, inside the map; the
+beacon sits on the centre of that cell and replaces the player's previous
+one). Repair follows OpenRA's RepairableBuilding: a step of `min(step,
+missing hp)` every `interval + 1` ticks, each repairing player pays
+`max(1, hp * percent * value / (max_hp * 100))` (`building.value`: OpenRA
+GetSellValue, CustomSellValue or the cost), the step is multiplied by
+`bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
+insufficient funds event per player, repairers who are no longer allied or
+playing drop out, a full structure ends the repair. Powered off, a structure
+adds nothing to the power drain and `is_powered_down` is true (defences hold
+fire, radar, gap generator and detection stop, support powers stop
+charging, the sprite stands still and is darkened like low power). Both are
+in the state hash; beacons are not (they change nothing) and last
+`player.beacon_duration` ticks (OpenRA PlaceBeacon.Duration, 750), shown to
+the owner and allies (rects over the shroud, not in the spectator views).
+Rules: `building.repairable {percent, interval, step, bonuses}` or null,
+`building.power_down`, `building.value`, `base_building` (actor),
+`player.beacon_duration`; `Rules::validate` bounds them (bonuses 1..9 values).
+`rules_json` actors have `repairable` and `powerDown`, players `team` and
+`neutral`. Wasm: `repair_building`, `power_down`, `place_beacon(player, x,
+y)` (pixels), `repair_cursor(player, id)` (0 nothing, 1 toggle repairing that
+structure, 2 an own damaged unit goes to its depot), `repair_unit_target(player,
+id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`,
+`beacons(player)` (`[x, y, owner, ticks left, ...]`), and for the hotkeys
+`base_actors(player)` (Construction Yards and MCVs, else the first
+structure), `harvesters(player)`, `production_buildings(player)` (no
+Construction Yards, by first production type) and `queue_producer(player,
+queue)` (the structure units of that tab come out of, or NONE). `actor_json`
+has `repairing`, `repairers`, `poweredOff` and `canPowerDown`. Audio events
+(engine/src/sound_events.rs): 11 `RepairStarted` (owner: the repairing
+player, b: the structure's owner; the "Repairing" announcement), 12
+`PowerToggled` (b: 1 off, 0 on; OpenRA's power sounds), 13 `BeaconPlaced`
+(b: ticks it stays; a sound and radar ping for allies), 14 `UnitDamaged` (a
+unit hit by another player after a quiet spell; a radar ping like OpenRA's
+DamageNotifier@Unit).
+
+Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
+(`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
+data/source/hotkeys; CI checks it is up to date), each action naming its
+OpenRA hotkey (`openra`), except `BROWSER_SUBSTITUTES` (Ctrl+Tab, Ctrl+Q,
+Ctrl+W, F11, F12). Saved overrides (`settings.hotkeys`, synced with the
+account) carry `"webra:keymap": ["2"]`; overrides without it come from WebRA
+0.7 and are migrated on reading (`migrateOverrides`: overrides equal to the
+old defaults, or old defaults that only lost keys to other actions' user
+bindings, are dropped; everything else stays). Radar pings and the "last
+event" (Space) are client side (js/radarpings.js) from the audio events.
 
 ## 6. Deployment
 
@@ -920,10 +982,10 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_paths`, `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `beacons`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre) | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

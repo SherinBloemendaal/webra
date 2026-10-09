@@ -674,6 +674,7 @@ Serialized size at most 32 KiB.
     "pixelRatioCap": 2,            // number 0.5..3 (resolution cap)
     "lowQuality": false,
     "healthBars": "off",           // "off" | "damaged" | "all"
+    "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] }
   },
