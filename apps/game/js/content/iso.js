@@ -45,11 +45,6 @@ export function isoName(raw) {
   return raw.replace(/;\d+$/, '').replace(/\.$/, '');
 }
 
-/** Whether the first bytes of a file look like an ISO 9660 image (needs 32 KiB + 6 bytes). */
-export function looksLikeIso(head) {
-  return head.length >= PVD_OFFSET + 6 && head[PVD_OFFSET] === 1 && String.fromCharCode(...head.subarray(PVD_OFFSET + 1, PVD_OFFSET + 6)) === 'CD001';
-}
-
 /** Parse the directory records in `bytes`: [{ name, extent, size, dir }]. */
 export function parseDirectory(bytes, blockSize) {
   const out = [];

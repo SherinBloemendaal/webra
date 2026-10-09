@@ -38,6 +38,17 @@ export const ARCHIVES = [...SOUND_ARCHIVES, 'conquer.mix', 'hires.mix', 'hires1.
   (v, i, all) => all.indexOf(v) === i,
 );
 
+/**
+ * The largest file of each kind taken from an archive or picked loose: an
+ * index or a file claiming more is reported as too large instead of being
+ * read into memory. Generous for the real files (music tracks are a few
+ * megabytes; scores.mix itself, 61 MB, is opened as an archive, not read).
+ */
+export const MAX_FILE_BYTES = Object.freeze({ music: 32 * 1024 * 1024, other: 8 * 1024 * 1024 });
+
+/** The size limit for a wanted file (MAX_FILE_BYTES). */
+export const maxBytesOf = (name) => (MUSIC_FILES.has(name) ? MAX_FILE_BYTES.music : MAX_FILE_BYTES.other);
+
 /** Which settings group a stored file belongs to (for the install report). */
 export function categoryOf(name) {
   if (kindOf(name) === 'graphics') return 'graphics';
@@ -77,6 +88,13 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
   const found = new Map();
   const report = { found, archives: [], skipped: [], errors: [] };
 
+  /** Whether `size` is within the limit for `name`; reports it otherwise. */
+  const fits = (name, size, from) => {
+    if (size <= maxBytesOf(name)) return true;
+    report.errors.push(`${name} (in ${from}): too large (${size} bytes, at most ${maxBytesOf(name)})`);
+    return false;
+  };
+
   const take = (name, bytes, from) => {
     if (found.has(name) || !wanted.has(name)) return;
     const problem = check(name, bytes);
@@ -101,6 +119,7 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
     report.archives.push(label);
     for (const name of wanted) {
       if (found.has(name) || !archive.has(name)) continue;
+      if (!fits(name, archive.sizeOf(name), label)) continue;
       take(name, await archive.read(name), label);
     }
     if (depth >= MAX_DEPTH) return;
@@ -149,7 +168,7 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
       onProgress(`Reading ${name}`);
       await scanMix(blobSource(file), name, 0);
     } else if (wanted.has(name)) {
-      take(name, new Uint8Array(await file.arrayBuffer()), name);
+      if (fits(name, file.size, name)) take(name, new Uint8Array(await file.arrayBuffer()), name);
     } else {
       report.skipped.push(name);
     }

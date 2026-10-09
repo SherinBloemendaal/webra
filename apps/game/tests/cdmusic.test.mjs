@@ -7,9 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { IsoImage, IsoError, isoName, looksLikeIso, SECTOR } from '../js/content/iso.js';
-import { blobSource, bytesSource, MixArchive } from '../js/audio/mix.js';
-import { installContent } from '../js/content/install.js';
+import { IsoImage, IsoError, isoName, SECTOR } from '../js/content/iso.js';
+import { blobSource, bytesSource, MixArchive, mixHash } from '../js/audio/mix.js';
+import { installContent, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore } from '../js/content/store.js';
 import { MUSIC } from '../js/audio/catalog.js';
 import {
@@ -50,8 +50,6 @@ test('iso: names, directories over several sectors, subdirectories, any case', a
   const main = new Uint8Array(5000).map((_, i) => i & 255);
   const red = new Uint8Array(300).fill(9);
   const img = buildIso({ 'MAIN.MIX': main, 'INSTALL/REDALERT.MIX': red }, { fillDirs: 80 });
-  assert.ok(looksLikeIso(img.subarray(0, 40000)));
-  assert.ok(!looksLikeIso(new Uint8Array(40000)));
   const iso = await IsoImage.open(bytesSource(img));
   assert.ok(iso.root.size > SECTOR, 'the root spans more than one sector');
   const root = await iso.list(iso.root);
@@ -121,6 +119,42 @@ test('install: an image without Red Alert archives says so', async () => {
   assert.match(r2.errors[0], /junk\.iso: not a CD image/);
 });
 
+test('install: an entry or a loose file larger than its limit is reported, never read', async () => {
+  const claimed = MAX_FILE_BYTES.music + 1;
+  // A Red Alert MIX index (flags, count, data size, one entry) claiming a huge track; the data is never there.
+  const head = new Uint8Array(4 + 6 + 12);
+  const dv = new DataView(head.buffer);
+  dv.setUint16(4, 1, true);
+  dv.setUint32(6, claimed, true);
+  dv.setUint32(10, mixHash(MUSIC[0].file), true);
+  dv.setUint32(14, 0, true);
+  dv.setUint32(18, claimed, true);
+  const reads = [];
+  const mix = {
+    name: 'scores.mix',
+    size: head.length + claimed,
+    slice(a, b) {
+      reads.push(b - a);
+      assert.ok(b - a <= 64 * 1024, `a read of ${b - a} bytes`);
+      return { arrayBuffer: async () => head.slice(a, b).buffer };
+    },
+  };
+  const loose = {
+    name: MUSIC[1].file,
+    size: claimed,
+    arrayBuffer() {
+      throw new Error('an oversized loose file must not be read');
+    },
+  };
+  const r = await installContent([mix, loose], new MemoryStore());
+  assert.equal(r.added, 0);
+  assert.ok(r.errors.some((e) => e.startsWith(`${MUSIC[0].file} (in scores.mix): too large (${claimed} bytes`)), r.errors.join('; '));
+  assert.ok(r.errors.some((e) => e.startsWith(`${MUSIC[1].file} (in ${MUSIC[1].file}): too large`)), r.errors.join('; '));
+  assert.equal(r.errors.filter((e) => /too large/.test(e)).length, 2);
+  assert.ok(reads.every((n) => n <= 64));
+  assert.ok(MAX_FILE_BYTES.other < MAX_FILE_BYTES.music);
+});
+
 // ---- The relay download --------------------------------------------------------------
 
 /** Synthetic stand-in for scores.mix (a pattern, not the real file) and its hash. */
@@ -184,6 +218,21 @@ test('music download: a failure keeps the finished pieces; the next try asks onl
     Array.from({ length: PIECES - 3 }, (_, i) => i + 3),
   );
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()).subarray(0, 4096 * 3), FAKE.subarray(0, 4096 * 3));
+});
+
+test('music download: a 502 from the relay is retried once per click, not per piece', async () => {
+  const calls = [];
+  const down = relay(() => new Response(JSON.stringify({ error: { code: 'unavailable', message: 'archive down' } }), { status: 502 }), calls);
+  await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: down, expected: FAKE_SHA }), /archive down/);
+  assert.equal(calls.length, 2, 'the first try and one retry');
+  // One transient 502 on one piece: the download still completes, and a second one ends it.
+  let bad = 2;
+  const calls2 = [];
+  const twice = relay((piece) => (piece === 4 && bad-- > 0 ? new Response('{}', { status: 502 }) : null), calls2);
+  await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: twice, expected: FAKE_SHA }), /502/);
+  let once = 1;
+  const file = await downloadScores({ store: new MemoryStore(), fetchImpl: relay((piece) => (piece === 4 && once-- > 0 ? new Response('{}', { status: 502 }) : null)), expected: FAKE_SHA });
+  assert.equal(file.size, SCORES_BYTES);
 });
 
 test('music download: a dropped connection is retried; a refusal is not', async () => {

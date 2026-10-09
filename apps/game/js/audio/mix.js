@@ -144,6 +144,11 @@ export class MixArchive {
     return this.entries.has(mixHash(name));
   }
 
+  /** The size in bytes of a named entry (from the index, nothing is read), or null. */
+  sizeOf(name) {
+    return this.entries.get(mixHash(name))?.size ?? null;
+  }
+
   /** The bytes of a named entry, or null. */
   async read(name) {
     const e = this.entries.get(mixHash(name));

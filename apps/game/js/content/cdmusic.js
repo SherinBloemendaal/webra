@@ -27,7 +27,7 @@ export const SCORES_SHA256 = '313ef2e4e9dfe33d0d282d078d9c545fe1aff4748375f062d2
 export const SCORES_PIECE = 8 * 1024 * 1024;
 /** The download's name among the store's unfinished downloads. */
 export const SCORES_PARTIAL = 'ra-scores';
-/** Tries per piece when the network or the archive fails (not when the server refuses). */
+/** Tries per piece when the network fails (not when the server refuses; server errors: UNAVAILABLE_RETRIES). */
 export const PIECE_TRIES = 3;
 
 /**
@@ -71,6 +71,12 @@ export class CancelledError extends Error {
 /** A refusal from the server that trying again will not change (401, 403, 416, 429). */
 class Refused extends Error {}
 
+/** The relay could not reach the archive (5xx): worth one more try per download at most. */
+class Unavailable extends Error {}
+
+/** Server errors retried per download (a click), in all: each costs the archive a round of requests. */
+export const UNAVAILABLE_RETRIES = 1;
+
 async function fetchPiece(i, { fetchImpl, signal, onBytes }) {
   const start = i * SCORES_PIECE;
   const end = start + pieceLength(i) - 1;
@@ -83,7 +89,8 @@ async function fetchPiece(i, { fetchImpl, signal, onBytes }) {
   }
   if (res.status !== 206 || !res.body) {
     const problem = await relayProblem(res);
-    throw res.status >= 400 && res.status < 500 ? new Refused(problem.message) : problem;
+    if (res.status >= 400 && res.status < 500) throw new Refused(problem.message);
+    throw res.status >= 500 ? new Unavailable(problem.message) : problem;
   }
   if (res.headers.get('Content-Range') !== `bytes ${start}-${end}/${SCORES_BYTES}`) {
     await res.body.cancel().catch(() => {});
@@ -151,6 +158,7 @@ export async function downloadScores({
     received += n;
     onProgress(received, SCORES_BYTES);
   };
+  let unavailableLeft = UNAVAILABLE_RETRIES;
   for (let i = 0; i < PIECES; i++) {
     if (have.has(i)) continue;
     let piece = null;
@@ -160,6 +168,7 @@ export async function downloadScores({
         piece = await fetchPiece(i, { fetchImpl, signal, onBytes });
       } catch (err) {
         if (err instanceof CancelledError || err instanceof Refused || attempt >= PIECE_TRIES) throw err;
+        if (err instanceof Unavailable && unavailableLeft-- <= 0) throw err;
       }
     }
     out.set(piece, i * SCORES_PIECE);
