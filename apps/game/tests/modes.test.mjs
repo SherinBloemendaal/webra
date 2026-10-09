@@ -416,8 +416,11 @@ test('game menu: settings have help, and Esc closes an open tip before the menu'
     const keys = root.querySelectorAll('.info-btn').map((b) => b.dataset.help);
     assert.deepEqual(keys, MENU_HELP_KEYS.map((k) => `settings.${k}`));
     for (const row of root.querySelectorAll('.game-menu-row')) {
+      const help = row.querySelector('.info-btn');
+      if (!help) continue; // health bars: its choice carries a visible note instead
       const control = row.querySelector('input, select, button:not(.info-btn)');
-      assert.ok(control.getAttribute('aria-describedby'), textOf(row));
+      assert.ok(control.getAttribute('aria-describedby').split(' ').includes(help.getAttribute('aria-describedby')), textOf(row));
+      assert.equal(row.querySelector('.ui-label').textContent.length > 0, true);
     }
     const onKey = listeners.find(([t]) => t === 'keydown')[1];
     const esc = () => onKey(Object.assign(new FakeEvent('keydown', { key: 'Escape' }), { stopImmediatePropagation() {}, target: doc.body }));

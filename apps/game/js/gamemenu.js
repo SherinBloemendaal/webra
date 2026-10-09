@@ -13,21 +13,22 @@
 import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
+import { segmented, slider as createSlider, toggle as createToggle } from './ui/controls.js';
 import { closeOpenTip, infoTip } from './infotip.js';
 
 /** Settings of the Settings page with a "?" (tests check each one has help in js/help.js). */
-export const MENU_HELP_KEYS = ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'pixelRatioCap', 'lowQuality', 'fullscreen'];
+export const MENU_HELP_KEYS = ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'pixelRatioCap', 'lowQuality', 'fullscreen'];
 
-let rowId = 0;
-
-/** The name cell of a settings row: a label for `control` and its "?" help. */
-function settingName(key, text, control) {
-  const name = el('span', 'game-menu-name');
-  const label = el('label', null, text);
-  if (!control.id) control.id = `game-menu-${++rowId}`;
-  label.htmlFor = control.id;
-  name.append(label, infoTip(`settings.${key}`, { label: text, describes: control }).root);
-  return name;
+/**
+ * Put the "?" help of setting `key` next to the row's label: the label and
+ * the button share the first cell (css/help.css), the tip describes `control`.
+ */
+function withHelp(row, key, control) {
+  const label = row.querySelector('.ui-label');
+  const name = el('span', 'game-menu-name ui-label-help');
+  label.replaceWith(name);
+  name.append(label, infoTip(`settings.${key}`, { label: label.textContent, describes: control }).root);
+  return row;
 }
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
@@ -319,50 +320,49 @@ export class GameMenu {
     c.append(el('h1', null, 'Settings'));
     const slider = (key, text) => {
       const spec = SCHEMA[key];
-      const row = el('div', 'game-menu-row');
-      const input = el('input', 'game-menu-range');
-      input.type = 'range';
-      input.min = String(spec.min);
-      input.max = String(spec.max);
-      input.step = '0.25';
-      input.value = String(s.get(key));
-      const out = el('output', 'game-menu-value', speedLabel(s.get(key)));
-      input.addEventListener('input', () => {
-        const v = s.set(key, Number(input.value));
-        out.textContent = speedLabel(v);
+      const control = createSlider({
+        id: `game-menu-${key}`,
+        label: text,
+        min: spec.min,
+        max: spec.max,
+        step: 0.25,
+        value: s.get(key),
+        format: speedLabel,
+        rowClass: 'game-menu-row',
+        onInput: (v) => {
+          control.output.textContent = speedLabel(s.set(key, v));
+        },
       });
-      row.append(settingName(key, text, input), input, out);
-      return row;
+      return withHelp(control.row, key, control.input);
     };
     const check = (key, text) => {
-      const row = el('div', 'game-menu-row');
-      const input = el('input', 'game-menu-check');
-      input.type = 'checkbox';
-      input.checked = !!s.get(key);
-      input.addEventListener('change', () => s.set(key, input.checked));
-      row.append(settingName(key, text, input), input);
-      return row;
+      const t = createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) });
+      return withHelp(t.row, key, t.input);
     };
-    const choice = (key, text, labels) => {
-      const row = el('div', 'game-menu-row');
-      const select = el('select', 'game-menu-select');
-      for (const option of SCHEMA[key].options) {
-        const o = el('option', null, labels[option] ?? option);
-        o.value = option;
-        select.append(o);
-      }
-      select.value = s.get(key);
-      select.addEventListener('change', () => {
-        select.value = s.set(key, select.value);
+    const choice = (key, text, labels, hint) => {
+      const id = `game-menu-${key}`;
+      const group = segmented({
+        name: id,
+        label: text,
+        value: s.get(key),
+        describedBy: hint ? `${id}-hint` : undefined,
+        options: SCHEMA[key].options.map((option) => ({ value: option, label: labels[option] ?? option })),
+        onChange: (v) => group.set(s.set(key, v)),
       });
-      row.append(settingName(key, text, select), select);
+      const row = el('div', 'ui-row ui-row-choice game-menu-row');
+      row.append(el('span', 'ui-label', text), group.root);
+      if (hint) {
+        const note = el('p', 'ui-hint', hint);
+        note.id = `${id}-hint`;
+        row.append(note);
+      }
       return row;
     };
     c.append(
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
-      choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
+      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );
@@ -370,7 +370,8 @@ export class GameMenu {
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());
     fsButton.disabled = !fs.available();
-    fsRow.append(settingName('fullscreen', `Fullscreen (${formatCombo('Alt+Enter')})`, fsButton), fsButton);
+    fsRow.append(el('span', 'ui-label', `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    withHelp(fsRow, 'fullscreen', fsButton);
     c.append(fsRow);
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(

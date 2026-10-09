@@ -82,9 +82,9 @@ export const GROUPS = deepFreeze({
       lowQuality: { type: 'boolean', default: false, label: 'Low quality rendering' },
       healthBars: {
         type: 'choice',
-        default: 'off',
+        default: 'damaged',
         options: ['off', 'damaged', 'all'],
-        labels: { off: 'Selected and hovered only', damaged: 'Also damaged units', all: 'All units' },
+        labels: { off: 'Selected and hovered only', damaged: 'Also damaged units and buildings', all: 'All units and buildings' },
         label: 'Health bars',
       },
       graphics: {

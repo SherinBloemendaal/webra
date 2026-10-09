@@ -54,6 +54,7 @@ import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
+import { switchInput } from './ui/controls.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
 // its label and choices. Map style, biome and weather are the World group of
@@ -977,8 +978,7 @@ export class Lobby {
     for (const opt of TOGGLE_OPTIONS) {
       const row = el('div', 'lobby-toggle-row');
       const label = el('label', 'lobby-toggle');
-      const box = el('input', 'lobby-check');
-      box.type = 'checkbox';
+      const box = switchInput();
       box.addEventListener('change', () => {
         this.state[opt.key] = box.checked;
         this.optionEdited();

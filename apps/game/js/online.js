@@ -43,6 +43,7 @@ import {
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { onlineRefusal } from './account/ui.js';
+import { switchInput } from './ui/controls.js';
 import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
@@ -535,9 +536,7 @@ export class OnlineUI {
       const title = el('input', 'online-input');
       title.maxLength = SESSION_NAME_MAX;
       title.value = `${name}'s game`;
-      const pub = el('input');
-      pub.type = 'checkbox';
-      pub.checked = true;
+      const pub = switchInput({ checked: true });
       const pass = el('input', 'online-input');
       pass.type = 'password';
       pass.maxLength = PASSWORD_MAX;
@@ -1030,8 +1029,7 @@ export class OnlineUI {
     for (const [key, label] of TOGGLES) {
       const row = el('div', 'online-toggle-row');
       const name = el('label', 'online-toggle');
-      const box2 = el('input');
-      box2.type = 'checkbox';
+      const box2 = switchInput();
       box2.addEventListener('change', () => edit(key, box2.checked));
       this.optionControls[key] = box2;
       name.append(box2, el('span', null, label));

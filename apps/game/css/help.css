@@ -247,3 +247,22 @@
     display: none;
   }
 }
+
+/* ---- Game menu settings rows (js/ui/controls.js rows with a "?") ---------------------- */
+
+.ui-row > .ui-label-help {
+  min-width: 0;
+}
+
+.ui-label-help > .ui-label {
+  display: block;
+  margin: 0;
+  color: var(--ui-text);
+  font: var(--ui-fs-m) / 1.35 var(--ui-font);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+.ui-label-help > label.ui-label {
+  cursor: pointer;
+}

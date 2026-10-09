@@ -247,7 +247,6 @@
 .replay-seek {
   flex: 1;
   min-width: 120px;
-  accent-color: var(--accent, #d9b23a);
 }
 
 .replay-time {

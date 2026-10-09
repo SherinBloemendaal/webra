@@ -46,17 +46,6 @@
   width: min(600px, 100%);
 }
 
-.content-choice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.menu-card .content-choice label {
-  margin: 0 8px 0 0;
-}
-
 .content-packs {
   display: flex;
   flex-direction: column;
@@ -66,13 +55,31 @@
   list-style: none;
 }
 
+/* One pack: its on/off switch and name, then the order buttons. */
 .content-pack {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 6px 10px 8px;
+  background: var(--ui-metal-0);
   border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+.content-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.content-pack-rank {
+  margin-right: auto;
+  color: var(--ui-muted);
+  font: var(--ui-fs-s) / 1.4 var(--ui-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .content-preview {

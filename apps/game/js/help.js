@@ -64,7 +64,6 @@ export const HELP = Object.freeze({
   'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
-  'settings.healthBars': 'Health bars always show for selected and hovered units. Also for damaged units, or for every unit.',
   'settings.pixelRatioCap':
     'Highest number of rendered pixels per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer.',
   'settings.lowQuality': 'Renders below screen resolution and with fewer weather particles. Faster on phones and old computers.',
