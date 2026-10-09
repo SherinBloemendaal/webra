@@ -80,7 +80,6 @@
 .field input:focus-visible,
 .field select:focus-visible,
 .field textarea:focus-visible,
-.check input:focus-visible,
 .tab:focus-visible,
 .link-button:focus-visible,
 .sort:focus-visible,
@@ -137,18 +136,16 @@ ul.form-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 8px 10px;
+  min-height: var(--ctl-row, 2.25rem);
 }
 
-.check input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
+.field select.ui-select {
+  padding-right: 2.4em;
 }
 
 .check .form-help {
   flex-basis: 100%;
-  padding-left: 28px;
 }
 
 .check-group,
@@ -439,12 +436,6 @@ ul.form-status {
 
 .data-table .col-check {
   width: 44px;
-}
-
-.data-table .col-check input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
 }
 
 .data-table .col-email {

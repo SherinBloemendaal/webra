@@ -58,6 +58,7 @@ export class AudioSystem {
       () => this.changed(),
       () => this.bank.pack,
       () => this.prefs.get().original,
+      () => ({ shuffle: this.prefs.get().musicShuffle, repeat: this.prefs.get().musicRepeat }),
     );
     this.director = null;
     this.game = null;
@@ -65,16 +66,20 @@ export class AudioSystem {
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
-    let original = this.prefs.get().original;
+    let last = this.prefs.get();
     this.prefs.subscribe((p) => {
+      // Volumes apply at once, also to the playing music track (mixer buses).
       this.mixer.apply(p);
       if (!p.speech || !p.enabled) this.speech.cancel();
-      if (p.original !== original) {
+      if (p.original !== last.original) {
         // Installed original tracks join or leave the playlist.
-        original = p.original;
         this.jukebox.stop();
         this.jukebox.refresh().then(() => this.syncMusic(), () => {});
+      } else {
+        if (p.musicShuffle !== last.musicShuffle) this.jukebox.reorder();
+        if (p.musicRepeat !== last.musicRepeat) this.jukebox.repeatChanged();
       }
+      last = p;
       this.syncMusic();
     });
     this.installUnlock(doc);
@@ -357,12 +362,23 @@ export class AudioSystem {
 
   // ---- Music ------------------------------------------------------------------------
 
-  syncMusic() {
+  /** Whether music should play now: in a game, sound and music on, a track to play, audio unlocked. */
+  musicWanted() {
     const p = this.prefs.get();
     // The playlist holds pack music, plus the installed originals when they are on (music.js).
-    const want = this.inGame && p.enabled && p.music > 0 && this.jukebox.available && this.mixer.ready;
-    if (want && !this.jukebox.handle) this.jukebox.start();
+    return this.inGame && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
+  }
+
+  syncMusic() {
+    const want = this.musicWanted();
+    // A playlist that ended (repeat off) stays quiet until the player asks for the next track.
+    if (want && !this.jukebox.handle && !this.jukebox.finished) this.jukebox.start();
     else if (!want && this.jukebox.handle) this.jukebox.stop();
+  }
+
+  /** "Next track" (Settings, Sound): skips the playing track, or starts a finished playlist again. */
+  nextTrack() {
+    if (this.musicWanted()) this.jukebox.next();
   }
 
   /** Short test sound for the settings panel. */

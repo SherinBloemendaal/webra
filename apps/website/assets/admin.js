@@ -5,7 +5,8 @@
 // (docs/accounts-api.md 8). Moderators see only what their role allows.
 // The server checks every action again.
 
-import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
+import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { checkInput } from '/lib/js/ui/controls.js';
 import {
   AUDIT_ACTIONS,
   BAN_PRESETS,
@@ -26,11 +27,11 @@ import {
   parseView,
   permissions,
   viewHash,
-} from '/play/js/account/admin-state.js';
-import { buildSettingsForm } from '/play/js/account/admin-forms.js';
-import { checkDocument } from '/play/js/registry.js';
-import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/play/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
+} from '/lib/js/account/admin-state.js';
+import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
+import { checkDocument } from '/lib/js/registry.js';
+import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
+import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [
   ['overview', 'Overview', 'stats'],
@@ -214,7 +215,7 @@ export async function mountAdmin(root, deps = {}) {
     bulkReject.addEventListener('click', () => runBulk('reject', bulkReject));
 
     const tbody = el('tbody');
-    const all = el('input', { type: 'checkbox', 'aria-label': 'Select all shown users' });
+    const all = checkInput({ label: 'Select all shown users' });
     all.addEventListener('change', () => {
       table.toggleAll(all.checked);
       drawRows();
@@ -250,7 +251,7 @@ export async function mountAdmin(root, deps = {}) {
     function drawRows() {
       tbody.replaceChildren(
         ...table.users.map((u) => {
-          const pick = el('input', { type: 'checkbox', 'aria-label': `Select ${u.username}`, checked: table.selected.has(u.id) });
+          const pick = checkInput({ label: `Select ${u.username}`, checked: table.selected.has(u.id) });
           pick.addEventListener('change', () => (table.toggle(u.id, pick.checked), syncBulk()));
           const open = el('button', { type: 'button', class: 'link-button', text: u.username });
           open.addEventListener('click', () => openUser(u.id));
@@ -493,7 +494,7 @@ export async function mountAdmin(root, deps = {}) {
     const username = field('Username', el('input', { type: 'text', value: u.username, maxlength: String(USERNAME_MAX) }));
     const displayName = field('Display name', el('input', { type: 'text', value: u.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX) }));
     const email = field('Email', el('input', { type: 'email', value: u.email ?? '', maxlength: String(EMAIL_MAX) }), { help: 'Empty removes it.' });
-    const verified = checkbox('Email verified', { checked: u.emailVerified });
+    const verified = switchRow('Email verified', { checked: u.emailVerified });
     const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#4a82c4' }));
     const statusSel = el('select', {}, ...SETTABLE_STATUSES.map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
     statusSel.value = SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active';
@@ -503,7 +504,7 @@ export async function mountAdmin(root, deps = {}) {
     roleSel.value = u.role;
     roleSel.disabled = u.id === me.id;
     const role = field('Role', roleSel, { help: u.id === me.id ? 'You cannot change your own role.' : 'A role change signs the account out everywhere.' });
-    const flags = Object.entries(FLAGS).map(([f, label]) => [f, checkbox(label, { checked: u.flags?.includes(f) })]);
+    const flags = Object.entries(FLAGS).map(([f, label]) => [f, switchRow(label, { checked: u.flags?.includes(f) })]);
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save changes' });
     const form = el('form', { class: 'form-grid', novalidate: true }, username.row, displayName.row, email.row, verified.row, color.row, st.row, role.row, el('fieldset', { class: 'check-group' }, el('legend', { text: 'Flags' }), ...flags.map(([, c]) => c.row)), el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {
@@ -743,7 +744,7 @@ export async function mountAdmin(root, deps = {}) {
     const status = statusLine();
     const add = el('button', { type: 'button', class: 'btn btn-danger', text: 'Ban an address or range' });
     add.addEventListener('click', () => ipBanDialog());
-    const activeOnly = checkbox('Only bans in effect', { checked: true });
+    const activeOnly = switchRow('Only bans in effect', { checked: true });
     const list = el('tbody');
     const load = async () => {
       try {
@@ -816,7 +817,7 @@ export async function mountAdmin(root, deps = {}) {
     const eff = site.effective ?? {};
     const unavailable = (on, ok, why) => (on && !ok ? el('span', { class: 'badge badge-warn', text: why }) : null);
     const toggle = (label, checked, help, badge) => {
-      const c = checkbox(label, { checked, help });
+      const c = switchRow(label, { checked, help });
       if (badge) c.row.append(badge);
       return c;
     };
@@ -827,6 +828,11 @@ export async function mountAdmin(root, deps = {}) {
     const loginEmail = toggle('Email (verification, reset and change links)', s.login.email, null, unavailable(s.login.email, svc.email, 'Unavailable until the email plan is upgraded'));
     const loginDiscord = toggle('Discord sign-in', s.login.discord, null, unavailable(s.login.discord, svc.discord, 'Unavailable: Discord is not configured'));
     const loginPasskey = toggle('Passkeys', s.login.passkey);
+    const game = toggle(
+      'The game needs an account',
+      s.gameRequiresAccount !== false,
+      'The server serves /play only to active, unbanned accounts (admins and moderators always). Off: anyone can load the game. A change reaches every server within 30 seconds; a revoked sign-in loses the game within 10 minutes.',
+    );
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
     const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
@@ -837,7 +843,7 @@ export async function mountAdmin(root, deps = {}) {
       { class: 'form-stack', novalidate: true },
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Registration' }), open.row, approval.row, verify.row),
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Sign-in methods' }), loginPw.row, loginEmail.row, loginDiscord.row, loginPasskey.row),
-      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), online.row, relay.row),
+      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row),
       motd.row,
       el('div', { class: 'form-actions' }, save),
     );
@@ -847,6 +853,7 @@ export async function mountAdmin(root, deps = {}) {
       const patch = {
         registration: { open: open.input.checked, approvalRequired: approval.input.checked, emailVerification: verify.input.checked },
         login: { password: loginPw.input.checked, email: loginEmail.input.checked, discord: loginDiscord.input.checked, passkey: loginPasskey.input.checked },
+        gameRequiresAccount: game.input.checked,
         onlineRequiresAccount: online.input.checked,
         contentRelay: relay.input.checked,
         motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),

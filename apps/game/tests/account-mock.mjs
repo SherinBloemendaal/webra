@@ -27,6 +27,7 @@ export class MockAccountServer {
       registration: { open: true, approvalRequired: true, emailVerification: true },
       login: { password: true, email: true, discord: true, passkey: true },
       onlineRequiresAccount: true,
+      gameRequiresAccount: true,
       contentRelay: true,
       motd: '',
     };
@@ -90,6 +91,7 @@ export class MockAccountServer {
       login: { password: this.site.login.password, email, discord: this.site.login.discord && this.services.discord, passkey: this.site.login.passkey },
       services: { ...this.services },
       onlineRequiresAccount: this.site.onlineRequiresAccount,
+      gameRequiresAccount: this.site.gameRequiresAccount,
       contentRelay: this.site.contentRelay,
       motd: this.site.motd,
       passkey: { rpId: 'webra.sherin.dev' },
@@ -116,6 +118,7 @@ export class MockAccountServer {
       usernameChangedAt: u.usernameChangedAt,
       methods: { password: !!u.password, discord: u.discord, passkeys: u.passkeys.length },
       ban: u.ban,
+      canPlay: status === 'active' || (!this.site.gameRequiresAccount && status !== 'banned' && status !== 'deleted'),
       canPlayOnline: status === 'active',
       canUseContentRelay: status === 'active' && this.site.contentRelay && (u.role === 'admin' || u.flags.includes('content_autoinstall')),
     };

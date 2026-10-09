@@ -7,14 +7,14 @@
   z-index: 70;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: calc(16 * var(--ui-px));
   background: var(--ui-scan), rgba(0, 0, 0, 0.62);
 }
 
 .rn-card {
-  width: min(640px, 100%);
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px);
+  width: min(calc(640 * var(--ui-px)), 100%);
+  max-height: calc(100vh - calc(32 * var(--ui-px)));
+  max-height: calc(100dvh - calc(32 * var(--ui-px)));
   display: flex;
   flex-direction: column;
   user-select: text;
@@ -24,43 +24,43 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12 * var(--ui-px));
 }
 
 .rn-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
   min-width: 0;
 }
 
 .menu-card .rn-title {
-  font-size: 30px;
+  font-size: calc(30 * var(--ui-px));
 }
 
 .rn-badge {
   display: inline-block;
-  padding: 2px 7px;
+  padding: calc(2 * var(--ui-px)) calc(7 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
   color: var(--ui-accent-hi);
-  font: 700 12px var(--ui-font-mono);
+  font: 700 calc(12 * var(--ui-px)) var(--ui-font-mono);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
 
 .rn-intro {
-  margin-bottom: 10px;
+  margin-bottom: calc(10 * var(--ui-px));
 }
 
 .rn-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-right: 4px;
+  padding-right: calc(4 * var(--ui-px));
   overscroll-behavior: contain;
 }
 
@@ -70,8 +70,8 @@
 }
 
 .rn-release + .rn-release {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: calc(18 * var(--ui-px));
+  padding-top: calc(14 * var(--ui-px));
   border-top: 1px solid var(--panel-edge);
 }
 
@@ -79,24 +79,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  margin: 6px 0 4px;
+  gap: calc(6 * var(--ui-px)) calc(10 * var(--ui-px));
+  margin: calc(6 * var(--ui-px)) 0 calc(4 * var(--ui-px));
   color: var(--text);
-  font-size: 14px;
+  font-size: calc(14 * var(--ui-px));
   letter-spacing: 0;
   text-transform: none;
 }
 
 .rn-version .rn-badge {
-  font-size: 14px;
+  font-size: calc(14 * var(--ui-px));
 }
 
 .rn-tag {
-  padding: 1px 6px;
+  padding: 1px calc(6 * var(--ui-px));
   border: 1px solid var(--panel-edge);
   border-radius: var(--ui-radius);
   color: var(--ui-muted);
-  font: 700 10px var(--ui-font);
+  font: 700 calc(10 * var(--ui-px)) var(--ui-font);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
@@ -109,14 +109,14 @@
 
 .rn-date {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--ui-px));
   font-weight: 400;
 }
 
 .rn-section {
-  margin: 14px 0 4px;
+  margin: calc(14 * var(--ui-px)) 0 calc(4 * var(--ui-px));
   color: var(--accent);
-  font-size: 13px;
+  font-size: calc(13 * var(--ui-px));
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
@@ -126,23 +126,23 @@
 }
 
 .rn-group {
-  margin: 6px 0 0;
+  margin: calc(6 * var(--ui-px)) 0 0;
 }
 
 .rn-scope {
-  margin: 8px 0 2px;
+  margin: calc(8 * var(--ui-px)) 0 calc(2 * var(--ui-px));
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13 * var(--ui-px));
 }
 
 .rn-entries {
   margin: 0;
-  padding-left: 18px;
+  padding-left: calc(18 * var(--ui-px));
   color: #ccd3da;
 }
 
 .rn-entry {
-  margin: 3px 0;
+  margin: calc(3 * var(--ui-px)) 0;
   overflow-wrap: anywhere;
 }
 
@@ -152,8 +152,8 @@
 
 .rn-link {
   color: var(--accent);
-  font-size: 12px;
-  text-underline-offset: 2px;
+  font-size: calc(12 * var(--ui-px));
+  text-underline-offset: calc(2 * var(--ui-px));
 }
 
 .rn-entry .rn-link {
@@ -170,42 +170,42 @@
 }
 
 .rn-compare {
-  margin: 8px 0 0;
+  margin: calc(8 * var(--ui-px)) 0 0;
 }
 
 .rn-footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
+  gap: calc(8 * var(--ui-px));
+  margin-top: calc(12 * var(--ui-px));
 }
 
 .menu-card .rn-footer button,
 .menu-card button.rn-close {
   width: auto;
   margin: 0;
-  padding: 8px 14px;
+  padding: calc(8 * var(--ui-px)) calc(14 * var(--ui-px));
 }
 
 .menu-card button.rn-close {
   flex: none;
-  padding: 6px 12px;
+  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
 }
 
 @media (max-width: 480px) {
   #release-notes {
-    padding: 8px;
+    padding: calc(8 * var(--ui-px));
   }
 
   .rn-card.menu-card {
-    padding: 16px 14px;
-    max-height: calc(100vh - 16px);
-    max-height: calc(100dvh - 16px);
+    padding: calc(16 * var(--ui-px)) calc(14 * var(--ui-px));
+    max-height: calc(100vh - calc(16 * var(--ui-px)));
+    max-height: calc(100dvh - calc(16 * var(--ui-px)));
   }
 
   .menu-card .rn-title {
-    font-size: 28px;
+    font-size: calc(28 * var(--ui-px));
   }
 
   .menu-card .rn-footer button {

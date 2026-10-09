@@ -148,6 +148,46 @@ test('settings forms: every setting gets a labelled control; values round-trip; 
   assert.equal(checkDocument(r.document).ok, true);
 });
 
+test('settings forms: the UI and game scale take "auto" or a number; the music settings get controls', () => {
+  for (const key of ['uiScale', 'gameScale']) {
+    const spec = specOf('game', key);
+    const c = controlFor(spec);
+    assert.equal(c.kind, 'text', 'a text field: "auto" or a number');
+    assert.match(c.hint, new RegExp(`"auto", or a number from ${spec.min} to ${spec.max}`));
+    assert.equal(formatValue(spec, 'auto'), 'auto');
+    assert.equal(formatValue(spec, 1.25), '1.25');
+    assert.deepEqual(parseValue(spec, ' Auto '), { value: 'auto' });
+    assert.deepEqual(parseValue(spec, '1.25'), { value: 1.25 });
+    assert.match(parseValue(spec, '').error, /needs "auto" or a number/);
+    assert.match(parseValue(spec, 'big').error, /"auto" or a number/);
+    assert.match(parseValue(spec, String(spec.max + 1)).error, /between/);
+  }
+  assert.equal(controlFor(specOf('audio', 'musicRepeat')).kind, 'select');
+  assert.deepEqual(
+    controlFor(specOf('audio', 'musicRepeat')).options.map((o) => o.value),
+    ['all', 'one', 'off'],
+  );
+  assert.equal(controlFor(specOf('audio', 'musicOn')).kind, 'checkbox');
+
+  const form = buildSettingsForm({ game: { uiScale: 0.9 } }, { groups: ['game', 'audio'] });
+  const ui = form.controls.find((c) => c.key === 'uiScale');
+  const game = form.controls.find((c) => c.key === 'gameScale');
+  assert.equal(ui.input.value, '0.9');
+  assert.equal(game.input.value, 'auto', 'missing: the default');
+  typeInto(game.input, '7');
+  assert.deepEqual(form.read().errors.map((e) => e.path), ['game.gameScale']);
+  typeInto(game.input, '2.5');
+  typeInto(ui.input, 'auto');
+  const repeat = form.controls.find((c) => c.key === 'musicRepeat');
+  repeat.input.value = 'one';
+  const r = form.read();
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.document.game.gameScale, 2.5);
+  assert.equal(r.document.game.uiScale, 'auto');
+  assert.equal(r.document.audio.musicRepeat, 'one');
+  assert.equal(checkDocument(r.document).ok, true);
+});
+
 // ---- The dashboard ---------------------------------------------------------------------------------
 
 function seed(server) {
@@ -316,10 +356,14 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   assert.match(textOf(root), /Unavailable: Discord is not configured/);
   const approval = root.querySelectorAll('input[type="checkbox"]').find((c) => /Approval required/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
   check(approval, false);
+  const gameGate = root.querySelectorAll('input[type="checkbox"]').find((c) => /The game needs an account/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
+  assert.equal(gameGate.checked, true, 'on by default');
+  check(gameGate, false);
   root.querySelector('textarea').value = 'Open beta!';
   submit(root.querySelector('form'));
   await settle(30);
   assert.equal(server.site.registration.approvalRequired, false);
+  assert.equal(server.site.gameRequiresAccount, false);
   assert.equal(server.site.motd, 'Open beta!');
   assert.equal(server.requests.find((r) => r.method === 'PATCH' && r.url === '/api/admin/site').headers['if-match'], '"v1"');
   // Audit log with a filter.

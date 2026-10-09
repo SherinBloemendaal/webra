@@ -323,7 +323,10 @@ Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
 (accounts API, section 1.1). With the site setting `onlineRequiresAccount`
 (on by default), `POST /api/sessions`, `POST /api/maps` and joining over the
 WebSocket need a signed-in, active, unbanned account (accounts API, section
-7); the session cookie travels with the WebSocket upgrade.
+7.2); the session cookie travels with the WebSocket upgrade. With
+`gameRequiresAccount` (on by default) the game files themselves need one too
+(section 6 and accounts API, section 7.1); `UserSelf.canPlay` and
+`GET /api/site` `gameRequiresAccount` tell clients in advance.
 
 `/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
 one-click install of the original content. It needs a signed-in, active
@@ -681,11 +684,23 @@ One Worker named `webra` on the `WebRA` Cloudflare account serves
 everything on `webra.sherin.dev`:
 
 - `/` and `/assets/*`: `apps/website` build output
-- `/play/*`: `apps/game` (with `pkg/` from wasm-pack and `protocol/`)
+- `/play` and `/play/*`: `apps/game` (with `pkg/` from wasm-pack and
+  `protocol/`), served by the Worker's play gate (`apps/server/src/playgate.js`)
+  only to accounts that may play while the site setting `gameRequiresAccount`
+  is on (accounts API, section 7.1): page loads without access go to
+  `/account/?returnTo=<path>`, other requests get 401 or 403
+- `/lib/*`: the game modules and stylesheets the website's account and admin
+  pages load, copied from `apps/game` with the same layout
+  (`tools/shared-modules.mjs` lists them from the website's `/lib/` imports
+  and links); public. No website page, script or stylesheet loads from
+  `/play` (the build fails otherwise)
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
+`wrangler.jsonc` runs the Worker first for `/api/*`, `/play` and `/play/*`;
+every other path is answered by Workers Static Assets with `_headers`.
+
 Build: `npm run build` assembles `dist/` (website at the root, game under
-`play/`) and writes `dist/version.json` and `dist/release-notes.json`. The
+`play/`, the website's shared modules under `lib/`) and writes `dist/version.json` and `dist/release-notes.json`. The
 release notes are CHANGELOG.md (written by release-please) as data, parsed by
 `tools/release-notes.mjs`: the newest 30 releases, newest first, each with
 `version`, `date`, `compareUrl` and `sections` of entries `{ scope, text,

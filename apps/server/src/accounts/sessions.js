@@ -8,6 +8,7 @@ import { ipSalt, keyedHash } from '../ipkey.js';
 import { userSelect } from './users.js';
 import { summarizeUserAgent } from './useragent.js';
 import { ipRecord } from './ip.js';
+import { clearPlayPassCookie } from './playpass.js';
 
 export const SESSION_COOKIE = 'webra_session';
 export const SESSION_ABSOLUTE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -44,6 +45,14 @@ export function sessionCookie(request, token) {
 
 export function clearSessionCookie(request) {
   return cookieHeader(request, SESSION_COOKIE, '', 0);
+}
+
+/**
+ * Set-Cookie values that end this browser's sign-in: the session cookie and
+ * the play pass (accounts/playpass.js), so the game stops loading at once.
+ */
+export function signOutCookies(request) {
+  return [clearSessionCookie(request), clearPlayPassCookie(request)];
 }
 
 /** Record the client's address in the account's IP history (bounded, admins only). */

@@ -3,12 +3,12 @@
 
 #powers {
   position: absolute;
-  left: 8px;
-  top: 34px;
+  left: calc(8 * var(--ui-px));
+  top: calc(34 * var(--ui-px));
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 132px;
+  gap: calc(4 * var(--ui-px));
+  width: calc(132 * var(--ui-px));
   z-index: 5;
 }
 
@@ -17,8 +17,8 @@
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: baseline;
-  gap: 2px 6px;
-  padding: 4px 6px 6px;
+  gap: calc(2 * var(--ui-px)) calc(6 * var(--ui-px));
+  padding: calc(4 * var(--ui-px)) calc(6 * var(--ui-px)) calc(6 * var(--ui-px));
   background:
     var(--ui-scan),
     linear-gradient(180deg, rgba(34, 40, 48, 0.92), rgba(20, 24, 29, 0.92));
@@ -46,7 +46,7 @@
 
 #powers .power-bar {
   grid-column: 1 / -1;
-  height: 4px;
+  height: calc(4 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   overflow: hidden;
