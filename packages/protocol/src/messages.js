@@ -45,6 +45,7 @@ import {
   TEAM_MAX,
   TICK_MAX,
   VERSION_RE,
+  HANDICAPS,
 } from './constants.js';
 import {
   bool,
@@ -248,8 +249,9 @@ const CLIENT = {
     return out;
   },
   [C2S.SLOT](m) {
-    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty'], 'slot');
+    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'handicap'], 'slot');
     const out = { t: C2S.SLOT, slot: int(m.slot, 0, SLOT_MAX, 'slot') };
+    if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, 'handicap');
     if (has(m, 'faction')) out.faction = validFaction(m.faction, 'faction');
     if (has(m, 'color')) out.color = int(m.color, 0, COLOR_COUNT - 1, 'color');
     if (has(m, 'team')) out.team = int(m.team, 0, TEAM_MAX, 'team');
@@ -334,7 +336,7 @@ function validSessionInfo(v, what = 'session') {
   };
 }
 
-const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready'];
+const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready', 'handicap'];
 
 /** One slot of the online lobby as the server publishes it. */
 export function validLobbySlot(v, what = 'slot') {
@@ -359,6 +361,8 @@ export function validLobbySlot(v, what = 'slot') {
   out.faction = validFaction(v.faction, `${what}.faction`);
   out.color = int(v.color, 0, COLOR_COUNT - 1, `${what}.color`);
   out.team = int(v.team, 0, TEAM_MAX, `${what}.team`);
+  // Handicap: left out means 0.
+  if (has(v, 'handicap')) out.handicap = oneOf(v.handicap, HANDICAPS, `${what}.handicap`);
   return out;
 }
 

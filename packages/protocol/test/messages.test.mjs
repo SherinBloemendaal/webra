@@ -341,8 +341,10 @@ test('game options: concrete factions, unique colours, slots in order', () => {
 test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   const hello = { t: 'hello', protocol: PROTOCOL_VERSION, version: '0.3.0', name: 'Tanya' };
   // Version 4 added the map style, biome and weather lobby options on top;
-  // version 5 accounts (optional hello name, welcome name, account marks).
-  assert.equal(PROTOCOL_VERSION, 5);
+  // version 5 accounts (optional hello name, welcome name, account marks);
+  // version 6 OpenRA's crates, short game, bounties, team spawns, ally build
+  // radius and time limit options and per slot handicaps.
+  assert.equal(PROTOCOL_VERSION, 6);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);

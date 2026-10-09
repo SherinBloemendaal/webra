@@ -108,8 +108,9 @@ test('the settings document takes saved modes and names the bad field', () => {
   assert.equal(field([{ name: 'A', options: bundle() }, { name: 'A', options: bundle() }]), 'settings.lobby.presets[1].name');
   assert.equal(field('all of them'), 'settings.lobby.presets');
   assert.equal(field(Array.from({ length: 17 }, (_, i) => ({ name: `M${i}`, options: bundle() }))), 'settings.lobby.presets');
-  // Sixteen modes with the longest names fit in the document with room to spare.
+  // Sixteen modes with the longest names fit in the document with room to spare
+  // (a quarter of SETTINGS_MAX_BYTES).
   const full = Array.from({ length: PRESETS_MAX }, (_, i) => ({ name: `${i}`.padEnd(PRESET_NAME_MAX, 'm'), options: bundle() }));
-  assert.ok(JSON.stringify(full).length < 6 * 1024);
+  assert.ok(JSON.stringify(full).length < 8 * 1024);
   assert.doesNotThrow(() => validateSettingsDocument({ lobby: { presets: full } }));
 });

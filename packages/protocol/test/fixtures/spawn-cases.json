@@ -1,0 +1,16 @@
+{
+  "about": "Spawn assignment cases shared by packages/protocol (spawns.js) and the engine (gamerules.rs assign_spawns): spawn cells, each player's team, the option, whether the map is generated (spawns listed by column, top first; default false), and the spawn each player gets.",
+  "cases": [
+    { "spawns": [[4, 4], [40, 40], [40, 4], [4, 40]], "teams": [0, 0, 0, 0], "separate": true, "want": [0, 1, 2, 3] },
+    { "spawns": [[4, 4], [40, 40], [40, 4], [4, 40]], "teams": [1, 1, 2, 2], "separate": false, "want": [0, 1, 2, 3] },
+    { "spawns": [[4, 4], [40, 40], [40, 4], [4, 40]], "teams": [1, 1, 2, 2], "separate": true, "want": [0, 2, 1, 3] },
+    { "spawns": [[4, 4], [40, 40], [40, 4], [4, 40]], "teams": [1, 2, 1, 2], "separate": true, "want": [0, 1, 2, 3] },
+    { "spawns": [[4, 4], [40, 40], [40, 4]], "teams": [0, 1, 1], "separate": true, "want": [0, 1, 2] },
+    { "spawns": [[10, 10], [50, 10], [90, 10], [10, 50], [50, 50], [90, 50]], "teams": [1, 2, 1, 2, 1, 2], "separate": true, "want": [0, 5, 3, 2, 1, 4] },
+    { "spawns": [[4, 4], [40, 40]], "teams": [1, 2], "separate": true, "want": [0, 1] },
+    { "spawns": [[23, 22], [23, 70], [70, 22], [70, 70]], "teams": [1, 2, 1, 2], "separate": true, "generated": true, "want": [0, 2, 1, 3] },
+    { "spawns": [[23, 22], [23, 70], [70, 22], [70, 70]], "teams": [1, 1, 2, 2], "separate": true, "generated": true, "want": [0, 1, 2, 3] },
+    { "spawns": [[23, 22], [23, 70], [70, 22], [70, 70]], "teams": [1, 2, 1, 2], "separate": false, "generated": true, "want": [0, 1, 2, 3] },
+    { "spawns": [[10, 10], [10, 50], [50, 10], [50, 50], [90, 10], [90, 50]], "teams": [2, 1, 0, 2, 1, 2], "separate": true, "generated": true, "want": [0, 4, 2, 1, 5, 3] }
+  ]
+}

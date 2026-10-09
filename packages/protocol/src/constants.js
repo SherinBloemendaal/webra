@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -98,7 +98,26 @@ export const FACTIONS = [...Object.keys(RANDOM_FACTIONS), ...PLAYABLE_FACTIONS];
  * then may players send cheat orders (CHEAT_ORDER_KINDS), and the server
  * refuses them otherwise.
  */
-export const BOOLEAN_OPTIONS = ['fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
+export const BOOLEAN_OPTIONS = [
+  'fog',
+  'explored',
+  'buildRadius',
+  'redeployableMcv',
+  'oreRegrowth',
+  'cheats',
+  // OpenRA's other lobby checkboxes (world.yaml, player.yaml; engine/src/gamerules.rs, crates.rs):
+  // crates, short game, kill bounties, separate team spawns, ally build radius.
+  'crates',
+  'shortGame',
+  'bounty',
+  'separateTeamSpawns',
+  'allyBuildRadius',
+];
+
+/** Time limits in minutes, 0 for none (OpenRA TimeLimitManager TimeLimitOptions). */
+export const TIME_LIMITS = [0, 10, 20, 30, 40, 60, 90];
+/** Handicaps in percent: less firepower and armour, slower production (OpenRA: 0 to 95 in steps of 5). */
+export const HANDICAPS = Array.from({ length: 20 }, (_, i) => i * 5);
 
 /** Cheat flags of the `dev_flag` order (engine/src/debug.rs DevFlag). */
 export const DEV_FLAGS = ['fast_build', 'build_anywhere', 'unlimited_power', 'fast_charge', 'disable_shroud', 'all_tech'];
@@ -129,6 +148,13 @@ export const DEFAULT_OPTIONS = Object.freeze({
   redeployableMcv: true,
   oreRegrowth: true,
   cheats: false,
+  // OpenRA's defaults.
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
 });
 
 /** Slot types in an online lobby. */

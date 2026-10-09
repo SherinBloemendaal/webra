@@ -65,7 +65,9 @@ export {
   SAVE_SLOTS_MAX,
   validateReplay,
 } from './replay.js';
+export { assignSpawns } from './spawns.js';
 export {
+  ADDED_PRESET_KEYS,
   BUILTIN_MODES,
   PRESET_KEYS,
   PRESET_NAME_MAX,

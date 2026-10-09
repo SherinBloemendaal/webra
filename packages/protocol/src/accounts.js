@@ -374,6 +374,7 @@ const SETTINGS_SECTIONS = {
     showUnitPaths: boolean,
     pixelRatioCap: num(0.5, 3),
     lowQuality: boolean,
+    reduceMotion: choice(['auto', 'on', 'off']),
     uiScale: scale(UI_SCALE_LIMITS),
     gameScale: scale(GAME_SCALE_LIMITS),
     healthBars: choice(['off', 'damaged', 'all']),
