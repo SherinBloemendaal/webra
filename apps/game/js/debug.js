@@ -21,6 +21,8 @@
 // (apps/game/tests/debug.test.mjs).
 
 import { instanceLines } from './crowd.js';
+import { defaultRegistry } from './registry.js';
+import { VIEWS } from './debug-views.js';
 
 /** Cheat flags (engine/src/debug.rs DevFlag), in menu order. */
 export const CHEATS = [
@@ -32,17 +34,7 @@ export const CHEATS = [
   { flag: 'all_tech', label: 'All tech', title: 'Every prerequisite counts as met: build anything.' },
 ];
 
-/** Local view overlays, in menu order. */
-export const VIEWS = [
-  { key: 'cells', label: 'Cell grid and occupancy', title: 'Grid, blocked cells, water, structure footprints and cells with units.' },
-  { key: 'footprints', label: 'Footprints and radii', title: 'Structure footprints and unit hit radii.' },
-  { key: 'flow', label: 'Pathing', title: 'Flow field of the first selected moving unit, and the goals of own units.' },
-  { key: 'combat', label: 'Combat geometry', title: 'Weapon ranges and the current target of each actor.' },
-  { key: 'tags', label: 'Actor ids and tags', title: 'Actor id, type, owner and activity.' },
-  { key: 'health', label: 'Health numbers', title: 'Hit points of every visible actor.' },
-  { key: 'stats', label: 'Performance stats', title: 'FPS, frame and simulation time, actor counts, pathing cache.' },
-  { key: 'graph', label: 'Frame graph', title: 'Frame, render and simulation time of the last frames.' },
-];
+export { VIEWS };
 
 /** Cell flags of Game.debug_cells (engine/src/debug.rs `cell`). */
 export const CELL = {
@@ -68,7 +60,8 @@ export const DIRS = [
 ];
 export const DIR_GOAL = 8;
 
-const PREFS_KEY = 'webra.debug.v1';
+/** Settings registry group of the view choices (js/registry.js). */
+const PREFS_GROUP = 'debug';
 const HISTORY = 240;
 
 /**
@@ -168,20 +161,12 @@ export function simLines(sim) {
 }
 
 function readPrefs() {
-  try {
-    const raw = globalThis.localStorage?.getItem(PREFS_KEY);
-    return sanitizePrefs(raw ? JSON.parse(raw) : null);
-  } catch {
-    return sanitizePrefs(null);
-  }
+  return sanitizePrefs(defaultRegistry().group(PREFS_GROUP));
 }
 
 function writePrefs(prefs) {
-  try {
-    globalThis.localStorage?.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // Private mode or storage full: the choice lasts for this page only.
-  }
+  // The registry keeps them (private mode or full storage: for this page only).
+  defaultRegistry().patch(PREFS_GROUP, sanitizePrefs(prefs));
 }
 
 function el(tag, className, text) {

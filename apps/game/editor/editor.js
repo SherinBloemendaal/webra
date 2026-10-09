@@ -5,6 +5,7 @@
 import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
 import { Renderer, TEAM_COLORS } from '../js/renderer.js';
 import { buildAtlas, drawIcon } from '../js/sprites.js';
+import { defaultRegistry } from '../js/registry.js';
 import { TEST_MAP_KEY } from '../js/maploader.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, isTyping } from './js/view.js';
@@ -33,8 +34,9 @@ import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index
 import { renderReport } from '../js/oramap/report.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
-const AUTHOR_KEY = 'webra.editor.author';
-const PREFS_KEY = 'webra.editor.prefs';
+/** Tool choices and the author name live in the settings registry (js/registry.js, "extra" group, editor* keys). */
+const PREF_KEYS = ['material', 'size', 'ore', 'gems', 'symmetry', 'grid'];
+const prefKey = (k) => `editor${k[0].toUpperCase()}${k.slice(1)}`;
 
 const MATERIALS = [
   { t: TERRAIN.CLEAR, key: '1', color: '#3e582c' },
@@ -182,21 +184,16 @@ async function initialMap() {
 }
 
 function newBlankMap(width = 96, height = 96, base = TERRAIN.CLEAR) {
-  return createMap({ width, height, base, name: 'Untitled', author: store.get(AUTHOR_KEY) || 'Commander' });
+  return createMap({ width, height, base, name: 'Untitled', author: defaultRegistry().get('extra', 'editorAuthor') || 'Commander' });
 }
 
 function loadPrefs() {
-  try {
-    const p = JSON.parse(store.get(PREFS_KEY) ?? '{}');
-    for (const k of ['material', 'size', 'ore', 'gems', 'symmetry', 'grid']) if (k in p) state[k] = p[k];
-  } catch {
-    // Corrupt preferences: keep the defaults.
-  }
+  const p = defaultRegistry().group('extra');
+  for (const k of PREF_KEYS) state[k] = p[prefKey(k)];
 }
 
 function savePrefs() {
-  const { material, size, ore, gems, symmetry, grid } = state;
-  store.set(PREFS_KEY, JSON.stringify({ material, size, ore, gems, symmetry, grid }));
+  defaultRegistry().patch('extra', Object.fromEntries(PREF_KEYS.map((k) => [prefKey(k), state[k]])));
 }
 
 // ---- Render loop --------------------------------------------------------------------------
@@ -488,7 +485,7 @@ function buildMapPane() {
         doc.touchMeta();
         doc.meta[key] = input.value;
         doc.commit();
-        if (key === 'author') store.set(AUTHOR_KEY, input.value);
+        if (key === 'author') defaultRegistry().set('extra', 'editorAuthor', input.value);
       },
     });
     return el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, `${label} `), input]);
@@ -894,7 +891,7 @@ function newMapDialog() {
           ? Game.generated_map_styled(genSeed, num(genSize), num(players), genStyle.value, genBiome.value)
           : Game.generated_map(genSeed, num(genSize), num(players)),
       );
-      map.author = store.get(AUTHOR_KEY) || map.author;
+      map.author = defaultRegistry().get('extra', 'editorAuthor') || map.author;
     } else {
       if (!inRange(num(width)) || !inRange(num(height))) return toast(`Width and height must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
       map = newBlankMap(num(width), num(height), Number(base.value));

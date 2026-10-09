@@ -3,9 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRegistry, REGISTRY_KEY } from '../js/registry.js';
 import {
   GENERAL_LABEL,
-  SEEN_KEY,
+  SEEN_SETTING,
   compareVersions,
   formatReleaseDate,
   groupByScope,
@@ -26,9 +27,16 @@ function memoryStorage({ broken = false, initial = {} } = {}) {
   return {
     getItem: (k) => (guard(), map.has(k) ? map.get(k) : null),
     setItem: (k, v) => (guard(), map.set(k, String(v))),
+    removeItem: (k) => (guard(), map.delete(k)),
     map,
   };
 }
+
+/** A settings registry over memoryStorage (js/registry.js). */
+const registryOver = (o) => {
+  const storage = memoryStorage(o);
+  return Object.assign(createRegistry({ storage }), { storage });
+};
 
 const rel = (version) => ({ version, date: '2026-01-01', compareUrl: null, sections: [] });
 const RELEASES = ['0.5.0', '0.4.1', '0.4.0', '0.3.0'].map(rel);
@@ -153,23 +161,24 @@ test("what's new: a version without notes neither opens nor remembers", () => {
   assert.deepEqual(whatsNew({ current: '0.5.0', seen: '0.4.0', releases: null }), { show: false, releases: [], remember: null });
 });
 
-test('seen version storage: round trip, garbage, and storage that throws', () => {
-  const s = memoryStorage();
+test('seen version setting: round trip, garbage, migration, and storage that throws', () => {
+  const s = registryOver();
   assert.equal(readSeenVersion(s), null);
   assert.equal(writeSeenVersion('0.3.0+abcdef12', s), true);
-  assert.equal(s.map.get(SEEN_KEY), '0.3.0');
+  assert.equal(JSON.parse(s.storage.map.get(REGISTRY_KEY))[SEEN_SETTING[0]][SEEN_SETTING[1]], '0.3.0');
   assert.equal(readSeenVersion(s), '0.3.0');
   assert.equal(writeSeenVersion('dev', s), false);
-  assert.equal(readSeenVersion(memoryStorage({ initial: { [SEEN_KEY]: '<script>' } })), null);
-  const broken = memoryStorage({ broken: true });
+  assert.equal(readSeenVersion(registryOver({ initial: { 'webra.releaseNotes.seen': '<script>' } })), null);
+  assert.equal(readSeenVersion(registryOver({ initial: { 'webra.releaseNotes.seen': '0.4.0' } })), '0.4.0', 'the old key migrates');
+  const broken = registryOver({ broken: true });
   assert.equal(readSeenVersion(broken), null);
-  assert.equal(writeSeenVersion('0.3.0', broken), false);
+  assert.equal(writeSeenVersion('0.3.0', broken), true, 'kept for this page');
   assert.equal(readSeenVersion(null), null);
   assert.equal(writeSeenVersion('0.3.0', null), false);
 });
 
 test('the whole flow: first visit, same version, update, then nothing until the next one', () => {
-  const storage = memoryStorage();
+  const storage = registryOver();
   const load = (current) => {
     const d = whatsNew({ current, seen: readSeenVersion(storage), releases: RELEASES });
     if (d.remember) writeSeenVersion(d.remember, storage);

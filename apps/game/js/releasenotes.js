@@ -10,8 +10,8 @@
 /** Where the build writes the notes, relative to the game's index.html. */
 export const RELEASE_NOTES_URL = '../release-notes.json';
 
-/** localStorage key: the last game version whose notes this browser has seen. */
-export const SEEN_KEY = 'webra.releaseNotes.seen';
+/** Settings registry place of the last version whose notes were seen (js/registry.js). */
+export const SEEN_SETTING = Object.freeze(['releaseNotes', 'lastSeenVersion']);
 
 /**
  * Conventional Commit scopes as players read them. Several scopes can share a
@@ -171,31 +171,24 @@ export function formatReleaseDate(date) {
 
 // ---- "What's new" once per version --------------------------------------------
 
-/** The browser's localStorage, or null (private mode, blocked storage, Node). */
-function browserStorage() {
+/**
+ * Last version whose notes were seen, or null. `registry` is the settings
+ * registry (js/registry.js; anything with get(group, key)). Never throws.
+ */
+export function readSeenVersion(registry) {
   try {
-    return globalThis.window?.localStorage ?? null;
+    return normalizeVersion(registry?.get(...SEEN_SETTING) ?? null);
   } catch {
     return null;
   }
 }
 
-/** Last version this browser has seen the notes of, or null. Never throws. */
-export function readSeenVersion(storage = browserStorage()) {
-  try {
-    return normalizeVersion(storage?.getItem(SEEN_KEY) ?? null);
-  } catch {
-    return null;
-  }
-}
-
-/** Remember that this browser has seen the notes up to `version`. Never throws. */
-export function writeSeenVersion(version, storage = browserStorage()) {
+/** Remember that the notes up to `version` were seen. Never throws. */
+export function writeSeenVersion(version, registry) {
   const v = normalizeVersion(version);
-  if (!v || !storage) return false;
+  if (!v || !registry) return false;
   try {
-    storage.setItem(SEEN_KEY, v);
-    return true;
+    return registry.set(...SEEN_SETTING, v) === v;
   } catch {
     return false;
   }

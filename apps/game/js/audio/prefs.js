@@ -1,53 +1,22 @@
-// Audio settings, kept in this browser's localStorage (per device, never sent
-// anywhere). Volumes are 0..1.
+// Audio settings: the "audio" group of the settings registry (js/registry.js),
+// kept in this browser and synced with the player's account. Volumes are 0..1.
 
-export const PREFS_KEY = 'webra.audio.v1';
+import { defaultRegistry, groupDefaults, normalizeValues } from '../registry.js';
 
-export const DEFAULT_PREFS = Object.freeze({
-  /** All sound on or off. */
-  enabled: true,
-  master: 0.8,
-  effects: 0.8,
-  /** Unit replies and announcer. */
-  voices: 0.9,
-  /** Music (installed original content only). */
-  music: 0.5,
-  /** Speak unit replies and announcer lines with the browser's speech synthesis. */
-  speech: true,
-  /** Use installed original Red Alert sounds where available. */
-  original: true,
-});
+/** Registry group of the audio settings. */
+export const PREFS_GROUP = 'audio';
 
-const VOLUMES = ['master', 'effects', 'voices', 'music'];
-const FLAGS = ['enabled', 'speech', 'original'];
+/**
+ * enabled: all sound on or off; master, effects, voices (unit replies and
+ * announcer), music (installed content only): volumes; speech: speak unit
+ * replies and announcer lines with the browser's speech synthesis;
+ * original: use installed original Red Alert sounds where available.
+ */
+export const DEFAULT_PREFS = Object.freeze(groupDefaults(PREFS_GROUP));
 
 /** Keep only known keys with valid values; anything else falls back to the default. */
 export function sanitizePrefs(raw) {
-  const out = { ...DEFAULT_PREFS };
-  if (!raw || typeof raw !== 'object') return out;
-  for (const k of VOLUMES) {
-    const v = Number(raw[k]);
-    if (raw[k] !== undefined && raw[k] !== null && Number.isFinite(v)) out[k] = Math.max(0, Math.min(1, v));
-  }
-  for (const k of FLAGS) if (typeof raw[k] === 'boolean') out[k] = raw[k];
-  return out;
-}
-
-export function loadPrefs(storage) {
-  try {
-    return sanitizePrefs(JSON.parse(storage?.getItem(PREFS_KEY) ?? 'null'));
-  } catch {
-    return { ...DEFAULT_PREFS };
-  }
-}
-
-export function savePrefs(storage, prefs) {
-  try {
-    storage?.setItem(PREFS_KEY, JSON.stringify(sanitizePrefs(prefs)));
-    return true;
-  } catch {
-    return false; // private mode or blocked storage: settings last for this page only
-  }
+  return normalizeValues({ [PREFS_GROUP]: raw && typeof raw === 'object' ? raw : {} }).values[PREFS_GROUP];
 }
 
 /** Effective gain of a bus: master times the bus volume, zero when sound is off. */
@@ -56,12 +25,17 @@ export function busGain(prefs, bus) {
   return prefs.master * (prefs[bus] ?? 1);
 }
 
-/** Observable settings: `set` merges, saves and notifies. */
+/** Observable settings: `set` merges, saves and notifies (also for changes synced from the account). */
 export class Prefs {
-  constructor(storage = globalThis.localStorage) {
-    this.storage = storage;
-    this.value = loadPrefs(storage);
+  /** @param {ReturnType<import('../registry.js').createRegistry>} [registry] */
+  constructor(registry = defaultRegistry()) {
+    this.registry = registry;
+    this.value = registry.group(PREFS_GROUP);
     this.listeners = new Set();
+    registry.subscribe(PREFS_GROUP, (values) => {
+      this.value = values;
+      for (const fn of [...this.listeners]) fn(this.value);
+    });
   }
 
   get() {
@@ -69,13 +43,16 @@ export class Prefs {
   }
 
   set(patch) {
-    this.value = sanitizePrefs({ ...this.value, ...patch });
-    savePrefs(this.storage, this.value);
-    for (const fn of this.listeners) fn(this.value);
+    this.registry.patch(PREFS_GROUP, sanitizePatch(patch));
   }
 
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
+}
+
+/** Only the known keys of a patch (the registry normalizes their values). */
+function sanitizePatch(patch) {
+  return Object.fromEntries(Object.entries(patch ?? {}).filter(([k]) => Object.hasOwn(DEFAULT_PREFS, k)));
 }

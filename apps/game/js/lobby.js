@@ -5,8 +5,6 @@
 // stored-settings migration and the options shape live in lobby-state.js.
 
 import {
-  STORAGE_KEY,
-  LEGACY_STORAGE_KEYS,
   MAP_STORAGE_KEY,
   NAME_MAX,
   DEFAULT_NAME,
@@ -48,7 +46,9 @@ import {
   storedSettings,
   inspectMapFile,
   spawnMarkers,
+  withDefaults,
 } from './lobby-state.js';
+import { defaultRegistry } from './registry.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 
@@ -168,14 +168,14 @@ function writeJson(key, data) {
   }
 }
 
-/** Current settings, else the newest legacy ones (sanitizeState migrates them). */
+/**
+ * The last skirmish setup from the settings registry (js/registry.js, which
+ * also migrated the older lobby keys); sanitizeState checks it.
+ */
 function loadStored() {
-  for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
-    const data = readJson(key);
-    if (data) return data;
-  }
-  return null;
+  return defaultRegistry().get('lobby', 'lastOptions');
 }
+
 
 // ---- Colour picker -----------------------------------------------------------
 
@@ -367,7 +367,7 @@ export class Lobby {
     this.previewFrame = 0;
     this.spawnCache = { key: '', cells: [] };
 
-    this.state = sanitizeState(loadStored(), this.colors.length);
+    this.state = sanitizeState(withDefaults(loadStored(), defaultRegistry().group('lobby'), this.colors.length), this.colors.length);
     /** Installed map file: { json, info, accepted } or null. */
     this.mapFile = this.loadStoredMap();
     /** A modded map waiting for the player to accept its rules. */
@@ -1262,7 +1262,10 @@ export class Lobby {
   }
 
   persist() {
-    writeJson(STORAGE_KEY, storedSettings(this.state));
+    const stored = storedSettings(this.state);
+    const me = stored.players?.find((p) => p.type === 'human');
+    // Name, faction and colour of the player's own slot are also the account-wide defaults.
+    defaultRegistry().patch('lobby', { lastOptions: stored, ...(me ? { name: me.name, faction: me.faction, color: me.color } : {}) });
   }
 
   start() {

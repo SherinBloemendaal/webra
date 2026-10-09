@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { Director, EV, STRIDE, spatial, MAX_EFFECTS_PER_FRAME, MAX_SAME_PER_FRAME, VOICE_GAP } from '../js/audio/director.js';
 import { Announcer } from '../js/audio/announcer.js';
-import { Prefs, sanitizePrefs, loadPrefs, busGain, DEFAULT_PREFS, PREFS_KEY } from '../js/audio/prefs.js';
+import { Prefs, sanitizePrefs, busGain, DEFAULT_PREFS } from '../js/audio/prefs.js';
+import { createRegistry, REGISTRY_KEY } from '../js/registry.js';
 import { WEAPON_SYNTH, fireSound, impactSound, deathSound, voiceLine, EVA, allOriginalNames, fileName, powerReadyLine, MUSIC } from '../js/audio/catalog.js';
 import { WEAPON_SOUNDS } from '../js/audio/catalog-data.js';
 import { RECIPES, render } from '../js/audio/synth.js';
@@ -287,7 +288,7 @@ test('the announcer plays one line at a time, drops duplicates and stale lines',
 
 function memoryStorage() {
   const m = new Map();
-  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), map: m };
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), map: m };
 }
 
 test('settings are validated, saved and observed', () => {
@@ -295,21 +296,27 @@ test('settings are validated, saved and observed', () => {
     ...DEFAULT_PREFS,
     master: 1,
     effects: 0,
-    voices: 0.5,
     original: false,
   });
   const storage = memoryStorage();
-  storage.setItem(PREFS_KEY, '{broken');
-  assert.deepEqual(loadPrefs(storage), DEFAULT_PREFS, 'corrupt settings fall back to defaults');
-  const prefs = new Prefs(storage);
+  storage.setItem('webra.audio.v1', '{broken');
+  assert.deepEqual(new Prefs(createRegistry({ storage })).get(), DEFAULT_PREFS, 'corrupt settings fall back to defaults');
+  storage.setItem('webra.audio.v1', JSON.stringify({ master: 0.3 }));
+  storage.map.delete(REGISTRY_KEY);
+  assert.equal(new Prefs(createRegistry({ storage })).get().master, 0.3, 'the old audio key migrates');
+  const registry = createRegistry({ storage });
+  const prefs = new Prefs(registry);
   const seen = [];
   prefs.subscribe((p) => seen.push(p.music));
-  prefs.set({ music: 0.25 });
-  assert.equal(JSON.parse(storage.getItem(PREFS_KEY)).music, 0.25);
+  prefs.set({ music: 0.25, bogus: 1 });
+  assert.equal(JSON.parse(storage.getItem(REGISTRY_KEY)).audio.music, 0.25);
   assert.deepEqual(seen, [0.25]);
-  assert.equal(new Prefs(storage).get().music, 0.25, 'survives a reload');
+  assert.equal(new Prefs(createRegistry({ storage })).get().music, 0.25, 'survives a reload');
+  registry.applyDocument({ audio: { music: 0.6 } });
+  assert.equal(prefs.get().music, 0.6, 'a synced change reaches the live prefs');
+  assert.deepEqual(seen, [0.25, 0.6]);
   const throwing = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
-  const p2 = new Prefs(throwing);
+  const p2 = new Prefs(createRegistry({ storage: throwing }));
   p2.set({ master: 0.1 });
   assert.equal(p2.get().master, 0.1, 'works without storage');
   assert.equal(busGain({ ...DEFAULT_PREFS, master: 0.5, effects: 0.5 }, 'effects'), 0.25);
@@ -406,7 +413,7 @@ test('music shuffles every track once before repeating', () => {
 
 test('local orders and production through the watched game get replies', () => {
   const calls = [];
-  const audio = new AudioSystem({ storage: memoryStorage(), doc: null });
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
   audio.director = { onOrder: (ids) => calls.push(['order', ids]), onProductionStarted: (id) => calls.push(['build', id]), onProductionCancelled: () => calls.push(['cancel']) };
   const game = {
     n: 0,
@@ -430,7 +437,7 @@ test('local orders and production through the watched game get replies', () => {
 });
 
 test('announcer lines reach the on-screen notifications, also with sound off', () => {
-  const audio = new AudioSystem({ storage: memoryStorage(), doc: null });
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
   const shown = [];
   const pushed = [];
   audio.announcer.push = (key) => pushed.push(key);
@@ -460,7 +467,7 @@ test('announcer lines reach the on-screen notifications, also with sound off', (
 });
 
 test('only cells the engine reports as visible count as seen for sounds', () => {
-  const audio = new AudioSystem({ storage: memoryStorage(), doc: null });
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
   audio.game = { take_audio_events: () => [5, 0, 0, 0, 0, 0] };
   audio.pxPerCell = 24;
   audio.mapWidth = 3;
@@ -532,4 +539,19 @@ test('the engine reports fire, impact and death events to the client', () => {
   for (let t = 0; t < 25 * 10; t++) game.tick();
   d.onEvents(game.take_audio_events(), { x0: 0, y0: 0, x1: 64 * 24, y1: 64 * 24 });
   assert.ok(calls.length <= MAX_EFFECTS_PER_FRAME);
+});
+
+test('removing the installed content stops a removed music track at once', async () => {
+  const { MemoryStore } = await import('../js/content/store.js');
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  const store = new MemoryStore();
+  audio.store = async () => store;
+  audio.jukebox.getStore = async () => store;
+  await audio.reloadInstalled();
+  let stopped = 0;
+  audio.jukebox.playing = 'Hell March';
+  audio.jukebox.handle = { stop: () => stopped++ };
+  await audio.reloadInstalled();
+  assert.equal(stopped, 1);
+  assert.equal(audio.jukebox.playing, null);
 });

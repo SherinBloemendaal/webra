@@ -15,6 +15,7 @@ import {
   whatsNew,
   writeSeenVersion,
 } from './releasenotes.js';
+import { defaultRegistry } from './registry.js';
 
 const LOAD_TIMEOUT_MS = 8000;
 
@@ -59,10 +60,10 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 /**
  * Build the dialog into `panel`.
  * @param {HTMLElement} panel the overlay section
- * @param {{ version?: string | null, url?: string, storage?: Storage | null }} opts
+ * @param {{ version?: string | null, url?: string, registry?: object }} opts registry: the settings registry (js/registry.js)
  *   `version` is the running game version (the engine's "0.3.0+abcdef12" is fine).
  */
-export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_URL, storage } = {}) {
+export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_URL, registry = defaultRegistry() } = {}) {
   const current = normalizeVersion(version);
   let notesPromise = null;
   let opener = null;
@@ -249,7 +250,7 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
    */
   async function showWhatsNewOnce() {
     if (!current) return false;
-    const seen = readSeenVersion(storage);
+    const seen = readSeenVersion(registry);
     if (seen === current) return false;
     try {
       notes = await loadNotes();
@@ -257,7 +258,7 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
       return false; // no notes: decide again on the next load
     }
     const decision = whatsNew({ current, seen, releases: notes.releases });
-    if (decision.remember) writeSeenVersion(decision.remember, storage);
+    if (decision.remember) writeSeenVersion(decision.remember, registry);
     if (!decision.show || !panel.hidden) return false;
     render('whatsNew', decision.releases);
     setOpen(true);

@@ -2,7 +2,8 @@
 // modules, no DOM. Run with: node --test apps/game/tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSettings, SCHEMA } from '../js/settings.js';
+import { createSettings as settingsOver, SCHEMA } from '../js/settings.js';
+import { createRegistry, REGISTRY_KEY } from '../js/registry.js';
 import { HotkeyRegistry, comboFromEvent, normalizeCombo, formatCombo, isReservedCombo, keyName } from '../js/hotkeys.js';
 import { ControlGroups, groupKeyFromEvent, groupCommand, DOUBLE_TAP_MS } from '../js/controlgroups.js';
 import { MenuState, fixedControls, speedLabel } from '../js/gamemenu.js';
@@ -17,8 +18,12 @@ function memoryStorage(initial = {}, fail = false) {
     data,
     getItem: (k) => (guard(), data.has(k) ? data.get(k) : null),
     setItem: (k, v) => (guard(), data.set(k, String(v))),
+    removeItem: (k) => (guard(), data.delete(k)),
   };
 }
+
+/** Game settings over a fresh registry over `storage` (null: memory only). */
+const createSettings = (storage) => settingsOver(createRegistry({ storage }));
 
 const key = (code, keyValue, mods = {}) => ({ code, key: keyValue, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...mods });
 
@@ -69,12 +74,15 @@ test('settings: corrupt or throwing storage falls back to defaults and keeps wor
   assert.equal(none.set('showUnitPaths', true), true);
 });
 
-test('settings: unknown stored keys survive a save; objects are copies', () => {
-  const storage = memoryStorage({ 'webra.settings': JSON.stringify({ futureKey: 7, edgeScrollSpeed: 0.5 }) });
+test('settings: the old settings key migrates into the registry; objects are copies', () => {
+  const storage = memoryStorage({ 'webra.settings': JSON.stringify({ futureKey: 7, edgeScrollSpeed: 0.5, hotkeys: { stop: ['Z'] } }) });
   const s = createSettings(storage);
   assert.equal(s.get('edgeScrollSpeed'), 0.5);
+  assert.deepEqual(s.get('hotkeys'), { stop: ['Z'] });
   s.set('keyScrollSpeed', 2);
-  assert.equal(JSON.parse(storage.data.get('webra.settings')).futureKey, 7);
+  assert.equal(JSON.parse(storage.data.get(REGISTRY_KEY)).game.keyScrollSpeed, 2);
+  assert.equal(storage.data.has('webra.settings'), false, 'the old key is gone once migrated');
+  s.set('hotkeys', {});
   const hk = s.get('hotkeys');
   hk.attackMove = ['X'];
   assert.deepEqual(s.get('hotkeys'), {}, 'mutating a returned object changes nothing');

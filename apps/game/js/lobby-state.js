@@ -3,9 +3,8 @@
 // this state; the functions here are pure (or only mutate the state passed in)
 // so they run under Node tests.
 
-export const STORAGE_KEY = 'webra.lobby.v2';
-/** Older keys whose settings are migrated when no current settings exist. */
-export const LEGACY_STORAGE_KEYS = ['webra.lobby.v1'];
+// The last setup is kept in the settings registry (js/registry.js, group
+// "lobby"), which migrated the older keys webra.lobby.v2 and v1.
 /** The installed map file lives in its own key (it can be large). */
 export const MAP_STORAGE_KEY = 'webra.lobby.map.v1';
 
@@ -187,6 +186,26 @@ export function parseUnits(text) {
   if (!/^\d{1,6}$/.test(s)) return null;
   const n = Number(s);
   return n >= UNITS_MIN && n <= UNITS_MAX ? n : null;
+}
+
+/**
+ * Without a stored setup (a new device of a signed-in player), the player's
+ * slot takes the account-wide name, faction and colour (`lobby`: the
+ * registry's lobby group). A stored setup is returned as it is.
+ */
+export function withDefaults(stored, lobby, colorCount) {
+  if (stored && Array.isArray(stored.players) && stored.players.length) return stored;
+  const players = DEFAULT_PLAYERS.map((p) =>
+    p.type === 'human'
+      ? {
+          ...p,
+          name: cleanName(lobby?.name),
+          faction: FACTIONS.has(lobby?.faction) ? lobby.faction : p.faction,
+          color: Number.isInteger(lobby?.color) && lobby.color >= 0 && lobby.color < colorCount ? lobby.color : p.color,
+        }
+      : { ...p },
+  );
+  return { ...(stored ?? {}), players };
 }
 
 export function cleanName(text) {

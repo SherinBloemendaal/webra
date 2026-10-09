@@ -14,6 +14,7 @@ import { Announcer } from './announcer.js';
 import { Director } from './director.js';
 import { Jukebox } from './music.js';
 import { openContentStore, storeError } from './store.js';
+import { defaultRegistry } from '../registry.js';
 
 /** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
 export const FOG_VISIBLE = 255;
@@ -41,8 +42,9 @@ const now = () => performance.now() / 1000;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
 export class AudioSystem {
-  constructor({ storage = globalThis.localStorage, doc = globalThis.document } = {}) {
-    this.prefs = new Prefs(storage);
+  /** @param {{ registry?: object, doc?: Document | null }} [o] the settings registry (js/registry.js) */
+  constructor({ registry = defaultRegistry(), doc = globalThis.document } = {}) {
+    this.prefs = new Prefs(registry);
     this.mixer = new Mixer();
     this.mixer.apply(this.prefs.get());
     this.speech = new Speech();
@@ -112,6 +114,8 @@ export class AudioSystem {
       const store = await this.store();
       await this.bank.loadInstalled(store);
       await this.jukebox.refresh();
+      // A removed track stops instead of playing on until it ends.
+      if (this.jukebox.playing && !this.jukebox.tracks.some((t) => t.title === this.jukebox.playing)) this.jukebox.stop();
     } catch (err) {
       this.storeError = err.message ?? String(err);
     }

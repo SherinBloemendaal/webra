@@ -41,8 +41,8 @@ import {
   validName,
 } from './protocol.js';
 import { api, ApiError, Connection } from './net.js';
+import { defaultRegistry } from './registry.js';
 
-const STORAGE_KEY = 'webra.online.v1';
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
 /** Server error codes after which reconnecting cannot help. */
@@ -131,13 +131,9 @@ function rgbCss(c) {
   return `rgb(${b(c[0])}, ${b(c[1])}, ${b(c[2])})`;
 }
 
+/** The player's lobby name from the settings registry (js/registry.js); signed-in players play under their username. */
 function loadName() {
-  try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    return data && typeof data.name === 'string' ? data.name : '';
-  } catch {
-    return '';
-  }
+  return defaultRegistry().get('lobby', 'name');
 }
 
 /** The stored rejoin record of this tab, or null (malformed records are dropped). */
@@ -200,11 +196,8 @@ export function leftText(m, inGame) {
 }
 
 function saveName(name) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ name }));
-  } catch {
-    // Storage blocked: the name is simply not remembered.
-  }
+  // The registry keeps it (blocked storage: for this page only).
+  defaultRegistry().set('lobby', 'name', name);
 }
 
 /** Session id from an invite link (?join=<id> or #join=<id>), or null. */

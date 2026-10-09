@@ -1,4 +1,5 @@
-// User settings, kept in localStorage under one JSON key.
+// Game settings, a view on the settings registry (js/registry.js) under the
+// flat names the game has always used:
 //
 //   import { get, set, subscribe } from './settings.js';
 //   get('edgeScrollSpeed');                      // 1
@@ -6,137 +7,78 @@
 //   const off = subscribe((key, value) => ...);  // every change
 //   const off2 = subscribe('showUnitPaths', (value) => ...); // one key
 //
-// Storage can be missing or throw (private windows, blocked site data, Node),
-// so every access is wrapped: the game then runs on defaults for the session.
+// The registry keeps them in localStorage and syncs them with the player's
+// account; storage can be missing or throw (private windows, blocked site
+// data, Node), and the game then runs on defaults for the session.
 
-const STORAGE_KEY = 'webra.settings';
+import { defaultRegistry, GROUPS } from './registry.js';
 
-/**
- * Known settings. Numbers are clamped to [min, max]; choices must be one of
- * their options; a stored value of the wrong type falls back to the default.
- */
-export const SCHEMA = {
-  // Multiplier on the edge scroll speed; 0 turns edge scrolling off.
-  edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3 },
-  // Multiplier on the arrow key scroll speed.
-  keyScrollSpeed: { type: 'number', default: 1, min: 0.25, max: 3 },
-  // Draw the paths of selected units (renderer side lives in another module).
-  showUnitPaths: { type: 'boolean', default: false },
-  // Highest canvas pixels per CSS pixel (js/layout.js renderPixelRatio); lower is faster on phones.
-  pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3 },
-  // Render below screen resolution (cheap speed-up for weak mobile GPUs).
-  lowQuality: { type: 'boolean', default: false },
-  // Health bars besides the selection and the hovered actor (OpenRA status bars):
-  // 'off' (selected and hovered only), 'damaged' (also damaged actors), 'all'.
-  healthBars: { type: 'choice', default: 'off', options: ['off', 'damaged', 'all'] },
+/** Setting name -> [registry group, registry key]. */
+export const KEYS = Object.freeze({
+  edgeScrollSpeed: ['game', 'edgeScrollSpeed'],
+  keyScrollSpeed: ['game', 'keyScrollSpeed'],
+  showUnitPaths: ['game', 'showUnitPaths'],
+  healthBars: ['game', 'healthBars'],
+  pixelRatioCap: ['game', 'pixelRatioCap'],
+  lowQuality: ['game', 'lowQuality'],
   // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the
   // original Red Alert graphics the player installed from their own copy).
-  graphics: { type: 'choice', default: 'webra', options: ['webra', 'original'] },
+  graphics: ['game', 'graphics'],
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
-  hotkeys: { type: 'object', default: {} },
-};
-
-function normalize(key, value) {
-  const spec = SCHEMA[key];
-  if (spec.type === 'number') {
-    const n = typeof value === 'number' ? value : Number.NaN;
-    return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
-  }
-  if (spec.type === 'boolean') return typeof value === 'boolean' ? value : spec.default;
-  if (spec.type === 'choice') return spec.options.includes(value) ? value : spec.default;
-  if (spec.type === 'object') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return structuredClone(spec.default);
-    return structuredClone(value);
-  }
-  return spec.default;
-}
-
-function defaultStorage() {
-  try {
-    // Browsers only: Node exposes an experimental localStorage that warns when touched.
-    return globalThis.window?.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function report(err) {
-  if (typeof globalThis.reportError === 'function') globalThis.reportError(err);
-  else console.error(err);
-}
+  hotkeys: ['game', 'hotkeys'],
+});
 
 /**
- * A settings store over `storage` (a Web Storage object, or null for memory only).
- * The module exports one store over localStorage; tests create their own.
+ * Known settings (type, default, min, max, options, label), from the
+ * registry. Numbers are clamped to [min, max]; choices must be one of their
+ * options; a value of the wrong type falls back to the default.
  */
-export function createSettings(storage = defaultStorage()) {
-  const values = {};
-  let stored = {};
-  try {
-    const raw = storage?.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed;
-  } catch {
-    // Unreadable or corrupt: start from defaults.
-  }
-  for (const key of Object.keys(SCHEMA)) values[key] = normalize(key, stored[key]);
-  const listeners = new Set();
+export const SCHEMA = Object.freeze(Object.fromEntries(Object.entries(KEYS).map(([name, [group, key]]) => [name, GROUPS[group].settings[key]])));
 
-  const check = (key) => {
-    if (!Object.hasOwn(SCHEMA, key)) throw new Error(`Unknown setting "${key}"`);
+const REVERSE = new Map(Object.entries(KEYS).map(([name, [group, key]]) => [`${group}.${key}`, name]));
+
+/**
+ * A settings store over a registry (js/registry.js createRegistry). The
+ * module exports one over the page's registry; tests create their own.
+ */
+export function createSettings(registry = defaultRegistry()) {
+  const where = (name) => {
+    if (!Object.hasOwn(KEYS, name)) throw new Error(`Unknown setting "${name}"`);
+    return KEYS[name];
   };
-
-  const save = () => {
-    try {
-      // Keep keys this build does not know (written by a newer build) intact.
-      storage?.setItem(STORAGE_KEY, JSON.stringify({ ...stored, ...values }));
-    } catch {
-      // Quota or blocked storage: the change still applies for this session.
-    }
-  };
-
   return {
+    registry,
     /** Current value of a setting (objects are copies). */
-    get(key) {
-      check(key);
-      const v = values[key];
-      return v && typeof v === 'object' ? structuredClone(v) : v;
+    get(name) {
+      const [group, key] = where(name);
+      return registry.get(group, key);
     },
     /** Change a setting; returns the stored (normalized) value. */
-    set(key, value) {
-      check(key);
-      const next = normalize(key, value);
-      if (JSON.stringify(next) === JSON.stringify(values[key])) return this.get(key);
-      values[key] = next;
-      save();
-      for (const fn of [...listeners]) {
-        try {
-          fn(key, this.get(key));
-        } catch (err) {
-          report(err);
-        }
-      }
-      return this.get(key);
+    set(name, value) {
+      const [group, key] = where(name);
+      return registry.set(group, key, value);
     },
     /** Put a setting back to its default. */
-    reset(key) {
-      check(key);
-      return this.set(key, SCHEMA[key].default);
+    reset(name) {
+      const [group, key] = where(name);
+      return registry.reset(group, key);
     },
     /**
-     * subscribe(fn): fn(key, value) on every change.
-     * subscribe(key, fn): fn(value) when that key changes.
+     * subscribe(fn): fn(name, value) on every change.
+     * subscribe(name, fn): fn(value) when that setting changes.
      * Returns a function that unsubscribes.
      */
-    subscribe(keyOrFn, fn) {
-      let listener;
-      if (typeof keyOrFn === 'function') listener = keyOrFn;
-      else {
-        check(keyOrFn);
-        listener = (key, value) => key === keyOrFn && fn(value);
-      }
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+    subscribe(nameOrFn, fn) {
+      const only = typeof nameOrFn === 'function' ? null : nameOrFn;
+      if (only) where(only);
+      const call = typeof nameOrFn === 'function' ? nameOrFn : (_name, value) => fn(value);
+      return registry.subscribe((changes) => {
+        for (const c of changes) {
+          const name = REVERSE.get(`${c.group}.${c.key}`);
+          if (!name || (only && name !== only)) continue;
+          call(name, structuredClone(c.to));
+        }
+      });
     },
   };
 }
