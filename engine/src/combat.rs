@@ -35,6 +35,11 @@ impl World {
     /// use their kind's class; submarines switch between surfaced and
     /// submerged classes (naval.rs).
     pub fn target_class(&self, i: usize) -> u32 {
+        // Damaged units are also Heal or Repair targets (infantry_combat.rs).
+        self.kind_class(i) | self.support_class(i)
+    }
+
+    fn kind_class(&self, i: usize) -> u32 {
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
@@ -55,7 +60,10 @@ impl World {
     /// power down button (repair.rs; OpenRA's `disabled` condition).
     pub fn is_powered_down(&self, i: usize) -> bool {
         let a = &self.actors[i];
-        a.powered_off || (self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power())
+        a.powered_off
+            || (self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power())
+            // A spy's power outage (InfiltrateForPowerOutage, infantry.rs).
+            || self.outage_disabled(i)
     }
 
     // ---- Target acquisition ------------------------------------------------
@@ -66,6 +74,10 @@ impl World {
     /// ReturnFire, also while attack-moving) only defences count among the
     /// structures (AutoTargetPriority@DEFAULT has Defense but not Structure).
     pub(crate) fn scan_for_target(&self, i: usize) -> Option<usize> {
+        // Medics and mechanics look for friends to treat (infantry_combat.rs).
+        if self.heals(i) {
+            return self.scan_for_heal_target(i);
+        }
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
         let any_structure = a.stance == Stance::AttackAnything || !self.has_stance(i);
@@ -93,6 +105,8 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
+                        // A disguised spy looks friendly (OpenRA AppearsHostileTo; infantry.rs).
+                        || !self.appears_hostile(u, i)
                         || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
@@ -112,6 +126,8 @@ impl World {
                         && self.are_enemies(a.owner, t.owner)
                         && !self.is_cloaked_from(b, a.owner)
                         && !tinfo.is_wall()
+                        // An allied engineer is taking it over (CaptureManager.PreventsAutoTarget).
+                        && !self.capture_protected(b, a.owner)
                         && (any_structure || tinfo.defense)
                         && info.can_attack(&self.rules, Kind::Building)
                     {
@@ -215,7 +231,8 @@ impl World {
         }
         let stance = self.actors[i].stance;
         let hold = stance < Stance::AttackAnything;
-        if stance >= Stance::ReturnFire {
+        // Healers never shoot back (their weapons only treat friends).
+        if stance >= Stance::ReturnFire && !self.heals(i) {
             if let Some(t) = self.retaliation_target(i, aggressor, hold) {
                 self.engage(i, t, hold);
                 return true;
@@ -243,6 +260,10 @@ impl World {
         let info = &self.rules.actors[self.actors[i].ty as usize];
         let tclass = self.target_class(t);
         if !self.actors[t].in_world() || !self.are_enemies(owner, self.actors[t].owner) || !self.targetable(t, owner) {
+            return None;
+        }
+        // No retaliation against what looks friendly (AutoTarget: AppearsFriendlyTo).
+        if !self.appears_hostile(t, i) {
             return None;
         }
         let range =
@@ -279,8 +300,13 @@ impl World {
         // Forced attacks (force-fire) may target anyone, own actors included,
         // but never the attacker itself.
         let forced = self.actors[i].forced;
-        self.resolve(self.actors[i].target)
-            .filter(|&t| t != i && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner))
+        // Healers treat own and allied units only (Armament TargetRelationships Ally).
+        let heals = self.heals(i);
+        self.resolve(self.actors[i].target).filter(|&t| {
+            let ok =
+                if heals { self.are_allies(owner, self.actors[t].owner) } else { forced || self.are_enemies(owner, self.actors[t].owner) };
+            t != i && ok && self.targetable(t, owner)
+        })
     }
 
     // ---- Units ---------------------------------------------------------------
@@ -324,7 +350,12 @@ impl World {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let d = self.target_distance(t, x, y);
         if d <= range && d >= min_range {
-            self.aim_and_fire(i, t);
+            // Dogs leap onto their prey instead of firing from range (dog.rs).
+            if self.leaps(i) {
+                self.leap_attack(i, t);
+            } else {
+                self.aim_and_fire(i, t);
+            }
             return;
         }
         // Defend and ReturnFire fights never move the unit: out of reach ends them.
@@ -513,7 +544,8 @@ impl World {
             }
             // Submarines surface to fire (Cloak UncloakOn: Attack).
             self.naval_on_fire(i);
-            self.fire_on(i, ft, w);
+            // Armament.FireDelay holds the shot back (infantry_combat.rs).
+            self.fire_or_delay(i, slot, ft, w);
             // Firing heats vehicles up in a heat wave (weather.rs).
             self.actors[i].env.fired = true;
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
@@ -550,7 +582,7 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine | Kind::Proxy => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
@@ -719,7 +751,8 @@ impl World {
                 let ci = self.map.idx(xx, yy);
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
-                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) {
+                    // Warhead.ValidRelationships (the Heal and Repair warheads only touch friends).
+                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) && self.warhead_relates(wh, owner, u) {
                         let d = self.hit_distance(u, x, y);
                         if d <= radius {
                             hits.push((u, d));
@@ -730,7 +763,7 @@ impl World {
                 if b != NONE && !seen_buildings.contains(&(b as usize)) {
                     let b = b as usize;
                     seen_buildings.push(b);
-                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
+                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) && self.warhead_relates(wh, owner, b) {
                         let d = self.hit_distance(b, x, y);
                         if d <= radius {
                             hits.push((b, d));
@@ -782,6 +815,11 @@ impl World {
     /// prone modifiers apply, a trigger type throws infantry prone, and a kill
     /// gives `source` experience (veterancy.rs).
     pub(crate) fn damage_from(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
+        // Negative damage heals (the Medic's and Mechanic's warheads, infantry_combat.rs).
+        if dmg < 0 {
+            self.heal_by(u, -dmg);
+            return;
+        }
         if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick {
             return;
         }
@@ -815,6 +853,8 @@ impl World {
         }
         self.take_cover(u, types);
         if self.actors[u].hp <= 0 {
+            // Which death animation and scream (infantry_combat.rs).
+            self.note_death_types(u, types);
             self.award_kill(u, source);
             self.kill(u);
             return;

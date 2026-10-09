@@ -120,17 +120,22 @@ pub struct Nuke {
     pub camera_remove: i32,
 }
 
-/// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
-/// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
-fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
-    let name = match t {
+/// OpenRA terrain type name of a WebRA terrain class.
+pub(crate) fn terrain_name(t: Terrain) -> &'static str {
+    match t {
         Terrain::Clear => "Clear",
         Terrain::Rough => "Rough",
         Terrain::Rock => "Rock",
         Terrain::Water => "Water",
         Terrain::Tree => "Tree",
         Terrain::Ford => "Ford",
-    };
+    }
+}
+
+/// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
+/// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
+fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
+    let name = terrain_name(t);
     let res = match resource {
         Some(Resource::Ore) => "Ore",
         Some(Resource::Gems) => "Gems",
@@ -251,6 +256,8 @@ impl World {
     /// Called right after actor `i` fired a weapon.
     pub(crate) fn on_fire(&mut self, i: usize) {
         self.uncloak_on(i, "Attack");
+        // A spy drops its disguise when it attacks (Disguise RevealDisguiseOn: Attack; infantry.rs).
+        self.actors[i].inf.disguise = None;
         // Demolition truck: GrantConditionOnAttack -> KillsSelf (the MiniNuke goes off).
         if self.rules.actors[self.actors[i].ty as usize].abilities.demo_truck.is_some() {
             self.kill(i);
@@ -461,7 +468,7 @@ impl World {
         a.stuck_ticks = 0;
     }
 
-    fn on_cell(&self, i: usize, ci: u32) -> bool {
+    pub(crate) fn on_cell(&self, i: usize, ci: u32) -> bool {
         let a = &self.actors[i];
         dist(a.x, a.y, cell_center(ci as i32 % self.map.width), cell_center(ci as i32 / self.map.width)) <= ON_CELL
     }
@@ -469,7 +476,7 @@ impl World {
     /// Progress bookkeeping toward a cell, measured along the path; true
     /// when the unit has made no progress for too long or cannot reach the
     /// cell at all.
-    fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
+    pub(crate) fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.

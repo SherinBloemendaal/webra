@@ -59,10 +59,18 @@ impl World {
             }
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
             let p = &mut self.players[a.owner as usize];
-            for &t in &b.provides[p.faction] {
+            // The structure's own faction (OpenRA FactionInit): a captured
+            // Soviet barracks trains Soviet infantry for its new owner.
+            for &t in &b.provides[a.faction as usize] {
                 p.tokens[t as usize] = true;
             }
             p.storage += b.storage;
+        }
+        // Proxies granted by infiltrations (infantry.rs).
+        for p in 0..self.players.len() {
+            for t in self.proxy_tokens(p) {
+                self.players[p].tokens[t as usize] = true;
+            }
         }
         for p in self.players.iter_mut() {
             // Ore over capacity is lost, as in OpenRA when silos are destroyed.
@@ -78,6 +86,10 @@ impl World {
         for a in &self.actors {
             // Switched off with the power down button: no drain (OpenRA PowerMultiplier@POWERDOWN: 0).
             if !a.alive || a.kind != Kind::Building || a.powered_off {
+                continue;
+            }
+            // A power plant under a spy's power outage makes nothing (infantry.rs).
+            if self.outage_disabled_at(a) {
                 continue;
             }
             let info = &self.rules.actors[a.ty as usize];
@@ -278,17 +290,30 @@ impl World {
         self.availability(player, ty).enabled && (!q.is_structure() || self.has_producer(player, q))
     }
 
+    /// Whether `player` can queue one more `ty`: `can_produce` within its
+    /// Buildable.BuildLimit (owned and queued together, infantry.rs). Items
+    /// already queued are not cancelled by the limit.
+    pub fn can_start(&self, player: u8, ty: u16) -> bool {
+        self.can_produce(player, ty) && !self.at_build_limit(player, ty)
+    }
+
     /// Queue `count` items of `ty`. Structures queue like units (OpenRA): only
     /// the first item is built, and a finished structure waits for placement
     /// while the items behind it wait too.
     pub fn start_production(&mut self, player: u8, ty: u16, count: i32) {
-        if ty as usize >= self.rules.actors.len() || !self.can_produce(player, ty) {
+        if ty as usize >= self.rules.actors.len() || !self.can_start(player, ty) {
             return;
         }
         let q = self.rules.actors[ty as usize].queue;
+        // BuildLimit: one by one, so a count of 5 queues only what is left.
+        let limit = self.rules.actors[ty as usize].build_limit;
+        let owned = if limit > 0 { self.actors.iter().filter(|a| a.alive && a.owner == player && a.ty == ty).count() } else { 0 };
         let queue = &mut self.players[player as usize].queues[q as usize];
         for _ in 0..count.max(1) {
             if queue.items.len() >= MAX_QUEUED {
+                return;
+            }
+            if limit > 0 && owned + queue.items.iter().filter(|it| it.ty == ty).count() >= limit as usize {
                 return;
             }
             queue.items.push(QueueItem { ty, total: 0, remaining: 0, paid: 0, slow: 0, done: false });
@@ -628,6 +653,10 @@ impl World {
     pub fn sell(&mut self, b: usize) -> bool {
         let a = &self.actors[b];
         if !a.alive || a.kind != Kind::Building {
+            return false;
+        }
+        // Sellable RequiresCondition !being-captured && !being-demolished (infantry.rs).
+        if self.being_captured(b) || self.being_demolished(b) {
             return false;
         }
         let info = &self.rules.actors[a.ty as usize];

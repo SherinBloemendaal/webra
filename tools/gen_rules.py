@@ -24,8 +24,8 @@ ACTORS = [
     'SBAG', 'FENC', 'BRIK', 'PBOX', 'HBOX', 'GUN', 'FTUR', 'TSLA', 'AGUN', 'SAM',
     # France: decoy structures
     'FPWR', 'TENF', 'SYRF', 'WEAF', 'DOMF', 'FIXF', 'FAPW', 'ATEF', 'PDOF', 'MSLF', 'FACF',
-    # Infantry (more later)
-    'E1', 'E3',
+    # Infantry
+    'E1', 'E2', 'E3', 'E4', 'E6', 'E7', 'DOG', 'MEDI', 'MECH', 'SPY', 'SPY.England', 'THF', 'SHOK',
     # Ground vehicles
     'HARV', 'MCV', 'TRUK', 'JEEP', 'APC', 'FTRK', '1TNK', '2TNK', '3TNK', '4TNK', 'V2RL', 'ARTY', 'MNLY',
     'MRJ', 'MGG', 'TTNK', 'DTRK', 'CTNK', 'STNK', 'QTNK',
@@ -42,7 +42,14 @@ EXTRA_ACTORS = [
     'E1R1', 'E3R1',            # paratroopers (ParatroopersPower DropItems)
     'U2', 'BADR', 'BADR.Bomber',  # spy plane, paratrooper transport, parabomb bomber
     'MINV', 'MINP',            # Minelayer mines (data/source/rules/misc.yaml)
+] + [
+    # Proxies (OpenRA InfiltrateForSupportPower.Proxy, data/source/rules/misc.yaml):
+    # player-level actors a spy grants by infiltrating a structure. They have
+    # no body: the engine keeps them per player (infantry.rs) for their
+    # prerequisites and support powers.
+    'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse',
 ]
+PROXIES = {'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse'}
 # Reveal range of OpenRA's support power camera actors. They live in
 # mods/ra/rules/misc.yaml, of which data/source only has the mines; OpenRA's CAMERA
 # actor reveals 10c0 and the power cameras inherit it.
@@ -173,7 +180,12 @@ TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure
                # Submarine is its own class (surfaced and submerged subs): depth charge
                # warheads hit it, while Underwater only matches submerged subs.
                'Ship': 16, 'Submarine': 128,
-               'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
+               'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0,
+               # Damaged infantry (Targetable@HEAL) and damaged vehicles, ships and
+               # landed aircraft (Targetable@REPAIR): what the Medic's Heal and the
+               # Mechanic's Repair weapons fire at. The engine adds them to an
+               # actor's classes while it is damaged (combat.rs target_class).
+               'Heal': 512, 'Repair': 1024}
 
 
 def target_mask(v):
@@ -229,6 +241,8 @@ def weapon_info(name, weapons):
         versus = v.get('Versus', {})
         warheads.append({
             'kind': {'SpreadDamage': 'spread', 'TargetDamage': 'target', 'HealthPercentageDamage': 'percent'}[kind],
+            # WarheadInfo.ValidRelationships (default all): the Heal and Repair warheads only touch allies.
+            'relationships': relationship_mask(v.get('ValidRelationships', 'Ally, Neutral, Enemy')),
             'damage': int(v.get('Damage', 0)),
             'spread': wdist(v.get('Spread', 43)),
             'falloff': ints(v['Falloff']) if 'Falloff' in v else DEFAULT_FALLOFF,
@@ -245,7 +259,7 @@ def weapon_info(name, weapons):
                   None: 'instant'}[ptype]
     speed = 0
     if isinstance(proj, dict) and projectile in ('bullet', 'missile'):
-        speed = ints(proj.get('Speed', '213'))[0] if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
+        speed = wdist(tokens(proj['Speed'])[0]) if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
     if projectile == 'bomb':
         # GravityBomb: falls straight down at Velocity (world units per tick, z component).
         speed = abs(ints(proj.get('Velocity', '0, 0, -50'))[2])
@@ -264,6 +278,14 @@ def weapon_info(name, weapons):
         'invalid': target_mask(w.get('InvalidTargets', '')),
         'warheads': warheads,
     }
+
+
+# OpenRA PlayerRelationship as bits (rules.rs RELATION_*).
+RELATIONSHIPS = {'None': 0, 'Ally': 1, 'Neutral': 2, 'Enemy': 4}
+
+
+def relationship_mask(v):
+    return sum(RELATIONSHIPS[x] for x in tokens(v))
 
 
 def experience_info(t):
@@ -387,6 +409,91 @@ def stances(t):
     return [STANCES[str(at.get('InitialStance', 'AttackAnything'))], STANCES[str(at.get('InitialStanceAI', 'AttackAnything'))]]
 
 
+# Target types that an Infiltrates trait can enter (Infiltrates.Types of the
+# Spy, Thief and Mechanic), exported per actor from its Targetable traits.
+INFILTRATE_TYPES = ['SpyInfiltrate', 'ThiefInfiltrate', 'Husk']
+# InfiltrateFor* traits on the infiltrated structure (OpenRA.Mods.Cnc
+# Traits/Infiltration) and the effect names the engine knows (infantry.rs).
+INFILTRATE_EFFECTS = {'InfiltrateForCash': 'cash', 'InfiltrateForExploration': 'exploration',
+                      'InfiltrateForPowerOutage': 'power_outage', 'InfiltrateForSupportPower': 'support_power',
+                      'InfiltrateForSupportPowerReset': 'power_reset', 'InfiltrateForDecoration': 'decoration'}
+# OpenRA trait defaults of the infantry abilities (infantry.rs).
+INFILTRATE_CASH_PERCENT = 100       # InfiltrateForCashInfo.Percentage
+POWER_OUTAGE_DURATION = 500         # InfiltrateForPowerOutageInfo.Duration
+CAPTURE_DELAY = 0                   # CapturesInfo.CaptureDelay
+DEMOLITION_DELAY = 45               # DemolitionInfo.DetonationDelay
+DEMOLITION_FLASHES = 3              # DemolitionInfo.Flashes
+DEMOLITION_FLASH_DELAY = 4          # DemolitionInfo.FlashesDelay
+DEMOLITION_FLASH_INTERVAL = 4       # DemolitionInfo.FlashInterval
+LEAP_SPEED = '426'                  # AttackLeapInfo.Speed
+SPAWN_ACTOR_LIFETIME = 250          # SpawnActorPowerInfo.LifeTime
+# The reusable engineers lobby option (player.yaml LobbyPrerequisiteCheckbox@REUSABLEENGINEERS)
+# grants this prerequisite; Captures traits switch on it.
+REUSABLE_ENGINEERS = 'global-reusable-engineers'
+
+
+def armament_info(t):
+    """Per weapon slot (the order of `weapons`): FireDelay; and whether the
+    armaments only target allies (TargetRelationships: Ally, the Medic and
+    Mechanic)."""
+    delays, allies = [], False
+    for arm in trait(t, 'Armament').values():
+        if isinstance(arm, dict) and arm.get('Name') != 'garrisoned':
+            delays.append(int(arm.get('FireDelay', 0)))
+            allies |= relationship_mask(arm.get('TargetRelationships', 'Enemy')) == RELATIONSHIPS['Ally']
+    return delays, allies
+
+
+def death_info(t):
+    """WithDeathAnimation: the death sequence number per damage type (die1..die6)
+    and whether crushing has its own sequence; None without the trait."""
+    d = t.get('WithDeathAnimation')
+    if not isinstance(d, dict) or str(d.get('UseDeathTypeSuffix', 'true')).lower() != 'true':
+        return None
+    types = d.get('DeathTypes') or {}
+    return {'types': [{'type': k, 'sequence': int(tokens(v)[0])} for k, v in types.items()],
+            'crushed': bool(d.get('CrushedSequence'))}
+
+
+def captures_info(t):
+    """Captures traits: types, delay, consumed and which lobby setting enables them."""
+    out = []
+    for v in trait(t, 'Captures').values():
+        v = v if isinstance(v, dict) else {}
+        cond = v.get('RequiresCondition', '')
+        if cond not in ('', REUSABLE_ENGINEERS, '!' + REUSABLE_ENGINEERS):
+            raise SystemExit(f'unsupported Captures condition {cond!r}')
+        out.append({'types': tokens(v.get('CaptureTypes')), 'delay': int(v.get('CaptureDelay', CAPTURE_DELAY)),
+                    'consumed': str(v.get('ConsumedByCapture', 'True')).lower() == 'true',
+                    'experience': int(v.get('PlayerExperience', 0)),
+                    # 1: only with reusable engineers, -1: only without, 0: always.
+                    'option': 1 if cond == REUSABLE_ENGINEERS else -1 if cond else 0})
+    return out
+
+
+def infiltrated_info(t, ids_lower):
+    """InfiltrateFor* effects of an infiltratable actor (structures, husks)."""
+    out = []
+    for k, v in t.items():
+        base = k.split('@')[0]
+        if base not in INFILTRATE_EFFECTS:
+            continue
+        v = v if isinstance(v, dict) else {}
+        e = {'kind': INFILTRATE_EFFECTS[base], 'types': tokens(v.get('Types')),
+             'experience': int(v.get('PlayerExperience', 0))}
+        if base == 'InfiltrateForCash':
+            e['percentage'] = int(v.get('Percentage', INFILTRATE_CASH_PERCENT))
+            e['minimum'] = int(v.get('Minimum', -1))
+            e['maximum'] = int(v.get('Maximum', 2 ** 31 - 1))
+            e['experience_percentage'] = int(v.get('PlayerExperiencePercentage', 0))
+        if base == 'InfiltrateForPowerOutage':
+            e['duration'] = int(v.get('Duration', POWER_OUTAGE_DURATION))
+        if base == 'InfiltrateForSupportPower':
+            e['proxy'] = ids_lower[v['Proxy'].lower()]
+        out.append(e)
+    return out
+
+
 def load_source_rules():
     """Resolved OpenRA actor rules from data/source (parse.py), keyed by actor name."""
     sys.path.insert(0, os.path.join(DATA, 'source'))
@@ -420,7 +527,7 @@ def extra_actor(src, aid):
         'id': aid,
         'name': name,
         'description': '',
-        'queue': 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t else 'Vehicle',
+        'queue': 'Building' if aid in PROXIES else 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t else 'Vehicle',
         'cost': int(src.g(tree, 'Valued/Cost') or 0),
         'buildDuration': None,
         'buildDurationModifier': None,
@@ -454,7 +561,8 @@ def main():
     for aid in ACTORS + EXTRA_ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
+        kind = ('proxy' if aid in PROXIES else 'building' if 'Building' in t else 'mine' if 'Mine' in t
+                else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle'))
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -491,7 +599,22 @@ def main():
             'experience': experience_info(t),
             'gives_experience': gives_experience_info(t),
             'take_cover': take_cover_info(t) if kind == 'infantry' else None,
+            # Buildable.BuildLimit: most owned and queued at once (0: no limit).
+            'build_limit': int(t['Buildable'].get('BuildLimit', 0)) if isinstance(t.get('Buildable'), dict) else 0,
+            # ProducibleWithLevel: produced with levels while the owner has the prerequisites.
+            'producible_level': {'prerequisites': tokens(t['ProducibleWithLevel'].get('Prerequisites')),
+                                 'levels': int(t['ProducibleWithLevel'].get('InitialLevels', 1))}
+            if isinstance(t.get('ProducibleWithLevel'), dict) else None,
+            'fire_delays': [],
+            'targets_allies': False,
+            # WithDeathAnimation (infantry deaths per damage type, infantry.rs).
+            'death': death_info(t) if kind == 'infantry' else None,
+            # Infiltrates.Types this actor can be entered with (its Targetable types).
+            'infiltrate_types': [x for x in INFILTRATE_TYPES if x in target_types(t)],
+            # Targetable type Disguise: a Spy can disguise as it.
+            'disguisable': 'Disguise' in target_types(t),
         }
+        e['fire_delays'], e['targets_allies'] = armament_info(t)
         for slot, arm in trait(t, 'Armament').items():
             # Garrison weapons belong to the soldier inside, not the vehicle or building.
             if isinstance(arm, dict) and arm.get('Name') != 'garrisoned':
@@ -537,6 +660,53 @@ def main():
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
+        # Infantry abilities (infantry.rs): engineers, spies, thieves, Tanya, dogs.
+        if has(t, 'Captures'):
+            ab['captures'] = captures_info(t)
+        if has(t, 'Capturable'):
+            c = first(t, 'Capturable') or next(iter(trait(t, 'Capturable').values()))
+            c = c if isinstance(c, dict) else {}
+            ab['capturable'] = {'types': sorted({x for v in trait(t, 'Capturable').values() if isinstance(v, dict) for x in tokens(v.get('Types'))}),
+                                'cancel_activity': str(c.get('CancelActivity', 'False')).lower() == 'true'}
+        if 'InstantlyRepairs' in t:
+            ab['instantly_repairs'] = {}
+        if 'InstantlyRepairable' in t:
+            ab['instantly_repairable'] = {}
+        if 'RepairsBridges' in t:
+            ab['repairs_bridges'] = {}
+        if has(t, 'Infiltrates'):
+            v = next(iter(trait(t, 'Infiltrates').values()))
+            v = v if isinstance(v, dict) else {}
+            ab['infiltrates'] = {'types': tokens(v.get('Types')),
+                                 'relationships': relationship_mask(v.get('ValidRelationships', 'Neutral, Enemy'))}
+        infiltrated = infiltrated_info(t, ids_lower)
+        if infiltrated:
+            ab['infiltrated'] = infiltrated
+        if 'Disguise' in t:
+            ab['disguise'] = {}
+        if 'IgnoresDisguise' in t:
+            ab['ignores_disguise'] = {}
+        if 'Demolition' in t:
+            d = t['Demolition'] if isinstance(t['Demolition'], dict) else {}
+            ab['demolition'] = {'delay': int(d.get('DetonationDelay', DEMOLITION_DELAY)),
+                                'flashes': int(d.get('Flashes', DEMOLITION_FLASHES)),
+                                'flash_delay': int(d.get('FlashesDelay', DEMOLITION_FLASH_DELAY)),
+                                'flash_interval': int(d.get('FlashInterval', DEMOLITION_FLASH_INTERVAL))}
+        if has(t, 'Demolishable'):
+            ab['demolishable'] = {}
+        if 'AttackLeap' in t:
+            lp = t['AttackLeap'] if isinstance(t['AttackLeap'], dict) else {}
+            # GrantConditionWhileAiming `run` speeds the dog up (SpeedMultiplier
+            # requiring run); GrantConditionOnAttack `eating` pauses it after a bite.
+            run = [int(v['Modifier']) for v in trait(t, 'SpeedMultiplier').values()
+                   if isinstance(v, dict) and v.get('RequiresCondition') == 'run']
+            eat = t.get('GrantConditionOnAttack') if isinstance(t.get('GrantConditionOnAttack'), dict) else {}
+            ab['attack_leap'] = {'speed': wdist(lp.get('Speed', LEAP_SPEED)), 'run_speed': run[0] if run else 100,
+                                 'eat_ticks': int(eat.get('RevokeDelay', 0))}
+        if aid in PROXIES:
+            # ProvidesPrerequisite without a Prerequisite provides the actor's own name.
+            ab['proxy'] = {'provides': [(p.get('Prerequisite') if isinstance(p, dict) else None) or aid.lower()
+                                        for p in trait(t, 'ProvidesPrerequisite').values()]}
         if 'AcceptsDeliveredCash' in t:
             ab['accepts_cash'] = {}
         # Iron Curtain (ExternalCondition@INVULNERABILITY): the Demolition Truck's
@@ -608,7 +778,8 @@ def main():
         powers = []
         for k, v in t.items():
             base = k.split('@')[0]
-            if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower'):
+            if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower',
+                        'SpawnActorPower'):
                 v = v if isinstance(v, dict) else {}
                 power = {'key': k, 'kind': base, 'name': ftl.get(v.get('Name', ''), v.get('Name', base)),
                          'description': ftl.get(v.get('Description', ''), ''),
@@ -640,6 +811,16 @@ def main():
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
                 if base == 'GpsPower':
                     power['reveal_delay'] = int(v.get('RevealDelay', 0))
+                if base == 'SpawnActorPower':
+                    # The Sonar Pulse spawns SONAR for LifeTime ticks: a DetectCloaked
+                    # detector without a body (infantry.rs).
+                    spawned = src.to_json(src.rules[v['Actor'].upper()])
+                    det = spawned.get('DetectCloaked') if isinstance(spawned.get('DetectCloaked'), dict) else {}
+                    power['duration'] = int(v.get('LifeTime', SPAWN_ACTOR_LIFETIME))
+                    power['terrain'] = tokens(v.get('Terrain'))
+                    power['allow_under_shroud'] = str(v.get('AllowUnderShroud', 'True')).lower() == 'true'
+                    power['detect_range'] = wdist(det.get('Range', '5c0'))
+                    power['detect_types'] = tokens(det.get('DetectionTypes', 'Cloak'))
                 power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
                 powers.append(power)
         if powers:
@@ -723,8 +904,8 @@ def main():
             e['building']['value'] = int(csv.get('Value', a['cost'])) if isinstance(csv, dict) else a['cost']
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
-        elif kind == 'mine':
-            pass  # Immobile: no unit info.
+        elif kind in ('mine', 'proxy'):
+            pass  # Immobile mines and bodiless proxies: no unit info.
         else:
             if kind == 'aircraft':
                 # Aircraft have no Mobile trait: they fly over everything.

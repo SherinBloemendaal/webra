@@ -38,7 +38,7 @@ fn busy_world() -> World {
     let types: Vec<u16> = (0..w.rules.actors.len() as u16).collect();
     for (k, &t) in types.iter().enumerate() {
         let kind = w.rules.actors[t as usize].kind;
-        if kind == Kind::Building || kind == Kind::Mine {
+        if kind == Kind::Building || kind == Kind::Mine || kind == Kind::Proxy {
             continue;
         }
         for p in 0..2u8 {
@@ -531,7 +531,7 @@ fn exercise(over: &serde_json::Value, seed: u64) {
             let k = t as i32;
             let (x, y) = (2 + (k % 12) * 5, 2 + (k / 12 % 3) * 5 + p as i32 * 32);
             match w.rules.actors[t].kind {
-                Kind::Mine => {}
+                Kind::Mine | Kind::Proxy => {}
                 Kind::Building => {
                     w.spawn_building(t as u16, p, x, y);
                 }

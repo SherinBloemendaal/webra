@@ -162,6 +162,21 @@ impl World {
                 }
             }
         }
+        // Proxies granted by infiltration (the Sonar Pulse; infantry.rs) are always powered.
+        for p in 0..n {
+            for &ty in &self.players[p].proxies {
+                let Some(list) = self.rules.actors[ty as usize].abilities.support_powers.as_ref() else { continue };
+                for (k, info) in list.iter().enumerate() {
+                    if !self.power_prereqs_met(p as u8, info) {
+                        continue;
+                    }
+                    match offered.iter_mut().find(|o| o.0 as usize == p && o.1 == info.key) {
+                        Some(o) => o.4 = true,
+                        None => offered.push((p as u8, info.key.clone(), ty, k, true)),
+                    }
+                }
+            }
+        }
         for p in 0..n {
             let defeated = self.players[p].defeated;
             let spent = &self.powers.spent;
@@ -229,18 +244,28 @@ impl World {
 
     /// Whether the player owns a powered structure that provides `key` and meets its prerequisites.
     pub fn has_powered_provider(&self, player: u8, key: &str) -> bool {
-        (0..self.actors.len()).any(|i| {
-            let a = &self.actors[i];
-            a.alive
-                && a.owner == player
-                && a.kind == Kind::Building
-                && !self.is_powered_down(i)
-                && self.rules.actors[a.ty as usize]
+        let proxy = self.players.get(player as usize).is_some_and(|p| {
+            p.proxies.iter().any(|&ty| {
+                self.rules.actors[ty as usize]
                     .abilities
                     .support_powers
                     .as_ref()
-                    .is_some_and(|l| l.iter().any(|p| p.key == key && self.power_prereqs_met(player, p)))
-        })
+                    .is_some_and(|l| l.iter().any(|sp| sp.key == key && self.power_prereqs_met(player, sp)))
+            })
+        });
+        proxy
+            || (0..self.actors.len()).any(|i| {
+                let a = &self.actors[i];
+                a.alive
+                    && a.owner == player
+                    && a.kind == Kind::Building
+                    && !self.is_powered_down(i)
+                    && self.rules.actors[a.ty as usize]
+                        .abilities
+                        .support_powers
+                        .as_ref()
+                        .is_some_and(|l| l.iter().any(|p| p.key == key && self.power_prereqs_met(player, p)))
+            })
     }
 
     /// Dispatch on the power kind. Add new kinds here (see the module docs).
@@ -253,6 +278,8 @@ impl World {
             "GrantExternalConditionPower" => self.fire_iron_curtain(info, x, y),
             "NukePower" => self.fire_nuke(player, info, x, y),
             "GpsPower" => self.fire_gps(player, info),
+            // infantry.rs: the Sonar Pulse a spy's infiltration grants.
+            "SpawnActorPower" => self.fire_spawn_actor(player, info, x, y),
             _ => false,
         }
     }

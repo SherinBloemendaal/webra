@@ -224,7 +224,7 @@ impl World {
             Kind::Aircraft => s.aircraft_built += 1,
             Kind::Ship => s.ships_built += 1,
             Kind::Infantry | Kind::Vehicle => s.units_built += 1,
-            Kind::Mine => return,
+            Kind::Mine | Kind::Proxy => return,
         }
         s.built_value += cost;
         *self.detail_mut(player).built.entry(ty).or_insert(0) += 1;
@@ -243,6 +243,12 @@ impl World {
                 self.stats_mut(k).damage_dealt += i64::from(amount);
             }
         }
+    }
+
+    /// `player` gained experience points outside combat (OpenRA PlayerExperience
+    /// of captures and infiltrations, infantry.rs), on the units' scale.
+    pub(crate) fn note_points(&mut self, player: u8, xp: i64) {
+        self.stats_mut(player).experience += xp.max(0);
     }
 
     /// Actor `i` gained `xp` experience and `ranks` levels.

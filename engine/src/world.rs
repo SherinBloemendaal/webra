@@ -37,6 +37,8 @@ pub enum Activity {
     Guard,
     /// Fire at the ground at `fire_at` until told otherwise (OpenRA force-fire).
     AttackGround,
+    /// Walk into an actor to capture, infiltrate, repair or demolish it (infantry.rs).
+    Enter,
 }
 
 /// A queued move (Shift+click), started once the unit is idle. Units of one
@@ -198,6 +200,12 @@ pub struct Actor {
     pub repair_active: bool,
     /// Switched off with the power down button (OpenRA `powerdown` condition).
     pub powered_off: bool,
+
+    /// Faction it was made for (OpenRA FactionInit): a captured structure
+    /// keeps providing its own faction's prerequisites.
+    pub faction: u8,
+    /// Infantry abilities: entering, disguise, leaps, C4 (infantry.rs, dog.rs).
+    pub inf: crate::infantry::InfantryState,
 }
 
 impl Actor {
@@ -278,6 +286,8 @@ impl Actor {
             repair_ticks: 0,
             repair_active: false,
             powered_off: false,
+            faction: 0,
+            inf: Default::default(),
         }
     }
 
@@ -339,6 +349,8 @@ pub struct Player {
     pub neutral: bool,
     /// Debug menu cheat flags (debug.rs); only orders of a game with cheats set them.
     pub dev: crate::debug::DevFlags,
+    /// Proxy actor types infiltrations granted (OpenRA InfiltrateForSupportPower; infantry.rs), sorted.
+    pub proxies: Vec<u16>,
 }
 
 impl Player {
@@ -425,6 +437,9 @@ pub struct GameOptions {
     pub weather: crate::weather::WeatherMode,
     /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
     pub cheats: bool,
+    /// Lobby option "Reusable engineers" (OpenRA `reusable-engineers`): engineers
+    /// capture from outside and stay (Captures@REUSABLE; infantry.rs).
+    pub reusable_engineers: bool,
 }
 
 impl Default for GameOptions {
@@ -442,6 +457,7 @@ impl Default for GameOptions {
             biome: Some(crate::weather::Biome::Temperate),
             weather: crate::weather::WeatherMode::Full,
             cheats: false,
+            reusable_engineers: false,
         }
     }
 }
@@ -798,6 +814,25 @@ pub enum SmartAction {
     Load = 6,
     /// Supply truck onto an own or allied structure (abilities.rs).
     DeliverCash = 7,
+    // ---- Infantry (infantry.rs) ----
+    /// Engineer, thief or mechanic takes the target over (cursor `enter`).
+    Capture = 8,
+    /// Spy or thief gets in (cursor `enter`).
+    Infiltrate = 9,
+    /// Tanya plants C4 (cursor `c4`).
+    Demolish = 10,
+    /// Engineer repairs an own or allied structure, or a bridge (cursor `goldwrench`).
+    InstantRepair = 11,
+    /// Medic heals (cursor `heal`).
+    Heal = 12,
+    /// Mechanic repairs a vehicle (cursor `repair`).
+    Fix = 13,
+    /// Spy takes the target's looks (cursor `ability`).
+    Disguise = 14,
+    /// Capturable target that cannot be taken now (cursor `enter-blocked`).
+    EnterBlocked = 15,
+    /// Engineer over an undamaged own structure (cursor `goldwrench-blocked`).
+    RepairBlocked = 16,
 }
 
 #[derive(Clone)]
@@ -840,6 +875,8 @@ pub struct World {
     pub options: GameOptions,
     /// Ability and support power state (abilities.rs).
     pub abil: crate::abilities::AbilityState,
+    /// Infantry state: power outages, sonar pulses, delayed shots, corpses (infantry.rs).
+    pub inf: crate::infantry::InfantryWorld,
     /// Helicopters falling after being shot down (helicopter.rs).
     pub crashes: Vec<crate::helicopter::Crash>,
     /// Support power timers, cameras and falling bombs (powers.rs).
@@ -954,6 +991,9 @@ impl World {
                 continue;
             }
             let Some(ty) = w.rules.actor_index(&a.ty) else { continue };
+            if w.rules.actors[ty].kind == Kind::Proxy {
+                continue;
+            }
             if w.rules.actors[ty].kind == Kind::Building {
                 w.spawn_building(ty as u16, owner, a.x, a.y);
             } else {
@@ -1028,6 +1068,7 @@ impl World {
             pending: Vec::new(),
             options: GameOptions::default(),
             abil: Default::default(),
+            inf: Default::default(),
             crashes: Vec::new(),
             powers: Default::default(),
             env: Default::default(),
@@ -1065,6 +1106,7 @@ impl World {
             team: 0,
             neutral: false,
             dev: Default::default(),
+            proxies: Vec::new(),
         });
     }
 
@@ -1125,6 +1167,7 @@ impl World {
         let mut a = Actor::blank();
         a.alive = true;
         a.gen = gen;
+        a.faction = self.players.get(owner as usize).map_or(0, |p| p.faction as u8);
         a.kind = info.kind;
         a.ty = ty;
         a.owner = owner;
@@ -1150,6 +1193,8 @@ impl World {
         a.born = self.tick;
         self.actors[i] = a;
         self.init_abilities(i);
+        // ProducibleWithLevel (infantry.rs).
+        self.on_created(i);
         i
     }
 
@@ -1174,6 +1219,7 @@ impl World {
         a.kind = Kind::Building;
         a.ty = ty;
         a.owner = owner;
+        a.faction = self.players.get(owner as usize).map_or(0, |p| p.faction as u8);
         a.cx = cx;
         a.cy = cy;
         a.x = cx * CELL + b.width * HALF_CELL;
@@ -1226,7 +1272,11 @@ impl World {
         self.record_death(i);
         self.dying.push(i as u32);
         let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
-        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind));
+        // The death sequence (infantry.rs) picks the scream: b = kind | sequence << 8.
+        let death = (self.actors[i].inf.death as i32) << 8;
+        self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind) | death);
+        // A dying soldier for the renderer (infantry_combat.rs).
+        self.infantry_died(i);
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1704,6 +1754,11 @@ impl World {
     pub fn order_attack(&mut self, units: &[usize], target: usize, forced: bool) {
         let tref = self.make_ref(target);
         for &i in units {
+            // Force fire with C4 on a structure (Demolition ForceTargetRelationships, infantry.rs).
+            if forced && self.can_demolish(i, target, true) && !self.can_attack_class_now(i, target) {
+                self.order_enter(i, target, crate::infantry::EnterKind::Demolish);
+                continue;
+            }
             // Only what the owner sees gives the attack a place to head for.
             let owner = self.actors[i].owner;
             let seen = self.is_visible_to(target, owner).then(|| (self.actors[target].x, self.actors[target].y));
@@ -1783,6 +1838,10 @@ impl World {
         let any_weapon = units.iter().any(|&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
         let any_harv = units.iter().any(|&i| self.is_harvester(i));
         if let Some(t) = self.actor_at(player, x, y) {
+            // Capture, infiltrate, C4, disguise, heal (infantry.rs).
+            if let Some(act) = self.infantry_smart_action(player, units, t) {
+                return act;
+            }
             let ta = &self.actors[t];
             if self.can_deliver_cash(player, units, t) {
                 return SmartAction::DeliverCash;
@@ -1871,6 +1930,18 @@ impl World {
                 let t = self.actor_at(player, x, y).unwrap();
                 self.order_load(units, t);
             }
+            act @ (SmartAction::Capture
+            | SmartAction::Infiltrate
+            | SmartAction::Demolish
+            | SmartAction::InstantRepair
+            | SmartAction::Heal
+            | SmartAction::Fix
+            | SmartAction::Disguise
+            | SmartAction::EnterBlocked
+            | SmartAction::RepairBlocked) => {
+                let t = self.actor_at(player, x, y).unwrap();
+                self.order_smart_infantry(act, units, t, x, y);
+            }
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let tref = self.make_ref(t);
@@ -1932,6 +2003,8 @@ impl World {
         self.tick_repairs();
         self.tick_beacons();
         self.tick_abilities_world();
+        // Delayed shots, C4, outages, sonar pulses, captures (infantry.rs).
+        self.tick_infantry_world();
         self.tick_units();
         self.tick_projectiles();
         self.tick_crashes();
@@ -2031,8 +2104,11 @@ impl World {
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
+                // Infantry abilities (infantry.rs).
+                self.hash_infantry_actor(a, &mut mix);
             }
         }
+        self.hash_infantry_world(&mut mix);
         mix(self.env.weather as i64);
         for p in &self.players {
             mix(p.cash as i64);

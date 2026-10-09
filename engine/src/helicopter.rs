@@ -214,7 +214,7 @@ impl World {
                     let class = self.ground_class(x, y);
                     self.heli_engage(i, FireTarget::Ground(x, y), class);
                 }
-                Activity::Harvest | Activity::Board | Activity::Ability => self.actors[i].activity = Activity::Idle,
+                Activity::Harvest | Activity::Board | Activity::Ability | Activity::Enter => self.actors[i].activity = Activity::Idle,
             },
         }
     }

@@ -86,6 +86,10 @@ impl World {
     /// Domain modules (plane.rs, helicopter.rs, naval.rs) call it for the parts
     /// they do not override.
     pub(crate) fn tick_unit_activity(&mut self, i: usize) {
+        // A dog in the air does nothing else until it lands (dog.rs).
+        if self.tick_leap(i) {
+            return;
+        }
         match self.actors[i].activity {
             Activity::Idle => self.tick_idle(i),
             Activity::Move => self.tick_move(i),
@@ -97,6 +101,7 @@ impl World {
             Activity::Ability => self.tick_ability_activity(i),
             Activity::Guard => self.tick_guard(i),
             Activity::AttackGround => self.tick_attack_ground(i),
+            Activity::Enter => self.tick_enter(i),
         }
     }
 
@@ -405,7 +410,11 @@ impl World {
         let ship = loco.domain == crate::rules::Domain::Water;
         let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
         // Rank speed bonus and prone infantry (veterancy.rs), then weather (weather.rs).
-        let speed = self.weather_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100));
+        // Dogs stand still while they eat or reload and run while hunting (dog.rs).
+        if self.movement_paused(i) {
+            return;
+        }
+        let speed = self.weather_speed(i, self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)));
         let grip = self.grip_of(i, ci);
         let turn_speed = grip.map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1));
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
@@ -875,7 +884,8 @@ impl World {
         for i in 0..n {
             let a = &self.actors[i];
             // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
-            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) {
+            // Leaping dogs and units walking into a target pass through the crowd (dog.rs, infantry.rs).
+            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) || self.passes_through(i) {
                 continue;
             }
             let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
@@ -893,7 +903,12 @@ impl World {
                         let b = &self.actors[j];
                         // Only units in the same domain bump into each other
                         // (aircraft fly over tanks, ships never meet tanks).
-                        if !b.alive || self.domain_of(i) != self.domain_of(j) || b.air.parachute || self.is_plane(j) {
+                        if !b.alive
+                            || self.domain_of(i) != self.domain_of(j)
+                            || b.air.parachute
+                            || self.is_plane(j)
+                            || self.passes_through(j)
+                        {
                             continue;
                         }
                         // A landed helicopter and one flying over it do not touch.
@@ -959,6 +974,8 @@ impl World {
         for (k, crusher) in crushed {
             if self.actors[k].alive {
                 let source = self.make_ref(crusher);
+                // Crushed soldiers leave a flattened body (infantry_combat.rs).
+                self.note_crushed(k);
                 self.award_kill(k, source);
                 let by = self.actors[crusher].owner;
                 self.with_damage_source(by, |w| w.kill(k));

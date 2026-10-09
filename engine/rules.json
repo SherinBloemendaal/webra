@@ -69,6 +69,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -92,6 +100,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 4,
@@ -207,6 +222,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_outage",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "duration": 500
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -221,6 +254,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -319,6 +361,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_outage",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "duration": 500
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -333,6 +393,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -431,6 +500,28 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "cash",
+      "types": [
+       "SpyInfiltrate",
+       "ThiefInfiltrate"
+      ],
+      "experience": 5,
+      "percentage": 50,
+      "minimum": -1,
+      "maximum": 2147483647,
+      "experience_percentage": 1
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -445,6 +536,16 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate",
+    "ThiefInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 4,
@@ -555,6 +656,27 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "cash",
+      "types": [
+       "ThiefInfiltrate"
+      ],
+      "experience": 5,
+      "percentage": 50,
+      "minimum": -1,
+      "maximum": 2147483647,
+      "experience_percentage": 1
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -569,6 +691,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "ThiefInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -652,6 +783,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "barracks.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -666,6 +815,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -792,6 +950,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "barracks.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -806,6 +982,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -930,6 +1115,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -944,6 +1137,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -1076,6 +1276,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "vehicles.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1090,6 +1308,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -1209,6 +1436,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1223,6 +1458,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -1326,6 +1568,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "exploration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1343,6 +1602,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -1441,6 +1709,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "aircraft.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1455,6 +1741,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -1571,6 +1866,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "aircraft.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1665,6 +1978,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 2,
@@ -1777,6 +2099,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "aircraft.upgraded"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -1871,6 +2211,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 2,
@@ -1983,6 +2332,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "powerproxy.sonarpulse"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2004,6 +2371,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -2135,6 +2511,24 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "support_power",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10,
+      "proxy": "powerproxy.sonarpulse"
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2156,6 +2550,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -2302,6 +2705,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_reset",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2332,6 +2752,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -2439,6 +2868,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2453,6 +2890,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -2559,6 +3003,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -2575,6 +3027,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -2658,6 +3117,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_reset",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2718,6 +3194,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 1,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 2,
@@ -2817,6 +3302,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_reset",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2851,6 +3353,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 1,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 2,
@@ -2934,6 +3445,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "power_reset",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 10
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -2969,6 +3497,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 1,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 1,
@@ -3062,6 +3599,13 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3139,6 +3683,13 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3215,6 +3766,13 @@
    "experience": null,
    "gives_experience": null,
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3306,6 +3864,14 @@
      "eject_on_sell": true,
      "eject_on_death": false
     },
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3326,6 +3892,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3433,6 +4006,14 @@
      "eject_on_sell": true,
      "eject_on_death": false
     },
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3468,6 +4049,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3561,6 +4149,14 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3581,6 +4177,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3674,6 +4279,14 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3694,6 +4307,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3796,6 +4418,14 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3816,6 +4446,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -3923,6 +4562,14 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -3936,6 +4583,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 1,
     "height": 1,
@@ -4029,6 +4685,14 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "iron_curtainable": {
      "kills": false
     },
@@ -4042,6 +4706,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 1,
@@ -4124,6 +4797,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4138,6 +4828,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -4222,6 +4921,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4236,6 +4952,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -4320,6 +5045,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4334,6 +5076,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -4417,6 +5168,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4431,6 +5199,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -4515,6 +5292,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4529,6 +5323,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -4613,6 +5416,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4627,6 +5438,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -4711,6 +5529,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4725,6 +5560,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 3,
@@ -4809,6 +5653,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4823,6 +5684,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 3,
@@ -4907,6 +5777,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -4921,6 +5808,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 1,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 2,
@@ -5004,6 +5900,23 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "infiltrated": [
+     {
+      "kind": "decoration",
+      "types": [
+       "SpyInfiltrate"
+      ],
+      "experience": 0
+     }
+    ],
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -5018,6 +5931,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 1,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [
+    "SpyInfiltrate"
+   ],
+   "disguisable": false,
    "building": {
     "width": 2,
     "height": 1,
@@ -5100,6 +6022,14 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
     "accepts_cash": {},
     "iron_curtainable": {
      "kills": false
@@ -5114,6 +6044,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "building": {
     "width": 3,
     "height": 4,
@@ -5275,8 +6212,209 @@
      }
     ]
    },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
    "unit": {
     "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E2",
+   "name": "Grenadier",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 150,
+   "build_ticks": 90,
+   "palette_order": 40,
+   "prerequisites": [
+    "~barr",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Soldier",
+   "hp": 5000,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [
+    8
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": 9,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    15
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 68,
     "turn_speed": 512,
     "turn_in_place": true,
     "locomotor": 0,
@@ -5305,8 +6443,8 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    8,
-    9
+    10,
+    11
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -5393,6 +6531,1677 @@
      }
     ]
    },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E4",
+   "name": "Flame Infantry",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 300,
+   "build_ticks": 180,
+   "palette_order": 70,
+   "prerequisites": [
+    "~barr",
+    "ftur",
+    "~techlevel.low"
+   ],
+   "build_at": "Soldier",
+   "hp": 4000,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [
+    12
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    8
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E6",
+   "name": "Engineer",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 400,
+   "build_ticks": 240,
+   "palette_order": 60,
+   "prerequisites": [
+    "~barracks",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Soldier",
+   "hp": 2500,
+   "armor": 0,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "captures": [
+     {
+      "types": [
+       "building"
+      ],
+      "delay": 200,
+      "consumed": true,
+      "experience": 10,
+      "option": -1
+     },
+     {
+      "types": [
+       "building"
+      ],
+      "delay": 375,
+      "consumed": false,
+      "experience": 10,
+      "option": 1
+     }
+    ],
+    "instantly_repairs": {},
+    "repairs_bridges": {},
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 4096
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "E7",
+   "name": "Tanya",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 1800,
+   "build_ticks": 1080,
+   "palette_order": 120,
+   "prerequisites": [
+    "~tent",
+    "atek",
+    "~techlevel.high"
+   ],
+   "build_at": "Soldier",
+   "hp": 10000,
+   "armor": 0,
+   "sight": 6144,
+   "weapons": [
+    13
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "demolition": {
+     "delay": 45,
+     "flashes": 3,
+     "flash_delay": 4,
+     "flash_interval": 4
+    },
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 6144
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 1,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 68,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "DOG",
+   "name": "Attack Dog",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 50,
+   "prerequisites": [
+    "~kenn",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Dog",
+   "hp": 1800,
+   "armor": 0,
+   "sight": 5632,
+   "weapons": [
+    14
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "ignores_disguise": {},
+    "attack_leap": {
+     "speed": 426,
+     "run_speed": 150,
+     "eat_ticks": 20
+    },
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5632
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": false,
+   "unit": {
+    "speed": 100,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "MEDI",
+   "name": "Medic",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 200,
+   "build_ticks": 120,
+   "palette_order": 40,
+   "prerequisites": [
+    "~tent",
+    "~techlevel.infonly"
+   ],
+   "build_at": "Soldier",
+   "hp": 6000,
+   "armor": 0,
+   "sight": 3072,
+   "weapons": [
+    15
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 3072
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": true,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 49,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "MECH",
+   "name": "Mechanic",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 100,
+   "prerequisites": [
+    "~tent",
+    "fix",
+    "~techlevel.medium"
+   ],
+   "build_at": "Soldier",
+   "hp": 8000,
+   "armor": 0,
+   "sight": 3072,
+   "weapons": [
+    16
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "captures": [
+     {
+      "types": [
+       "husk"
+      ],
+      "delay": 0,
+      "consumed": true,
+      "experience": 10,
+      "option": 0
+     }
+    ],
+    "infiltrates": {
+     "types": [
+      "Husk"
+     ],
+     "relationships": 1
+    },
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 3072
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": true,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 49,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "SPY",
+   "name": "Spy",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 90,
+   "prerequisites": [
+    "~!infantry.england",
+    "dome",
+    "~tent",
+    "~techlevel.medium"
+   ],
+   "build_at": "Soldier",
+   "hp": 2500,
+   "armor": 0,
+   "sight": 5120,
+   "weapons": [
+    17
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
+   "abilities": {
+    "infiltrates": {
+     "types": [
+      "SpyInfiltrate"
+     ],
+     "relationships": 6
+    },
+    "disguise": {},
+    "ignores_disguise": {},
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "SPY.England",
+   "name": "British Spy",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 250,
+   "build_ticks": 150,
+   "palette_order": 90,
+   "prerequisites": [
+    "~infantry.england",
+    "dome",
+    "~tent",
+    "~techlevel.medium"
+   ],
+   "build_at": "Soldier",
+   "hp": 2500,
+   "armor": 0,
+   "sight": 5120,
+   "weapons": [
+    17
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "hold_fire",
+    "hold_fire"
+   ],
+   "abilities": {
+    "infiltrates": {
+     "types": [
+      "SpyInfiltrate"
+     ],
+     "relationships": 6
+    },
+    "disguise": {},
+    "ignores_disguise": {},
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": 500,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 54,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "THF",
+   "name": "Thief",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 500,
+   "build_ticks": 300,
+   "palette_order": 110,
+   "prerequisites": [
+    "~barr",
+    "dome",
+    "~techlevel.medium"
+   ],
+   "build_at": "Soldier",
+   "hp": 8000,
+   "armor": 0,
+   "sight": 5120,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "captures": [
+     {
+      "types": [
+       "vehicle",
+       "aircraft"
+      ],
+      "delay": 0,
+      "consumed": true,
+      "experience": 10,
+      "option": 0
+     }
+    ],
+    "infiltrates": {
+     "types": [
+      "ThiefInfiltrate"
+     ],
+     "relationships": 6
+    },
+    "cloak": {
+     "initial_delay": 250,
+     "cloak_delay": 120,
+     "uncloak_on": [
+      "Attack",
+      "Unload",
+      "Infiltrate",
+      "Demolish",
+      "Move"
+     ],
+     "types": [
+      "Cloak"
+     ],
+     "off_when_critical": true
+    },
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
+   "unit": {
+    "speed": 72,
+    "turn_speed": 512,
+    "turn_in_place": true,
+    "locomotor": 0,
+    "radius": 128,
+    "passenger": "Infantry",
+    "passenger_weight": 1,
+    "repair_at": [],
+    "repair_near": false
+   }
+  },
+  {
+   "id": "SHOK",
+   "name": "Shock Trooper",
+   "description": "",
+   "kind": "infantry",
+   "queue": "Infantry",
+   "cost": 350,
+   "build_ticks": 210,
+   "palette_order": 130,
+   "prerequisites": [
+    "~barr",
+    "stek",
+    "tsla",
+    "~infantry.russia",
+    "~techlevel.high"
+   ],
+   "build_at": "Soldier",
+   "hp": 5000,
+   "armor": 0,
+   "sight": 5120,
+   "weapons": [
+    18
+   ],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": [
+    "attack_anything",
+    "attack_anything"
+   ],
+   "abilities": {
+    "detect_cloaked": {
+     "range": 1536,
+     "types": [
+      "Cloak"
+     ],
+     "needs_power": false
+    },
+    "gap_sight": {
+     "range": 5120
+    },
+    "crushable": [
+     "infantry"
+    ]
+   },
+   "experience": {
+    "thresholds": [
+     200,
+     400,
+     800,
+     1600
+    ],
+    "firepower": [
+     105,
+     110,
+     120,
+     130
+    ],
+    "damage": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "speed": [
+     105,
+     110,
+     120,
+     140
+    ],
+    "reload": [
+     95,
+     90,
+     85,
+     75
+    ],
+    "heal": {
+     "rank": 4,
+     "step": 0,
+     "percentage_step": 5,
+     "delay": 100,
+     "start_if_below": 100,
+     "damage_cooldown": 125
+    }
+   },
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000
+   },
+   "take_cover": {
+    "duration": 50,
+    "speed_modifier": 50,
+    "damage_triggers": [
+     "TriggerProne"
+    ],
+    "damage_modifiers": [
+     {
+      "type": "Prone50Percent",
+      "percent": 50
+     }
+    ]
+   },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "barracks.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -5429,7 +8238,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 10,
+   "death_weapon": 19,
    "self_heal": {
     "step": 100,
     "delay": 25,
@@ -5439,6 +8248,12 @@
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -5456,6 +8271,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -5501,11 +8323,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": true,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -5532,6 +8360,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 60,
     "turn_speed": 20,
@@ -5569,11 +8404,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -5594,6 +8435,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -5626,7 +8474,7 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    12
+    20
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
@@ -5634,7 +8482,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -5658,6 +8506,12 @@
      "after_unload_delay": 25,
      "eject_on_sell": true,
      "eject_on_death": false
+    },
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
     },
     "iron_curtainable": {
      "kills": false
@@ -5715,6 +8569,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 164,
     "turn_speed": 40,
@@ -5747,7 +8615,7 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    12
+    20
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -5755,7 +8623,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -5774,6 +8642,12 @@
      "after_unload_delay": 25,
      "eject_on_sell": true,
      "eject_on_death": false
+    },
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
     },
     "iron_curtainable": {
      "kills": false
@@ -5831,6 +8705,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -5863,8 +8751,8 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    13,
-    14
+    21,
+    22
    ],
    "turret_turn_speed": 40,
    "reload_override": null,
@@ -5872,7 +8760,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -5885,6 +8773,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -5941,6 +8835,21 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -5973,7 +8882,7 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    15
+    23
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
@@ -5981,7 +8890,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -5994,6 +8903,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6050,6 +8965,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -6083,7 +9012,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    16
+    24
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
@@ -6091,7 +9020,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -6104,6 +9033,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6160,6 +9095,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6193,7 +9142,7 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    17
+    25
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
@@ -6201,7 +9150,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -6214,6 +9163,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6270,6 +9225,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -6304,8 +9273,8 @@
    "armor": 3,
    "sight": 6144,
    "weapons": [
-    18,
-    19
+    26,
+    27
    ],
    "turret_turn_speed": 8,
    "reload_override": null,
@@ -6313,7 +9282,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": {
     "step": 100,
     "delay": 3,
@@ -6331,6 +9300,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6387,6 +9362,21 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -6420,7 +9410,7 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    20
+    28
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -6428,7 +9418,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 21,
+   "death_weapon": 29,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -6436,6 +9426,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6492,6 +9488,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6525,7 +9535,7 @@
    "armor": 2,
    "sight": 5120,
    "weapons": [
-    22
+    30
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -6533,7 +9543,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 23,
+   "death_weapon": 31,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -6541,6 +9551,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6597,6 +9613,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -6635,7 +9665,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 24,
+   "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -6658,6 +9688,12 @@
      ]
     },
     "mine_immune": {},
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6721,6 +9757,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -6760,11 +9803,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6788,6 +9837,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 68,
     "turn_speed": 20,
@@ -6827,11 +9883,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6852,6 +9914,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -6886,7 +9955,7 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    25
+    33
    ],
    "turret_turn_speed": 512,
    "reload_override": null,
@@ -6894,7 +9963,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -6902,6 +9971,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -6958,6 +10033,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -6991,7 +10080,7 @@
    "armor": 2,
    "sight": 4096,
    "weapons": [
-    26
+    34
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -6999,11 +10088,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 27,
+   "death_weapon": 35,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": true
     },
@@ -7022,6 +10117,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 67,
     "turn_speed": 20,
@@ -7055,7 +10159,7 @@
    "armor": 2,
    "sight": 6144,
    "weapons": [
-    28
+    36
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -7063,7 +10167,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -7071,6 +10175,12 @@
     "attack_anything"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -7131,6 +10241,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 86,
     "turn_speed": 20,
@@ -7164,7 +10288,7 @@
    "armor": 2,
    "sight": 7168,
    "weapons": [
-    29
+    37
    ],
    "turret_turn_speed": 20,
    "reload_override": null,
@@ -7172,7 +10296,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -7196,6 +10320,12 @@
      "after_unload_delay": 25,
      "eject_on_sell": true,
      "eject_on_death": false
+    },
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
     },
     "iron_curtainable": {
      "kills": false
@@ -7268,6 +10398,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "vehicles.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -7308,11 +10452,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 11,
+   "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
    "abilities": {
+    "capturable": {
+     "types": [
+      "vehicle"
+     ],
+     "cancel_activity": true
+    },
     "iron_curtainable": {
      "kills": false
     },
@@ -7328,8 +10478,8 @@
      "thump_interval": 8,
      "detonation_delay": 42,
      "driver": "E1",
-     "thump_weapon": 30,
-     "detonation_weapon": 31
+     "thump_weapon": 38,
+     "detonation_weapon": 39
     }
    },
    "experience": null,
@@ -7338,6 +10488,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 46,
     "turn_speed": 20,
@@ -7375,7 +10532,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 32,
+   "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -7445,6 +10602,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 115,
     "turn_speed": 512,
@@ -7478,8 +10642,8 @@
    "armor": 3,
    "sight": 8192,
    "weapons": [
-    33,
-    34
+    41,
+    42
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
@@ -7487,7 +10651,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 32,
+   "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -7563,6 +10727,16 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 142,
     "turn_speed": 28,
@@ -7596,7 +10770,7 @@
    "armor": 2,
    "sight": 8192,
    "weapons": [
-    35
+    43
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -7604,7 +10778,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 36,
+   "death_weapon": 44,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -7690,6 +10864,15 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    2
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 78,
     "turn_speed": 20,
@@ -7724,9 +10907,9 @@
    "armor": 3,
    "sight": 5120,
    "weapons": [
-    37,
-    34,
-    38
+    45,
+    42,
+    46
    ],
    "turret_turn_speed": 28,
    "reload_override": null,
@@ -7734,7 +10917,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 32,
+   "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -7810,6 +10993,17 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0,
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 92,
     "turn_speed": 28,
@@ -7844,8 +11038,8 @@
    "armor": 3,
    "sight": 7168,
    "weapons": [
-    39,
-    39
+    47,
+    47
    ],
    "turret_turn_speed": 12,
    "reload_override": null,
@@ -7853,7 +11047,7 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
-   "death_weapon": 32,
+   "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
     [
@@ -7926,6 +11120,16 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -7960,8 +11164,8 @@
    "armor": 2,
    "sight": 8192,
    "weapons": [
-    40,
-    41
+    48,
+    49
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -7969,7 +11173,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 36,
+   "death_weapon": 44,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8055,6 +11259,16 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    2,
+    2
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -8094,7 +11308,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -8110,6 +11324,12 @@
      "after_unload_delay": 40,
      "eject_on_sell": true,
      "eject_on_death": false
+    },
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
     },
     "gap_sight": {
      "range": 6144
@@ -8160,6 +11380,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -8225,7 +11452,7 @@
    "armor": 2,
    "sight": 10240,
    "weapons": [
-    43
+    51
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -8233,7 +11460,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8241,6 +11468,12 @@
     "hold_fire"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    },
     "gap_sight": {
      "range": 8192
     }
@@ -8290,6 +11523,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "aircraft.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -8356,7 +11603,7 @@
    "armor": 2,
    "sight": 10240,
    "weapons": [
-    43
+    51
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -8364,7 +11611,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8372,6 +11619,12 @@
     "hold_fire"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    },
     "gap_sight": {
      "range": 8192
     }
@@ -8421,6 +11674,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "aircraft.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -8487,8 +11754,8 @@
    "armor": 2,
    "sight": 12288,
    "weapons": [
-    44,
-    45
+    52,
+    53
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -8496,7 +11763,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8504,6 +11771,12 @@
     "hold_fire"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    },
     "gap_sight": {
      "range": 10240
     }
@@ -8553,6 +11826,21 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "aircraft.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -8618,7 +11906,7 @@
    "armor": 2,
    "sight": 11264,
    "weapons": [
-    46
+    54
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -8626,7 +11914,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8634,6 +11922,12 @@
     "hold_fire"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    },
     "gap_sight": {
      "range": 9216
     }
@@ -8683,6 +11977,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "aircraft.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -8718,7 +12026,7 @@
      "rotors": [],
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 47
+     "crash_weapon": 55
     }
    }
   },
@@ -8741,7 +12049,7 @@
    "armor": 2,
    "sight": 13312,
    "weapons": [
-    48
+    56
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -8749,7 +12057,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": [
@@ -8757,6 +12065,12 @@
     "hold_fire"
    ],
    "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    },
     "gap_sight": {
      "range": 11264
     }
@@ -8806,6 +12120,20 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "aircraft.upgraded"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -8841,7 +12169,7 @@
      "rotors": [],
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 47
+     "crash_weapon": 55
     }
    }
   },
@@ -8949,6 +12277,48 @@
      }
     ]
    },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "techlevel.infonly"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -8978,8 +12348,8 @@
    "armor": 0,
    "sight": 4096,
    "weapons": [
-    8,
-    9
+    10,
+    11
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -9066,6 +12436,49 @@
      }
     ]
    },
+   "build_limit": 0,
+   "producible_level": {
+    "prerequisites": [
+     "techlevel.infonly"
+    ],
+    "levels": 1
+   },
+   "fire_delays": [
+    0,
+    0
+   ],
+   "targets_allies": false,
+   "death": {
+    "types": [
+     {
+      "type": "DefaultDeath",
+      "sequence": 1
+     },
+     {
+      "type": "BulletDeath",
+      "sequence": 2
+     },
+     {
+      "type": "SmallExplosionDeath",
+      "sequence": 3
+     },
+     {
+      "type": "ExplosionDeath",
+      "sequence": 4
+     },
+     {
+      "type": "FireDeath",
+      "sequence": 5
+     },
+     {
+      "type": "ElectricityDeath",
+      "sequence": 6
+     }
+    ],
+    "crushed": true
+   },
+   "infiltrate_types": [],
+   "disguisable": true,
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -9101,17 +12514,31 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
-   "abilities": {},
+   "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    }
+   },
    "experience": null,
    "gives_experience": {
     "experience": -1,
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 373,
     "turn_speed": 28,
@@ -9140,7 +12567,7 @@
      "rotors": [],
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 47
+     "crash_weapon": 55
     }
    }
   },
@@ -9167,7 +12594,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -9181,6 +12608,12 @@
      "after_unload_delay": 25,
      "eject_on_sell": true,
      "eject_on_death": false
+    },
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
     }
    },
    "experience": null,
@@ -9189,6 +12622,13 @@
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -9217,7 +12657,7 @@
      "rotors": [],
      "drop_range": 4096,
      "crash_velocity": 86,
-     "crash_weapon": 47
+     "crash_weapon": 55
     }
    }
   },
@@ -9238,7 +12678,7 @@
    "armor": 2,
    "sight": 0,
    "weapons": [
-    49
+    57
    ],
    "turret_turn_speed": null,
    "reload_override": null,
@@ -9246,17 +12686,33 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 42,
+   "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
-   "abilities": {},
+   "abilities": {
+    "capturable": {
+     "types": [
+      "aircraft"
+     ],
+     "cancel_activity": false
+    }
+   },
    "experience": null,
    "gives_experience": {
     "experience": 1000,
     "actor_modifier": 10000
    },
    "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [
+    0
+   ],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -9285,7 +12741,7 @@
      "rotors": [],
      "drop_range": 0,
      "crash_velocity": 86,
-     "crash_weapon": 47
+     "crash_weapon": 55
     }
    }
   },
@@ -9312,7 +12768,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 24,
+   "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -9335,7 +12791,14 @@
    },
    "experience": null,
    "gives_experience": null,
-   "take_cover": null
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
   },
   {
    "id": "MINP",
@@ -9360,7 +12823,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
-   "death_weapon": 50,
+   "death_weapon": 58,
    "self_heal": null,
    "turret_offsets": [],
    "stance": null,
@@ -9383,7 +12846,215 @@
    },
    "experience": null,
    "gives_experience": null,
-   "take_cover": null
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
+  },
+  {
+   "id": "barracks.upgraded",
+   "name": "barracks.upgraded",
+   "description": "",
+   "kind": "proxy",
+   "queue": "Building",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Building",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "proxy": {
+     "provides": [
+      "barracks.upgraded"
+     ]
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
+  },
+  {
+   "id": "vehicles.upgraded",
+   "name": "vehicles.upgraded",
+   "description": "",
+   "kind": "proxy",
+   "queue": "Building",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Building",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "proxy": {
+     "provides": [
+      "vehicles.upgraded"
+     ]
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
+  },
+  {
+   "id": "aircraft.upgraded",
+   "name": "aircraft.upgraded",
+   "description": "",
+   "kind": "proxy",
+   "queue": "Building",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Building",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "proxy": {
+     "provides": [
+      "aircraft.upgraded"
+     ]
+    }
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
+  },
+  {
+   "id": "powerproxy.sonarpulse",
+   "name": "powerproxy.sonarpulse",
+   "description": "",
+   "kind": "proxy",
+   "queue": "Building",
+   "cost": 0,
+   "build_ticks": 0,
+   "palette_order": 0,
+   "prerequisites": [
+    "~disabled"
+   ],
+   "build_at": "Building",
+   "hp": 0,
+   "armor": 0,
+   "sight": 0,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "proxy": {
+     "provides": []
+    },
+    "support_powers": [
+     {
+      "key": "SpawnActorPower",
+      "kind": "SpawnActorPower",
+      "name": "Sonar Pulse",
+      "description": "",
+      "charge": 750,
+      "prerequisites": [],
+      "duration": 250,
+      "range": 1,
+      "max_distance": 0,
+      "palette_order": 80,
+      "terrain": [
+       "Water"
+      ],
+      "allow_under_shroud": false,
+      "detect_range": 10240,
+      "detect_types": [
+       "Underwater"
+      ],
+      "one_shot": false
+     }
+    ]
+   },
+   "experience": null,
+   "gives_experience": null,
+   "take_cover": null,
+   "build_limit": 0,
+   "producible_level": null,
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false
   }
  ],
  "weapons": [
@@ -9405,6 +13076,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 15000,
      "spread": 1024,
      "falloff": [
@@ -9435,6 +13107,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 2048,
      "falloff": [
@@ -9465,6 +13138,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 3072,
      "falloff": [
@@ -9495,6 +13169,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 4096,
      "falloff": [
@@ -9525,6 +13200,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 5120,
      "falloff": [
@@ -9573,6 +13249,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9599,6 +13276,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9625,6 +13303,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9651,6 +13330,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9677,6 +13357,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9703,6 +13384,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9747,6 +13429,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 128,
      "falloff": [
@@ -9791,6 +13474,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 15000,
      "spread": 213,
      "falloff": [
@@ -9836,6 +13520,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 10000,
      "spread": 42,
      "falloff": [
@@ -9880,6 +13565,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 900,
      "spread": 213,
      "falloff": [
@@ -9924,6 +13610,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4500,
      "spread": 128,
      "falloff": [
@@ -9968,6 +13655,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -9995,6 +13683,96 @@
    ]
   },
   {
+   "name": "Grenade",
+   "range": 4096,
+   "min_range": 0,
+   "reload": 60,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 136,
+   "inaccuracy": 554,
+   "arc": true,
+   "valid": 279,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 6000,
+     "spread": 256,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      60,
+      100,
+      25,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "SmallExplosionDeath"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "UnitExplodeSmall",
+   "range": 0,
+   "min_range": 0,
+   "reload": 1,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 287,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 4000,
+     "spread": 426,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      90,
+      75,
+      60,
+      25,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ExplosionDeath"
+     ]
+    }
+   ]
+  },
+  {
    "name": "RedEye",
    "range": 7680,
    "min_range": 512,
@@ -10012,6 +13790,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2400,
      "spread": 128,
      "falloff": [
@@ -10056,6 +13835,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 128,
      "falloff": [
@@ -10083,6 +13863,312 @@
    ]
   },
   {
+   "name": "Flamer",
+   "range": 5120,
+   "min_range": 0,
+   "reload": 50,
+   "burst": 15,
+   "burst_delays": [
+    1
+   ],
+   "projectile": "bullet",
+   "speed": 170,
+   "inaccuracy": 853,
+   "arc": true,
+   "valid": 279,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 1000,
+     "spread": 341,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      70,
+      80,
+      40,
+      20,
+      10
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "FireDeath",
+      "Incendiary"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Colt45",
+   "range": 7168,
+   "min_range": 0,
+   "reload": 7,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 257,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 10000,
+     "spread": 42,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 1,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "DogJaw",
+   "range": 3072,
+   "min_range": 0,
+   "reload": 10,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 1,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "target",
+     "relationships": 7,
+     "damage": 100000,
+     "spread": 43,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 1,
+     "invalid": 0,
+     "damage_types": [
+      "DefaultDeath"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Heal",
+   "range": 4096,
+   "min_range": 0,
+   "reload": 80,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 1706,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 512,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 1,
+     "damage": -5000,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 512,
+     "invalid": 0,
+     "damage_types": []
+    }
+   ]
+  },
+  {
+   "name": "Repair",
+   "range": 4096,
+   "min_range": 0,
+   "reload": 80,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "bullet",
+   "speed": 1706,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 1024,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 1,
+     "damage": -2000,
+     "spread": 213,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 1024,
+     "invalid": 0,
+     "damage_types": []
+    }
+   ]
+  },
+  {
+   "name": "SilencedPPK",
+   "range": 2560,
+   "min_range": 0,
+   "reload": 80,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "instant",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 257,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 15000,
+     "spread": 128,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      100,
+      100,
+      100,
+      100,
+      100
+     ],
+     "delay": 0,
+     "valid": 1,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "DefaultDeath"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "PortaTesla",
+   "range": 6144,
+   "min_range": 0,
+   "reload": 70,
+   "burst": 1,
+   "burst_delays": [
+    5
+   ],
+   "projectile": "tesla",
+   "speed": 0,
+   "inaccuracy": 0,
+   "arc": false,
+   "valid": 279,
+   "invalid": 0,
+   "warheads": [
+    {
+     "kind": "spread",
+     "relationships": 7,
+     "damage": 4500,
+     "spread": 42,
+     "falloff": [
+      100,
+      37,
+      14,
+      5
+     ],
+     "versus": [
+      1000,
+      73,
+      100,
+      60,
+      100
+     ],
+     "delay": 0,
+     "valid": 23,
+     "invalid": 0,
+     "damage_types": [
+      "Prone50Percent",
+      "TriggerProne",
+      "ElectricityDeath"
+     ]
+    }
+   ]
+  },
+  {
    "name": "OreExplosion",
    "range": 0,
    "min_range": 0,
@@ -10100,6 +14186,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 9,
      "falloff": [
@@ -10127,50 +14214,6 @@
    ]
   },
   {
-   "name": "UnitExplodeSmall",
-   "range": 0,
-   "min_range": 0,
-   "reload": 1,
-   "burst": 1,
-   "burst_delays": [
-    5
-   ],
-   "projectile": "instant",
-   "speed": 0,
-   "inaccuracy": 0,
-   "arc": false,
-   "valid": 287,
-   "invalid": 0,
-   "warheads": [
-    {
-     "kind": "spread",
-     "damage": 4000,
-     "spread": 426,
-     "falloff": [
-      100,
-      37,
-      14,
-      5
-     ],
-     "versus": [
-      90,
-      75,
-      60,
-      25,
-      100
-     ],
-     "delay": 0,
-     "valid": 23,
-     "invalid": 0,
-     "damage_types": [
-      "Prone50Percent",
-      "TriggerProne",
-      "ExplosionDeath"
-     ]
-    }
-   ]
-  },
-  {
    "name": "M60mg",
    "range": 4096,
    "min_range": 0,
@@ -10188,6 +14231,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1000,
      "spread": 128,
      "falloff": [
@@ -10232,6 +14276,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1200,
      "spread": 213,
      "falloff": [
@@ -10276,6 +14321,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2000,
      "spread": 213,
      "falloff": [
@@ -10320,6 +14366,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 128,
      "falloff": [
@@ -10364,6 +14411,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4000,
      "spread": 128,
      "falloff": [
@@ -10408,6 +14456,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4000,
      "spread": 128,
      "falloff": [
@@ -10452,6 +14501,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 128,
      "falloff": [
@@ -10496,6 +14546,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 256,
      "falloff": [
@@ -10540,6 +14591,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4500,
      "spread": 341,
      "falloff": [
@@ -10588,6 +14640,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4500,
      "spread": 341,
      "falloff": [
@@ -10636,6 +14689,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 23000,
      "spread": 426,
      "falloff": [
@@ -10680,6 +14734,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 15000,
      "spread": 426,
      "falloff": [
@@ -10724,6 +14779,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 40000,
      "spread": 256,
      "falloff": [
@@ -10768,6 +14824,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 10000,
      "spread": 42,
      "falloff": [
@@ -10812,6 +14869,7 @@
    "warheads": [
     {
      "kind": "target",
+     "relationships": 7,
      "damage": 0,
      "spread": 43,
      "falloff": [
@@ -10852,6 +14910,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 15000,
      "spread": 1024,
      "falloff": [
@@ -10882,6 +14941,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 2048,
      "falloff": [
@@ -10912,6 +14972,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 3072,
      "falloff": [
@@ -10942,6 +15003,7 @@
     },
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 4096,
      "falloff": [
@@ -10990,6 +15052,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 128,
      "falloff": [
@@ -11034,6 +15097,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 128,
      "falloff": [
@@ -11078,6 +15142,7 @@
    "warheads": [
     {
      "kind": "percent",
+     "relationships": 7,
      "damage": 1,
      "spread": 7168,
      "falloff": [
@@ -11118,6 +15183,7 @@
    "warheads": [
     {
      "kind": "percent",
+     "relationships": 7,
      "damage": 19,
      "spread": 7168,
      "falloff": [
@@ -11158,6 +15224,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 426,
      "falloff": [
@@ -11202,6 +15269,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 256,
      "falloff": [
@@ -11246,6 +15314,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 128,
      "falloff": [
@@ -11288,6 +15357,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 18000,
      "spread": 426,
      "falloff": [
@@ -11332,6 +15402,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 426,
      "falloff": [
@@ -11376,6 +15447,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 128,
      "falloff": [
@@ -11420,6 +15492,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 1650,
      "spread": 128,
      "falloff": [
@@ -11464,6 +15537,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 213,
      "falloff": [
@@ -11511,6 +15585,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 426,
      "falloff": [
@@ -11558,6 +15633,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 450,
      "spread": 426,
      "falloff": [
@@ -11605,6 +15681,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 426,
      "falloff": [
@@ -11652,6 +15729,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 2500,
      "spread": 128,
      "falloff": [
@@ -11696,6 +15774,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 3000,
      "spread": 128,
      "falloff": [
@@ -11740,6 +15819,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 6000,
      "spread": 128,
      "falloff": [
@@ -11784,6 +15864,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 4000,
      "spread": 128,
      "falloff": [
@@ -11828,6 +15909,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 5000,
      "spread": 426,
      "falloff": [
@@ -11875,6 +15957,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 7000,
      "spread": 128,
      "falloff": [
@@ -11919,6 +16002,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 30000,
      "spread": 1000,
      "falloff": [
@@ -11963,6 +16047,7 @@
    "warheads": [
     {
      "kind": "spread",
+     "relationships": 7,
      "damage": 40000,
      "spread": 256,
      "falloff": [

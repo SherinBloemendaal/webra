@@ -59,7 +59,10 @@ fn combat_reports_fire_impact_and_death() {
     assert!(all.iter().any(|e| e[0] == K::Fire as i32 && e[1] == weapon("M1Carbine") && e[4] == 1), "rifleman fired back");
     assert!(has(&all, K::Impact));
     let death = all.iter().find(|e| e[0] == K::Death as i32).expect("death event");
-    assert_eq!((death[1], death[4], death[5]), (rifle_ty, 1, 1), "infantry of player 1");
+    assert_eq!((death[1], death[4], death[5] & 0xff), (rifle_ty, 1, 1), "infantry of player 1");
+    // The death sequence of the killing damage type rides along (infantry.rs):
+    // the 25mm shell's ExplosionDeath plays die4.
+    assert_eq!(death[5] >> 8, 4, "ExplosionDeath plays die4");
 }
 
 #[test]

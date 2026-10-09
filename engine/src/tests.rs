@@ -333,7 +333,8 @@ fn every_actor_is_reachable_for_the_right_factions() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
         // FACT comes from deploying an MCV; support power actors (paratroopers,
         // spy plane, Badgers) and mines are never built.
-        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str()) || a.kind == Kind::Mine;
+        // Proxies come from infiltrations (infantry.rs).
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str()) || matches!(a.kind, Kind::Mine | Kind::Proxy);
         assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
     // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the

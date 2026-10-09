@@ -60,8 +60,45 @@ struct RawActor {
     experience: Option<ExperienceInfo>,
     gives_experience: Option<GivesExperienceInfo>,
     take_cover: Option<RawTakeCover>,
+    build_limit: i32,
+    producible_level: Option<ProducibleLevel>,
+    fire_delays: Vec<i32>,
+    targets_allies: bool,
+    death: Option<RawDeath>,
+    infiltrate_types: Vec<String>,
+    disguisable: bool,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
+}
+
+/// OpenRA `ProducibleWithLevel`: produced with `levels` veterancy levels while
+/// the owner has every prerequisite (a spy infiltrated a barracks, say).
+#[derive(Deserialize, Clone)]
+pub struct ProducibleLevel {
+    pub prerequisites: Vec<String>,
+    pub levels: i32,
+}
+
+#[derive(Deserialize)]
+struct RawDeath {
+    types: Vec<RawDeathType>,
+    crushed: bool,
+}
+
+#[derive(Deserialize)]
+struct RawDeathType {
+    #[serde(rename = "type")]
+    ty: String,
+    sequence: u8,
+}
+
+/// OpenRA `WithDeathAnimation` of infantry (infantry.rs): which death
+/// sequence (`die1`..`die6`) a kill with a damage type plays, by damage type
+/// bit (`Rules::damage_types`), and whether being crushed has its own.
+#[derive(Clone, Debug)]
+pub struct DeathInfo {
+    pub by_type: Vec<(u32, u8)>,
+    pub crushed: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -176,6 +213,109 @@ pub struct Abilities {
     pub iron_curtainable: Option<IronCurtainableInfo>,
     /// The Chronosphere can shift it (Chronoshiftable).
     pub chronoshiftable: Option<ChronoshiftableInfo>,
+    // ---- Infantry abilities (infantry.rs) ------------------------------------
+    /// OpenRA `Captures` (Engineer, Thief, Mechanic): one entry per trait.
+    pub captures: Option<Vec<CapturesInfo>>,
+    /// OpenRA `Capturable`: capture types that can take it over.
+    pub capturable: Option<CapturableInfo>,
+    /// OpenRA `InstantlyRepairs` (Engineer): enters an own or allied
+    /// structure that has `instantly_repairable` and repairs it fully.
+    pub instantly_repairs: Option<serde_json::Value>,
+    pub instantly_repairable: Option<serde_json::Value>,
+    /// OpenRA `RepairsBridges` (Engineer). Bridges come with the world objects;
+    /// they call `World::repair_target` (infantry.rs) to take it into account.
+    pub repairs_bridges: Option<serde_json::Value>,
+    /// OpenRA `Infiltrates` (Spy, Thief, Mechanic).
+    pub infiltrates: Option<InfiltratesInfo>,
+    /// OpenRA `InfiltrateFor*` effects of a structure (or husk) when entered.
+    pub infiltrated: Option<Vec<InfiltratedInfo>>,
+    /// OpenRA `Disguise` (Spy).
+    pub disguise: Option<serde_json::Value>,
+    /// OpenRA `IgnoresDisguise` (Dog, Spy): sees through spies' disguises.
+    pub ignores_disguise: Option<serde_json::Value>,
+    /// OpenRA `Demolition` (Tanya's C4).
+    pub demolition: Option<DemolitionInfo>,
+    /// OpenRA `Demolishable`: C4 can blow it up.
+    pub demolishable: Option<serde_json::Value>,
+    /// OpenRA `AttackLeap` (Dog).
+    pub attack_leap: Option<AttackLeapInfo>,
+    /// A proxy (OpenRA InfiltrateForSupportPower.Proxy): the prerequisites it provides.
+    pub proxy: Option<ProxyInfo>,
+}
+
+/// One OpenRA `Captures` trait.
+#[derive(Deserialize, Clone, Debug)]
+pub struct CapturesInfo {
+    pub types: Vec<String>,
+    /// CaptureDelay: ticks next to the target before entering it.
+    pub delay: i32,
+    /// ConsumedByCapture: the captor enters and is used up.
+    pub consumed: bool,
+    pub experience: i32,
+    /// 1: only with the Reusable Engineers option, -1: only without, 0: always.
+    pub option: i32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct CapturableInfo {
+    pub types: Vec<String>,
+    /// CancelActivity: the captured actor stops what it was doing.
+    pub cancel_activity: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct InfiltratesInfo {
+    /// Target types (`ActorInfo::infiltrate_types`) it can enter.
+    pub types: Vec<String>,
+    /// ValidRelationships as RELATION_* bits.
+    pub relationships: u32,
+}
+
+/// One OpenRA `InfiltrateFor*` trait of an infiltratable actor.
+#[derive(Deserialize, Clone, Debug)]
+pub struct InfiltratedInfo {
+    /// cash, exploration, power_outage, support_power, power_reset or decoration.
+    pub kind: String,
+    /// Infiltrates types that trigger it.
+    pub types: Vec<String>,
+    pub experience: i32,
+    #[serde(default)]
+    pub percentage: i32,
+    #[serde(default)]
+    pub minimum: i32,
+    #[serde(default)]
+    pub maximum: i32,
+    #[serde(default)]
+    pub experience_percentage: i32,
+    /// Power outage ticks.
+    #[serde(default)]
+    pub duration: i32,
+    /// Proxy actor id granted to the infiltrator's owner (support_power).
+    #[serde(default)]
+    pub proxy: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct DemolitionInfo {
+    pub delay: i32,
+    pub flashes: i32,
+    pub flash_delay: i32,
+    pub flash_interval: i32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct AttackLeapInfo {
+    /// World units per tick while leaping.
+    pub speed: i32,
+    /// SpeedMultiplier while aiming (the `run` condition), percent.
+    pub run_speed: i32,
+    /// Ticks the dog stands still after a bite (GrantConditionOnAttack `eating`).
+    pub eat_ticks: i32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ProxyInfo {
+    pub provides: Vec<String>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -340,6 +480,18 @@ pub struct SupportPowerInfo {
     /// Fires once per game (GPS Satellite).
     #[serde(default)]
     pub one_shot: bool,
+    // ---- SpawnActorPower (the Sonar Pulse, infantry.rs).
+    /// Terrain types the target cell must have (empty: any).
+    #[serde(default)]
+    pub terrain: Vec<String>,
+    /// AllowUnderShroud: false needs an explored target cell.
+    #[serde(default)]
+    pub allow_under_shroud: bool,
+    /// DetectCloaked of the spawned actor: range and detection types.
+    #[serde(default)]
+    pub detect_range: i32,
+    #[serde(default)]
+    pub detect_types: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -477,6 +629,7 @@ struct RawWeapon {
 #[derive(Deserialize)]
 struct RawWarhead {
     kind: String,
+    relationships: u32,
     damage: i32,
     spread: i32,
     falloff: Vec<i32>,
@@ -516,6 +669,15 @@ pub const TARGET_SUBMARINE: u32 = 128;
 /// Bare land (OpenRA target type `Ground`): force-fire on the ground. No actor
 /// carries it; a water cell is a `TARGET_WATER` ground target.
 pub const TARGET_GROUND: u32 = 256;
+/// Damaged infantry (OpenRA Targetable@HEAL): the Medic's Heal weapon.
+pub const TARGET_HEAL: u32 = 512;
+/// Damaged vehicles, ships and landed aircraft (Targetable@REPAIR): the Mechanic's Repair weapon.
+pub const TARGET_REPAIR: u32 = 1024;
+
+/// OpenRA PlayerRelationship bits (gen_rules.py RELATIONSHIPS).
+pub const RELATION_ALLY: u32 = 1;
+pub const RELATION_NEUTRAL: u32 = 2;
+pub const RELATION_ENEMY: u32 = 4;
 
 /// OpenRA `UnitStance` of an actor with `AutoTarget`, from least to most
 /// aggressive (the order matters: `stance >= Stance::Defend` and so on).
@@ -554,6 +716,9 @@ pub enum Kind {
     Aircraft,
     /// Mines laid by a Minelayer: immobile, cloaked, not units.
     Mine,
+    /// Player-level proxies (OpenRA InfiltrateForSupportPower.Proxy): never on
+    /// the map, kept per player (`Player::proxies`, infantry.rs).
+    Proxy,
 }
 
 impl Kind {
@@ -565,6 +730,7 @@ impl Kind {
             Kind::Ship => TARGET_WATER,
             Kind::Aircraft => TARGET_AIR,
             Kind::Mine => TARGET_MINE,
+            Kind::Proxy => 0,
         }
     }
 }
@@ -737,6 +903,20 @@ pub struct ActorInfo {
     pub gives_experience: Option<GivesExperienceInfo>,
     /// Prone infantry (veterancy.rs): TakeCover.
     pub take_cover: Option<TakeCoverInfo>,
+    /// Buildable.BuildLimit: most owned plus queued at once, 0 for no limit.
+    pub build_limit: i32,
+    /// ProducibleWithLevel (infantry.rs).
+    pub producible_level: Option<ProducibleLevel>,
+    /// Armament.FireDelay per weapon slot (ticks from firing to the shot).
+    pub fire_delays: Vec<i32>,
+    /// Armament.TargetRelationships Ally: the weapons heal or repair friends (Medic, Mechanic).
+    pub targets_allies: bool,
+    /// WithDeathAnimation of infantry (infantry.rs).
+    pub death: Option<DeathInfo>,
+    /// Infiltrates types that can enter it (Targetable SpyInfiltrate, ThiefInfiltrate, Husk).
+    pub infiltrate_types: Vec<String>,
+    /// Targetable as Disguise: spies can take its looks.
+    pub disguisable: bool,
     pub building: Option<BuildingInfo>,
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
@@ -792,8 +972,10 @@ pub struct Warhead {
     pub delay: i32,
     pub valid: u32,
     pub invalid: u32,
-    /// DamageTypes that TakeCover reacts to, as bits of `Rules::damage_types`.
+    /// DamageTypes that TakeCover and death animations react to, as bits of `Rules::damage_types`.
     pub damage_types: u32,
+    /// ValidRelationships as RELATION_* bits, seen from the shooter.
+    pub relationships: u32,
 }
 
 impl Warhead {
@@ -892,8 +1074,9 @@ pub struct Rules {
     /// Per locomotor: `Crushes: mine` (sets off mines it drives over).
     pub locomotor_crushes_mines: Vec<bool>,
     pub tokens: Vec<String>,
-    /// Damage type names that some actor's TakeCover refers to; bit `k` of a
-    /// warhead's or TakeCover's damage type mask is `damage_types[k]`.
+    /// Damage type names that some actor's TakeCover or death animation refers
+    /// to; bit `k` of a warhead's, TakeCover's or DeathInfo's damage type mask
+    /// is `damage_types[k]`.
     pub damage_types: Vec<String>,
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
@@ -956,6 +1139,7 @@ impl Rules {
                 within(&n("warheads.damage"), h.damage, -10_000_000, 100_000_000)?;
                 within(&n("warheads.spread"), h.spread, 0, 32 * CELLS)?;
                 within(&n("warheads.delay"), h.delay, 0, 10_000)?;
+                within(&n("warheads.relationships"), h.relationships as i32, 0, 7)?;
                 if h.falloff.is_empty() || h.falloff.len() > 64 || h.falloff.iter().any(|&f| !(0..=10_000).contains(&f)) {
                     return Err(n("warheads.falloff must be 1 to 64 values between 0 and 10000"));
                 }
@@ -978,7 +1162,8 @@ impl Rules {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
-        within(&n("hp"), a.hp, 1, 100_000_000)?;
+        // Proxies have no body (infantry.rs).
+        within(&n("hp"), a.hp, if a.kind == Kind::Proxy { 0 } else { 1 }, 100_000_000)?;
         within(&n("sight"), a.sight, 0, MAX_VISION)?;
         count(&n("prerequisites"), a.prerequisites.len(), 32)?;
         if let Some(t) = a.turret_turn_speed {
@@ -1260,6 +1445,88 @@ impl Rules {
                 self.validate_power(a, p)?;
             }
         }
+        self.validate_infantry_abilities(a)
+    }
+
+    /// Infantry abilities and what they act on (infantry.rs).
+    fn validate_infantry_abilities(&self, a: &ActorInfo) -> Result<(), String> {
+        let n = |f: &str| format!("actors.{}.{f}", a.id);
+        let ab = &a.abilities;
+        within(&n("build_limit"), a.build_limit, 0, 1000)?;
+        if let Some(p) = &a.producible_level {
+            count(&n("producible_level.prerequisites"), p.prerequisites.len(), 16)?;
+            within(&n("producible_level.levels"), p.levels, 0, MAX_LEVELS as i32)?;
+        }
+        if a.fire_delays.len() > crate::world::MAX_WEAPONS {
+            return Err(n("fire_delays: more delays than weapon slots"));
+        }
+        for &d in &a.fire_delays {
+            within(&n("fire_delays"), d, 0, 1000)?;
+        }
+        count(&n("infiltrate_types"), a.infiltrate_types.len(), 8)?;
+        if let Some(list) = &ab.captures {
+            count(&n("abilities.captures"), list.len(), 8)?;
+            for c in list {
+                within(&n("abilities.captures.delay"), c.delay, 0, TIMER)?;
+                within(&n("abilities.captures.experience"), c.experience, 0, 1_000_000)?;
+                within(&n("abilities.captures.option"), c.option, -1, 1)?;
+                count(&n("abilities.captures.types"), c.types.len(), 8)?;
+            }
+        }
+        if let Some(c) = &ab.capturable {
+            count(&n("abilities.capturable.types"), c.types.len(), 8)?;
+        }
+        if let Some(i) = &ab.infiltrates {
+            count(&n("abilities.infiltrates.types"), i.types.len(), 8)?;
+        }
+        if let Some(list) = &ab.infiltrated {
+            count(&n("abilities.infiltrated"), list.len(), 8)?;
+            for e in list {
+                let m = |f: &str| n(&format!("abilities.infiltrated.{f}"));
+                if !matches!(e.kind.as_str(), "cash" | "exploration" | "power_outage" | "support_power" | "power_reset" | "decoration") {
+                    return Err(m("kind: unknown effect"));
+                }
+                count(&m("types"), e.types.len(), 8)?;
+                within(&m("experience"), e.experience, 0, 1_000_000)?;
+                within(&m("percentage"), e.percentage, 0, 100)?;
+                within(&m("minimum"), e.minimum, -1, 1_000_000)?;
+                within(&m("maximum"), e.maximum, 0, i32::MAX)?;
+                within(&m("experience_percentage"), e.experience_percentage, 0, 100)?;
+                within(&m("duration"), e.duration, 0, TIMER)?;
+                if e.kind == "support_power" {
+                    self.actor_id_ref(&m("proxy"), &e.proxy, &[Kind::Proxy])?;
+                }
+            }
+        }
+        if let Some(d) = &ab.demolition {
+            within(&n("abilities.demolition.delay"), d.delay, 0, TIMER)?;
+            within(&n("abilities.demolition.flashes"), d.flashes, 0, 100)?;
+            within(&n("abilities.demolition.flash_delay"), d.flash_delay, 0, TIMER)?;
+            within(&n("abilities.demolition.flash_interval"), d.flash_interval, 1, TIMER)?;
+        }
+        if let Some(l) = &ab.attack_leap {
+            within(&n("abilities.attack_leap.speed"), l.speed, 1, 4 * CELLS)?;
+            within(&n("abilities.attack_leap.run_speed"), l.run_speed, 0, MAX_PERCENT)?;
+            within(&n("abilities.attack_leap.eat_ticks"), l.eat_ticks, 0, TIMER)?;
+            // Running is a speed bonus: it must stay within the movement bound.
+            if let Some(u) = &a.unit {
+                within(
+                    &n("unit.speed while running"),
+                    (u.speed as i64 * l.run_speed as i64 / 100).min(i32::MAX as i64) as i32,
+                    0,
+                    2 * CELLS,
+                )?;
+            }
+        }
+        if let Some(p) = &ab.proxy {
+            if a.kind != Kind::Proxy {
+                return Err(n("abilities.proxy: only proxies provide prerequisites without a body"));
+            }
+            count(&n("abilities.proxy.provides"), p.provides.len(), 16)?;
+        }
+        if a.kind == Kind::Proxy && (a.unit.is_some() || a.building.is_some()) {
+            return Err(n("kind: a proxy has no body"));
+        }
         Ok(())
     }
 
@@ -1273,6 +1540,10 @@ impl Rules {
         within(&n("range"), p.range, 0, 64 * CELLS)?;
         within(&n("max_distance"), p.max_distance, 0, 256)?;
         count(&n("prerequisites"), p.prerequisites.len(), 16)?;
+        // SpawnActorPower (Sonar Pulse): a detector for `duration` ticks.
+        within(&n("detect_range"), p.detect_range, 0, 64 * CELLS)?;
+        count(&n("detect_types"), p.detect_types.len(), 8)?;
+        count(&n("terrain"), p.terrain.len(), 16)?;
         // Aircraft powers spawn a squad of planes that fly in from the map edge.
         let air = matches!(p.kind.as_str(), "AirstrikePower" | "ParatroopersPower");
         within(&n("squad_size"), p.squad_size, if air { 1 } else { 0 }, 16)?;
@@ -1349,6 +1620,18 @@ impl Rules {
                 (tokens.len() - 1) as u16
             }
         };
+        // Prerequisites only proxies provide and ProducibleWithLevel asks for (infantry.rs).
+        for a in &raw.actors {
+            for t in a
+                .abilities
+                .proxy
+                .iter()
+                .flat_map(|p| p.provides.iter())
+                .chain(a.producible_level.iter().flat_map(|p| p.prerequisites.iter()))
+            {
+                intern(t);
+            }
+        }
         let ids: Vec<String> = raw.actors.iter().map(|a| a.id.clone()).collect();
         // Damage types TakeCover refers to get one bit each; other types never matter.
         let mut damage_types: Vec<String> = Vec::new();
@@ -1361,6 +1644,18 @@ impl Rules {
             for t in tc.damage_triggers.iter().chain(tc.damage_modifiers.iter().map(|m| &m.ty)) {
                 if !damage_types.contains(t) {
                     damage_types.push(t.clone());
+                }
+            }
+        }
+        // Damage types of death animations (WithDeathAnimation.DeathTypes) too.
+        for a in &raw.actors {
+            let Some(d) = &a.death else { continue };
+            if d.types.len() > MAX_TAKE_COVER_TYPES {
+                return Err(format!("actors.{}.death.types may have at most {MAX_TAKE_COVER_TYPES} entries", truncate(&a.id)));
+            }
+            for t in &d.types {
+                if !damage_types.contains(&t.ty) {
+                    damage_types.push(t.ty.clone());
                 }
             }
         }
@@ -1379,6 +1674,7 @@ impl Rules {
                 "ship" => Kind::Ship,
                 "aircraft" => Kind::Aircraft,
                 "mine" => Kind::Mine,
+                "proxy" => Kind::Proxy,
                 _ => return Err(n("kind: unknown kind")),
             };
             let mut prerequisites = Vec::new();
@@ -1469,6 +1765,8 @@ impl Rules {
             }
             let queue = QueueType::parse(&a.queue).ok_or_else(|| n("queue: unsupported queue"))?;
             let transforms_into = a.abilities.transforms.as_ref().and_then(|t| index_of(&t.into));
+            let death =
+                a.death.map(|d| DeathInfo { by_type: d.types.iter().map(|t| (type_bit(&t.ty), t.sequence)).collect(), crushed: d.crushed });
             let take_cover = a.take_cover.map(|tc| TakeCoverInfo {
                 duration: tc.duration,
                 speed_modifier: tc.speed_modifier,
@@ -1504,6 +1802,13 @@ impl Rules {
                 experience: a.experience,
                 gives_experience: a.gives_experience,
                 take_cover,
+                build_limit: a.build_limit,
+                producible_level: a.producible_level,
+                fire_delays: a.fire_delays,
+                targets_allies: a.targets_allies,
+                death,
+                infiltrate_types: a.infiltrate_types,
+                disguisable: a.disguisable,
                 building,
                 unit: a.unit,
                 transforms_into,
@@ -1553,6 +1858,7 @@ impl Rules {
                         valid: h.valid,
                         invalid: h.invalid,
                         damage_types: h.damage_types.iter().fold(0, |m, t| m | type_bit(t)),
+                        relationships: h.relationships,
                     })
                     .collect(),
             })
@@ -1602,6 +1908,10 @@ impl Rules {
         loop {
             let mut changed = false;
             for (i, a) in self.actors.iter().enumerate() {
+                // Proxies are granted by infiltration, never built (infantry.rs).
+                if a.kind == Kind::Proxy {
+                    continue;
+                }
                 if ok[i] {
                     if let Some(b) = &a.building {
                         for &t in &b.provides[faction] {

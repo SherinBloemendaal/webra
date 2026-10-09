@@ -201,7 +201,8 @@ impl World {
                 mask |= 1 << d.owner;
             }
         }
-        mask
+        // Sonar Pulses (infantry.rs).
+        mask | self.pulse_detectors(x, y, owner, cloak_types)
     }
 
     /// Visibility rule for ships: submerged submarines show only to their

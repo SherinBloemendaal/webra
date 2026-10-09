@@ -1,6 +1,8 @@
-# Excerpt of OpenRA mods/ra/rules/misc.yaml: the mines laid by the Minelayer
-# (they inherit ^Mine from defaults.yaml). Not buildable, so they are not in
-# data/actors.json; tools/gen_rules.py resolves them (EXTRA_ACTORS) through parse.py.
+# Excerpt of OpenRA mods/ra/rules/misc.yaml (commit b6fc03fcfaef1277592bbd4cbc7d44dd85219902):
+# the mines laid by the Minelayer (they inherit ^Mine from defaults.yaml), and
+# the proxies a Spy's infiltration grants with the Sonar Pulse's SONAR actor.
+# Not buildable, so they are not in data/actors.json; tools/gen_rules.py
+# resolves them (EXTRA_ACTORS) through parse.py.
 
 MINP:
 	Inherits: ^Mine
@@ -11,3 +13,64 @@ MINV:
 	Inherits: ^Mine
 	FireWarheadsOnDeath:
 		Weapon: ATMine
+
+CAMERA:
+	Interactable:
+	EditorOnlyTooltip:
+		Name: actor-camera-name
+	Immobile:
+		OccupiesSpace: false
+	RevealsShroud:
+		Range: 10c0
+		Type: CenterPosition
+	BodyOrientation:
+		QuantizedFacings: 1
+	WithSpriteBody:
+	RenderSpritesEditorOnly:
+		Image: camera
+	MapEditorData:
+		Categories: System
+
+camera.spyplane:
+	Inherits: CAMERA
+	EditorOnlyTooltip:
+		Name: actor-camera-spyplane-name
+
+SONAR:
+	Inherits: camera.spyplane
+	EditorOnlyTooltip:
+		Name: actor-sonar-name
+	-RevealsShroud:
+	DetectCloaked:
+		DetectionTypes: Underwater
+		Range: 10c0
+
+powerproxy.sonarpulse:
+	SpawnActorPower:
+		Icon: sonar
+		Name: actor-powerproxy-sonarpulse.name
+		Description: actor-powerproxy-sonarpulse.description
+		ChargeInterval: 750
+		EndChargeSpeechNotification: SonarPulseReady
+		SelectTargetSpeechNotification: SelectTarget
+		EndChargeTextNotification: notification-sonar-pulse-ready
+		SelectTargetTextNotification: notification-select-target
+		Actor: sonar
+		Terrain: Water
+		AllowUnderShroud: false
+		LifeTime: 250
+		DeploySound: sonpulse.aud
+		EffectImage: moveflsh
+		EffectPalette: moveflash
+		SupportPowerPaletteOrder: 80
+		EffectSequence: idle
+		BlockedCursor: move-blocked
+
+barracks.upgraded:
+	ProvidesPrerequisite:
+
+vehicles.upgraded:
+	ProvidesPrerequisite:
+
+aircraft.upgraded:
+	ProvidesPrerequisite:

@@ -68,6 +68,8 @@ pub enum SoundEventKind {
     /// A deploy order could not transform the actor where it stands (OpenRA
     /// Transforms NoTransformNotification); a = actor type.
     DeployBlocked = 16,
+    /// Infantry abilities (infantry.rs `InfantryEvent`): a = event, b = its value.
+    Infantry = 40,
 }
 
 impl SoundEventKind {
@@ -85,6 +87,7 @@ pub fn kind_code(kind: Kind) -> i32 {
         Kind::Ship => 3,
         Kind::Aircraft => 4,
         Kind::Mine => 5,
+        Kind::Proxy => 6,
     }
 }
 
@@ -97,6 +100,7 @@ pub fn power_code(kind: &str) -> i32 {
         "AirstrikePower" => 4,
         "ParatroopersPower" => 5,
         "GpsPower" => 6,
+        "SpawnActorPower" => 7,
         _ => 0,
     }
 }

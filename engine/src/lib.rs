@@ -17,9 +17,12 @@ mod combat;
 mod combined;
 mod commands;
 pub mod debug;
+mod dog;
 pub mod doors;
 pub mod flowfield;
 mod helicopter;
+pub mod infantry;
+mod infantry_combat;
 pub mod instances;
 pub mod map;
 pub mod mapdata;
@@ -61,6 +64,8 @@ mod tests_debug;
 mod tests_doors;
 #[cfg(test)]
 mod tests_helis;
+#[cfg(test)]
+mod tests_infantry;
 #[cfg(test)]
 mod tests_instances;
 #[cfg(test)]
@@ -440,6 +445,7 @@ impl Game {
                         Kind::Ship => "ship",
                         Kind::Aircraft => "aircraft",
                         Kind::Mine => "mine",
+                        Kind::Proxy => "proxy",
                     },
                     "altitude": a.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude),
                     "queue": a.queue as usize,
@@ -1192,7 +1198,7 @@ impl Game {
                 let reqs = w.requirements(player, t as u16);
                 json!({
                     "id": w.rules.actors[t].id,
-                    "enabled": w.can_produce(player, t as u16),
+                    "enabled": w.can_start(player, t as u16),
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
@@ -1500,6 +1506,7 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
         weather: weather::WeatherMode::from_name(&name("weather", "full")?)
             .ok_or_else(|| JsError::new("options.weather must be full, cosmetic or off"))?,
         cheats: flag("cheats", false),
+        reusable_engineers: flag("reusableEngineers", false),
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }

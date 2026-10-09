@@ -215,6 +215,10 @@ impl MapData {
                 if let Some(r) = &rules {
                     match r.actor_index(&a.ty) {
                         None => errors.push(format!("unknown actor type {}", short(&a.ty))),
+                        // Proxies (infantry.rs) have no body to place.
+                        Some(t) if r.actors[t].kind == crate::rules::Kind::Proxy => {
+                            errors.push(format!("actor type {} cannot be placed on a map", short(&a.ty)))
+                        }
                         // The whole footprint of a structure must lie on the map, not only its top-left cell.
                         Some(t) => {
                             let Some(b) = r.actors[t].building.as_ref().filter(|_| m.contains(a.x, a.y)) else { continue };
