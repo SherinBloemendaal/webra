@@ -371,6 +371,17 @@ async function main() {
   assert.equal((await content({ headers: { Origin: 'https://evil.example', 'X-WebRA-Content': '1' } }, ADMIN)).status, 403);
   assert.equal((await content({ headers: { 'X-WebRA-Content': '1', 'Sec-Fetch-Site': 'cross-site' } }, ADMIN)).status, 403);
   assert.equal((await content({ method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', 'X-WebRA-CSRF': '1' } }, ADMIN)).status, 405);
+  // The music relay (src/cdmusic.js): the same gate, then its Range check, both before any upstream request.
+  const music = (init, who = null) => fetch(`${BASE}/api/content/ra-scores`, { ...init, headers: { ...init.headers, ...(who ? { Cookie: cookies.get(who) } : {}) } });
+  assert.equal((await music({ headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15' } })).status, 401, 'the music relay needs an account');
+  const musicNoFlag = await music({ headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15' } }, HOST);
+  assert.equal((await musicNoFlag.json()).error.code, 'relay_forbidden');
+  assert.equal((await music({ headers: { Origin: ORIGIN, Range: 'bytes=0-15' } }, ADMIN)).status, 403, 'admins pass the gate; the relay checks its header');
+  const musicBadRange = await music({ headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15,20-30' } }, ADMIN);
+  assert.equal(musicBadRange.status, 416);
+  assert.equal(musicBadRange.headers.get('content-range'), 'bytes */64171360');
+  assert.equal((await music({ headers: { Origin: ORIGIN, 'X-WebRA-Content': '1' } }, ADMIN)).status, 416, 'no Range, no fetch');
+  assert.equal((await music({ method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', 'X-WebRA-CSRF': '1' } }, ADMIN)).status, 405);
 
   const w = 48;
   const terrain = Buffer.alloc(w * w).toString('base64');

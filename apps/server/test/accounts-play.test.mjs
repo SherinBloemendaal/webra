@@ -212,3 +212,28 @@ test('content relay: signed in, active, flag or admin, relay switched on', async
   assert.equal((await relay(b)).body.error.code, 'forbidden', 'admins pass the gate');
   assert.equal((await b.post('/api/content/ra-quickinstall', {})).status, 405);
 });
+
+test('music relay: the same account gate as the content relay, before any range or fetch', async () => {
+  const env = makeEnv({ email: false });
+  const music = (b, headers = {}) => b.get('/api/content/ra-scores', { csrf: false, json: false, headers: { Range: 'bytes=0-15', ...headers } });
+  assert.equal((await music(new Browser(env))).status, 401);
+  const b = await signup(env, 'Listener');
+  assert.equal((await music(b)).body.error.code, 'account_inactive');
+  promote(env, b.user.id);
+  const noFlag = await music(b);
+  assert.equal(noFlag.status, 403);
+  assert.equal(noFlag.body.error.code, 'relay_forbidden');
+  env.DB.sqlite.prepare('UPDATE users SET flags = 1 WHERE id = ?').run(b.user.id);
+  // Past the account gate, the relay's own checks answer (no X-WebRA-Content header): the archive is never contacted.
+  const passed = await music(b);
+  assert.equal(passed.status, 403);
+  assert.equal(passed.body.error.code, 'forbidden');
+  const badRange = await music(b, { 'X-WebRA-Content': '1', Range: 'bytes=0-1,5-6' });
+  assert.equal(badRange.status, 416);
+  await setSite(env, { contentRelay: false });
+  assert.equal((await music(b)).body.error.code, 'relay_forbidden', 'the site switch turns the music relay off too');
+  await setSite(env, { contentRelay: true });
+  env.DB.sqlite.prepare("UPDATE users SET status = 'pending_approval' WHERE id = ?").run(b.user.id);
+  assert.equal((await music(b, { 'X-WebRA-Content': '1', Range: 'bytes=0-1,5-6' })).body.error.code, 'account_inactive', 'an inactive flagged account never reaches the relay');
+  assert.equal((await b.post('/api/content/ra-scores', {})).status, 405);
+});

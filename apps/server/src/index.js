@@ -13,6 +13,7 @@ import { getMap, listMaps, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
+import { scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
 
@@ -102,6 +103,12 @@ async function route(ctx) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     await requireRelay(ctx);
     return quickInstall(request, env, ctx.ip, { salt: ctx.salt() });
+  }
+  if (path === '/api/content/ra-scores') {
+    // The Red Alert music: byte ranges of scores.mix from the freeware CD images, streamed, never stored (cdmusic.js).
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    const user = await requireRelay(ctx);
+    return scoresRange(request, env, ctx.ip, user, { salt: ctx.salt() });
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

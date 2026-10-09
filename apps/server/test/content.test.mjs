@@ -5,32 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { quickInstall, QUICKINSTALL_BYTES, QUICKINSTALL_MIRRORS, CONTENT_LIMIT, CONTENT_HEADER } from '../src/content.js';
 import { checkOrigin, HttpError } from '../src/http.js';
-
-/** The quota statements of src/quota.js (read, then upsert) against a Map. */
-class FakeDb {
-  constructor() {
-    this.rows = new Map();
-    this.writes = 0;
-  }
-  prepare(sql) {
-    const db = this;
-    return {
-      bind(key, win) {
-        return {
-          async first() {
-            if (/^SELECT win, count FROM rate_limits/.test(sql)) return db.rows.get(key) ?? null;
-            assert.match(sql, /INSERT INTO rate_limits/);
-            db.writes++;
-            const row = db.rows.get(key);
-            const count = row && row.win === win ? row.count + 1 : 1;
-            db.rows.set(key, { win, count });
-            return { count };
-          },
-        };
-      },
-    };
-  }
-}
+import { FakeQuotaDb as FakeDb } from './fake-quota-db.mjs';
 
 /** A Worker environment for the relay: the quota table and the IP hash secret. */
 const makeEnv = () => ({ DB: new FakeDb(), IP_HASH_SALT: 'content-test-salt-0123456789' });

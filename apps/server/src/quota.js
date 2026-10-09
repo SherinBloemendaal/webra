@@ -29,30 +29,32 @@ async function current(db, key, win) {
   return row && row.win === win ? Number(row.count) : 0;
 }
 
-async function bump(db, key, win) {
+async function bump(db, key, win, amount = 1) {
   const row = await db
     .prepare(
-      `INSERT INTO rate_limits (key, win, count) VALUES (?1, ?2, 1)
+      `INSERT INTO rate_limits (key, win, count) VALUES (?1, ?2, ?3)
        ON CONFLICT(key) DO UPDATE SET
-         count = CASE WHEN rate_limits.win = excluded.win THEN rate_limits.count + 1 ELSE 1 END,
+         count = CASE WHEN rate_limits.win = excluded.win THEN rate_limits.count + excluded.count ELSE excluded.count END,
          win = excluded.win
        RETURNING count`,
     )
-    .bind(key, win)
+    .bind(key, win, amount)
     .first();
   return Number(row?.count ?? Number.MAX_SAFE_INTEGER);
 }
 
 /**
- * Count one attempt for `purpose` from `subject`. Returns true while the
- * caller is within `limit` attempts per `windowMs`. A caller already at the
- * limit is refused after one read, without a write.
+ * Count one attempt for `purpose` from `subject` (or `amount` units of it,
+ * such as megabytes of a download). Returns true while the caller is within
+ * `limit` units per `windowMs`. A caller this would take over the limit is
+ * refused after one read, without a write.
  */
-export async function takeQuota(db, salt, purpose, subject, limit, windowMs, now = Date.now()) {
+export async function takeQuota(db, salt, purpose, subject, limit, windowMs, now = Date.now(), amount = 1) {
+  if (!Number.isSafeInteger(amount) || amount < 1) throw new RangeError('quota amount must be a positive integer');
   const win = windowStart(now, windowMs);
   const key = await quotaKey(salt, purpose, subject);
-  if ((await current(db, key, win)) >= limit) return false;
-  return (await bump(db, key, win)) <= limit;
+  if ((await current(db, key, win)) + amount > limit) return false;
+  return (await bump(db, key, win, amount)) <= limit;
 }
 
 /** Attempts counted so far in the current window (a read only). */
