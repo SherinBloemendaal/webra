@@ -210,6 +210,38 @@
   color: var(--o-gold);
 }
 
+/* A name that comes from an account (protocol 5 `account: true`). */
+.online-badge-account {
+  color: var(--ui-accent-hi);
+  border-color: var(--ui-accent-lo);
+}
+
+/* Accounts: who plays, and the prompt to sign in when online play needs an account. */
+.online-account-name {
+  font-weight: 700;
+}
+
+.online-account-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-accent-lo);
+  border-left: 3px solid var(--ui-accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+}
+
+.online-link {
+  color: var(--ui-accent-hi);
+}
+
+.online-error .online-btn {
+  margin-left: 8px;
+}
+
 /* ---- Tables ------------------------------------------------------------- */
 
 .online-sessions,

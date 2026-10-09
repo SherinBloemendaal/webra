@@ -271,3 +271,21 @@ test('registry: diffValues lists changed settings; toDocument keeps groups in or
   );
   assert.deepEqual(Object.keys(toDocument(a)), ['schema', ...Object.keys(GROUPS)]);
 });
+
+test('registry: the protocol package accepts its documents (once packages/protocol/src/accounts.js is merged)', async (t) => {
+  let protocol;
+  try {
+    protocol = await import('../protocol/accounts.js');
+  } catch {
+    t.skip('packages/protocol/src/accounts.js is not merged yet; the contract is mirrored in the tests above');
+    return;
+  }
+  const r = createRegistry({ storage: null });
+  r.set('releaseNotes', 'lastSeenVersion', '0.6.0');
+  r.set('game', 'hotkeys', { stop: ['Ctrl+Shift+F1'], guard: [] });
+  r.set('content', 'packs', [{ id: 'desert tiles|someone', enabled: false }]);
+  r.set('lobby', 'lastOptions', { seed: 5, players: [{ type: 'human', name: 'Tanya', faction: 'russia', color: 2, team: 0 }], mapSource: 'random' });
+  r.applyDocument({ extra: { futureThing: { on: true } } });
+  assert.doesNotThrow(() => protocol.validateSettingsDocument(r.document()));
+  assert.doesNotThrow(() => protocol.validateSettingsDocument(createRegistry({ storage: null }).document()));
+});

@@ -1,0 +1,200 @@
+/* Accounts in the game (js/account/ui.js): the account entry on the start
+   screen, the sign-in dialog and the settings conflict choice. Shares the
+   look of the other dialogs (css/audio.css, menu-card). */
+
+#account-entry {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  top: max(8px, env(safe-area-inset-top));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(360px, calc(100% - 200px));
+  font: var(--ui-fs-m) / 1.4 var(--ui-font);
+  color: var(--ui-text);
+}
+
+#account-entry[hidden] {
+  display: none;
+}
+
+/* Only on the start screen: the game and the online page have their own. */
+#app:not([hidden]) ~ #account-entry,
+#online-root:not([hidden]) ~ #account-entry {
+  display: none;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+}
+
+.account-row button,
+.account-signin {
+  padding: 4px 10px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 var(--ui-fs-s) / 1.5 var(--ui-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.account-row button.account-signin {
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
+}
+
+.account-row button:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+
+.account-row button:focus-visible,
+.account-name:focus-visible,
+.account-dialog a:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.account-avatar {
+  --avatar: var(--ui-accent);
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--avatar);
+  border: 1px solid var(--ui-edge);
+  color: #fff;
+  font: 700 var(--ui-fs-s) / 1 var(--ui-font);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.account-name {
+  color: var(--ui-text);
+  font-weight: 700;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-name:hover {
+  text-decoration: underline;
+}
+
+.account-state,
+.account-motd,
+.account-sync {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-warn);
+  border-radius: var(--ui-radius);
+  background: var(--ui-metal-1);
+  font-size: var(--ui-fs-m);
+  white-space: pre-line;
+}
+
+.account-state-banned {
+  border-left-color: var(--ui-bad);
+}
+
+.account-motd {
+  border-left-color: var(--ui-accent);
+}
+
+.account-sync {
+  padding: 2px 8px;
+  border-left-color: var(--ui-line);
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.account-sync-error,
+.account-sync-offline {
+  border-left-color: var(--ui-warn);
+}
+
+/* Dialogs */
+.account-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+  background: var(--ui-scan), rgba(0, 0, 0, 0.62);
+}
+
+.account-dialog {
+  width: min(440px, 100%);
+}
+
+.account-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-card .account-form label {
+  display: block;
+  margin: 6px 0 0;
+}
+
+.menu-card .account-form input {
+  width: 100%;
+  min-height: 36px;
+}
+
+.account-error {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--ui-bad);
+  background: color-mix(in srgb, var(--ui-bad) 12%, transparent);
+}
+
+.account-error[hidden] {
+  display: none;
+}
+
+.account-dialog a {
+  color: var(--ui-accent-hi);
+}
+
+.menu-card button.account-discord {
+  background: linear-gradient(180deg, #6773f2, #4752c4);
+  color: #fff;
+}
+
+.account-conflicts {
+  margin: 0;
+  padding-left: 18px;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  #account-entry {
+    max-width: calc(100% - 170px);
+  }
+
+  .account-row button {
+    min-height: 44px;
+  }
+}

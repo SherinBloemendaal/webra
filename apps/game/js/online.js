@@ -42,11 +42,28 @@ import {
 } from './protocol.js';
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
+import { onlineRefusal } from './account/ui.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
 /** Server error codes after which reconnecting cannot help. */
-const FINAL_CODES = new Set(['forbidden', 'kicked', 'bad_state', 'invalid', 'bad_message', 'not_found', 'session_lost', 'protocol_mismatch', 'version_mismatch', 'too_large']);
+const FINAL_CODES = new Set([
+  'forbidden',
+  'kicked',
+  'bad_state',
+  'invalid',
+  'bad_message',
+  'not_found',
+  'session_lost',
+  'protocol_mismatch',
+  'version_mismatch',
+  'too_large',
+  // Accounts (protocol 5, docs/accounts-api.md 7): reconnecting cannot help.
+  'account_required',
+  'account_inactive',
+  'banned',
+  'ip_banned',
+]);
 const REFRESH_MS = 10_000;
 const CHAT_LINES = 200;
 
@@ -212,6 +229,13 @@ function randomSeed() {
   return crypto.getRandomValues(new Uint32Array(1))[0] & SEED_MAX;
 }
 
+/** Marker of a lobby member whose name comes from an account (protocol 5 `account: true`). */
+function accountMark() {
+  const mark = el('span', 'online-badge online-badge-account', 'ACCOUNT');
+  mark.title = 'Signed in with a WebRA account';
+  return mark;
+}
+
 function messageOf(err) {
   if (err instanceof ApiError || err instanceof ProtocolError) return err.message;
   return `Unexpected error: ${err && err.message ? err.message : err}`;
@@ -271,7 +295,8 @@ export class OnlineUI {
    *     => Promise<{ host: any, game: any, driver: any, recorder: any }>,  the simulation with its LockstepDriver (js/main.js, js/sim)
    *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
    *   onBack: () => void,
-   * }} ctx
+   *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
+   * }} ctx  account: signed-in players play under their username (protocol 5)
    */
   constructor(root, ctx) {
     this.root = root;
@@ -344,8 +369,11 @@ export class OnlineUI {
     });
 
     const tools = el('div', 'online-tools');
+    const user = this.account?.user;
+    // Signed in: the lobby name is the username (the server sets it). Otherwise the typed name, when the site allows anonymous play.
+    const nameField = user ? field('Playing as', el('span', 'online-account-name', user.username)) : field('Your name', nameInput);
     tools.append(
-      field('Your name', nameInput),
+      nameField,
       button('Host game', 'online-btn-primary', () => this.hostDialog()),
       button('Refresh', null, () => this.refresh()),
     );
@@ -361,19 +389,54 @@ export class OnlineUI {
     this.sessionList = table;
     this.listStatus = el('p', 'online-muted', 'Loading sessions...');
 
-    page.append(head, this.banner, tools, joinRow, table, this.listStatus);
+    page.append(head, this.banner);
+    if (!user && this.account && !this.account.canPlayOnline) {
+      const prompt = el('div', 'online-account-prompt');
+      prompt.setAttribute('role', 'note');
+      prompt.append(el('span', null, 'Online play needs a WebRA account. '), button('Sign in', 'online-btn-primary', () => this.signIn()));
+      const create = el('a', 'online-link', 'Create an account');
+      create.href = '/account/#signup';
+      prompt.append(' ', create);
+      page.append(prompt);
+    } else if (user && !user.canPlayOnline) {
+      page.append(el('div', 'online-account-prompt', onlineRefusal(user.status === 'banned' ? 'banned' : 'account_inactive')?.text ?? 'Your account cannot play online right now.'));
+    }
+    page.append(tools, joinRow, table, this.listStatus);
     this.root.append(page);
     this.refresh();
     this.refreshTimer = setInterval(() => this.refresh(), REFRESH_MS);
   }
 
-  setError(message) {
+  setError(message, { signIn = false } = {}) {
     if (!this.banner) return;
     this.banner.textContent = message || '';
     this.banner.hidden = !message;
+    if (message && signIn && this.ctx.account) {
+      this.banner.append(' ', button('Sign in', 'online-btn-primary', () => this.signIn()));
+    }
+  }
+
+  /** Show an error; account refusals (account_required, banned, ...) get their own text and a sign-in button where it helps. */
+  showProblem(err) {
+    const refusal = onlineRefusal(err?.code, err?.message);
+    if (refusal) this.setError(refusal.text, { signIn: refusal.signIn && !this.account?.user });
+    else this.setError(messageOf(err));
+  }
+
+  get account() {
+    return this.ctx.account?.session ?? null;
+  }
+
+  /** Sign in from the online page, then show the browser again (signed in, the name is the username). */
+  async signIn(reason = 'Sign in to play online.') {
+    const user = await this.ctx.account?.signIn(reason);
+    if (user && !this.conn) this.showBrowser();
+    return user;
   }
 
   playerName() {
+    const user = this.account?.user;
+    if (user) return user.username;
     try {
       return validName(this.nameInput ? this.nameInput.value || 'Commander' : this.name || 'Commander');
     } catch (err) {
@@ -464,7 +527,7 @@ export class OnlineUI {
       const { id, hostKey } = await api.createSession(body);
       await this.connect(id, { name, hostKey });
     } catch (err) {
-      this.setError(messageOf(err));
+      this.showProblem(err);
     }
   }
 
@@ -492,7 +555,7 @@ export class OnlineUI {
       if (spectate) hello.spectate = true;
       await this.connect(session.id, hello);
     } catch (err) {
-      this.setError(messageOf(err));
+      this.showProblem(err);
     }
   }
 
@@ -501,7 +564,7 @@ export class OnlineUI {
    * (after a reload, or `reconnect` when this page still has its game).
    */
   async connect(id, hello, { rejoin = false, reconnect = false } = {}) {
-    if (!rejoin) saveName(hello.name);
+    if (!rejoin && !this.account?.user) saveName(hello.name);
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
@@ -519,7 +582,9 @@ export class OnlineUI {
     const welcome = await conn.open({ version: this.ctx.version, ...hello });
     clearInterval(this.refreshTimer);
     this.conn = conn;
-    if (welcome.key) saveRejoin({ id, client: welcome.you, key: welcome.key, name: hello.name });
+    // Protocol 5: the server says which name this member got (the username when signed in).
+    const memberName = typeof welcome.name === 'string' ? welcome.name : hello.name;
+    if (welcome.key) saveRejoin({ id, client: welcome.you, key: welcome.key, name: memberName });
     if (reconnect && this.driver) {
       // Same game, new connection: the driver catches up from the server's log.
       this.driver.reattach(conn);
@@ -579,7 +644,9 @@ export class OnlineUI {
   }
 
   onServerError(m) {
-    if (this.inGame) this.gameLine(`Server: ${m.message}`);
+    const refusal = onlineRefusal(m.code, m.message);
+    if (this.inGame) this.gameLine(`Server: ${refusal?.text ?? m.message}`, !!refusal);
+    else if (refusal) this.setError(refusal.text, { signIn: refusal.signIn && !this.account?.user });
     else this.setError(m.message);
   }
 
@@ -765,6 +832,7 @@ export class OnlineUI {
     const list = el('div', 'online-spectators');
     for (const sp of st.spectators) {
       const row = el('span', 'online-spectator', sp.name);
+      if (sp.account) row.append(accountMark());
       if (sp.client === st.hostId) row.append(el('span', 'online-badge', 'HOST'));
       if (sp.client === st.you) row.append(el('span', 'online-badge online-badge-you', 'YOU'));
       list.append(row);
@@ -806,6 +874,7 @@ export class OnlineUI {
         row.style.setProperty('--slot-color', rgbCss(this.ctx.colors[slot.color] || [1, 1, 1]));
         if (slot.type === 'human') {
           who.append(el('span', 'online-player-name', slot.name));
+          if (slot.account) who.append(accountMark());
           if (slot.client === this.state.hostId) who.append(el('span', 'online-badge', 'HOST'));
           if (i === mine) who.append(el('span', 'online-badge online-badge-you', 'YOU'));
         } else {

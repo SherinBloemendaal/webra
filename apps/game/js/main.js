@@ -40,7 +40,9 @@ import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
-import { shouldShowNotice } from './content/download.js';
+import { shouldShowNotice, canAutoInstall } from './content/download.js';
+import { AccountSession } from './account/session.js';
+import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
 import { defaultRegistry } from './registry.js';
 import { setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
@@ -80,6 +82,8 @@ let content = null;
 let contentPanel = null;
 /** The start screen notice about the original content (js/content/panel.js), while shown. */
 let contentNotice = null;
+/** The signed-in account (js/account/session.js): online play, settings sync, the one-click content install. */
+let account = null;
 
 async function boot() {
   let gpuError = null;
@@ -90,6 +94,7 @@ async function boot() {
   }
   $('version').textContent = wasm ? `v${version()}` : '';
   setupAudio();
+  setupAccount();
   setupContent();
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
@@ -183,6 +188,47 @@ function setupAudio() {
 }
 
 /**
+ * The account (js/account): who is signed in, what the site allows, and the
+ * settings sync. The game works the same signed out; only online play may
+ * need an account (site setting).
+ */
+function setupAccount() {
+  try {
+    account = new AccountSession({ registry: defaultRegistry(), storage: browserStorage(), onConflict: askConflict, win: window });
+    mountAccountEntry($('account-entry'), account);
+    // The one-click content install follows the account (the server decides: canUseContentRelay).
+    account.onChange(() => {
+      const allowed = canAutoInstall(account.user);
+      contentPanel?.setAutoInstall(allowed);
+      contentNotice?.setAutoInstall(allowed);
+    });
+    // Back from Discord (#discord=ok or #discord=error&code=...): say how it went, then clean the address.
+    const discord = /^#discord=(ok|error)(?:&code=([a-z_]{1,32}))?$/.exec(location.hash);
+    if (discord) {
+      history.replaceState(null, '', location.pathname + location.search);
+      if (discord[1] === 'error') showToast(`Discord sign-in did not work (${discord[2] ?? 'unknown'}). Try again, or use the account page.`);
+    }
+    account.refresh();
+    // Back on the tab: settings changed on another device arrive.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && account.user) account.sync?.flush().catch(() => {});
+    });
+  } catch (err) {
+    console.warn('Accounts are unavailable:', err);
+    account = null;
+  }
+}
+
+/** This page's localStorage, or null when the browser blocks it. */
+function browserStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Original graphics and texture packs (js/content), loaded into memory ahead
  * of the first game so the game can build its art at once. The game plays
  * the same without them.
@@ -197,6 +243,7 @@ function setupContent() {
     content = new ContentSystem({ settings, known });
     contentPanel = mountContentPanel($('content-button'), $('content-panel'), content, audio, {
       actorNames: new Map(actors.map((a) => [String(a.id).toUpperCase(), a.name ?? a.id])),
+      autoInstall: canAutoInstall(account?.user ?? null),
     });
     const sync = () => {
       setCameoArt(content.cameos());
@@ -222,6 +269,7 @@ function setupContent() {
             onFiles: (files) => dropContent(files),
             onOpen: () => contentPanel.open(),
             onDownload: () => contentPanel.download(),
+            autoInstall: canAutoInstall(account?.user ?? null),
           });
         }
       })
@@ -316,6 +364,7 @@ function setupOnline(lobby, gpuError) {
         createGame: createOnlineGame,
         colors: TEAM_COLORS,
         colorNames: COLOR_NAMES,
+        account: account ? { session: account, signIn: (reason) => openSignIn(account, { reason }) } : undefined,
         onBack: () => {
           root.hidden = true;
           $('menu').hidden = false;
