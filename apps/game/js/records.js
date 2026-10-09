@@ -11,7 +11,7 @@ import { formatTicks, recordFileName, REPLAY_SPEEDS } from './replay.js';
 import { downloadText, pickFile, readFileText, SaveStore } from './saves.js';
 import { MODDED_WARNING, parseReplay } from './protocol.js';
 
-export { ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
+export { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -260,6 +260,12 @@ export class ReplayBar {
     this.root.append(this.play, speeds, this.seek, this.time, this.note);
     parent.append(this.root);
     this.dragging = false;
+    this.update();
+  }
+
+  /** The replay speed hotkeys (js/gamekeys.js): a speed of REPLAY_SPEEDS, or 'max' for the highest. */
+  setSpeed(speed) {
+    this.c.setSpeed(speed === 'max' ? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1] : speed);
     this.update();
   }
 

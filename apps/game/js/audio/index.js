@@ -179,7 +179,7 @@ export class AudioSystem {
    * @param {number} o.player local player
    * @param {number} o.worldUnitsPerCell Game.world_units_per_cell()
    */
-  attachGame({ game, rules, player, worldUnitsPerCell }) {
+  attachGame({ game, rules, player, worldUnitsPerCell, allied }) {
     this.game = game;
     game.set_audio_events(true);
     const sideIndex = rules.players?.[player]?.side ?? 0;
@@ -201,6 +201,7 @@ export class AudioSystem {
       },
       sink: this,
       now,
+      allied,
     });
     this.inGame = true;
     this.syncMusic();
@@ -249,10 +250,11 @@ export class AudioSystem {
    * Per frame, after the simulation ticked: play this frame's events.
    * @param {{ x0, y0, x1, y1 }} view visible world rectangle in pixels
    * @param {() => Uint8Array} [fog] the local player's fog bytes from Game.fog_ptr (0 shroud, 128 fog, 255 visible)
+   * @param {Int32Array | number[]} [events] the frame's engine events when the caller took them already
    */
-  frame(view, fog) {
+  frame(view, fog, events = null) {
     if (!this.director || !this.game) return;
-    const events = this.game.take_audio_events();
+    events ??= this.game.take_audio_events();
     if (!events.length) return;
     // With sound off the director still runs: its announcer lines are shown
     // as text (onAnnounce); effect() and voice() stay silent.
@@ -359,10 +361,32 @@ export class AudioSystem {
 
   syncMusic() {
     const p = this.prefs.get();
-    // The playlist holds pack music, plus the installed originals when they are on (music.js).
-    const want = this.inGame && p.enabled && p.music > 0 && this.jukebox.available && this.mixer.ready;
+    // The playlist holds pack music, plus the installed originals when they are on (music.js);
+    // the music hotkeys may have stopped or paused it.
+    const want =
+      this.inGame && p.enabled && p.music > 0 && this.jukebox.available && this.mixer.ready && !this.jukebox.stoppedByUser && !this.jukebox.paused;
     if (want && !this.jukebox.handle) this.jukebox.start();
     else if (!want && this.jukebox.handle) this.jukebox.stop();
+  }
+
+  // ---- Hotkeys (js/gamekeys.js) ----------------------------------------------------
+
+  /** OpenRA ToggleMute: all sound off or on again. Returns whether it is muted now. */
+  toggleMute() {
+    const muted = this.prefs.get().enabled;
+    this.prefs.set({ enabled: !muted });
+    return muted;
+  }
+
+  /** OpenRA's music hotkeys: 'stop', 'pause' (or resume), 'prev', 'next'. */
+  music(command) {
+    this.mixer.unlock?.();
+    const j = this.jukebox;
+    if (command === 'stop') j.userStop();
+    else if (command === 'pause') j.togglePause();
+    else if (command === 'prev') j.prev();
+    else if (command === 'next') j.next();
+    this.changed();
   }
 
   /** Short test sound for the settings panel. */

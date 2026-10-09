@@ -32,6 +32,12 @@ export class Jukebox {
     this.playing = null; // title
     this.wanted = false; // should be playing (game running, music on)
     this.token = 0;
+    /** The music hotkeys stopped it (OpenRA StopMusic): it stays off until started again. */
+    this.stoppedByUser = false;
+    /** Paused (OpenRA PauseMusic): { track, buffer, at } to resume from, or null. */
+    this.paused = null;
+    this.buffer = null;
+    this.track = null;
   }
 
   /** Refresh the installed track list from the store. */
@@ -61,12 +67,71 @@ export class Jukebox {
     const h = this.handle;
     this.handle = null;
     this.playing = null;
+    this.paused = null;
     h?.stop();
+    this.onChange();
+  }
+
+  /** The stop music hotkey: off until the player starts it again (next, previous, pause). */
+  userStop() {
+    this.stop();
+    this.stoppedByUser = true;
+  }
+
+  /**
+   * The pause music hotkey (OpenRA PauseOrResumeMusic): pause what plays,
+   * resume what was paused, or start the next track.
+   */
+  async togglePause() {
+    if (this.handle && this.buffer) {
+      const at = this.handle.position?.() ?? 0;
+      const paused = { track: this.track, buffer: this.buffer, at };
+      this.stop();
+      this.paused = paused;
+      this.playing = null;
+      this.onChange();
+      return;
+    }
+    this.stoppedByUser = false;
+    const p = this.paused;
+    if (p && this.mixer.ready) {
+      this.paused = null;
+      this.start_(p.track, p.buffer, p.at);
+      return;
+    }
+    await this.next();
+  }
+
+  /** The previous track of the shuffled order (OpenRA PrevMusic). */
+  async prev() {
+    if (!this.tracks.length) return;
+    // `pos` is past the track playing now: two back is the one before it.
+    this.pos = Math.max(0, Math.min(this.pos, this.order.length) - 2);
+    await this.next();
+  }
+
+  /** Play `buffer` of `track` from `offset` seconds; the next track follows when it ends. */
+  start_(track, buffer, offset = 0) {
+    const token = ++this.token;
+    this.wanted = true;
+    this.stoppedByUser = false;
+    this.playing = track.title;
+    this.track = track;
+    this.buffer = buffer;
+    this.handle = this.mixer.play(buffer, {
+      bus: 'music',
+      offset,
+      onEnded: () => {
+        if (token === this.token && this.wanted) this.next();
+      },
+    });
     this.onChange();
   }
 
   /** Play the next track of the shuffled order. */
   async next() {
+    this.stoppedByUser = false;
+    this.paused = null;
     if (!this.tracks.length || !this.mixer.ready) return;
     const token = ++this.token;
     const old = this.handle;
@@ -92,14 +157,6 @@ export class Jukebox {
       }
     }
     if (!buffer || token !== this.token) return;
-    this.wanted = true;
-    this.playing = track.title;
-    this.handle = this.mixer.play(buffer, {
-      bus: 'music',
-      onEnded: () => {
-        if (token === this.token && this.wanted) this.next();
-      },
-    });
-    this.onChange();
+    this.start_(track, buffer);
   }
 }

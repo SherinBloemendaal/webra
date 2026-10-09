@@ -85,12 +85,17 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   game.order_waypoint(0, all, 640, 660, true);
   for (const stance of ['hold_fire', 'return_fire', 'defend', 'attack_anything']) assert.equal(game.set_stance(0, all, stance), true);
   assert.equal(game.set_stance(0, all, 'berserk'), false, 'unknown stances are not sent');
+  // Sidebar buttons (engine/src/repair.rs, beacons.rs).
+  game.repair_building(0, units[0]);
+  game.power_down(0, units[0]);
+  game.place_beacon(0, 240, 360);
   const orders = JSON.parse(game.take_orders());
-  assert.ok(orders.length >= 14);
+  assert.ok(orders.length >= 17);
   assert.deepEqual(
-    orders.slice(-9).map((o) => o.o),
-    ['attack_ground', 'guard', 'scatter', 'waypoint', 'waypoint', 'set_stance', 'set_stance', 'set_stance', 'set_stance'],
+    orders.slice(-12).map((o) => o.o),
+    ['attack_ground', 'guard', 'scatter', 'waypoint', 'waypoint', 'set_stance', 'set_stance', 'set_stance', 'set_stance', 'repair_building', 'power_down', 'place_beacon'],
   );
+  assert.deepEqual(orders.at(-1), { o: 'place_beacon', player: 0, x: 10240, y: 15360 }, 'world units');
   const valid = validOrders(orders);
   assert.deepEqual(valid, orders);
   const r = parseClientMessage(JSON.stringify({ t: 'orders', tick: 3, orders }));

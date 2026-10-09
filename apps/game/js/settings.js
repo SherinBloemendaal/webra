@@ -19,6 +19,8 @@ export const KEYS = Object.freeze({
   keyScrollSpeed: ['game', 'keyScrollSpeed'],
   showUnitPaths: ['game', 'showUnitPaths'],
   healthBars: ['game', 'healthBars'],
+  // OpenRA's relationship colours (TogglePlayerStanceColor): js/main.js.
+  playerStanceColors: ['game', 'playerStanceColors'],
   pixelRatioCap: ['game', 'pixelRatioCap'],
   lowQuality: ['game', 'lowQuality'],
   // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the

@@ -10,7 +10,8 @@
 // game hotkey fires; default actions (Tab between buttons, arrow keys on a
 // slider) still work.
 
-import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
+import { BROWSER_SUBSTITUTES, comboFromEvent, formatCombo, GROUP_ORDER, isMac } from './hotkeys.js';
+import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
 
@@ -18,7 +19,7 @@ import { touchControls } from './touch.js';
 export function fixedControls(mac = isMac()) {
   const ctrl = mac ? 'Cmd (or Ctrl)' : 'Ctrl';
   return [
-    ['Esc', 'Cancel placement, targeting, sell or attack move; otherwise open this menu'],
+    ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu'],
     ['Left click', 'Select, or give the order shown by the cursor'],
     ['Left drag', 'Box select'],
     ['Shift + click / drag', 'Add to or remove from the selection'],
@@ -27,15 +28,9 @@ export function fixedControls(mac = isMac()) {
     ['Right click', 'Cancel the current mode, or clear the selection'],
     ['Middle drag', 'Pan the map'],
     ['Mouse wheel', 'Zoom'],
-    ['Arrow keys, screen edges', 'Scroll the map'],
-    [`${ctrl} + 1..9, 0`, 'Store the selected units as a control group'],
-    ['1..9, 0', 'Select a control group (press twice: centre the camera on it)'],
-    ['Shift + 1..9, 0', 'Add a control group to the selection'],
+    ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],
-    ['Numpad 1..9', 'Build the n-th item of the sidebar tab (Shift: 5, Ctrl: cancel one)'],
-    ['Numpad + / 0 / -', 'Next / previous sidebar tab'],
-    ['Numpad .', 'Cancel building placement'],
-    ['Enter', 'Chat (online games)'],
+    ['Shift + production key', 'Build 5 (production slots, numpad)'],
   ];
 }
 
@@ -92,8 +87,9 @@ function button(text, className, onClick) {
   return b;
 }
 
-// Actions that still run while the menu is open (they close it or are harmless).
-const MENU_ACTIONS = new Set(['menu', 'pause', 'fullscreen']);
+// Actions that still run while the menu is open (they close it or are
+// harmless; OpenRA's menu context has ToggleMute and TakeScreenshot).
+const MENU_ACTIONS = new Set(['menu', 'pause', 'fullscreen', 'toggleMute', 'takeScreenshot']);
 
 export class GameMenu {
   /**
@@ -346,6 +342,7 @@ export class GameMenu {
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
       choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
+      check('playerStanceColors', 'Relationship colours (you, allies, enemies)'),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );
@@ -358,7 +355,7 @@ export class GameMenu {
     if (!fs.available()) c.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
     c.append(
       button('Defaults', null, () => {
-        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'pixelRatioCap', 'lowQuality']) s.reset(key);
+        for (const key of ['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'healthBars', 'playerStanceColors', 'pixelRatioCap', 'lowQuality']) s.reset(key);
         this.render();
       }),
       button('Back', 'primary', () => this.show('main')),
@@ -375,7 +372,9 @@ export class GameMenu {
       if (!groups.has(a.group)) groups.set(a.group, []);
       groups.get(a.group).push(a);
     }
-    for (const [group, actions] of groups) {
+    // Sections in the order of OpenRA's hotkey settings, then any others.
+    const order = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
+    for (const [group, actions] of [...groups].sort((x, y) => order(x[0]) - order(y[0]))) {
       list.append(el('h2', null, group));
       const table = el('div', 'game-menu-keys');
       for (const a of actions) {
@@ -383,19 +382,27 @@ export class GameMenu {
         const waiting = this.capture === a.name;
         const keys = el('span', 'game-menu-keycap', waiting ? 'Press a key...' : a.keys.length ? a.keys.map((k) => formatCombo(k)).join(' / ') : 'Unbound');
         const changed = JSON.stringify(a.keys) !== JSON.stringify(a.defaults);
-        row.append(
-          el('span', 'game-menu-key-label', a.label),
-          keys,
-          button('Change', 'game-menu-mini', () => {
-            this.capture = a.name;
-            this.message = '';
-            this.render();
-          }),
-          button('Clear', 'game-menu-mini', () => reg.unbind(a.name)),
-        );
-        const resetBtn = button('Reset', 'game-menu-mini', () => reg.reset(a.name));
-        resetBtn.disabled = !changed;
-        row.append(resetBtn);
+        const label = el('span', 'game-menu-key-label', a.label);
+        // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key.
+        const sub = a.openra && BROWSER_SUBSTITUTES[a.openra];
+        if (sub && OPENRA_HOTKEYS[a.openra]?.key) label.title = `OpenRA: ${formatCombo(OPENRA_HOTKEYS[a.openra].key)} (${sub.why}).`;
+        if (a.context === 'chat-input') label.append(el('span', 'hint', ' (in the chat line)'));
+        row.append(label, keys);
+        if (a.readonly) {
+          row.classList.add('game-menu-fixed');
+        } else {
+          row.append(
+            button('Change', 'game-menu-mini', () => {
+              this.capture = a.name;
+              this.message = '';
+              this.render();
+            }),
+            button('Clear', 'game-menu-mini', () => reg.unbind(a.name)),
+          );
+          const resetBtn = button('Reset', 'game-menu-mini', () => reg.reset(a.name));
+          resetBtn.disabled = !changed;
+          row.append(resetBtn);
+        }
         table.append(row);
       }
       list.append(table);
@@ -420,7 +427,7 @@ export class GameMenu {
       el(
         'p',
         'hint',
-        'Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.',
+        "The keys are OpenRA's Red Alert defaults, except where the browser keeps OpenRA's key: Shift+Tab is the next facility (Ctrl+Tab switches tabs), Alt+Shift+Q and Alt+Shift+W record bookmarks 1 and 2 (Ctrl+Q and Ctrl+W quit and close), and F11 and F12 have nothing (full screen and developer tools). Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.",
       ),
     );
     c.append(list, button('Reset all hotkeys', null, () => reg.reset()), button('Back', 'primary', () => this.show('main')));

@@ -410,7 +410,7 @@ async function setup(actors) {
   canvas.setPointerCapture = () => {};
   const game = fakeGame(actors);
   const hotkeys = new HotkeyRegistry(createSettings(null));
-  const hooks = { onSelectionChanged() {}, onPlaced() {}, onCancelPlace() {}, onPowerTargeting() {}, onSellMode() {} };
+  const hooks = { onSelectionChanged() {}, onPlaced() {}, onCancelPlace() {}, onPowerTargeting() {}, onMode() {} };
   const rules = { actors: [{ id: 'powr', width: 2, height: 2 }] };
   const input = new Input(canvas, game, rules, 0, hooks, { hotkeys, settings: createSettings(null) });
   input.camera.zoom = 1;

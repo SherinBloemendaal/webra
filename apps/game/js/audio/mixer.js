@@ -65,10 +65,11 @@ export class Mixer {
   }
 
   /**
-   * Start a buffer on a bus. Returns a handle { stop(), ended: Promise } or
+   * Start a buffer on a bus, `offset` seconds into it. Returns a handle
+   * { stop(), ended: Promise, position(): seconds played into the buffer } or
    * null when the context is not running or the bus is full of louder sounds.
    */
-  play(buffer, { bus = 'effects', gain = 1, pan = 0, rate = 1, onEnded = null } = {}) {
+  play(buffer, { bus = 'effects', gain = 1, pan = 0, rate = 1, onEnded = null, offset = 0 } = {}) {
     if (!this.ready || !buffer) return null;
     if (this.prefs && busGain(this.prefs, bus) <= 0 && bus !== 'music') return null;
     const list = this.active[bus];
@@ -96,8 +97,10 @@ export class Mixer {
     }
     tail.connect(this.buses[bus]);
     let resolveEnded;
+    const startedAt = ctx.currentTime;
     const handle = {
       gain,
+      position: () => offset + (ctx.currentTime - startedAt) * rate,
       ended: new Promise((r) => (resolveEnded = r)),
       stop: () => {
         try {
@@ -117,7 +120,7 @@ export class Mixer {
       onEnded?.();
     };
     list.push(handle);
-    src.start();
+    src.start(0, Math.max(0, Math.min(offset, buffer.duration ?? offset)));
     return handle;
   }
 

@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
+import { DECORATION_SPECIALS } from '../js/art/decorations.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from '../js/art/veterancy.js';
 import { veterancyText } from '../js/sidebar.js';
 
@@ -96,8 +97,10 @@ test('prone poses and rank decorations sit in the sprite slots the engine draws'
   const list = spriteList(actors);
   // engine/src/render.rs SpriteIds: 12 built-in specials, then 8 slots per art module; veterancy is the fifth.
   const base = actors.length * 2 + 12 + 4 * SPECIAL_SLOTS;
-  assert.equal(list.length, base + SPECIAL_SLOTS);
+  // The repair and power down marks (art/decorations.js) are the sixth and last.
+  assert.equal(list.length, base + 2 * SPECIAL_SLOTS);
   VETERANCY_SPECIALS.forEach((s, k) => assert.equal(list[base + k], s));
+  DECORATION_SPECIALS.forEach((s, k) => assert.equal(list[base + SPECIAL_SLOTS + k], s));
   for (const [k, a] of actors.entries()) {
     if (a.kind !== 'infantry') continue;
     const key = a.id.replace(/R1$/, '');
@@ -107,7 +110,7 @@ test('prone poses and rank decorations sit in the sprite slots the engine draws'
 });
 
 test('veterancy art draws within its box', () => {
-  const draws = [...VETERANCY_SPECIALS, ...Object.values(PRONE_DRAW)];
+  const draws = [...VETERANCY_SPECIALS, ...DECORATION_SPECIALS, ...Object.values(PRONE_DRAW)];
   for (const [w, h, draw] of draws) {
     let minX = Infinity;
     let minY = Infinity;

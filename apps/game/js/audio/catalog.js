@@ -176,6 +176,8 @@ export const EVA = {
   baseUnderAttack: { text: 'Our base is under attack', chime: 'eva_alarm', originals: ['baseatk1'], cooldown: 20 },
   unitLost: { text: 'Unit lost', chime: 'eva_loss', originals: ['unitlst1'], cooldown: 6 },
   structureSold: { text: 'Structure sold', chime: 'eva_cash', originals: ['strusld1'], cooldown: 1 },
+  // OpenRA RepairableBuilding RepairingNotification (the Repair button).
+  repairing: { text: 'Repairing', chime: 'eva_info', originals: ['repair1'], cooldown: 1 },
   selectTarget: { text: 'Select target', chime: 'eva_info', originals: ['slcttgt1'], cooldown: 1 },
   cancelled: { text: 'Cancelled', chime: 'eva_loss', originals: ['cancld1'], cooldown: 1 },
   powerReady: { text: 'Ready', chime: 'eva_ready', originals: [], cooldown: 0.5 },
@@ -204,6 +206,13 @@ export const POWER_KINDS = [
   'ParatroopersPower',
   'GpsPower',
 ];
+
+/** Sidebar button sounds (OpenRA notifications): power down and up, a beacon placed. */
+export const BUTTON_SOUNDS = {
+  powerDown: { synth: 'power_down', originals: ['bleep11'].map(fileName) },
+  powerUp: { synth: 'power_up', originals: ['bleep12'].map(fileName) },
+  beacon: { synth: 'beacon', originals: ['beepslct'].map(fileName) },
+};
 
 /** Sound where a support power strikes. */
 export function powerSound(code) {
@@ -273,6 +282,7 @@ export function allOriginalNames() {
   }
   add(INFANTRY_DIE);
   add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);
+  for (const s of Object.values(BUTTON_SOUNDS)) add(s.originals);
   for (const set of Object.values(VOICE_SETS)) {
     for (const line of ['select', 'action']) {
       for (const base of set[line]) for (const v of Object.values(set.variants).flat()) add([base + v]);

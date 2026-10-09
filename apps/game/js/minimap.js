@@ -14,6 +14,7 @@
 // every frame only the camera rectangle moves.
 
 import { askOf } from './sim/methods.js';
+import { RadarPings } from './radarpings.js';
 
 const CELL_PX = 24;
 /** Radar picture refresh interval (ms): units move at 4 Hz on the radar. */
@@ -194,8 +195,11 @@ export class Minimap {
    * @param {object} o.input js/input.js Input (camera, selection, order flash)
    * @param {number[][]} o.colors team colours (TEAM_COLORS, may be reordered in place)
    * @param {string} [o.biome] the map's biome (terrain colours)
+   * @param {import('./radarpings.js').RadarPings} [o.pings] radar pings drawn over the picture
    */
-  constructor(parent, { game, fog, player, input, colors, biome = 'temperate' }) {
+  constructor(parent, { game, fog, player, input, colors, biome = 'temperate', pings = null }) {
+    this.pings = pings;
+    this.pingsDrawn = false;
     this.game = game;
     this.fog = fog;
     this.player = player;
@@ -232,10 +236,12 @@ export class Minimap {
     this.ctx = this.canvas.getContext('2d');
     this.image = this.ctx?.createImageData(this.mapW, this.mapH) ?? null;
     this.camera = el('div', 'mm-camera');
+    this.pingCanvas = el('canvas', 'mm-pings');
+    this.pingCtx = this.pingCanvas.getContext?.('2d') ?? null;
     this.label = el('div', 'mm-label');
     // The picture and the camera frame open and close together (clipped by --mm-reveal).
     const layer = el('div', 'mm-layer');
-    layer.append(this.canvas, this.camera);
+    layer.append(this.canvas, this.pingCanvas, this.camera);
     this.screen.append(this.staticCanvas, layer);
     this.root.append(this.screen, this.label);
     parent.prepend(this.root);
@@ -341,6 +347,47 @@ export class Minimap {
       this.staticCtx.putImageData(this.staticImage, 0, 0);
     }
     if (reveal > 0) this.drawCamera();
+    this.drawPings(now, reveal > 0);
+  }
+
+  /**
+   * Radar pings (OpenRA RadarWidget): a turning triangle per ping, shrinking
+   * onto its spot, in its colour; only while the radar shows a picture.
+   */
+  drawPings(now, shown) {
+    const ctx = this.pingCtx;
+    if (!ctx || !this.pings) return;
+    const list = shown ? this.pings.active(now) : [];
+    if (!list.length) {
+      if (this.pingsDrawn) ctx.clearRect(0, 0, this.pingCanvas.width, this.pingCanvas.height);
+      this.pingsDrawn = false;
+      return;
+    }
+    const dpr = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1));
+    const w = Math.max(1, Math.round(this.pingCanvas.clientWidth * dpr));
+    const h = Math.max(1, Math.round(this.pingCanvas.clientHeight * dpr));
+    if (this.pingCanvas.width !== w || this.pingCanvas.height !== h) {
+      this.pingCanvas.width = w;
+      this.pingCanvas.height = h;
+    }
+    ctx.clearRect(0, 0, w, h);
+    // OpenRA's radii are radar pixels of a radar about 200 pixels wide.
+    const scale = (w / dpr / 200) * dpr;
+    for (const p of list) {
+      const cx = (p.x / (this.mapW * CELL_PX)) * w;
+      const cy = (p.y / (this.mapH * CELL_PX)) * h;
+      const pts = RadarPings.triangle(cx, cy, p.radius, p.angle, scale);
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.lineWidth = 2 * dpr;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.stroke();
+      ctx.lineWidth = 1 * dpr;
+      ctx.strokeStyle = `rgb(${p.color.map((c) => Math.round(Math.max(0, Math.min(1, c)) * 255)).join(', ')})`;
+      ctx.stroke();
+    }
+    this.pingsDrawn = true;
   }
 
   refresh(now) {

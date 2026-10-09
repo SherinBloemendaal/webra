@@ -412,3 +412,15 @@ body {
 }
 
 /* Phone layouts (portrait and landscape drawers) live in css/touch.css. */
+
+/* OpenRA DisableUserInterface (Shift+=) and DisableAllUserInterface
+   (Alt+Shift+=): only the battlefield is left, and with the second also no
+   cursor (js/main.js toggleInterface). */
+#app.ui-hidden #field > :not(#view),
+#app.ui-hidden #sidebar {
+  display: none !important;
+}
+
+#app.cursor-hidden #view {
+  cursor: none !important;
+}

@@ -85,6 +85,8 @@ export const GROUPS = deepFreeze({
         labels: { off: 'Selected and hovered only', damaged: 'Also damaged units', all: 'All units' },
         label: 'Health bars',
       },
+      // OpenRA UsePlayerStanceColors: you green, allies yellow, enemies red, neutrals tan.
+      playerStanceColors: { type: 'boolean', default: false, label: 'Relationship colours', help: 'Colour players by relationship instead of their own colour.' },
       graphics: {
         type: 'choice',
         default: 'webra',

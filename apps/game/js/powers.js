@@ -3,6 +3,7 @@
 // bar and the time left. A ready power flashes; clicking it starts targeting
 // on the map (Input.startPowerTargeting): click the target, or drag from the
 // target to choose the direction aircraft fly in. Escape or right click cancels.
+// The support power hotkeys pick the n-th power (js/gamekeys.js; OpenRA has no default keys).
 
 export class PowerBar {
   /**
@@ -53,6 +54,16 @@ export class PowerBar {
       this.hooks.onTargetLost?.();
     }
     this.root.hidden = this.buttons.size === 0;
+  }
+
+  /**
+   * The support power hotkeys (OpenRA SupportPower01..06): target the
+   * `index`-th power of the bar (0-based, palette order) when it is ready.
+   */
+  activate(index) {
+    const el = this.root.children[index];
+    const b = el && [...this.buttons.values()].find((x) => x.el === el);
+    if (b?.power.ready) this.hooks.onSelect(b.power);
   }
 
   /** Highlight the power being targeted (null: none). */

@@ -146,28 +146,32 @@ test('icons and cursors are CSP-safe SVG', () => {
 
 // ---- Hotkeys ----------------------------------------------------------------------------
 
-test('command hotkeys: Guard takes D from deploy (OpenRA), G and X and C work, stances can be bound', () => {
+test("command hotkeys: OpenRA's keys (Guard D, Scatter Ctrl+X, stances Alt+A/S/D/F), stance cycling bindable", () => {
   const reg = new HotkeyRegistry(createSettings(null));
-  // What js/input.js registers before the bar exists.
-  for (const [name, keys] of [['attackMove', 'A'], ['stop', 'S'], ['deploy', ['F', 'D']], ['sell', 'Z'], ['selectAll', 'Q'], ['selectByType', 'W'], ['base', ['H', 'Space']]]) {
-    reg.registerAction(name, keys, () => {});
+  // What js/input.js registers before the bar exists (OpenRA: F deploys, X powers down).
+  for (const [name, openra] of [['attackMove', 'AttackMove'], ['stop', 'Stop'], ['deploy', 'Deploy'], ['powerDown', 'PowerDown'], ['repair', 'Repair']]) {
+    reg.registerAction(name, undefined, () => {}, { openra });
   }
   const ran = [];
-  for (const h of COMMAND_HOTKEYS) reg.registerAction(h.name, h.keys, () => ran.push(h.name), { label: h.label, group: 'Orders' });
+  for (const h of COMMAND_HOTKEYS) reg.registerAction(h.name, h.keys, () => ran.push(h.name), { openra: h.openra, label: h.label, group: h.group });
   assert.equal(reg.actionFor('D'), 'guard', 'OpenRA: D guards; F deploys');
   assert.equal(reg.actionFor('F'), 'deploy');
-  assert.equal(reg.actionFor('G'), 'guard');
-  assert.equal(reg.actionFor('X'), 'scatter');
-  assert.equal(reg.actionFor('C'), 'stanceCycle');
-  for (const s of STANCES) assert.deepEqual(reg.bindingsFor(s.action), [], `${s.action}: no default key, bindable in the menu`);
-  assert.equal(reg.rebind('stanceHoldFire', 'Alt+H').ok, true);
+  assert.equal(reg.actionFor('G'), null, 'no extra keys');
+  assert.equal(reg.actionFor('Ctrl+X'), 'scatter');
+  assert.equal(reg.actionFor('X'), 'powerDown');
+  assert.equal(reg.actionFor('C'), 'repair', 'C is the repair mode, not stance cycling');
+  assert.deepEqual(STANCES.map((s) => reg.bindingsFor(s.action)), [['Alt+A'], ['Alt+S'], ['Alt+D'], ['Alt+F']]);
+  assert.deepEqual(reg.bindingsFor('stanceCycle'), [], 'no default key, bindable in the menu');
+  assert.equal(reg.rebind('stanceCycle', 'Alt+H').ok, true);
   const ev = (code, key, o = {}) => ({ code, key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'CANVAS' }, preventDefault() {}, ...o });
   assert.equal(reg.handle(ev('KeyD', 'd')), true);
   assert.equal(reg.handle(ev('KeyH', 'h', { altKey: true })), true);
-  assert.deepEqual(ran, ['guard', 'stanceHoldFire']);
+  assert.equal(reg.handle(ev('KeyF', 'f', { altKey: true })), true);
+  assert.equal(reg.handle(ev('KeyX', 'x', { ctrlKey: true })), true);
+  assert.deepEqual(ran, ['guard', 'stanceCycle', 'stanceHoldFire', 'scatter']);
   // The touch action bar (js/touch.js) runs actions by name.
   for (const name of ['guard', 'scatter', 'stanceCycle', ...STANCES.map((s) => s.action)]) assert.equal(reg.run(name), true, name);
-  assert.equal(ran.length, 2 + 3 + STANCES.length);
+  assert.equal(ran.length, 4 + 3 + STANCES.length);
   // Every order button names a registered action or a modifier hint for its tooltip.
   const names = new Set([...reg.list().map((a) => a.name)]);
   for (const c of COMMANDS) assert.ok(c.hint || names.has(c.action), c.id);

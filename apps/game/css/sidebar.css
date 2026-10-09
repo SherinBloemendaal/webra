@@ -562,7 +562,7 @@
   filter: grayscale(1) brightness(0.25);
 }
 
-/* Numpad hotkey for the first nine cameos. */
+/* Production slot hotkey of the cameo (OpenRA F1..F12, js/sidebar.js slotKey). */
 #sidebar .sb-slot {
   position: absolute;
   top: 2px;

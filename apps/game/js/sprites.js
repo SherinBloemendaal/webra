@@ -33,6 +33,7 @@ import { PLANE_DRAW, PLANE_SPECIALS } from './art/planes.js';
 import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
+import { DECORATION_SPECIALS } from './art/decorations.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
@@ -492,7 +493,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities, veterancy), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -557,6 +558,7 @@ export function spriteList(actors) {
     slots(HELI_SPECIALS),
     slots(ABILITY_SPECIALS),
     slots(VETERANCY_SPECIALS),
+    slots(DECORATION_SPECIALS),
   );
 }
 

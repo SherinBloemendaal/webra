@@ -5,20 +5,25 @@
 // order (move, attack, harvest, dock, repair) and left click on one of your
 // own units selects it instead. Right click clears the selection.
 //
-// Keyboard: Esc, the digit row (control groups, js/controlgroups.js), the
-// numpad (sidebar) and the arrow keys are handled here; every other key goes
-// through the hotkey registry (js/hotkeys.js), where this class registers its
-// actions with OpenRA's default keys. README.md (Controls) lists them all.
+// Keyboard: Esc (cancel, menu) is handled here; every other key goes through
+// the hotkey registry (js/hotkeys.js), where this class registers its actions
+// (orders, sidebar modes, selection, camera, control groups) with OpenRA's
+// default keys. README.md (Controls) lists them all.
+//
+// Sidebar modes (OpenRA's order generators): sell, repair and power down
+// stay on until cancelled (right click, Esc, the button or key again); a
+// beacon is placed with one click.
 //
 // The game may run in a worker (js/sim): what is drawn each frame (cursor,
 // placement footprint) reads the game handle's synchronous answers, which are
 // one frame old there; what a click or key does asks fresh answers
 // (`this.ask`, promises) and acts when they arrive.
 
-import { CURSORS, ACTION_CURSORS, ACTION, POWER_CURSORS, scrollCursor } from './cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, scrollCursor } from './cursors.js';
 import { hotkeys as defaultHotkeys } from './hotkeys.js';
+import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
-import { ControlGroups, DOUBLE_TAP_MS, groupCommand, groupKeyFromEvent } from './controlgroups.js';
+import { ControlGroups } from './controlgroups.js';
 import { actorInfo, askOf, queryOf } from './sim/methods.js';
 
 const NONE = 0xffffffff;
@@ -30,6 +35,18 @@ export const MIN_ZOOM = 0.5;
 export const MAX_ZOOM = 4;
 const DEFAULT_ZOOM = 1.5;
 const BOOKMARKS = 4;
+
+/** Sidebar modes (OpenRA order generators), see `Input.setMode`. */
+export const MODES = Object.freeze(['sell', 'repair', 'powerDown', 'beacon']);
+
+/**
+ * The actor after the selected one in `list` (OpenRA's cycle hotkeys: the
+ * first one after the first of `list` that is selected), or the first one.
+ */
+export function nextInCycle(list, selection) {
+  const i = list.findIndex((id) => selection.includes(id));
+  return i >= 0 && i + 1 < list.length ? list[i + 1] : (list[0] ?? null);
+}
 
 /** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
 export function edgeDirection(x, y, w, h, edge = EDGE) {
@@ -60,26 +77,30 @@ export function scrollBlocked(dx, dy, camera, bounds) {
 }
 
 export class Input {
-  constructor(canvas, game, rules, player, hooks, { hotkeys = defaultHotkeys, settings = defaultSettings } = {}) {
+  constructor(canvas, game, rules, player, hooks, { hotkeys = defaultHotkeys, settings = defaultSettings, spectator = false } = {}) {
     this.canvas = canvas;
     this.game = game;
     /** Fresh answers for actions (js/sim/methods.js askOf). */
     this.ask = askOf(game);
     this.rules = rules;
     this.player = player;
-    // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onNumpad(slot, opts), onTab(dir), onMenu() },
+    // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
+    // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text) },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) }
     this.hooks = hooks;
     this.hotkeys = hotkeys;
     this.settings = settings;
+    // Spectators and replays: only the hotkeys OpenRA has in its spectator context.
+    this.spectator = !!spectator;
+    // Spectator watching the whole map (no player's view): see viewOwner.
+    this.watchAll = false;
     this.camera = { x: 0, y: 0, zoom: DEFAULT_ZOOM };
     this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
     this.selection = [];
     this.ownUnits = null;
     this.groups = new ControlGroups();
     this.bookmarks = new Map(); // slot -> { x, y, zoom } (view centre)
-    this.lastSelectTap = { name: null, time: -Infinity }; // Q / W double tap
     this.edgeScroll = null; // { dx, dy, blocked } while the mouse scrolls the view
     this.suspended = false; // game menu open: no input, no scrolling
     this.viewSize = { w: canvas.clientWidth, h: canvas.clientHeight };
@@ -89,7 +110,7 @@ export class Input {
     this.drag = null;
     this.pan = null;
     this.placing = null; // actor id being placed
-    this.sellMode = false;
+    this.mode = null; // sidebar mode: one of MODES, or null
     this.attackMove = false;
     this.power = null; // support power being targeted: { key, name } (js/powers.js)
     this.powerDrag = null; // target picked, mouse still down: { x, y, sx, sy }
@@ -243,7 +264,7 @@ export class Input {
     this.attackMove = false;
     this.cancelPower();
     this.cancelTargeting();
-    this.setSellMode(false);
+    this.setMode(null);
   }
 
   // ---- Support powers (engine/src/powers.rs, js/powers.js) -------------------------
@@ -252,7 +273,7 @@ export class Input {
   startPowerTargeting(power) {
     this.placing = null;
     this.attackMove = false;
-    this.setSellMode(false);
+    this.setMode(null);
     // Superweapons have their own targeting (abilities: Chronosphere source then
     // destination, Iron Curtain and nuke targets) and cursors.
     if (POWER_CURSORS[power.kind]) {
@@ -274,17 +295,66 @@ export class Input {
     this.hooks.onPowerTargeting?.(null);
   }
 
-  setSellMode(on) {
-    this.sellMode = !!on;
-    if (on) {
-      this.placing = null;
+  /**
+   * Switch a sidebar mode on ('sell', 'repair', 'powerDown', 'beacon') or
+   * all off (null). Turning one on ends placement, targeting and attack move.
+   */
+  setMode(mode) {
+    const next = MODES.includes(mode) ? mode : null;
+    if (next) {
+      this.cancelPlacing();
       this.attackMove = false;
+      this.cancelPower();
+      this.cancelTargeting();
     }
-    this.hooks.onSellMode?.(this.sellMode);
+    if (next === this.mode) return;
+    this.mode = next;
+    this.hooks.onMode?.(this.mode);
   }
 
-  toggleSellMode() {
-    this.setSellMode(!this.sellMode);
+  /** The mode's button or hotkey: on, or off again when it is on. */
+  toggleMode(mode) {
+    this.setMode(this.mode === mode ? null : mode);
+  }
+
+  /** A left click on the map in a sidebar mode. */
+  async modeClick(w) {
+    const mode = this.mode;
+    if (mode === 'beacon') {
+      // OpenRA BeaconOrderGenerator: one beacon, then the mode ends.
+      this.game.place_beacon(this.player, w.x, w.y);
+      this.setMode(null);
+      return;
+    }
+    const hit = await this.ask.pick(this.player, w.x, w.y);
+    if (hit === NONE) return;
+    if (mode === 'sell') {
+      if ((await this.ask.sell_value(this.player, hit)) <= 0) return;
+      this.game.sell(this.player, hit);
+      this.flashOrder(w, ACTION.HARVEST);
+    } else if (mode === 'repair') {
+      const what = await this.ask.repair_cursor(this.player, hit);
+      if (what === 1) {
+        this.game.repair_building(this.player, hit);
+      } else if (what === 2) {
+        // An own damaged unit: off to its repair depot (OpenRA RepairOrderGenerator).
+        const t = await this.ask.repair_unit_target(this.player, hit);
+        if (t.length === 2) this.game.order_smart(this.player, Uint32Array.from([hit]), t[0], t[1]);
+      }
+    } else if (mode === 'powerDown') {
+      if (await this.ask.can_power_down(this.player, hit)) this.game.power_down(this.player, hit);
+    }
+  }
+
+  /** Whether the current mode can act on what is at world point `w` (the cursor). */
+  modeTarget(w) {
+    if (this.mode === 'beacon') return true;
+    const hit = this.game.pick(this.player, w.x, w.y);
+    if (hit === NONE) return false;
+    if (this.mode === 'sell') return this.game.sell_value(this.player, hit) > 0;
+    if (this.mode === 'repair') return this.game.repair_cursor(this.player, hit) > 0;
+    if (this.mode === 'powerDown') return !!this.game.can_power_down(this.player, hit);
+    return false;
   }
 
   /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
@@ -369,8 +439,14 @@ export class Input {
     c.addEventListener('mouseleave', () => (this.mouse.inside = false));
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.key);
+      this.hotkeys.release(e);
+    });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.hotkeys.releaseAll();
+    });
   }
 
   local(e) {
@@ -405,8 +481,8 @@ export class Input {
         this.attackMove = false;
         return;
       }
-      if (this.sellMode) {
-        this.setSellMode(false);
+      if (this.mode) {
+        this.setMode(null);
         return;
       }
       this.setSelection([]);
@@ -418,9 +494,8 @@ export class Input {
       this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
       return;
     }
-    if (this.sellMode) {
-      this.sellAt(w);
-      if (!e.shiftKey) this.setSellMode(false);
+    if (this.mode) {
+      this.modeClick(w);
       return;
     }
     if (this.placing) {
@@ -449,14 +524,6 @@ export class Input {
       return;
     }
     this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
-  }
-
-  /** Sell mode click: sell the own structure there, if it can be sold. */
-  async sellAt(w) {
-    const hit = await this.ask.pick(this.player, w.x, w.y);
-    if (hit === NONE || (await this.ask.sell_value(this.player, hit)) <= 0) return;
-    this.game.sell(this.player, hit);
-    this.flashOrder(w, ACTION.HARVEST);
   }
 
   /** Place structure `id` with its top-left cell at (cx, cy) when every footprint cell is free. */
@@ -606,49 +673,21 @@ export class Input {
     const t = e.target;
     if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
     if (this.suspended) return;
-    // Alt + arrow jumps to a map edge (a hotkey); it must not also start scrolling.
-    if (!(e.altKey && e.key.startsWith('Arrow'))) this.keys.add(e.key);
-    // Numpad drives the sidebar (works with NumLock on or off):
-    // 1-9 build that card (Shift: 5, Ctrl: cancel one), + / - switch tabs.
-    if (e.code.startsWith('Numpad')) {
-      const digit = /^Numpad([1-9])$/.exec(e.code);
-      if (digit) {
-        e.preventDefault();
-        this.hooks.onNumpad?.(Number(digit[1]), { shift: e.shiftKey, cancel: e.ctrlKey || e.metaKey });
-        return;
-      }
-      if (e.code === 'NumpadAdd' || e.code === 'Numpad0') {
-        e.preventDefault();
-        this.hooks.onTab?.(1);
-        return;
-      }
-      if (e.code === 'NumpadSubtract') {
-        e.preventDefault();
-        this.hooks.onTab?.(-1);
-        return;
-      }
-      if (e.code === 'NumpadDecimal') {
-        e.preventDefault();
-        this.cancelPlacing();
-        return;
-      }
-    }
+    this.keys.add(e.key);
     if (e.key === 'Escape') {
       // Esc cancels the current mode first; with nothing to cancel it opens the game menu.
       e.preventDefault();
       if (!this.cancelMode()) this.hooks.onMenu?.();
       return;
     }
-    const group = groupKeyFromEvent(e);
-    if (group !== null && this.groupKey(e, group)) return;
     this.hotkeys.handle(e);
   }
 
-  /** Cancel targeting, power, sell, placement, a command bar mode or attack move. False when none was active. */
+  /** Cancel targeting, power, a sidebar mode, placement, a command bar mode or attack move. False when none was active. */
   cancelMode() {
     if (this.targeting) this.cancelTargeting();
     else if (this.power) this.cancelPower();
-    else if (this.sellMode) this.setSellMode(false);
+    else if (this.mode) this.setMode(null);
     else if (this.placing) this.cancelPlacing();
     else if (this.hooks.cancelCommand?.()) {
       // A command bar mode (force move, force attack, guard, queue) was disarmed.
@@ -665,46 +704,73 @@ export class Input {
     });
   }
 
-  /**
-   * Digit row: Ctrl/Cmd+N stores the selected units as group N, N selects it
-   * (twice quickly: and centres the camera), Shift+N adds it to the selection.
-   */
-  groupKey(e, key) {
-    const cmd = groupCommand(e);
-    if (!cmd) return false;
-    // Ctrl/Cmd+number is a tab switch in some browsers: hold it back where allowed.
-    e.preventDefault();
-    if (cmd === 'assign') {
-      if (!e.repeat) this.groups.assign(key, this.selectedOwnUnits());
-      return true;
-    }
-    if (e.repeat) return true;
-    const alive = (ids) => this.ownAlive(ids);
-    if (cmd === 'add') {
-      const ids = this.groups.members(key, alive);
-      if (ids.length) {
-        this.setSelection(this.selection.concat(ids));
-        this.refreshSelection();
-      }
-      return true;
-    }
-    const { ids, center } = this.groups.recall(key, performance.now(), alive);
-    if (!ids.length) return true;
+  // ---- Control groups (OpenRA ControlGroupsWidget, js/controlgroups.js) -------------
+
+  /** Select group `key`; pressed twice quickly, also centre the camera on it. */
+  groupSelect(key) {
+    const { ids, center } = this.groups.recall(key, performance.now(), (list) => this.ownAlive(list));
     this.setSelection(ids);
-    this.refreshSelection();
     if (center) this.centerOnUnits(ids);
-    return true;
   }
 
-  /** True on the second press of `name` within the double tap time. */
-  doubleTap(name) {
-    const now = performance.now();
-    const twice = this.lastSelectTap.name === name && now - this.lastSelectTap.time <= DOUBLE_TAP_MS;
-    this.lastSelectTap = twice ? { name: null, time: -Infinity } : { name, time: now };
-    return twice;
+  /** The player's own selected actors (units and structures), as OpenRA puts in groups. */
+  selectedOwn() {
+    return this.ownAlive(this.selection);
   }
 
-  /** Own units of the selected types, on screen (or on the whole map). */
+  /** Make group `key` the selection (nothing selected: the group stays as it was). */
+  groupCreate(key) {
+    const ids = this.selectedOwn();
+    if (ids.length) this.groups.assign(key, ids);
+  }
+
+  /** Add the selection to group `key`. */
+  groupAddTo(key) {
+    const ids = this.selectedOwn();
+    if (ids.length) this.groups.add(key, ids);
+  }
+
+  /** Add group `key` to the selection. */
+  groupCombine(key) {
+    const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    if (ids.length) this.setSelection(this.selection.concat(ids));
+  }
+
+  /** Centre the camera on group `key` without selecting it. */
+  groupJump(key) {
+    const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    if (ids.length) this.centerOnUnits(ids);
+  }
+
+  // ---- Selection hotkeys --------------------------------------------------------------
+
+  /**
+   * The player whose actors the world hotkeys use: the local one, or the one
+   * a spectator watches (none in the whole map view, like OpenRA without a
+   * render player).
+   */
+  viewOwner() {
+    return this.spectator && this.watchAll ? null : this.player;
+  }
+
+  /**
+   * OpenRA SelectAllUnits: the player's combat units on screen; when that
+   * selects nothing new, every one of them on the map.
+   */
+  async selectAllUnits() {
+    const v = this.viewRect();
+    let ids = Array.from(await this.ask.select_box(this.player, v.x0, v.y0, v.x1, v.y1));
+    let where = 'screen';
+    if (ids.length <= this.selection.length) {
+      const m = this.mapRect();
+      ids = Array.from(await this.ask.select_box(this.player, m.x0, m.y0, m.x1, m.y1));
+      where = 'map';
+    }
+    this.setSelection(ids);
+    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+  }
+
+  /** Own units of the selected types inside `rect`. */
   async selectSameTypes(rect) {
     const seen = new Set();
     const asks = [];
@@ -719,58 +785,137 @@ export class Input {
     return out;
   }
 
-  /** Register this class's hotkey actions (defaults from OpenRA's RA set). Returns an unregister function. */
-  registerHotkeys() {
-    const reg = (name, keys, handler, label, group, opts = {}) => this.hotkeys.registerAction(name, keys, handler, { label, group, ...opts });
-    const offs = [
-      reg('attackMove', 'A', () => {
-        if (this.selectedOwnUnits().length) this.attackMove = true;
-      }, 'Attack move', 'Orders'),
-      reg('stop', 'S', () => {
-        const units = this.selectedOwnUnits();
-        if (units.length) this.game.order_stop(this.player, Uint32Array.from(units));
-      }, 'Stop', 'Orders'),
-      // OpenRA deploys with F; D (WebRA's first key) keeps working until another action takes it.
-      reg('deploy', ['F', 'D'], () => this.deploySelection(), 'Deploy, unload, pack up', 'Orders'),
-      reg('sell', 'Z', () => this.toggleSellMode(), 'Sell mode', 'Orders'),
-      reg('selectAll', 'Q', async () => {
-        const r = this.doubleTap('selectAll') ? this.mapRect() : this.viewRect();
-        this.setSelection(Array.from(await this.ask.select_box(this.player, r.x0, r.y0, r.x1, r.y1)));
-      }, 'Select all units on screen (twice: whole map)', 'Selection'),
-      reg('selectByType', 'W', async () => {
-        const ids = await this.selectSameTypes(this.doubleTap('selectByType') ? this.mapRect() : this.viewRect());
-        if (ids.length) this.setSelection(ids);
-      }, 'Select units of the selected types on screen (twice: whole map)', 'Selection'),
-      reg('base', ['H', 'Space'], () => {
-        const [x, y] = this.game.start_position(this.player);
-        this.centerOn(x, y);
-      }, 'Jump to base', 'Camera'),
-      reg('toSelection', 'Home', () => this.centerOnUnits(this.selection), 'Jump to selection', 'Camera'),
-      reg('zoomIn', ']', () => this.setZoom(this.camera.zoom * 1.25), 'Zoom in', 'Camera', { repeat: true }),
-      reg('zoomOut', '[', () => this.setZoom(this.camera.zoom / 1.25), 'Zoom out', 'Camera', { repeat: true }),
-      reg('resetZoom', '.', () => this.setZoom(DEFAULT_ZOOM), 'Reset zoom', 'Camera'),
-      reg('jumpTop', 'Alt+ArrowUp', () => this.jumpToEdge(0, -1), 'Jump to top edge', 'Camera'),
-      reg('jumpBottom', 'Alt+ArrowDown', () => this.jumpToEdge(0, 1), 'Jump to bottom edge', 'Camera'),
-      reg('jumpLeft', 'Alt+ArrowLeft', () => this.jumpToEdge(-1, 0), 'Jump to left edge', 'Camera'),
-      reg('jumpRight', 'Alt+ArrowRight', () => this.jumpToEdge(1, 0), 'Jump to right edge', 'Camera'),
-    ];
-    // Camera bookmarks. OpenRA uses Ctrl+Q/W/E/R and Alt+Q/W/E/R, but browsers
-    // keep Ctrl+Q and Ctrl+W (quit, close tab), so WebRA uses F1..F4 to jump
-    // and Shift+F1..F4 to save.
-    for (let i = 1; i <= BOOKMARKS; i++) {
-      offs.push(
-        reg(`bookmarkSave${i}`, `Shift+F${i}`, () => {
-          const c = this.viewCenter();
-          this.bookmarks.set(i, { x: c.x, y: c.y, zoom: this.camera.zoom });
-        }, `Save camera bookmark ${i}`, 'Camera'),
-        reg(`bookmarkJump${i}`, `F${i}`, () => {
-          const b = this.bookmarks.get(i);
-          if (!b) return;
-          this.camera.zoom = b.zoom;
-          this.centerOn(b.x, b.y);
-        }, `Jump to camera bookmark ${i}`, 'Camera'),
-      );
+  /**
+   * OpenRA SelectUnitsByType: units of the selected types on screen; when
+   * that selects nothing new, on the whole map. Added to the selection.
+   */
+  async selectUnitsByType() {
+    if (!this.selection.length) {
+      this.hooks.feedback?.('Nothing selected.');
+      return;
     }
+    if (!this.selectedOwnUnits().length) return;
+    let ids = await this.selectSameTypes(this.viewRect());
+    let where = 'screen';
+    if (ids.length <= this.selection.length) {
+      ids = await this.selectSameTypes(this.mapRect());
+      where = 'map';
+    }
+    this.setSelection(this.selection.concat(ids));
+    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+  }
+
+  /** Select the next actor of `list` after the selected one and centre the camera on it. */
+  async selectNext(list) {
+    if (this.viewOwner() === null) return;
+    const next = nextInCycle(Array.from(list), this.selection);
+    if (next === null) return;
+    this.setSelection([next]);
+    const c = await this.ask.units_center(this.viewOwner(), Uint32Array.from([next]));
+    if (c.length === 2) this.centerOn(c[0], c[1]);
+  }
+
+  /** OpenRA CycleBase: the next Construction Yard or MCV (else the first structure). */
+  async cycleBase() {
+    if (this.viewOwner() === null) return;
+    await this.selectNext(await this.ask.base_actors(this.viewOwner()));
+  }
+
+  /** OpenRA CycleHarvesters: the next harvester on the map. */
+  async cycleHarvesters() {
+    if (this.viewOwner() === null) return;
+    await this.selectNext(await this.ask.harvesters(this.viewOwner()));
+  }
+
+  /** OpenRA CycleProductionBuildings: the next factory, barracks, yard or airfield. */
+  async cycleProductionBuildings() {
+    if (this.viewOwner() === null) return;
+    await this.selectNext(await this.ask.production_buildings(this.viewOwner()));
+  }
+
+  /**
+   * OpenRA SelectProductionBuilding: select the structure that builds what
+   * the production tab `queue` makes; when it already is the selection,
+   * centre the camera on it.
+   */
+  async selectProductionBuilding(queue) {
+    const id = await this.ask.queue_producer(this.player, queue);
+    if (id === NONE) return;
+    if (this.selection.length === 1 && this.selection[0] === id) {
+      await this.centerOnUnits([id]);
+      return;
+    }
+    this.setSelection([id]);
+  }
+
+  /** Register this class's hotkey actions (OpenRA's RA defaults, js/hotkeys.js). Returns an unregister function. */
+  registerHotkeys() {
+    const offs = [];
+    // name: the WebRA action; ora: its OpenRA hotkey (defaults, description,
+    // section, contexts). Spectators only get OpenRA's spectator hotkeys.
+    const reg = (name, ora, handler, opts = {}) => {
+      if (this.spectator && !OPENRA_HOTKEYS[ora].contexts.includes('spectator')) return;
+      offs.push(this.hotkeys.registerAction(name, undefined, handler, { openra: ora, ...opts }));
+    };
+    const units = () => Uint32Array.from(this.selectedOwnUnits());
+    // Game commands: sidebar modes, selection and the camera on the world.
+    reg('sell', 'Sell', () => this.toggleMode('sell'));
+    reg('repair', 'Repair', () => this.toggleMode('repair'));
+    reg('powerDown', 'PowerDown', () => this.toggleMode('powerDown'));
+    reg('placeBeacon', 'PlaceBeacon', () => this.toggleMode('beacon'));
+    reg('base', 'CycleBase', () => this.cycleBase());
+    reg('toLastEvent', 'ToLastEvent', () => {
+      const at = this.hooks.lastEvent?.();
+      if (at) this.centerOn(at.x, at.y);
+    });
+    reg('toSelection', 'ToSelection', () => this.centerOnUnits(this.selection));
+    reg('selectAll', 'SelectAllUnits', () => this.selectAllUnits());
+    reg('selectByType', 'SelectUnitsByType', () => this.selectUnitsByType());
+    reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());
+    // Unit commands.
+    reg('attackMove', 'AttackMove', () => {
+      if (this.selectedOwnUnits().length) this.attackMove = true;
+    });
+    reg('stop', 'Stop', () => {
+      if (this.selectedOwnUnits().length) this.game.order_stop(this.player, units());
+    });
+    reg('deploy', 'Deploy', () => this.deploySelection());
+    // Viewport: scrolling (held), map edges, zoom and bookmarks.
+    reg('mapScrollUp', 'MapScrollUp', () => {}, { hold: true });
+    reg('mapScrollDown', 'MapScrollDown', () => {}, { hold: true });
+    reg('mapScrollLeft', 'MapScrollLeft', () => {}, { hold: true });
+    reg('mapScrollRight', 'MapScrollRight', () => {}, { hold: true });
+    reg('jumpTop', 'MapJumpToTopEdge', () => this.jumpToEdge(0, -1));
+    reg('jumpBottom', 'MapJumpToBottomEdge', () => this.jumpToEdge(0, 1));
+    reg('jumpLeft', 'MapJumpToLeftEdge', () => this.jumpToEdge(-1, 0));
+    reg('jumpRight', 'MapJumpToRightEdge', () => this.jumpToEdge(1, 0));
+    for (let i = 1; i <= BOOKMARKS; i++) {
+      reg(`bookmarkSave${i}`, `MapBookmarkSave0${i}`, () => {
+        const c = this.viewCenter();
+        this.bookmarks.set(i, { x: c.x, y: c.y, zoom: this.camera.zoom });
+      });
+      reg(`bookmarkJump${i}`, `MapBookmarkRestore0${i}`, () => {
+        const b = this.bookmarks.get(i);
+        if (!b) return;
+        this.camera.zoom = b.zoom;
+        this.centerOn(b.x, b.y);
+      });
+    }
+    reg('zoomIn', 'ZoomIn', () => this.setZoom(this.camera.zoom * 1.25), { repeat: true });
+    reg('zoomOut', 'ZoomOut', () => this.setZoom(this.camera.zoom / 1.25), { repeat: true });
+    reg('resetZoom', 'ResetZoom', () => this.setZoom(DEFAULT_ZOOM));
+    // Control groups: 1..9, 0 select (twice: centre), Ctrl creates, Ctrl+Shift
+    // adds the selection, Shift adds the group to the selection, Alt jumps.
+    for (let n = 1; n <= 10; n++) {
+      const key = String(n % 10);
+      const nn = String(n).padStart(2, '0');
+      reg(`controlGroupSelect${nn}`, `ControlGroupSelect${nn}`, () => this.groupSelect(key));
+      reg(`controlGroupCreate${nn}`, `ControlGroupCreate${nn}`, () => this.groupCreate(key));
+      reg(`controlGroupAddTo${nn}`, `ControlGroupAddTo${nn}`, () => this.groupAddTo(key));
+      reg(`controlGroupCombineWith${nn}`, `ControlGroupCombineWith${nn}`, () => this.groupCombine(key));
+      reg(`controlGroupJumpTo${nn}`, `ControlGroupJumpTo${nn}`, () => this.groupJump(key));
+    }
+    reg('removeFromControlGroup', 'RemoveFromControlGroup', () => this.groups.remove(this.selectedOwn()));
     return () => offs.forEach((off) => off());
   }
 
@@ -786,6 +931,7 @@ export class Input {
     this.suspended = !!on;
     if (!on) return;
     this.keys.clear();
+    this.hotkeys.releaseAll();
     this.drag = null;
     this.pan = null;
     this.mineDrag = null;
@@ -811,10 +957,11 @@ export class Input {
     if (this.suspended) return;
     let kx = 0;
     let ky = 0;
-    if (this.keys.has('ArrowLeft')) kx -= 1;
-    if (this.keys.has('ArrowRight')) kx += 1;
-    if (this.keys.has('ArrowUp')) ky -= 1;
-    if (this.keys.has('ArrowDown')) ky += 1;
+    // OpenRA MapScroll hotkeys (arrow keys by default): held keys of the registry.
+    if (this.hotkeys.isHeld('mapScrollLeft')) kx -= 1;
+    if (this.hotkeys.isHeld('mapScrollRight')) kx += 1;
+    if (this.hotkeys.isHeld('mapScrollUp')) ky -= 1;
+    if (this.hotkeys.isHeld('mapScrollDown')) ky += 1;
     const edgeSpeed = this.settings.get('edgeScrollSpeed');
     let ex = 0;
     let ey = 0;
@@ -848,10 +995,10 @@ export class Input {
     if (this.edgeScroll) {
       // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
       cursor = scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked);
-    } else if (this.sellMode) {
-      const w = this.toWorld(this.mouse.x, this.mouse.y);
-      const hit = this.game.pick(this.player, w.x, w.y);
-      cursor = hit !== NONE && this.game.sell_value(this.player, hit) > 0 ? CURSORS.sell : CURSORS.blocked;
+    } else if (this.mode) {
+      // Sidebar modes: their cursor where they can act, the blocked one elsewhere.
+      const [ok, blocked] = MODE_CURSORS[this.mode];
+      cursor = this.mouse.inside && this.modeTarget(this.toWorld(this.mouse.x, this.mouse.y)) ? ok : blocked;
     } else if (this.targeting && this.mouse.inside) {
       const w = this.toWorld(this.mouse.x, this.mouse.y);
       const t = this.targeting;

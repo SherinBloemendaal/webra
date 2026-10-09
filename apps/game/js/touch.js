@@ -37,7 +37,7 @@ export const TOUCH_BAR = [
   { id: 'force', label: 'Force', title: 'Force attack: tap any unit or building, your own included', toggle: true, needsUnits: true },
   { id: 'stop', label: 'Stop', title: 'Stop the selected units', hotkey: 'stop', needsUnits: true },
   { id: 'deploy', label: 'Deploy', title: 'Deploy, unload, pack up or use the ability of the selection', hotkey: 'deploy' },
-  { id: 'selectAll', label: 'All', title: 'Select every unit on screen (twice quickly: on the whole map)', hotkey: 'selectAll' },
+  { id: 'selectAll', label: 'All', title: 'Select every combat unit on screen (again: on the whole map)', hotkey: 'selectAll' },
   { id: 'cancel', label: 'Cancel', title: 'Cancel the current mode, or clear the selection' },
 ];
 
@@ -166,7 +166,7 @@ export class TouchControls {
 
   modeActive() {
     const i = this.input;
-    return !!(this.force || i.targeting || i.power || i.sellMode || i.placing || i.attackMove);
+    return !!(this.force || i.targeting || i.power || i.mode || i.placing || i.attackMove);
   }
 
   /** The right click: cancel the current mode, else clear the selection. */

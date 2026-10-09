@@ -33,6 +33,10 @@ export const ORDERS = Object.freeze([
   'order_teleport',
   'set_stance',
   'sell',
+  // Sidebar buttons (engine/src/repair.rs, beacons.rs).
+  'repair_building',
+  'power_down',
+  'place_beacon',
   'deploy',
   'activate_power',
   'set_rally',
@@ -68,6 +72,16 @@ export const QUERY_DEFAULTS = Object.freeze({
   can_guard: () => false,
   can_attack_ground: () => false,
   sell_value: () => 0,
+  // Sidebar modes and the hotkeys that cycle through actors (js/input.js).
+  repair_cursor: () => 0,
+  repair_unit_target: EMPTY_F32,
+  can_power_down: () => false,
+  base_actors: EMPTY_U32,
+  harvesters: EMPTY_U32,
+  production_buildings: EMPTY_U32,
+  queue_producer: () => NONE,
+  beacons: EMPTY_I32,
+  army_counts: EMPTY_U32,
   deploy_state: () => 0,
   ability_deploy_state: () => 0,
   has_minelayer: () => false,
@@ -128,7 +142,21 @@ export const QUERIES = Object.freeze(Object.keys(QUERY_DEFAULTS));
  * anyway. The others (ids) wait for their own answer.
  */
 export const FOLLOW_LATEST = Object.freeze(
-  new Set(['pick', 'cursor_action', 'can_guard', 'can_attack_ground', 'teleport_valid', 'placement_preview', 'debug_cells', 'debug_flow', 'debug_actors', 'command_state']),
+  new Set([
+    'pick',
+    'cursor_action',
+    'can_guard',
+    'can_attack_ground',
+    'teleport_valid',
+    'placement_preview',
+    'debug_cells',
+    'debug_flow',
+    'debug_actors',
+    'command_state',
+    // The sidebar mode cursors ask about the actor under the mouse.
+    'repair_cursor',
+    'can_power_down',
+  ]),
 );
 
 /** Facts that never change during a game: read once when it starts. */

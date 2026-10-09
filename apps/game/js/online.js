@@ -43,6 +43,8 @@ import {
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { onlineRefusal } from './account/ui.js';
+import { hotkeys } from './hotkeys.js';
+import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from './chatkeys.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -568,7 +570,7 @@ export class OnlineUI {
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
-      .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null))
+      .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null, !!m.team))
       .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
@@ -1062,9 +1064,9 @@ export class OnlineUI {
     this.send({ t: 'ready', ready: !me.ready, mapHash: this.state.map ? this.state.map.hash : null });
   }
 
-  chatLine(name, textValue, system = false) {
+  chatLine(name, textValue, system = false, team = false) {
     if (this.inGame) {
-      this.gameLine(name ? `${name}: ${textValue}` : textValue);
+      this.gameLine(name ? `${team ? '[Team] ' : ''}${name}: ${textValue}` : textValue);
       return;
     }
     if (!this.chatLog) return;
@@ -1227,7 +1229,7 @@ export class OnlineUI {
     for (const [type, msg] of pending) this.net(type, msg);
     this.inGame = true;
     this.root.hidden = true;
-    this.buildGameOverlay(m.players, m.options.cheats === true, spectator);
+    this.buildGameOverlay(m.players, m.options.cheats === true, spectator, hasTeamChat(m.options.players, me ? me.player : null));
     this.ctx.onStartGame({
       host,
       game,
@@ -1253,7 +1255,13 @@ export class OnlineUI {
     return map.canonical;
   }
 
-  buildGameOverlay(players, cheats = false, spectator = false) {
+  /**
+   * The in-game log and chat line. OpenRA's chat keys (js/chatkeys.js): Enter
+   * opens team chat (all chat without a team mate), Shift+Enter all chat;
+   * in the line Shift+Tab switches between them, Tab completes a name, Enter
+   * sends, Esc closes.
+   */
+  buildGameOverlay(players, cheats = false, spectator = false, teamChat = false) {
     const field2 = document.getElementById('field') || document.body;
     const box = el('div', 'online-game');
     box.id = 'online-game';
@@ -1263,32 +1271,60 @@ export class OnlineUI {
     this.waitLine.hidden = true;
     const chatInput = el('input', 'online-input online-game-chat');
     chatInput.maxLength = CHAT_MAX;
-    chatInput.placeholder = 'Chat (Enter to send, Esc to close)';
     chatInput.hidden = true;
+    const names = players.map((p) => p.name).filter(Boolean);
+    let mode = 'all';
+    let completion = null;
+    const setMode = (m) => {
+      mode = m;
+      chatInput.placeholder = `${mode === 'team' ? (spectator ? 'Spectators' : 'Team') : 'All'}: Enter sends, Shift+Tab switches, Esc closes`;
+      chatInput.setAttribute('aria-label', mode === 'team' ? 'Team chat' : 'Chat to all');
+    };
+    const close = () => {
+      chatInput.value = '';
+      chatInput.hidden = true;
+      chatInput.blur();
+    };
+    const open = (wantTeam) => {
+      setMode(chatMode(wantTeam, teamChat));
+      chatInput.hidden = false;
+      chatInput.focus();
+    };
     chatInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Escape') {
-        chatInput.hidden = true;
-        chatInput.blur();
+        close();
       } else if (e.key === 'Enter') {
-        if (chatInput.value.trim()) this.send({ t: 'chat', text: chatInput.value });
-        chatInput.value = '';
-        chatInput.hidden = true;
-        chatInput.blur();
+        if (chatInput.value.trim()) this.send({ t: 'chat', text: chatInput.value, ...(mode === 'team' ? { team: true } : {}) });
+        close();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          // OpenRA ToggleChatMode: only when there is a team to talk to.
+          if (teamChat) setMode(mode === 'team' ? 'all' : 'team');
+          return;
+        }
+        // OpenRA Autocomplete: player names.
+        const r = completeName(chatInput.value, names, completion);
+        if (r) {
+          completion = r.state;
+          chatInput.value = r.text;
+        }
+        return;
       }
+      completion = null;
     });
-    window.addEventListener('keydown', (e) => {
-      // Plain Enter only: Alt+Enter is the fullscreen hotkey (js/hotkeys.js).
-      if (e.key !== 'Enter' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-      e.preventDefault();
-      chatInput.hidden = false;
-      chatInput.focus();
-    });
+    // Enter and Shift+Enter open the chat line (not while a button has focus:
+    // Enter presses it); the chat line's own keys are listed in the Controls
+    // page and fixed, like OpenRA's Readonly chat-input keys.
+    const handlers = { openTeamChat: () => open(true), openGeneralChat: () => open(false) };
+    for (const h of CHAT_HOTKEYS) {
+      hotkeys.registerAction(h.name, undefined, handlers[h.name] ?? (() => {}), { openra: h.openra, inControls: false, listOnly: h.listOnly });
+    }
     box.append(this.gameLog, this.waitLine, chatInput);
     field2.append(box);
-    const names = players.map((p) => p.name).join(', ');
-    this.gameLine(spectator ? `Watching: ${names}. Press Enter to chat.` : `Online game: ${names}. Press Enter to chat.`);
+    const list = names.join(', ');
+    this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);

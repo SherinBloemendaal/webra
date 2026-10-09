@@ -7,7 +7,7 @@
 // No Web Audio here: the director talks to a `sink` and reads a clock, so the
 // rules are unit tested in Node (tests/audio.test.mjs).
 
-import { fireSound, impactSound, deathSound, placeSound, sellSound, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS } from './catalog.js';
+import { fireSound, impactSound, deathSound, placeSound, sellSound, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const EV = {
@@ -21,6 +21,10 @@ export const EV = {
   INSUFFICIENT_FUNDS: 8,
   POWER_ACTIVATED: 9,
   CONSTRUCTION_READY: 10,
+  REPAIR_STARTED: 11,
+  POWER_TOGGLED: 12,
+  BEACON_PLACED: 13,
+  UNIT_DAMAGED: 14,
 };
 export const STRIDE = 6;
 
@@ -84,8 +88,10 @@ export class Director {
    * @param {(id: number) => { type: string, owner: number, building: boolean } | null} o.lookup actor info by id
    * @param {{ effect(sound, opts): void, voice(line): void, announce(key): void }} o.sink
    * @param {() => number} o.now seconds
+   * @param {(owner: number) => boolean} [o.allied] whether a player is the local one or an ally (beacons)
    */
-  constructor({ rules, player, side, pxPerWorld, lookup, sink, now }) {
+  constructor({ rules, player, side, pxPerWorld, lookup, sink, now, allied = (owner) => owner === player }) {
+    this.allied = allied;
     this.rules = rules;
     this.player = player;
     this.side = side;
@@ -243,6 +249,16 @@ export class Director {
           break;
         case EV.INSUFFICIENT_FUNDS:
           if (own) this.announce('insufficientFunds');
+          break;
+        // Sidebar buttons (engine/src/repair.rs, beacons.rs): OpenRA plays these as notifications, not in the world.
+        case EV.REPAIR_STARTED:
+          if (own) this.announce('repairing');
+          break;
+        case EV.POWER_TOGGLED:
+          if (own) this.sink.effect(b === 1 ? BUTTON_SOUNDS.powerDown : BUTTON_SOUNDS.powerUp, { gain: 0.8, pan: 0 });
+          break;
+        case EV.BEACON_PLACED:
+          if (this.allied(owner)) this.sink.effect(BUTTON_SOUNDS.beacon, { gain: 0.8, pan: 0 });
           break;
         case EV.POWER_ACTIVATED: {
           const sound = powerSound(a);
