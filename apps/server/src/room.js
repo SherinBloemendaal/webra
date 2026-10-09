@@ -925,6 +925,20 @@ export class Room {
     return record;
   }
 
+  /**
+   * A seat leaves play for a while (its catch-up of a resumed save ran out):
+   * away with a fresh grace of `graceMs` to rejoin, like a lost connection.
+   */
+  awaySeat(seat, now, graceMs) {
+    const s = this.seatStates?.[seat];
+    if (!s || s.state === 'gone') return false;
+    s.state = 'away';
+    s.until = now + graceMs;
+    s.graceUntil = s.until;
+    s.record = null;
+    return true;
+  }
+
   /** The seat can never come back (left, removed, expired). */
   endSeat(seat) {
     const s = this.seatStates?.[seat];

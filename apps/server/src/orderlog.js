@@ -10,7 +10,7 @@
 // and `full` is set; the session then refuses rejoins and late spectators
 // (they could not catch up), and the game itself goes on.
 
-import { LOG_MAX_BYTES } from '@webra/protocol';
+import { LOG_MAX_BYTES, logEntryBytes } from '@webra/protocol';
 
 /** A chunk is sealed after this many frames or this many bytes of JSON. */
 export const CHUNK_FRAMES = 512;
@@ -63,7 +63,8 @@ export class OrderLog {
     this.lastTick = frame.tick;
     if (this.full || frame.orders.length === 0) return;
     const entry = [frame.tick, frame.orders];
-    const size = JSON.stringify(entry).length + 1;
+    // The same accounting as an online save's orders budget (protocol logEntryBytes).
+    const size = logEntryBytes(frame.tick, frame.orders);
     if (this.bytes + size > this.maxBytes) {
       this.full = true;
       return;

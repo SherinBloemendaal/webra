@@ -894,12 +894,38 @@ export class Session extends DurableObject {
     }
   }
 
-  /** Every player of a resumed save caught up (or is gone): the relay starts after the save point. */
+  /**
+   * A player of a resumed save did not catch up within resumeStartMs: the
+   * game starts without it, and its seat waits RECONNECT_GRACE_MS for a
+   * rejoin (not final: a slow device continues once it caught up).
+   */
+  async dropFromResumeStart(seat, client, now) {
+    const ws = this.socketOf(client);
+    if (ws) {
+      const att = this.attachment(ws);
+      att.gone = true;
+      ws.serializeAttachment(att);
+      this.syncing.delete(ws);
+      this.catching.delete(ws);
+      this.send(ws, { t: S2C.ERROR, code: ERRORS.DROPPED, message: 'You took too long to catch up; the game goes on. Rejoin to continue.' });
+      this.close(ws, CLOSE_NORMAL, 'dropped');
+    }
+    this.room.awaySeat(seat, now, RECONNECT_GRACE_MS);
+    await this.saveRoom();
+    const name = this.clientName(client);
+    if (name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: 'dropped' });
+    await this.maybeStartResumed();
+  }
+
+  /** Every player of a resumed save caught up (or is away or gone): the relay starts after the save point. */
   async maybeStartResumed() {
     const room = this.room;
     if (!room?.resumeStart || room.phase !== 'game') return;
-    const live = room.liveSeats();
-    if (live.length === 0 || live.some((seat) => room.seatState(seat) !== 'active')) return;
+    // Nobody still catching up; players who were dropped from the start (away) rejoin later.
+    const seats = room.liveSeats();
+    if (seats.some((seat) => room.seatState(seat) === 'syncing')) return;
+    const live = seats.filter((seat) => room.seatState(seat) === 'active');
+    if (live.length === 0) return;
     const { ticks, hash } = room.resumeStart;
     this.lockstep = new Lockstep({ players: live, delay: room.startMsg.delay, start: ticks });
     // Rejoining players and late spectators check against the saved state.
@@ -1350,6 +1376,12 @@ export class Session extends DurableObject {
       // Seats that did not come back (or did not catch up) in time.
       for (const seat of this.room.expiredSeats(now)) {
         const client = this.room.seats[seat];
+        if (this.room.resumeStart && this.room.seatState(seat) === 'syncing') {
+          // The start of a resumed save goes on without a slow player, who may rejoin like after a lost connection.
+          await this.dropFromResumeStart(seat, client, now);
+          if (!this.room) return;
+          continue;
+        }
         const ws = this.socketOf(client);
         if (ws) {
           const att = this.attachment(ws);

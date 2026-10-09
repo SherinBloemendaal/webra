@@ -312,3 +312,67 @@ test('a resumed start waits at most a few minutes for its players', async () => 
   assert.equal(resumeStartMs(10_000_000), RESUME_START_MAX_MS);
   assert.ok(RESUME_START_MAX_MS <= 3 * 60_000);
 });
+
+test('anything the order log keeps fits a resume: the log and the save check count frames the same way', async () => {
+  const { OrderLog } = await import('../src/orderlog.js');
+  const { FakeStorage } = await import('./fake-do.mjs');
+  const { parseReplay, logEntryBytes, DEFAULT_OPTIONS } = await import('@webra/protocol');
+  const orders = (t) => [[0, [{ o: 'stop', player: 0, ids: Array.from({ length: (t % 5) + 1 }, (_, i) => t * 10 + i) }]]];
+  // A log whose limit is reached exactly by the first three frames.
+  const limit = [1, 2, 3].reduce((n, t) => n + logEntryBytes(t, orders(t)), 0);
+  const log = new OrderLog(new FakeStorage(), { maxBytes: limit });
+  for (const t of [1, 2, 3]) log.append({ tick: t, orders: orders(t) });
+  assert.equal(log.full, false, 'exactly at the limit is kept');
+  log.append({ tick: 4, orders: orders(4) });
+  assert.equal(log.full, true, 'one more frame is not');
+  const options = { ...DEFAULT_OPTIONS, players: [{ slot: 0, type: 'human', name: 'A', faction: 'germany', color: 0, team: 0 }, { slot: 1, type: 'human', name: 'B', faction: 'russia', color: 1, team: 0 }] };
+  const file = (frames) => JSON.stringify({ format: REPLAY_FORMAT, version: REPLAY_VERSION, kind: 'replay', mode: 'online', engine: '1', createdAt: 1, title: 'x', options, map: null, mapHash: null, player: 0, ticks: 100, frames, hashes: [] });
+  const kept = await log.read();
+  assert.equal((await parseReplay(file(kept), { maxFrameBytes: limit })).ok, true, 'what the log kept passes the resume budget');
+  const over = await parseReplay(file([...kept, [4, orders(4)]]), { maxFrameBytes: limit });
+  assert.deepEqual([over.ok, over.code], [false, 'too_large'], 'and what it refused does not');
+});
+
+test('a player too slow for a resumed start is dropped for now, not for good: the game starts, and it rejoins', async () => {
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const ctx = await game(env, accounts);
+  const { agreed, result: saved } = await saveGame(ctx);
+  const text = await saveFile(ctx, saved, agreed);
+  const s = await makeSession({ DB: env.DB, maxPlayers: 3 });
+  const sid = wire(env, s.session);
+  const host = s.connect('host', '10.0.0.1', authOf(accounts.host));
+  await s.send(host, hello(s, { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  assert.equal((await accounts.host.req('POST', `/api/sessions/${sid}/resume`, text, { headers: { [MEMBER_HEADER]: `${hw.you}.${hw.key}` } })).status, 200);
+  const guest = s.connect('guest', '10.0.0.2', authOf(accounts.guest));
+  await s.send(guest, hello(s));
+  const gw = guest.take('welcome')[0];
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  const st = host.last('start');
+  const seatOf = (w) => st.players.find((p) => p.client === w.you).player;
+  await s.send(host, { t: 'resume' });
+  // The guest's device is slow: its catch-up time runs out.
+  s.session.room.seatStates[seatOf(gw)].until = Date.now() - 1;
+  await s.session.alarm();
+  assert.equal(guest.last('error').code, 'dropped');
+  assert.ok(guest.closed);
+  assert.deepEqual([host.last('left').reason, host.last('left').player], ['dropped', seatOf(gw)]);
+  assert.equal(s.session.room.seatState(seatOf(gw)), 'away', 'not gone: it may rejoin');
+  assert.ok(s.session.room.seatStates[seatOf(gw)].until >= Date.now() + 100_000, 'with the full reconnect grace');
+  // The game starts for the host.
+  assert.deepEqual(host.take('frame').map((f) => f.tick), [saved.ticks, saved.ticks + 1, saved.ticks + 2]);
+  // The guest reconnects with its key, catches up and plays on.
+  const back = s.connect('guest-back', '10.0.0.2', authOf(accounts.guest));
+  await s.send(back, hello(s, { rejoin: { client: gw.you, key: gw.key } }));
+  assert.ok(back.take('welcome')[0]);
+  assert.ok(back.last('start').resume);
+  assert.ok(back.last('sync'));
+  await s.send(back, { t: 'resume' });
+  const b = host.last('back');
+  assert.equal(b.client, gw.you);
+  assert.ok(b.tick > saved.ticks);
+  valid(host);
+  valid(back);
+});

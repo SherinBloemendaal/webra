@@ -220,6 +220,8 @@ export class Lockstep {
     const at = this.next + this.delay;
     const frame = this.windows.size > 0 ? [...this.windows.values()][0].frame : this.next;
     this.active.add(player);
+    // A seat that missed the start of a resumed save joins the game's seats here.
+    this.seats.add(player);
     this.expected.set(player, at);
     this.joinTick.set(player, at);
     this.lastHashTick.set(player, -1);
