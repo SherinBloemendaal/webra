@@ -1046,11 +1046,9 @@ impl World {
         {
             return Some(SmartAction::EnterBlocked);
         }
-        if self.are_allies(player, ta.owner) {
-            if any(&|u| self.can_heal(u, t)) {
-                let mech = units.iter().any(|&u| self.can_heal(u, t) && ta.kind != Kind::Infantry);
-                return Some(if mech { SmartAction::Fix } else { SmartAction::Heal });
-            }
+        if self.are_allies(player, ta.owner) && any(&|u| self.can_heal(u, t)) {
+            let mech = units.iter().any(|&u| self.can_heal(u, t) && ta.kind != Kind::Infantry);
+            return Some(if mech { SmartAction::Fix } else { SmartAction::Heal });
         }
         None
     }

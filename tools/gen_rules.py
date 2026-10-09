@@ -134,7 +134,8 @@ def load_ftl():
             attr = cur + '.' + m.group(1)
             out[attr] = m.group(2)
             continue
-        if line.startswith('        ') and attr:
+        # Continuation lines of a multi-line value are indented (4 spaces or more).
+        if line.startswith('    ') and line.strip() and attr:
             out[attr] = (out[attr] + ' ' + line.strip()).strip()
     return out
 

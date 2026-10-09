@@ -1920,7 +1920,7 @@
       "key": "ParatroopersPower@paratroopers",
       "kind": "ParatroopersPower",
       "name": "Paratroopers",
-      "description": "A Badger drops a squad of infantry",
+      "description": "A Badger drops a squad of infantry at the selected location.",
       "charge": 7500,
       "prerequisites": [
        "aircraft.soviet"
@@ -1950,7 +1950,7 @@
       "key": "AirstrikePower@parabombs",
       "kind": "AirstrikePower",
       "name": "Parabombs",
-      "description": "A Badger drops parachuted bombs",
+      "description": "A Badger drops parachuted bombs at the selected location.",
       "charge": 7500,
       "prerequisites": [
        "aircraft.ukraine"
@@ -2153,7 +2153,7 @@
       "key": "ParatroopersPower@paratroopers",
       "kind": "ParatroopersPower",
       "name": "Paratroopers",
-      "description": "A Badger drops a squad of infantry",
+      "description": "A Badger drops a squad of infantry at the selected location.",
       "charge": 7500,
       "prerequisites": [
        "aircraft.soviet"
@@ -2183,7 +2183,7 @@
       "key": "AirstrikePower@parabombs",
       "kind": "AirstrikePower",
       "name": "Parabombs",
-      "description": "A Badger drops parachuted bombs",
+      "description": "A Badger drops parachuted bombs at the selected location.",
       "charge": 7500,
       "prerequisites": [
        "aircraft.ukraine"
@@ -2734,7 +2734,7 @@
       "key": "GpsPower",
       "kind": "GpsPower",
       "name": "GPS Satellite",
-      "description": "",
+      "description": "Reveals map terrain and provides tactical information. Requires power and active radar.",
       "charge": 12000,
       "prerequisites": [],
       "duration": 0,
@@ -3146,7 +3146,7 @@
       "key": "ChronoshiftPower@chronoshift",
       "kind": "ChronoshiftPower",
       "name": "Chronoshift",
-      "description": "Teleports a group of units across",
+      "description": "Teleports a group of units across the map for 20 seconds.",
       "charge": 3000,
       "prerequisites": [
        "!pdox.germany"
@@ -3167,7 +3167,7 @@
       "key": "ChronoshiftPower@advancedchronoshift",
       "kind": "ChronoshiftPower",
       "name": "Advanced Chronoshift",
-      "description": "Teleports a large group of units across",
+      "description": "Teleports a large group of units across the map for 20 seconds.",
       "charge": 3000,
       "prerequisites": [
        "pdox.germany"
@@ -3331,7 +3331,7 @@
       "key": "GrantExternalConditionPower@IRONCURTAIN",
       "kind": "GrantExternalConditionPower",
       "name": "Invulnerability",
-      "description": "Grants invulnerability to a group of units",
+      "description": "Grants invulnerability to a group of units for 20 seconds.",
       "charge": 3000,
       "prerequisites": [],
       "duration": 400,
@@ -3474,7 +3474,7 @@
       "key": "NukePower",
       "kind": "NukePower",
       "name": "Atom Bomb",
-      "description": "Launches a devastating atomic bomb",
+      "description": "Launches a devastating atomic bomb at the target location.",
       "charge": 13500,
       "prerequisites": [],
       "duration": 0,
@@ -13029,7 +13029,7 @@
       "key": "SpawnActorPower",
       "kind": "SpawnActorPower",
       "name": "Sonar Pulse",
-      "description": "",
+      "description": "Reveals all submarines in the vicinity for a short time.",
       "charge": 750,
       "prerequisites": [],
       "duration": 250,

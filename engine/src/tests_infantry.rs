@@ -282,7 +282,7 @@ fn spy_in_a_radar_dome_steals_and_resets_the_exploration() {
     run(&mut w, 200);
     assert!(!w.actors[spy].alive);
     assert!(w.players[0].explored.iter().all(|&e| e != 0), "the spy's owner learns the map");
-    assert!(w.players[1].explored.iter().any(|&e| e == 0), "the victim forgets it");
+    assert!(w.players[1].explored.contains(&0), "the victim forgets it");
 }
 
 #[test]

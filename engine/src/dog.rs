@@ -40,7 +40,9 @@ impl World {
         if self.resolve(self.actors[t].inf.leaper).is_some_and(|d| d != i && self.actors[d].inf.leap.is_some()) {
             return;
         }
-        if self.actors[i].reload.iter().all(|&r| r > 0) || self.actors[i].inf.eat > 0 {
+        // Can't leap yet: every armament reloads (LeapAttack), or the dog still eats.
+        let slots = self.rules.actors[self.actors[i].ty as usize].weapons.len().min(crate::world::MAX_WEAPONS);
+        if self.actors[i].reload[..slots].iter().all(|&r| r > 0) || self.actors[i].inf.eat > 0 {
             return;
         }
         let (ox, oy) = (self.actors[i].x, self.actors[i].y);
