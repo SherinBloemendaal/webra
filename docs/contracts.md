@@ -568,8 +568,8 @@ serialized).
 
 ### Production queues (`engine/src/production.rs`)
 
-Orders `start_production {ty, count}` and `cancel_production {ty}` serve every
-queue, structures included (no extra order types):
+Orders `start_production {ty, count}`, `cancel_production {ty}` and
+`pause_production {ty, paused}` serve every queue, structures included:
 
 - Structures queue like units (OpenRA): left click queues one, shift queues
   five. Only the first item of a queue is built. A finished structure waits
@@ -578,6 +578,22 @@ queue, structures included (no extra order types):
   the finished head of the queue.
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
+- `pause_production` (OpenRA PauseProduction) puts the first queued item of
+  that type on hold or resumes it. An item on hold at the head of its queue
+  holds up the queue (no progress, nothing paid); finished items are never
+  on hold. It is in the state hash. The sidebar follows OpenRA's
+  ProductionPaletteWidget: right click holds the item being built and
+  cancels one that is on hold, finished or not started (nothing paid yet),
+  middle click cancels at once, left click on a held item resumes it.
+  `player_json().queues[][]` items have `paused` and `started` (something
+  paid).
+- Buildable.BuildLimit (`build_limit` in rules.json, 0 none: the
+  superweapons, Tanya): owned plus queued of that type stay within it;
+  `start_production` queues only what fits, the "all tech" cheat lifts it.
+  `player_json().buildable[].limitLeft` is how many more fit (null: no
+  limit); with the queue length (at most 30) the sidebar knows what OpenRA's
+  CanQueue would say (Building or Training, Unable to build more, Building
+  in progress).
 - OpenRA `CancelUnbuildableItems`: every tick, before production advances,
   each queued item that can no longer be produced is cancelled and refunded,
   wherever it is in the queue. That is an item whose prerequisites were lost
@@ -697,6 +713,20 @@ warhead (`damage_types`); modded maps can tune them within
 (`SpriteIds::veterancy_base` + 0..2 chevrons, + 3 elite,
 apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
 `2t + 1` is the prone pose.
+
+### Pilots (`engine/src/plane.rs` `eject_pilot`)
+
+OpenRA EjectOnDeath (rules `abilities.eject_on_death {pilot, success_rate,
+in_air, on_ground, allow_unsuitable_cell}`, every RA plane and helicopter
+but the Badger): when such an actor dies, unless its owner is defeated or it
+is off the map, `rng.range(0, 100) < success_rate` (the shared simulation
+random numbers, so it is in the state hash through the pilot) decides
+whether its pilot (E1) comes out at its position. In the air the pilot falls
+by parachute from the aircraft's height and dies where it cannot stand
+(water, structures); at ground level only with `on_ground` (false in RA).
+Without `allow_unsuitable_cell` (true in RA) no pilot comes out over a cell
+infantry cannot enter. A plane that starts to fall decides when it is hit,
+not again where it crashes.
 
 ### Helicopters (`engine/src/helicopter.rs`)
 
@@ -858,6 +888,53 @@ player, b: the structure's owner; the "Repairing" announcement), 12
 (b: ticks it stays; a sound and radar ping for allies), 14 `UnitDamaged` (a
 unit hit by another player after a quiet spell; a radar ping like OpenRA's
 DamageNotifier@Unit).
+
+### Audio events and notifications (`engine/src/sound_events.rs`, `apps/game/js/audio`)
+
+The engine logs what happened as audio events (`EVENT_STRIDE` i32s each:
+`[kind, a, x, y, owner, b]`, world units); the client drains them per frame
+(`take_audio_events`) and decides what to play (js/audio/director.js). The
+log is presentation only: never read by the simulation, off by default
+(servers, tests), not in the state hash; presentation-only bookkeeping
+(power instances' `notified_charging` / `notified_ready`, aircraft
+`air.power` / `air.launched`) is not hashed either. Kinds and their fields:
+1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
+attacking player; only another player's fire counts, as in OpenRA's
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold, 8
+InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
+ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
+Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
+provider type, b: its power index; OpenRA SupportPowerInstance's
+notifiedCharging and notifiedReady), 19 ReinforcementsArrived (the first
+paratrooper plane of a drop in the drop zone), 20 ProductionCancelled
+(CancelUnbuildableItems), 21 ProductionBlocked (a finished unit cannot
+leave, once per item), 22 UnitRepairStarted and 23 UnitRepaired (b: the
+repairing structure's type), 24 LevelUp, 25 Crushed (at the crusher; b: its
+owner), 26 DamageHeavy (fell below half health: SoundOnDamageTransition), 27
+CloakChanged (b: 1 cloaked; not when an actor starts cloaked), 28 ParaDrop
+(the dropping aircraft's ChuteSound), 29 ParachuteImpact (b: 1 on water), 30
+Rearmed (one magazine; the owner only), 31 NewOptions (10 ticks after a
+placement that added buildable items), 32 PrimaryBuildingSelected, 33
+Captured (owner: new owner, b: old owner), 34 Infiltrated (owner: the
+target's owner, b: `infiltrator_code(type, owner)`), 35 TimeLimitWarning (a:
+minutes left, owner `ALL_PLAYERS`; `SoundEvents::push_time_limit`), 36
+CrateCollected (a: `crate_action_code`, b: the crate's type), 37
+PilotEjected (a: the aircraft's type; its EjectOnDeath ChuteSound). Kinds 32 to 36
+are the API for features other code emits (`self.sound.push(...)`); the
+client already plays them. `rules_json` actors list their support power keys
+(`powers`) so `power_ref` names a power.
+
+The client follows OpenRA's notifications (data/source/audio/notifications.yaml
+and the rules, through `tools/gen-audio-catalog.mjs` into
+js/audio/catalog-data.js): speech goes to the player it is for (spectators
+and replays hear none of it, but the time limit warnings), with OpenRA's
+intervals (low power every 10 s while low, silos needed every 20 s above 80
+percent of the storage, base under attack and insufficient funds at most
+every 30 s); sound notifications (RadarUp, LevelUp, ChatLine, ClickSound,
+...) honour their InterruptType and VolumeModifier; world sounds are heard
+near the camera where the player can see (WebRA's fog rule; OpenRA plays
+them regardless of the shroud). Lines that only exist as text in OpenRA
+(Unit promoted., Our ally is under attack.) are shown without sound.
 
 Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
 (`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
@@ -1260,7 +1337,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |

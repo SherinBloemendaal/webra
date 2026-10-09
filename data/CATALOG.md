@@ -9,6 +9,8 @@ Hotkeys (`data/source/hotkeys/*.yaml` and `*.ftl`, OpenRA `mods/common/hotkeys`,
 
 Sprite sequences (`data/source/sequences/*.yaml`, OpenRA `mods/ra/sequences` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0) describe how OpenRA cuts the original Red Alert sprites into facings and animations; `tools/gen_content_tables.py` turns them, the rules and the tilesets into `apps/game/js/content/tables.js` the audit facts `apps/game/js/content/render-facts.js` and the engine's effect data `engine/render.json` (file names and frame numbers only: the graphics come from the player's own copy of Red Alert). Mouse cursors (`data/source/cursors.yaml`, OpenRA `mods/ra/cursors.yaml` at the same commit, GPL-3.0) give each cursor's frames and hotspot in mouse.shp.
 
+Audio (`data/source/audio/notifications.yaml` and `music.yaml`, OpenRA `mods/ra/audio` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0): the speech and sound notifications with their file names, volumes and interrupt types, and the soundtrack with its titles, volumes and hidden tracks; `tools/gen-audio-catalog.mjs` turns them, the rules in `data/source/rules` (every actor with its inheritance resolved: sound traits, notifications, support powers) and `weapons.json` into `apps/game/js/audio/catalog-data.js` (file names only: the sounds come from the player's own copy of Red Alert).
+
 Full trait-level data for every actor (every property OpenRA defines) is in `actors.json`; every weapon with projectile and warheads is in `weapons.json`.
 
 ## Buildings (17)

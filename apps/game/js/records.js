@@ -163,9 +163,10 @@ async function loadDialog(store, ctx) {
  * file) and download the replay. Each `run()` resolves with the message to show.
  * `recorder` is the handle on the recorder that runs with the simulation
  * (js/sim/proxy.js RecorderHandle): `start`, `full`, and `encode(kind)`
- * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads.
+ * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads;
+ * `onSaved()` runs after every save (OpenRA's GameSaved notification).
  */
-export function recordActions({ recorder, ready = () => true, stress = false, store = null }) {
+export function recordActions({ recorder, ready = () => true, stress = false, store = null, onSaved = () => {} }) {
   if (stress || !recorder) return [];
   const saves = store ?? SaveStore.browser();
   const fail = (err) => err?.message ?? String(err);
@@ -180,6 +181,7 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
         try {
           const { text, ticks } = await recorder.encode('save');
           await saves.add(text);
+          onSaved();
           return `Saved at ${formatTicks(ticks)}. Load it from the lobby (Load game).`;
         } catch (err) {
           return `Could not save: ${fail(err)}`;
@@ -195,6 +197,7 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
         try {
           const { text } = await recorder.encode('save');
           downloadText(recordFileName({ ...recorder.start }, 'save'), text);
+          onSaved();
           return 'Save file downloaded.';
         } catch (err) {
           return `Could not save: ${fail(err)}`;

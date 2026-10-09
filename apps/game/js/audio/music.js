@@ -1,11 +1,14 @@
-// Music: the original Red Alert soundtrack, only when the player installed it
-// from their own copy (scores.mix), and texture pack music. Tracks play one
-// after another on the music bus, shuffled or as listed, repeating all, one
-// or none (Settings: audio.musicShuffle, audio.musicRepeat); WebRA ships no
-// music of its own.
+// Music: the original Red Alert soundtrack (with the Counterstrike and
+// Aftermath tracks), only when the player installed it from their own copy,
+// and texture pack music. Tracks play one after another on the music bus,
+// shuffled or as listed, repeating all, one or none (Settings:
+// audio.musicShuffle, audio.musicRepeat), each at its music.yaml
+// VolumeModifier; WebRA ships no music of its own. A background track
+// (OpenRA MusicPlaylist: the menu's intro, the score and map tracks after a
+// game) loops until the player picks another track.
 
 import { audDuration, decodeAud } from './aud.js';
-import { MUSIC } from './catalog.js';
+import { MUSIC, PLAYLIST } from './catalog.js';
 
 /** A shuffled order of `n` items that does not start with `avoid`. */
 export function shuffle(n, random = Math.random, avoid = -1) {
@@ -41,7 +44,11 @@ export class Jukebox {
     this.onChange = onChange;
     this.mode = mode;
     this.random = Math.random;
-    this.tracks = []; // { file, title } installed
+    this.tracks = []; // { file, title, volume } installed playlist tracks
+    /** Every installed track file, hidden background tracks included. */
+    this.installed = new Set();
+    /** The background track playing (or wanted while the music waits), or null. */
+    this.background = null;
     this.order = [];
     this.pos = 0;
     this.current = -1; // index into tracks of the playing (or last played) track
@@ -66,7 +73,9 @@ export class Jukebox {
     const names = new Set(await store.names());
     const pack = this.packTracks();
     const originals = this.useOriginals();
-    this.tracks = MUSIC.filter((m) => (originals && names.has(m.file)) || pack.has(m.file) || pack.has(m.file.replace(/\.aud$/, '')));
+    const has = (m) => (originals && names.has(m.file)) || pack.has(m.file) || pack.has(m.file.replace(/\.aud$/, ''));
+    this.installed = new Set(MUSIC.filter(has).map((m) => m.file));
+    this.tracks = PLAYLIST.filter(has);
     this.order = playOrder(this.tracks.length, this.mode().shuffle, this.random);
     this.pos = 0;
     this.current = -1;
@@ -107,6 +116,7 @@ export class Jukebox {
 
   stop() {
     this.wanted = false;
+    this.background = null;
     this.token++;
     const h = this.handle;
     this.handle = null;
@@ -128,7 +138,7 @@ export class Jukebox {
    */
   async togglePause() {
     if (this.handle && this.buffer) {
-      const paused = { index: this.current, buffer: this.buffer, at: this.handle.position?.() ?? 0 };
+      const paused = { index: this.current, buffer: this.buffer, at: this.handle.position?.() ?? 0, background: this.background };
       this.stop();
       this.paused = paused;
       this.onChange();
@@ -136,6 +146,12 @@ export class Jukebox {
     }
     this.stoppedByUser = false;
     const p = this.paused;
+    if (p?.background && this.mixer.ready) {
+      this.paused = null;
+      this.background = p.background;
+      this.play(p.background, p.buffer, ++this.token, p.at);
+      return;
+    }
     if (p && this.mixer.ready && this.tracks[p.index]) {
       this.paused = null;
       this.current = p.index;
@@ -177,6 +193,7 @@ export class Jukebox {
   async next({ ended = false } = {}) {
     this.stoppedByUser = false;
     this.paused = null;
+    this.background = null;
     if (!this.tracks.length || !this.mixer.ready) return;
     const token = ++this.token;
     const old = this.handle;
@@ -208,6 +225,7 @@ export class Jukebox {
     if (!this.tracks[index] || !this.mixer.ready) return;
     this.stoppedByUser = false;
     this.paused = null;
+    this.background = null;
     this.finished = false;
     const token = ++this.token;
     const old = this.handle;
@@ -228,23 +246,58 @@ export class Jukebox {
   /** Load and play track `index` unless another request (`token`) came in meanwhile. */
   async startTrack(index, token) {
     const track = this.tracks[index];
-    // A texture pack's version of the track first, then the installed original.
-    const pack = this.packTracks();
-    let buffer = pack.get(track.file) ?? pack.get(track.file.replace(/\.aud$/, '')) ?? null;
-    if (!buffer) {
-      const store = await this.getStore();
-      const rec = await store.get(track.file);
-      if (token !== this.token || !rec) return;
-      try {
-        const { sampleRate, samples } = decodeAud(new Uint8Array(rec.bytes));
-        buffer = this.mixer.buffer(samples, sampleRate);
-      } catch {
-        buffer = null;
-      }
-    }
+    // A texture pack's track plays at once (no await: the handle exists before anything else asks).
+    const buffer = this.packBuffer(track) ?? (await this.load(track, token));
     if (!buffer || token !== this.token) return;
     if (buffer.duration) this.lengths.set(track.file, buffer.duration);
     this.play(track, buffer, token);
+  }
+
+  /** The decoded track: a texture pack's version first, then the installed original (null when neither, or `token` is stale). */
+  async load(track, token) {
+    const packed = this.packBuffer(track);
+    if (packed) return packed;
+    if (!this.useOriginals()) return null;
+    const store = await this.getStore();
+    const rec = await store.get(track.file);
+    if (token !== this.token || !rec) return null;
+    try {
+      const { sampleRate, samples } = decodeAud(new Uint8Array(rec.bytes));
+      return this.mixer.buffer(samples, sampleRate);
+    } catch {
+      return null;
+    }
+  }
+
+  /** A texture pack's version of `track` (by its file name, with or without .aud), or null. */
+  packBuffer(track) {
+    const pack = this.packTracks();
+    return pack.get(track.file) ?? pack.get(track.file.replace(/\.aud$/, '')) ?? null;
+  }
+
+  /** Whether `track` (a catalog.js MUSIC entry) is installed or in a texture pack. */
+  has(track) {
+    return !!track && this.installed.has(track.file);
+  }
+
+  /**
+   * Play `track` as background music (OpenRA MusicPlaylist.SetBackgroundMusic
+   * and Stop: it loops until the player picks another track). Returns
+   * whether it plays.
+   */
+  async playBackground(track) {
+    if (!this.has(track) || !this.mixer.ready) return false;
+    this.stoppedByUser = false;
+    this.paused = null;
+    const token = ++this.token;
+    const old = this.handle;
+    this.handle = null;
+    old?.stop();
+    this.background = track;
+    const buffer = this.packBuffer(track) ?? (await this.load(track, token));
+    if (!buffer || token !== this.token) return false;
+    this.play(track, buffer, token);
+    return true;
   }
 
   /** Seconds into the playing or paused track (0 when none). */
@@ -292,7 +345,11 @@ export class Jukebox {
     return found;
   }
 
-  /** Play `buffer` of `track` from `offset` seconds; when it ends, the next track follows. */
+  /**
+   * Play `buffer` of `track` from `offset` seconds, at the track's
+   * VolumeModifier; when it ends, the next track follows (a background track
+   * starts again).
+   */
   play(track, buffer, token, offset = 0) {
     this.wanted = true;
     this.stoppedByUser = false;
@@ -300,9 +357,12 @@ export class Jukebox {
     this.buffer = buffer;
     this.handle = this.mixer.play(buffer, {
       bus: 'music',
+      gain: track.volume ?? 1,
       offset,
       onEnded: () => {
-        if (token === this.token && this.wanted) this.next({ ended: true });
+        if (token !== this.token || !this.wanted) return;
+        if (this.background === track) this.play(track, buffer, ++this.token);
+        else this.next({ ended: true });
       },
     });
     this.onChange();

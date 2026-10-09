@@ -527,7 +527,7 @@ test('the sidebar mode sounds and announcements', async () => {
     side: 'allies',
     pxPerWorld: 1,
     lookup: () => null,
-    sink: { effect: (s) => effects.push(s.synth), voice() {}, announce: (k) => lines.push(k) },
+    sink: { effect: (s) => effects.push(s.synth), voice() {}, announce: (k) => lines.push(k), notify: (name) => effects.push(name) },
     now: () => 10,
     allied: (o) => o === 0 || o === 1,
   });
@@ -543,7 +543,7 @@ test('the sidebar mode sounds and announcements', async () => {
     { x0: 0, y0: 0, x1: 100, y1: 100 },
   );
   assert.deepEqual(lines, ['repairing'], 'to the player who repairs');
-  assert.deepEqual(effects, ['power_down', 'power_up', 'beacon'], "an enemy's beacon makes no sound");
+  assert.deepEqual(effects, ['DisablePower', 'EnablePower', 'Beacon'], "OpenRA's notifications; an enemy's beacon makes no sound");
 });
 
 // ---- Chat keys, observer panels ---------------------------------------------------------------

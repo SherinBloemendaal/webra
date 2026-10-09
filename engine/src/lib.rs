@@ -91,6 +91,8 @@ mod tests_security;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
+mod tests_sound_eva;
+#[cfg(test)]
 mod tests_stats;
 #[cfg(test)]
 mod tests_veterancy;
@@ -466,6 +468,9 @@ impl Game {
                     "repairable": b.is_some_and(|b| b.repairable.is_some()),
                     "powerDown": b.is_some_and(|b| b.power_down),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
+                    // Support power keys in rules order: audio events name a power by provider and index.
+                    "powers": a.abilities.support_powers.as_ref().map_or(Vec::new(), |l| l.iter().map(|p| p.key.as_str()).collect::<Vec<_>>()),
+                    "buildLimit": a.build_limit,
                 })
             })
             .collect();
@@ -1168,6 +1173,13 @@ impl Game {
         }
     }
 
+    /// Put the first queued `actor` on hold (`paused`) or resume it (OpenRA PauseProduction).
+    pub fn pause_production(&mut self, player: u8, actor: &str, paused: bool) {
+        if let Some(ty) = self.world.rules.actor_index(actor) {
+            self.submit(Order::PauseProduction { player, ty: ty as u16, paused });
+        }
+    }
+
     pub fn place_building(&mut self, player: u8, actor: &str, cx: i32, cy: i32) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
             self.submit(Order::Place { player, ty: ty as u16, cx, cy });
@@ -1193,7 +1205,7 @@ impl Game {
                     .iter()
                     .map(|it| {
                         let progress = if it.total > 0 { (it.total - it.remaining) as f32 / it.total as f32 } else { 0.0 };
-                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done})
+                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done, "paused": it.paused, "started": it.paid > 0})
                     })
                     .collect::<Vec<_>>()
             })
@@ -1213,6 +1225,8 @@ impl Game {
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
                     "buildTicks": w.build_time_with(t as u16, w.producer_count_in(&factories, t as u16)),
+                    // Buildable.BuildLimit: how many more may be queued (null: no limit).
+                    "limitLeft": Some(w.build_limit_left(player, t as u16)).filter(|&n| n != i32::MAX),
                 })
             })
             .collect();

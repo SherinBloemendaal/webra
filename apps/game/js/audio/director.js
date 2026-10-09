@@ -1,13 +1,52 @@
 // Decides what to play: turns the engine's audio events (sound_events.rs) and
 // the client's own moments (orders, selection, production clicks, player
-// state) into effects, unit replies and announcer lines, with throttling,
-// positional culling and a per-frame voice budget so a battle of thousands of
-// units stays a soundscape instead of a wall of noise.
+// state) into effects, unit replies, sound notifications and announcer lines,
+// with throttling, positional culling and a per-frame voice budget so a
+// battle of thousands of units stays a soundscape instead of a wall of noise.
+//
+// Who hears what follows OpenRA: speech notifications and UI sounds go to the
+// player they are for (Sound.PlayNotification with a player), a spectator
+// hears none of them; world sounds (weapons, explosions, crushes, cloaks) are
+// heard by everyone near them, here also only where the player can see
+// (WebRA's fog rule for world sounds), except the player's own.
 //
 // No Web Audio here: the director talks to a `sink` and reads a clock, so the
 // rules are unit tested in Node (tests/audio.test.mjs).
 
-import { fireSound, impactSound, deathSound, placeSound, sellSound, transformSounds, deployBlocked, powerSound, voiceLine, KINDS, EVA, powerReadyLine, POWER_KINDS, BUTTON_SOUNDS } from './catalog.js';
+import {
+  fireSound,
+  impactSound,
+  deathSound,
+  placeSound,
+  sellSound,
+  transformSounds,
+  deployBlocked,
+  powerSound,
+  voiceLine,
+  KINDS,
+  EVA,
+  POWER_KINDS,
+  speechKey,
+  queueLine,
+  PLAYER_LINES,
+  timeLimitLine,
+  actorSounds,
+  lostLine,
+  captureLines,
+  infiltrationLines,
+  repairLines,
+  primaryLine,
+  powerNotifications,
+  damagedSound,
+  crushSound,
+  chuteSound,
+  ejectChuteSound,
+  paraImpactSound,
+  cloakSound,
+  rearmSound,
+  levelUp,
+  crateSounds,
+} from './catalog.js';
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const EV = {
@@ -27,8 +66,31 @@ export const EV = {
   UNIT_DAMAGED: 14,
   TRANSFORMED: 15,
   DEPLOY_BLOCKED: 16,
+  POWER_CHARGING: 17,
+  POWER_READY: 18,
+  REINFORCEMENTS_ARRIVED: 19,
+  PRODUCTION_CANCELLED: 20,
+  PRODUCTION_BLOCKED: 21,
+  UNIT_REPAIR_STARTED: 22,
+  UNIT_REPAIRED: 23,
+  LEVEL_UP: 24,
+  CRUSHED: 25,
+  DAMAGE_HEAVY: 26,
+  CLOAK_CHANGED: 27,
+  PARA_DROP: 28,
+  PARACHUTE_IMPACT: 29,
+  REARMED: 30,
+  NEW_OPTIONS: 31,
+  PRIMARY_BUILDING_SELECTED: 32,
+  CAPTURED: 33,
+  INFILTRATED: 34,
+  TIME_LIMIT_WARNING: 35,
+  CRATE_COLLECTED: 36,
+  PILOT_EJECTED: 37,
 };
 export const STRIDE = 6;
+/** `owner` of events every player hears (sound_events.rs ALL_PLAYERS). */
+export const ALL_PLAYERS = 255;
 
 /** Positional effects started per frame, at most. */
 export const MAX_EFFECTS_PER_FRAME = 10;
@@ -52,9 +114,11 @@ const WEIGHT = {
   naval_gun: 1.8,
   rocket_heavy: 1.8,
   place_building: 1.6,
+  damaged: 1.5,
   explosion_small: 1.4,
   cannon: 1.4,
   tesla: 1.4,
+  crush: 1.2,
   hit: 0.6,
 };
 /** Sounds heard beyond the view (in half-views), e.g. a nuke across the map. */
@@ -83,14 +147,14 @@ const soundKey = (s) => s.synth ?? s.originals[0] ?? '';
 export class Director {
   /**
    * @param {object} o
-   * @param {{ actors: { id: string, kind: string }[], weapons: string[] }} o.rules
-   * @param {number} o.player local player index
+   * @param {{ actors: { id: string, kind: string, queue?: number, powers?: string[] }[], weapons: string[] }} o.rules
+   * @param {number} o.player local player index (-1: a spectator, who hears no player's notifications)
    * @param {'allies' | 'soviet'} o.side local player's side (voice variants)
    * @param {number} o.pxPerWorld pixels per world unit
    * @param {(id: number) => { type: string, owner: number, building: boolean } | null} o.lookup actor info by id
-   * @param {{ effect(sound, opts): void, voice(line): void, announce(key): void }} o.sink
+   * @param {{ effect(sound, opts): void, voice(line): void, announce(key): void, notify?(name, opts): void }} o.sink
    * @param {() => number} o.now seconds
-   * @param {(owner: number) => boolean} [o.allied] whether a player is the local one or an ally (beacons)
+   * @param {(owner: number) => boolean} [o.allied] whether a player is the local one or an ally
    */
   constructor({ rules, player, side, pxPerWorld, lookup, sink, now, allied = (owner) => owner === player }) {
     this.allied = allied;
@@ -106,8 +170,13 @@ export class Director {
     this.lastVoice = -Infinity;
     this.lastEva = new Map();
     this.selection = new Set();
+    /** Low power (null before the first player state), and when its line last played. */
     this.lowPower = null;
-    this.powersReady = null;
+    this.lowPowerAt = -Infinity;
+    /** When the silo warning was last checked (OpenRA ResourceStorageWarning). */
+    this.silosAt = null;
+    /** Infantry deaths of this batch that were a crush (no scream: crushing is no DeathSounds death type). */
+    this.crushed = [];
   }
 
   actor(ty) {
@@ -118,13 +187,18 @@ export class Director {
 
   /** Queue an announcer line unless the same one played within its cooldown. */
   announce(key) {
-    const line = EVA[key];
+    const line = key ? EVA[key] : null;
     if (!line) return false;
     const t = this.now();
     if (t - (this.lastEva.get(key) ?? -Infinity) < line.cooldown) return false;
     this.lastEva.set(key, t);
     this.sink.announce(key);
     return true;
+  }
+
+  /** A sound notification (notifications.yaml Sounds: LevelUp, RadarUp, ...) for the local player. */
+  notify(name, opts = {}) {
+    this.sink.notify?.(name, opts);
   }
 
   // ---- Unit replies ------------------------------------------------------------
@@ -169,33 +243,69 @@ export class Director {
     if (u) this.reply(u.type, u.kind, 'select');
   }
 
-  onProductionStarted(actorId) {
+  // ---- The sidebar (OpenRA ProductionPaletteWidget, SupportPowersWidget) ----------------
+
+  /**
+   * A production cameo was clicked (OpenRA ProductionPaletteWidget): the
+   * ClickSound, and the queue's speech for `outcome`: 'queued', 'blocked'
+   * (NoBuild), 'limited' (BuildingInProgress), 'resumed' (the queued line
+   * again), 'onHold', 'cancelled'; null for a click without speech (OpenRA
+   * speaks on a new item only when the queue was empty).
+   * @param {string} actorId
+   * @param {string | null} outcome
+   */
+  onProductionClick(actorId, outcome) {
+    this.notify('ClickSound');
     const a = this.rules.actors.find((x) => x.id === actorId);
-    if (a) this.announce(a.kind === 'infantry' ? 'training' : 'building');
+    if (!a || !outcome) return;
+    const what = outcome === 'resumed' ? 'queued' : outcome;
+    this.announce(queueLine(a.queue ?? 0, what));
   }
 
-  onProductionCancelled() {
-    this.announce('cancelled');
+  /** A ready support power was picked (OpenRA SupportPowerInstance.Target): its SelectTarget line. */
+  onSelectTarget(power) {
+    this.announce(this.powerRules(power).selectTargetLine);
   }
 
-  onSelectTarget() {
-    this.announce('selectTarget');
+  /** A support power without a powered provider was clicked (OpenRA SupportPowersWidget.ClickIcon). */
+  onInsufficientPower(power) {
+    this.notify('ClickSound');
+    this.announce(this.powerRules(power).insufficientPowerLine);
   }
 
+  /** Notifications of a power from `player_json().powers` ({ key, kind }) or a key. */
+  powerRules(power) {
+    const key = typeof power === 'string' ? power : power?.key;
+    const provider = this.rules.actors.find((a) => a.powers?.includes(key));
+    return powerNotifications(provider?.id, key);
+  }
+
+  /** The game ended for the local player (OpenRA MissionObjectives Win/LoseNotification). */
   onGameOver(won) {
-    this.announce(won ? 'missionAccomplished' : 'missionFailed');
+    this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose);
   }
 
-  /** Player state (Game.player_json), polled by the UI: low power and power readiness edges. */
+  /**
+   * Player state (Game.player_json), polled by the UI: OpenRA PowerManager's
+   * low power line (at once when power gets low, then every AdviceInterval
+   * while it stays low) and ResourceStorageWarning (every AdviceInterval,
+   * when the stored ore is above Threshold percent of the silo capacity).
+   */
   onPlayerState(state) {
+    const t = this.now();
     const low = !!state.lowPower;
-    if (this.lowPower === false && low) this.announce('lowPower');
-    this.lowPower = low;
-    const ready = new Map((state.powers ?? []).map((p) => [p.key, p]));
-    if (this.powersReady) {
-      for (const [key, p] of ready) if (p.ready && !this.powersReady.has(key)) this.announce(powerReadyLine(p.kind));
+    if (this.lowPower !== null && low && (!this.lowPower || t - this.lowPowerAt >= PLAYER_LINES.lowPowerInterval)) {
+      this.lowPowerAt = t;
+      this.announce(PLAYER_LINES.lowPower);
     }
-    this.powersReady = new Set([...ready.values()].filter((p) => p.ready).map((p) => p.key));
+    if (this.lowPower === null && low) this.lowPowerAt = t;
+    this.lowPower = low;
+    if (this.silosAt === null) this.silosAt = t;
+    else if (t - this.silosAt > PLAYER_LINES.silosInterval) {
+      this.silosAt = t;
+      const storage = state.storage ?? 0;
+      if (storage > 0 && (state.resources ?? 0) > (PLAYER_LINES.silosThreshold * storage) / 100) this.announce(PLAYER_LINES.silos);
+    }
   }
 
   // ---- Engine events --------------------------------------------------------------
@@ -209,6 +319,7 @@ export class Director {
    */
   onEvents(events, view, visible = () => true) {
     const k = this.pxPerWorld;
+    this.crushed = [];
     for (let i = 0; i + STRIDE <= events.length; i += STRIDE) {
       const kind = events[i];
       const a = events[i + 1];
@@ -217,28 +328,33 @@ export class Director {
       const owner = events[i + 4];
       const b = events[i + 5];
       const own = owner === this.player;
+      // A world sound: the player's own, or where the player can see.
+      const heard = own || visible(x, y);
       switch (kind) {
         case EV.FIRE:
-          if (own || visible(x, y)) this.queue(fireSound(this.rules.weapons[a]), x, y);
+          if (heard) this.queue(fireSound(this.rules.weapons[a]), x, y);
           break;
         case EV.IMPACT:
-          if (own || visible(x, y)) this.queue(impactSound(this.rules.weapons[a], b === 1), x, y);
+          if (heard) this.queue(impactSound(this.rules.weapons[a], b === 1), x, y);
           break;
         case EV.DEATH: {
           const actor = this.actor(a);
           const kindName = KINDS[b] ?? actor.kind;
-          if (own || visible(x, y)) this.queue(deathSound(actor.id, kindName), x, y);
-          if (own && kindName !== 'building' && kindName !== 'mine') this.announce('unitLost');
+          const crush = this.crushed.findIndex((c) => c.ty === a && c.owner === owner);
+          if (crush >= 0) this.crushed.splice(crush, 1);
+          else if (heard) this.queue(deathSound(actor.id, kindName), x, y);
+          // OpenRA ActorLostNotification (UnitLost, NavalUnitLost, AirUnitLost), to the owner.
+          if (own) this.announce(lostLine(actor.id));
           break;
         }
         case EV.BUILDING_DAMAGED:
-          if (own) this.announce('baseUnderAttack');
+          // OpenRA DamageNotifier: speech to the owner, a text to the allies (not the attacker).
+          if (own) this.announce(PLAYER_LINES.baseAttack);
+          else if (this.player >= 0 && this.allied(owner) && b !== this.player) this.announce('allyUnderAttack');
           break;
         case EV.UNIT_PRODUCED:
-          if (own) this.announce('unitReady');
-          break;
         case EV.CONSTRUCTION_READY:
-          if (own) this.announce('constructionComplete');
+          if (own) this.announce(queueLine(this.actor(a).queue ?? 0, 'ready'));
           break;
         // OpenRA plays these with PlayToPlayer: only the owner hears them, at the actor's position.
         case EV.BUILDING_PLACED:
@@ -256,33 +372,125 @@ export class Director {
           break;
         case EV.SOLD:
           if (own) {
-            this.announce('structureSold');
+            this.announce(speechKey(actorSounds(this.actor(a).id).sellNotification ?? 'StructureSold'));
             this.queue(sellSound(this.actor(a).id), x, y);
           }
           break;
         case EV.INSUFFICIENT_FUNDS:
-          if (own) this.announce('insufficientFunds');
+          if (own) this.announce(PLAYER_LINES.funds);
           break;
         // Sidebar buttons (engine/src/repair.rs, beacons.rs): OpenRA plays these as notifications, not in the world.
         case EV.REPAIR_STARTED:
-          if (own) this.announce('repairing');
+          if (own) this.announce(speechKey(actorSounds(this.actor(a).id).repairing ?? 'Repairing'));
           break;
         case EV.POWER_TOGGLED:
-          if (own) this.sink.effect(b === 1 ? BUTTON_SOUNDS.powerDown : BUTTON_SOUNDS.powerUp, { gain: 0.8, pan: 0 });
+          if (own) this.notify(b === 1 ? 'DisablePower' : 'EnablePower');
           break;
         case EV.BEACON_PLACED:
-          if (this.allied(owner)) this.sink.effect(BUTTON_SOUNDS.beacon, { gain: 0.8, pan: 0 });
+          if (this.player >= 0 && this.allied(owner)) this.notify('Beacon');
           break;
-        case EV.POWER_ACTIVATED: {
-          const sound = powerSound(a);
-          if (POWER_KINDS[a] === 'NukePower') {
-            if (own) this.sink.effect(sound, { gain: 0.9, pan: 0 });
-            else this.announce('nukeLaunched');
-          } else if (own || visible(x, y)) {
-            this.queue(sound, x, y);
+        case EV.POWER_ACTIVATED:
+          this.powerActivated(a, b, x, y, owner, heard);
+          break;
+        // Support power timers (OpenRA SupportPower.Charging and Charged), to the owner.
+        case EV.POWER_CHARGING:
+        case EV.POWER_READY:
+          if (own) {
+            const p = powerNotifications(this.actor(a).id, this.actor(a).powers?.[b]);
+            this.announce(kind === EV.POWER_CHARGING ? p.beginChargeLine : p.endChargeLine);
           }
           break;
+        case EV.REINFORCEMENTS_ARRIVED:
+          if (own) this.announce(powerNotifications(this.actor(a).id, this.actor(a).powers?.[b]).reinforcementsLine);
+          break;
+        case EV.PRODUCTION_CANCELLED:
+          if (own) this.announce(queueLine(this.actor(a).queue ?? 0, 'cancelled'));
+          break;
+        case EV.PRODUCTION_BLOCKED:
+          if (own) this.announce(queueLine(this.actor(a).queue ?? 0, 'blocked'));
+          break;
+        case EV.UNIT_REPAIR_STARTED:
+        case EV.UNIT_REPAIRED:
+          if (own) {
+            const lines = repairLines(this.actor(b).id);
+            this.announce(kind === EV.UNIT_REPAIR_STARTED ? lines.start : lines.finish);
+          }
+          break;
+        case EV.LEVEL_UP:
+          if (own) {
+            const l = levelUp(this.actor(a).id);
+            if (l) {
+              this.notify(l.sound);
+              if (l.text) this.announce(l.text);
+            }
+          }
+          break;
+        case EV.CRUSHED: {
+          const sound = crushSound(this.actor(a).id);
+          this.crushed.push({ ty: a, owner });
+          if (sound && (heard || owner === this.player || b === this.player)) this.queue(sound, x, y);
+          break;
         }
+        case EV.DAMAGE_HEAVY: {
+          const sound = damagedSound(this.actor(a).id);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.CLOAK_CHANGED: {
+          const sound = cloakSound(this.actor(a).id, b === 1);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.PARA_DROP: {
+          const sound = chuteSound(this.actor(a).id);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.PILOT_EJECTED: {
+          const sound = ejectChuteSound(this.actor(a).id);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.PARACHUTE_IMPACT: {
+          const sound = paraImpactSound(this.actor(a).id, b === 1);
+          if (sound && heard) this.queue(sound, x, y);
+          break;
+        }
+        case EV.REARMED: {
+          // OpenRA Rearmable: PlayToPlayer, the owner only.
+          const sound = rearmSound(this.actor(a).id);
+          if (sound && own) this.queue(sound, x, y);
+          break;
+        }
+        case EV.NEW_OPTIONS:
+          if (own) this.announce(PLAYER_LINES.newOptions);
+          break;
+        case EV.PRIMARY_BUILDING_SELECTED:
+          if (own) this.announce(primaryLine(this.actor(a).id));
+          break;
+        case EV.CAPTURED: {
+          const lines = captureLines(this.actor(a).id);
+          if (own) this.announce(lines.gained);
+          else if (b === this.player) this.announce(lines.lost);
+          break;
+        }
+        case EV.INFILTRATED: {
+          const lines = infiltrationLines(this.actor(a).id, this.actor(b >> 8).id);
+          if ((b & 0xff) === this.player) for (const key of lines.infiltrator) this.announce(key);
+          if (own) for (const key of lines.target) this.announce(key);
+          break;
+        }
+        case EV.TIME_LIMIT_WARNING:
+          // OpenRA TimeLimitManager: to everyone, spectators too.
+          if (owner === ALL_PLAYERS || own) this.announce(timeLimitLine(a));
+          break;
+        case EV.CRATE_COLLECTED:
+          if (own) {
+            const c = crateSounds(a);
+            if (c.sound) this.queue(c.sound, x, y);
+            this.announce(c.line);
+          }
+          break;
         default:
           break;
       }
@@ -290,8 +498,32 @@ export class Director {
     this.flush(view);
   }
 
+  /**
+   * A support power fired (OpenRA SupportPower.PlayLaunchSounds): its
+   * Launch speech and sound for the owner's allies, Incoming for everyone
+   * else (spectators hear neither), and the sound where it strikes.
+   */
+  powerActivated(code, ref, x, y, owner, heard) {
+    const provider = this.actor(ref >> 8);
+    const p = powerNotifications(provider.id, provider.powers?.[ref & 0xff]);
+    const own = owner === this.player;
+    if (this.player >= 0) {
+      const allied = own || this.allied(owner);
+      this.announce(allied ? p.launchLine : p.incomingLine);
+      const ui = allied ? p.launchSound : p.incomingSound;
+      if (ui) this.sink.effect({ synth: null, originals: [`${ui}.aud`] }, { gain: 1, pan: 0 });
+    }
+    const sound = powerSound(code, p);
+    if (POWER_KINDS[code] === 'NukePower') {
+      // Our own launch rumble: the silo is the player's (OpenRA plays no launch sound for RA's nuke).
+      if (own) this.sink.effect(sound, { gain: 0.9, pan: 0 });
+    } else if (heard) {
+      this.queue(sound, x, y);
+    }
+  }
+
   queue(sound, x, y) {
-    if (!sound.synth && sound.originals.length === 0) return;
+    if (!sound || (!sound.synth && sound.originals.length === 0)) return;
     this.batch.push({ sound, x, y });
   }
 

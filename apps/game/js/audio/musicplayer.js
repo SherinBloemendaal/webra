@@ -106,6 +106,8 @@ export function mountMusicPlayer(root, audio, opts = {}) {
       const title = el('span', { class: 'music-track-title', text: track.title });
       const length = el('span', { class: 'music-track-length' });
       const b = el('button', { type: 'button', class: 'music-track', 'aria-describedby': id('time') }, title, length);
+      // The Counterstrike and Aftermath tracks say which expansion they come from.
+      if (track.group && track.group !== 'Red Alert') b.title = `${track.title} (${track.group})`;
       b.addEventListener('click', () => audio.playTrack(i));
       return { item: el('li', {}, b), button: b, length, track };
     });

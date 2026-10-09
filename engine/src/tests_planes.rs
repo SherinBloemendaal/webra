@@ -458,3 +458,146 @@ fn smart_order_on_an_own_airfield_returns_the_plane_to_base() {
     run(&mut w, 1);
     assert_eq!(w.actors[q].air.phase, Phase::Flying);
 }
+
+// ---- Pilots (OpenRA EjectOnDeath) ---------------------------------------------------
+
+/// Set the EjectOnDeath success rate of `id` (the rules are the world's own copy).
+fn eject_rate(w: &mut World, id: &str, rate: i32) {
+    let t = ty(w, id) as usize;
+    w.rules.actors[t].abilities.eject_on_death.as_mut().expect("EjectOnDeath").success_rate = rate;
+}
+
+fn pilots(w: &World, owner: u8) -> Vec<usize> {
+    of_type(w, owner, "E1")
+}
+
+#[test]
+fn rules_give_aircraft_openra_eject_on_death() {
+    let w = game("soviet");
+    for id in ["YAK", "MIG", "HELI", "HIND", "TRAN", "MH60"] {
+        let e = w.rules.actors[ty(&w, id) as usize].abilities.eject_on_death.as_ref().unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(
+            (e.pilot.as_str(), e.success_rate, e.in_air, e.on_ground, e.allow_unsuitable_cell),
+            ("E1", 50, true, false, true),
+            "{id}"
+        );
+    }
+    assert!(w.rules.actors[ty(&w, "BADR") as usize].abilities.eject_on_death.is_none(), "BADR: -EjectOnDeath");
+    assert!(w.rules.actors[ty(&w, "1TNK") as usize].abilities.eject_on_death.is_none());
+}
+
+#[test]
+fn a_pilot_bails_out_of_a_downed_plane_and_lands_by_parachute() {
+    let mut w = game("soviet");
+    eject_rate(&mut w, "YAK", 100);
+    w.sound.set_enabled(true);
+    let (x, y) = open_ground(&w, 14);
+    let p = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 256);
+    let alt = w.actors[p].altitude;
+    w.damage(p, 100_000);
+    let pilot = pilots(&w, 0);
+    assert_eq!(pilot.len(), 1, "one pilot");
+    let e = pilot[0];
+    assert_eq!((w.actors[e].x, w.actors[e].y, w.actors[e].altitude), (x, y, alt), "where the plane was hit, at its height");
+    assert!(w.actors[e].air.parachute);
+    let ev = w.sound.take();
+    let ejected: Vec<&[i32]> =
+        ev.chunks(crate::sound_events::EVENT_STRIDE).filter(|c| c[0] == crate::sound_events::SoundEventKind::PilotEjected as i32).collect();
+    assert_eq!(ejected.len(), 1);
+    assert_eq!((ejected[0][1], ejected[0][4]), (ty(&w, "YAK") as i32, 0), "the plane's ChuteSound, for everyone near");
+    run(&mut w, 25 * 30);
+    assert!(!w.actors[p].alive, "the plane crashed");
+    assert_eq!(pilots(&w, 0), vec![e], "no second pilot where the wreck hits the ground");
+    let a = &w.actors[e];
+    assert!(a.alive && a.altitude == 0 && !a.air.parachute, "landed on open ground");
+}
+
+#[test]
+fn a_pilot_over_water_comes_down_but_drowns() {
+    let mut w = game("soviet");
+    eject_rate(&mut w, "HELI", 100);
+    let (x, y) = open_ground(&w, 14);
+    let (cx, cy) = w.cell_of(x, y);
+    for dy in -3..=3 {
+        for dx in -3..=3 {
+            let i = w.map.idx(cx + dx, cy + dy);
+            w.map.terrain[i] = crate::map::Terrain::Water;
+        }
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    w.pass_water = crate::flowfield::Passability::water(&w.map);
+    let h = w.spawn_unit(ty(&w, "HELI"), 0, x, y, 0);
+    w.actors[h].altitude = 1024;
+    w.sound.set_enabled(true);
+    w.damage(h, 1_000_000);
+    let pilot = pilots(&w, 0);
+    assert_eq!(pilot.len(), 1, "AllowUnsuitableCell: it still bails out");
+    let mut impact = Vec::new();
+    for _ in 0..25 * 10 {
+        w.step();
+        impact.extend(
+            w.sound
+                .take()
+                .chunks(crate::sound_events::EVENT_STRIDE)
+                .filter(|c| c[0] == crate::sound_events::SoundEventKind::ParachuteImpact as i32)
+                .map(|c| c[5]),
+        );
+    }
+    assert!(!w.actors[pilot[0]].alive, "Parachutable KilledOnImpassableTerrain");
+    assert_eq!(impact, vec![1], "the WaterImpactSound");
+}
+
+#[test]
+fn no_pilot_on_the_ground_by_chance_for_losers_or_over_bad_ground() {
+    let mut w = game("soviet");
+    let (x, y) = open_ground(&w, 14);
+    // A landed helicopter: EjectOnGround is false.
+    eject_rate(&mut w, "HELI", 100);
+    let landed = w.spawn_unit(ty(&w, "HELI"), 0, x, y, 0);
+    w.actors[landed].altitude = 0;
+    w.damage(landed, 1_000_000);
+    assert!(pilots(&w, 0).is_empty(), "no pilot at ground level");
+    // SuccessRate 0.
+    eject_rate(&mut w, "YAK", 0);
+    let p = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 256);
+    w.damage(p, 1_000_000);
+    assert!(pilots(&w, 0).is_empty(), "SuccessRate 0");
+    // The owner has lost.
+    eject_rate(&mut w, "YAK", 100);
+    w.players[0].defeated = true;
+    let p = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 256);
+    w.damage(p, 1_000_000);
+    assert!(pilots(&w, 0).is_empty(), "WinState Lost");
+    w.players[0].defeated = false;
+    // Without AllowUnsuitableCell, not over a cell the pilot cannot enter.
+    let t = ty(&w, "YAK") as usize;
+    w.rules.actors[t].abilities.eject_on_death.as_mut().unwrap().allow_unsuitable_cell = false;
+    let (cx, cy) = w.cell_of(x, y);
+    let ci = w.map.idx(cx, cy);
+    w.pass.set_blocked(ci, true);
+    let p = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 256);
+    w.damage(p, 1_000_000);
+    assert!(pilots(&w, 0).is_empty(), "unsuitable cell");
+    w.pass.set_blocked(ci, false);
+    let p = w.spawn_unit(ty(&w, "YAK"), 0, x, y, 256);
+    w.damage(p, 1_000_000);
+    assert_eq!(pilots(&w, 0).len(), 1, "a suitable one");
+}
+
+#[test]
+fn pilots_follow_the_simulations_random_numbers() {
+    let run_one = || {
+        let mut w = game("soviet");
+        let (x, y) = open_ground(&w, 14);
+        for _ in 0..60 {
+            let p = w.spawn_unit(ty(&w, "MIG"), 0, x, y, 256);
+            w.damage(p, 1_000_000);
+        }
+        let n = pilots(&w, 0).len();
+        (n, w.state_hash())
+    };
+    let (a, ha) = run_one();
+    let (b, hb) = run_one();
+    assert_eq!((a, ha), (b, hb), "same seed, same pilots");
+    assert!((15..=45).contains(&a), "about half of 60 (SuccessRate 50): {a}");
+}

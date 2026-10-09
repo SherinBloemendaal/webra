@@ -285,13 +285,40 @@ impl World {
         if ty as usize >= self.rules.actors.len() || !self.can_produce(player, ty) {
             return;
         }
+        // OpenRA ProductionQueue StartProduction: Buildable.BuildLimit counts owned and queued ones.
+        let count = count.max(1).min(self.build_limit_left(player, ty));
         let q = self.rules.actors[ty as usize].queue;
         let queue = &mut self.players[player as usize].queues[q as usize];
-        for _ in 0..count.max(1) {
+        for _ in 0..count {
             if queue.items.len() >= MAX_QUEUED {
                 return;
             }
-            queue.items.push(QueueItem { ty, total: 0, remaining: 0, paid: 0, slow: 0, done: false });
+            queue.items.push(QueueItem { ty, total: 0, remaining: 0, paid: 0, slow: 0, done: false, paused: false });
+        }
+    }
+
+    /// How many more of `ty` `player` may queue under its Buildable.BuildLimit
+    /// (owned plus queued; `i32::MAX` without a limit or with the "all tech" cheat).
+    pub fn build_limit_left(&self, player: u8, ty: u16) -> i32 {
+        let limit = self.rules.actors[ty as usize].build_limit;
+        if limit <= 0 || self.players[player as usize].dev.all_tech {
+            return i32::MAX;
+        }
+        let q = self.rules.actors[ty as usize].queue as usize;
+        let queued = self.players[player as usize].queues[q].items.iter().filter(|it| it.ty == ty).count() as i32;
+        let owned = self.actors.iter().filter(|a| a.alive && a.owner == player && a.ty == ty).count() as i32;
+        (limit - queued - owned).max(0)
+    }
+
+    /// Put the first queued `ty` on hold or resume it (OpenRA PauseProduction:
+    /// a paused first item holds up its queue). Finished items are not paused.
+    pub fn pause_production(&mut self, player: u8, ty: u16, paused: bool) {
+        if ty as usize >= self.rules.actors.len() || player as usize >= self.players.len() {
+            return;
+        }
+        let q = self.rules.actors[ty as usize].queue as usize;
+        if let Some(it) = self.players[player as usize].queues[q].items.iter_mut().find(|it| it.ty == ty) {
+            it.paused = paused && !it.done;
         }
     }
 
@@ -306,6 +333,9 @@ impl World {
             let item = queue.items.remove(pos);
             self.refund(player, item.paid);
             self.note_production_refund(player, item.paid);
+            if pos == 0 {
+                self.sound.unblock(player, q as usize);
+            }
         }
     }
 
@@ -324,6 +354,7 @@ impl World {
             let q = QueueType::from_index(qi);
             let producer = !q.is_structure() || self.has_producer(player, q);
             // Back to front, so removing an item does not shift the ones still to check.
+            let mut cancelled = None;
             for i in (0..self.players[player as usize].queues[qi].items.len()).rev() {
                 let ty = self.players[player as usize].queues[qi].items[i].ty;
                 if producer && self.availability(player, ty).enabled {
@@ -332,6 +363,14 @@ impl World {
                 let item = self.players[player as usize].queues[qi].items.remove(i);
                 self.refund(player, item.paid);
                 self.note_production_refund(player, item.paid);
+                cancelled = Some(ty);
+                if i == 0 {
+                    self.sound.unblock(player, qi);
+                }
+            }
+            // OpenRA CancelUnbuildableItems: one CancelledAudio for the queue.
+            if let Some(ty) = cancelled {
+                self.sound.push(SoundEventKind::ProductionCancelled, ty as i32, 0, 0, player, 0);
             }
         }
     }
@@ -340,6 +379,8 @@ impl World {
         if self.players[player as usize].defeated {
             return;
         }
+        let tick = self.tick;
+        self.sound.flush_new_options(player, tick);
         self.cancel_unbuildable(player);
         for qi in 0..crate::rules::QUEUE_COUNT {
             let q = QueueType::from_index(qi);
@@ -364,6 +405,8 @@ impl World {
                 if q.is_structure() {
                     continue; // waiting for placement
                 }
+            } else if item.paused {
+                continue; // on hold: the queue waits
             } else {
                 if item.total == 0 {
                     // More factories of the same kind build faster (BuildTimeSpeedReduction).
@@ -405,6 +448,10 @@ impl World {
             if self.spawn_produced(player, first_ty) {
                 self.players[player as usize].queues[qi].items.remove(0);
                 self.note_built(player, first_ty);
+                self.sound.unblock(player, qi);
+            } else if !fast_build {
+                // OpenRA: BlockedAudio once while the unit cannot leave (not for instant builds).
+                self.sound.push_blocked(player, qi, first_ty);
             }
         }
     }
@@ -566,6 +613,8 @@ impl World {
         if !ready || !self.can_produce(player, ty) || !self.can_place(player, ty, cx, cy) {
             return false;
         }
+        // OpenRA PlaceBuilding: NewOptions when the placement adds buildable items (sound only).
+        let options_before = self.sound.enabled().then(|| self.buildable_count(player));
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
         self.players[player as usize].queues[qi].items.remove(0);
         self.note_built(player, ty);
@@ -585,7 +634,25 @@ impl World {
         }
         self.refresh_tokens();
         self.update_power();
+        if options_before.is_some_and(|n| self.buildable_count(player) > n) {
+            let tick = self.tick;
+            self.sound.note_new_options(player, tick);
+        }
         true
+    }
+
+    /// How many actor types `player` can produce now (OpenRA PlaceBuilding
+    /// GetNumBuildables: the BuildableItems of every queue, which are empty
+    /// while the queue has no producer). Sound only.
+    fn buildable_count(&self, player: u8) -> usize {
+        let producers: Vec<bool> = (0..crate::rules::QUEUE_COUNT).map(|q| self.has_producer(player, QueueType::from_index(q))).collect();
+        (0..self.rules.actors.len())
+            .filter(|&t| {
+                let info = &self.rules.actors[t];
+                let never = info.prerequisites.iter().any(|pr| self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+                !never && producers[info.queue as usize] && self.can_produce(player, t as u16)
+            })
+            .count()
     }
 
     /// OpenRA LineBuild: a wall piece placed in line with another piece of the
