@@ -701,7 +701,8 @@ Serialized size at most 32 KiB.
     "gameScale": "auto",           // "auto" | number 0.5..3 (base zoom of the battlefield; GAME_SCALE_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
     "graphics": "webra",           // "webra" | "original"
-    "hotkeys": { "attackMove": ["A"], "stop": [] }
+    "hotkeys": { "attackMove": ["A"], "stop": [] },
+    "attackMoveTipSeen": false     // the one-time attack-move tip was shown (apps/game/js/hints.js)
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
