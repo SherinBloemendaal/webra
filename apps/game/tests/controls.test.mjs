@@ -289,6 +289,29 @@ test('control groups: add the selection to a group, remove actors from their gro
 
 // ---- gamemenu.js --------------------------------------------------------------------
 
+test('control groups: entries for the selection box numbers, versions only on real changes, prune', () => {
+  const g = new ControlGroups();
+  const v0 = g.version;
+  g.assign('1', [10, 11]);
+  g.assign('0', [12]);
+  const { ids, groups } = g.entries();
+  assert.ok(ids instanceof Uint32Array && groups instanceof Uint8Array);
+  assert.deepEqual([...ids], [10, 11, 12]);
+  assert.deepEqual([...groups], [1, 1, 0], 'group 0 is the 0 key (OpenRA ControlGroupSelect10)');
+  const v1 = g.version;
+  assert.ok(v1 > v0);
+  g.assign('1', [10, 11]);
+  g.members('1');
+  g.remove([99]);
+  assert.equal(g.version, v1, 'the same members again: no change for the engine');
+  g.prune((list) => list.filter((id) => id !== 11));
+  assert.ok(g.version > v1, 'a dead member is a change');
+  assert.deepEqual([...g.entries().ids], [10, 12]);
+  g.prune(() => []);
+  assert.equal(g.entries().ids.length, 0, 'every member gone: no groups left');
+  assert.equal(g.has('1') || g.has('0'), false);
+});
+
 test('game menu: single player pauses while open, online never pauses', () => {
   const log = [];
   const sp = new MenuState({ online: false, onChange: (open, paused) => log.push(['sp', open, paused]) });

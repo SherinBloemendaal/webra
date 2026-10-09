@@ -612,6 +612,22 @@ impl Game {
         self.paths.len() / paths::LINE_FLOATS
     }
 
+    /// Every line the map shows this frame: the rally lines of the selected
+    /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
+    /// `paths` ("Show unit paths"), the routes `build_paths` draws. Returns
+    /// the segment count; read them through `path_ptr`. A rally line's red
+    /// channel below zero selects its owner's team colour (shaders/line.wgsl).
+    pub fn build_lines(&mut self, player: u8, alpha: f32, paths: bool) -> usize {
+        let mut route = Vec::new();
+        if paths {
+            self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut route);
+        }
+        self.paths.clear();
+        self.world.build_rally_lines(player, &self.selection, &mut self.paths);
+        self.paths.extend_from_slice(&route);
+        self.paths.len() / paths::LINE_FLOATS
+    }
+
     pub fn path_ptr(&self) -> *const f32 {
         self.paths.as_ptr()
     }
@@ -647,6 +663,14 @@ impl Game {
     /// reads it, so the state hash is the same either way.
     pub fn set_sprite_poses(&mut self, on: bool) {
         self.world.render_opts.poses = on;
+    }
+
+    /// The local player's control groups, for the numbers on their selection
+    /// boxes (overlays.rs): `ids[k]` is in group `groups[k]` (0..=9). Local
+    /// UI state like the selection: the simulation never reads it, so the
+    /// state hash is the same either way.
+    pub fn set_control_groups(&mut self, ids: Vec<u32>, groups: Vec<u8>) {
+        self.world.render_opts.set_control_groups(&ids, &groups);
     }
 
     /// Selected ids that are still alive.

@@ -240,7 +240,7 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Double click | Select all units of that type on screen |
 | Ctrl + double click | Select all units of that type on the map |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
-| Factory selected + left click on the ground | Set its rally point |
+| Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |
 | Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
 | Radar: left click or drag, right click | Move the camera there; order the selected units there |
 | Mouse wheel | Zoom |
@@ -297,7 +297,7 @@ Camera, control groups, chat, music and spectators:
 | Alt + Shift + Q, Alt + Shift + W, Ctrl + E, Ctrl + R | Record camera bookmark 1..4 (OpenRA: Ctrl + Q/W/E/R) |
 | Shift + = | Hide the interface (again: show it); Alt + Shift + = also hides the cursor |
 | 1..9, 0 | Select a control group; press twice quickly to centre the camera on it |
-| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time) |
+| Ctrl + 1..9, 0 (Cmd on macOS) | Create a control group from the selection (a unit is in one group at a time; selected units and structures show their group number in the top left corner of their selection box, like OpenRA) |
 | Ctrl + Shift + 1..9, 0 | Add the selection to a control group |
 | Shift + 1..9, 0 | Add a control group to the selection |
 | Alt + 1..9, 0 | Jump to a control group |

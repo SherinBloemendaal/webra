@@ -173,6 +173,43 @@ test('unit paths: route lines for selected own units only', () => {
   assert.equal(game.build_paths(0, 1), 0, 'nothing selected');
 });
 
+test('rally lines and control group numbers: local UI state drawn by the engine, outside the state hash', () => {
+  const game = newGame();
+  const [mcv] = ownUnits(game);
+  game.deploy(0, Uint32Array.from([mcv]));
+  ticks(game, 2);
+  const [yard] = Array.from(game.base_actors(0));
+  assert.equal(actor(game, yard).type, 'FACT');
+  const [sx, sy] = game.start_position(0);
+  game.set_rally(0, yard, sx + 5 * 24, sy + 6 * 24);
+  ticks(game, 1);
+  const hash = game.state_hash();
+  // Not selected: no rally line.
+  game.set_selection(new Uint32Array());
+  assert.equal(game.build_lines(0, 1, false), 0);
+  game.set_selection(Uint32Array.from([yard]));
+  assert.equal(game.build_lines(0, 1, false), 1, 'the rally line of the selected structure');
+  const line = new Float32Array(wasm.memory.buffer, game.path_ptr(), 8);
+  assert.ok(Math.abs(line[2] - (sx + 5 * 24)) < 1 && Math.abs(line[3] - (sy + 6 * 24)) < 1, 'it ends on the rally point');
+  assert.equal(line[4], -1, 'in player 0\'s team colour (shaders/line.wgsl)');
+  assert.equal(game.build_lines(1, 1, false), 0, 'not for the enemy');
+  // Control groups change what is drawn only.
+  const plates = () => {
+    game.build_render(0, 1, 0, 0, 64 * 24, 64 * 24);
+    const r = new Float32Array(wasm.memory.buffer, game.rect_ptr(), game.rect_count() * 8);
+    let n = 0;
+    for (let k = 0; k < r.length; k += 8) if (r[k + 2] === 5 && r[k + 3] === 7 && r[k + 4] === 0 && r[k + 7] > 0.7) n++;
+    return n;
+  };
+  assert.equal(plates(), 0, 'no group yet');
+  game.set_control_groups(Uint32Array.from([yard]), Uint8Array.from([4]));
+  assert.equal(plates(), 1, 'the selected yard shows its group number');
+  game.set_selection(new Uint32Array());
+  assert.equal(plates(), 0, 'only while selected');
+  game.set_selection(Uint32Array.from([yard]));
+  assert.equal(game.state_hash(), hash, 'selection, rally line and groups are not simulation state');
+});
+
 test('orders: smart move and stop', () => {
   const game = newGame({ startingUnits: 'light' });
   const units = ownUnits(game);

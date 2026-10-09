@@ -102,6 +102,8 @@ export class Input {
     this.selection = [];
     this.ownUnits = null;
     this.groups = new ControlGroups();
+    /** `groups.version` the engine last got (`syncGroups`). */
+    this.groupsSent = 0;
     this.bookmarks = new Map(); // slot -> { x, y, zoom } (view centre)
     this.edgeScroll = null; // { dx, dy, blocked } while the mouse scrolls the view
     this.suspended = false; // game menu open: no input, no scrolling
@@ -206,6 +208,9 @@ export class Input {
   }
 
   refreshSelection() {
+    // Grouped actors that died (or changed owner) leave their group, and their number goes.
+    this.groups.prune((list) => this.ownAlive(list));
+    this.syncGroups();
     const alive = Array.from(this.game.selection());
     if (alive.length !== this.selection.length) {
       this.selection = alive;
@@ -732,9 +737,21 @@ export class Input {
 
   // ---- Control groups (OpenRA ControlGroupsWidget, js/controlgroups.js) -------------
 
+  /**
+   * Hand the groups to the engine when they changed, for the numbers on the
+   * selection boxes (engine/src/overlays.rs). Local UI state, like the selection.
+   */
+  syncGroups() {
+    if (this.groups.version === this.groupsSent) return;
+    this.groupsSent = this.groups.version;
+    const { ids, groups } = this.groups.entries();
+    this.game.set_control_groups(ids, groups);
+  }
+
   /** Select group `key`; pressed twice quickly, also centre the camera on it. */
   groupSelect(key) {
     const { ids, center } = this.groups.recall(key, performance.now(), (list) => this.ownAlive(list));
+    this.syncGroups();
     this.setSelection(ids);
     if (center) this.centerOnUnits(ids);
   }
@@ -748,23 +765,27 @@ export class Input {
   groupCreate(key) {
     const ids = this.selectedOwn();
     if (ids.length) this.groups.assign(key, ids);
+    this.syncGroups();
   }
 
   /** Add the selection to group `key`. */
   groupAddTo(key) {
     const ids = this.selectedOwn();
     if (ids.length) this.groups.add(key, ids);
+    this.syncGroups();
   }
 
   /** Add group `key` to the selection. */
   groupCombine(key) {
     const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    this.syncGroups();
     if (ids.length) this.setSelection(this.selection.concat(ids));
   }
 
   /** Centre the camera on group `key` without selecting it. */
   groupJump(key) {
     const ids = this.groups.members(key, (list) => this.ownAlive(list));
+    this.syncGroups();
     if (ids.length) this.centerOnUnits(ids);
   }
 
@@ -941,7 +962,10 @@ export class Input {
       reg(`controlGroupCombineWith${nn}`, `ControlGroupCombineWith${nn}`, () => this.groupCombine(key));
       reg(`controlGroupJumpTo${nn}`, `ControlGroupJumpTo${nn}`, () => this.groupJump(key));
     }
-    reg('removeFromControlGroup', 'RemoveFromControlGroup', () => this.groups.remove(this.selectedOwn()));
+    reg('removeFromControlGroup', 'RemoveFromControlGroup', () => {
+      this.groups.remove(this.selectedOwn());
+      this.syncGroups();
+    });
     return () => offs.forEach((off) => off());
   }
 

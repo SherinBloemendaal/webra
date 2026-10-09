@@ -379,7 +379,8 @@ export class SimCore {
       rectCount = g.rect_count();
       rects = { ptr: g.rect_ptr(), len: rectCount * 8 };
     }
-    const lineCount = req.paths ? g.build_paths(req.view, alpha) : 0;
+    // Rally lines of selected structures, plus the unit routes with "Show unit paths".
+    const lineCount = g.build_lines(req.view, alpha, !!req.paths);
     const lines = { ptr: lineCount ? g.path_ptr() : 0, len: lineCount * 8 };
     // Heat shimmer over hot vehicles in view (4 floats each) and the sky
     // (weather_json, a short string): on both instance paths.
