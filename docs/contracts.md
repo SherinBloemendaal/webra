@@ -316,9 +316,20 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/maps/:id` | the map JSON |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited) |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
+| any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
+
+Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
+`Sec-Fetch-Site` same-origin or absent, and the header `X-WebRA-CSRF: 1`
+(accounts API, section 1.1). With the site setting `onlineRequiresAccount`
+(on by default), `POST /api/sessions`, `POST /api/maps` and joining over the
+WebSocket need a signed-in, active, unbanned account (accounts API, section
+7); the session cookie travels with the WebSocket upgrade.
 
 `/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
-one-click install of the original content. The request must carry
+one-click install of the original content. It needs a signed-in, active
+account with the `content_autoinstall` flag (or an admin) and the
+`contentRelay` site setting (401, 403 `account_inactive` or
+`relay_forbidden` otherwise). The request must carry
 `X-WebRA-Content: 1`, come from the game page (`Origin` absent or ours,
 `Sec-Fetch-Site` absent or `same-origin`) and stay within 3 downloads per
 hour per IP (D1 quota table, IP as a salted hash; 429 with `Retry-After`).
@@ -338,7 +349,7 @@ Client to server:
 
 | t | Fields | When |
 |---|--------|------|
-| `hello` | `protocol, version, name, password?, hostKey?, spectate?, rejoin?: { client, key }` | first message |
+| `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
 | `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?` | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
@@ -353,16 +364,22 @@ Client to server:
 | `hash` | `tick, hash` | in game, every 25 ticks |
 | `leave` | | any time |
 
-Server to client: `welcome {you, hostId, session, role, key?}`, `lobby {slots,
-options, map, hostId, spectators: [{client, name}], maxSpectators}`, `chat
+Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {slots,
+options, map, hostId, spectators: [{client, name, account?}], maxSpectators}`
+(human slots and spectators carry `account: true` when the name comes from a
+signed-in account), `chat
 {from, text}`, `start {seed, options, map, players, delay}`, `frame {tick,
 orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 3
+{player, client, name, tick}`, `error {code, message}`. Protocol version 5
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello`.
+at `hello`. Version 5 added accounts: the optional hello `name`, the welcome
+`name`, the `account` marks, one place per account and session, rejoin keys
+bound to their account, and the error codes `account_required`,
+`account_inactive`, `banned` and `ip_banned` (sent in answer to `hello`, or
+when a ban drops a connected member with left reason `removed`).
 
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
@@ -650,8 +667,9 @@ game menu; the website's `/changelog` page shows the same file. The build
 fails when CHANGELOG.md has no release for the version in package.json. Deploy: GitHub Actions `deploy.yml` runs `wrangler deploy` from
 `apps/server` on every push to `main` after CI passes, using the repository
 secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Storage: Durable
-Objects (SQLite) for sessions, D1 database `webra` for maps and the session
-directory.
+Objects (SQLite) for sessions, D1 database `webra` for maps, the session
+directory, accounts and everything around them (docs/accounts-api.md). A
+daily cron trigger runs the accounts retention job.
 
 ## 7. Replays and saves
 

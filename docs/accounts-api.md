@@ -71,7 +71,7 @@ body. Errors always look like this:
 | 403 | `ip_banned` | The client's IP address is banned |
 | 403 | `registration_closed` | Signup is closed in the site settings |
 | 403 | `method_disabled` | That login method is switched off in the site settings |
-| 403 | `account_required` | The action needs an active account (online play, uploads, relay) |
+| (WebSocket) | `account_required` | Online play needs a signed-in account; HTTP routes answer `401 unauthenticated` instead |
 | 403 | `relay_forbidden` | The content relay needs the `content_autoinstall` flag (or admin) and the relay switched on |
 | 404 | `not_found` | No such endpoint or object |
 | 405 | `bad_message` | Method not allowed (`Allow` header lists the allowed ones) |
@@ -166,9 +166,11 @@ live session.
 
 ### 2.4 Sessions and cookies
 
-- **Session cookie:** `__Host-webra_session` on HTTPS (production), and
-  `webra_session` on plain-HTTP local development (where `__Host-` and
-  `Secure` cannot apply). Attributes: `HttpOnly; Secure; SameSite=Lax;
+- **Session cookie:** `__Host-webra_session`, except for plain HTTP to a
+  local development host (`localhost`, `127.0.0.1`, `[::1]`), where it is
+  `webra_session` without `Secure` (`__Host-` and `Secure` cannot apply
+  there). Plain HTTP to any other host still gets the Secure `__Host-`
+  cookie, which browsers refuse to store: sign-in fails closed. Attributes: `HttpOnly; Secure; SameSite=Lax;
   Path=/; Max-Age=2592000` (the `Secure` attribute is left out only on plain
   HTTP). The value is 32 random bytes, base64url (43 characters). The server
   stores only its SHA-256.
@@ -923,6 +925,8 @@ Per IP limits key on a salted hash of the address (never the address).
 - The first admin is made with `node tools/promote-admin.mjs <username>
   [--local | --remote]` (docs/deploy.md): it sets `role = 'admin'` and
   `status = 'active'` for an existing account through `wrangler d1 execute`.
+- Local development runs `wrangler dev --local-upstream localhost:8799` so
+  the request host stays `localhost` (docs/deploy.md).
 - Under `wrangler dev` started with `--var WEBRA_DEV_ROUTES:1`, the test-only
   endpoint `POST /api/dev/promote` `{ "username", "role" }` does the same for
   the end-to-end test. It answers `404 not_found` unless that variable is
