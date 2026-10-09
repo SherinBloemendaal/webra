@@ -52,7 +52,7 @@ pub struct RenderOptions {
 
 impl Default for RenderOptions {
     fn default() -> RenderOptions {
-        RenderOptions { hover: NONE, health_bars: HealthBars::Selected, building_overlays: Vec::new(), poses: false }
+        RenderOptions { hover: NONE, health_bars: HealthBars::Damaged, building_overlays: Vec::new(), poses: false }
     }
 }
 
@@ -238,7 +238,10 @@ impl World {
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
             let info = &self.rules.actors[a.ty as usize];
-            if !a.alive || a.kind == Kind::Mine || info.is_wall() || (opts.health_bars == HealthBars::Damaged && a.hp >= info.hp) {
+            // Anything damaged gets a bar (walls too); "all" adds undamaged
+            // actors except wall pieces, which would cover every wall line.
+            let damaged = a.hp < info.hp;
+            if !a.alive || a.kind == Kind::Mine || (!damaged && (opts.health_bars == HealthBars::Damaged || info.is_wall())) {
                 continue;
             }
             bar(i, &mut shown, sink);

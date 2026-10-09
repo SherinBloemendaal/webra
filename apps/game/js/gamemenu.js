@@ -342,7 +342,7 @@ export class GameMenu {
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
-      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows health bars only for selected and hovered units.'),
+      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );

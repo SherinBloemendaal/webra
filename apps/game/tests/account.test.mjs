@@ -220,13 +220,13 @@ test('sync: offline changes are kept across a reload and uploaded later; a confl
   a.sync.stop({ forget: false });
   // Meanwhile another device changed healthBars too (a conflict) and voices not.
   const v = server.settingsDocs.get(user.id).version;
-  server.settingsDocs.set(user.id, { version: v + 1, updatedAt: 0, settings: { ...server.settingsDocs.get(user.id).settings, game: { ...server.settingsDocs.get(user.id).settings.game, healthBars: 'damaged', showUnitPaths: true } } });
+  server.settingsDocs.set(user.id, { version: v + 1, updatedAt: 0, settings: { ...server.settingsDocs.get(user.id).settings, game: { ...server.settingsDocs.get(user.id).settings.game, healthBars: 'off', showUnitPaths: true } } });
   server.offline = false;
   // A reload: new registry and sync over the same storage. The player keeps this device's choice.
   const b = device(server, user, { storage, syncStorage, onConflict: () => 'local' });
   await b.sync.start(user);
   assert.equal(b.conflicts.length, 1);
-  assert.deepEqual(b.conflicts[0].conflicts.map((c) => `${c.group}.${c.key}:${c.local}/${c.remote}`), ['game.healthBars:all/damaged']);
+  assert.deepEqual(b.conflicts[0].conflicts.map((c) => `${c.group}.${c.key}:${c.local}/${c.remote}`), ['game.healthBars:all/off']);
   const doc = server.settingsDocs.get(user.id).settings;
   assert.equal(doc.game.healthBars, 'all');
   assert.equal(doc.audio.voices, 0.1, 'the offline change went up');
