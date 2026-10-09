@@ -13,6 +13,7 @@
 import { comboFromEvent, formatCombo, isMac } from './hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
+import { segmented, slider as createSlider, toggle as createToggle } from './ui/controls.js';
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -301,51 +302,47 @@ export class GameMenu {
     c.append(el('h1', null, 'Settings'));
     const slider = (key, text) => {
       const spec = SCHEMA[key];
-      const row = el('label', 'game-menu-row');
-      const name = el('span', null, text);
-      const input = el('input', 'game-menu-range');
-      input.type = 'range';
-      input.min = String(spec.min);
-      input.max = String(spec.max);
-      input.step = '0.25';
-      input.value = String(s.get(key));
-      const out = el('output', 'game-menu-value', speedLabel(s.get(key)));
-      input.addEventListener('input', () => {
-        const v = s.set(key, Number(input.value));
-        out.textContent = speedLabel(v);
+      const control = createSlider({
+        id: `game-menu-${key}`,
+        label: text,
+        min: spec.min,
+        max: spec.max,
+        step: 0.25,
+        value: s.get(key),
+        format: speedLabel,
+        rowClass: 'game-menu-row',
+        onInput: (v) => {
+          control.output.textContent = speedLabel(s.set(key, v));
+        },
       });
-      row.append(name, input, out);
-      return row;
+      return control.row;
     };
-    const check = (key, text) => {
-      const row = el('label', 'game-menu-row');
-      const input = el('input', 'game-menu-check');
-      input.type = 'checkbox';
-      input.checked = !!s.get(key);
-      input.addEventListener('change', () => s.set(key, input.checked));
-      row.append(el('span', null, text), input);
-      return row;
-    };
-    const choice = (key, text, labels) => {
-      const row = el('label', 'game-menu-row');
-      const select = el('select', 'game-menu-select');
-      for (const option of SCHEMA[key].options) {
-        const o = el('option', null, labels[option] ?? option);
-        o.value = option;
-        select.append(o);
+    const check = (key, text) =>
+      createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) }).row;
+    const choice = (key, text, labels, hint) => {
+      const id = `game-menu-${key}`;
+      const group = segmented({
+        name: id,
+        label: text,
+        value: s.get(key),
+        describedBy: hint ? `${id}-hint` : undefined,
+        options: SCHEMA[key].options.map((option) => ({ value: option, label: labels[option] ?? option })),
+        onChange: (v) => group.set(s.set(key, v)),
+      });
+      const row = el('div', 'ui-row ui-row-choice game-menu-row');
+      row.append(el('span', 'ui-label', text), group.root);
+      if (hint) {
+        const note = el('p', 'ui-hint', hint);
+        note.id = `${id}-hint`;
+        row.append(note);
       }
-      select.value = s.get(key);
-      select.addEventListener('change', () => {
-        select.value = s.set(key, select.value);
-      });
-      row.append(el('span', null, text), select);
       return row;
     };
     c.append(
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
-      choice('healthBars', 'Always show health bars', { off: 'Off (selected and hovered)', damaged: 'Damaged units', all: 'All units' }),
+      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows health bars only for selected and hovered units.'),
       slider('pixelRatioCap', 'Max resolution (pixel ratio)'),
       check('lowQuality', 'Low quality (faster on phones)'),
     );

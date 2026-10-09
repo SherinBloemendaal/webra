@@ -968,26 +968,6 @@
   color: #fff;
 }
 
-#menu .lobby-check {
-  appearance: none;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  background: var(--l-field);
-  border: 1px solid var(--l-edge);
-  border-top-color: var(--ui-edge);
-  border-left-color: var(--ui-edge);
-  border-radius: 1px;
-  cursor: pointer;
-}
-
-#menu .lobby-check:checked {
-  background: var(--l-gold);
-  border-color: var(--l-gold-dim);
-  box-shadow: inset 0 0 0 3px var(--l-field);
-}
-
 /* Shown while the "Debug menu" (cheats) option is on. */
 #menu .lobby-cheats-warning {
   margin: 10px 0 0;

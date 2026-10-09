@@ -135,13 +135,8 @@ body.touch #sidebar .sb-tip {
 
 body.touch .menu-card button,
 body.touch .menu-card select,
-body.touch .menu-card input:not([type='checkbox']):not([type='range']) {
+body.touch .menu-card input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']) {
   min-height: 44px;
-}
-
-body.touch .menu-card input.game-menu-check {
-  width: 28px;
-  height: 28px;
 }
 
 /* The Sound button and the version tag would sit on the action bar: the game

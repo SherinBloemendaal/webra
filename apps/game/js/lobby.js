@@ -51,6 +51,7 @@ import {
 import { defaultRegistry } from './registry.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
+import { switchInput } from './ui/controls.js';
 
 // Game option rows: the key in options, its label, tooltip and choices.
 const SELECT_OPTIONS = [
@@ -948,8 +949,7 @@ export class Lobby {
     for (const opt of TOGGLE_OPTIONS) {
       const row = el('label', 'lobby-toggle');
       row.title = opt.title;
-      const box = el('input', 'lobby-check');
-      box.type = 'checkbox';
+      const box = switchInput();
       box.addEventListener('change', () => {
         this.state[opt.key] = box.checked;
         this.renderCheats();

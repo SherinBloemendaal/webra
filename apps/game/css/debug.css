@@ -87,14 +87,14 @@
 .debug-check {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 22px;
+  gap: 8px;
+  min-height: 26px;
   cursor: pointer;
 }
 
+/* The switches are the compact variant of css/controls.css. */
 .debug-check input {
   margin: 0;
-  accent-color: var(--ui-accent);
 }
 
 .debug-actions {

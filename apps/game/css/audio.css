@@ -54,32 +54,6 @@
   gap: 8px;
 }
 
-.audio-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.2em;
-  align-items: center;
-  gap: 10px;
-}
-
-.audio-row output {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.audio-check {
-  grid-template-columns: auto 1fr;
-}
-
-.menu-card .audio-check label {
-  margin: 0;
-}
-
-.menu-card .audio-row input[type='range'] {
-  width: 100%;
-  padding: 0;
-}
-
 .audio-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -134,22 +108,4 @@
 
 button.danger {
   color: var(--ui-bad);
-}
-
-@media (max-width: 480px) {
-  .audio-row {
-    grid-template-columns: 1fr 3.2em;
-  }
-
-  .audio-row label {
-    grid-column: 1 / -1;
-  }
-
-  .audio-check {
-    grid-template-columns: auto 1fr;
-  }
-
-  .audio-check label {
-    grid-column: auto;
-  }
 }
