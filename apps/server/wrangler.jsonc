@@ -12,7 +12,9 @@
     "directory": "../../dist",
     "binding": "ASSETS",
     // The Worker answers the API and gates the game: /play and /play/* are
-    // served only to accounts that may play (src/playgate.js).
+    // served only to accounts that may play (src/playgate.js). Patterns
+    // match the raw path; other spellings of game paths are redirected by
+    // Static Assets to the canonical, gated path (docs/security.md).
     "run_worker_first": ["/api/*", "/play", "/play/*"],
     "not_found_handling": "404-page"
   },

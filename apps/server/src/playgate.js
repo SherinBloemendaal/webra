@@ -27,8 +27,56 @@ export const PLAY_CACHE_CONTROL = 'private, max-age=0, must-revalidate';
 const STAFF = new Set(['admin', 'moderator']);
 const DEFAULT_RETURN = '/play/';
 
-export function isPlayPath(pathname) {
+/** /play or a path under it, exactly as the canonical URL spells it. */
+function isCanonicalPlayPath(pathname) {
   return pathname === '/play' || pathname.startsWith('/play/');
+}
+
+/** Percent-decode `s`; malformed or non-UTF-8 escapes (overlong forms) decode byte by byte, never to `/`. */
+function decodeOnce(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s.replace(/%([0-9a-fA-F]{2})/g, (m, hex) => {
+      const c = parseInt(hex, 16);
+      return c < 0x80 ? String.fromCharCode(c) : m;
+    });
+  }
+}
+
+/**
+ * The path segments of `pathname` the way any layer might read it:
+ * percent escapes decoded (repeatedly, so double encoding counts too),
+ * backslashes as slashes, empty segments dropped, `;params` and trailing
+ * dots or spaces of a segment ignored, dot segments resolved, lower case.
+ */
+export function normalizedSegments(pathname) {
+  let s = String(pathname);
+  for (let i = 0; i < 4; i++) {
+    const next = decodeOnce(s);
+    if (next === s) break;
+    s = next;
+  }
+  const out = [];
+  for (let seg of s.replace(/\\/g, '/').split('/')) {
+    seg = seg.split(';')[0].replace(/[.\s]+$/, (m) => (seg === '.' || seg === '..' ? m : '')).toLowerCase();
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') out.pop();
+    else out.push(seg);
+  }
+  return out;
+}
+
+/**
+ * Whether a request is for the game: its path, normalized as above, is
+ * /play or under it. Deliberately wider than the paths Workers Static Assets
+ * serves (it redirects every non-canonical spelling to the canonical one,
+ * which is gated, and is case-sensitive), so no spelling of a game path
+ * reaches the files around the gate. Refusing a path that would only have
+ * been a 404 or a redirect costs nothing.
+ */
+export function isPlayPath(pathname) {
+  return normalizedSegments(pathname)[0] === 'play';
 }
 
 /**
@@ -46,7 +94,7 @@ export function isNavigation(request) {
 /** Where the sign-in page sends the player back to: this game path (and query), or /play/. */
 export function returnPathFor(url) {
   const target = url.pathname + url.search;
-  return isPlayPath(url.pathname) && isReturnPath(target) ? target : DEFAULT_RETURN;
+  return isCanonicalPlayPath(url.pathname) && isReturnPath(target) ? target : DEFAULT_RETURN;
 }
 
 function appendVary(headers, name) {

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Browser, Clock, makeEnv, ORIGIN, promote, setSite, signup } from './accounts-harness.mjs';
 import { PASS_TTL_S, passKey, signPass, verifyPass, sidOfToken, passMatchesSession } from '../src/accounts/playpass.js';
-import { isNavigation, PLAY_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
+import { isNavigation, isPlayPath, normalizedSegments, PLAY_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
 import { PLAY_HEADERS, SITE_HEADERS } from '../src/static-headers.js';
 import { hmacSha256, toBase64Url } from '../src/crypto.js';
 
@@ -126,6 +126,80 @@ test('redirect target: only this game path, never another origin', () => {
   assert.equal(at(`/play/${'x'.repeat(300)}`), '/play/', 'too long: the default');
   assert.equal(at('/play/"quoted"'), '/play/%22quoted%22');
   assert.equal(at('/elsewhere'), '/play/');
+});
+
+// ---- Path variants ----------------------------------------------------------------------------
+
+/** Spellings of game paths that some layer could read as /play/...: every one is gated. */
+const GATED_VARIANTS = [
+  '/play',
+  '/play/',
+  '/play/js/main.js',
+  '/%70lay/',
+  '/%70lay/index.html',
+  '/%70lay/js/main.js',
+  '/%70lay/pkg/webra_sim_bg.wasm',
+  '/pl%61y/js/main.js',
+  '/%50LAY/js/main.js',
+  '/%2570lay/js/main.js',
+  '/play%2Findex.html',
+  '/play%2fjs%2fmain.js',
+  '/%2fplay/js/main.js',
+  '/%2Fplay%2Fjs%2Fmain.js',
+  '//play/',
+  '//play/js/main.js',
+  '///play//js//main.js',
+  '/PLAY/',
+  '/Play/js/main.js',
+  '/pLaY/pkg/webra_sim_bg.wasm',
+  '/play/./js/main.js',
+  '/./play/js/main.js',
+  '/x/../play/js/main.js',
+  '/lib/../play/js/main.js',
+  '/lib/%2e%2e/play/js/main.js',
+  '/lib/%2E%2E%2Fplay/js/main.js',
+  '/play/..%2fplay/js/main.js',
+  '/api/..%2fplay/js/main.js',
+  '/play.',
+  '/play./js/main.js',
+  '/play../js/main.js',
+  '/play;x/js/main.js',
+  '/play;/js/main.js',
+  '/play%3Bx/js/main.js',
+  '/play%20/js/main.js',
+  '/play\\js\\main.js',
+  '/play%5Cjs%5Cmain.js',
+  '\\play\\js\\main.js',
+  '/play/js/main.js;',
+  '/play/js/main.js.',
+  '/play/js/main.js/',
+];
+
+/** Paths that are not the game, whatever the spelling. */
+const NOT_GAME = ['/', '/index.html', '/playground', '/play.html', '/plays/x', '/lib/js/account/api.js', '/assets/site.js', '/account/', '/%C0%AFplay/js/main.js', '/%E0%80%AFplay/js/main.js', '/api/version'];
+
+test('path matcher: every spelling of a game path is the game; other paths are not', () => {
+  for (const p of GATED_VARIANTS) assert.equal(isPlayPath(p), true, p);
+  for (const p of NOT_GAME) assert.equal(isPlayPath(p), false, p);
+  // Overlong UTF-8 never decodes to a slash or a letter.
+  assert.deepEqual(normalizedSegments('/%C0%AFplay/js'), ['%c0%afplay', 'js']);
+  assert.deepEqual(normalizedSegments('/%2570lay/x'), ['play', 'x'], 'double encoding is decoded too');
+});
+
+test('path variants that reach the Worker are gated like /play (never the assets without a check)', async () => {
+  const env = assets(makeEnv({ email: false }));
+  const anon = new Browser(env);
+  for (const p of GATED_VARIANTS) {
+    for (const method of ['GET', 'HEAD', 'OPTIONS', 'POST']) {
+      const r = await anon.req(method, p, undefined, { csrf: false, json: false, headers: { ...SUB.headers, Range: 'bytes=0-3' } });
+      assert.equal(r.status, 401, `${method} ${p}: ${r.status}`);
+    }
+    const nav = await anon.get(p, NAV);
+    assert.equal(nav.status, 302, `navigation ${p}`);
+    const target = decodeURIComponent(nav.res.headers.get('location').split('returnTo=')[1]);
+    assert.ok(target === '/play' || target.startsWith('/play/'), `${p}: redirect back to a canonical game path, not ${target}`);
+  }
+  assert.deepEqual(env.assetRequests, [], 'no variant reached the assets');
 });
 
 // ---- The gate matrix ----------------------------------------------------------------------------

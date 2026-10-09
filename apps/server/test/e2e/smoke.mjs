@@ -121,6 +121,75 @@ class Client {
   }
 }
 
+/** One raw request (the path is sent exactly as given) without cookies: { status, location, body }. */
+function rawRequest(method, path, headers = {}) {
+  const base = new URL(BASE);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: base.hostname, port: base.port, method, path, headers: { Host: base.host, ...headers } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, location: res.headers.location ?? null, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/**
+ * Spellings of game paths (percent-encoded letters and slashes, double
+ * encoding, double slashes, dot segments, case, trailing dots and
+ * semicolons, backslashes, overlong UTF-8) with every method and a Range
+ * header: none may return a game file without the gate. Static Assets
+ * answers non-canonical spellings with a redirect to the canonical path
+ * (which the gate refuses, checked by following it); the rest are refused
+ * by the gate or are 404 / 405.
+ */
+async function pathVariants() {
+  const VARIANTS = [
+    '/%70lay/', '/%70lay/index.html', '/%70lay/js/main.js', '/%70lay/pkg/webra_sim_bg.wasm', '/pl%61y/js/main.js', '/%50LAY/js/main.js',
+    '/%2570lay/js/main.js', '/play%2Findex.html', '/play%2fjs%2fmain.js', '/%2fplay/js/main.js', '/%2Fplay%2Fjs%2Fmain.js',
+    '//play/', '//play/js/main.js', '///play//js//main.js', '/PLAY/', '/Play/js/main.js', '/pLaY/pkg/webra_sim_bg.wasm',
+    '/play/./js/main.js', '/./play/js/main.js', '/x/../play/js/main.js', '/lib/../play/js/main.js', '/lib/%2e%2e/play/js/main.js',
+    '/lib/%2E%2E%2Fplay/js/main.js', '/play/..%2fplay/js/main.js', '/api/..%2fplay/js/main.js', '/play.', '/play./js/main.js',
+    '/play;x/js/main.js', '/play%3Bx/js/main.js', '/play%20/js/main.js', '/play\\js\\main.js', '/play%5Cjs%5Cmain.js',
+    '/play/js/main.js;', '/play/js/main.js.', '/play/js/main.js/', '/%C0%AFplay/js/main.js', '/play%C0%AFjs/main.js',
+    '/play/js/main.js%00', '/play/pkg/webra_sim_bg.wasm',
+  ];
+  const WASM_MAGIC = Buffer.from([0x00, 0x61, 0x73, 0x6d]);
+  const gameLike = (body) => body.includes(WASM_MAGIC) || /\bimport\b|<canvas|webra_sim/.test(body.toString('latin1'));
+  const counts = {};
+  for (const path of VARIANTS) {
+    for (const method of ['GET', 'HEAD', 'OPTIONS', 'POST']) {
+      for (const headers of [{}, { Range: 'bytes=0-3' }, { 'Sec-Fetch-Mode': 'navigate', Accept: 'text/html' }]) {
+        const r = await rawRequest(method, path, headers);
+        const what = `${method} ${path} ${JSON.stringify(headers)}`;
+        counts[r.status] = (counts[r.status] ?? 0) + 1;
+        assert.ok(![200, 206, 304].includes(r.status), `${what}: ${r.status} without the gate`);
+        assert.ok(!gameLike(r.body), `${what}: game content in a ${r.status}`);
+        if (r.status >= 300 && r.status < 400) {
+          const target = new URL(r.location, BASE);
+          assert.equal(target.origin, ORIGIN, `${what}: redirect stays on this site`);
+          // The gate's own redirect to sign in (a page load): nothing to follow.
+          if (target.pathname === '/account/') {
+            assert.match(target.search, /^\?returnTo=%2Fplay/, `${what}: sign in, then back to the game`);
+            continue;
+          }
+          // Follow the redirect (twice at most), still without cookies: refused or sent to sign in.
+          let next = await rawRequest(method === 'HEAD' ? 'HEAD' : 'GET', target.pathname + target.search, headers);
+          if (next.status >= 300 && next.status < 400 && !/^\/account\//.test(next.location ?? '')) {
+            const t2 = new URL(next.location, BASE);
+            next = await rawRequest('GET', t2.pathname + t2.search, headers);
+          }
+          assert.ok([302, 401, 403, 404, 405].includes(next.status), `${what} -> ${r.location}: ${next.status}`);
+          if (next.status === 302) assert.match(next.location ?? '', /^\/account\/\?returnTo=%2Fplay/, `${what}: the redirect is the sign-in`);
+          assert.ok(!gameLike(next.body), `${what} -> ${r.location}: game content`);
+        }
+      }
+    }
+  }
+  console.log(`  path variants: ${VARIANTS.length} spellings x 4 methods x 3 header sets, statuses ${JSON.stringify(counts)}`);
+}
+
 /** The play gate (src/playgate.js): who gets /play, the pass, sign-out. */
 async function playGate(ADMIN, HOST) {
   const site = await api('/api/site');
@@ -173,6 +242,8 @@ async function playGate(ADMIN, HOST) {
     assert.equal(r.headers.get('cache-control'), 'no-store', path);
     securityHeaders(r, `refusal ${path}`);
   }
+  await pathVariants();
+
   // The account page's modules stay public (/lib/), the gated copies do not.
   const lib = await get('/lib/js/account/api.js', SUB);
   assert.equal(lib.status, 200, 'the account client is public under /lib/');
