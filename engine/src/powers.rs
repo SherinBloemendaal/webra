@@ -216,6 +216,7 @@ impl World {
         }
         let code = crate::sound_events::power_code(&info.kind);
         self.sound.push(crate::sound_events::SoundEventKind::PowerActivated, code, x, y, player, 0);
+        self.note_power(player, key);
         let list = &mut self.powers.players[player as usize];
         if let Some(p) = list.iter_mut().find(|p| p.key == key) {
             p.remaining = p.total;
