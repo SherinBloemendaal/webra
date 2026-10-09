@@ -99,3 +99,19 @@ test('site settings: merge, validation, stored values over defaults', () => {
   assert.equal(stored.registration.approvalRequired, true, 'bad stored values keep their default');
   assert.equal('obsolete' in stored, false);
 });
+
+test('settings documents refuse prototype keys everywhere', () => {
+  for (const doc of [
+    JSON.parse('{"extra":{"__proto__":{"x":1}}}'),
+    { extra: { constructor: { prototype: { x: 1 } } } },
+    { extra: { a: { prototype: 1 } } },
+    { lobby: { lastOptions: { constructor: 1 } } },
+    { game: { hotkeys: { constructor: ['A'] } } },
+    JSON.parse('{"game":{"hotkeys":{"__proto__":["A"]}}}'),
+    JSON.parse('{"__proto__":{"x":1}}'),
+    { audio: JSON.parse('{"__proto__":{"master":1}}') },
+  ]) {
+    throwsField(() => validateSettingsDocument(doc));
+  }
+  assert.equal({}.x, undefined);
+});

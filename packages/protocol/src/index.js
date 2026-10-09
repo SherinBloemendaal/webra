@@ -3,7 +3,7 @@
 
 export * from './constants.js';
 export * from './accounts.js';
-export { ProtocolError, truncate, utf8Length } from './check.js';
+export { ProtocolError, text, truncate, utf8Length } from './check.js';
 export { LOBBY_OPTION_KEYS, validateGameOptions, validateLobbyOptions } from './options.js';
 export {
   client,

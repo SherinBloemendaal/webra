@@ -256,6 +256,8 @@ const FREE_DEPTH_MAX = 4;
 const FREE_STRING_MAX = 500;
 const FREE_ARRAY_MAX = 64;
 const FREE_KEY_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+/** Keys that would reach Object.prototype or a constructor when copied: never stored. */
+const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const HOTKEY_ACTION_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const HOTKEY_COMBO_RE = /^[\x21-\x7e]{1,40}$/;
 
@@ -296,6 +298,7 @@ function freeJson(v, f, depth = 0) {
   const out = {};
   for (const [k, x] of Object.entries(v)) {
     if (!FREE_KEY_RE.test(k)) bad(f, 'Keys must be 1 to 64 letters, digits, "_", "." or "-".');
+    if (PROTO_KEYS.has(k)) bad(`${f}.${k}`, 'This key is not allowed.');
     out[k] = freeJson(x, `${f}.${k}`, depth + 1);
   }
   return out;
@@ -317,6 +320,7 @@ function hotkeys(v, f) {
   const out = {};
   for (const [action, combos] of entries) {
     if (!HOTKEY_ACTION_RE.test(action)) bad(f, 'Action names are 1 to 64 letters, digits or "_.:-".');
+    if (PROTO_KEYS.has(action)) bad(`${f}.${action}`, 'This action name is not allowed.');
     const p = `${f}.${action}`;
     if (!Array.isArray(combos) || combos.length > HOTKEY_COMBOS_MAX) bad(p, `Must be a list of at most ${HOTKEY_COMBOS_MAX} keys.`);
     out[action] = combos.map((c, i) => {
@@ -344,7 +348,7 @@ function packs(v, f) {
 
 function section(v, keys, f) {
   if (!isPlainObject(v)) bad(f, 'Must be an object.');
-  for (const k of Object.keys(v)) if (!keys.includes(k)) bad(`${f}.${k}`, 'Unknown setting.');
+  for (const k of Object.keys(v)) if (PROTO_KEYS.has(k) || !keys.includes(k)) bad(`${f}.${k}`, 'Unknown setting.');
 }
 
 const SETTINGS_SECTIONS = {
@@ -396,6 +400,7 @@ export function validateSettingsDocument(doc, field = 'settings') {
   const out = {};
   for (const [k, v] of Object.entries(doc)) {
     const f = `${field}.${k}`;
+    if (PROTO_KEYS.has(k)) bad(f, 'Unknown settings section.');
     if (k === 'schema') {
       if (v !== SETTINGS_SCHEMA_VERSION) bad(f, `Schema must be ${SETTINGS_SCHEMA_VERSION}.`);
       out.schema = v;
