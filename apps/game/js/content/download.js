@@ -43,7 +43,21 @@ export async function downloadQuickInstall({ onProgress = () => {}, fetchImpl = 
     throw new Error(`the download could not start (${err.message ?? err})`);
   }
   if (res.status === 429) throw new Error('too many downloads from this network; try again in an hour or install the files yourself');
-  if (res.status === 401 || res.status === 403) throw new Error('the one-click download is only for selected accounts; install the files yourself with the steps below');
+  // The relay needs a signed-in account (401 unauthenticated) with the content_autoinstall flag or the admin role (403 relay_forbidden).
+  if (res.status === 401) throw new Error('sign in first: the one-click download is only for selected accounts; or install the files yourself with the steps below');
+  if (res.status === 403) {
+    let code = '';
+    try {
+      code = (await res.json()).error?.code ?? '';
+    } catch {
+      // not JSON
+    }
+    if (code === 'relay_forbidden' || code === 'forbidden') throw new Error('the one-click download is only for selected accounts; install the files yourself with the steps below');
+    if (code === 'banned') throw new Error('this account is banned');
+    if (code === 'account_inactive') throw new Error('your account is not active yet');
+    if (code === 'ip_banned') throw new Error('downloads are blocked from your network');
+    throw new Error('the one-click download is not allowed; install the files yourself with the steps below');
+  }
   if (!res.ok || !res.body) {
     let message = `the server answered ${res.status}`;
     try {

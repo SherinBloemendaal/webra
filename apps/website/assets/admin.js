@@ -11,6 +11,7 @@ import {
   BAN_PRESETS,
   FLAGS,
   ROLES,
+  SETTABLE_STATUSES,
   SORTS,
   STATUSES,
   STATUS_LABELS,
@@ -28,6 +29,7 @@ import {
 } from '/play/js/account/admin-state.js';
 import { buildSettingsForm } from '/play/js/account/admin-forms.js';
 import { checkDocument } from '/play/js/registry.js';
+import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/play/protocol/accounts.js';
 import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy } from './ui.js';
 
 const TABS = [
@@ -488,13 +490,13 @@ export async function mountAdmin(root, deps = {}) {
   }
 
   function editForm(u, status, reload) {
-    const username = field('Username', el('input', { type: 'text', value: u.username, maxlength: '24' }));
-    const displayName = field('Display name', el('input', { type: 'text', value: u.displayName ?? '', maxlength: '32' }));
-    const email = field('Email', el('input', { type: 'email', value: u.email ?? '', maxlength: '254' }), { help: 'Empty removes it.' });
+    const username = field('Username', el('input', { type: 'text', value: u.username, maxlength: String(USERNAME_MAX) }));
+    const displayName = field('Display name', el('input', { type: 'text', value: u.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX) }));
+    const email = field('Email', el('input', { type: 'email', value: u.email ?? '', maxlength: String(EMAIL_MAX) }), { help: 'Empty removes it.' });
     const verified = checkbox('Email verified', { checked: u.emailVerified });
     const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#4a82c4' }));
-    const statusSel = el('select', {}, ...['pending_email', 'pending_approval', 'active'].map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
-    statusSel.value = ['pending_email', 'pending_approval', 'active'].includes(u.storedStatus) ? u.storedStatus : 'active';
+    const statusSel = el('select', {}, ...SETTABLE_STATUSES.map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
+    statusSel.value = SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active';
     statusSel.disabled = u.storedStatus === 'deleted';
     const st = field('Status', statusSel, { help: 'Bans and deletion have their own buttons.' });
     const roleSel = el('select', {}, ...ROLES.map((r) => el('option', { value: r, text: r })));
@@ -532,7 +534,7 @@ export async function mountAdmin(root, deps = {}) {
   function banDialog(u) {
     return openDialog(`Ban ${u.username}`, (body, close) => {
       const status = statusLine();
-      const reason = field('Reason', el('textarea', { rows: '3', maxlength: '500', required: true }), { help: 'Shown to the player. At most 500 characters.' });
+      const reason = field('Reason', el('textarea', { rows: '3', maxlength: String(BAN_REASON_MAX), required: true }), { help: `Shown to the player. At most ${BAN_REASON_MAX} characters.` });
       const until = field('Until', el('input', { type: 'datetime-local' }), { help: 'Empty: permanent.' });
       const presets = el(
         'div',
@@ -717,7 +719,7 @@ export async function mountAdmin(root, deps = {}) {
     return openDialog('Ban an address or range', (body, close) => {
       const status = statusLine();
       const range = field('Address or range', el('input', { type: 'text', value: cidr, spellcheck: 'false', placeholder: '203.0.113.7 or 203.0.113.0/24' }), { help: 'IPv4 from /8, IPv6 from /16. You cannot ban your own address.' });
-      const reason = field('Reason', el('input', { type: 'text', value: reasonText, maxlength: '500' }));
+      const reason = field('Reason', el('input', { type: 'text', value: reasonText, maxlength: String(BAN_REASON_MAX) }));
       const until = field('Until', el('input', { type: 'datetime-local' }), { help: 'Empty: permanent.' });
       const submit = el('button', { type: 'submit', class: 'btn btn-danger', text: 'Ban' });
       const form = el('form', { class: 'form-stack', novalidate: true }, status.node, range.row, reason.row, until.row, el('div', { class: 'form-actions' }, submit));
@@ -757,7 +759,7 @@ export async function mountAdmin(root, deps = {}) {
             edit.addEventListener('click', async () => {
               const changed = await openDialog(`Edit ban of ${b.cidr}`, (body, close) => {
                 const s = statusLine();
-                const reason = field('Reason', el('input', { type: 'text', value: b.reason, maxlength: '500' }));
+                const reason = field('Reason', el('input', { type: 'text', value: b.reason, maxlength: String(BAN_REASON_MAX) }));
                 const until = field('Until', el('input', { type: 'datetime-local', value: b.expiresAt ? localInputValue(b.expiresAt) : '' }), { help: 'Empty: permanent.' });
                 const ok = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save' });
                 const form = el('form', { class: 'form-stack', novalidate: true }, s.node, reason.row, until.row, el('div', { class: 'form-actions' }, ok));
@@ -827,7 +829,7 @@ export async function mountAdmin(root, deps = {}) {
     const loginPasskey = toggle('Passkeys', s.login.passkey);
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
-    const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: '500', value: s.motd ?? '' }), { help: 'Plain text, shown on the start screen and the account page. At most 500 characters.' });
+    const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
     motd.input.value = s.motd ?? '';
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save site settings' });
     const form = el(
@@ -847,7 +849,7 @@ export async function mountAdmin(root, deps = {}) {
         login: { password: loginPw.input.checked, email: loginEmail.input.checked, discord: loginDiscord.input.checked, passkey: loginPasskey.input.checked },
         onlineRequiresAccount: online.input.checked,
         contentRelay: relay.input.checked,
-        motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, 500),
+        motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),
       };
       if (!patch.login.password && !patch.login.passkey && !(patch.login.discord && svc.discord)) {
         if (!(await confirmDialog('No sign-in method', 'With these settings nobody can sign in (also you). Save anyway?', { confirmText: 'Save anyway', danger: true }))) return;
@@ -880,8 +882,8 @@ export async function mountAdmin(root, deps = {}) {
     const status = statusLine();
     const action = el('select', {}, el('option', { value: '', text: 'All actions' }), ...AUDIT_ACTIONS.map((a) => el('option', { value: a, text: a })));
     action.value = audit.action;
-    const actor = field('Actor id', el('input', { type: 'text', value: audit.actor, spellcheck: 'false', maxlength: '64' }));
-    const target = field('Target id', el('input', { type: 'text', value: audit.target, spellcheck: 'false', maxlength: '64' }));
+    const actor = field('Actor id', el('input', { type: 'text', value: audit.actor, spellcheck: 'false', maxlength: '32' }));
+    const target = field('Target id', el('input', { type: 'text', value: audit.target, spellcheck: 'false', maxlength: '32' }));
     const since = field('From', el('input', { type: 'date', value: audit.since }));
     const until = field('To', el('input', { type: 'date', value: audit.until }));
     const apply = el('button', { type: 'submit', class: 'btn', text: 'Filter' });
@@ -917,7 +919,8 @@ export async function mountAdmin(root, deps = {}) {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const f = auditFilter({ action: action.value, actor: actor.input.value.trim(), target: target.input.value.trim(), since: since.input.value, until: until.input.value });
-      if ((actor.input.value.trim() && !f.actor) || (target.input.value.trim() && !f.target)) return status.show('Ids are lower case hex.', 'error');
+      if (actor.input.value.trim() && !f.actor) return status.show('The actor is a user id: 32 lower case hex characters.', 'error');
+      if (target.input.value.trim() && !f.target) return status.show('The target is an id: lower case letters and digits.', 'error');
       audit = f;
       status.clear();
       load();

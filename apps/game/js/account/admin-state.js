@@ -3,10 +3,18 @@
 // filters, sorting, pages, selection for bulk actions) and the audit log
 // filters, kept in the address fragment so a view can be shared and reloaded.
 
-export const STATUSES = Object.freeze(['pending_email', 'pending_approval', 'active', 'banned', 'deleted']);
-export const ROLES = Object.freeze(['user', 'moderator', 'admin']);
-export const FLAGS = Object.freeze({ content_autoinstall: 'One-click content install' });
+import { ACCOUNT_FLAG_NAMES, ACCOUNT_ROLES, ACCOUNT_STATUSES, ACCOUNT_STORED_STATUSES } from '../../protocol/accounts.js';
+
+/** Statuses, roles and flags: the protocol package's (packages/protocol/src/accounts.js). */
+export const STATUSES = ACCOUNT_STATUSES;
+/** Statuses an admin may set with PATCH /api/admin/users/:id (bans and deletion have their own endpoints). */
+export const SETTABLE_STATUSES = Object.freeze(ACCOUNT_STORED_STATUSES.filter((s) => s !== 'deleted'));
+export const ROLES = ACCOUNT_ROLES;
+const FLAG_LABELS = { content_autoinstall: 'One-click content install' };
+/** Flag -> label for people (a flag the client has no words for shows its name). */
+export const FLAGS = Object.freeze(Object.fromEntries(ACCOUNT_FLAG_NAMES.map((f) => [f, FLAG_LABELS[f] ?? f])));
 export const SORTS = Object.freeze({ created: 'Created', lastSeen: 'Last seen', username: 'Username' });
+/** Audit actions (apps/server/src/accounts/audit.js AUDIT_ACTIONS, docs/accounts-api.md 8.9). */
 export const AUDIT_ACTIONS = Object.freeze([
   'user.update',
   'user.approve',
@@ -186,14 +194,19 @@ export function viewHash({ tab, user = null, query = DEFAULT_QUERY, audit = null
   return `#${name}${params ? `?${params}` : ''}`;
 }
 
-/** Audit log filters (8.9): actor and target ids, action, a date range (YYYY-MM-DD), page. */
+/**
+ * Audit log filters (8.9): actor (a user id, 32 hex), target (a user id,
+ * ban id or "site"), action, a date range (YYYY-MM-DD), page. The server
+ * refuses other forms, so they are dropped here.
+ */
 export function auditFilter(raw = {}) {
-  const id = (v) => (typeof v === 'string' && /^[0-9a-f]{1,64}$/.test(v) ? v : '');
+  const actorId = (v) => (typeof v === 'string' && /^[0-9a-f]{32}$/.test(v) ? v : '');
+  const targetId = (v) => (typeof v === 'string' && /^[0-9a-z]{1,32}$/.test(v) ? v : '');
   const day = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) ? v : '');
   const page = Number(raw.page);
   return {
-    actor: id(raw.actor),
-    target: id(raw.target),
+    actor: actorId(raw.actor),
+    target: targetId(raw.target),
     action: AUDIT_ACTIONS.includes(raw.action) ? raw.action : '',
     since: day(raw.since),
     until: day(raw.until),
@@ -201,14 +214,14 @@ export function auditFilter(raw = {}) {
   };
 }
 
-/** API query of audit filters: dates become Unix milliseconds (until: the end of that day, UTC). */
+/** API query of audit filters: dates become Unix milliseconds (`until` is exclusive: the start of the next day, UTC). */
 export function auditParams(f) {
   const out = {};
   if (f.actor) out.actor = f.actor;
   if (f.target) out.target = f.target;
   if (f.action) out.action = f.action;
   if (f.since) out.since = Date.parse(`${f.since}T00:00:00Z`);
-  if (f.until) out.until = Date.parse(`${f.until}T23:59:59.999Z`);
+  if (f.until) out.until = Date.parse(`${f.until}T00:00:00Z`) + 86_400_000;
   if (f.page > 1) out.page = f.page;
   return out;
 }

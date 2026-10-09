@@ -10,9 +10,30 @@
 import { AccountApi, AccountError, errorText, formatDateTime } from '/play/js/account/api.js';
 import { AccountSession, accountState, signInMethods } from '/play/js/account/session.js';
 import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/play/js/account/passkey.js';
+import {
+  ACCOUNT_PASSWORD_MAX,
+  ACCOUNT_PASSWORD_MIN,
+  DISPLAY_NAME_MAX,
+  EMAIL_MAX,
+  USERNAME_MAX,
+  USERNAME_MIN,
+  validEmail,
+  validNewPassword,
+  validUsername,
+} from '/play/protocol/accounts.js';
 import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob } from './ui.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
+
+/** The message of a protocol check that fails, or null. */
+function check(fn) {
+  try {
+    fn();
+    return null;
+  } catch (err) {
+    return err.message;
+  }
+}
 
 /** What the fragment asks for: { kind: 'verify' | 'reset' | 'discord' | 'signup' | 'forgot' | null, token?, ok?, code? }. */
 export function parseFragment(hash) {
@@ -92,13 +113,17 @@ export async function mountAccountPage(root, deps = {}) {
   // ---- Password reset from a link -------------------------------------------------------
   function renderReset() {
     const status = statusLine();
-    const password = field('New password', el('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: '10', maxlength: '128' }), { help: 'At least 10 characters. A long phrase is best.' });
+    const password = field('New password', el('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: String(ACCOUNT_PASSWORD_MIN), maxlength: String(ACCOUNT_PASSWORD_MAX) }), {
+      help: `At least ${ACCOUNT_PASSWORD_MIN} characters. A long phrase is best.`,
+    });
     const again = field('New password again', el('input', { type: 'password', autocomplete: 'new-password', required: true }));
     const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Set password and sign in' });
     const form = el('form', { class: 'panel form-card', novalidate: true }, el('h2', { text: 'Choose a new password' }), status.node, password.row, again.row, el('div', { class: 'form-actions' }, submit));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (password.input.value !== again.input.value) return status.show('The two passwords are not the same.', 'error');
+      const problem = check(() => validNewPassword(password.input.value));
+      if (problem) return status.show(problem, 'error');
       await busy(submit, status, async () => {
         const r = await api.resetPassword(fragment.token, password.input.value);
         fragment.used = true;
@@ -162,7 +187,7 @@ export async function mountAccountPage(root, deps = {}) {
     const status = statusLine();
     const out = el('div', { class: 'form-stack' }, status.node);
     if (methods.password) {
-      const login = field('Username or email', el('input', { type: 'text', autocomplete: 'username webauthn', required: true, maxlength: '254' }));
+      const login = field('Username or email', el('input', { type: 'text', autocomplete: 'username webauthn', required: true, maxlength: String(EMAIL_MAX) }));
       const password = field('Password', el('input', { type: 'password', autocomplete: 'current-password', required: true, maxlength: '128' }));
       const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Sign in' });
       const form = el('form', { class: 'form-stack', novalidate: true }, login.row, password.row, el('div', { class: 'form-actions' }, submit));
@@ -208,13 +233,13 @@ export async function mountAccountPage(root, deps = {}) {
     const status = statusLine();
     const site = session.site;
     if (site && site.registration?.open === false) return el('p', { class: 'notice', text: 'Signing up is closed right now. Check back later.' });
-    const policy = site?.policy ?? { usernameMin: 3, usernameMax: 24, passwordMin: 10, passwordMax: 128, displayNameMax: 32 };
+    const policy = site?.policy ?? { usernameMin: USERNAME_MIN, usernameMax: USERNAME_MAX, passwordMin: ACCOUNT_PASSWORD_MIN, passwordMax: ACCOUNT_PASSWORD_MAX, displayNameMax: DISPLAY_NAME_MAX };
     const emailRequired = !!site?.registration?.emailVerificationRequired;
     const username = field('Username', el('input', { type: 'text', autocomplete: 'username', required: true, minlength: String(policy.usernameMin), maxlength: String(policy.usernameMax), spellcheck: 'false' }), {
       help: `${policy.usernameMin} to ${policy.usernameMax} characters: letters, digits, space, _ - and . Shown in lobbies.`,
     });
     const displayName = field('Display name (optional)', el('input', { type: 'text', autocomplete: 'nickname', maxlength: String(policy.displayNameMax) }));
-    const email = field(emailRequired ? 'Email' : 'Email (optional)', el('input', { type: 'email', autocomplete: 'email', maxlength: '254', required: emailRequired }), {
+    const email = field(emailRequired ? 'Email' : 'Email (optional)', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX), required: emailRequired }), {
       help: emailRequired ? 'We send a link to verify it.' : 'For password resets. You can add it later.',
     });
     const usePasskey = methods.passkey && methods.password ? checkbox('Use a passkey instead of a password') : null;
@@ -252,11 +277,20 @@ export async function mountAccountPage(root, deps = {}) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!privacy.checked) return status.show('Accept the privacy notice to create an account.', 'error');
-      const name = username.input.value.trim();
-      if (Array.from(name).length < policy.usernameMin) return status.show(`The username needs at least ${policy.usernameMin} characters.`, 'error');
+      // The protocol package's checks, as the server makes them (it stays the authority).
+      let name;
+      try {
+        name = validUsername(username.input.value);
+      } catch (err) {
+        username.input.focus();
+        return status.show(err.message, 'error');
+      }
       if (emailRequired && !email.input.value.trim()) return status.show('Enter your email.', 'error');
+      const emailProblem = email.input.value.trim() ? check(() => validEmail(email.input.value.trim())) : null;
+      if (emailProblem) return status.show(emailProblem, 'error');
       const withPasskey = passkeyOnly || !!usePasskey?.input.checked;
-      if (!withPasskey && Array.from(password.input.value).length < policy.passwordMin) return status.show(`The password needs at least ${policy.passwordMin} characters.`, 'error');
+      const pwProblem = withPasskey ? null : check(() => validNewPassword(password.input.value, { username: name, email: email.input.value.trim() || null }));
+      if (pwProblem) return status.show(pwProblem, 'error');
       const input = { username: name, acceptPrivacy: true };
       if (displayName.input.value.trim()) input.displayName = displayName.input.value.trim();
       if (email.input.value.trim()) input.email = email.input.value.trim();
@@ -293,7 +327,7 @@ export async function mountAccountPage(root, deps = {}) {
 
   function forgotForm() {
     const status = statusLine();
-    const email = field('Email', el('input', { type: 'email', autocomplete: 'email', required: true, maxlength: '254' }));
+    const email = field('Email', el('input', { type: 'email', autocomplete: 'email', required: true, maxlength: String(EMAIL_MAX) }));
     const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Send reset link' });
     const form = el('form', { class: 'form-stack', novalidate: true }, status.node, el('p', { class: 'form-help', text: 'We email a link to choose a new password, if an account has this email.' }), email.row, el('div', { class: 'form-actions' }, submit));
     form.addEventListener('submit', async (e) => {
@@ -418,10 +452,10 @@ export async function mountAccountPage(root, deps = {}) {
 
   function profileSection(user) {
     const status = statusLine();
-    const username = field('Username', el('input', { type: 'text', value: user.username, autocomplete: 'username', maxlength: '24', spellcheck: 'false' }), {
+    const username = field('Username', el('input', { type: 'text', value: user.username, autocomplete: 'username', maxlength: String(USERNAME_MAX), spellcheck: 'false' }), {
       help: user.usernameChangedAt ? `Last changed ${formatDateTime(user.usernameChangedAt)}. You can change it once every 30 days.` : 'You can change it once every 30 days.',
     });
-    const displayName = field('Display name', el('input', { type: 'text', value: user.displayName ?? '', maxlength: '32', autocomplete: 'nickname' }));
+    const displayName = field('Display name', el('input', { type: 'text', value: user.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX), autocomplete: 'nickname' }));
     const color = field('Colour', el('input', { type: 'color', value: user.avatarColor ?? '#4a82c4' }));
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save profile' });
     const form = el('form', { class: 'form-grid', novalidate: true }, username.row, displayName.row, color.row, el('div', { class: 'form-actions' }, save));
@@ -448,7 +482,7 @@ export async function mountAccountPage(root, deps = {}) {
       ? el('p', {}, el('span', { text: user.email }), el('span', { class: user.emailVerified ? 'badge badge-open' : 'badge badge-warn', text: user.emailVerified ? 'Verified' : 'Not verified' }))
       : el('p', { class: 'form-help', text: 'No email on this account.' });
     const pending = user.pendingEmail ? el('p', { class: 'form-help', text: `Waiting for you to follow the link sent to ${user.pendingEmail}.` }) : null;
-    const email = field('New email', el('input', { type: 'email', autocomplete: 'email', maxlength: '254' }));
+    const email = field('New email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX) }));
     const save = el('button', { type: 'submit', class: 'btn', text: 'Change email' });
     const form = el('form', { class: 'form-grid', novalidate: true }, email.row, el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {
@@ -488,12 +522,13 @@ export async function mountAccountPage(root, deps = {}) {
     const status = statusLine();
     const has = !!user.methods?.password;
     const currentPw = has ? field('Current password', el('input', { type: 'password', autocomplete: 'current-password' }), { help: 'Not needed if you confirmed your sign-in in the last 10 minutes.' }) : null;
-    const next = field(has ? 'New password' : 'Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: '10', maxlength: '128' }));
+    const next = field(has ? 'New password' : 'Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(ACCOUNT_PASSWORD_MIN), maxlength: String(ACCOUNT_PASSWORD_MAX) }));
     const save = el('button', { type: 'submit', class: 'btn', text: has ? 'Change password' : 'Set a password' });
     const form = el('form', { class: 'form-grid', novalidate: true }, currentPw?.row, next.row, el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (Array.from(next.input.value).length < 10) return status.show('The new password needs at least 10 characters.', 'error');
+      const problem = check(() => validNewPassword(next.input.value, { username: user.username, email: user.email }));
+      if (problem) return status.show(problem, 'error');
       await busy(save, status, async () => {
         const input = { newPassword: next.input.value };
         if (currentPw?.input.value) input.currentPassword = currentPw.input.value;

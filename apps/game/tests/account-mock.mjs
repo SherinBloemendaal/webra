@@ -441,14 +441,14 @@ export class MockAccountServer {
       if (key === 'POST /api/admin/ip-bans') {
         if (!/^[0-9a-f.:]+(\/\d+)?$/i.test(body.cidr ?? '')) return fail(400, 'invalid', 'Not an address or range.', { field: 'cidr' });
         if (/\/([0-7])$/.test(body.cidr)) return fail(400, 'invalid', 'The range is too wide.', { field: 'cidr' });
-        const ban = { id: newId(16), cidr: body.cidr, reason: body.reason, createdAt: this.now, createdBy: me.id, expiresAt: body.expiresAt ?? null, active: true };
+        const ban = { id: this.ipBans.length + 1, cidr: body.cidr, reason: body.reason, createdAt: this.now, createdBy: me.id, expiresAt: body.expiresAt ?? null, active: true };
         this.ipBans.push(ban);
         this.log(me, 'ipban.create', { type: 'ipban', id: ban.id, label: ban.cidr });
         return reply(201, { ban });
       }
-      const ib = /^\/api\/admin\/ip-bans\/([0-9a-f]+)$/.exec(path);
+      const ib = /^\/api\/admin\/ip-bans\/([1-9][0-9]*)$/.exec(path);
       if (ib) {
-        const i = this.ipBans.findIndex((b) => b.id === ib[1]);
+        const i = this.ipBans.findIndex((b) => String(b.id) === ib[1]);
         if (i < 0) return fail(404, 'not_found', 'No such ban.');
         if (method === 'DELETE') {
           this.ipBans.splice(i, 1);

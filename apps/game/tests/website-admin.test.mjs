@@ -79,8 +79,21 @@ test('admin state: users table query, sorting, pages, selection for bulk actions
   assert.equal(parseView('#nonsense').tab, 'overview');
   const a = auditFilter({ action: 'user.ban', since: '2026-10-01', until: '2026-10-02', actor: 'NOT HEX' });
   assert.equal(a.actor, '');
-  assert.deepEqual(auditParams(a), { action: 'user.ban', since: Date.parse('2026-10-01T00:00:00Z'), until: Date.parse('2026-10-02T23:59:59.999Z') });
+  assert.deepEqual(auditParams(a), { action: 'user.ban', since: Date.parse('2026-10-01T00:00:00Z'), until: Date.parse('2026-10-03T00:00:00Z') });
+  assert.equal(auditFilter({ target: 'site', actor: 'ab' }).target, 'site');
+  assert.equal(auditFilter({ actor: 'ab' }).actor, '', 'actors are full user ids');
   assert.equal(parseView(viewHash({ tab: 'audit', audit: a })).audit.since, '2026-10-01', 'audit filters survive the fragment');
+});
+
+test('admin state: value sets match the protocol package and the server', async () => {
+  const protocol = await import('../protocol/accounts.js');
+  const { AUDIT_ACTIONS: serverActions } = await import('../../server/src/accounts/audit.js');
+  const state = await import('../js/account/admin-state.js');
+  assert.deepEqual([...state.AUDIT_ACTIONS], [...serverActions]);
+  assert.deepEqual([...state.STATUSES], [...protocol.ACCOUNT_STATUSES]);
+  assert.deepEqual([...state.ROLES], [...protocol.ACCOUNT_ROLES]);
+  assert.deepEqual(Object.keys(state.FLAGS), Object.keys(protocol.ACCOUNT_FLAGS));
+  assert.deepEqual([...state.SETTABLE_STATUSES], ['pending_email', 'pending_approval', 'active']);
 });
 
 test('admin state: ban ends and IP ranges are checked before sending', () => {

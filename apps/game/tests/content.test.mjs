@@ -638,7 +638,10 @@ test('one-click download: progress, exact size, server errors; the notice rememb
     downloadQuickInstall({ fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'mirrors down' } }), { status: 502 }) }),
     /mirrors down/,
   );
-  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 403 }) }), /selected accounts/);
+  const refuse = (status, code) => async () => new Response(JSON.stringify({ error: { code, message: 'x' } }), { status });
+  await assert.rejects(downloadQuickInstall({ fetchImpl: refuse(403, 'relay_forbidden') }), /selected accounts/);
+  await assert.rejects(downloadQuickInstall({ fetchImpl: refuse(401, 'unauthenticated') }), /sign in first/);
+  await assert.rejects(downloadQuickInstall({ fetchImpl: refuse(403, 'ip_banned') }), /blocked from your network/);
   const storage = new Map([['webra.content.prompt.v1', 'yes']]);
   const st = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) };
   const registry = createRegistry({ storage: st });

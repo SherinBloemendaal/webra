@@ -272,20 +272,24 @@ test('registry: diffValues lists changed settings; toDocument keeps groups in or
   assert.deepEqual(Object.keys(toDocument(a)), ['schema', ...Object.keys(GROUPS)]);
 });
 
-test('registry: the protocol package accepts its documents (once packages/protocol/src/accounts.js is merged)', async (t) => {
-  let protocol;
-  try {
-    protocol = await import('../protocol/accounts.js');
-  } catch {
-    t.skip('packages/protocol/src/accounts.js is not merged yet; the contract is mirrored in the tests above');
-    return;
-  }
+test('registry: the protocol package (the server\'s validator) accepts its documents', async () => {
+  const protocol = await import('../protocol/accounts.js');
+  assert.equal(SCHEMA_VERSION, protocol.SETTINGS_SCHEMA_VERSION);
+  assert.equal(MAX_DOCUMENT_BYTES, protocol.SETTINGS_MAX_BYTES);
+  assert.equal(GROUPS.extra.maxBytes, protocol.SETTINGS_EXTRA_MAX_BYTES);
+  assert.equal(GROUPS.lobby.settings.lastOptions.maxBytes, protocol.SETTINGS_LAST_OPTIONS_MAX_BYTES);
   const r = createRegistry({ storage: null });
   r.set('releaseNotes', 'lastSeenVersion', '0.6.0');
   r.set('game', 'hotkeys', { stop: ['Ctrl+Shift+F1'], guard: [] });
   r.set('content', 'packs', [{ id: 'desert tiles|someone', enabled: false }]);
   r.set('lobby', 'lastOptions', { seed: 5, players: [{ type: 'human', name: 'Tanya', faction: 'russia', color: 2, team: 0 }], mapSource: 'random' });
+  r.patch('lobby', { name: 'Tanya Adams', faction: 'ukraine', color: 7 });
   r.applyDocument({ extra: { futureThing: { on: true } } });
   assert.doesNotThrow(() => protocol.validateSettingsDocument(r.document()));
   assert.doesNotThrow(() => protocol.validateSettingsDocument(createRegistry({ storage: null }).document()));
+  // What the registry refuses, the server refuses too.
+  for (const bad of [{ audio: { master: 2 } }, { game: { healthBars: 'x' } }, { lobby: { color: 8 } }, { nope: {} }]) {
+    assert.equal(checkDocument(bad).ok, false);
+    assert.throws(() => protocol.validateSettingsDocument({ schema: 1, ...bad }));
+  }
 });

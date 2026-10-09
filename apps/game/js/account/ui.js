@@ -9,6 +9,7 @@ import { errorText } from './api.js';
 import { accountState, signInMethods } from './session.js';
 import { getPasskey, isCancel, passkeysAvailable } from './passkey.js';
 import { GROUPS } from '../registry.js';
+import { ACCOUNT_PASSWORD_MAX, EMAIL_MAX } from '../../protocol/accounts.js';
 
 /** The account page (sign up, verify, reset, profile, passkeys, sessions, data). */
 export const ACCOUNT_URL = '/account/';
@@ -89,8 +90,8 @@ export function openSignIn(session, { reason = '', returnTo = '/play/', navigate
     body.append(error);
 
     if (methods.password) {
-      const login = el('input', { type: 'text', id: 'account-login', name: 'username', autocomplete: 'username webauthn', required: true, maxlength: '254' });
-      const password = el('input', { type: 'password', id: 'account-password', name: 'password', autocomplete: 'current-password', required: true, maxlength: '128' });
+      const login = el('input', { type: 'text', id: 'account-login', name: 'username', autocomplete: 'username webauthn', required: true, maxlength: String(EMAIL_MAX) });
+      const password = el('input', { type: 'password', id: 'account-password', name: 'password', autocomplete: 'current-password', required: true, maxlength: String(ACCOUNT_PASSWORD_MAX) });
       const submit = el('button', { type: 'submit', class: 'primary', text: 'Sign in' });
       const form = el(
         'form',

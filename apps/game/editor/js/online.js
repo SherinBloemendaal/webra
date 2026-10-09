@@ -3,6 +3,7 @@
 // is set when the service cannot be reached at all (local development).
 
 import { canonicalJson, mapHash, parseMap } from './mapformat.js';
+import { CSRF_HEADER } from '../../js/net.js';
 
 export class ApiError extends Error {
   constructor(message, { status = 0, unavailable = false, code = null } = {}) {
@@ -71,7 +72,7 @@ export async function publishMap(map) {
   const body = canonicalJson(map);
   const localHash = await mapHash(map);
   // X-WebRA-CSRF: every API write carries it (docs/accounts-api.md 1.1).
-  const out = await request(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WebRA-CSRF': '1' }, body });
+  const out = await request(API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...CSRF_HEADER }, body });
   if (typeof out?.id !== 'string' && typeof out?.id !== 'number') throw new ApiError('The map service did not return a map id.');
   return { id: String(out.id), hash: out.hash ?? null, localHash };
 }
