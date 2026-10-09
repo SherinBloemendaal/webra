@@ -234,7 +234,7 @@ const ONLINE = {
 };
 
 /** The server's relay in memory, with its order log as a list of non-empty frames. */
-function relayHarness() {
+function relayHarness(options = ONLINE) {
   const relay = new Lockstep({ players: [0, 1], delay: 3 });
   const log = [];
   const clients = new Map();
@@ -247,12 +247,17 @@ function relayHarness() {
   };
   const conn = (seat, client) => ({
     sent: [],
+    orderTicks: [],
     send(msg) {
       const parsed = parseClientMessage(encodeClient(msg));
       assert.ok(parsed.ok, parsed.message);
       const m = parsed.msg;
       this.sent.push(m.t);
-      if (m.t === 'orders') deliver(relay.submit(seat, m.tick, m.orders));
+      if (m.t === 'orders') {
+        if (m.orders.length) this.orderTicks.push(m.tick);
+        deliver(relay.submit(seat, m.tick, m.orders));
+      }
+      if (m.t === 'defeated') relay.defeat(seat);
       if (m.t === 'hash') {
         hashes.push([seat, m.tick, m.hash]);
         assert.equal(relay.hash(seat, m.tick, m.hash), null, `desync at ${m.tick}`);
@@ -265,7 +270,7 @@ function relayHarness() {
     },
   });
   const add = (seat, { rejoining = false, spectator = false } = {}) => {
-    const game = Game.from_options(JSON.stringify(ONLINE));
+    const game = Game.from_options(JSON.stringify(options));
     // `seen`: the state hash at every tick count this client stopped at.
     const client = { seat, game, inbox: [], live: true, record: null, seen: new Map() };
     client.conn = conn(seat, client);
@@ -274,6 +279,7 @@ function relayHarness() {
       tickMs: 40,
       rejoining,
       spectator,
+      player: seat,
       onCaughtUp: () => !spectator && client.conn.send({ t: 'resume' }),
       onCheck: (ok) => (client.checked = ok),
     });
@@ -338,6 +344,37 @@ test('a player drops out, rejoins from the order log, catches up and plays on in
   for (const t of common) assert.equal(a.seen.get(t), b2.seen.get(t), `tick ${t}`);
   // B's orders after the rejoin reached the game (A sees them too).
   assert.ok(h.log.some(([t, o]) => t >= b2.driver.joinTick && o.some(([p]) => p === 1)));
+});
+
+test('a defeated player tells the server, keeps watching in sync and never sends an order again', () => {
+  const h = relayHarness({ ...ONLINE, cheats: true });
+  const a = h.add(0);
+  const b = h.add(1);
+  h.deliver(h.relay.initialFrames());
+  h.run(40);
+  assert.equal(b.game.player_defeated(1), false);
+  // A destroys everything B owns (cheat), B keeps clicking.
+  const table = a.game.actor_table();
+  const ids = [];
+  for (let i = 0; i + 1 < table.length; i += 2) if (table[i] !== 0xffffffff && (table[i + 1] & 0xff) === 1) ids.push(table[i]);
+  assert.ok(ids.length > 0);
+  a.game.dev_kill(0, Uint32Array.from(ids));
+  h.run(80, (i) => {
+    if (i % 10 === 0) b.game.order_move(1, Uint32Array.from(units(b.game, 1)), 500, 500, false);
+  });
+  assert.ok(b.game.player_defeated(1) && a.game.player_defeated(1), 'every peer agrees');
+  assert.ok(b.driver.defeated);
+  assert.equal(b.conn.sent.filter((t) => t === 'defeated').length, 1, 'told the server once');
+  assert.ok(h.relay.defeated.has(1));
+  const defeatTick = b.game.tick_count();
+  h.run(60, (i) => {
+    if (i % 10 === 0) b.game.order_move(1, Uint32Array.from(units(b.game, 1)), 900, 300, true);
+  });
+  assert.ok(b.conn.orderTicks.every((t) => t < defeatTick), 'no orders after the defeat');
+  assert.ok(!h.log.some(([t, o]) => t > defeatTick && o.some(([p]) => p === 1)), 'none reached a frame');
+  const common = [...a.seen.keys()].filter((t) => b.seen.has(t) && t > defeatTick);
+  assert.ok(common.length > 10);
+  for (const t of common) assert.equal(a.seen.get(t), b.seen.get(t), `tick ${t}: still in sync`);
 });
 
 test('spectators catch up and follow, but never send orders or hashes', () => {

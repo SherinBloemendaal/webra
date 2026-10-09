@@ -159,11 +159,15 @@ impl World {
             return;
         }
         let cap = self.level_experience(i, levels);
+        let before = (self.actors[i].xp, self.actors[i].rank);
         let xp = self.actors[i].xp.saturating_add(amount).clamp(0, cap);
         self.actors[i].xp = xp;
         while (self.actors[i].rank as usize) < levels && xp >= self.level_experience(i, self.actors[i].rank as usize + 1) {
             self.actors[i].rank += 1;
         }
+        // Observer stats (observer.rs).
+        let ranks = u32::from(self.actors[i].rank.saturating_sub(before.1));
+        self.note_experience(i, xp - before.0, ranks);
     }
 
     /// OpenRA GainsExperience.GiveLevels: just enough experience for `n` more levels.

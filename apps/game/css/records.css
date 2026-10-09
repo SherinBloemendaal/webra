@@ -122,10 +122,6 @@
   flex-wrap: wrap;
 }
 
-#gameover-replay {
-  margin-top: 8px;
-}
-
 /* ---- Observer panel (spectators and replays) ------------------------------------ */
 
 .observer-panel {

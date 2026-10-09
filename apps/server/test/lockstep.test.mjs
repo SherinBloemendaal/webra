@@ -376,3 +376,23 @@ test('agreed hashes: the majority hash is kept for rejoin checks', () => {
   assert.deepEqual(ls.hash(2, 25, 'bb'), { tick: 25, players: [2] });
   assert.deepEqual(ls.agreed, { tick: 25, hash: 'aa' });
 });
+
+test('a defeated seat keeps playing in step, but its orders never reach a frame', () => {
+  const ls = new Lockstep({ players: [0, 1], delay: 3 });
+  ls.initialFrames();
+  // Already waiting for a later frame when the defeat is reported: dropped too.
+  ls.submit(1, 3, [stop([7], 1)]);
+  assert.equal(ls.defeat(1), true);
+  assert.equal(ls.defeat(1), false, 'reported once');
+  assert.deepEqual(ls.submit(0, 3, [stop([1])]), [{ tick: 3, orders: [[0, [stop([1])]]] }]);
+  // It still has to deliver every tick (it watches the game), only empty.
+  assert.deepEqual(ls.submit(0, 4, []), []);
+  assert.deepEqual(ls.submit(1, 4, [stop([8], 1)]), [{ tick: 4, orders: [] }]);
+  // Kept across a lost connection and a rejoin.
+  ls.suspend(1);
+  const at = ls.rejoin(1, null);
+  for (let t = 5; t < at; t++) ls.submit(0, t, []);
+  ls.submit(0, at, []);
+  assert.deepEqual(ls.submit(1, at, [stop([9], 1)]), [{ tick: at, orders: [] }]);
+  assert.throws(() => ls.defeat(5), LockstepError, 'only seats of the game');
+});

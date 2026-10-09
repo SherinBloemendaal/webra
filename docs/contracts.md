@@ -362,6 +362,7 @@ Client to server:
 | `map` | `{ id, hash, name, modded }` (host only) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
 | `chat` | `text` (<= 200 chars) | any time |
+| `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
 | `orders` | `tick, orders: [...]` | in game, every tick (may be empty) |
 | `hash` | `tick, hash` | in game, every 25 ticks |
@@ -455,6 +456,18 @@ host role. Spectators are not in `start.players`, receive every frame and
 chat, never count for stalls or hash majorities, and the server removes a
 spectator that sends `orders` or `hash` (`left` reason `removed`).
 
+### Defeated players
+
+The engine refuses every order of a defeated player (it may still own
+submarines, walls or mines), on every peer and in replays; `apply_frame`
+skips them. A defeated player may keep watching: its client switches to the
+observer view, keeps running lockstep (empty `orders` every tick, `hash`
+as before, the same stall rules) and sends `defeated` once (again after a
+reconnect). The server keeps the seat but drops its orders from then on,
+also ones already waiting for a frame and after a rejoin. A seat cannot
+undo it; a spectator sending `defeated` gets `bad_state`. Online games never
+pause for the end-game dialog.
+
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
 an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 (`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
@@ -467,10 +480,27 @@ all); `player_json` has `won`, `defeated` and `team`.
 Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
 `build_render`, `build_render_records` and `fog_ptr` renders the whole map with every actor live (no
 ghosts, no owner-only decorations); `Game.observer_stats()` returns `[{
-player, faction, team, cash, funds, earned, armyValue, unitsKilled, unitsLost,
-buildingsKilled, buildingsLost, powerGenerated, powerUsed, defeated, won }]`
-for the non-neutral players (kills credited to the owner of the weapon that
-dealt the killing damage; not part of the state hash). `Game.snapshot()` and
+player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
+spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
+buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
+unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
+promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
+defeatedAt, won }]` for the non-neutral players (kills credited to the owner
+of the weapon that dealt the killing damage; `orders` counts the orders of
+the order log, AI decisions are not orders; `score` is the value destroyed
+plus half the value built; not part of the state hash).
+`Game.observer_report()` adds per player `productionTicks` (per queue),
+`built`, `killed`, `lost`, `units`, `structures` (actor id -> count) and
+`powers` (power key -> times fired), plus `{ tick, ticksPerSecond, winner,
+endTick, history: { interval, ticks, players: [{ player, funds, earned,
+spent, armyValue, kills, deaths, assetsDestroyed, assetsLost, harvested,
+powerGenerated, powerUsed, orders, damageDealt }] } }`: a sample on tick 1,
+every 125 ticks (5 s) and on the tick the game ended, the same on every peer
+and in a replay. `Game.player_defeated(p)` is a cheap check for the lockstep
+driver. The client's end-game dialog (`js/endgame.js`) and statistics screen
+(`js/stats.js`, tabs Basic, Economy, Production, Combat, Army, Support powers,
+Graphs) read these; the screen asks for the report (`ask.observer_report`)
+when it opens and every two seconds while it is open. `Game.snapshot()` and
 `game.restore(snapshot)` copy the whole world in memory (replay seeking; not
 serialized).
 
@@ -726,6 +756,10 @@ about options added since; files of the running build are validated in full:
   The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
   (backwards from in-memory snapshots, `Game.snapshot`), and switches between
   the whole map and each player's view with the observer stats.
+- Restart (`js/restart.js`): single player games and loaded saves restart
+  from tick 0 with the same options and map through a page reload (the
+  settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
+  viewer restarts playback in place. Online games have no restart.
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
@@ -954,7 +988,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `set_selection`, `set_hover` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre) | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).

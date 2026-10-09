@@ -663,6 +663,7 @@ impl World {
         let a = &mut self.actors[u];
         // One "under attack" event per burst of fire on a structure (sound_events.rs).
         let report = a.kind == Kind::Building && (a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS);
+        let dealt = dmg.min(a.hp.max(0));
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
@@ -670,6 +671,7 @@ impl World {
             let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
             self.sound.push(SoundEventKind::BuildingDamaged, ty, x, y, owner, 0);
         }
+        self.note_damage(u, dealt);
         self.take_cover(u, types);
         if self.actors[u].hp <= 0 {
             self.award_kill(u, source);
