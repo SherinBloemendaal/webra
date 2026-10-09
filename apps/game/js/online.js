@@ -43,6 +43,7 @@ import {
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { onlineRefusal } from './account/ui.js';
+import { switchInput } from './ui/controls.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -499,9 +500,7 @@ export class OnlineUI {
       const title = el('input', 'online-input');
       title.maxLength = SESSION_NAME_MAX;
       title.value = `${name}'s game`;
-      const pub = el('input');
-      pub.type = 'checkbox';
-      pub.checked = true;
+      const pub = switchInput({ checked: true });
       const pass = el('input', 'online-input');
       pass.type = 'password';
       pass.maxLength = PASSWORD_MAX;
@@ -950,10 +949,7 @@ export class OnlineUI {
     const toggles = el('div', 'online-toggles');
     for (const [key, label] of TOGGLES) {
       const row = el('label', 'online-toggle');
-      const box2 = el('input');
-      box2.type = 'checkbox';
-      box2.checked = o[key];
-      box2.disabled = !host;
+      const box2 = switchInput({ checked: o[key], disabled: !host });
       box2.addEventListener('change', () => set(key, box2.checked));
       row.append(box2, el('span', null, label));
       toggles.append(row);

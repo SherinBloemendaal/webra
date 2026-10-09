@@ -37,6 +37,36 @@
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --display: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
   color-scheme: dark;
+
+  /* The names the game's shared controls sheet uses (/play/css/controls.css,
+     loaded by the account and admin pages), mapped onto this palette. */
+  --ui-metal-0: #0e1115;
+  --ui-metal-1: var(--panel);
+  --ui-metal-2: var(--panel-2);
+  --ui-metal-3: #2d343e;
+  --ui-metal-4: #3a424d;
+  --ui-edge: var(--edge-dark);
+  --ui-line: var(--edge);
+  --ui-text: var(--text);
+  --ui-muted: var(--muted);
+  --ui-dim: #5f6873;
+  --ui-bad: var(--red-hi);
+  --ui-focus: var(--focus);
+  --ui-accent: var(--accent);
+  --ui-accent-hi: var(--accent-hi);
+  --ui-accent-lo: var(--accent-lo);
+  --ui-accent-glow: rgba(74, 130, 196, 0.45);
+  --ui-primary: #2f5f96;
+  --ui-primary-hi: #3d76b5;
+  --ui-bevel: var(--bevel);
+  --ui-bevel-in: var(--bevel-in);
+  --ui-rivet: var(--rivet);
+  --ui-brushed: var(--brushed);
+  --ui-radius: var(--radius);
+  --ui-font: var(--sans);
+  --ui-font-mono: var(--mono);
+  --ui-fs-m: 13px;
+  --ui-fs-s: 11px;
 }
 
 *,

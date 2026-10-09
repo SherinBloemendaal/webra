@@ -12,6 +12,7 @@
 // a reset link) an account that may play goes straight back there.
 
 import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { checkInput } from '/lib/js/ui/controls.js';
 import { AccountSession, accountState, signInMethods } from '/lib/js/account/session.js';
 import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/lib/js/account/passkey.js';
 import {
@@ -25,7 +26,7 @@ import {
   validNewPassword,
   validUsername,
 } from '/lib/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
+import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 export const DEFAULT_RETURN = '/play/';
@@ -294,12 +295,13 @@ export async function mountAccountPage(root, deps = {}) {
     });
     // Addresses are only taken once they can be confirmed: no email field while this server sends no email.
     email.row.hidden = !methods.email;
-    const usePasskey = methods.passkey && methods.password ? checkbox('Use a passkey instead of a password') : null;
+    const usePasskey = methods.passkey && methods.password ? switchRow('Use a passkey instead of a password') : null;
     const password = field('Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(policy.passwordMin), maxlength: String(policy.passwordMax) }), {
       help: `At least ${policy.passwordMin} characters. A long phrase is best.`,
     });
     const privacyUrl = site?.privacyUrl ?? '/privacy.html';
-    const privacy = el('input', { type: 'checkbox', id: 'signup-privacy', required: true });
+    const privacy = checkInput({ id: 'signup-privacy' });
+    privacy.required = true;
     const privacyRow = el(
       'div',
       { class: 'check' },

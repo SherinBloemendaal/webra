@@ -6,6 +6,7 @@
 // The server checks every action again.
 
 import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/account/api.js';
+import { checkInput } from '/lib/js/ui/controls.js';
 import {
   AUDIT_ACTIONS,
   BAN_PRESETS,
@@ -30,7 +31,7 @@ import {
 import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
 import { checkDocument } from '/lib/js/registry.js';
 import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
-import { el, field, checkbox, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
+import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [
   ['overview', 'Overview', 'stats'],
@@ -214,7 +215,7 @@ export async function mountAdmin(root, deps = {}) {
     bulkReject.addEventListener('click', () => runBulk('reject', bulkReject));
 
     const tbody = el('tbody');
-    const all = el('input', { type: 'checkbox', 'aria-label': 'Select all shown users' });
+    const all = checkInput({ label: 'Select all shown users' });
     all.addEventListener('change', () => {
       table.toggleAll(all.checked);
       drawRows();
@@ -250,7 +251,7 @@ export async function mountAdmin(root, deps = {}) {
     function drawRows() {
       tbody.replaceChildren(
         ...table.users.map((u) => {
-          const pick = el('input', { type: 'checkbox', 'aria-label': `Select ${u.username}`, checked: table.selected.has(u.id) });
+          const pick = checkInput({ label: `Select ${u.username}`, checked: table.selected.has(u.id) });
           pick.addEventListener('change', () => (table.toggle(u.id, pick.checked), syncBulk()));
           const open = el('button', { type: 'button', class: 'link-button', text: u.username });
           open.addEventListener('click', () => openUser(u.id));
@@ -493,7 +494,7 @@ export async function mountAdmin(root, deps = {}) {
     const username = field('Username', el('input', { type: 'text', value: u.username, maxlength: String(USERNAME_MAX) }));
     const displayName = field('Display name', el('input', { type: 'text', value: u.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX) }));
     const email = field('Email', el('input', { type: 'email', value: u.email ?? '', maxlength: String(EMAIL_MAX) }), { help: 'Empty removes it.' });
-    const verified = checkbox('Email verified', { checked: u.emailVerified });
+    const verified = switchRow('Email verified', { checked: u.emailVerified });
     const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#4a82c4' }));
     const statusSel = el('select', {}, ...SETTABLE_STATUSES.map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
     statusSel.value = SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active';
@@ -503,7 +504,7 @@ export async function mountAdmin(root, deps = {}) {
     roleSel.value = u.role;
     roleSel.disabled = u.id === me.id;
     const role = field('Role', roleSel, { help: u.id === me.id ? 'You cannot change your own role.' : 'A role change signs the account out everywhere.' });
-    const flags = Object.entries(FLAGS).map(([f, label]) => [f, checkbox(label, { checked: u.flags?.includes(f) })]);
+    const flags = Object.entries(FLAGS).map(([f, label]) => [f, switchRow(label, { checked: u.flags?.includes(f) })]);
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save changes' });
     const form = el('form', { class: 'form-grid', novalidate: true }, username.row, displayName.row, email.row, verified.row, color.row, st.row, role.row, el('fieldset', { class: 'check-group' }, el('legend', { text: 'Flags' }), ...flags.map(([, c]) => c.row)), el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {
@@ -743,7 +744,7 @@ export async function mountAdmin(root, deps = {}) {
     const status = statusLine();
     const add = el('button', { type: 'button', class: 'btn btn-danger', text: 'Ban an address or range' });
     add.addEventListener('click', () => ipBanDialog());
-    const activeOnly = checkbox('Only bans in effect', { checked: true });
+    const activeOnly = switchRow('Only bans in effect', { checked: true });
     const list = el('tbody');
     const load = async () => {
       try {
@@ -816,7 +817,7 @@ export async function mountAdmin(root, deps = {}) {
     const eff = site.effective ?? {};
     const unavailable = (on, ok, why) => (on && !ok ? el('span', { class: 'badge badge-warn', text: why }) : null);
     const toggle = (label, checked, help, badge) => {
-      const c = checkbox(label, { checked, help });
+      const c = switchRow(label, { checked, help });
       if (badge) c.row.append(badge);
       return c;
     };

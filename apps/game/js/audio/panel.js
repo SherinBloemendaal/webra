@@ -4,6 +4,7 @@
 // content dialog (js/content/panel.js), which `opts.onContent` opens.
 
 import { installedSummary } from './install.js';
+import { slider, toggle } from '../ui/controls.js';
 
 const VOLUMES = [
   ['master', 'Master volume'],
@@ -46,25 +47,29 @@ export function mountAudioSettings(root, audio, opts = {}) {
   root.classList.add('audio-settings');
   const p = audio.prefs.get();
 
-  const enabled = el('input', { type: 'checkbox', id: 'audio-enabled' });
-  enabled.checked = p.enabled;
-  enabled.addEventListener('change', () => audio.prefs.set({ enabled: enabled.checked }));
+  const enabled = toggle({ id: 'audio-enabled', label: 'Sound on', checked: p.enabled, rowClass: 'audio-row', onChange: (on) => audio.prefs.set({ enabled: on }) });
 
-  const sliders = VOLUMES.map(([key, label]) => {
-    const input = el('input', { type: 'range', min: '0', max: '100', step: '1', id: `audio-${key}` });
-    input.value = String(Math.round(p[key] * 100));
-    const out = el('output', { for: `audio-${key}`, text: `${input.value}%` });
-    input.addEventListener('input', () => {
-      out.textContent = `${input.value}%`;
-      audio.prefs.set({ [key]: Number(input.value) / 100 });
-    });
-    return el('div', { class: 'audio-row' }, el('label', { for: `audio-${key}`, text: label }), input, out);
+  const sliders = VOLUMES.map(([key, label]) =>
+    slider({
+      id: `audio-${key}`,
+      label,
+      min: 0,
+      max: 100,
+      value: Math.round(p[key] * 100),
+      format: (v) => `${v}%`,
+      rowClass: 'audio-row',
+      onInput: (v) => audio.prefs.set({ [key]: v / 100 }),
+    }),
+  );
+
+  const speech = toggle({
+    id: 'audio-speech',
+    label: 'Speak unit replies and announcements',
+    checked: p.speech,
+    disabled: !audio.speech.available,
+    rowClass: 'audio-row',
+    onChange: (on) => audio.prefs.set({ speech: on }),
   });
-
-  const speech = el('input', { type: 'checkbox', id: 'audio-speech' });
-  speech.checked = p.speech;
-  speech.disabled = !audio.speech.available;
-  speech.addEventListener('change', () => audio.prefs.set({ speech: speech.checked }));
   const speechNote = el('p', {
     class: 'audio-note',
     text: audio.speech.available
@@ -72,11 +77,15 @@ export function mountAudioSettings(root, audio, opts = {}) {
       : 'This browser has no speech synthesis: you hear radio blips and announcer chimes instead.',
   });
 
-  const original = el('input', { type: 'checkbox', id: 'audio-original' });
-  original.checked = p.original;
-  original.addEventListener('change', () => audio.prefs.set({ original: original.checked }));
+  const original = toggle({
+    id: 'audio-original',
+    label: 'Use installed original sounds',
+    checked: p.original,
+    rowClass: 'audio-row',
+    onChange: (on) => audio.prefs.set({ original: on }),
+  });
   // Also switched in the Original content dialog.
-  audio.prefs.subscribe((v) => (original.checked = v.original));
+  audio.prefs.subscribe((v) => original.set(v.original));
 
   const testFx = el('button', { type: 'button', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
@@ -115,9 +124,9 @@ export function mountAudioSettings(root, audio, opts = {}) {
   });
 
   root.replaceChildren(
-    el('div', { class: 'audio-row audio-check' }, enabled, el('label', { for: 'audio-enabled', text: 'Sound on' })),
-    ...sliders,
-    el('div', { class: 'audio-row audio-check' }, speech, el('label', { for: 'audio-speech', text: 'Speak unit replies and announcements' })),
+    enabled.row,
+    ...sliders.map((s) => s.row),
+    speech.row,
     speechNote,
     el('div', { class: 'audio-buttons' }, testFx, testVoice),
     musicRow,
@@ -129,7 +138,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
         class: 'audio-note',
         text: 'WebRA ships only its own sounds. If you have Red Alert (Electronic Arts released it as freeware in 2008), install its original sounds, voices and music, and its graphics, from your own copy in the Original content dialog. Texture packs can bring sounds too.',
       }),
-      el('div', { class: 'audio-row audio-check' }, original, el('label', { for: 'audio-original', text: 'Use installed original sounds' })),
+      original.row,
       status,
       el('div', { class: 'audio-buttons' }, openContent),
     ),
