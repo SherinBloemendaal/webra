@@ -83,6 +83,24 @@ export const REMATCH_STATES = ['open', 'cancelled', 'lobby'];
 /** Why a proposal was cancelled (`rematch.reason`). */
 export const REMATCH_CANCEL_REASONS = ['declined', 'expired', 'left', 'withdrawn'];
 
+/**
+ * Online saves (`save` messages): any player proposes saving the running
+ * game; every player still in it must accept within SAVE_VOTE_MS. The save
+ * point is the next hash tick (a multiple of HASH_INTERVAL) the server has
+ * not sent yet; once every player reported the same state hash there, the
+ * server records the save and each player's client stores the file.
+ */
+export const SAVE_VOTE_MS = 60_000;
+/** Players must report their state hash at the save point within this long after agreeing. */
+export const SAVE_HASH_MS = 60_000;
+export const SAVE_COOLDOWN_MS = 10_000;
+export const SAVE_STATES = ['open', 'agreed', 'saved', 'cancelled'];
+export const SAVE_CANCEL_REASONS = ['declined', 'withdrawn', 'left', 'expired', 'desync', 'accounts', 'too_long', 'failed'];
+/** Saved online games the server remembers per account (the oldest go first), and for how long. */
+export const ONLINE_SAVES_PER_ACCOUNT = 20;
+export const ONLINE_SAVE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const SAVE_ID_RE = /^[0-9a-f]{16}$/;
+
 // ---- Lobby maps -----------------------------------------------------------------------
 
 /**
@@ -207,6 +225,8 @@ export const C2S = Object.freeze({
   KICK: 'kick',
   /** Propose (host) or accept a rematch (`accept: true`), or decline / withdraw it (`accept: false`). */
   REMATCH: 'rematch',
+  /** Propose or accept saving the running game (`accept: true`), or decline / withdraw it. */
+  SAVE: 'save',
 });
 
 /** Server to client. */
@@ -227,6 +247,8 @@ export const S2C = Object.freeze({
   BACK: 'back',
   /** A rematch proposal: open (with who accepted), cancelled, or the session is back in its lobby. */
   REMATCH: 'rematch',
+  /** Saving the game: proposed, agreed (the save point), saved (the record's id), or cancelled. */
+  SAVE: 'save',
 });
 
 /** Error codes the server sends in `error` messages and HTTP error bodies. */

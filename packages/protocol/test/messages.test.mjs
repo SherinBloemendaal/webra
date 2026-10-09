@@ -537,3 +537,50 @@ test('protocol 6: the member credential header format', () => {
   }
   assert.deepEqual(MAP_STATES, ['installed', 'missing', 'declined']);
 });
+
+test('protocol 6: save messages, resumed starts and resume lobbies are strict', () => {
+  assert.deepEqual(ok({ t: 'save', accept: true }), { t: 'save', accept: true });
+  bad({ t: 'save' }, /accept/);
+  bad({ t: 'save', accept: true, tick: 50 }, /unknown field/);
+  const p = (m) => parseServerMessage(JSON.stringify(m));
+  const open = { t: 'save', state: 'open', by: 2, accepted: [2], waiting: [1], msLeft: 30000 };
+  assert.deepEqual(p(open).msg, open);
+  assert.equal(p({ ...open, tick: 50 }).ok, false);
+  assert.deepEqual(p({ t: 'save', state: 'agreed', tick: 75 }).msg, { t: 'save', state: 'agreed', tick: 75 });
+  assert.equal(p({ t: 'save', state: 'agreed', tick: 74 }).ok, false, 'a hash tick');
+  const saved = { t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 76, hash: 'abcd' };
+  assert.deepEqual(p(saved).msg, saved);
+  assert.equal(p({ ...saved, ticks: 75 }).ok, false);
+  assert.equal(p({ ...saved, id: 'x' }).ok, false);
+  assert.deepEqual(p({ t: 'save', state: 'cancelled', reason: 'desync' }).msg, { t: 'save', state: 'cancelled', reason: 'desync' });
+  assert.equal(p({ t: 'save', state: 'cancelled', reason: 'bored' }).ok, false);
+  // A resumed start says where the game goes on.
+  const start = {
+    t: 'start',
+    seed: OPTIONS.seed,
+    options: OPTIONS,
+    map: null,
+    delay: 3,
+    players: [
+      { player: 0, slot: 0, client: 1, name: 'Host', type: 'human' },
+      { player: 1, slot: 2, client: null, name: 'Computer', type: 'ai' },
+    ],
+  };
+  assert.deepEqual(p({ ...start, resume: { ticks: 501, hash: 'ab' } }).msg.resume, { ticks: 501, hash: 'ab' });
+  assert.equal(p({ ...start, resume: { ticks: 500, hash: 'ab' } }).ok, false);
+  assert.equal(p({ ...start, resume: { ticks: 501 } }).ok, false);
+  // A lobby that resumes a save.
+  const lobby = {
+    t: 'lobby',
+    hostId: 1,
+    slots: [{ type: 'human', client: 1, name: 'Host', faction: 'germany', color: 0, team: 0, ready: false }, { type: 'open' }],
+    options: { ...DEFAULT_OPTIONS },
+    map: null,
+    spectators: [],
+    maxSpectators: 2,
+    resume: { id: '0123456789abcdef', title: 'Friday', createdAt: 5, ticks: 501, waiting: ['Guest'] },
+  };
+  assert.deepEqual(p(lobby).msg.resume, lobby.resume);
+  assert.equal(p({ ...lobby, resume: { ...lobby.resume, waiting: ['a‮b'] } }).ok, false);
+  assert.equal(p({ ...lobby, resume: { ...lobby.resume, frames: [] } }).ok, false);
+});

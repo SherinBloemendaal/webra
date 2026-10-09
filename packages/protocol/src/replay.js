@@ -10,7 +10,7 @@
 // then every field strictly (unknown keys, orders, options, map, hashes), and
 // returns a fresh object holding only validated values.
 
-import { MAX_PLAYERS, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
+import { HASH_INTERVAL, MAX_PLAYERS, SAVE_ID_RE, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
 import { fail, int, isPlainObject, object, oneOf, ProtocolError, text, utf8Length } from './check.js';
 import { validFrameOrders } from './messages.js';
 import { parseMap, sha256Hex } from './map.js';
@@ -30,7 +30,7 @@ export const REPLAY_TITLE_MAX = 64;
 /** Saves in the browser (IndexedDB) and their names. */
 export const SAVE_SLOTS_MAX = 50;
 
-const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes'];
+const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online'];
 
 /**
  * Validate everything except the map hash (which needs async SHA-256).
@@ -64,7 +64,15 @@ export function validateReplay(v) {
   if (out.kind === 'save' && (out.player === null || out.options.players[out.player].type !== 'human')) {
     fail('a save must name the human player it belongs to');
   }
-  if (out.kind === 'save' && out.mode !== 'skirmish') fail('only skirmish games can be saved');
+  // An online save names the server's record of it (docs/contracts.md section 4, "Online saves");
+  // it can only be resumed online, after a hash tick, by the players who saved it.
+  if (out.kind === 'save' && out.mode === 'online') {
+    object(v.online, ['id'], 'online');
+    out.online = { id: (() => (typeof v.online.id === 'string' && SAVE_ID_RE.test(v.online.id) ? v.online.id : fail('online.id is malformed')))() };
+    if (out.ticks < 1 || (out.ticks - 1) % HASH_INTERVAL !== 0) fail('an online save follows a hash tick');
+  } else if (v.online !== undefined) {
+    fail('only online saves carry an online record');
+  }
 
   if (v.map !== null) {
     if (typeof v.map !== 'string') fail('map must be canonical map JSON text or null');
@@ -164,6 +172,20 @@ export async function parseReplay(raw, { version = null } = {}) {
     if (err instanceof ProtocolError) return { ok: false, error: err.message };
     throw err;
   }
+}
+
+/**
+ * SHA-256 of a game's order frames in their validated form: the server
+ * computes it from its order log, the Worker from an uploaded save; equal
+ * digests mean the same orders.
+ */
+export async function framesDigest(frames) {
+  return sha256Hex(JSON.stringify(frames.map(([tick, orders], i) => [int(tick, 0, REPLAY_MAX_TICKS, `frames[${i}] tick`), validFrameOrders(orders, `frames[${i}]`)])));
+}
+
+/** SHA-256 of a game's validated options (players, factions, seed and the rest). */
+export async function optionsDigest(options) {
+  return sha256Hex(JSON.stringify(validateGameOptions(options, 'options')));
 }
 
 /** Serialize a replay after validating it (throws ProtocolError). */
