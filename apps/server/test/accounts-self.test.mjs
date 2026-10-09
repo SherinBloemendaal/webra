@@ -181,7 +181,9 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
   await invalid({ lobby: { presets: Array.from({ length: 17 }, (_, i) => ({ name: `Mode ${i}`, options: mode })) } }, 'settings.lobby.presets');
   const withModes = await desktop.put('/api/account/settings', { settings: { ...doc, lobby: { ...doc.lobby, presets: [{ name: 'Ice', options: mode }] } } }, { headers: { 'If-Match': '"v2"' } });
   assert.equal(withModes.status, 200, JSON.stringify(withModes.body));
-  assert.deepEqual((await laptop.get('/api/account/settings')).body.settings.lobby.presets, [{ name: 'Ice', options: mode }]);
+  // A mode saved before protocol 6 gets the defaults of the options added since.
+  const stored = { ...mode, timeLimit: 0, crates: true, shortGame: true, bounty: false, separateTeamSpawns: true, allyBuildRadius: true };
+  assert.deepEqual((await laptop.get('/api/account/settings')).body.settings.lobby.presets, [{ name: 'Ice', options: stored }]);
   await invalid([], 'settings');
   const malformed = await desktop.put('/api/account/settings', { settings: {} }, { headers: { 'If-Match': 'v3' } });
   assert.equal(malformed.status, 400);
