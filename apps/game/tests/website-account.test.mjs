@@ -1,0 +1,169 @@
+// The account page (apps/website/assets/account.js) on a fake DOM against the
+// contract mock: sign in, sign up, email and reset links, Discord returns,
+// methods the site switched off, re-authentication, export and deletion.
+import './play-loader.mjs';
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
+import { MockAccountServer } from './account-mock.mjs';
+import { AccountApi } from '../js/account/api.js';
+
+const { mountAccountPage, parseFragment, DISCORD_ERRORS } = await import('../../website/assets/account.js');
+
+let doc;
+beforeEach(() => {
+  doc = installDom();
+  globalThis.URL.createObjectURL ??= () => 'blob:x';
+  globalThis.URL.revokeObjectURL ??= () => {};
+});
+afterEach(() => uninstallDom());
+
+async function page(server, hash = '') {
+  const root = doc.createElement('div');
+  doc.body.append(root);
+  const replaced = [];
+  const navigated = [];
+  const location = { hash, pathname: '/account/', search: '', assign: (u) => navigated.push(u) };
+  const history = { replaceState: (_s, _t, url) => replaced.push(url) };
+  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u) });
+  await settle(10);
+  return { root, view, replaced, navigated };
+}
+
+const byText = (root, tag, re) => root.querySelectorAll(tag).find((b) => re.test(b.textContent));
+const inputByLabel = (root, re) => {
+  const label = root.querySelectorAll('label').find((l) => re.test(l.textContent));
+  return label ? root.querySelector(`#${label.getAttribute('for')}`) : null;
+};
+
+test('fragments: verify, reset, Discord, tabs; bad tokens are caught', () => {
+  assert.deepEqual(parseFragment('#verify=' + 'a'.repeat(43)), { kind: 'verify', token: 'a'.repeat(43) });
+  assert.deepEqual(parseFragment('#reset=' + 'b_-'.repeat(15)), { kind: 'reset', token: 'b_-'.repeat(15) });
+  assert.deepEqual(parseFragment('#reset=<script>'), { kind: 'bad-link' });
+  assert.deepEqual(parseFragment('#discord=ok'), { kind: 'discord', ok: true, code: null });
+  assert.deepEqual(parseFragment('#discord=error&code=no_account'), { kind: 'discord', ok: false, code: 'no_account' });
+  assert.deepEqual(parseFragment('#signup'), { kind: 'signup' });
+  assert.deepEqual(parseFragment(''), { kind: null });
+  assert.ok(DISCORD_ERRORS.rate_limited, 'every documented Discord code has words');
+});
+
+test('account page: sign in with a password; wrong ones say so; the account sections appear', async () => {
+  const server = new MockAccountServer();
+  server.addUser({ username: 'Tanya', password: 'a long passphrase', email: 'tanya@example.com', emailVerified: true });
+  const { root } = await page(server);
+  const tabs = root.querySelectorAll('[role="tab"]').map((t) => t.textContent);
+  assert.deepEqual(tabs, ['Sign in', 'Create account'], 'no forgot tab while email is unavailable');
+  assert.equal(byText(root, 'button', /Discord/), undefined, 'Discord not configured: no button');
+  inputByLabel(root, /Username or email/).value = 'tanya';
+  inputByLabel(root, /^Password$/).value = 'wrong password';
+  submit(root.querySelector('form'));
+  await settle(10);
+  assert.match(textOf(root.querySelector('[role="alert"]')), /Wrong login or password/);
+  assert.equal(inputByLabel(root, /^Password$/).value, '', 'the password field is cleared');
+  inputByLabel(root, /^Password$/).value = 'a long passphrase';
+  submit(root.querySelector('form'));
+  await settle(20);
+  assert.match(textOf(root), /Tanya/);
+  for (const title of ['Profile', 'Email', 'Password', 'Passkeys', 'Devices', 'Your data']) assert.ok(root.querySelector(`#section-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`), title);
+  assert.match(textOf(root), /tanya@example\.com.*Verified/);
+});
+
+test('account page: sign up needs the privacy notice; a new account waits for approval', async () => {
+  const server = new MockAccountServer();
+  const { root } = await page(server, '#signup');
+  const privacyLink = root.querySelector('a[href="/privacy.html"]');
+  assert.ok(privacyLink, 'the form links the privacy notice');
+  inputByLabel(root, /^Username/).value = 'Boris';
+  inputByLabel(root, /^Password/).value = 'a long passphrase';
+  const form = root.querySelectorAll('form')[0];
+  submit(form);
+  await settle(5);
+  assert.match(textOf(root), /Accept the privacy notice/);
+  check(root.querySelector('#signup-privacy'));
+  submit(form);
+  await settle(20);
+  const req = server.requests.find((r) => r.url === '/api/auth/signup');
+  assert.equal(JSON.parse(req.body).acceptPrivacy, true);
+  assert.match(textOf(root), /Waiting for approval/);
+  assert.match(textOf(root), /closed beta/);
+});
+
+test('account page: closed registration and switched off methods are hidden', async () => {
+  const server = new MockAccountServer();
+  server.site.registration.open = false;
+  server.site.login.password = false;
+  const { root } = await page(server, '#signup');
+  assert.match(textOf(root), /Signing up is closed/);
+  click(root.querySelector('#tab-signin'));
+  await settle();
+  assert.equal(inputByLabel(root, /Username or email/), null);
+  assert.match(textOf(root), /Signing in is switched off/);
+});
+
+test('account page: email verification and password reset links, then the fragment is gone', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'old passphrase!', status: 'pending_email', email: 't@example.com' });
+  user.verifyToken = 'v'.repeat(43);
+  const a = await page(server, `#verify=${'v'.repeat(43)}`);
+  assert.deepEqual(a.replaced, ['/account/']);
+  assert.match(textOf(a.root), /Your email is verified/);
+  assert.equal(user.emailVerified, true);
+  uninstallDom();
+  doc = installDom();
+  user.resetToken = 'r'.repeat(43);
+  const b = await page(server, `#reset=${'r'.repeat(43)}`);
+  const inputs = b.root.querySelectorAll('input[type="password"]');
+  inputs[0].value = 'a brand new passphrase';
+  inputs[1].value = 'a brand new passphrase';
+  submit(b.root.querySelector('form'));
+  await settle(20);
+  assert.equal(user.password, 'a brand new passphrase');
+  assert.match(textOf(b.root), /password is set and you are signed in/);
+  uninstallDom();
+  doc = installDom();
+  const c = await page(server, '#discord=error&code=no_account');
+  assert.match(textOf(c.root), /No WebRA account is linked to that Discord account/);
+});
+
+test('account page: export and deletion ask to confirm the sign-in again, then work', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  server.sessions.get(server.cookie).reauthUntil = 0;
+  const { root } = await page(server);
+  const exportButton = byText(root, 'button', /Download my data/);
+  click(exportButton);
+  await settle(10);
+  const dialog = doc.body.querySelector('[role="dialog"]');
+  assert.match(textOf(dialog), /Confirm it is you/);
+  dialog.querySelector('input[type="password"]').value = 'a long passphrase';
+  submit(dialog.querySelector('form'));
+  await settle(20);
+  assert.match(textOf(root), /Your data is downloaded/);
+  // Deleting: type the username.
+  click(byText(root, 'button', /Delete my account/));
+  await settle(5);
+  const del = doc.body.querySelector('[role="dialog"]');
+  typeInto(del.querySelector('input'), 'Tanya');
+  submit(del.querySelector('form'));
+  await settle(20);
+  assert.equal(user.status, 'deleted');
+  assert.match(textOf(root), /Your account is deleted/);
+});
+
+test('account page: devices list marks this one; signing out another device', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  const other = [...server.sessions.keys()][0];
+  server.signIn(user); // this browser
+  const { root } = await page(server);
+  await settle(20);
+  const devices = root.querySelector('#section-devices').closest('section');
+  assert.match(textOf(devices), /This device/);
+  click(byText(devices, 'button', /Sign out everywhere else/));
+  await settle(20);
+  assert.equal(server.sessions.has(other), false);
+  assert.equal(server.sessions.has(server.cookie), true);
+  void FakeEvent;
+});

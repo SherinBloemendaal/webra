@@ -1,0 +1,613 @@
+/* The account page (/account/) and the admin dashboard (/admin.html):
+   forms, tabs, dialogs, tables and the user drawer, on the site's gunmetal
+   theme (site.css tokens). */
+
+.account-root,
+.admin-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-wide.wrap {
+  max-width: 1400px;
+}
+
+.account-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- Forms ---------------------------------------------------------------- */
+
+.form-card,
+.account-section,
+.account-head {
+  padding: 20px clamp(16px, 3vw, 28px);
+}
+
+.form-card {
+  max-width: 560px;
+}
+
+.account-section h2,
+.form-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.form-grid > .form-actions,
+.form-grid > fieldset {
+  grid-column: 1 / -1;
+}
+
+.field textarea,
+.dialog textarea,
+.settings-form textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 8px 12px;
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius);
+  background: #0e1115;
+  box-shadow: var(--bevel-in);
+  color: var(--text);
+  font: 0.9rem/1.4 var(--mono);
+  resize: vertical;
+}
+
+.field input[type='color'] {
+  padding: 4px;
+  min-height: 44px;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible,
+.check input:focus-visible,
+.tab:focus-visible,
+.link-button:focus-visible,
+.sort:focus-visible,
+.btn:focus-visible,
+.detail-block summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.field input[aria-invalid='true'],
+.field textarea[aria-invalid='true'] {
+  border-color: var(--red-hi);
+}
+
+.form-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.form-status {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(74, 130, 196, 0.12);
+}
+
+.form-status[hidden] {
+  display: none;
+}
+
+.form-status-error {
+  border-left-color: var(--red-hi);
+  background: rgba(255, 90, 60, 0.12);
+}
+
+.form-status-ok {
+  border-left-color: var(--ok);
+  background: rgba(79, 208, 103, 0.1);
+}
+
+ul.form-status {
+  padding-left: 28px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.check .form-help {
+  flex-basis: 100%;
+  padding-left: 28px;
+}
+
+.check-group,
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.check-group legend,
+.settings-group legend {
+  padding: 0 6px;
+  color: var(--accent-hi);
+  font: 700 0.8rem/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
+}
+
+.btn-danger {
+  background: linear-gradient(180deg, #8c2c1f, #5e1a12);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: linear-gradient(180deg, #a63625, #74211a);
+}
+
+.btn-discord {
+  background: linear-gradient(180deg, #6773f2, #4752c4);
+  color: #fff;
+}
+
+.btn-discord:hover {
+  background: linear-gradient(180deg, #7983f5, #5560d6);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-hi);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- Tabs ------------------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--edge);
+}
+
+.tab {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: none;
+  color: var(--muted);
+  font: 700 0.85rem/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  border-color: var(--edge);
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.tab-panel:focus {
+  outline: none;
+}
+
+/* ---- Account page ------------------------------------------------------------ */
+
+.account-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.account-username {
+  font: 700 1.4rem/1.2 var(--display);
+  text-transform: uppercase;
+}
+
+.account-display {
+  color: var(--muted);
+}
+
+.account-state-banned {
+  border-left-color: var(--red-hi);
+}
+
+.account-state-pending_email,
+.account-state-pending_approval {
+  border-left-color: #ffb347;
+}
+
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.item .badge {
+  margin-left: 8px;
+}
+
+/* ---- Dialogs ------------------------------------------------------------------ */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.66);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  padding: 18px 20px 20px;
+}
+
+.dialog-wide {
+  width: min(860px, 100%);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- Admin: overview -------------------------------------------------------------- */
+
+.admin-who {
+  margin: 0;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.stat {
+  padding: 14px 16px;
+}
+
+.stat-link,
+.stat > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.stat-link:hover .stat-label {
+  text-decoration: underline;
+}
+
+.stat-value {
+  font: 700 1.8rem/1 var(--display);
+}
+
+.stat-label {
+  color: var(--muted);
+  font: 700 0.75rem/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---- Admin: tables ------------------------------------------------------------------ */
+
+.admin-filters .field {
+  min-width: 140px;
+}
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--edge);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 700 0.75rem/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.data-table tbody tr:hover,
+.data-table tbody tr.selected {
+  background: rgba(74, 130, 196, 0.1);
+}
+
+.data-table .col-check {
+  width: 44px;
+}
+
+.data-table .col-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.data-table .col-email {
+  overflow-wrap: anywhere;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+th[aria-sort='ascending'] .sort::after {
+  content: ' \2191';
+}
+
+th[aria-sort='descending'] .sort::after {
+  content: ' \2193';
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.badge-status {
+  margin-right: 6px;
+}
+
+.badge-active {
+  color: var(--ok);
+}
+
+.badge-pending_approval,
+.badge-pending_email {
+  color: #ffb347;
+}
+
+.badge-banned {
+  color: var(--red-hi);
+}
+
+.badge-deleted {
+  color: var(--steel);
+}
+
+.badge-flag {
+  margin-left: 4px;
+  color: var(--accent-hi);
+}
+
+/* ---- Admin: user drawer -------------------------------------------------------------- */
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(640px, 100%);
+  padding: 16px 18px;
+  overflow-y: auto;
+  box-shadow:
+    var(--bevel),
+    -12px 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.drawer-body .badge {
+  margin-right: 6px;
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.detail-facts dt {
+  color: var(--muted);
+}
+
+.detail-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-block {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+.detail-block summary {
+  min-height: 32px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detail-block[open] summary {
+  margin-bottom: 10px;
+}
+
+.code {
+  overflow: auto;
+  max-height: 360px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--edge-dark);
+  background: #0e1115;
+  font: 0.82rem/1.4 var(--mono);
+  white-space: pre;
+}
+
+/* ---- Admin: audit log ------------------------------------------------------------------- */
+
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Tablets and phones: the drawer covers the page, tables scroll sideways. */
+@media (max-width: 760px) {
+  .drawer {
+    width: 100%;
+  }
+
+  .form-card {
+    max-width: none;
+  }
+}
