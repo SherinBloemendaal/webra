@@ -620,7 +620,8 @@ signed-in account and 10 resumes per hour per network; before reading the
 body it checks that the requester is the host (the session's `checkHost`)
 and that Content-Length is at most the order log limit plus a map plus 256 KiB
 (413). It validates the file (`parseReplay`, the orders counted against the
-order log limit while validating: 413), finds the record by `online.id` (404 when
+order log limit while validating with the order log's own accounting,
+`logEntryBytes`: 413), finds the record by `online.id` (404 when
 the server no longer keeps it), and requires the same save point, final state
 hash, game version, map hash, options digest and frames digest (409
 otherwise) and the requester's account among the save's players (403). The map, when there is one, is
@@ -640,8 +641,9 @@ hash }`. Every member gets it with the saved orders as `log` messages and
 like a rejoin and compare their state hash at the save point. A player whose
 hash differs does not continue; the others send `resume`. When every player
 caught up (or the catch-up time ran out for some: 60 s plus 1 ms per saved
-tick, at most 3 minutes; they may rejoin later like after a lost
-connection), the relay starts at `ticks`: `back` with that tick for
+tick, at most 3 minutes; such a player gets `error dropped`, everyone gets
+`left` with reason `dropped`, and its seat waits `RECONNECT_GRACE_MS` for a
+rejoin like after a lost connection), the relay starts at `ticks`: `back` with that tick for
 every player, then the empty frames `ticks .. ticks + delay - 1`, and the game
 goes on in lockstep. Orders and hashes before that are refused with
 `bad_state`. The resumed game records itself completely (it replays from tick

@@ -659,7 +659,12 @@ players (docs/contracts.md section 4, "Online saves").
   relay starts only when every player caught up, so nobody gets a head start.
   Orders and hashes sent before that are refused. A player who does not catch
   up holds the start at most 60 s plus 1 ms per saved tick, never more than 3
-  minutes (it may rejoin later), not the 15 minutes a rejoin may take.
+  minutes, not the 15 minutes a rejoin may take: then the game starts without
+  it and its seat waits 2 minutes for a rejoin, like after a lost connection
+  (the client reconnects by itself and goes on catching up).
+- **Orders budget.** The order log and the resume check count a frame the
+  same way (protocol `logEntryBytes`), so every game the server recorded as
+  saved fits the budget when it is resumed.
 - **Server memory.** The frames digest is chained frame by frame, so the
   session computes it while reading its order log one chunk at a time, and a
   resumed start writes each log chunk before reading the next.
