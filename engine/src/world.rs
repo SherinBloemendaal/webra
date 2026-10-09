@@ -86,6 +86,13 @@ pub struct Actor {
     /// Original attack-move destination, resumed after a fight.
     pub dest: (i32, i32),
     pub target: u32,
+    /// Where `target` was last seen by the owner. An attack whose target went
+    /// out of sight heads there (OpenRA Attack: last visible target) and ends
+    /// on arrival unless the target shows up again (combat.rs).
+    pub target_seen: Option<(i32, i32)>,
+    /// Target of opportunity fire: a turreted unit on a plain move shoots at
+    /// it without stopping (OpenRA AttackTurreted OpportunityFire, units.rs).
+    pub opportunity: u32,
     pub forced: bool,
     pub chase_cell: u32,
     pub reload: [i32; MAX_WEAPONS],
@@ -207,6 +214,8 @@ impl Actor {
             attack_move: false,
             dest: (0, 0),
             target: NONE,
+            target_seen: None,
+            opportunity: NONE,
             forced: false,
             chase_cell: NONE,
             reload: [0; MAX_WEAPONS],
@@ -822,6 +831,15 @@ impl World {
         World::setup(rules, map, seed, players, options, &[], biome)
     }
 
+    /// World on a prepared map with the default rules: players start at the
+    /// map's spawns. Harnesses and tests use it for scenario maps (an open
+    /// field for mirrored fights, say). Without a lobby biome the weather is
+    /// temperate, so no snow or heat waves change a scenario.
+    pub fn on_map(seed: u64, map: Map, players: &[PlayerSetup], options: GameOptions) -> World {
+        let biome = options.biome.unwrap_or(crate::weather::Biome::Temperate);
+        World::setup(Rules::load(), map, seed, players, options, &[], biome)
+    }
+
     /// World from a map file; rules overrides (modded maps) apply.
     pub fn from_map(data: &crate::mapdata::MapData, seed: u64, players: &[PlayerSetup], options: GameOptions) -> Result<World, String> {
         let v = data.validate();
@@ -1045,6 +1063,9 @@ impl World {
     // ---- Spawning ----------------------------------------------------------
 
     pub fn spawn_unit(&mut self, ty: u16, owner: u8, x: i32, y: i32, facing: i32) -> usize {
+        // The first auto-target scan comes after a random delay, like every
+        // later one (combat.rs `scan_due`).
+        let first_scan = self.rng.range(1, crate::combat::MAX_SCAN_TICKS);
         let i = self.alloc();
         let gen = self.actors[i].gen;
         let info = &self.rules.actors[ty as usize];
@@ -1063,7 +1084,7 @@ impl World {
         a.pfacing = facing;
         a.pturret = facing;
         a.hp = info.hp;
-        a.scan_cooldown = (i as i32) % 8;
+        a.scan_cooldown = first_scan;
         // Aircraft enter the world flying at their cruise altitude.
         a.altitude = info.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude);
         if info.unit.as_ref().is_some_and(|u| u.harvester.is_some()) {
@@ -1601,6 +1622,9 @@ impl World {
     pub fn order_attack(&mut self, units: &[usize], target: usize, forced: bool) {
         let tref = self.make_ref(target);
         for &i in units {
+            // Only what the owner sees gives the attack a place to head for.
+            let owner = self.actors[i].owner;
+            let seen = self.is_visible_to(target, owner).then(|| (self.actors[target].x, self.actors[target].y));
             if self.rules.actors[self.actors[i].ty as usize].weapons.is_empty() || i == target || !self.actors[i].in_world() {
                 continue;
             }
@@ -1608,6 +1632,7 @@ impl World {
             let a = &mut self.actors[i];
             a.activity = Activity::Attack;
             a.target = tref;
+            a.target_seen = seen;
             a.forced = forced;
             a.hold = false;
             a.attack_move = false;

@@ -48,6 +48,8 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_combat;
+#[cfg(test)]
 mod tests_commands;
 #[cfg(test)]
 mod tests_debug;

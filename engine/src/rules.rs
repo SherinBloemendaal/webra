@@ -47,6 +47,8 @@ struct RawActor {
     turret_turn_speed: Option<i32>,
     reload_override: Option<i32>,
     requires_power: bool,
+    defense: bool,
+    opportunity_fire: bool,
     death_weapon: Option<usize>,
     self_heal: Option<SelfHeal>,
     turret_offsets: Vec<Vec<i32>>,
@@ -689,6 +691,12 @@ pub struct ActorInfo {
     pub turret_turn_speed: Option<i32>,
     pub reload_override: Option<i32>,
     pub requires_power: bool,
+    /// Targetable as `Defense` (OpenRA ^Defense: turrets, pillboxes, Tesla
+    /// and AA): the one kind of structure auto-targeted below AttackAnything.
+    pub defense: bool,
+    /// Fires at targets of opportunity while moving (OpenRA AttackTurreted
+    /// with OpportunityFire, the default): turreted units.
+    pub opportunity_fire: bool,
     pub death_weapon: Option<usize>,
     pub self_heal: Option<SelfHeal>,
     /// (forward, lateral) offset of each turret from the actor's centre (OpenRA Turreted.Offset).
@@ -1442,6 +1450,8 @@ impl Rules {
                 turret_turn_speed: a.turret_turn_speed,
                 reload_override: a.reload_override,
                 requires_power: a.requires_power,
+                defense: a.defense,
+                opportunity_fire: a.opportunity_fire,
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
                 turret_offsets,

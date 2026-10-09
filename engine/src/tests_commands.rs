@@ -197,6 +197,8 @@ fn hold_fire_ends_fights_the_unit_picked_itself() {
     assert_eq!(w.actors[tank].activity, Activity::Attack);
     set_stance(&mut w, 0, &[tank], Stance::HoldFire);
     assert_eq!(w.actors[tank].activity, Activity::Idle);
+    // A shell already in the air still lands.
+    run(&mut w, 25);
     let hp = w.actors[foe].hp;
     run(&mut w, 100);
     assert_eq!(w.actors[foe].hp, hp, "no more shots");
