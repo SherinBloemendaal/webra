@@ -426,6 +426,7 @@ export const DEFAULT_SITE_SETTINGS = Object.freeze({
   registration: Object.freeze({ open: true, approvalRequired: true, emailVerification: true }),
   login: Object.freeze({ password: true, email: true, discord: true, passkey: true }),
   onlineRequiresAccount: true,
+  gameRequiresAccount: true,
   contentRelay: true,
   motd: '',
 });
@@ -434,6 +435,7 @@ const SITE_SHAPE = {
   registration: { open: boolean, approvalRequired: boolean, emailVerification: boolean },
   login: { password: boolean, email: boolean, discord: boolean, passkey: boolean },
   onlineRequiresAccount: boolean,
+  gameRequiresAccount: boolean,
   contentRelay: boolean,
   motd: (v, f) => {
     if (typeof v !== 'string') bad(f, 'Must be text.');

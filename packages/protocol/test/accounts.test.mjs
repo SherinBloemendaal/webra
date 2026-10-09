@@ -100,6 +100,16 @@ test('site settings: merge, validation, stored values over defaults', () => {
   assert.equal('obsolete' in stored, false);
 });
 
+test('site settings: gameRequiresAccount defaults on, validates, and older documents read it as on', () => {
+  assert.equal(DEFAULT_SITE_SETTINGS.gameRequiresAccount, true);
+  assert.equal(mergeSiteSettings(DEFAULT_SITE_SETTINGS, { gameRequiresAccount: false }).gameRequiresAccount, false);
+  throwsField(() => mergeSiteSettings(DEFAULT_SITE_SETTINGS, { gameRequiresAccount: 'no' }), 'settings.gameRequiresAccount');
+  // Documents stored before the setting existed have no key: the default (on) applies.
+  assert.equal(normalizeSiteSettings({ onlineRequiresAccount: false }).gameRequiresAccount, true);
+  assert.equal(normalizeSiteSettings({ gameRequiresAccount: 0 }).gameRequiresAccount, true, 'a bad stored value keeps the default');
+  assert.equal(normalizeSiteSettings({ gameRequiresAccount: false }).gameRequiresAccount, false);
+});
+
 test('settings documents refuse prototype keys everywhere', () => {
   for (const doc of [
     JSON.parse('{"extra":{"__proto__":{"x":1}}}'),
