@@ -125,7 +125,7 @@ test('lobby: map files of every kind of version are checked, upgraded or refused
   const up = inspectMapFile(JSON.stringify(v1Map()), fakeValidate, versions);
   assert.ok(up.ok, up.errors.join('; '));
   assert.deepEqual(up.upgrade, { from: 1, message: MAP_UPGRADED_NOTICE });
-  assert.equal(up.json, canonicalMapJson(upgradeMap(v1Map(), versions).map), 'the engine gets the upgraded map');
+  assert.equal(up.json, canonicalMapJson(upgradeMap(v1Map(), versions).map), 'the engine gets the upgraded map, validated');
   assert.ok(up.json.startsWith('{"formatVersion":3,'));
   assert.equal(up.biome, 'snow');
 
@@ -134,6 +134,13 @@ test('lobby: map files of every kind of version are checked, upgraded or refused
   assert.match(gone.errors[0], /^This map was made for WebRA 0\.9 \(format 1\) and is no longer compatible/);
   assert.match(gone.errors[1], /GONE was removed in format 2/);
 
+  // Upgraded, but the protocol refuses the result (ore on what is rock now): not compatible any more.
+  const ore = new Uint8Array(32 * 32);
+  ore[40] = 4;
+  const rock = inspectMapFile(JSON.stringify(v1Map({ ore: Buffer.from(ore).toString('base64') }, { 40: 9 })), fakeValidate, versions);
+  assert.equal(rock.ok, false);
+  assert.match(rock.errors[0], /no longer compatible/);
+  assert.match(rock.errors[1], /ore can only lie/);
   // Upgraded, but the engine refuses the result: not compatible any more (not "broken").
   const refused = inspectMapFile(JSON.stringify(v1Map()), () => ({ ok: false, errors: ['spawn 1 needs 3x4 clear ground'] }), versions);
   assert.deepEqual(refused.errors.slice(1), ['spawn 1 needs 3x4 clear ground']);

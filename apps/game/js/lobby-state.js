@@ -6,7 +6,7 @@
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
 import { assignSpawns } from '../protocol/spawns.js';
-import { canonicalMapJson } from '../protocol/map.js';
+import { validateMap } from '../protocol/map.js';
 import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
 
 /** The installed map file lives in its own key (it can be large). */
@@ -572,8 +572,15 @@ export function inspectMapFile(text, validate, versions = undefined) {
   const up = upgradeMap(raw, versions);
   if (up.status === 'newer' || up.status === 'incompatible') return fail(up.message, ...up.problems.map((p) => p.message));
   // Malformed `formatVersion` or `gameVersion`, or no object: the engine words it.
-  const json = up.status === 'upgraded' ? canonicalMapJson(up.map) : text;
-  const data = up.status === 'upgraded' ? up.map : raw;
+  let json = text;
+  let data = raw;
+  if (up.status === 'upgraded') {
+    // The validated canonical form of the upgraded map is what gets installed.
+    const r = validateMap(raw, { versions });
+    if (!r.ok) return fail(...r.errors);
+    json = r.canonical;
+    data = r.map;
+  }
   let v;
   try {
     v = validate(json);
