@@ -80,8 +80,8 @@
 .audio-local {
   margin: 0;
   padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
-  border-left: 3px solid var(--ui-accent);
-  background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+  border-left: 3px solid var(--ui-info);
+  background: color-mix(in srgb, var(--ui-info) 10%, transparent);
   font-size: calc(13 * var(--ui-px));
 }
 

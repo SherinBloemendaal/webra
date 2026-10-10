@@ -103,8 +103,21 @@
 }
 
 .campaign-btn-primary {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
+}
+
+.campaign-btn-primary:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+  filter: none;
+}
+
+.campaign-btn-primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
+}
+
+.campaign-btn-primary:disabled {
+  background: var(--ui-primary-disabled);
 }
 
 .campaign-tab[aria-selected='true'] {

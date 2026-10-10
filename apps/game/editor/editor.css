@@ -37,15 +37,25 @@ body.editor {
 }
 
 .editor button.primary {
-  background: #7a2a20;
-  border-color: #a63a2c;
+  background: var(--ui-primary-fill);
+  border-color: var(--ui-edge);
+  color: #fff;
+}
+
+.editor button.primary:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+  filter: none;
+}
+
+.editor button.primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
 }
 
 .editor button.active,
 .editor .seg.active {
-  background: #4a4020;
-  border-color: var(--accent);
-  color: #fff3c8;
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: #fff;
 }
 
 .editor button.link,
@@ -614,7 +624,7 @@ kbd {
 }
 
 .rules-item.active {
-  background: #4a4020 !important;
+  background: var(--ui-accent-lo) !important;
 }
 
 .rules-item.changed .id {
