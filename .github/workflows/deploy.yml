@@ -34,6 +34,13 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Error reports (docs/deploy.md, "Error reports") are opt-in: only with
+      # the repository variable SENTRY_DSN set do the game, the website and the
+      # Worker report anything; unset, the build and the Worker send nothing.
+      WEBRA_ENV: production
+      SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+      SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}
+      SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +86,49 @@ jobs:
             echo "No apps/server/migrations directory, skipping."
           fi
 
+      # Releases, source files and deploy markers in Sentry need an org auth
+      # token (secret SENTRY_AUTH_TOKEN) and the variables SENTRY_ORG and
+      # SENTRY_PROJECT; without the token these steps are skipped.
+      - name: Create the Sentry release and upload the sources
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "No SENTRY_AUTH_TOKEN secret: skipping the Sentry release and source upload."
+            exit 0
+          fi
+          if [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "::error::SENTRY_AUTH_TOKEN is set, so the repository variables SENTRY_ORG and SENTRY_PROJECT are required (docs/deploy.md)."
+            exit 1
+          fi
+          release=$(node tools/sentry-config.mjs release)
+          npx --yes @sentry/cli@3.8.0 releases new "$release"
+          # Our modules are served as they are (no bundler) and the SDK with
+          # its source map: everything under dist/ by its URL path.
+          npx --yes @sentry/cli@3.8.0 sourcemaps upload --release "$release" --url-prefix '~/' dist
+
       - name: Deploy the Worker
         working-directory: apps/server
-        run: npx --no-install wrangler deploy
+        # The SENTRY_* variables of the Worker (src/telemetry.js) come from the same configuration as the game's.
+        run: |
+          vars=$(node ../../tools/sentry-config.mjs worker-vars)
+          npx --no-install wrangler deploy $vars
+
+      - name: Mark the Sentry release deployed
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "No SENTRY_AUTH_TOKEN secret: skipping the Sentry deploy marker."
+            exit 0
+          fi
+          release=$(node tools/sentry-config.mjs release)
+          environment=$(node tools/sentry-config.mjs environment)
+          npx --yes @sentry/cli@3.8.0 releases finalize "$release"
+          npx --yes @sentry/cli@3.8.0 deploys new --release "$release" --env "$environment" --url https://webra.sherin.dev

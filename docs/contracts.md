@@ -1694,12 +1694,26 @@ Main thread to worker:
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
-| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
+| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
-`warn`, and `failed` (the worker cannot go on; the page says so).
+`warn`, `failed` (the worker cannot go on; the page says so), and `error {
+error: { name, message, stack, context } }`: an error for the error report
+(docs/security.md, "Error reports"). The worker has no reporting of its own;
+the main thread reports it when reports are on (`js/telemetry`).
+
+Engine panics: the wasm32 engine aborts on a Rust panic, which JavaScript sees
+as `RuntimeError: unreachable`. The engine's panic hook
+(`engine/src/panic_report.rs`, installed at module start) keeps the message,
+source location and tick, and the free function `take_panic()` returns them
+once as JSON `{ message, location, tick }`. `SimCore` (`js/sim/core.js`)
+turns every trap of a call into the engine into an `EnginePanic` (with the
+panic's message and location) or `EngineTrap` error carrying
+`webraContext { engine, mode, tick, hashes, panicTick }`
+(`js/sim/engine-error.js`); after one, the game is stopped and every later
+call throws the same error.
 
 Start specs: `skirmish { options, map, player, recorder }`, `mission {
 mission, options, recorder }` (the mission file's text and its start

@@ -21,5 +21,8 @@
     "test:protocol": "node --test packages/protocol/test/*.test.mjs",
     "test:server": "node --test apps/server/test/*.test.mjs",
     "test:luastack": "cargo build --release --target wasm32-unknown-unknown -p webra-sim --example lua_stack --features stack-probe && node tools/lua-stack-wasm.mjs && node --stack-size=300 tools/lua-stack-wasm.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }

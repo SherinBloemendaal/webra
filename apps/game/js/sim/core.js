@@ -19,8 +19,13 @@ import { LockstepDriver } from '../net.js';
 import { coopStart, LocalDriver, newGame, Recorder, ReplayController } from '../replay.js';
 import { RECT_REC_FLOATS, SPRITE_EXTRA_FLOATS, SPRITE_REC_FLOATS } from '../crowd.js';
 import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
+import { engineError } from './engine-error.js';
+import { C2S } from '../protocol.js';
 
 const MAX_TICKS_PER_FRAME = 8;
+
+/** How many of the newest state hashes an error report gets. */
+const REPORT_HASHES = 4;
 
 /** Calls the main thread may make besides orders and UI state. */
 const SETTINGS = new Set(["set_audio_events", "set_health_bars", "set_building_overlays", "set_sprite_poses", "set_original_slots", "set_death_art"]);
@@ -28,12 +33,24 @@ const SETTINGS = new Set(["set_audio_events", "set_health_bars", "set_building_o
 export class SimCore {
   /**
    * @param {{ Game: any, memory: () => WebAssembly.Memory,
-   *   emit?: (type: string, payload: any) => void, now?: () => number }} o
+   *   emit?: (type: string, payload: any) => void, now?: () => number,
+   *   engine?: { version?: () => string, takePanic?: () => string | undefined } | null,
+   *   onFailure?: (err: Error) => void }} o
+   *   `engine`: the wasm module's `version` and `take_panic` exports, for
+   *   errors that say what the engine did (js/sim/engine-error.js);
+   *   `onFailure`: called once with the engine error that stops the game
    */
-  constructor({ Game, memory, emit = () => {}, now = null }) {
+  constructor({ Game, memory, emit = () => {}, now = null, engine = null, onFailure = null }) {
     this.Game = Game;
     this.memory = memory;
     this.emit = emit;
+    this.engine = engine;
+    this.onFailure = onFailure;
+    /** The engine error that stopped this game: every later call throws it. */
+    this.failure = null;
+    /** The last tick a frame was built for, and the newest state hashes `[tick, hash]` sent online. */
+    this.lastTick = 0;
+    this.sentHashes = [];
     this.now = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     this.game = null;
     this.kind = null;
@@ -57,6 +74,59 @@ export class SimCore {
     /** Whether the game plays a mission (asked once), and the tick its panel state was sent for. */
     this.missionOn = null;
     this.missionTick = -1;
+    // Every call into the engine goes through `guard`: a panic or trap
+    // becomes an EnginePanic / EngineTrap with the game's facts.
+    for (const name of ['start', 'call', 'query', 'command', 'step']) {
+      const fn = this[name];
+      this[name] = (...args) => this.guard(() => fn.apply(this, args));
+    }
+  }
+
+  /** Run `fn`; an engine panic or trap stops the game and is thrown as an EngineError. */
+  guard(fn) {
+    if (this.failure) throw this.failure;
+    try {
+      return fn();
+    } catch (err) {
+      const out = engineError(err, { takePanic: this.engine?.takePanic, context: () => this.context() });
+      if (out !== err) {
+        this.failure = out;
+        try {
+          this.onFailure?.(out);
+        } catch {
+          // Reporting must never hide the error itself.
+        }
+      }
+      throw out;
+    }
+  }
+
+  /** A state hash sent to the server (online): the newest few go into error reports. */
+  noteHash(tick, hash) {
+    this.sentHashes.push([tick, hash]);
+    if (this.sentHashes.length > REPORT_HASHES) this.sentHashes.shift();
+  }
+
+  /**
+   * Facts about the game for an error report: the engine version, the game
+   * mode, the last tick drawn and the newest state hashes (sent online, or
+   * kept by the recorder). Never calls into the game: after a panic it
+   * cannot be used any more.
+   */
+  context() {
+    let engine = null;
+    try {
+      engine = this.engine?.version?.() ?? null;
+    } catch {
+      engine = null;
+    }
+    const kept = this.sentHashes.length ? this.sentHashes : (this.recorder?.hashes ?? []);
+    return {
+      engine,
+      mode: this.kind,
+      tick: this.lastTick,
+      hashes: kept.slice(-REPORT_HASHES).map(([tick, hash]) => [tick, hash]),
+    };
   }
 
   // ---- Start ------------------------------------------------------------------------
@@ -120,7 +190,12 @@ export class SimCore {
         } catch {
           this.recorder = null;
         }
-        const conn = { send: (msg) => this.emit('send', { msg, epoch: this.epoch }) };
+        const conn = {
+          send: (msg) => {
+            if (msg?.t === C2S.HASH) this.noteHash(msg.tick, msg.hash);
+            this.emit('send', { msg, epoch: this.epoch });
+          },
+        };
         this.driver = new LockstepDriver(conn, this.game, {
           delay: spec.delay,
           tickMs: this.tickMs,
@@ -277,6 +352,9 @@ export class SimCore {
         return this.game.state_hash();
       case 'tick':
         return this.game.tick_count();
+      // Facts for an error report (js/telemetry): a desync, for example.
+      case 'report':
+        return this.context();
       default:
         throw new Error(`unknown simulation command ${name}`);
     }
@@ -360,6 +438,7 @@ export class SimCore {
     }
     let table = null;
     const tick = g.tick_count();
+    this.lastTick = tick;
     if (req.table && (this.tableDirty || tick !== this.tableTick)) {
       table = g.actor_table();
       this.tableTick = tick;

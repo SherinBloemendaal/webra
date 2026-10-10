@@ -31,6 +31,7 @@ import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
 import { closeOpenTip, labelWithHelp } from './infotip.js';
+import { configured as reportsConfigured } from './telemetry/index.js';
 
 /**
  * Settings of the Settings page with a "?" (tests check each one has help
@@ -53,6 +54,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCapture',
   'mouseCaptureSpeed',
   'mouseCaptureEscMenu',
+  'errorReports',
 ]);
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
@@ -547,6 +549,11 @@ export class GameMenu {
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
     }
+
+    // ---- Privacy (js/telemetry: error reports). Not reset by Defaults: switching reports back on is the player's call. ----
+    // The switch is kept even when this build reports nothing (it is synced and applies once reports are turned on).
+    list.append(el('h2', null, 'Privacy'), check('errorReports', 'Send error reports'));
+    if (!reportsConfigured()) list.append(el('p', 'hint', 'Error reporting is off on this site: nothing is sent, whatever this switch says.'));
 
     c.append(
       list,

@@ -787,6 +787,108 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
   allocate a huge one; a broken file throws and the card shows instead. Videos are never
   bundled or uploaded.
 
+## Error reports (2026-10-10)
+
+The game, the map editor, the website and the Worker can report errors to
+WebRA's self-hosted Sentry at `sentry.vitrion.dev` (one project; its DSN is a
+public client key). Reporting is opt-in for the operator: no DSN is built in,
+and only a deploy with the repository variable `SENTRY_DSN` set reports
+anything (docs/deploy.md, "Error reports"). Without it the browser never
+loads the SDK, the Worker's wrapper does nothing, and the build writes the
+privacy notice's "Error reporting is currently off" section instead of the
+description below (`privacySections`, tools/sentry-config.mjs).
+
+- **What is sent.** Errors nothing caught (`window` error and
+  `unhandledrejection`, the Worker's handlers), errors the code reports on
+  purpose (engine panics and traps, a simulation worker that stopped, a 5xx
+  the Worker answers, failed background writes, failed cron runs), online
+  desyncs (`Lockstep desync`, with the newest state hashes), and a sampled
+  share (`SENTRY_TRACES_SAMPLE_RATE`, default 5%) of page loads and Worker
+  requests as performance traces. Each report has the release
+  (`webra@<version>+<commit>`), the environment, tags (`surface`: game,
+  website or worker; `mode`: menu, editor, skirmish, mission, online, replay,
+  stress; `renderer`: webgpu or unavailable; `original_content`: on or off;
+  `protocol`) and, for engine errors, the `engine` context: engine version,
+  mode, tick and the newest state hashes (checksums, no game content).
+  Browser reports keep the User-Agent (browser and GPU stack bugs need it);
+  the Worker's keep none.
+- **What is never sent.** Users (no id, name or email; no hashed id either:
+  errors are not tied to accounts), network addresses (both SDKs tell
+  Sentry not to infer them, `infer_ip: never`, and the project must have
+  "Prevent Storing of IP Addresses" on), cookies, request headers and
+  bodies (Authorization, `X-WebRA-Member`, `X-WebRA-Auth`, passwords, map
+  uploads), query strings and fragments (rejoin keys, invite links, OAuth
+  codes), local variables, session replays and sessions. Both SDKs run with
+  every `dataCollection` category off (in @sentry 11 it replaced
+  `sendDefaultPii`), and every event, transaction and breadcrumb passes
+  `packages/protocol/src/scrub.js` before it leaves: URLs lose user info,
+  query values (the names stay) and fragments,
+  path segments that look like tokens or ids; text loses URLs' secrets, email
+  addresses and long tokens; keys that name secrets (`password`, `token`,
+  `key`, `session`, `member`, `rejoin`, `cookie`, `auth`) are dropped;
+  console breadcrumbs are kept for warnings and errors only, without their
+  arguments, and click breadcrumbs lose the values
+  of their attributes; traces lose header, user agent, address, query and body
+  attributes and the time zone. Traces are sent as transactions
+  (`traceLifecycle: 'static'`), so they pass the same scrubber (the SDK's
+  default streams spans past `beforeSendTransaction`). Spans that the SDK
+  sends on their own bypass every `beforeSend*` hook, so: the browser traces
+  only page loads and navigations (LCP and CLS ride on the page load
+  transaction); INP, which is such a span named after the element clicked
+  (whose title or label can hold a player's name), long tasks and request
+  spans are off; `beforeSendSpan` scrubs every span; and the browser's
+  transport sends nothing while reports are switched off, whatever produced
+  the envelope. Neither SDK adds `sentry-trace` or `baggage` headers to any
+  request (`tracePropagationTargets: []`): not to the API, not to Discord,
+  the content mirrors or archive.org.
+- **Players' text.** Chat, player, lobby and map names cannot be recognized
+  by their shape, so the client remembers the text it receives and sends
+  (`noteUserText`: WebSocket messages and API answers in `js/net.js`,
+  `js/account/api.js` and the website's fetches, map files the lobby
+  checks, the player's own lobby name) and replaces it with `[redacted]`
+  wherever it shows up in a report. Residual risk: text that reaches an error
+  message without passing those points (none is known) would only lose its
+  URLs, email addresses and tokens.
+- **Consent.** Once the operator has turned reporting on, reports are on by
+  default and the player switches them off in
+  the game's Settings (Privacy) or on the privacy page; it is the settings
+  registry's `privacy.errorReports`, synced with the account. It is read
+  from localStorage before anything loads: switched off, the SDK is never
+  loaded. Switching it off later (this tab, another tab, an account sync)
+  drops every event, transaction and breadcrumb from then on and the
+  transport sends nothing; switching it on loads the SDK. The game menu's
+  Defaults button never switches it back on. The switch covers what this
+  browser sends: the Worker reports its own errors whatever it says, also of
+  a player's request that failed, with none of the player's data (above).
+- **Loading and CSP.** With a DSN, the SDK is bundled by `tools/build-dist.mjs` into
+  `/play/vendor/sentry.js` and `/lib/vendor/sentry.js` (only what WebRA uses:
+  no replay or feedback code) and loaded from the site's own origin: the CSP
+  keeps `script-src 'self'`. Only `connect-src` gained
+  `https://sentry.vitrion.dev`; the build stops when the DSN's host is not
+  in it. Reports are CORS requests, which COEP `require-corp` does not block.
+- **Worker.** `@sentry/cloudflare` wraps `fetch`, `scheduled` and the
+  `Session` Durable Object (fetch, alarms, WebSocket handlers, RPC methods)
+  only when `SENTRY_DSN` is set; it is empty in `wrangler.jsonc`, so
+  `wrangler dev` and the tests send nothing, and the deploy workflow sets it.
+  The SDK needs `AsyncLocalStorage` (compatibility flag `nodejs_als`).
+- **Engine panics.** The wasm32 engine aborts on a panic; a panic hook
+  (`engine/src/panic_report.rs`) keeps its message, source location (a path
+  in the repository) and the running tick for the JavaScript side. The tick
+  it notes is presentation only and never enters the simulation or
+  `state_hash`. The native `sentry` crate is not used: it needs threads and
+  a native HTTP transport, which `wasm32-unknown-unknown` lacks in the
+  browser and the Worker, and the native tools (the examples such as
+  `ai_vs_ai`, `shader-check`) run in CI and on developers' machines, where a
+  panic already fails the run with its message on stderr.
+- **Abuse.** The DSN is public by design: anyone can send made-up events to
+  the project. That costs Sentry quota and noise, never data: the project
+  holds nothing but these reports. Rate limits of the Sentry server apply.
+- **The Sentry server.** It sees each report's connection like any web
+  server. Required project settings (docs/deploy.md): "Prevent Storing of
+  IP Addresses" and 90 days of retention; recommended: the default data
+  scrubbers.
+  `apps/website/privacy.html` says all of this to players.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

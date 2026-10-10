@@ -4,6 +4,7 @@
 export * from './constants.js';
 export * from './accounts.js';
 export { ProtocolError, text, truncate, utf8Length } from './check.js';
+export { FILTERED, REDACTED, Redactor, scrubBreadcrumb, scrubEvent, scrubSpan, scrubText, scrubUrl, scrubValue } from './scrub.js';
 export { LOBBY_OPTION_KEYS, validateGameOptions, validateLobbyOptions } from './options.js';
 export {
   client,

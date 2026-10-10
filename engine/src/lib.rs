@@ -52,6 +52,7 @@ mod naval;
 pub mod neutral;
 pub mod observer;
 pub mod overlays;
+mod panic_report;
 pub mod paths;
 mod plane;
 mod powers;
@@ -168,6 +169,14 @@ pub fn base_rules_json() -> String {
 #[wasm_bindgen]
 pub fn version() -> String {
     format!("{VERSION}+{GIT_HASH}")
+}
+
+/// The last engine panic since the previous call, as JSON `{ message,
+/// location, tick }`, or undefined (panic_report.rs). After a panic the
+/// wasm32 build has trapped; the JavaScript side reads this to report it.
+#[wasm_bindgen]
+pub fn take_panic() -> Option<String> {
+    panic_report::take()
 }
 
 fn to_wu(px: f32) -> i32 {
@@ -381,6 +390,7 @@ impl Game {
     }
 
     pub fn tick(&mut self) {
+        panic_report::note_tick(self.world.tick);
         self.world.step();
     }
 

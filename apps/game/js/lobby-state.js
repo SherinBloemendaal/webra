@@ -8,6 +8,7 @@
 import { assignSpawns } from '../protocol/spawns.js';
 import { validateMap } from '../protocol/map.js';
 import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
+import { noteUserText } from './telemetry/index.js';
 
 /** The installed map file lives in its own key (it can be large). */
 export const MAP_STORAGE_KEY = 'webra.lobby.map.v1';
@@ -576,6 +577,8 @@ export function inspectMapFile(text, validate, versions = undefined) {
   } catch (err) {
     return fail(`Could not check the map: ${err?.message ?? err}`);
   }
+  // The map's name and author are cut out of error reports (js/telemetry).
+  noteUserText({ name: data.name, author: data.author });
   if (!v || !v.ok) {
     const errors = v?.errors?.length ? v.errors : ['The map is not valid.'];
     // Valid for the release that made it: the upgrade is why it fails now.

@@ -42,6 +42,8 @@ export const KEYS = Object.freeze({
   mouseCaptureSpeed: ['game', 'mouseCaptureSpeed'],
   mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
+  // "Send error reports" (js/telemetry/index.js follows it).
+  errorReports: ['privacy', 'errorReports'],
 });
 
 /**

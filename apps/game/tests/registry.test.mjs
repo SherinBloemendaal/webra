@@ -48,7 +48,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     }
   }
   // The groups and keys are the account's settings document sections.
-  assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'extra']);
+  assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'privacy', 'extra']);
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
     'attackMoveTipSeen',
     'edgeScrollSpeed',
