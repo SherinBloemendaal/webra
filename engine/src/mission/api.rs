@@ -933,7 +933,7 @@ impl Ctx<'_> {
         self.w
             .actors
             .iter()
-            .find(|a| a.alive && a.owner == 0)
+            .find(|a| a.alive && a.owner == self.m.local_player)
             .map_or((self.w.map.width * CELL / 2, self.w.map.height * CELL / 2), |a| (a.x, a.y))
     }
 
@@ -1140,7 +1140,7 @@ impl Ctx<'_> {
             F::MediaDisplayMessageToPlayer => {
                 let p = a.player(0)?;
                 let t = a.string(1)?;
-                if p != 0 || t.is_empty() {
+                if p != self.m.local_player || t.is_empty() {
                     return Ok(Vec::new());
                 }
                 let prefix = a.opt_string(2)?.unwrap_or_else(|| "Mission".into());

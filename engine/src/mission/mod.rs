@@ -302,6 +302,11 @@ pub struct Mission {
     /// Map actors by script name, in map order.
     pub(crate) named: Vec<(String, u32)>,
     pub players: Vec<MissionPlayer>,
+    /// How many people play (engine players 0 to humans - 1).
+    pub humans: usize,
+    /// The engine player of this screen (`MissionOptions::local_player`):
+    /// presentation only, never hashed.
+    pub local_player: u8,
     /// OpenRA cell of the engine's cell (0, 0).
     pub origin: (i32, i32),
     pub(crate) triggers: triggers::Triggers,
@@ -449,13 +454,25 @@ impl Mission {
     /// FNV-1a over the mission state that decides the game (the interpreter
     /// heap, handles, objectives, triggers, queues, timers). The UI log, the
     /// mission text and the camera are presentation and left out.
+    ///
+    /// With several people (co-op online) every client runs the scripts with
+    /// its own `IsLocalPlayer`, and the scripts use that for presentation
+    /// (their objective messages, timer colours, the camera), so the
+    /// interpreter heap, the trigger and timer counts and the local result
+    /// differ between clients without changing the game. Like OpenRA, whose
+    /// sync hash never covers Lua, the hash then leaves them out and covers
+    /// what the scripts did to the game: handles, objectives, activity
+    /// queues, reinforcements, builds and the world itself.
     pub fn state_hash(&self) -> u64 {
+        let coop = self.humans > 1;
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         let mut mix = |v: i64| {
             h ^= v as u64;
             h = h.wrapping_mul(0x0100_0000_01b3);
         };
-        mix(self.lua.as_ref().map_or(0, |l| l.state_hash()) as i64);
+        if !coop {
+            mix(self.lua.as_ref().map_or(0, |l| l.state_hash()) as i64);
+        }
         mix(self.handles.len() as i64);
         for hd in &self.handles {
             mix(hd.owner as i64);
@@ -479,16 +496,18 @@ impl Mission {
                 mix(o.state as i64);
             }
         }
-        mix(self.triggers.count() as i64);
+        if !coop {
+            mix(self.triggers.count() as i64);
+            mix(self.delayed.len() as i64);
+            mix(self.result as i64);
+        }
         for (h, q) in &self.queues {
             mix(*h as i64);
             mix(q.len() as i64);
         }
-        mix(self.delayed.len() as i64);
         mix(self.spawns.len() as i64);
         mix(self.builds.len() as i64);
         mix(self.time_limit.end as i64);
-        mix(self.result as i64);
         mix(self.error.is_some() as i64);
         h
     }

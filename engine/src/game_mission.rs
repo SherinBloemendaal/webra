@@ -14,8 +14,11 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl Game {
     /// A game of a mission file (`apps/game/missions/<id>.json`) with
-    /// `{ seed, options: { difficulty: "hard" } }`. The person playing is
-    /// player 0. The scripts are loaded and `WorldLoaded` has run.
+    /// `{ seed, options: { difficulty: "hard" }, humans?: ["Allies1",
+    /// "Allies2"], localPlayer?: 0 }`: `humans` names the mission's playable
+    /// players people take, in engine order (default: its first playable
+    /// player alone), `localPlayer` this screen's (presentation only). The
+    /// scripts are loaded and `WorldLoaded` has run.
     pub fn from_mission(mission_json: &str, options_json: &str) -> Result<Game, JsError> {
         let data = MissionData::parse(mission_json).map_err(|e| JsError::new(&e))?;
         let o: serde_json::Value = serde_json::from_str(options_json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
@@ -28,6 +31,16 @@ impl Game {
                 }
             }
         }
+        if let Some(list) = o.get("humans").and_then(|v| v.as_array()) {
+            if list.len() > 8 {
+                return Err(JsError::new("at most 8 people play a mission"));
+            }
+            chosen.humans = list
+                .iter()
+                .map(|v| v.as_str().map(|s| s.chars().take(64).collect()).ok_or_else(|| JsError::new("humans must be names")))
+                .collect::<Result<_, _>>()?;
+        }
+        chosen.local_player = o.get("localPlayer").and_then(|v| v.as_u64()).unwrap_or(0).min(255) as u8;
         let world = World::from_mission(data, seed, &chosen).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))
     }
@@ -51,7 +64,8 @@ impl Game {
 
     /// `{ id, title, result, error, objectives: [{ description, type, required,
     /// state }], missionText: { text, color } | null, players: [{ name, color }],
-    /// lowPowerQuiet }`: what the mission panel shows (null without a mission).
+    /// lowPowerQuiet, localPlayer }`: what the mission panel shows for this
+    /// screen's player (null without a mission).
     pub fn mission_state(&self) -> String {
         let Some(m) = self.world.mission() else { return "null".into() };
         let state = |s: ObjectiveState| match s {
@@ -70,7 +84,7 @@ impl Game {
             "title": m.title(),
             "result": result,
             "error": m.error,
-            "objectives": m.players[0].objectives.iter().map(|o| json!({
+            "objectives": m.players[m.local_player as usize].objectives.iter().map(|o| json!({
                 "description": o.description,
                 "type": o.kind,
                 "required": o.required,
@@ -78,7 +92,8 @@ impl Game {
             })).collect::<Vec<_>>(),
             "missionText": m.mission_text().map(|(t, c)| json!({"text": t, "color": c})),
             "players": m.players.iter().map(|p| json!({"name": p.name, "color": crate::mission::hex_color(p.color)})).collect::<Vec<_>>(),
-            "lowPowerQuiet": m.low_power_quiet(0),
+            "lowPowerQuiet": m.low_power_quiet(m.local_player),
+            "localPlayer": m.local_player,
         })
         .to_string()
     }
@@ -94,7 +109,8 @@ impl Game {
     /// the person's first actor.
     pub fn mission_camera(&self) -> Vec<f32> {
         let w = &self.world;
-        let pos = w.mission().and_then(|m| m.camera()).or_else(|| w.actors.iter().find(|a| a.alive && a.owner == 0).map(|a| (a.x, a.y)));
+        let me = w.mission().map_or(0, |m| m.local_player);
+        let pos = w.mission().and_then(|m| m.camera()).or_else(|| w.actors.iter().find(|a| a.alive && a.owner == me).map(|a| (a.x, a.y)));
         let (x, y) = pos.unwrap_or((w.map.width * crate::math::CELL / 2, w.map.height * crate::math::CELL / 2));
         vec![x as f32 * PX_PER_CELL / crate::math::CELL as f32, y as f32 * PX_PER_CELL / crate::math::CELL as f32]
     }

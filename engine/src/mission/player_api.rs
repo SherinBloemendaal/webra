@@ -25,8 +25,8 @@ impl Ctx<'_> {
             "Team" | "Handicap" => Ok(num(0)),
             "IsBot" => Ok(boolean(mp.bot)),
             "IsNonCombatant" => Ok(boolean(mp.non_combatant)),
-            // One person plays a mission: the player in slot 0.
-            "IsLocalPlayer" => Ok(boolean(p == 0)),
+            // The player of this screen (co-op online: each client its own).
+            "IsLocalPlayer" => Ok(boolean(p == self.m.local_player)),
             "Cash" => Ok(num(pl.cash as i64)),
             "Resources" => Ok(num(pl.resources as i64)),
             "ResourceCapacity" => Ok(num(pl.storage as i64)),

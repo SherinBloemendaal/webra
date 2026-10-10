@@ -734,17 +734,20 @@ impl Ctx<'_> {
     /// The game is over when every player is non-combatant, decided, or has no
     /// objectives (OpenRA CheckIfGameIsOver); it ends GameOverDelay later.
     fn check_game_over(&mut self) {
-        let human = &self.m.players[0];
-        let result = match human.win {
+        // The game's winner: the first person who won (the same on every client).
+        if self.w.winner.is_none() {
+            if let Some(p) = (0..self.m.humans).find(|&p| self.m.players[p].win == WinState::Won) {
+                self.w.winner = Some(p as u8);
+            }
+        }
+        // This screen's result (presentation: co-op players can end differently).
+        let result = match self.m.players[self.m.local_player as usize].win {
             WinState::Won => MissionResult::Won,
             WinState::Lost => MissionResult::Lost,
             WinState::Undefined => MissionResult::Playing,
         };
         if result != MissionResult::Playing && self.m.result == MissionResult::Playing {
             self.m.result = result;
-            if result == MissionResult::Won {
-                self.w.winner = Some(0);
-            }
             self.m.ui(UiEvent::Result { result: if result == MissionResult::Won { "won".into() } else { "lost".into() } });
         }
         let over = self.m.players.iter().all(|p| p.non_combatant || p.win != WinState::Undefined || p.objectives.is_empty());

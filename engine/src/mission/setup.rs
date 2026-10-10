@@ -23,6 +23,13 @@ pub const ENEMY: u8 = 2;
 #[derive(Clone, Debug, Default)]
 pub struct MissionOptions {
     pub options: BTreeMap<String, String>,
+    /// The mission's playable players taken by people, in engine order
+    /// (player 0, 1, ...): one for the campaign, several for a co-op
+    /// mission online. Empty: the mission's first playable player.
+    pub humans: Vec<String>,
+    /// The engine player this screen belongs to (`IsLocalPlayer`, the UI's
+    /// messages and camera). Presentation only: never part of the state hash.
+    pub local_player: u8,
 }
 
 pub(crate) fn stance_of(name: &str) -> Option<Stance> {
@@ -56,12 +63,32 @@ impl World {
         let rules = Rules::load_mission(&data.rules)?;
         let map = data.map.to_map()?;
         let data = Arc::new(data);
-        // The person playing is slot 0; the other players follow in the
-        // mission's order. Other playable slots (co-op missions) stay empty,
-        // like unoccupied slots in OpenRA: their scripts check for nil.
-        let human = data.human();
-        let mut order = vec![human];
-        order.extend((0..data.players.len()).filter(|&i| i != human && !data.players[i].playable));
+        // The people playing come first (one in the campaign, the co-op
+        // players online), the other players follow in the mission's order.
+        // Playable slots nobody took stay empty, like unoccupied slots in
+        // OpenRA: their scripts check for nil.
+        let humans: Vec<usize> = if chosen.humans.is_empty() {
+            vec![data.human()]
+        } else {
+            let mut out = Vec::new();
+            for name in &chosen.humans {
+                let i = data
+                    .players
+                    .iter()
+                    .position(|p| p.playable && &p.name == name)
+                    .ok_or_else(|| format!("{name} is not a playable player of this mission"))?;
+                if out.contains(&i) {
+                    return Err(format!("{name} is taken twice"));
+                }
+                out.push(i);
+            }
+            out
+        };
+        if chosen.local_player as usize >= humans.len() {
+            return Err("the local player must be one of the people playing".into());
+        }
+        let mut order = humans.clone();
+        order.extend((0..data.players.len()).filter(|&i| !data.players[i].playable));
         let tech = TECH_LEVELS.iter().position(|t| *t == data.tech_level).unwrap_or(TECH_LEVELS.len() - 1);
         let options = GameOptions {
             starting_cash: data.starting_cash,
@@ -95,7 +122,7 @@ impl World {
         for &pi in &order {
             let p = &data.players[pi];
             let fi = w.rules.faction_index(&p.faction).or_else(|| w.rules.faction_index("allies")).expect("allies faction");
-            let bot = pi != human;
+            let bot = !humans.contains(&pi);
             w.add_player(fi, bot, (0, 0));
             let slot = w.players.len() - 1;
             w.players[slot].cash = data.starting_cash;
@@ -103,7 +130,7 @@ impl World {
             players.push(MissionPlayer {
                 name: p.name.clone(),
                 color: parse_hex(&p.color),
-                playable: pi == human,
+                playable: !bot,
                 non_combatant: p.non_combatant || p.owns_world,
                 bot,
                 objectives: Vec::new(),
@@ -167,6 +194,8 @@ impl World {
             low_power_quiet: Default::default(),
             player_actors: BTreeMap::new(),
             conditions: BTreeMap::new(),
+            humans: humans.len(),
+            local_player: chosen.local_player,
         };
         for id in data.options.keys() {
             if let Some(v) = data.option_value(id, &chosen.options) {

@@ -434,3 +434,43 @@ fn a_script_that_never_ends_is_stopped() {
     assert_ne!(w.state_hash(), hash, "the game goes on");
 }
 
+/// Co-op missions online: two people take Allies1 and Allies2; each client
+/// runs the scripts with its own local player (camera, objective messages)
+/// and still computes the same game and the same state hash.
+#[test]
+fn coop_missions_agree_between_their_players() {
+    for id in ["evacuation", "exodus", "infiltration"] {
+        let world = |local: u8| {
+            let opts = MissionOptions {
+                options: [("difficulty".to_string(), "normal".to_string())].into(),
+                humans: vec!["Allies1".into(), "Allies2".into()],
+                local_player: local,
+            };
+            World::from_mission(load(id), 11, &opts).unwrap_or_else(|e| panic!("{id}: {e}"))
+        };
+        let (mut a, mut b) = (world(0), world(1));
+        {
+            let m = a.mission().unwrap();
+            assert_eq!(m.humans, 2);
+            assert_eq!((m.players[0].name.as_str(), m.players[1].name.as_str()), ("Allies1", "Allies2"));
+            assert!(m.players[0].playable && m.players[1].playable && !m.players[0].bot && !m.players[1].bot);
+        }
+        assert_eq!(lua_in(&mut a, "return tostring(Allies1.IsLocalPlayer) .. tostring(Allies2.IsLocalPlayer)"), "truefalse");
+        assert_eq!(lua_in(&mut b, "return tostring(Allies1.IsLocalPlayer) .. tostring(Allies2.IsLocalPlayer)"), "falsetrue");
+        for t in 0..1500 {
+            a.step();
+            b.step();
+            assert_eq!(a.state_hash(), b.state_hash(), "{id} differs at tick {t}");
+        }
+        assert_eq!(error_of(&a), None, "{id}");
+        assert_eq!(error_of(&b), None, "{id}");
+    }
+    // Names that are not playable, or taken twice, are refused.
+    let bad = |humans: Vec<&str>, local: u8| {
+        let opts = MissionOptions { humans: humans.into_iter().map(String::from).collect(), local_player: local, ..Default::default() };
+        World::from_mission(load("evacuation"), 1, &opts).err().unwrap_or_default()
+    };
+    assert!(bad(vec!["Soviets"], 0).contains("not a playable player"));
+    assert!(bad(vec!["Allies1", "Allies1"], 0).contains("taken twice"));
+    assert!(bad(vec!["Allies1"], 1).contains("local player"));
+}
