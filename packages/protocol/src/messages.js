@@ -13,6 +13,7 @@ import {
   COLOR_COUNT,
   DEV_FLAGS,
   DIFFICULTIES,
+  BOTS,
   ERROR_CODE_RE,
   ERROR_MESSAGE_MAX,
   HASH_INTERVAL,
@@ -297,7 +298,7 @@ const CLIENT = {
     return out;
   },
   [C2S.SLOT](m) {
-    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'handicap'], 'slot');
+    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'bot', 'handicap'], 'slot');
     const out = { t: C2S.SLOT, slot: int(m.slot, 0, SLOT_MAX, 'slot') };
     if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, 'handicap');
     if (has(m, 'faction')) out.faction = validFaction(m.faction, 'faction');
@@ -305,6 +306,7 @@ const CLIENT = {
     if (has(m, 'team')) out.team = int(m.team, 0, TEAM_MAX, 'team');
     if (has(m, 'type')) out.type = oneOf(m.type, HOST_SLOT_TYPES, 'type');
     if (has(m, 'difficulty')) out.difficulty = oneOf(m.difficulty, DIFFICULTIES, 'difficulty');
+    if (has(m, 'bot')) out.bot = oneOf(m.bot, BOTS, 'bot');
     return out;
   },
   [C2S.OPTIONS](m) {
@@ -401,7 +403,7 @@ function validSessionInfo(v, what = 'session') {
   };
 }
 
-const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready', 'handicap', 'mapState'];
+const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'bot', 'ready', 'handicap', 'mapState'];
 
 /** One slot of the online lobby as the server publishes it. */
 export function validLobbySlot(v, what = 'slot') {
@@ -419,12 +421,15 @@ export function validLobbySlot(v, what = 'slot') {
     // Present (true) only when the name comes from a signed-in account.
     if (has(v, 'account') && bool(v.account, `${what}.account`)) out.account = true;
     if (has(v, 'difficulty')) fail(`${what}: humans have no difficulty`);
+    if (has(v, 'bot')) fail(`${what}: humans have no bot`);
     mapStateOf(v, out, what);
   } else {
     if (has(v, 'client') || has(v, 'name') || has(v, 'ready') || has(v, 'account') || has(v, 'mapState')) {
       fail(`${what}: AI slots carry no client, name, account, ready or map state`);
     }
     out.difficulty = oneOf(v.difficulty, DIFFICULTIES, `${what}.difficulty`);
+    // Bot type: left out means the Normal AI (lobbies from before bot types).
+    if (has(v, 'bot')) out.bot = oneOf(v.bot, BOTS, `${what}.bot`);
   }
   out.faction = validFaction(v.faction, `${what}.faction`);
   out.color = int(v.color, 0, COLOR_COUNT - 1, `${what}.color`);

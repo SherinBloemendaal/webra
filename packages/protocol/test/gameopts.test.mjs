@@ -16,6 +16,7 @@ import {
   parseClientMessage,
   presetOptions,
   validateGameOptions,
+  BOTS,
   validateLobbyOptions,
   validateSavedPresets,
   validLobbySlot,
@@ -39,6 +40,17 @@ test('the new options default to OpenRA and are strict', () => {
   assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, crates: 'on' }), /crates/);
   const { shortGame: _s, ...missing } = DEFAULT_OPTIONS;
   assert.throws(() => validateLobbyOptions(missing), /shortGame/);
+});
+
+test('bot types: AI players only, the Normal AI when left out', () => {
+  assert.deepEqual(BOTS, ['rush', 'normal', 'turtle', 'naval']);
+  const ai = players.findIndex((p) => p.type === 'ai');
+  const human = players.findIndex((p) => p.type === 'human');
+  const withBot = (i, bot) => players.map((p, k) => (k === i ? { ...p, bot } : p));
+  assert.equal(validateGameOptions({ ...DEFAULT_OPTIONS, players: withBot(ai, 'turtle') }).players[ai].bot, 'turtle');
+  assert.equal(validateGameOptions({ ...DEFAULT_OPTIONS, players }).players[ai].bot, undefined);
+  assert.throws(() => validateGameOptions({ ...DEFAULT_OPTIONS, players: withBot(ai, 'hacky') }), /bot/);
+  assert.throws(() => validateGameOptions({ ...DEFAULT_OPTIONS, players: withBot(human, 'rush') }), /bot/);
 });
 
 test('handicaps: 0 to 95 in steps of 5, per player, 0 when left out', () => {

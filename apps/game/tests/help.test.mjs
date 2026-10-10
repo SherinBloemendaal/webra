@@ -79,15 +79,25 @@ test('weather, biome and speed help match the engine numbers', () => {
     const seeds = rules.actors.find((a) => a.id === id).world.seeds;
     assert.match(HELP.oreRegrowth, new RegExp(`every ${seeds.interval / 25} s`), id);
   }
-  // AI difficulties (engine/src/ai.rs: think interval in ticks, defences).
-  const ai = read('../../../engine/src/ai.rs');
-  const rows = Object.fromEntries([...ai.matchAll(/AiDifficulty::(\w+) => \((\d+), (\d+), (\d+), (\d+)\)/g)].map((m) => [m[1], m.slice(2).map(Number)]));
-  assert.deepEqual([rows.Easy[0] / 25, rows.Normal[0] / 25, rows.Hard[0] / 25], [2, 1, 0.6]);
-  assert.deepEqual([rows.Easy[3], rows.Normal[3], rows.Hard[3]], [0, 2, 4]);
+  // AI bots (engine/rules.json "bots", OpenRA's ai.yaml) and difficulties (engine/src/ai_bots.rs).
+  const bots = Object.fromEntries(rules.bots.map((b) => [b.type, b]));
+  assert.deepEqual(
+    ['rush', 'normal'].map((t) => bots[t].squads.squad_size),
+    [20, 40],
+  );
+  const limit = (t, id) => bots[t].base_builder.building_limits.find(([a]) => a === id)?.[1];
+  assert.deepEqual([limit('turtle', 'BARR'), limit('turtle', 'WEAP')], [1, 1]);
+  const diff = read('../../../engine/src/ai_bots.rs');
+  assert.match(diff, /AiDifficulty::Easy => ticks \* 2,/);
+  assert.match(diff, /AiDifficulty::Normal => ticks,/);
+  assert.match(diff, /AiDifficulty::Hard => \(ticks \* 2 \/ 3\)/);
+  assert.match(diff, /pub const EASY_HANDICAP: u8 = 25;/);
   for (const key of ['player', 'playerOnline']) {
-    assert.match(HELP[key], /Easy thinks every 2 s and builds no defences/);
-    assert.match(HELP[key], /Normal thinks every second, builds 2 defences/);
-    assert.match(HELP[key], /Hard thinks every 0\.6 s, builds 4 defences/);
+    assert.match(HELP[key], /Rush AI attacks early with squads of 20 or more/);
+    assert.match(HELP[key], /Normal AI builds a full base and attacks with squads of 40 or more/);
+    assert.match(HELP[key], /Turtle AI keeps one barracks and one war factory/);
+    assert.match(HELP[key], /Easy takes twice as long, plays with an extra 25% handicap/);
+    assert.match(HELP[key], /Hard reacts in two thirds of the time/);
   }
 });
 

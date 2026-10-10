@@ -205,6 +205,10 @@ fn lobby_bot_types_parse_and_default_to_the_normal_ai() {
     assert!(crate::parse_options(&json(r#","bot":"brutal""#)).is_err());
     let g = crate::Game::from_options(&json(r#","bot":"turtle""#)).unwrap();
     assert_eq!(g.world.ai[1].bot, BotType::Turtle);
+    // Easy bots play with an extra handicap on top of the slot's.
+    let easy = r#"{"seed":1,"mapSize":64,"players":[{"type":"human","faction":"england","handicap":10},{"type":"ai","faction":"russia","difficulty":"easy","handicap":10}]}"#;
+    let g = crate::Game::from_options(easy).unwrap();
+    assert_eq!((g.world.players[0].handicap, g.world.players[1].handicap), (10, 35));
 }
 
 // ---- Fuzzy attack or flee -----------------------------------------------------------

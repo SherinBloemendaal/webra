@@ -7,6 +7,7 @@ import {
   BOOLEAN_OPTIONS,
   COLOR_COUNT,
   DIFFICULTIES,
+  BOTS,
   FACTIONS,
   BIOMES,
   GAME_SPEEDS,
@@ -64,7 +65,7 @@ export function validateLobbyOptions(v, what = 'options') {
   return out;
 }
 
-const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty', 'handicap'];
+const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty', 'bot', 'handicap'];
 
 /**
  * Validate the options the engine receives at game start: lobby options plus
@@ -89,9 +90,12 @@ export function validateGameOptions(v, what = 'options') {
     if (player.type === 'human') {
       player.name = text(p.name, NAME_MIN, NAME_MAX, `${w}.name`);
       if (p.difficulty !== undefined) fail(`${w}: humans have no difficulty`);
+      if (p.bot !== undefined) fail(`${w}: humans have no bot`);
     } else {
       if (p.name !== undefined) player.name = text(p.name, NAME_MIN, NAME_MAX, `${w}.name`);
       player.difficulty = oneOf(p.difficulty, DIFFICULTIES, `${w}.difficulty`);
+      // Bot type: left out means the Normal AI, as in games before bot types.
+      if (p.bot !== undefined) player.bot = oneOf(p.bot, BOTS, `${w}.bot`);
     }
     player.faction = oneOf(p.faction, PLAYABLE_FACTIONS, `${w}.faction`);
     player.color = int(p.color, 0, COLOR_COUNT - 1, `${w}.color`);

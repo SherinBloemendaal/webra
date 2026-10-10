@@ -1,7 +1,7 @@
 // Online lobby state and slot rules (pure, no I/O; serializable to storage).
 //
 // Slots: { type: 'human', client, name, faction, color, team, handicap, ready }
-//        { type: 'ai', difficulty, faction, color, team, handicap }
+//        { type: 'ai', difficulty, bot, faction, color, team, handicap }
 //        { type: 'open' } | { type: 'closed' }
 //
 // Rules:
@@ -85,7 +85,9 @@ const fail = (message, code) => {
   throw new RoomError(message, code);
 };
 
-const AI_NAMES = { easy: 'Computer (easy)', normal: 'Computer', hard: 'Computer (hard)' };
+// OpenRA's bot names (ModularBot Name); the difficulty when it is not Normal.
+const BOT_NAMES = { rush: 'Rush AI', normal: 'Normal AI', turtle: 'Turtle AI', naval: 'Naval AI' };
+const aiName = (s) => `${BOT_NAMES[s.bot ?? 'normal']}${s.difficulty === 'normal' ? '' : ` (${s.difficulty})`}`;
 
 export class Room {
   /** @param {{ maxPlayers: number, seed?: number }} config */
@@ -155,6 +157,8 @@ export class Room {
     r.saveCooldown ??= 0;
     r.resume ??= null;
     r.resumeStart ??= null;
+    // AI slots stored before bot types play the Normal AI.
+    for (const s of r.slots) if (s.type === 'ai') s.bot ??= 'normal';
     return r;
   }
 
@@ -368,7 +372,9 @@ export class Room {
     this.slots = this.slots.map((_, i) => {
       if (i >= players.length) return { type: 'closed' };
       const p = players[i];
-      if (p.type === 'ai') return { type: 'ai', difficulty: p.difficulty, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
+      if (p.type === 'ai') {
+        return { type: 'ai', difficulty: p.difficulty, bot: p.bot ?? 'normal', faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
+      }
       return { type: 'open', reserved: i };
     });
     for (const m of members) {
@@ -413,6 +419,7 @@ export class Room {
         this.slots[target] = {
           type: 'ai',
           difficulty: msg.difficulty ?? (cur.type === 'ai' ? cur.difficulty : 'normal'),
+          bot: msg.bot ?? (cur.type === 'ai' ? (cur.bot ?? 'normal') : 'normal'),
           faction: msg.faction ?? (cur.type === 'ai' ? cur.faction : 'random'),
           color,
           team: msg.team ?? (cur.type === 'ai' ? cur.team : 0),
@@ -424,6 +431,7 @@ export class Room {
           msg.color !== undefined ||
           msg.team !== undefined ||
           msg.difficulty !== undefined ||
+          msg.bot !== undefined ||
           msg.handicap !== undefined
         ) {
           fail('Empty slots have no settings.');
@@ -436,6 +444,7 @@ export class Room {
 
     if (target === mine) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
+      if (msg.bot !== undefined) fail('Humans have no bot type.');
       this.applySettings(target, msg);
       cur.ready = false;
       return { kicked: null };
@@ -443,6 +452,7 @@ export class Room {
 
     if (cur.type === 'open' && mine >= 0) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
+      if (msg.bot !== undefined) fail('Humans have no bot type.');
       // Move to the open slot, keeping name and settings.
       this.slots[target] = this.slots[mine];
       this.slots[mine] = { type: 'open' };
@@ -454,6 +464,7 @@ export class Room {
     if (cur.type === 'ai' && host) {
       this.applySettings(target, msg);
       if (msg.difficulty !== undefined) cur.difficulty = msg.difficulty;
+      if (msg.bot !== undefined) cur.bot = msg.bot;
       this.resetReady();
       return { kicked: null };
     }
@@ -584,8 +595,9 @@ export class Room {
         startPlayers.push({ player: index, slot, client: s.client, name: s.name, type: 'human' });
         seats.push(s.client);
       } else {
-        const name = AI_NAMES[s.difficulty];
-        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
+        const name = aiName(s);
+        const bot = s.bot ?? 'normal';
+        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, bot, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
         startPlayers.push({ player: index, slot, client: null, name, type: 'ai' });
         seats.push(null);
       }

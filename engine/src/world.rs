@@ -1068,7 +1068,9 @@ impl World {
             w.add_player(fi, p.ai.is_some(), spawns[order[slot]]);
             w.players[slot].cash = options.starting_cash;
             w.players[slot].team = p.team;
-            w.players[slot].handicap = i32::from(p.handicap.min(crate::gamerules::MAX_HANDICAP));
+            // An Easy AI plays with an extra handicap (ai_bots.rs).
+            let extra = p.ai.map_or(0, |d| crate::ai_bots::Difficulty(d).handicap());
+            w.players[slot].handicap = i32::from(p.handicap.saturating_add(extra).min(crate::gamerules::MAX_HANDICAP));
             if options.explored {
                 w.players[slot].explored.iter_mut().for_each(|e| *e = 1);
             }

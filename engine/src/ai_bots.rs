@@ -10,8 +10,9 @@
 //! were equally strong (OpenRA commit 2320a7d571, "avoid easy/hard
 //! classification as they are identical"), so a bot type is a personality,
 //! not a strength. Normal is OpenRA's timing exactly; Easy reacts at half
-//! the speed and leaves the superweapons and the Sonar Pulse alone, Hard
-//! reacts in two thirds of the time. docs/contracts.md has the details.
+//! the speed, plays with an extra 25 % handicap and leaves the superweapons
+//! and the Sonar Pulse alone; Hard reacts in two thirds of the time.
+//! docs/contracts.md has the details and the measurements.
 
 use crate::rules::Rules;
 use crate::world::AiDifficulty;
@@ -429,6 +430,9 @@ impl BotConfig {
     }
 }
 
+/// Extra handicap of an Easy bot, in percent (a step of OpenRA's handicap).
+pub const EASY_HANDICAP: u8 = 25;
+
 /// What the slot's difficulty changes (see the module docs).
 #[derive(Clone, Copy, Debug)]
 pub struct Difficulty(pub AiDifficulty);
@@ -441,6 +445,18 @@ impl Difficulty {
             AiDifficulty::Easy => ticks * 2,
             AiDifficulty::Normal => ticks,
             AiDifficulty::Hard => (ticks * 2 / 3).max(1),
+        }
+    }
+
+    /// Handicap (OpenRA's, gamerules.rs) added to the slot's own: Easy bots
+    /// play with EASY_HANDICAP percent less firepower and armour and slower
+    /// production, as reacting slower alone hardly weakens them (measured
+    /// with examples/bot_matrix.rs, docs/contracts.md).
+    pub fn handicap(self) -> u8 {
+        if self.0 == AiDifficulty::Easy {
+            EASY_HANDICAP
+        } else {
+            0
         }
     }
 

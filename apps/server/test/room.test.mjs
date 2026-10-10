@@ -223,6 +223,34 @@ test("OpenRA's other lobby options and handicaps: carried into the start options
   assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
 });
 
+test("bot types: the host picks an AI's OpenRA bot, it names the AI and reaches the engine; old rooms play the Normal AI", () => {
+  const { room, host, guest } = lobby(4);
+  room.setSlot(host, { slot: 2, type: 'ai', bot: 'turtle', difficulty: 'hard' });
+  room.setSlot(host, { slot: 3, type: 'ai' });
+  assert.equal(room.slots[2].bot, 'turtle');
+  assert.equal(room.slots[3].bot, 'normal', 'a new AI slot plays the Normal AI');
+  room.setSlot(host, { slot: 3, bot: 'naval' });
+  throwsRoom(() => room.setSlot(guest, { slot: 1, bot: 'rush' }));
+  throwsRoom(() => room.setSlot(guest, { slot: 3, bot: 'rush' }), 'forbidden');
+  throwsRoom(() => room.setSlot(host, { slot: 1, type: 'open', bot: 'rush' }));
+  const view = room.lobbyView();
+  assert.deepEqual(view.slots.map((s) => s.bot), [undefined, undefined, 'turtle', 'naval']);
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...view })).ok);
+  room.setReady(guest, true, null);
+  const start = room.start(host, first);
+  assert.deepEqual(start.options.players.map((p) => [p.bot, p.name]).slice(2), [['turtle', 'Turtle AI (hard)'], ['naval', 'Naval AI']]);
+  assert.ok(parseServerMessage(encodeServer({ t: 'start', ...start })).ok);
+  // A room stored before bot types: its AI slots play the Normal AI.
+  const stored = lobby(3);
+  stored.room.setSlot(stored.host, { slot: 2, type: 'ai', difficulty: 'easy' });
+  const json = stored.room.toJSON();
+  delete json.slots[2].bot;
+  const back = Room.fromJSON(json);
+  assert.equal(back.slots[2].bot, 'normal');
+  assert.ok(parseClientMessage(JSON.stringify({ t: 'slot', slot: 2, bot: 'rush' })).ok);
+  assert.ok(!parseClientMessage(JSON.stringify({ t: 'slot', slot: 2, bot: 'brutal' })).ok);
+});
+
 test('game modes are plain option bundles: the host sends them, guests cannot, nothing new on the wire', () => {
   const { room, host, guest } = lobby(2);
   for (const mode of BUILTIN_MODES.filter((m) => !m.skirmishOnly)) {

@@ -1,7 +1,7 @@
 //! Bot type pairings (ai_bots.rs): every pairing of Rush, Normal, Turtle and
 //! Naval AI plays 1v1 on generated maps over a range of seeds; prints the
 //! win split and game lengths per pairing.
-//! Usage: cargo run -p webra-sim --release --example bot_matrix -- [seeds] [max minutes] [difficulty] [map size]
+//! Usage: cargo run -p webra-sim --release --example bot_matrix -- [seeds] [max minutes] [difficulty] [map size] [difficulty of the second bot]
 //! Environment: AI_STYLE (random, land, rivers, lakes, islands), BOTS (comma
 //! separated subset, e.g. "normal,rush").
 //! Seed k puts the first bot of the pairing in slot k % 2, so both bots play
@@ -16,12 +16,13 @@ struct Game {
     minutes: f64,
 }
 
-fn play(a: BotType, b: BotType, seed: u64, minutes: u32, difficulty: AiDifficulty, size: i32, style: MapStyle) -> Game {
+fn play(a: BotType, b: BotType, seed: u64, minutes: u32, diffs: [AiDifficulty; 2], size: i32, style: MapStyle) -> Game {
     let swap = seed % 2 == 1;
     let bots = if swap { [b, a] } else { [a, b] };
+    let diffs = if swap { [diffs[1], diffs[0]] } else { diffs };
     let factions = if (seed / 2) % 2 == 0 { ["allies", "soviet"] } else { ["soviet", "allies"] };
     let players: Vec<PlayerSetup> =
-        (0..2).map(|k| PlayerSetup { bot: bots[k], ..PlayerSetup::new(factions[k], Some(difficulty)) }).collect();
+        (0..2).map(|k| PlayerSetup { bot: bots[k], ..PlayerSetup::new(factions[k], Some(diffs[k])) }).collect();
     let options = GameOptions { map_style: style, ..GameOptions::default() };
     let mut w = World::with_options(seed, size, &players, options);
     for _ in 0..25 * 60 * minutes {
@@ -38,11 +39,13 @@ fn main() {
     let arg = |k: usize| std::env::args().nth(k);
     let seeds: u64 = arg(1).map(|s| s.parse().expect("seeds")).unwrap_or(16);
     let minutes: u32 = arg(2).map(|s| s.parse().expect("minutes")).unwrap_or(60);
-    let difficulty = match arg(3).as_deref() {
+    let level = |s: Option<String>| match s.as_deref() {
         Some("easy") => AiDifficulty::Easy,
         Some("hard") => AiDifficulty::Hard,
         _ => AiDifficulty::Normal,
     };
+    let difficulty = level(arg(3));
+    let second = if arg(5).is_some() { level(arg(5)) } else { difficulty };
     let size: i32 = arg(4).map(|s| s.parse().expect("size")).unwrap_or(80);
     let style = MapStyle::from_name(&std::env::var("AI_STYLE").unwrap_or_else(|_| "random".into())).expect("AI_STYLE");
     let bots: Vec<BotType> = match std::env::var("BOTS") {
@@ -55,10 +58,10 @@ fn main() {
             pairings.push((bots[i], bots[j]));
         }
     }
-    println!("{seeds} seeds per pairing, {minutes} minutes at most, {difficulty:?}, map {size}, style {style:?}");
+    println!("{seeds} seeds per pairing, {minutes} minutes at most, {difficulty:?} against {second:?}, map {size}, style {style:?}");
     for (a, b) in pairings {
         let games: Vec<Game> = std::thread::scope(|s| {
-            let handles: Vec<_> = (0..seeds).map(|seed| s.spawn(move || play(a, b, seed, minutes, difficulty, size, style))).collect();
+            let handles: Vec<_> = (0..seeds).map(|seed| s.spawn(move || play(a, b, seed, minutes, [difficulty, second], size, style))).collect();
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
         let wins = |k: usize| games.iter().filter(|g| g.winner == Some(k)).count();

@@ -229,7 +229,7 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
-human|ai|closed, name, faction, color, team, difficulty, handicap?}],
+human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?}],
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
@@ -237,7 +237,11 @@ weather, techBuildings, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
-sky. A map file brings its own biome and ignores both. `weather` is `full`
+sky. A map file brings its own biome and ignores both. `bot` (AI players
+only) is the OpenRA bot the slot plays: `rush`, `normal`, `turtle` or
+`naval` (see "Skirmish AI" in section 5); left out it is `normal`, so lobby
+states, game modes, replays and online saves from before bot types keep
+their meaning (protocol 6, no version bump). `weather` is `full`
 (visuals and gameplay effects), `cosmetic` (visuals only: the simulation runs
 as under clear skies, including the biome effects) or `off` (clear skies).
 The protocol requires all three (protocol version 4); the engine treats
@@ -514,7 +518,7 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?` | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?` (difficulty and bot: AI slots, host only) | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
@@ -954,6 +958,111 @@ Close to OpenRA, and the same for every player whatever its slot:
 styles: `am_vs_am` (6 riflemen and 4 Medium Tanks a side) over tick shifts 0
 to 3 with 25 seeds each now ends 48 against 52 wins, where every shift used
 to be decided 25 of 25 by one side (75 against 25).
+
+### Skirmish AI (`engine/src/ai.rs`, `ai_*.rs`)
+
+Every AI slot plays one of OpenRA's Red Alert bots (`mods/ra/rules/ai.yaml`,
+vendored in `data/source/rules/ai.yaml`): Rush AI, Normal AI, Turtle AI or
+Naval AI. `tools/gen_rules.py` exports each bot's module configs, with the C#
+defaults of every field ai.yaml leaves out, to `engine/rules.json` `bots`;
+the engine ports the modules (OpenRA.Mods.Common/Traits/BotModules):
+
+| Module | File | What it does |
+|---|---|---|
+| BaseBuilderBotModule | `ai_base.rs` | Building and Defense queues: power when low, refineries, extra factories above NewProductionCashThreshold, a naval yard by water, silos when full, then BuildingFractions within BuildingLimits after BuildingDelays; rally points; sells crowded or dry refineries |
+| UnitBuilderBotModule | `ai_units.rs` | every 30 ticks one unit by UnitsToBuild shares, UnitLimits and UnitDelays, and what other modules ask for (ore trucks, MCVs, engineers) |
+| SquadManagerBotModule | `ai_squads.rs`, `ai_fuzzy.rs` | assault squads of SquadSize plus a random bonus, rushes on enemy yards, air, naval and protection squads; AttackOrFleeFuzzy in integer math |
+| HarvesterBotModule, ResourceMapBotModule | `ai_harvest.rs` | InitialHarvesters, idle trucks to the nearest ore along a path that avoids enemies, trucks from crowded fields to empty ones, trucks under fire home |
+| McvExpansionManagerBotModule, McvManagerBotModule | `ai_mcv.rs` | MinimumConstructionYardCount yards: new MCVs deploy by a good ore field and ask for a refinery there; yards pack up to move (with redeployable MCVs) |
+| SupportPowerBotModule | `ai_support.rs` | spy plane, paratroopers, parabombs and nuke at the most attractive spot (coarse then fine scan of the considerations) |
+| BuildingRepairBotModule, PowerDownBotModule | `ai_upkeep.rs` | repair hit structures; switch PowerDownTypes off while power is short |
+| MinelayerBotModule (Turtle) | `ai_mines.rs` | mine where fights were, favourite spots, halfway to the enemy |
+| CaptureManagerBotModule | `ai_infantry.rs` | engineers take the most valuable capturable structures of a random enemy or neutral player |
+
+The AI runs in lockstep on every client (OpenRA runs bots on the host only):
+all randomness comes from the world RNG and all math is integer. Its state
+is not part of `state_hash`; saves and replays replay the orders.
+
+**Difficulty.** OpenRA has none: in 2014 it renamed its Easy and Hard AI to
+Rush and Turtle AI "as they are identical" (commit 2320a7d571), so a bot
+type is a personality. WebRA keeps Easy, Normal and Hard as a strength on
+top of any bot type (`Difficulty` in `ai_bots.rs`): Normal is OpenRA's
+timing; Hard reacts in two thirds of the time (production checks, role
+and squad updates, harvester scans, power down and capture intervals; the
+personality timings BuildingDelays, UnitDelays, RushInterval,
+MinimumAttackForceDelay and MoveConyardTick stay as they are); Easy waits
+twice as long, plays with an extra 25 % handicap (OpenRA's handicap, on top
+of the slot's) and leaves the Iron Curtain, Chronosphere and Sonar Pulse
+alone. Reacting slower alone did not weaken a bot: Normal AI at Easy timing
+won 8 of 16 against Normal; with the handicap 4 of 16. Settings from before
+bot types (`difficulty` only) play the Normal AI at that difficulty.
+
+**Differences from OpenRA**, all to make AI-only games end and keep the
+engine's rules:
+
+- Like most skirmish AIs, the bots know where enemy structures are (squads,
+  support powers), and hunt the last units of a player without structures,
+  aircraft included. OpenRA's squads only see what is visible.
+- Squads attack-move onto structures, not to the edge of their weapon range:
+  the engine's units only auto-target what they see.
+- A squad whose leader can hit nothing (Tanya among structures, anti-air
+  only aircraft left) takes another unit as leader. After a squad fled from
+  a player's actors, squads prefer other enemies for three minutes.
+- Fuzzy attack-or-flee: against enemies that cannot shoot back a squad
+  always attacks.
+- Stalemate breaker: units at the base that stopped growing for two minutes
+  (from minute 10) leave below SquadSize, at least 4 (any number once the
+  bot earns nothing).
+- Air squads look for targets over the whole map and skip flight paths with
+  heavy anti-air (OpenRA's grid misses the map edges and its check skips
+  the safe paths); they fly to structures under the fog before attacking.
+- No refineries while no ore is in reach; while broke and earning nothing
+  (`ai_economy.rs`) only the power and a factory the army needs, unit
+  production below ProductionMinCashRequirement, and surplus structures sold
+  for an army or a refinery.
+- Placement: structures spiral out from the base centre (mirrored for bases
+  in the right half), refineries go where the dock is nearest to ore,
+  defences use OpenRA's ordering toward the nearest enemy with mirrored
+  ties.
+- The ResourceMap recounts friendly units on every update (OpenRA only adds).
+- MCVs remember their spot and deploy on arrival (no queued deploy).
+- The Iron Curtain (on the army in a fight), Chronosphere (idle vehicles
+  into the enemy base) and Sonar Pulse (where an unseen attacker hit a ship)
+  are WebRA additions: OpenRA's bots have no decisions for them. The GPS
+  Satellite launches by itself.
+- Capturing: RA's bots lost the capture module in 2016 (7e6488c522); WebRA
+  keeps it with OpenRA's defaults and trains up to two engineers while a
+  neutral structure worth taking is in reach. Targets rank by
+  `capture_value`, read from traits: sell value, plus that again per lasting
+  benefit (support powers, production, radar, storage, power), GivesCash
+  OnCapture, five minutes of CashTrickler income (oil derricks) and 1000 for
+  a hospital.
+- Allies: an attack on an ally's structure, ore truck or MCV calls the
+  bot's protection squad too.
+
+**Measurements** (`examples/bot_matrix.rs`, 16 seeds per pairing, 1v1 on
+generated 80 maps of random style, each bot both spawns, Normal difficulty,
+60 minutes at most; wins of the first bot listed, then of the second, and
+game lengths in minutes):
+
+| Pairing | Wins | Unfinished | Mean | Median | Longest |
+|---|---|---|---|---|---|
+| Rush vs Rush | 4-12 | 0 | 15.3 | 12.7 | 59.9 |
+| Rush vs Normal | 11-5 | 0 | 17.2 | 14.5 | 41.8 |
+| Rush vs Turtle | 10-6 | 0 | 19.4 | 13.1 | 56.1 |
+| Rush vs Naval | 15-1 | 0 | 7.7 | 7.7 | 16.6 |
+| Normal vs Normal | 8-8 | 0 | 19.1 | 18.1 | 40.8 |
+| Normal vs Turtle | 13-3 | 0 | 26.4 | 26.5 | 54.0 |
+| Normal vs Naval | 13-3 | 0 | 13.1 | 13.1 | 24.2 |
+| Turtle vs Turtle | 5-9 | 2 (lakes, islands) | 33.3 | 34.9 | 56.5 |
+| Turtle vs Naval | 6-10 | 0 | 20.6 | 18.5 | 54.0 |
+| Naval vs Naval | 10-6 | 0 | 11.8 | 11.3 | 25.0 |
+
+Two Turtle AIs can still outlast an hour on water maps: Turtle AI forms an
+attack force at most every 100000 ticks (MinimumAttackForceDelay, about 67
+minutes, first one at a random time) and otherwise only defends.
+Difficulty (Normal AI against Normal AI, same setup): Easy against Normal
+4-12, Normal against Hard 4-12, Easy against Hard 5-10 (one unfinished).
 
 ### Skirmish AI target choice (`engine/src/ai.rs`)
 

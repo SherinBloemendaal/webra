@@ -29,6 +29,7 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
+import { aiName } from './lobby-state.js';
 import { AudioSystem } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
@@ -510,7 +511,7 @@ function hasRejoinRecord() {
 /** Names and colours of the players in a game's options, for the observer panel and the statistics. */
 function viewerPlayers(players) {
   return players.map((p, i) => ({
-    name: p.type === 'human' ? p.name || `Player ${i + 1}` : p.name || `Computer (${p.difficulty})`,
+    name: p.type === 'human' ? p.name || `Player ${i + 1}` : p.name || aiName(p),
     color: TEAM_COLORS[i] ?? [1, 1, 1],
   }));
 }

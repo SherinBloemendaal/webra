@@ -752,7 +752,8 @@ test('the engine reports an MCV deploy and a yard packing up to the client', () 
   for (let t = 0; t < 3; t++) {
     game.tick();
     const e = game.take_audio_events();
-    for (let i = 0; i < e.length; i += STRIDE) if (e[i] === EV.TRANSFORMED) seen.push([e[i + 1], e[i + 4], e[i + 5]]);
+    // The player's own deploy (the AI deploys its MCV at once too).
+    for (let i = 0; i < e.length; i += STRIDE) if (e[i] === EV.TRANSFORMED && e[i + 4] === 0) seen.push([e[i + 1], e[i + 4], e[i + 5]]);
   }
   assert.deepEqual(seen, [[id('MCV'), 0, id('FACT')]]);
 });
@@ -1007,8 +1008,9 @@ test('the engine reports fire, impact and death events to the client', () => {
     seed: 77,
     mapSize: 64,
     players: [
-      { slot: 0, type: 'ai', difficulty: 'hard', faction: 'england', color: 0 },
-      { slot: 1, type: 'ai', difficulty: 'hard', faction: 'russia', color: 1 },
+      // Rush AIs: they attack early (OpenRA SquadSize 20).
+      { slot: 0, type: 'ai', difficulty: 'hard', bot: 'rush', faction: 'england', color: 0 },
+      { slot: 1, type: 'ai', difficulty: 'hard', bot: 'rush', faction: 'russia', color: 1 },
     ],
     startingCash: 10000,
     startingUnits: 'heavy',

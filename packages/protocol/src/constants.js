@@ -135,6 +135,8 @@ export const STARTING_UNITS = ['mcv', 'light', 'heavy', 'base'];
 export const TECH_LEVELS = ['infonly', 'low', 'medium', 'high', 'unrestricted'];
 export const GAME_SPEEDS = ['slowest', 'slower', 'normal', 'fast', 'faster', 'fastest'];
 export const DIFFICULTIES = ['easy', 'normal', 'hard'];
+/** OpenRA's Red Alert bot types an AI slot plays (engine/src/ai_bots.rs); left out means 'normal'. */
+export const BOTS = ['rush', 'normal', 'turtle', 'naval'];
 export const RANDOM_FACTIONS = {
   random: ['england', 'france', 'germany', 'russia', 'ukraine'],
   randomallies: ['england', 'france', 'germany'],

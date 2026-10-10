@@ -34,6 +34,7 @@ import {
   CHAT_MAX,
   COLOR_COUNT,
   DIFFICULTIES,
+  BOTS,
   GAME_SPEEDS,
   MAP_SIZES,
   mapHash,
@@ -111,6 +112,7 @@ const LABELS = {
   techLevel: { infonly: 'Infantry only', low: 'Low', medium: 'Medium', high: 'No superweapons', unrestricted: 'Unrestricted' },
   gameSpeed: { slowest: 'Slowest', slower: 'Slower', normal: 'Normal', fast: 'Fast', faster: 'Faster', fastest: 'Fastest' },
   difficulty: { easy: 'Easy', normal: 'Normal', hard: 'Hard' },
+  bot: { rush: 'Rush AI', normal: 'Normal AI', turtle: 'Turtle AI', naval: 'Naval AI' },
   mapSize: { 64: 'Small', 96: 'Medium', 128: 'Large', 160: 'Huge' },
   mapStyle: { random: 'Random', land: 'Land', rivers: 'Rivers', lakes: 'Lakes', islands: 'Islands' },
   biome: { random: 'Random', temperate: 'Temperate', snow: 'Snow', desert: 'Desert' },
@@ -1140,7 +1142,12 @@ export class OnlineUI {
           if (slot.client === this.state.hostId) who.append(el('span', 'online-badge', 'HOST'));
           if (i === mine) who.append(el('span', 'online-badge online-badge-you', 'YOU'));
         } else {
-          who.append(el('span', 'online-player-name', 'Computer'));
+          // The OpenRA bot this AI plays (absent in lobbies from before bot types: Normal AI).
+          const bot = select(BOTS.map((b) => [b, LABELS.bot[b]]), slot.bot ?? 'normal', (v) => this.send({ t: 'slot', slot: i, bot: v }));
+          bot.disabled = !host || Boolean(this.state.resume);
+          bot.setAttribute('aria-label', `Player ${i + 1} bot`);
+          describedBy(bot, this.columnTips.playerOnline);
+          who.append(bot);
           const diff = select(DIFFICULTIES.map((d) => [d, LABELS.difficulty[d]]), slot.difficulty, (v) =>
             this.send({ t: 'slot', slot: i, difficulty: v }),
           );
