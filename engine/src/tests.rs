@@ -170,7 +170,9 @@ fn ai_vs_ai_game_runs_and_fights() {
     // Veterancy and prone infantry spread them further: elite armies end some
     // games sooner, soldiers taking cover drag others out (5 to 26 minutes).
     // Map styles (mapgen) make richer, more varied maps on top of that.
-    for _ in 0..(25 * 60 * 30) {
+    // OpenRA's Normal AI attacks with squads of 40 or more (ai_bots.rs):
+    // this game ends after 33 minutes.
+    for _ in 0..(25 * 60 * 45) {
         w.step();
         max_units = max_units.max(w.actors.iter().filter(|a| a.alive && a.kind != Kind::Building).count());
         if w.winner.is_some() {
@@ -180,7 +182,7 @@ fn ai_vs_ai_game_runs_and_fights() {
     let killed: u32 = w.losses.iter().sum();
     assert!(max_units >= 10, "armies were built: {max_units}");
     assert!(killed >= 5, "fighting happened: {killed} dead");
-    assert!(w.winner.is_some(), "one AI destroyed the other within 30 minutes");
+    assert!(w.winner.is_some(), "one AI destroyed the other within 45 minutes");
 }
 
 #[test]
