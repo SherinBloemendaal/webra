@@ -105,7 +105,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing, standing, idle, dying and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated, composed sequences like Tanya's shooting put together from their parts); helicopter rotors, radar dishes, muzzle flashes, smoke over badly damaged vehicles and ships, the explosion of every warhead (OpenRA's CreateEffect per weapon), the working animations of structures (repair depot, helipad, airfield, Tesla charge, missile silo, construction yard, turret recoil), the transport ship's ramp, the V2 launcher reloading, the harvester docking, paratroopers and their opening parachutes, the Tesla zap and Red Alert's own animated mouse cursors; team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
-- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: a one-click download (with the music from the freeware CDs for selected accounts), a freeware Red Alert CD image (`.iso`, read by slices), your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
+- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: one "Install everything" button for selected accounts (graphics, sounds and the music from the freeware CDs, one progress, the ZIP kept for updates, a clear installed or missing state), a freeware Red Alert CD image (`.iso`, read by slices), your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
 - [x] **Texture packs** (`.webrapack`): sprites, cameos, terrain tiles and sounds made by players, with a preview of what a pack replaces before it is installed, and a pack manager (enable, order, remove). Cosmetic only, so safe in multiplayer. Format: [docs/texture-packs.md](docs/texture-packs.md); build one with `node tools/make-pack.mjs`
 
 ### Engineering
@@ -122,19 +122,28 @@ WebRA can use them when you install them; the game plays the same without
 them (WebRA's own art and synthesized sounds).
 
 - **Open the Original content dialog** (lobby button, or Original content in
-  the game menu). On the first start the game offers it once; "Don't ask
-  again" is remembered in this browser.
-- **One click:** "Download original Red Alert content (13.5 MB)" fetches
+  the game menu). It shows what is installed and what is missing. The start
+  screen shows how to install it until something is installed or you
+  dismiss the notice (remembered with your settings).
+- **One click (selected accounts):** "Install everything" installs the
+  graphics, sounds, voices, the announcer and the music in one go, with one
+  progress bar, one Cancel and a line per part. The graphics and sounds are
   OpenRA's `ra-quickinstall.zip`, EA's freeware files as OpenRA's content
-  installer uses them, from OpenRA's community mirrors **through
+  installer uses them, fetched from OpenRA's community mirrors **through
   webra.sherin.dev**: the WebRA server passes the file through as a stream
-  and keeps no copy (no cache, no storage; at most 3 downloads per hour per
-  network). So the WebRA server does relay EA's files when you click this.
-- **Music:** `ra-quickinstall.zip` has no music. Selected accounts get
-  "Music (from the freeware Red Alert CDs)": the WebRA server reads only
-  `scores.mix` (64 MB) out of the freeware CD images on the Internet Archive
-  by HTTP range and passes it through; the game resumes cut off downloads
-  and checks the file's SHA-256 before installing it. Everyone else
+  and keeps no copy (no cache, no storage; 8 completed downloads per account
+  a day, failed or cancelled ones are not counted). The game keeps the ZIP
+  on your device, so installing again or a WebRA update that uses more of
+  its files needs no new download. So the WebRA server does relay EA's files
+  when you click this.
+- **Mission movies (optional, selected accounts):** a button of their own
+  ("Install mission movies", about 748 MB) reads `movies1.mix` and
+  `movies2.mix` out of the freeware CD images the same way, checks every
+  8 MB piece against its pinned SHA-256, and installs the movies.
+- **Music:** `ra-quickinstall.zip` has no music. The one-click install reads
+  only `scores.mix` (64 MB) out of the freeware CD images on the Internet
+  Archive by HTTP range through the WebRA server; the game resumes cut off
+  downloads and checks the file's SHA-256 before installing it. Everyone else
   downloads the Allied or Soviet CD image (linked in the dialog) and drops
   the `.iso` on the game: it is read by slices, never loaded whole, and
   installs the music, sounds and graphics on the disc.

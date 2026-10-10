@@ -359,6 +359,15 @@ function setupContent() {
     content
       .load()
       .then(async () => {
+        // A newer WebRA may use more files of the kept ra-quickinstall.zip: they come out of it, without a download.
+        content
+          .updateFromKept()
+          .then(async (report) => {
+            if (!report?.added) return;
+            await audio?.reloadInstalled();
+            showToast(`Original content updated: ${report.added} new file${report.added === 1 ? '' : 's'} from the kept ra-quickinstall.zip.`);
+          })
+          .catch((err) => console.warn('The kept original content package could not be read:', err));
         // Start screen: how to get the original content, until installed or dismissed.
         const installed = (await content.summary()).total > 0;
         if ($('app').hidden && shouldShowNotice({ installed, registry: defaultRegistry() })) {
@@ -1451,6 +1460,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     audio,
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
+    contentLabel: contentPanel ? () => contentPanel.label : undefined,
     onReleaseNotes: () => releaseNotes.open(),
     restart: rematch
       ? { online: true, available: canRestart, label: () => rematch.label(), text: () => rematch.text(), run: restartGame }

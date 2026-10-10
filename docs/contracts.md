@@ -714,6 +714,7 @@ travel over the network. The server never runs the simulation.
 | `POST` | `/api/maps` | map JSON -> `{ id, hash, upgradedFrom? }` (upgraded, validated, size limited, rate limited); publishes it to the community list. `upgradedFrom`: the file's older format version (what is stored is the upgraded map). A map that is not compatible or from a newer format: 422 with the message of section 2 |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
+| `GET` | `/api/content/ra-movies/allied`, `/api/content/ra-movies/soviet` | A byte range of `movies1.mix` or `movies2.mix` (the mission movies) from the same CD images, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
@@ -732,8 +733,12 @@ account with the `content_autoinstall` flag (or an admin) and the
 `contentRelay` site setting (401, 403 `account_inactive` or
 `relay_forbidden` otherwise). The request must carry
 `X-WebRA-Content: 1`, come from the game page (`Origin` absent or ours,
-`Sec-Fetch-Site` absent or `same-origin`) and stay within 3 downloads per
-hour per IP (D1 quota table, IP as a salted hash; 429 with `Retry-After`).
+`Sec-Fetch-Site` absent or `same-origin`) and stay within the budgets: 8
+completed downloads and 24 requests per account per UTC day, 20 completed
+downloads and 30 requests per network (an IPv4 address or an IPv6 /64) per hour (D1 quota
+table, account and network as salted hashes; a download that does not
+complete is given back; 429 with `Retry-After` and `retryAfter` and `scope`
+in the body, docs/accounts-api.md 7.3).
 The Worker tries the mirrors in order (`openra.baxxster.no`,
 `republic.community`, `openra.0x47.net`, `openra.ppmsite.com`) with
 `cache: 'no-store'` (Cloudflare's cache bypassed), takes the first answer
@@ -750,8 +755,9 @@ same-origin checks as above. The request carries `Range: bytes=a-b` (or
 `bytes=a-`): one range inside `scores.mix` (64,171,360 bytes), at most
 8 MiB (8,388,608 bytes); otherwise `416 bad_range` with `Content-Range:
 bytes */64171360`. Budgets: 256 MiB per account per UTC day (each request
-counts its length rounded up to whole MiB) and 64 requests per IP per hour
-(429 with `Retry-After`). The Worker reads the matching window of the
+counts its length rounded up to whole MiB; a piece that does not arrive
+whole is given back) and 64 requests per network per hour (429 with
+`Retry-After`, `retryAfter` and `scope`). The Worker reads the matching window of the
 pinned Allied disc image, then the Soviet one (`scores.mix` is the same on
 both), from the Internet Archive with `Range`, `redirect: 'manual'` (one
 redirect to an archive data node with the same item and path) and `cache:
@@ -764,6 +770,17 @@ same-origin`; 502 when neither disc answers (two rounds). The game
 pieces in IndexedDB (`partials` in the content database) to resume, checks
 the whole file's SHA-256 (`313ef2e4...0846`, pinned on both sides) and
 then installs it like a picked `scores.mix`.
+
+`/api/content/ra-movies/allied` and `/api/content/ra-movies/soviet`
+(`moviesRange` in `apps/server/src/cdmusic.js`): the optional one-click
+install of the mission movies, the same relay for `movies1.mix`
+(369,362,336 bytes, Allied disc) and `movies2.mix` (415,334,456 bytes,
+Soviet disc). Same gate, Range rules (416 with `Content-Range: bytes
+*/<size>`), answer and refunds; budgets 1,500 MiB and 288 requests per
+account per UTC day and 192 requests per network per hour. The game
+(`apps/game/js/content/cdmovies.js`) checks each 8 MiB piece against its
+pinned SHA-256 before keeping it, installs the movies from the kept pieces
+and forgets them.
 
 ### WebSocket messages (JSON, `{ "t": type, ... }`)
 

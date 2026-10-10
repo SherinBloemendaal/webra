@@ -283,7 +283,11 @@ table; both follow the `contentRelay` site setting (admin page) and the
 upstream requests per call, eight with the archive's redirect (the Free
 plan allows 50 subrequests), passes the body through as a stream (no
 buffering, little CPU), and writes two quota rows per 8 MiB piece (16 per
-full download). If the archive moves or changes the images, the relay
+full download). The package relay writes three quota rows per download
+(attempts, network, account) and two more when it gives an unfinished
+download back; that refund runs under `waitUntil` after the stream ends.
+Admins reset a player's relay budgets on the admin page (user drawer,
+"One-click relay budgets"). If the archive moves or changes the images, the relay
 answers 502 (the pinned size and `Content-Range` no longer match) and
 players can still install from a CD image themselves; new pins are measured
 as described in docs/security.md and changed in both

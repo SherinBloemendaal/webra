@@ -199,8 +199,35 @@ cross-origin isolated page, so the headers changed:
   webra.sherin.dev passes EA's files through; the project owner chose this
   with the risk explained (OpenRA itself only lets the client download from
   the mirrors). Limits: the game page only (`X-WebRA-Content` header, Origin
-  and `Sec-Fetch-Site` checks), 3 downloads per hour per IP through the D1
-  quota table (IP stored only as a salted hash, never logged), exactly
+  and `Sec-Fetch-Site` checks), the account gate (below), and budgets in the
+  D1 quota table that count completed downloads, not attempts: 8 per account
+  per UTC day and 20 per network per hour (an IPv4 address, or the /64 of an
+  IPv6 address, so a household behind one address and a phone with rotating
+  privacy addresses each count as one network), plus ceilings on requests
+  whatever their outcome, never given back: 24 per account per UTC day and
+  30 per network per hour. A download is charged when it starts and given
+  back (`refundQuota`) when it does not complete: no mirror answered (502),
+  the transfer broke off or ran too long, or the player cancelled (the
+  stream's end is seen by the Worker and the refund runs under
+  `waitUntil`); so a retry of a failed download is charged once. A
+  transfer counts as completed as soon as every byte went to the player
+  (the upstream is then cancelled), so a player closing right after the
+  last byte gets no refund; and since refunds never touch the attempt
+  ceilings, cancelling just before the end from many networks (a /56 holds
+  256 /64s) cannot buy more than 24 transfers a day. `takeQuota` gives back
+  what it took when a concurrent request took the last units between its
+  read and its write. A 429 with `scope: network` tells the player that
+  others on the same network used its budget (no more than the address
+  itself reveals to anyone on that network). An account over its day is refused by one read, without a
+  write or an attempt. Keys are salted hashes of the account id and the
+  network (never logged); a 429 carries `Retry-After` and `retryAfter` and
+  `scope` (`account` or `network`) in the body, and the game shows the time
+  and never retries on its own. Admins can see and reset an account's
+  budgets and those of the networks it used in the last day (audit logged,
+  without addresses: docs/accounts-api.md 8.10). The game keeps the
+  downloaded ZIP on the device (`content/index.js` `KEPT_PACKAGE`), so an
+  install in the same browser again or a WebRA update that uses more of its
+  files needs no new download. Exactly
   13,502,031 bytes or nothing (checked from `Content-Length` before
   streaming, cut off if the body runs longer), 15 s for a mirror to answer
   and 240 s for the transfer. Nothing is stored or cached: no Cache API, KV,
@@ -231,18 +258,23 @@ cross-origin isolated page, so the headers changed:
   `https://dn721505.ca.archive.org/0/items/command-conquer-red-alert_202309/Command%20%26%20Conquer%20Red%20Alert%20%5BCD1%5D.ISO`
   (earlier probes also saw `https://ia601402.us.archive.org/20/items/...`);
   a redirector that left `[`, `]` or `&` unescaped would match too. A
-  request whose upstream fails before anything streams (502) gives its
-  bytes back to the account's daily budget (`refundQuota`, never below
-  zero; the IP request still counts), and the game retries a 502 at most
-  once per click. The answer must be `206` with `Content-Range` of
+  piece that does not arrive whole (the upstream fails before anything
+  streams with a 502, the transfer breaks off, the player cancels) gives
+  its bytes back to the account's daily budget (`refundQuota`, never below
+  zero; the network request and the account's request still count: at
+  most 96 requests of at most 8 MiB per account per UTC day, so an account
+  can pull at most 768 MiB of music upstream a day whatever it cancels), so the game's retry of that
+  piece is charged once, and a piece counts as whole once every byte went
+  out; the game retries a 502 at most once per click and
+  never retries a 429. The answer must be `206` with `Content-Range` of
   exactly the asked window and the pinned image size (a changed or other
   image is refused) and is streamed through cut to the asked length. Only
   `GET`, the game page (`X-WebRA-Content`, Origin, `Sec-Fetch-Site`), the
   same account gate as the package relay (active, `content_autoinstall` or
   admin, `contentRelay` on, address not banned). Budgets in the D1 quota
   table: 256 MiB per account per UTC day (each request counts its size,
-  rounded up to whole MiB: four full downloads) and 64 requests per IP per
-  hour; keys are salted hashes. No player header (cookie, address) goes
+  rounded up to whole MiB: four full downloads) and 64 requests per network
+  (IPv4 address or IPv6 /64) per hour; keys are salted hashes. No player header (cookie, address) goes
   upstream; nothing is stored or cached (`cache: 'no-store'`, `Cache-Control:
   no-store`). At most four upstream attempts per request (two rounds over
   the two discs, the archive's data nodes sometimes answer 500 once), 15 s
@@ -257,6 +289,30 @@ cross-origin isolated page, so the headers changed:
   the `scores.mix` range was downloaded to hash it (the same hash on both
   discs). They are numbers about EA's files, not the files. Tests use
   synthetic bytes and a mocked archive.
+- **The movie relay reads the movie archives out of the same discs.** `GET
+  /api/content/ra-movies/allied` and `/soviet` (`moviesRange` in
+  `apps/server/src/cdmusic.js`) are the same relay for `movies1.mix`
+  (369,362,336 bytes at offset 19,846,497 of the Allied image) and
+  `movies2.mix` (415,334,456 bytes at offset 19,834,209 of the Soviet
+  image), each only from the disc that has it: the same Range rules (one
+  range of at most 8 MiB inside the archive, 416 otherwise), the same
+  redirect checks, `Content-Range` checks, account gate, no-store and
+  refunds. Their budgets are their own, sized for archives of hundreds of
+  megabytes: 1,500 MiB (both archives twice) and 288 requests (three per
+  piece of both) per account per UTC day, and 192 requests per network per
+  hour; the requests are never given back, so an account can pull at most
+  288 x 8 MiB = 2,304 MiB of movies upstream a day whatever it cancels. The game offers them as an
+  optional button with the size (about 748 MB) and never as part of
+  "Install everything". It checks every 8 MiB piece against its pinned
+  SHA-256 before it keeps it (`apps/game/js/content/cdmovies.js`; a whole
+  archive is never held in memory), installs the movies from the kept
+  pieces and then forgets them. The pins were measured on 2026-10-10 like
+  the music's: the offsets from the ISO 9660 directory and `MAIN.MIX`'s
+  index (the `scores.mix` offsets found the same way matched the existing
+  pins), the hashes by streaming each archive once by range through a hash
+  without writing it anywhere. The Counterstrike and Aftermath music is not
+  relayed: those expansion discs were not part of EA's 2008 freeware
+  release, so players install it from their own discs.
 - **CD images from the player.** A dropped or picked `.iso` is read by
   slices (`File.slice`), never loaded whole: the volume descriptor, the
   directories on the way to `MAIN.MIX` and `INSTALL/REDALERT.MIX`, then
@@ -390,8 +446,9 @@ data, admins only), roles (admin powers), and the right to play online.
 - **Content relay.** Only active accounts with the `content_autoinstall`
   flag (or admins), only while the site setting allows it, on top of the
   relay's existing header, origin and rate limit checks. The same gate
-  covers the music relay (`/api/content/ra-scores`), whose daily byte budget
-  is kept per account.
+  covers the music relay (`/api/content/ra-scores`). Both relays count
+  their main budget per account (completed package downloads, music bytes)
+  with a coarser per network ceiling against abuse.
 - **Abuse of the API.** Rate limits per IP and per account (section 9 of the
   accounts API), body size caps, strict schemas that refuse unknown fields,
   versioned writes (`If-Match`) for settings documents and site settings.

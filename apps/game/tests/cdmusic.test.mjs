@@ -11,6 +11,7 @@ import { IsoImage, IsoError, isoName, SECTOR } from '../js/content/iso.js';
 import { blobSource, bytesSource, MixArchive, mixHash } from '../js/audio/mix.js';
 import { installContent, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore } from '../js/content/store.js';
+import { RelayLimitError } from '../js/content/download.js';
 import { MUSIC } from '../js/audio/catalog.js';
 import {
   downloadScores,
@@ -24,7 +25,9 @@ import {
   FREEWARE_CDS,
 } from '../js/content/cdmusic.js';
 import { buildMix, imaAud, sineSamples } from './audio-fixtures.mjs';
-import { buildIso } from './content-fixtures.mjs';
+import { buildIso, buildVqa, vqaChunk } from './content-fixtures.mjs';
+import { archiveFile, downloadMovieArchive, forgetMovieDownload, keptMovieBytes, MOVIE_ARCHIVES, MOVIES_BYTES } from '../js/content/cdmovies.js';
+import { ALLIED_MOVIES } from '../js/content/movies.js';
 
 /** A File stand-in that counts what is read of it (slices only; never the whole). */
 function countingFile(bytes, name) {
@@ -249,8 +252,13 @@ test('music download: a dropped connection is retried; a refusal is not', async 
     [429, 'rate_limited', /downloaded the music too often/],
   ]) {
     const calls = [];
-    const refuse = relay(() => new Response(JSON.stringify({ error: { code, message: 'This account downloaded the music too often today. Try again tomorrow.' } }), { status }), calls);
-    await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: refuse, expected: FAKE_SHA }), re);
+    const refuse = relay(() => new Response(JSON.stringify({ error: { code, message: 'This account downloaded the music too often today.', retryAfter: 3600 } }), { status }), calls);
+    await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: refuse, expected: FAKE_SHA }), (e) => {
+      assert.match(e.message, re);
+      // A used up budget keeps its time to try again (the dialog holds the button until then).
+      assert.equal(e instanceof RelayLimitError, status === 429);
+      return true;
+    });
     assert.equal(calls.length, 1, `${status} is not retried`);
   }
   // Another part of the file than asked for is refused.
@@ -284,4 +292,100 @@ test('the real pin is the SHA-256 the server pins too', async () => {
   // The scores.mix reader copes with an index like the real one (an RA archive of tracks).
   const mix = await MixArchive.open(blobSource(new Blob([buildMix([{ name: MUSIC[0].file, data: new Uint8Array(32) }])])));
   assert.ok(mix.has(MUSIC[0].file));
+});
+
+// ---- Mission movies: pieces checked against their pins, kept, installed piece by piece ----
+
+function tinyMovie(seed = 1) {
+  const codebook = Uint8Array.from({ length: 32 }, (_, i) => (i * seed) & 255);
+  return buildVqa({ frames: [[vqaChunk('VQFR', vqaChunk('CBF0', codebook), vqaChunk('CPL0', new Uint8Array(768)), vqaChunk('VPT0', Uint8Array.of(0, 1, 2, 3, 0, 0, 0, 0)))]] });
+}
+
+/** A synthetic movies1.mix, its pins for `piece`-byte pieces, and a relay serving it (with `hook(piece, attempt)`). */
+function movieArchive(piece = 512) {
+  const bytes = buildMix([
+    { name: ALLIED_MOVIES[0], data: tinyMovie(1) },
+    { name: ALLIED_MOVIES[1], data: tinyMovie(3) },
+  ]);
+  const sha = (b) => createHash('sha256').update(b).digest('hex');
+  const pieces = [];
+  for (let at = 0; at < bytes.length; at += piece) pieces.push(sha(bytes.subarray(at, at + piece)));
+  const archive = { ...MOVIE_ARCHIVES[0], bytes: bytes.length, pieces };
+  const calls = [];
+  const fetchFor = (hook = () => null) => async (url, init) => {
+    calls.push({ url, init });
+    const m = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+    const start = Number(m[1]);
+    const end = Number(m[2]);
+    const special = await hook(start / piece, init);
+    if (special) return special;
+    return new Response(bytes.slice(start, end + 1), { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${bytes.length}` } });
+  };
+  return { bytes, archive, calls, fetchFor, piece };
+}
+
+test('movie archives: the pins cover both freeware discs, every piece of both archives', () => {
+  assert.deepEqual(MOVIE_ARCHIVES.map((a) => [a.id, a.name, a.url]), [
+    ['allied', 'movies1.mix', '/api/content/ra-movies/allied'],
+    ['soviet', 'movies2.mix', '/api/content/ra-movies/soviet'],
+  ]);
+  for (const a of MOVIE_ARCHIVES) {
+    assert.equal(a.pieces.length, Math.ceil(a.bytes / SCORES_PIECE), a.name);
+    for (const h of [a.sha256, ...a.pieces]) assert.match(h, /^[0-9a-f]{64}$/);
+  }
+  assert.equal(MOVIES_BYTES, 369_362_336 + 415_334_456);
+});
+
+test('the movie pins match the server', async () => {
+  const server = await import('../../server/src/cdmusic.js');
+  assert.equal(server.MOVIES.allied.bytes, MOVIE_ARCHIVES[0].bytes);
+  assert.equal(server.MOVIES.soviet.bytes, MOVIE_ARCHIVES[1].bytes);
+});
+
+test('movie download: checked pieces kept as they come, installed from the store piece by piece, then forgotten', async () => {
+  const { bytes, archive, calls, fetchFor, piece } = movieArchive();
+  const store = new MemoryStore();
+  const file = await downloadMovieArchive({ archive, store, fetchImpl: fetchFor(), piece });
+  assert.equal(calls.length, Math.ceil(bytes.length / piece));
+  assert.equal(calls[0].url, '/api/content/ra-movies/allied');
+  assert.equal(await keptMovieBytes(store, archive, piece), bytes.length);
+  assert.equal(file.size, bytes.length);
+  assert.equal(file.name, 'movies1.mix');
+  const r = await installContent([file], store);
+  assert.deepEqual(r.movies, [ALLIED_MOVIES[0], ALLIED_MOVIES[1]].sort());
+  await forgetMovieDownload(store, archive);
+  assert.equal(await keptMovieBytes(store, archive, piece), 0);
+});
+
+test('movie download: a piece that does not match its pin is not kept; a cut off download resumes', async () => {
+  const { archive, fetchFor, piece } = movieArchive();
+  const store = new MemoryStore();
+  const evil = fetchFor((i) => (i === 2 ? new Response(new Uint8Array(piece).fill(9), { status: 206, headers: { 'Content-Range': `bytes ${2 * piece}-${3 * piece - 1}/${archive.bytes}` } }) : null));
+  await assert.rejects(downloadMovieArchive({ archive, store, fetchImpl: evil, piece }), /part 3 of movies1\.mix does not match the freeware CDs/);
+  assert.deepEqual((await store.partialIndexes(archive.partial)).sort(), [0, 1], 'only checked pieces are kept');
+  const again = movieArchive();
+  await downloadMovieArchive({ archive, store, fetchImpl: again.fetchFor(), piece });
+  assert.equal(again.calls[0].init.headers.Range, `bytes=${2 * piece}-${3 * piece - 1}`, 'goes on where it stopped');
+  // A 429 is a RelayLimitError and is not retried.
+  const limited = movieArchive();
+  await assert.rejects(
+    downloadMovieArchive({
+      archive,
+      store: new MemoryStore(),
+      piece,
+      fetchImpl: limited.fetchFor(() => new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'This account downloaded the movies too often today.', retryAfter: 60 } }), { status: 429 })),
+    }),
+    (e) => e instanceof RelayLimitError,
+  );
+  assert.equal(limited.calls.length, 1);
+});
+
+test('movie download: an archive missing a piece fails the read instead of installing garbage', async () => {
+  const { archive, fetchFor, piece } = movieArchive();
+  const store = new MemoryStore();
+  const file = await downloadMovieArchive({ archive, store, fetchImpl: fetchFor(), piece });
+  await store.clearPartials(archive.partial);
+  await store.putPartial(archive.partial, 0, new ArrayBuffer(3));
+  await assert.rejects(file.slice(0, 10).arrayBuffer(), /not complete on this device/);
+  assert.equal(archiveFile(store, archive, piece).size, archive.bytes);
 });
