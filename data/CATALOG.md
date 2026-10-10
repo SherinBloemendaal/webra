@@ -11,6 +11,8 @@ Sprite sequences (`data/source/sequences/*.yaml`, OpenRA `mods/ra/sequences` at 
 
 Audio (`data/source/audio/notifications.yaml` and `music.yaml`, OpenRA `mods/ra/audio` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0): the speech and sound notifications with their file names, volumes and interrupt types, and the soundtrack with its titles, volumes and hidden tracks; `tools/gen-audio-catalog.mjs` turns them, the rules in `data/source/rules` (every actor with its inheritance resolved: sound traits, notifications, support powers) and `weapons.json` into `apps/game/js/audio/catalog-data.js` (file names only: the sounds come from the player's own copy of Red Alert).
 
+Missions (`data/source/missions`: `missions.yaml`, the campaign rules `rules/campaign-rules.yaml`, `campaign-tooltips.yaml` and `coop-missions-rules.yaml` with the `misc.yaml` and `husks.yaml` they build on, the shared scripts `scripts/campaign.lua` and `utils.lua`, the Fluent strings `fluent/lua.ftl` and `campaign.ftl`, and every mission map folder under `maps/` with its `map.yaml`, `map.bin`, Lua scripts, map rules, weapons, sequences and `map.ftl`; OpenRA `mods/ra` at commit `b6fc03fcfaef1277592bbd4cbc7d44dd85219902`, GPL-3.0, Copyright the OpenRA Developers; the maps' authors are named in each `map.yaml`): map previews, art, sounds and videos are left out. `tools/gen_missions.py` turns them into `apps/game/missions/*.json` and `index.json`, which the engine runs with its Lua interpreter (docs/contracts.md section 9).
+
 Full trait-level data for every actor (every property OpenRA defines) is in `actors.json`; every weapon with projectile and warheads is in `weapons.json`.
 
 ## Buildings (17)

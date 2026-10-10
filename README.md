@@ -25,6 +25,7 @@ WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and 
 Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [webra.sherin.dev](https://webra.sherin.dev/)). Playing needs a WebRA account while the site setting `gameRequiresAccount` is on (the default): sign up on the [account page](https://webra.sherin.dev/account/), and once the account is active (closed beta: an admin approves it) the game opens. The server enforces this for every game file, not only the start page ([security notes](docs/security.md#the-play-gate-2026-10-09)).
 
 ### Game modes
+- [x] **Campaign**: OpenRA's Red Alert missions with their maps, rules and Lua scripts, run inside the deterministic simulation: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions (60 in all). The Campaign button of the lobby lists them with map, briefing, difficulty and game speed; chapters open as you win (progress follows your account). In a mission: objectives panel, mission messages and timers, the scripts' speech, camera moves and radar pings, a card where the original plays a movie, next mission, restart, save and load, replays
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
 - [x] **Fair AI target choice** in free for alls: each AI attacks the nearest base (measured to the starting yard, so an expansion does not draw attacks), and among equally near ones first a player that recently hit its structures, then the one the fewest other AIs already attack, then the next base around the map in a direction the seed picks; strength no longer matters, so two AIs do not gang up on the weakest neighbour (often you, early on). An AI keeps its target until another is clearly better instead of switching every minute
 - [x] The AI uses the whole arsenal: helicopters and planes (away from heavy anti-air), naval yards and warships where water reaches the enemy, minefields, chrono tanks, MAD tanks and demolition trucks, radar jammers, and on Hard (Normal after 15 minutes) the Iron Curtain, Chronosphere and Atom Bomb, never where allies would be hit
@@ -164,6 +165,7 @@ them (WebRA's own art and synthesized sounds).
 - [x] Simulation in a Web Worker with SharedArrayBuffer (transferred buffers, or the main thread, as fallbacks)
 - [x] GPU compute for very large crowds: the simulation sends tick-rate instance records and a WebGPU compute pass interpolates, culls and compacts them every frame into an indirect draw (CPU path as the fallback and, until the pass has been seen working in browsers, the default: try it with `?instances=gpu`), see [Determinism and performance](#determinism-and-performance)
 - [x] Loading OpenRA `.oramap` maps
+- [x] The Red Alert campaign and expansion missions with OpenRA's Lua scripts
 - [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
 - [x] Mobile/touch controls
 
@@ -198,7 +200,7 @@ flowchart LR
   end
 ```
 
-**Simulation (`engine/`).** The `webra-sim` crate is compiled to WebAssembly with `wasm-bindgen` and `wasm-pack`. It runs a fixed-step simulation at 25 ticks per second (OpenRA timing) using integer math only: 1024 world units per cell, 1024 angle units per full turn and an integer sine table. No floating point touches game state, so two machines fed the same orders compute the same world. A state hash is exposed for desync checks.
+**Simulation (`engine/`).** The `webra-sim` crate is compiled to WebAssembly with `wasm-bindgen` and `wasm-pack`. It runs a fixed-step simulation at 25 ticks per second (OpenRA timing) using integer math: 1024 world units per cell, 1024 angle units per full turn and an integer sine table, so two machines fed the same orders compute the same world. A state hash is exposed for desync checks. The one exception is mission scripts: OpenRA's Lua runs in WebRA's own Lua 5.1 interpreter (`engine/src/lua`), whose numbers are doubles as in Lua, limited to exactly rounded operations and a pure Rust `libm`, with insertion-ordered tables and an instruction budget per tick ([docs/contracts.md](docs/contracts.md) section 9).
 
 **Pathfinding.** Movement uses flow fields: a Dijkstra integration field per goal cell and locomotor. Fields are cached in an LRU of 256 entries and rebuilt lazily when passability changes. Connectivity labels detect unreachable goals, which snap to the nearest reachable cell. Many units ordered to the same goal share one field.
 
@@ -224,8 +226,8 @@ webra/
 │   └── server/             Cloudflare Worker: static hosting, API, accounts (src/accounts), multiplayer sessions
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
-├── data/                   Red Alert catalog extracted from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen_oramap_tables.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
+├── data/                   Red Alert catalog and campaign missions from OpenRA mods/ra
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, accounts API, security, deploy, README assets
 ```
 
@@ -262,6 +264,8 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | End-to-end smoke test (accounts, lobby, game) against local `wrangler dev` | see [docs/deploy.md](docs/deploy.md), Local development |
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
+| Regenerate the campaign missions (`apps/game/missions`; needs Node) | `python3 tools/gen_missions.py` |
+| Run every mission headless for longer (ticks; one mission with `WEBRA_MISSION=allies-01`) | `WEBRA_MISSION_TICKS=9000 cargo test -p webra-sim --release every_mission` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 
 ## Controls
@@ -389,11 +393,13 @@ Notes on browsers:
 
 `tools/gen_rules.py` picks the actors needed for the current milestone and writes `engine/rules.json`, which is embedded in the WebAssembly module.
 
+`tools/gen_missions.py` turns OpenRA's Red Alert missions (`data/source/missions`: maps, Lua scripts, mission rules, GPL-3.0) into `apps/game/missions/*.json`, the files the campaign plays.
+
 `tools/gen_oramap_tables.py` turns OpenRA's Red Alert tilesets (`data/source/tilesets`) and decoration and civilian actors (`data/source/rules`) into the lookup tables of the `.oramap` importer (`apps/game/js/oramap/tables.js`).
 
 ## Determinism and performance
 
-- **Fixed step, integer only.** 25 ticks per second, world units of 1024 per cell, angles of 1024 per turn, an integer sine table and a seeded RNG. This is what will make lockstep multiplayer possible: peers only exchange orders and compare state hashes.
+- **Fixed step, integer only.** 25 ticks per second, world units of 1024 per cell, angles of 1024 per turn, an integer sine table and a seeded RNG. This is what makes lockstep multiplayer, replays and saves possible: peers only exchange orders and compare state hashes. Mission scripts use Lua's doubles, restricted to operations that round the same everywhere (section 9 of the contracts).
 - **Tested.** The test suite includes full AI vs AI games played to completion.
 - **Shared flow fields.** A crowd ordered to one goal costs one field, not one path search per unit.
 - **Cheap neighbourhood queries.** The per-tick spatial hash keeps separation, targeting and splash damage close to linear.

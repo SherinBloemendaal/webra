@@ -1337,8 +1337,8 @@ about options added since; files of the running build are validated in full:
 ```jsonc
 {
   "format": "webra-replay", "version": 1,
-  "kind": "replay",                 // or "save" (skirmish, or online with `online`)
-  "mode": "skirmish",               // or "online"
+  "kind": "replay",                 // or "save" (skirmish, mission, or online with `online`)
+  "mode": "skirmish",               // or "online", or "mission" (section 9)
   "engine": "0.3.0+abcdef12",       // Game version(): files only load in the same build
   "createdAt": 1760000000000,
   "title": "England vs 1 opponent", // 1..64 chars
@@ -1349,9 +1349,21 @@ about options added since; files of the running build are validated in full:
   "ticks": 1200,                    // ticks recorded
   "frames": [[12, [[0, [{ "o": "move", ... }]]]]],  // non-empty frames, tick < ticks, increasing
   "hashes": [[250, "0123456789abcdef"]],           // state hash after N ticks, every 250 ticks
-  "online": { "id": "0123456789abcdef" }           // online saves only: the server's record (section 4)
+  "online": { "id": "0123456789abcdef" },          // online saves only: the server's record (section 4)
+  "mission": { "id": "allies-01", "hash": "<sha256>" } // missions only (section 9)
 }
 ```
+
+A mission replay or save (`mode: "mission"`) has no `map` (null) and names
+its mission file instead: `mission.id` (`[a-z0-9][a-z0-9-]{0,63}`, the file
+`apps/game/missions/<id>.json`) and `mission.hash` (SHA-256 of the file's
+text). Its `options` are the mission's start options, `{ seed, gameSpeed,
+options }` with at most 8 mission options (`options.difficulty`: `easy`,
+...; keys and values `[a-z0-9][a-z0-9_-]{0,31}`, case-insensitive), not
+the game options of section 3. The person playing is player 0, so `player`
+is 0 and every frame carries player 0's orders only. The loader fetches the
+mission file and refuses it when its hash differs (another version of the
+game). `packages/protocol/src/mission.js` validates both.
 
 - Limits: 32 MiB, eight hours of game time, orders and options as strict as
   the network messages, frame players within the options, map canonical and
@@ -1417,9 +1429,14 @@ Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
 `warn`, and `failed` (the worker cannot go on; the page says so).
 
-Start specs: `skirmish { options, map, player, recorder }`, `save { replay }`,
-`replay { replay }`, `stress { seed, units, size }`, `online { options, map,
-player, spectator, delay, rejoining, recorder }`, each with `tickMs`.
+Start specs: `skirmish { options, map, player, recorder }`, `mission {
+mission, options, recorder }` (the mission file's text and its start
+options, section 9), `save { replay, mission? }`, `replay { replay,
+mission? }` (a mission save or replay also gets its mission file's text),
+`stress { seed, units, size }`, `online { options, map, player, spectator,
+delay, rejoining, recorder }`, each with `tickMs`. A mission's `info` adds
+`mission { camera, players }`: where the camera starts (world pixels) and
+the players' names and colours in engine order.
 
 A frame carries: ticks run and the interpolation `alpha`, the tick, the
 worker's simulation time, `busy` (loading a save, catching up, seeking),
@@ -1434,7 +1451,10 @@ set, and heat shimmer instances (`heatCount`, 4 floats each,
 `instances: 'gpu'` (below) it carries tick-rate records and fog instead of
 sprites, rects and fog, only when they changed, plus `instances`, `buildMs`
 (time spent building render data this step) and `renderBytes` (render data
-handed over this step).
+handed over this step). In a mission it also carries `mission { state,
+events }`: `Game.mission_state()` text when a tick ran (else null) and the
+`Game.take_mission_events()` text of the step (null when empty or busy); the
+handles keep the newest state and queue the events (`MissionFeed`).
 
 Messages are handled in order. A `call` or `ask` sent before a `step` is
 applied (or answered) before that step's ticks, so an order reaches the same
@@ -1689,7 +1709,8 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
-| `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
+| `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
+| `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
@@ -1699,3 +1720,134 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).
+
+## 9. Campaign missions (`engine/src/mission`, `engine/src/lua`, `apps/game/js/campaign`)
+
+OpenRA's Red Alert missions (`mods/ra/missions.yaml`: the Allied and Soviet
+campaigns, Counterstrike, Aftermath, OpenRA's own and the ant missions) run
+in the engine with their maps, rules and Lua scripts. The scripts are part
+of the simulation: lockstep-safe, replayed exactly, in the state hash.
+
+### Mission files (`apps/game/missions`, `tools/gen_missions.py`)
+
+`data/source/missions` vendors OpenRA's mission maps (map.yaml, map.bin,
+Lua, map rules and weapons, Fluent strings), `missions.yaml`, the campaign
+rules and the shared Lua scripts at commit
+`b6fc03fcfaef1277592bbd4cbc7d44dd85219902` (GPL-3.0, see data/CATALOG.md;
+no art, sounds or videos). `python3 tools/gen_missions.py` writes one JSON
+file per mission and `index.json` (campaigns, missions with title, faction,
+briefing, options, videos and the SHA-256 of each file). Never edit them by
+hand; CI regenerates and diffs them.
+
+A mission file (`format: 1`, at most 4 MiB, checked by
+`engine/src/mission/data.rs`) holds:
+
+| Field | What |
+|-------|------|
+| `id`, `title`, `campaign`, `author`, `source`, `briefing`, `videos` | From map.yaml and missions.yaml |
+| `tileset`, `origin`, `map` | The map converted by the `.oramap` importer (`tools/mission-map.mjs`), cropped to its bounds: `origin` is the OpenRA cell of WebRA cell (0, 0) |
+| `players` | map.yaml Players: name, faction, colour, playable, required, owns world, non-combatant, bot, allies, enemies |
+| `actors` | Every map actor with its inits (owner, location, facing, subcell, health, stance, free actor, tags), the map's bridges too |
+| `rules` | The mission's rules (OpenRA's merged with the map's, through `gen_rules.py`) as changes to `engine/rules.json`: actors, weapons, locomotors and armour types patched by key or added (`Rules::load_mission`) |
+| `props`, `art`, `conditions`, `death_spawns`, `bot_conditions`, `smudges` | Script-only actors (waypoints, cameras, flares), the art key each mission actor draws with, ExternalCondition effects, actors left on death, the conditions a bot gives, map smudges |
+| `scripts`, `messages`, `options` | The Lua files in load order (`campaign.lua`, `utils.lua`, the map's), the Fluent strings, the lobby options (`difficulty` with its values and default) |
+| `starting_cash`, `tech_level`, `time_limit`, `start_notification`, `objectives` | World settings: MissionObjectives (`early_game_over`, `game_over_delay`, `cooperative`) |
+
+### The Lua interpreter (`engine/src/lua`)
+
+A Lua 5.1 interpreter in Rust (no C, compiles to wasm), written for the
+lockstep simulation rather than embedding a C Lua:
+
+- **Determinism.** Numbers are IEEE doubles like Lua 5.1. +, -, *, / and
+  sqrt are exactly rounded everywhere; floor, fmod and the transcendental
+  functions come from `libm` (a Rust port of musl), never from the
+  platform; number formatting (`%.14g`) uses Rust's exact formatting.
+  Tables keep insertion order (also for `pairs` and `next`), objects live
+  in index arenas (so `tostring(t)` is the same everywhere), and
+  `math.random` does not exist (OpenRA scripts use `Utils.Random*`, which
+  draw from the world's RNG). The interpreter state is part of
+  `World::state_hash`.
+- **Budget.** Every run (a callback, `Tick`, loading) gets an instruction
+  budget (statements, loop rounds and calls; library functions charge for
+  their work), calls nest at most 120 deep and the heap is bounded. Running
+  out is a script error no `pcall` can catch.
+- **Sandbox.** OpenRA's globals only: ipairs, next, pairs, pcall, select,
+  tonumber, tostring, type, unpack, xpcall, math (without random), string,
+  table and print. No io, os, debug, load, require or coroutine.
+- **Collection** runs only between runs, from the globals and the host's
+  roots (triggers, activity queues, delayed calls).
+- **Not there:** proper tail calls (a deep tail recursion hits the depth
+  limit), `string.dump`, `setfenv`, `getfenv`, `collectgarbage` and
+  metatable `__gc`; no OpenRA mission needs them.
+
+### The scripting API (`engine/src/mission/api.rs`, `actor_api.rs`, `player_api.rs`)
+
+OpenRA's globals (`Actor`, `Player`, `Map`, `Trigger` with every On*
+trigger, `Reinforcements`, `Media`, `Utils`, `DateTime`, `Camera`, `Beacon`,
+`Radar`, `UserInterface`, `CPos`, `WPos`, `CVec`, `WVec`, `WDist`, `Angle`,
+`HSLColor`) and the actor and player properties and methods every RA
+mission uses (movement and attack activities, `CallFunc`, `Wait`, `Hunt`,
+transports, production with `Build`, capture, infiltration, chronoshift,
+conditions, objectives, cash, power, alliances, bots). Actors are handles:
+a dead or removed actor still answers `IsDead` and its last position. The
+human player is engine player 0 (`IsLocalPlayer`).
+
+Differences from OpenRA, all deterministic:
+
+- Engine events (killed, damaged, captured, produced, sold, passengers,
+  infiltrated, placed) reach triggers at the end of the tick they happened
+  in: a callback runs up to one tick later than OpenRA's.
+- Movies (`Media.PlayMovieFullscreen`, `PlayMovieInRadar`) are a card in the
+  game (no videos); their callback runs on the next tick. Music calls leave
+  the music to the player's settings and call back at once.
+- `DateTime` gives the game time; the real date (`CurrentYear`, ...,
+  `IsHalloween`) is fixed (2000-01-01 00:00, not Halloween) so every player
+  sees the same.
+- Script errors stop the mission's scripts (the battle goes on) and show an
+  error banner with Restart, like OpenRA's script error screen.
+- Missions are single player. In OpenRA's co-op missions (Evacuation,
+  Exodus, Infiltration) the other playable slots stay empty, like
+  unoccupied slots in OpenRA (their scripts check for that).
+
+### Saves, replays, restart
+
+A mission save or replay stores the mission file's id and hash, the start
+options and the order frames (section 7) and re-simulates on load: the Lua
+state is never serialized, so a save cannot disagree with its scripts.
+Restart, the next mission and the way back to the campaign screen go
+through a page reload with a `webra.restart.v1` record (`js/restart.js`:
+`mission { id, options, gameSpeed }`, `campaign { id }`).
+
+### Campaign screen and progress (`js/campaign`)
+
+The lobby's Campaign button opens the mission browser: campaigns, missions,
+map preview (`Game.mission_preview`), briefing, difficulty and game speed.
+Progress is the registry setting `extra.campaignProgress` (mission id to the
+difficulty it was won on, synced with the account). In the numbered
+campaigns the first chapter is open and a chapter opens once a mission of
+the chapter before it is won; the expansion and OpenRA missions are open
+from the start. In a mission, `js/campaign/view.js` shows the objectives
+panel, messages, mission text, floating texts, movie cards and script
+errors, plays the scripts' speech and sounds, moves the camera and pings the
+radar; the end of game dialogs offer the next mission, a restart and the
+way back to the campaign.
+
+### Art
+
+Mission actors are drawn like the actor their `art` key names (engine
+`rules_json` `art`): the built-in actor they inherit from or that has the
+same OpenRA image, or a campaign character (`tools/gen_content_tables.py`
+`MISSION_ART`: Einstein, Delphi, Chan, the general, the ants and the Chinook
+wrecks), with WebRA art (`js/art/world.js`, `js/art/infantry.js`) and, with
+the player's own original content, OpenRA's sequences. Missions may have up
+to 16 players; the renderer has 16 team colours (the lobby offers 8).
+
+### Tests
+
+`engine/src/lua/tests.rs` (interpreter, determinism, limits),
+`engine/src/tests_mission.rs` (every mission loads and runs without script
+errors, allies-01 and soviet-01 won with scripted orders, API behaviour,
+determinism of whole missions) and `apps/game/tests/campaign.test.mjs`
+(every mission in the wasm engine with its art, a mission through the
+simulation boundary with saves and replays, the campaign screen and the
+mission view).
