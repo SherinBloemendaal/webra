@@ -15,6 +15,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'user.restore',
   'user.purge',
   'user.settings_update',
+  'user.relay_quota_reset',
   'ipban.create',
   'ipban.update',
   'ipban.delete',

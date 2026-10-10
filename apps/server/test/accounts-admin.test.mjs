@@ -4,6 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Browser, Clock, makeEnv, PASSWORD, promote, signup } from './accounts-harness.mjs';
+import { takeQuota } from '../src/quota.js';
+import { CONTENT_ACCOUNT_LIMIT, CONTENT_NET_LIMIT } from '../src/content.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -41,6 +43,7 @@ test('permission matrix: users get nothing, moderators a subset, admins everythi
     ['POST', `/api/admin/users/${t}/logout`, {}, 'admin'],
     ['POST', `/api/admin/users/${t}/password-reset`, {}, 'admin'],
     ['GET', `/api/admin/users/${t}/settings`, undefined, 'admin'],
+    ['DELETE', `/api/admin/users/${t}/relay-quota`, undefined, 'admin'],
     ['PUT', `/api/admin/users/${t}/settings`, { settings: {} }, 'admin', ifMatch],
     ['GET', '/api/admin/ip-bans', undefined, 'admin'],
     ['POST', '/api/admin/ip-bans', { cidr: '192.0.2.0/24', reason: 'spam' }, 'admin'],
@@ -329,4 +332,36 @@ test('audit log filters and stats', async () => {
   assert.deepEqual(stats.body.services, { email: false, discord: false });
   assert.ok(stats.body.sessions.active >= 3);
   assert.deepEqual(stats.body.games, { lobbies: 0, running: 0 });
+});
+
+test('relay budgets: admins see what an account and its recent networks used, and reset them with an audit entry', async () => {
+  const { env, admin, mod, target } = await cast();
+  const id = target.user.id;
+  const salt = env.IP_HASH_SALT;
+  const now = Date.now();
+  // Target signed up from 198.51.100.4: two completed package downloads, 40 MiB of music, and its network's counters.
+  for (let i = 0; i < 2; i++) await takeQuota(env.DB, salt, 'content-account', id, CONTENT_ACCOUNT_LIMIT, 24 * 3600 * 1000, now);
+  await takeQuota(env.DB, salt, 'scores-bytes', id, 256, 24 * 3600 * 1000, now, 40);
+  for (let i = 0; i < 3; i++) await takeQuota(env.DB, salt, 'content-net', '198.51.100.4', CONTENT_NET_LIMIT, 3600 * 1000, now);
+  await takeQuota(env.DB, salt, 'content-tries', '198.51.100.4', 30, 3600 * 1000, now);
+  const detail = (await admin.get(`/api/admin/users/${id}`)).body.relay;
+  assert.equal(detail.account.content.used, 2);
+  assert.equal(detail.account.content.limit, CONTENT_ACCOUNT_LIMIT);
+  assert.equal(detail.account.content.unit, 'downloads');
+  assert.equal(detail.account.content.resetsAt, Math.floor(now / 864e5) * 864e5 + 864e5);
+  assert.equal(detail.account.music.used, 40);
+  assert.equal(detail.networks.length, 1);
+  assert.equal(detail.networks[0].network, '198.51.100.4');
+  assert.deepEqual([detail.networks[0].content.used, detail.networks[0].contentAttempts.used, detail.networks[0].music.used], [3, 1, 0]);
+  assert.equal((await mod.get(`/api/admin/users/${id}`)).body.relay, undefined, 'moderators do not see them');
+  const reset = await admin.req('DELETE', `/api/admin/users/${id}/relay-quota`);
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.relay.account.content.used, 0);
+  assert.equal(reset.body.relay.account.music.used, 0);
+  assert.equal(reset.body.relay.networks[0].content.used, 0);
+  const entry = (await admin.get('/api/admin/audit?action=user.relay_quota_reset')).body.entries[0];
+  assert.equal(entry.target.id, id);
+  assert.deepEqual(entry.before, { account: { content: 2, music: 40 }, networks: [{ content: 3, contentAttempts: 1, music: 0 }] });
+  assert.ok(!JSON.stringify(entry).includes('198.51.100.4'), 'no address in the audit log');
+  assert.equal((await mod.req('DELETE', `/api/admin/users/${id}/relay-quota`)).status, 403);
 });

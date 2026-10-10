@@ -171,6 +171,8 @@ export class AccountApi {
   unbanUser = (id) => this.del(`/api/admin/users/${enc(id)}/ban`);
   logoutUser = (id) => this.post(`/api/admin/users/${enc(id)}/logout`);
   revokeUserSession = (id, sessionId) => this.del(`/api/admin/users/${enc(id)}/sessions/${enc(sessionId)}`);
+  /** Give the account and its recent networks their one-click relay budgets back: { relay }. */
+  resetRelayQuota = (id) => this.del(`/api/admin/users/${enc(id)}/relay-quota`);
   deleteUser = (id) => this.del(`/api/admin/users/${enc(id)}`);
   restoreUser = (id) => this.post(`/api/admin/users/${enc(id)}/restore`);
   purgeUser = (id, confirm) => this.post(`/api/admin/users/${enc(id)}/purge`, { confirm });

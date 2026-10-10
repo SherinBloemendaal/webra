@@ -251,14 +251,14 @@ async function route(ctx) {
   if (path === '/api/content/ra-quickinstall') {
     // EA's freeware Red Alert files from OpenRA's mirrors, streamed, never stored (content.js).
     if (method !== 'GET') throw methodNotAllowed('GET');
-    await requireRelay(ctx);
-    return quickInstall(request, env, ctx.ip, { salt: ctx.salt() });
+    const user = await requireRelay(ctx);
+    return quickInstall(request, env, ctx.ip, user, { salt: ctx.salt(), waitUntil: (p) => exec.waitUntil(p.catch(() => {})) });
   }
   if (path === '/api/content/ra-scores') {
     // The Red Alert music: byte ranges of scores.mix from the freeware CD images, streamed, never stored (cdmusic.js).
     if (method !== 'GET') throw methodNotAllowed('GET');
     const user = await requireRelay(ctx);
-    return scoresRange(request, env, ctx.ip, user, { salt: ctx.salt() });
+    return scoresRange(request, env, ctx.ip, user, { salt: ctx.salt(), waitUntil: (p) => exec.waitUntil(p.catch(() => {})) });
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

@@ -25,9 +25,12 @@
 //   content_autoinstall flag or the admin role while the contentRelay site
 //   setting is on (accounts/play.js requireRelay, checked in index.js).
 // - Budgets in the D1 quota table (keys are salted hashes): SCORES_DAILY_MIB
-//   megabytes per account per day and SCORES_IP_LIMIT requests per IP per
-//   hour. A request over a budget costs no upstream fetch; a request whose
-//   upstream fails before anything streams (502) gets its bytes back.
+//   megabytes per account per day and SCORES_IP_LIMIT requests per network
+//   (an IPv4 address or an IPv6 /64, accounts/ip.js networkOf) per hour. A
+//   request over a budget costs no upstream fetch; a piece that does not
+//   arrive whole (the upstream fails before anything streams, the transfer
+//   breaks off, the player cancels) gets its megabytes back, so the
+//   client's retry of that piece is not charged twice.
 // - Nothing is stored or cached: `cache: 'no-store'` upstream and
 //   `Cache-Control: no-store` on the answer; no request header of the player
 //   (cookies, address) is passed upstream.
@@ -40,6 +43,7 @@
 
 import { HttpError } from './http.js';
 import { ipSalt } from './ipkey.js';
+import { networkOf } from './accounts/ip.js';
 import { refundQuota, takeQuota } from './quota.js';
 import { CONTENT_HEADER, exactly } from './content.js';
 
@@ -77,7 +81,7 @@ export const SCORES_MAX_RANGE = 8 * 1024 * 1024;
 /** Per account and UTC day, in MiB (each request counts its size rounded up): four full downloads. */
 export const SCORES_DAILY_MIB = 256;
 export const SCORES_DAY_MS = 24 * 60 * 60 * 1000;
-/** Requests per IP and hour (a full download is 8). */
+/** Requests per network and hour (a full download is 8). */
 export const SCORES_IP_LIMIT = 64;
 export const SCORES_IP_WINDOW_MS = 60 * 60 * 1000;
 /** Time for an upstream answer with headers, and for one piece's transfer. */
@@ -193,7 +197,13 @@ async function fetchWindow(disc, start, end, fetchImpl) {
  * `fetchImpl` and `discs` are replaceable for tests (tests never reach the
  * real archive).
  */
-export async function scoresRange(request, env, ip, account, { fetchImpl = fetch, discs = SCORES_DISCS, now = Date.now(), salt = null } = {}) {
+export async function scoresRange(
+  request,
+  env,
+  ip,
+  account,
+  { fetchImpl = fetch, discs = SCORES_DISCS, now = Date.now(), salt = null, waitUntil = (p) => p.catch(() => {}) } = {},
+) {
   if (request.method !== 'GET') throw new HttpError(405, 'bad_message', 'Method not allowed.', { allow: 'GET' });
   if (request.headers.get(CONTENT_HEADER) !== '1') throw new HttpError(403, 'forbidden', 'This download is for the WebRA game page only.');
   const site = request.headers.get('Sec-Fetch-Site');
@@ -202,15 +212,16 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
   const { start, end } = parseScoresRange(request.headers.get('Range'));
   const length = end - start + 1;
   const key = salt ?? ipSalt(env, request);
-  if (!(await takeQuota(env.DB, key, 'scores-ip', ip, SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, key, 'scores-ip', networkOf(ip), SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS, now))) {
     const retry = Math.ceil((SCORES_IP_WINDOW_MS - (now % SCORES_IP_WINDOW_MS)) / 1000);
-    throw new HttpError(429, 'rate_limited', 'Too many music downloads from this network. Try again later.', { 'retry-after': String(retry) }, { retryAfter: retry });
+    throw new HttpError(429, 'rate_limited', 'Too many music downloads from this network in the last hour.', { 'retry-after': String(retry) }, { retryAfter: retry, scope: 'network' });
   }
   const mib = Math.ceil(length / MIB);
   if (!(await takeQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAILY_MIB, SCORES_DAY_MS, now, mib))) {
     const retry = Math.ceil((SCORES_DAY_MS - (now % SCORES_DAY_MS)) / 1000);
-    throw new HttpError(429, 'rate_limited', 'This account downloaded the music too often today. Try again tomorrow.', { 'retry-after': String(retry) }, { retryAfter: retry });
+    throw new HttpError(429, 'rate_limited', 'This account downloaded the music too often today.', { 'retry-after': String(retry) }, { retryAfter: retry, scope: 'account' });
   }
+  const refund = () => refundQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAY_MS, now, mib).catch(() => {});
   for (let round = 0; round < SCORES_ROUNDS; round++) {
     for (const disc of discs) {
       const got = await fetchWindow(disc, start, end, fetchImpl);
@@ -218,9 +229,11 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
       const { res, controller } = got;
       // The transfer has a deadline of its own; the stream ends with an error after it.
       const timer = setTimeout(() => controller.abort(), SCORES_TRANSFER_TIMEOUT_MS);
-      const out = exactly(res.body, length, () => {
+      // A piece that does not arrive whole is not charged: the client throws it away and asks again.
+      const out = exactly(res.body, length, (completed) => {
         clearTimeout(timer);
         controller.abort();
+        if (!completed) waitUntil(refund());
       });
       return new Response(out, {
         status: 206,
@@ -237,6 +250,6 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
     }
   }
   // Nothing was streamed: the bytes go back to the account's daily budget (the IP request still counts).
-  await refundQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAY_MS, now, mib).catch(() => {});
+  await refund();
   throw new HttpError(502, 'unavailable', 'The Internet Archive did not answer with the Red Alert music. Try again later or install it from the CD image yourself.');
 }

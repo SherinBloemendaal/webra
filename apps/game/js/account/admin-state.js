@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'user.restore',
   'user.purge',
   'user.settings_update',
+  'user.relay_quota_reset',
   'ipban.create',
   'ipban.update',
   'ipban.delete',
@@ -66,6 +67,8 @@ export function permissions(role) {
     ipBans: admin,
     site: admin,
     audit: admin,
+    /** See and reset an account's one-click relay budgets. */
+    relayQuota: admin,
   };
 }
 
@@ -75,6 +78,22 @@ export function canBan(viewer, target) {
   const p = permissions(viewer.role);
   if (!p.ban) return false;
   return target.role === 'user' || p.banStaff;
+}
+
+/** Names of the one-click relay budgets (apps/server/src/relayquota.js RELAY_BUDGETS) in the drawer. */
+const RELAY_LABELS = Object.freeze({ content: 'Package downloads', contentAttempts: 'Package requests', music: 'Music' });
+
+/**
+ * The one-click relay budgets of a user detail (`relay`, docs/accounts-api.md
+ * 8.10) as lines for the drawer: { account: string[], networks: [{ network,
+ * lines: string[] }], used: boolean }. `when(ms)` formats a time.
+ */
+export function relayLines(relay, when = (ms) => new Date(ms).toISOString()) {
+  const line = (id, b) => `${RELAY_LABELS[id] ?? id}: ${b.used} of ${b.limit} ${b.unit}${b.used ? `, until ${when(b.resetsAt)}` : ''}`;
+  const lines = (o) => Object.entries(o ?? {}).map(([id, b]) => line(id, b));
+  const any = (o) => Object.values(o ?? {}).some((b) => b.used > 0);
+  const networks = (relay?.networks ?? []).map(({ network, lastSeen: _lastSeen, ...budgets }) => ({ network, lines: lines(budgets), used: any(budgets) }));
+  return { account: lines(relay?.account), networks, used: any(relay?.account) || networks.some((n) => n.used) };
 }
 
 export const DEFAULT_QUERY = Object.freeze({ q: '', status: '', role: '', flag: '', sort: 'created', order: 'desc', page: 1, limit: 25 });

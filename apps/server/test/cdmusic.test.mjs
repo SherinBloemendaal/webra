@@ -228,7 +228,7 @@ test('a 502 gives the bytes back to the daily budget (never below zero); the IP 
   const now = Date.UTC(2026, 9, 9, 5, 0, 0);
   const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
   const ok = await scoresRange(ask(piece), env, '10.1.0.1', ACCOUNT, { fetchImpl: archive(), now });
-  await ok.body.cancel();
+  await drain(ok);
   const counts = () => [...env.DB.rows.entries()].map(([k, v]) => [k.split(':')[0], v.count]).sort();
   assert.deepEqual(counts(), [['scores-bytes', 8], ['scores-ip', 1]]);
   for (let i = 0; i < 5; i++) {
@@ -282,8 +282,9 @@ test(`${SCORES_DAILY_MIB} MiB per account per day, counted by size; another acco
   const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
   const pieces = SCORES_DAILY_MIB / (SCORES_MAX_RANGE / (1024 * 1024));
   for (let i = 0; i < pieces; i++) {
+    // Whole pieces: a piece that does not arrive whole is given back.
     const res = await scoresRange(ask(piece), env, `10.0.0.${i % 200}`, ACCOUNT, { fetchImpl, now });
-    await res.body.cancel();
+    assert.equal(await drain(res), SCORES_MAX_RANGE);
   }
   const writes = env.DB.writes;
   await assert.rejects(scoresRange(ask('bytes=0-0'), env, '10.0.1.1', ACCOUNT, { fetchImpl, now }), (e) => {
@@ -291,7 +292,7 @@ test(`${SCORES_DAILY_MIB} MiB per account per day, counted by size; another acco
     assert.ok(Number(e.headers['retry-after']) > 0);
     return true;
   });
-  assert.equal(env.DB.writes, writes + 1, 'only the IP counter is written for a refused request');
+  assert.equal(env.DB.writes, writes + 1, 'only the network counter is written for a refused request');
   const other = await scoresRange(ask(piece), env, '10.0.1.2', { id: 'b'.repeat(32) }, { fetchImpl, now });
   await other.body.cancel();
   // The next UTC day starts afresh.
@@ -300,7 +301,7 @@ test(`${SCORES_DAILY_MIB} MiB per account per day, counted by size; another acco
   for (const key of env.DB.rows.keys()) assert.ok(!key.includes(ACCOUNT.id) && !key.includes('10.0.') && /^scores-(ip|bytes):[0-9a-f]{64}$/.test(key), key);
 });
 
-test(`${SCORES_IP_LIMIT} requests per IP per hour, before any fetch`, async () => {
+test(`${SCORES_IP_LIMIT} requests per network (IPv4 address, IPv6 /64) per hour, before any fetch`, async () => {
   const env = makeEnv();
   const calls = [];
   const fetchImpl = archive({}, calls);
@@ -310,8 +311,40 @@ test(`${SCORES_IP_LIMIT} requests per IP per hour, before any fetch`, async () =
     await res.body.cancel();
   }
   const before = calls.length;
-  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '9.9.9.9', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429);
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '9.9.9.9', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429 && e.extra.scope === 'network');
   assert.equal(calls.length, before, 'no upstream fetch when over the budget');
+  // IPv6 counts by /64: privacy addresses of one home share the budget.
+  for (let i = 0; i < SCORES_IP_LIMIT; i++) {
+    const res = await scoresRange(ask('bytes=0-0'), env, `2001:db8:5:6:${(i + 1).toString(16)}::1`, { id: String(i).padStart(32, '0') }, { fetchImpl, now });
+    await res.body.cancel();
+  }
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '2001:db8:5:6:abcd::2', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429);
+  const next = await scoresRange(ask('bytes=0-0'), env, '2001:db8:5:7::2', ACCOUNT, { fetchImpl, now });
+  await next.body.cancel();
+});
+
+test('a piece that does not arrive whole is given back, so the client retry is charged once', async () => {
+  const { peekQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 4, 0, 0);
+  const pending = [];
+  const waitUntil = (p) => pending.push(p);
+  const mib = () => peekQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now);
+  const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
+  const cancelled = await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive(), now, waitUntil });
+  assert.equal(await mib(), 8, 'charged while it runs');
+  const reader = cancelled.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 0, 'cancelled');
+  const short = await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive({ allied: 'short' }), now, waitUntil });
+  await assert.rejects(drain(short), /less than/);
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 0, 'cut off');
+  assert.equal(await drain(await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive(), now, waitUntil })), SCORES_MAX_RANGE);
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 8, 'a whole piece stays charged');
 });
 
 test('no timer outlives a cancelled or cut off transfer', async () => {
