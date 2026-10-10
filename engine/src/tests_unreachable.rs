@@ -320,6 +320,36 @@ fn a_rally_point_across_the_water_sends_units_to_the_bank() {
     assert!(x > 25 * CELL && x < 32 * CELL, "at the bank: cell {:?}", w.cell_of(w.actors[tank].x, w.actors[tank].y));
 }
 
+/// A naval yard on a shore with a pond on its other side launches ships
+/// onto the sea (the largest water, or the water its rally point is in),
+/// never into the pond they could not leave.
+#[test]
+fn naval_yards_launch_ships_onto_the_open_sea_not_into_a_pond() {
+    let mut w = arena(64, 48);
+    // Sea east of column 30; a 3 x 3 pond west of the yard at (27, 10).
+    flood(&mut w, (0..48).flat_map(|y| (30..64).map(move |x| (x, y))).chain((9..12).flat_map(|y| (24..27).map(move |x| (x, y)))));
+    w.spawn_building(ty(&w, "FACT"), 0, 4, 4);
+    w.spawn_building(ty(&w, "POWR"), 0, 10, 4);
+    let syrd = w.spawn_building(ty(&w, "SYRD"), 0, 27, 9).unwrap();
+    w.players[0].cash = 100_000;
+    w.refresh_tokens();
+    w.update_power();
+    let pond = w.pass_water.component[w.map.idx(25, 10)];
+    assert_ne!(pond, w.pass_water.component[w.map.idx(40, 10)]);
+    let pt = ty(&w, "PT");
+    for _ in 0..4 {
+        let boat = w.produce_at(syrd, 0, pt).expect("launched");
+        let ci = w.cell_index(w.actors[boat].x, w.actors[boat].y);
+        assert_ne!(w.pass_water.component[ci], pond, "launched into the pond at {:?}", w.cell_of(w.actors[boat].x, w.actors[boat].y));
+        w.step();
+    }
+    // A rally point in the pond is honoured (the player asked for it).
+    w.actors[syrd].rally = Some((cell_center(25), cell_center(10)));
+    let boat = w.produce_at(syrd, 0, pt).expect("launched");
+    let ci = w.cell_index(w.actors[boat].x, w.actors[boat].y);
+    assert_eq!(w.pass_water.component[ci], pond);
+}
+
 // ---- Harvesters ---------------------------------------------------------------------------
 
 /// A full ore truck delivers to a refinery it can drive to, not to the

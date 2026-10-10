@@ -63,20 +63,28 @@ impl World {
 
     /// Cell and facing where a ship built at naval yard `b` enters the world:
     /// open water just outside one of the yard's exits (the exit cells are the
-    /// yard's own corners). Picks the exit with the fewest units nearby, so
-    /// ships fan out; None while every exit is blocked.
+    /// yard's own corners). Water joined to the yard's rally point comes
+    /// first, then the largest body of water (a yard on a shore may touch a
+    /// pond too, and a ship launched into it could never leave; OpenRA
+    /// issue 19154), then the exit with the fewest units nearby, so ships
+    /// fan out. None while every exit is blocked.
     pub(crate) fn naval_spawn_cell(&self, b: usize) -> Option<(i32, i32, i32)> {
         let ya = &self.actors[b];
         let binfo = self.rules.actors[ya.ty as usize].building.as_ref()?;
         let (w, h) = (binfo.width, binfo.height);
-        let mut best: Option<(usize, (i32, i32))> = None;
+        let rally_area =
+            ya.rally.map(|(rx, ry)| self.cell_index(rx, ry)).filter(|&c| !self.pass_water.blocked[c]).map(|c| self.pass_water.component[c]);
+        let mut best: Option<((bool, std::cmp::Reverse<u32>, usize), (i32, i32))> = None;
         for &(ex, ey) in &binfo.exits {
             // Outward direction from the yard's centre through the exit cell.
             let (dx, dy) = ((2 * ex + 1 - w).signum(), (2 * ey + 1 - h).signum());
             let Some(c) = self.open_water_near(ya.cx + ex + dx, ya.cy + ey + dy, 3) else { continue };
-            let crowd = self.units_in_cell(self.map.idx(c.0, c.1)).len();
-            if best.is_none_or(|(n, _)| crowd < n) {
-                best = Some((crowd, c));
+            let ci = self.map.idx(c.0, c.1);
+            let crowd = self.units_in_cell(ci).len();
+            let key =
+                (rally_area.is_some_and(|r| r != self.pass_water.component[ci]), std::cmp::Reverse(self.pass_water.area_size(ci)), crowd);
+            if best.is_none_or(|(bk, _)| key < bk) {
+                best = Some((key, c));
             }
         }
         let (cx, cy) = best?.1;

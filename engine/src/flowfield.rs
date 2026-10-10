@@ -99,6 +99,8 @@ impl FlowField {
 pub struct Passability {
     pub blocked: Vec<bool>,
     pub component: Vec<u32>,
+    /// Cells per connectivity label of `component` (index 0 unused).
+    pub sizes: Vec<u32>,
     pub version: u32,
     dirty: bool,
     /// Crush classes of the wall on each blocked cell (`CRUSH_WALL`,
@@ -172,6 +174,7 @@ impl Passability {
         let mut p = Passability {
             blocked,
             component: vec![0; n],
+            sizes: Vec::new(),
             version: 1,
             dirty: true,
             crush: vec![0; n],
@@ -234,6 +237,11 @@ impl Passability {
         self.crush_components.iter().find(|(m, _)| *m == mask).map_or(&self.component, |(_, c)| c)
     }
 
+    /// Cells in the connected area of cell `i` (0 for a blocked cell).
+    pub fn area_size(&self, i: usize) -> u32 {
+        self.sizes.get(self.component[i] as usize).copied().unwrap_or(0)
+    }
+
     /// Whether cell `i` is open for units that crush walls of `mask` (labels of `components_for`).
     #[inline]
     pub fn open_for(&self, i: usize, mask: u8) -> bool {
@@ -269,6 +277,11 @@ impl Passability {
         self.cost_dirty = false;
         self.version += 1;
         label(map, &self.blocked, &mut self.component);
+        let labels = self.component.iter().copied().max().unwrap_or(0) as usize;
+        self.sizes = vec![0; labels + 1];
+        for &c in &self.component {
+            self.sizes[c as usize] += 1;
+        }
         // Walls the crushers of a class mask drive through (OpenRA: tanks
         // path over enemy walls): one more labelling per mask in use.
         let present = self.crush.iter().fold(0u8, |m, &c| m | c);
