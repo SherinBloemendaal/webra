@@ -26,8 +26,9 @@ jobs:
     needs: ci
     # Off until hosting is set up: set the repository variable DEPLOY_ENABLED
     # to "true" once the secrets below exist (docs/deploy.md).
-    if: vars.DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    # Production deploys only from main, also for a manual workflow_dispatch.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: large
     environment:
       name: production
       url: https://webra.sherin.dev
@@ -42,6 +43,12 @@ jobs:
       SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}
       SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
     steps:
+      # The self-hosted runner image is a minimal Ubuntu (see ci.yml).
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
+
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
