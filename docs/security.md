@@ -698,7 +698,17 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
   million per tick), calls nest at most 120 deep, the parser at most 200,
   strings are capped at 1 MiB and the heap at 3 million slots; running out
   is an error no `pcall` can catch, and it only stops the mission's scripts
-  (test: `a_script_that_never_ends_is_stopped`). The sandbox has OpenRA's
+  (test: `a_script_that_never_ends_is_stopped`). Native recursion (nested
+  expressions, blocks, calls and host round trips like `Utils.Do`) is
+  counted in stack levels sized from measured frame costs, so a script hits
+  "stack overflow" well before the WebAssembly stack does (tests:
+  `native_stack_per_level`, `deep_recursion_fits_in_a_small_stack`,
+  `host_round_trips_fit_the_native_stack`, at 512 KiB). Integer arguments
+  are checked or saturated (`string.rep`, `unpack`, `select`, positions,
+  delays; `huge_integers_never_overflow`, `script_positions_never_overflow`
+  with 2^62 and +-1e300), and `string.byte` results cost budget.
+  (Review 2026-10-10: these were the medium findings; none was reachable
+  from a player, since only the game's own mission files run Lua.) The sandbox has OpenRA's
   globals only: no io, os, debug, load, require, string.dump or coroutines,
   so a script reaches nothing outside the simulation. The interpreter has no
   `unsafe` code. Mission files are at most 4 MiB.
@@ -708,10 +718,16 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
   own local player; the state hash of a co-op game leaves the interpreter
   state out (presentation differs per client, as in OpenRA, whose sync hash
   never covers Lua) and covers everything the scripts did to the game, so a
-  client whose scripts misbehave still shows up as a desync.
+  client whose scripts misbehave still shows up as a desync. A generator
+  lint (`tools/gen_missions.py`, tested in `tools/gen-missions.test.mjs`)
+  refuses code under `IsLocalPlayer` that does more than presentation, and
+  the co-op test plays each co-op mission to its end on both seats. The
+  directory lists a co-op lobby only under a mission this version knows.
 - **Movies** from the player's own content are decoded in the browser
   (js/content/vqa.js) with every size, chunk and decompression bound
-  checked; a broken file throws and the card shows instead. Videos are never
+  checked; a sound track may not run longer than the pictures (plus two
+  seconds, at most 6 minutes), so a small file cannot make the decoder
+  allocate a huge one; a broken file throws and the card shows instead. Videos are never
   bundled or uploaded.
 
 ## Inherent to lockstep

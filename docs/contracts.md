@@ -1774,8 +1774,15 @@ lockstep simulation rather than embedding a C Lua:
   `World::state_hash`.
 - **Budget.** Every run (a callback, `Tick`, loading) gets an instruction
   budget (statements, loop rounds and calls; library functions charge for
-  their work), calls nest at most 120 deep and the heap is bounded. Running
-  out is a script error no `pcall` can catch.
+  their work), calls nest at most 120 deep, every recursive evaluation
+  (expressions, blocks, calls, host round trips such as `Utils.Do`) takes
+  native stack levels, at most 540, measured at about 560 to 680 bytes each
+  so a run stays within 384 KiB of the 1 MiB WebAssembly stack, and the heap
+  is bounded. Running out of budget or heap is a script error no `pcall`
+  can catch; a stack overflow is an ordinary Lua error. Integers from
+  scripts are checked or saturated; script positions and distances are
+  clamped to 2^20 cells and 2^29 world units, so no engine arithmetic on
+  them overflows.
 - **Sandbox.** OpenRA's globals only: ipairs, next, pairs, pcall, select,
   tonumber, tostring, type, unpack, xpcall, math (without random), string,
   table and print. No io, os, debug, load, require or coroutine.

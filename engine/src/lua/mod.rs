@@ -14,8 +14,12 @@
 //!   the state hash are the same on every machine.
 //! - **Bounded.** Each run gets an instruction budget (statements, loop
 //!   iterations and calls; library functions charge for their work), calls
-//!   nest at most `MAX_DEPTH` deep and the heap has a size limit. Running out
-//!   is an error no `pcall` can catch.
+//!   nest at most `MAX_DEPTH` deep, every recursive evaluation (expression,
+//!   block, call, host round trip) takes native stack levels (`MAX_LEVELS`,
+//!   measured to fit the WebAssembly stack) and the heap has a size limit.
+//!   The budget and the heap are errors no `pcall` can catch. Integers from
+//!   scripts (sizes, counts, positions) are checked or saturated, never
+//!   wrapped into a huge allocation or a panic.
 //! - **Sandboxed.** Only OpenRA's allowed globals exist: ipairs, next, pairs,
 //!   pcall, select, tonumber, tostring, type, unpack, xpcall, math (without
 //!   random and randomseed), string and table, plus print. There is no io,
