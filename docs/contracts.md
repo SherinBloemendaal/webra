@@ -255,9 +255,9 @@ reader shares (`packages/protocol/src/mapversions.js`).
   out, layers read or rebuilt to the map size, malformed spawns and actors
   left out). Every problem is listed with its location (click to jump) and
   quick fixes (`applyMapFix` actions: `removeActors`, `setActorType`,
-  `setTerrain`, `setField`, `moveField`, `accept`; actors are named by type
-  and cell, fields by key path, so fixes stay right after other fixes), each
-  one undoable. Saving writes the current format.
+  `setTerrain`, `setField`, `moveField`, `dropActorFields`, `accept`;
+  actors are named by type and cell, fields by key path, so fixes stay
+  right after other fixes), each one undoable. Saving writes the current format.
 - Identity and multiplayer: the hash covers the upgraded canonical form.
   `formatVersion` is part of it only above 1, so every map from before map
   versions kept its hash, and a canonical text always says its version
@@ -343,6 +343,12 @@ checked by `packages/protocol/src/mapsetup.js` and the engine
 their defaults, which change nothing a game does: `players: []`,
 `options: {}`, `lockedOptions: []`, `tags: []`. From version 2 on they are
 always in the canonical form (defaults filled in, `options` keys sorted).
+A format 1 file that already has any of them (or actors with `health`,
+`stance`, `veterancy` or `cargo`) is not upgraded silently: each is a
+problem (`field-from-later-format`) the author settles in the map editor,
+keeping them (the map is read as format 2) or dropping them (fix actions
+`accept`, `setField`, `dropActorFields`). A field written as `null` is
+refused (protocol and engine alike); leave it out for its default.
 
 - `players`: the player slots, at most one per spawn (OpenRA MapPlayers).
   Lobby slot k is slot k; a spawn without an entry is an open slot with
@@ -352,7 +358,10 @@ always in the canonical form (defaults filled in, `options` keys sorted).
   `ai`: an AI with `difficulty` and `bot`, `closed`), and `lock`: the parts
   players cannot change (`faction`, `team`, `color`, `type`; a locked
   colour needs a colour; a locked random faction allows the countries it
-  picks from). At least two slots must stay playable.
+  picks from). A map must be able to start a game: at least two slots
+  stay playable (not locked closed), at least one can take a person (not
+  locked to an AI or closed), and the playable slots are not all locked to
+  the same team (`mapSlotsProblem`, the engine's `validate_setup`).
 - `options`: lobby options the map starts with, from `weather`,
   `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`
   and the boolean options (section 3), with their section 3 values; not
@@ -373,10 +382,14 @@ always in the canonical form (defaults filled in, `options` keys sorted).
   lobby, the server applies it: `applyMapSetup` in `apps/server/src/room.js`)
   sets the listed slots (a person in a slot the map closes or gives to an
   AI moves to a slot the map leaves open; a map without one is refused
-  online) and merges the map's options into the lobby's. Locked parts and
-  options are disabled in both lobbies; the server refuses changes that
-  break them, and so does every start (`lockedSlotProblem`,
-  `lockedOptionProblem`). `Game.from_map` refuses options that break the
+  online) and merges the map's options into the lobby's. Whoever comes into
+  a slot later (joining, leaving the spectators, moving to another slot, an
+  AI the host adds) takes that slot's faction, team and colour from the map
+  (`mapSlotSettings`; a colour another slot holds is swapped). Locked parts
+  and options are disabled in both lobbies; the server refuses a slot change
+  only when it adds a broken lock (`lockedSlotProblems`), so a lobby that
+  breaks one can always be repaired, and every start refuses any
+  (`lockedSlotProblem`, `lockedOptionProblem`). `Game.from_map` refuses options that break the
   locked options. Lobby map descriptions (`validMapRef` full) carry
   `setup: { players, options, lockedOptions }` from the stored map.
 - Thumbnail: `mapThumbnail(map)` (protocol `mapthumb.js`) draws the map
@@ -696,7 +709,7 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
 | `POST` | `/api/sessions/:id/resume` | host only, `X-WebRA-Member`: an online save file -> `{ id }`; the lobby resumes that saved game (see "Online saves") |
 | `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt, tags, thumbnail }]` (published maps of the current format version only, section 2 "Map versions"; `thumbnail` the URL of the map's thumbnail) |
-| `GET` | `/api/maps/:id/thumbnail.png` | the published map's thumbnail: a PNG, one pixel per cell, drawn from the map data (section 2 "Map setup"), cached publicly (the list's URL names the map's hash) |
+| `GET` | `/api/maps/:id/thumbnail.png` | the published map's thumbnail: a PNG, one pixel per cell, drawn from the map data (section 2 "Map setup"), cached publicly (the list's URL names the map's hash). Drawn once per map version: kept in the edge cache by id and stored hash (the query is ignored); `ETag` is the hash (`If-None-Match` gets 304); drawing counts against 600 per hour per IP (429 with `Retry-After`; cached and 304 answers do not count); a map that cannot be drawn is logged and answered 404 |
 | `GET` | `/api/maps/:id` | the map JSON (published maps only; upgraded to the current format version, or as stored when it cannot be) |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash, upgradedFrom? }` (upgraded, validated, size limited, rate limited); publishes it to the community list. `upgradedFrom`: the file's older format version (what is stored is the upgraded map). A map that is not compatible or from a newer format: 422 with the message of section 2 |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |

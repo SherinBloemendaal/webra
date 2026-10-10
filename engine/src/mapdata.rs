@@ -129,6 +129,12 @@ impl Default for MapSlot {
     }
 }
 
+/// An optional text field that, when present, must be a string (null is
+/// refused, as by the protocol; leave the field out for its default).
+fn present_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
+}
+
 fn random_faction() -> String {
     "random".into()
 }
@@ -201,7 +207,7 @@ pub struct MapActor {
     pub health: i32,
     /// Fire stance (`hold_fire`, `return_fire`, `defend`, `attack_anything`);
     /// absent: the actor's own default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_string", skip_serializing_if = "Option::is_none")]
     pub stance: Option<String>,
     /// Veterancy level, 0 to the actor's levels.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -532,12 +538,34 @@ impl MapData {
     }
 
     /// The game setup's checks (format version 2): slots, options, locks, tags.
+    /// Why the map's slots can never start a game, or None (protocol
+    /// `mapSlotsProblem`): at least two slots stay playable (not locked
+    /// closed), at least one can take a person (not locked to an AI or
+    /// closed), and the playable slots are not all locked to one team.
+    /// Spawns without an entry are open slots with nothing locked.
+    fn slots_problem(&self) -> Option<String> {
+        let open = MapSlot::default();
+        let slots: Vec<&MapSlot> = (0..self.spawns.len()).map(|k| self.players.get(k).unwrap_or(&open)).collect();
+        let locked = |s: &MapSlot, part: &str| s.lock.iter().any(|l| l == part);
+        let playable: Vec<&&MapSlot> = slots.iter().filter(|s| !(s.ty == "closed" && locked(s, "type"))).collect();
+        if playable.len() < 2 {
+            return Some("a map must leave at least two slots that can play".into());
+        }
+        if !slots.iter().any(|s| s.ty == "open" || !locked(s, "type")) {
+            return Some("a map must leave at least one slot a person can take".into());
+        }
+        let team = playable[0].team;
+        if team != 0 && playable.iter().all(|s| locked(s, "team") && s.team == team) {
+            return Some(format!("every slot that can play is locked to team {team}: nobody to fight"));
+        }
+        None
+    }
+
     fn validate_setup(&self, errors: &mut Vec<String>) {
         if self.players.len() > self.spawns.len() {
             errors.push(format!("players lists {} slots; the map has {} spawns", self.players.len(), self.spawns.len()));
         }
         let mut colors = Vec::new();
-        let mut closed = 0;
         for (i, p) in self.players.iter().enumerate() {
             let w = format!("players[{i}]");
             if !SLOT_FACTIONS.contains(&p.faction.as_str()) {
@@ -571,12 +599,10 @@ impl MapData {
             if p.lock.iter().any(|l| l == "color") && p.color < 0 {
                 errors.push(format!("{w}: a locked colour needs a colour"));
             }
-            if p.ty == "closed" && p.lock.iter().any(|l| l == "type") {
-                closed += 1;
-            }
         }
-        if self.spawns.len() >= 2 && self.spawns.len() - closed.min(self.spawns.len()) < 2 {
-            errors.push("players: a map must leave at least two slots that can play".into());
+        // Fewer than two spawns is the spawn check's error already.
+        if let Some(problem) = self.slots_problem().filter(|_| self.spawns.len() >= 2) {
+            errors.push(format!("players: {problem}"));
         }
         for (k, v) in &self.options {
             match MAP_OPTIONS.iter().find(|(name, _)| name == k) {

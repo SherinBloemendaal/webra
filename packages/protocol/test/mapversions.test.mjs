@@ -164,6 +164,22 @@ test('format 2 game setup: what a file sets is kept, what it leaves out takes it
   bad({ players: [{ color: 3 }, { color: 3 }] }, /same colour/);
   bad({ players: [{ lock: ['color'] }] }, /locked colour needs a colour/);
   bad({ players: [{ type: 'closed', lock: ['type'] }] }, /at least two slots/);
+  // A map that can never start a game: nobody may play it, or nobody to fight.
+  bad({ players: [{ type: 'ai', lock: ['type'] }, { type: 'ai', lock: ['type'] }] }, /at least one slot a person can take/);
+  bad({ players: [{ team: 1, lock: ['team'] }, { type: 'ai', team: 1, lock: ['team'] }] }, /every slot that can play is locked to team 1: nobody to fight/);
+  for (const players of [
+    [{ type: 'ai' }, { type: 'ai', lock: ['type'] }],
+    [{ team: 0, lock: ['team'] }, { team: 0, lock: ['team'] }],
+    [{ team: 1, lock: ['team'] }, { team: 1 }],
+    [{ team: 1, lock: ['team'] }, { type: 'ai', team: 2, lock: ['team', 'type'] }],
+    [{ type: 'ai', team: 3, lock: ['type', 'team'] }],
+  ]) {
+    assert.ok(validateMap({ ...base, players }).ok, JSON.stringify(players));
+  }
+  // null is refused (as by the engine); leave a field out for its default.
+  for (const k of ['faction', 'team', 'color', 'type', 'difficulty', 'bot', 'lock']) bad({ players: [{ [k]: null }] }, new RegExp(`players\\[0\\]\\.${k} must not be null`));
+  for (const k of ['players', 'options', 'lockedOptions', 'tags']) bad({ [k]: null }, new RegExp(`${k} must not be null`));
+  bad({ actors: [{ type: 'E1', owner: 0, x: 6, y: 6, stance: null }] }, /stance/);
   bad({ players: [{ lock: ['team', 'team'] }] }, /lists team twice/);
   bad({ players: [{ extra: 1 }] }, /extra/);
   bad({ options: { seed: 4 } }, /not an option a map can set/);
@@ -485,4 +501,37 @@ test('ids from the file are cut short and stripped of control characters in mess
     assert.doesNotMatch(p.message, /[\x00-\x1f]/);
   }
   assert.match(ctx.problems[0].message, /^rules\.actors\.XY{39}: XY{39} was removed in format 2/);
+});
+
+test('a format 1 file with format 2 fields is not upgraded silently: the author keeps or drops them', () => {
+  const legacy = JSON.parse(read('./fixtures/maps/format1-legacy.webra-map.json'));
+  const odd = { ...legacy, formatVersion: 1, players: [{ faction: 'england', lock: ['faction'] }], tags: ['naval'] };
+  odd.actors = [...(legacy.actors ?? []), { type: 'E1', owner: 0, x: 6, y: 6, health: 50 }];
+  const up = upgradeMap(odd);
+  assert.equal(up.status, 'incompatible');
+  assert.deepEqual(
+    up.problems.map((p) => [p.code, p.path]),
+    [
+      ['field-from-later-format', ['players']],
+      ['field-from-later-format', ['tags']],
+      ['field-from-later-format', ['actors']],
+    ],
+  );
+  assert.match(up.problems[0].message, /players belongs to map format 2, but the map says it is format 1/);
+  assert.match(up.problems[2].message, /1 actor carry health/);
+  assert.equal(parseMap(JSON.stringify(odd)).ok, false, 'lobbies and the server refuse it');
+  // Keeping: the map as format 2 with what it carries.
+  const kept = up.problems.reduce((m, p) => applyMapFix(m, p.fixes[0].action), up.map);
+  const keptOk = validateMap(kept);
+  assert.ok(keptOk.ok, keptOk.errors.join('; '));
+  assert.deepEqual(keptOk.map.tags, ['naval']);
+  assert.equal(keptOk.map.actors.at(-1).health, 50);
+  // Dropping: the plain upgrade of the format 1 map.
+  const dropped = up.problems.reduce((m, p) => applyMapFix(m, p.fixes[1].action), up.map);
+  const plain = { ...legacy };
+  assert.equal(validateMap(dropped).canonical, validateMap({ ...plain, actors: [...(legacy.actors ?? []), { type: 'E1', owner: 0, x: 6, y: 6 }] }).canonical);
+  assert.throws(() => applyMapFix(up.map, { kind: 'dropActorFields', fields: ['type'] }), /invalid map fix/);
+  // The map editor opens it and lists the same problems.
+  const salvaged = salvageMap(odd);
+  assert.ok(salvaged.problems.some((p) => p.code === 'field-from-later-format'));
 });

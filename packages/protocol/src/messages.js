@@ -256,11 +256,16 @@ export function validMapRef(v, what = 'map', full = false) {
     // The map's game setup (map format version 2, mapsetup.js): online rooms apply and enforce it.
     if (has(v, 'setup')) {
       object(v.setup, MAP_SETUP_KEYS, `${what}.setup`);
-      const options = validateMapOptions(v.setup.options ?? {});
+      // Absent parts take their defaults; null is refused, as in a map file.
+      const part = (k, d) => {
+        if (v.setup[k] === null) fail(`${what}.setup.${k} must not be null`);
+        return v.setup[k] === undefined ? d : v.setup[k];
+      };
+      const options = validateMapOptions(part('options', {}));
       out.setup = {
-        players: validateMapPlayers(v.setup.players ?? [], out.players),
+        players: validateMapPlayers(part('players', []), out.players),
         options,
-        lockedOptions: validateLockedOptions(v.setup.lockedOptions ?? [], options),
+        lockedOptions: validateLockedOptions(part('lockedOptions', []), options),
       };
     }
   }

@@ -63,6 +63,9 @@ export const MAP_MIGRATIONS = Object.freeze([
     to: 2,
     summary: 'Adds the game setup with its defaults: open slots, no options set or locked, no tags.',
     migrate(map, ctx) {
+      // Format 1 had no game setup: a format 1 file that carries one was
+      // written wrongly (or by hand), so the author decides what it means.
+      refuseLaterFields(map, FORMAT_2_MAP_FIELDS, FORMAT_2_ACTOR_FIELDS, ctx);
       // Defaults that change nothing: every slot open (the lobby decides), the
       // lobby's options, no tags; actors keep full health, their own stance,
       // no levels and no passengers (left out of the file at those values).
@@ -73,6 +76,12 @@ export const MAP_MIGRATIONS = Object.freeze([
     },
   }),
 ]);
+
+/** Top-level and actor fields that format 2 added (a format 1 file must not have them). */
+const FORMAT_2_MAP_FIELDS = Object.freeze(['players', 'options', 'lockedOptions', 'tags']);
+const FORMAT_2_ACTOR_FIELDS = Object.freeze(['health', 'stance', 'veterancy', 'cargo']);
+/** Actor fields a `dropActorFields` fix may remove. */
+const DROPPABLE_ACTOR_FIELDS = FORMAT_2_ACTOR_FIELDS;
 
 /** The registry upgradeMap uses by default (tests pass their own). */
 export const MAP_VERSIONS = Object.freeze({ current: MAP_FORMAT_VERSION, history: MAP_FORMAT_HISTORY, migrations: MAP_MIGRATIONS });
@@ -421,6 +430,41 @@ export function moveField(map, from, to, ctx) {
   });
 }
 
+/**
+ * Fields that only exist from format `ctx.version` on, found in a file of
+ * an older format (`fields` top-level, `actorFields` on pre-placed actors):
+ * a problem each, fixed by keeping them (the map is read as the newer
+ * format) or dropping them.
+ */
+export function refuseLaterFields(map, fields, actorFields, ctx) {
+  const was = ctx.version - 1;
+  for (const k of fields) {
+    if (!Object.hasOwn(map, k)) continue;
+    ctx.problem({
+      code: 'field-from-later-format',
+      message: `${k} belongs to map format ${ctx.version}, but the map says it is format ${was}.`,
+      path: [k],
+      fixes: [
+        { label: `Keep ${k}`, action: { kind: 'accept' } },
+        { label: `Drop ${k}`, action: { kind: 'setField', path: [k] } },
+      ],
+    });
+  }
+  const actors = Array.isArray(map.actors) ? map.actors : [];
+  const found = actorFields.filter((f) => actors.some((a) => isPlainObject(a) && Object.hasOwn(a, f)));
+  if (!found.length) return;
+  const count = actors.filter((a) => isPlainObject(a) && found.some((f) => Object.hasOwn(a, f))).length;
+  ctx.problem({
+    code: 'field-from-later-format',
+    message: `${count} actor${count === 1 ? '' : 's'} carry ${found.join(', ')}, which belong to map format ${ctx.version}, but the map says it is format ${was}.`,
+    path: ['actors'],
+    fixes: [
+      { label: `Keep ${found.join(', ')}`, action: { kind: 'accept' } },
+      { label: `Drop ${found.join(', ')}`, action: { kind: 'dropActorFields', fields: found } },
+    ],
+  });
+}
+
 /** A new required field: maps without it get `value`. */
 export function addField(map, path, value, ctx) {
   if (getPath(map, path) !== undefined) return;
@@ -513,6 +557,9 @@ function checkAction(action) {
       checkPath(action.from);
       checkPath(action.to);
       return;
+    case 'dropActorFields':
+      if (!list(action.fields, (f) => DROPPABLE_ACTOR_FIELDS.includes(f))) bad();
+      return;
     default:
       throw new Error(`unknown map fix ${excerpt(action.kind)}`);
   }
@@ -546,6 +593,11 @@ export function applyMapFix(map, action) {
     }
     case 'setField':
       setPath(out, action.path, clone(action.value));
+      break;
+    case 'dropActorFields':
+      for (const a of Array.isArray(out.actors) ? out.actors : []) {
+        if (isPlainObject(a)) for (const f of action.fields) delete a[f];
+      }
       break;
     case 'moveField': {
       const value = getPath(out, action.from);

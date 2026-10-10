@@ -68,14 +68,19 @@ export function validateMapPlayers(v, spawns) {
   const out = v.map((p, i) => {
     const w = `players[${i}]`;
     object(p, SLOT_KEYS, w);
+    // A missing field takes its default; null is refused (as by the engine).
+    const field = (k) => {
+      if (p[k] === null) fail(`${w}.${k} must not be null`);
+      return p[k] === undefined ? MAP_SLOT_DEFAULTS[k] : p[k];
+    };
     const slot = {
-      faction: oneOf(p.faction ?? MAP_SLOT_DEFAULTS.faction, FACTIONS, `${w}.faction`),
-      team: int(p.team ?? 0, 0, TEAM_MAX, `${w}.team`),
-      color: int(p.color ?? -1, -1, COLOR_COUNT - 1, `${w}.color`),
-      type: oneOf(p.type ?? 'open', MAP_SLOT_TYPES, `${w}.type`),
-      difficulty: oneOf(p.difficulty ?? 'normal', DIFFICULTIES, `${w}.difficulty`),
-      bot: oneOf(p.bot ?? 'normal', BOTS, `${w}.bot`),
-      lock: p.lock ?? [],
+      faction: oneOf(field('faction'), FACTIONS, `${w}.faction`),
+      team: int(field('team'), 0, TEAM_MAX, `${w}.team`),
+      color: int(field('color'), -1, COLOR_COUNT - 1, `${w}.color`),
+      type: oneOf(field('type'), MAP_SLOT_TYPES, `${w}.type`),
+      difficulty: oneOf(field('difficulty'), DIFFICULTIES, `${w}.difficulty`),
+      bot: oneOf(field('bot'), BOTS, `${w}.bot`),
+      lock: field('lock'),
     };
     if (!Array.isArray(slot.lock) || slot.lock.length > MAP_SLOT_LOCKS.length) fail(`${w}.lock must list some of ${MAP_SLOT_LOCKS.join(', ')}`);
     slot.lock.forEach((l, k) => {
@@ -88,10 +93,27 @@ export function validateMapPlayers(v, spawns) {
   });
   const colors = out.filter((s) => s.color >= 0).map((s) => s.color);
   if (new Set(colors).size !== colors.length) fail('players: two slots have the same colour');
-  // At least two slots stay playable (spawns without an entry are open).
-  const closed = out.filter((s) => s.type === 'closed' && s.lock.includes('type')).length;
-  if (spawns - closed < 2) fail('players: a map must leave at least two slots that can play');
+  const problem = mapSlotsProblem(out, spawns);
+  if (problem) fail(`players: ${problem}`);
   return out;
+}
+
+/**
+ * Why a map's slots (validated, one per listed spawn; spawns without an
+ * entry are open with nothing locked) can never start a game, or null: at
+ * least two slots must be able to play (not locked closed), at least one
+ * must be able to take a person (not locked to an AI or closed), and the
+ * slots that play must be able to form two sides (not all locked to the
+ * same team). The engine's MapData::validate_setup checks the same.
+ */
+export function mapSlotsProblem(players, spawns) {
+  const slots = Array.from({ length: spawns }, (_, k) => canonicalSlot(players[k] ?? {}));
+  const playable = slots.filter((s) => !(s.type === 'closed' && s.lock.includes('type')));
+  if (playable.length < 2) return 'a map must leave at least two slots that can play';
+  if (!slots.some((s) => s.type === 'open' || !s.lock.includes('type'))) return 'a map must leave at least one slot a person can take';
+  const teams = new Set(playable.map((s) => (s.lock.includes('team') ? s.team : -1)));
+  if (teams.size === 1 && !teams.has(-1) && !teams.has(0)) return `every slot that can play is locked to team ${playable[0].team}: nobody to fight`;
+  return null;
 }
 
 /** Validate the options a map starts with. Returns a copy. */
@@ -217,20 +239,42 @@ export function lockedOptionProblem(options, map) {
  * (human or AI as the lobby likes), AI slots an AI and closed slots stay closed.
  */
 export function lockedSlotProblem(slot, map, k) {
+  return lockedSlotProblems(slot, map, k)[0] ?? null;
+}
+
+/** Every way a lobby slot breaks slot `k`'s locks (see lockedSlotProblem), in that order. */
+export function lockedSlotProblems(slot, map, k) {
   const m = mapSlot(map, k);
   const n = k + 1;
+  const out = [];
   if (m.lock.includes('type')) {
     const want = m.type;
     const kind = slot.type === 'human' || slot.type === 'ai' ? (slot.type === 'ai' ? 'ai' : 'human') : slot.type;
-    if (want === 'closed' && kind !== 'closed') return `This map keeps slot ${n} closed.`;
-    if (want === 'ai' && kind !== 'ai') return `This map gives slot ${n} to an AI.`;
-    if (want === 'open' && kind === 'closed') return `This map keeps slot ${n} open for a player.`;
+    if (want === 'closed' && kind !== 'closed') out.push(`This map keeps slot ${n} closed.`);
+    if (want === 'ai' && kind !== 'ai') out.push(`This map gives slot ${n} to an AI.`);
+    if (want === 'open' && kind === 'closed') out.push(`This map keeps slot ${n} open for a player.`);
   }
-  if (slot.type === 'closed' || slot.type === 'open') return null;
+  if (slot.type === 'closed' || slot.type === 'open') return out;
   if (m.lock.includes('faction') && slot.faction !== m.faction && !(RANDOM_FACTIONS[m.faction] ?? []).includes(slot.faction)) {
-    return `This map locks the faction of slot ${n} (${m.faction}).`;
+    out.push(`This map locks the faction of slot ${n} (${m.faction}).`);
   }
-  if (m.lock.includes('team') && (slot.team ?? 0) !== m.team) return `This map locks slot ${n} to ${m.team ? `team ${m.team}` : 'no team'}.`;
-  if (m.lock.includes('color') && slot.color !== m.color) return `This map locks the colour of slot ${n}.`;
-  return null;
+  if (m.lock.includes('team') && (slot.team ?? 0) !== m.team) out.push(`This map locks slot ${n} to ${m.team ? `team ${m.team}` : 'no team'}.`);
+  if (m.lock.includes('color') && slot.color !== m.color) out.push(`This map locks the colour of slot ${n}.`);
+  return out;
+}
+
+/**
+ * Slot `k`'s settings a lobby takes from the map when a person or an AI
+ * comes into it: the faction when the map sets or locks one, the team when
+ * the map lists the slot, the colour when it sets one (`{}` for a spawn
+ * without an entry).
+ */
+export function mapSlotSettings(map, k) {
+  if (!Array.isArray(map?.players) || k >= map.players.length) return {};
+  const m = mapSlot(map, k);
+  return {
+    ...(m.faction !== 'random' || m.lock.includes('faction') ? { faction: m.faction } : {}),
+    team: m.team,
+    ...(m.color >= 0 ? { color: m.color } : {}),
+  };
 }

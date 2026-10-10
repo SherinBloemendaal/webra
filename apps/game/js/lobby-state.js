@@ -587,7 +587,9 @@ export function applyMapSetup(state, setup, colorCount, spawns) {
   }
   // You take the first slot the map leaves to players (an AI or closed one there gives way).
   if (human) {
-    const free = state.players.findIndex((p, i) => p.type !== 'human' && (i >= listed || mapSlot(setup, i).type === 'open'));
+    let free = state.players.findIndex((p, i) => p.type !== 'human' && (i >= listed || mapSlot(setup, i).type === 'open'));
+    // Else a slot the map gives to an AI or closes without locking it (a valid map always leaves one).
+    if (free < 0) free = state.players.findIndex((p, i) => p.type !== 'human' && (i >= listed || !mapSlot(setup, i).lock.includes('type')));
     if (free >= 0) state.players[free] = { ...human, type: 'human', color: state.players[free].color };
     else if (state.players.length < spawns) state.players.push({ ...human });
   }

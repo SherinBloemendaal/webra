@@ -351,11 +351,15 @@ function validateCurrentMap(input, opts, current) {
     return b;
   });
 
-  // The game setup (format version 2, mapsetup.js); absent fields take their defaults.
-  m.players = step(() => validateMapPlayers(input.players ?? [], Array.isArray(m.spawns) ? m.spawns.length : MAP_MAX_SPAWNS));
-  m.options = step(() => validateMapOptions(input.options ?? {}));
-  m.lockedOptions = step(() => validateLockedOptions(input.lockedOptions ?? [], m.options));
-  m.tags = step(() => validateTags(input.tags ?? []));
+  // The game setup (format version 2, mapsetup.js); absent fields take their defaults, null is refused (as by the engine).
+  const setupField = (k, d) => {
+    if (input[k] === null) fail(`${k} must not be null`);
+    return input[k] === undefined ? d : input[k];
+  };
+  m.players = step(() => validateMapPlayers(setupField('players', []), Array.isArray(m.spawns) ? m.spawns.length : MAP_MAX_SPAWNS));
+  m.options = step(() => validateMapOptions(setupField('options', {})));
+  m.lockedOptions = step(() => validateLockedOptions(setupField('lockedOptions', []), m.options));
+  m.tags = step(() => validateTags(setupField('tags', [])));
 
   if (errors.length) return { ok: false, errors };
   const canonical = canonicalMapJson(m);

@@ -85,6 +85,17 @@ test('a map without a setup changes nothing; slots it lists are added', () => {
   assert.equal(state.players[2].difficulty, 'easy');
 });
 
+test('a map that gives every slot to an AI without locking one: you take an AI slot, never vanish', () => {
+  const state = fresh();
+  state.mapSource = 'file';
+  const n = state.players.length;
+  const s = setup(Array.from({ length: n }, (_, k) => ({ type: 'ai', ...(k > 0 ? { lock: ['type'] } : {}) })));
+  applyMapSetup(state, s, COLORS, n);
+  assert.equal(state.players.filter((p) => p.type === 'human').length, 1);
+  assert.equal(state.players[0].type, 'human', 'the one slot the map does not lock to an AI');
+  assert.equal(mapSetupProblem(state, s), null);
+});
+
 // ---- The map editor ----------------------------------------------------------------------
 
 let doc;

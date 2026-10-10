@@ -212,3 +212,56 @@ fn the_engine_reads_the_protocol_fixture_to_the_same_canonical_form_and_hash() {
     let old = include_str!("../../packages/protocol/test/fixtures/maps/format1-file.webra-map.json");
     assert!(MapData::parse(old.trim()).unwrap_err().contains("must be upgraded to format 2"));
 }
+
+#[test]
+fn a_map_must_be_able_to_start_a_game() {
+    let slot = |ty: &str, team: i32, lock: &[&str]| MapSlot {
+        ty: ty.into(),
+        team,
+        lock: lock.iter().map(|l| l.to_string()).collect(),
+        ..MapSlot::default()
+    };
+    let problems = |players: Vec<MapSlot>| {
+        let mut d = data(vec![]);
+        d.players = players;
+        errors(&d)
+    };
+    // Every slot locked to an AI, or to an AI and closed: nobody can play it.
+    let e = problems(vec![slot("ai", 0, &["type"]), slot("ai", 0, &["type"])]);
+    assert!(has(&e, "players: a map must leave at least one slot a person can take"), "{e:?}");
+    let e = problems(vec![slot("ai", 0, &["type"]), slot("closed", 0, &["type"])]);
+    assert!(has(&e, "at least two slots that can play"), "{e:?}");
+    // Every playable slot locked to the same team: nobody to fight.
+    let e = problems(vec![slot("open", 2, &["team"]), slot("ai", 2, &["team"])]);
+    assert!(has(&e, "every slot that can play is locked to team 2: nobody to fight"), "{e:?}");
+    // Two open slots locked to one team are one side.
+    let e = problems(vec![slot("open", 1, &["team"]), slot("open", 1, &["team"])]);
+    assert!(has(&e, "locked to team 1"), "{e:?}");
+    // Each of these can start: an unlocked AI slot takes a person, team 0 is
+    // free for all, a slot whose team is not locked picks another one.
+    for ok in [
+        vec![slot("ai", 0, &[]), slot("ai", 0, &["type"])],
+        vec![slot("open", 0, &["team"]), slot("open", 0, &["team"])],
+        vec![slot("open", 1, &["team"]), slot("open", 1, &[])],
+        vec![slot("open", 1, &["team"]), slot("ai", 2, &["team", "type"])],
+        vec![slot("ai", 1, &["type", "team"])],
+    ] {
+        let e = problems(ok.clone());
+        assert!(e.is_empty(), "{ok:?}: {e:?}");
+    }
+}
+
+#[test]
+fn null_setup_and_actor_fields_are_refused() {
+    let d = data(vec![MapActor::new("1TNK", 0, 10, 10, 0)]);
+    let text = d.canonical_json();
+    let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    v["actors"][0]["stance"] = serde_json::Value::Null;
+    assert!(MapData::parse(&v.to_string()).is_err(), "a null stance is refused");
+    let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    v["players"] = serde_json::json!([{ "faction": null }]);
+    assert!(MapData::parse(&v.to_string()).is_err(), "a null slot field is refused");
+    let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    v["actors"][0]["stance"] = serde_json::json!("hold_fire");
+    assert!(MapData::parse(&v.to_string()).is_ok(), "a present stance is read");
+}
