@@ -151,10 +151,13 @@ button with its shape kept (64 x 48 pixels like the originals works well).
 | `biomes` | which maps use the tiles: `temperate`, `snow`, `desert` (default all) |
 | `tileSize` | tile size in pixels, 8 to 64 (default 24) |
 | `clear`, `water` | required: a row of 1 to 16 square tiles, variants picked per cell |
-| `rough`, `rock`, `tree`, `ford` | optional rows; missing ones fall back (rough and tree to clear, rock to rough, ford to water) |
+| `rough`, `rock`, `tree`, `ford` | optional rows; missing ones fall back (rough and tree to clear, rock and ford to rough: a ford is a crossing units wade through, never drawn as open water) |
 | `ore`, `gems` | optional overlays: columns are density levels (up to 12 for ore, 4 for gems), rows are variants (up to 4) |
 
 The first enabled pack with terrain for the map's biome draws the whole map.
+The map's other terrain types use these rows too: roads are drawn as
+`clear`, bridges (the bridge actor draws the deck) and rivers as `water`,
+beaches as `rough` and walls as `rock`.
 
 ### Sounds
 

@@ -68,6 +68,7 @@ pub mod smudges;
 pub mod sound_events;
 #[cfg(any(test, feature = "stack-probe"))]
 pub mod stack_check;
+pub mod target_lines;
 mod trig_table;
 mod units;
 mod veterancy;
@@ -110,6 +111,8 @@ mod tests_naval;
 #[cfg(test)]
 mod tests_neutral;
 #[cfg(test)]
+mod tests_nuke;
+#[cfg(test)]
 mod tests_original_art;
 #[cfg(test)]
 mod tests_overlays;
@@ -133,6 +136,10 @@ mod tests_sound;
 mod tests_sound_eva;
 #[cfg(test)]
 mod tests_stats;
+#[cfg(test)]
+mod tests_target_lines;
+#[cfg(test)]
+mod tests_terrain;
 #[cfg(test)]
 mod tests_veterancy;
 #[cfg(test)]
@@ -772,17 +779,25 @@ impl Game {
 
     /// Every line the map shows this frame: the rally lines of the selected
     /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
-    /// `paths` ("Show unit paths"), the routes `build_paths` draws. Returns
-    /// the segment count; read them through `path_ptr`. A rally line's red
-    /// channel below zero selects its owner's team colour (shaders/line.wgsl).
-    pub fn build_lines(&mut self, player: u8, alpha: f32, paths: bool) -> usize {
+    /// `paths` ("Show unit paths"), the routes `build_paths` draws, then the
+    /// target lines (OpenRA DrawLineToTarget, target_lines.rs) of the
+    /// selected units in `target_lines` (the client decides when they show,
+    /// js/targetlines.js). Returns the segment count; read them through
+    /// `path_ptr`. A rally line's red channel below zero selects its owner's
+    /// team colour, a segment of length zero is a target marker
+    /// (shaders/line.wgsl).
+    pub fn build_lines(&mut self, player: u8, alpha: f32, paths: bool, target_lines: Option<Vec<u32>>) -> usize {
+        let alpha = alpha.clamp(0.0, 1.0);
         let mut route = Vec::new();
         if paths {
-            self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut route);
+            self.world.build_paths(player, alpha, &self.selection, &mut route);
         }
         self.paths.clear();
         self.world.build_rally_lines(player, &self.selection, &mut self.paths);
         self.paths.extend_from_slice(&route);
+        if let Some(ids) = target_lines.filter(|ids| !ids.is_empty()) {
+            self.world.build_target_lines(player, alpha, &self.selection, &ids, &mut self.paths);
+        }
         self.paths.len() / paths::LINE_FLOATS
     }
 

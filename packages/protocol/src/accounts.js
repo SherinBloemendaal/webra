@@ -372,6 +372,7 @@ const SETTINGS_SECTIONS = {
     edgeScrollSpeed: num(0, 3),
     keyScrollSpeed: num(0.25, 3),
     showUnitPaths: boolean,
+    targetLines: choice(['disabled', 'manual', 'automatic']),
     pixelRatioCap: num(0.5, 3),
     lowQuality: boolean,
     reduceMotion: choice(['auto', 'on', 'off']),
