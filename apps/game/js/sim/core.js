@@ -293,12 +293,13 @@ export class SimCore {
    * Advance the game by one animation frame and build its render data.
    * @param {{
    *   dt: number, paused?: boolean, view: number, rect: number[],
-   *   audio?: boolean, table?: boolean, paths?: boolean, queries?: Array<[string, string, any[]]>,
+   *   audio?: boolean, table?: boolean, paths?: boolean, targetLines?: number[], queries?: Array<[string, string, any[]]>,
    *   instances?: 'cpu' | 'gpu',
    * }} req `view`: the player whose eyes the screen uses (or the observer
    *   view), `rect`: the visible world rectangle [x0, y0, x1, y1] in pixels,
    *   `audio`: take the sound events, `table`: send the actor table when it
    *   changed, `paths`: build the selected units' route lines ("Show unit paths"),
+   *   `targetLines`: the selected units whose target lines show (js/targetlines.js),
    *   `instances`: 'cpu' (default) builds this frame's interpolated and culled
    *   sprites and rects; 'gpu' builds tick-rate records of the whole map for
    *   the GPU instance pass (js/crowd-gpu.js) and sends them, with the fog,
@@ -414,8 +415,9 @@ export class SimCore {
       rectCount = g.rect_count();
       rects = { ptr: g.rect_ptr(), len: rectCount * 8 };
     }
-    // Rally lines of selected structures, plus the unit routes with "Show unit paths".
-    const lineCount = g.build_lines(req.view, alpha, !!req.paths);
+    // Rally lines of selected structures, the unit routes with "Show unit
+    // paths" and the target lines of the units js/targetlines.js shows.
+    const lineCount = g.build_lines(req.view, alpha, !!req.paths, req.targetLines?.length ? Uint32Array.from(req.targetLines) : undefined);
     const lines = { ptr: lineCount ? g.path_ptr() : 0, len: lineCount * 8 };
     // Heat shimmer over hot vehicles in view (4 floats each) and the sky
     // (weather_json, a short string): on both instance paths.

@@ -1,7 +1,9 @@
-// Line segments in world space with a fixed width on screen: unit path lines
-// and rally lines. Instance: p.xy = start, p.zw = end (world pixels), color =
-// rgba; a negative red channel selects a team colour like rect.wgsl (rally
-// lines in the owner's colour, engine/src/overlays.rs).
+// Line segments in world space with a fixed width on screen: unit path lines,
+// rally lines and target lines. Instance: p.xy = start, p.zw = end (world
+// pixels), color = rgba; a negative red channel selects a team colour like
+// rect.wgsl (rally lines in the owner's colour, engine/src/overlays.rs). A
+// segment of length zero is a target marker: a small square around the point
+// (OpenRA TargetLineRenderable.DrawTargetMarker, engine/src/target_lines.rs).
 struct VsOut {
     @builtin(position) pos: vec4f,
     @location(0) color: vec4f,
@@ -9,6 +11,8 @@ struct VsOut {
 
 // Half the line width, in device pixels.
 const HALF_WIDTH: f32 = 1.0;
+// Half the side of a target marker, in device pixels (OpenRA MarkerWidth 2).
+const MARKER_HALF: f32 = 2.0;
 
 @vertex
 fn vs(@builtin(vertex_index) vi: u32, @location(0) p: vec4f, @location(1) color: vec4f) -> VsOut {
@@ -25,7 +29,10 @@ fn vs(@builtin(vertex_index) vi: u32, @location(0) p: vec4f, @location(1) color:
         dir = d / len;
     }
     let normal = vec2f(-dir.y, dir.x);
-    let s = mix(a, b, c.x) + normal * HALF_WIDTH * c.y;
+    var s = mix(a, b, c.x) + normal * HALF_WIDTH * c.y;
+    if (all(p.xy == p.zw)) {
+        s = a + vec2f(c.x * 2.0 - 1.0, c.y) * MARKER_HALF;
+    }
     var o: VsOut;
     o.pos = vec4f(s.x / g.view_size.x * 2.0 - 1.0, 1.0 - s.y / g.view_size.y * 2.0, 0.0, 1.0);
     o.color = color;

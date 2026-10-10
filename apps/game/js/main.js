@@ -82,6 +82,7 @@ import { CampaignMenu } from './campaign/menu.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
+import { TargetLines, withTargetLines } from './targetlines.js';
 
 const PLAYER = 0;
 
@@ -962,7 +963,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A defeated player who watches on gives no orders either (js/endgame.js).
   let spectating = false;
   const watching = () => !!viewer || spectating;
-  const ui = viewer ? viewOnly(watched) : viewOnly(watched, () => spectating);
+  // OpenRA's target lines (js/targetlines.js): ordered and newly selected units show theirs for a moment.
+  const targetLines = new TargetLines({ mode: () => settings.get('targetLines') });
+  const ui = withTargetLines(viewer ? viewOnly(watched) : viewOnly(watched, () => spectating), (ids) => targetLines.ordered(ids));
   const players = viewer ?? roster ?? [];
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
   const view = { player: viewer ? OBSERVER_VIEW : player };
@@ -1087,6 +1090,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (key) audio?.selectTarget(key);
     },
     onSelectionChanged: (ids, info) => {
+      targetLines.selected(ids);
       audio?.selection(ids, info);
       sidebar?.setSelection(selectionInfo(game, ids, allied));
       sidebar?.setDeployState(input.deployState());
@@ -1718,6 +1722,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       rect: [v.x0, v.y0, v.x1, v.y1],
       audio: true,
       paths: settings.get('showUnitPaths'),
+      // Selected units whose target lines show (js/targetlines.js; Shift: waypoint mode).
+      targetLines: targetLines.visible(input.selection, { shift: input.keys.has('Shift') }),
       instances: choice.path,
     });
     // Main thread time the simulation took this frame (in a worker: posting the step).

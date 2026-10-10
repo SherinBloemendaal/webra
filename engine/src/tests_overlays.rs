@@ -453,10 +453,10 @@ fn rally_lines_reach_the_line_buffer_and_skip_spectators() {
     let r = w.make_ref(weap);
     let mut g = crate::Game::wrap(w);
     g.set_selection(vec![r]);
-    assert_eq!(g.build_lines(0, 1.0, false), 1, "the rally line without unit paths");
-    assert_eq!(g.build_lines(0, 1.0, true), 1, "no unit routes to add");
-    assert_eq!(g.build_lines(1, 1.0, false), 0, "not the enemy's");
-    assert_eq!(g.build_lines(crate::observer::OBSERVER, 1.0, false), 0, "spectators have no player");
+    assert_eq!(g.build_lines(0, 1.0, false, None), 1, "the rally line without unit paths");
+    assert_eq!(g.build_lines(0, 1.0, true, None), 1, "no unit routes to add");
+    assert_eq!(g.build_lines(1, 1.0, false, None), 0, "not the enemy's");
+    assert_eq!(g.build_lines(crate::observer::OBSERVER, 1.0, false, None), 0, "spectators have no player");
     g.set_selection(vec![]);
-    assert_eq!(g.build_lines(0, 1.0, false), 0, "deselected: gone");
+    assert_eq!(g.build_lines(0, 1.0, false, None), 0, "deselected: gone");
 }
