@@ -115,6 +115,8 @@ mod tests_overlays;
 #[cfg(test)]
 mod tests_pathing;
 #[cfg(test)]
+mod tests_terrain;
+#[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
 mod tests_poses;
