@@ -5,12 +5,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  moviesRange,
+  MOVIES,
+  MOVIES_ACCOUNT_ATTEMPTS,
+  MOVIES_DAILY_MIB,
   scoresRange,
   parseScoresRange,
   allowedRedirect,
   SCORES_BYTES,
   SCORES_DISCS,
   SCORES_MAX_RANGE,
+  SCORES_ACCOUNT_ATTEMPTS,
   SCORES_DAILY_MIB,
   SCORES_IP_LIMIT,
   SCORES_ROUNDS,
@@ -228,19 +233,19 @@ test('a 502 gives the bytes back to the daily budget (never below zero); the IP 
   const now = Date.UTC(2026, 9, 9, 5, 0, 0);
   const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
   const ok = await scoresRange(ask(piece), env, '10.1.0.1', ACCOUNT, { fetchImpl: archive(), now });
-  await ok.body.cancel();
+  await drain(ok);
   const counts = () => [...env.DB.rows.entries()].map(([k, v]) => [k.split(':')[0], v.count]).sort();
-  assert.deepEqual(counts(), [['scores-bytes', 8], ['scores-ip', 1]]);
+  assert.deepEqual(counts(), [['scores-account-tries', 1], ['scores-bytes', 8], ['scores-ip', 1]]);
   for (let i = 0; i < 5; i++) {
     await assert.rejects(scoresRange(ask(piece), env, '10.1.0.1', ACCOUNT, { fetchImpl: archive({ allied: 'down', soviet: 500 }), now }), (e) => e.status === 502);
   }
-  assert.deepEqual(counts(), [['scores-bytes', 8], ['scores-ip', 6]], 'failed requests cost no bytes');
+  assert.deepEqual(counts(), [['scores-account-tries', 6], ['scores-bytes', 8], ['scores-ip', 6]], 'failed requests cost no bytes');
   // The refund only touches the current window and never goes below zero.
   const { refundQuota } = await import('../src/quota.js');
   await refundQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now, 50);
-  assert.deepEqual(counts(), [['scores-bytes', 0], ['scores-ip', 6]]);
+  assert.deepEqual(counts(), [['scores-account-tries', 6], ['scores-bytes', 0], ['scores-ip', 6]]);
   await refundQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now + 24 * 3600 * 1000, 1);
-  assert.deepEqual(counts(), [['scores-bytes', 0], ['scores-ip', 6]]);
+  assert.deepEqual(counts(), [['scores-account-tries', 6], ['scores-bytes', 0], ['scores-ip', 6]]);
   await assert.rejects(refundQuota(env.DB, 's'.repeat(20), 'x', 'y', 1000, now, 0), RangeError);
 });
 
@@ -282,8 +287,9 @@ test(`${SCORES_DAILY_MIB} MiB per account per day, counted by size; another acco
   const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
   const pieces = SCORES_DAILY_MIB / (SCORES_MAX_RANGE / (1024 * 1024));
   for (let i = 0; i < pieces; i++) {
+    // Whole pieces: a piece that does not arrive whole is given back.
     const res = await scoresRange(ask(piece), env, `10.0.0.${i % 200}`, ACCOUNT, { fetchImpl, now });
-    await res.body.cancel();
+    assert.equal(await drain(res), SCORES_MAX_RANGE);
   }
   const writes = env.DB.writes;
   await assert.rejects(scoresRange(ask('bytes=0-0'), env, '10.0.1.1', ACCOUNT, { fetchImpl, now }), (e) => {
@@ -291,16 +297,16 @@ test(`${SCORES_DAILY_MIB} MiB per account per day, counted by size; another acco
     assert.ok(Number(e.headers['retry-after']) > 0);
     return true;
   });
-  assert.equal(env.DB.writes, writes + 1, 'only the IP counter is written for a refused request');
+  assert.equal(env.DB.writes, writes + 2, 'only the attempt counters are written for a refused request');
   const other = await scoresRange(ask(piece), env, '10.0.1.2', { id: 'b'.repeat(32) }, { fetchImpl, now });
   await other.body.cancel();
   // The next UTC day starts afresh.
   const tomorrow = await scoresRange(ask(piece), env, '10.0.1.3', ACCOUNT, { fetchImpl, now: now + 24 * 3600 * 1000 });
   await tomorrow.body.cancel();
-  for (const key of env.DB.rows.keys()) assert.ok(!key.includes(ACCOUNT.id) && !key.includes('10.0.') && /^scores-(ip|bytes):[0-9a-f]{64}$/.test(key), key);
+  for (const key of env.DB.rows.keys()) assert.ok(!key.includes(ACCOUNT.id) && !key.includes('10.0.') && /^scores-(ip|bytes|account-tries):[0-9a-f]{64}$/.test(key), key);
 });
 
-test(`${SCORES_IP_LIMIT} requests per IP per hour, before any fetch`, async () => {
+test(`${SCORES_IP_LIMIT} requests per network (IPv4 address, IPv6 /64) per hour, before any fetch`, async () => {
   const env = makeEnv();
   const calls = [];
   const fetchImpl = archive({}, calls);
@@ -310,8 +316,64 @@ test(`${SCORES_IP_LIMIT} requests per IP per hour, before any fetch`, async () =
     await res.body.cancel();
   }
   const before = calls.length;
-  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '9.9.9.9', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429);
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '9.9.9.9', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429 && e.extra.scope === 'network');
   assert.equal(calls.length, before, 'no upstream fetch when over the budget');
+  // IPv6 counts by /64: privacy addresses of one home share the budget.
+  for (let i = 0; i < SCORES_IP_LIMIT; i++) {
+    const res = await scoresRange(ask('bytes=0-0'), env, `2001:db8:5:6:${(i + 1).toString(16)}::1`, { id: String(i).padStart(32, '0') }, { fetchImpl, now });
+    await res.body.cancel();
+  }
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '2001:db8:5:6:abcd::2', ACCOUNT, { fetchImpl, now }), (e) => e.status === 429);
+  const next = await scoresRange(ask('bytes=0-0'), env, '2001:db8:5:7::2', ACCOUNT, { fetchImpl, now });
+  await next.body.cancel();
+});
+
+test('a piece that does not arrive whole is given back, so the client retry is charged once', async () => {
+  const { peekQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 4, 0, 0);
+  const pending = [];
+  const waitUntil = (p) => pending.push(p);
+  const mib = () => peekQuota(env.DB, 'cdmusic-test-salt-0123456789', 'scores-bytes', ACCOUNT.id, 24 * 3600 * 1000, now);
+  const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
+  const cancelled = await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive(), now, waitUntil });
+  assert.equal(await mib(), 8, 'charged while it runs');
+  const reader = cancelled.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 0, 'cancelled');
+  const short = await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive({ allied: 'short' }), now, waitUntil });
+  await assert.rejects(drain(short), /less than/);
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 0, 'cut off');
+  assert.equal(await drain(await scoresRange(ask(piece), env, 'ip', ACCOUNT, { fetchImpl: archive(), now, waitUntil })), SCORES_MAX_RANGE);
+  await Promise.all(pending.splice(0));
+  assert.equal(await mib(), 8, 'a whole piece stays charged');
+});
+
+test(`${SCORES_ACCOUNT_ATTEMPTS} music requests per account per day, never given back`, async () => {
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 6, 0, 0);
+  for (let i = 0; i < SCORES_ACCOUNT_ATTEMPTS; i++) {
+    const res = await scoresRange(ask('bytes=0-0'), env, `2001:db8:9:${i.toString(16)}::1`, ACCOUNT, { fetchImpl: archive(), now });
+    await res.body.cancel();
+  }
+  const calls = [];
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '2001:db8:9:ffff::1', ACCOUNT, { fetchImpl: archive({}, calls), now }), (e) => e.status === 429 && e.extra.scope === 'account');
+  assert.equal(calls.length, 0);
+});
+
+test('an account over its request ceiling is refused before the network counter is charged', async () => {
+  const { peekQuota, takeQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 7, 0, 0);
+  const salt = 'cdmusic-test-salt-0123456789';
+  for (let i = 0; i < SCORES_ACCOUNT_ATTEMPTS; i++) await takeQuota(env.DB, salt, 'scores-account-tries', ACCOUNT.id, SCORES_ACCOUNT_ATTEMPTS, 24 * 3600 * 1000, now);
+  const writes = env.DB.writes;
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '203.0.113.9', ACCOUNT, { fetchImpl: archive(), now }), (e) => e.status === 429 && e.extra.scope === 'account');
+  assert.equal(env.DB.writes, writes, 'no write at all');
+  assert.equal(await peekQuota(env.DB, salt, 'scores-ip', '203.0.113.9', 3600 * 1000, now), 0, 'the network keeps its budget');
 });
 
 test('no timer outlives a cancelled or cut off transfer', async () => {
@@ -355,4 +417,49 @@ test('the Worker route checks the account gate (requireRelay) before the relay',
   assert.ok(origin > 0 && at > origin, 'checkOrigin runs before the route');
   const block = src.slice(at, src.indexOf('}', at));
   assert.ok(block.indexOf('requireRelay(ctx)') > 0 && block.indexOf('requireRelay(ctx)') < block.indexOf('scoresRange('), 'requireRelay before scoresRange');
+});
+
+// ---- The mission movies (moviesRange): the same relay for movies1.mix and movies2.mix ----
+
+test('movies: the asked window of each archive from its own disc at its pinned offset; nothing else', async () => {
+  for (const [which, m] of Object.entries(MOVIES)) {
+    assert.ok(m.offset > 0 && m.offset + m.bytes <= m.disc.isoBytes, which);
+    const calls = [];
+    const res = await moviesRange(ask('bytes=1000-5095'), makeEnv(), 'ip', ACCOUNT, which, { fetchImpl: archive({}, calls) });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get('content-range'), `bytes 1000-5095/${m.bytes}`);
+    assert.equal(calls[0].url, m.disc.url, 'only the disc that has it');
+    assert.equal(calls.at(-1).init.headers.Range, `bytes=${m.offset + 1000}-${m.offset + 5095}`);
+    assert.equal(await drain(res), 4096);
+    await assert.rejects(moviesRange(ask(`bytes=${m.bytes}-`), makeEnv(), 'ip', ACCOUNT, which, { fetchImpl: archive() }), (e) => e.status === 416 && e.headers['content-range'] === `bytes */${m.bytes}`);
+  }
+  assert.deepEqual([MOVIES.allied.name, MOVIES.soviet.name], ['movies1.mix', 'movies2.mix']);
+  assert.throws(() => moviesRange(ask(), makeEnv(), 'ip', ACCOUNT, 'constructor', { fetchImpl: archive() }), (e) => e.status === 404);
+  await assert.rejects(moviesRange(ask(), makeEnv(), 'ip', null, 'allied', { fetchImpl: archive() }), (e) => e.status === 401);
+});
+
+test(`movies: their own budgets (${MOVIES_DAILY_MIB} MiB and ${MOVIES_ACCOUNT_ATTEMPTS} requests per account per day), refunds of unfinished pieces`, async () => {
+  const { peekQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 8, 0, 0);
+  const pending = [];
+  const waitUntil = (p) => pending.push(p);
+  const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
+  const used = (purpose) => peekQuota(env.DB, 'cdmusic-test-salt-0123456789', purpose, ACCOUNT.id, 24 * 3600 * 1000, now);
+  assert.equal(await drain(await moviesRange(ask(piece), env, 'ip', ACCOUNT, 'soviet', { fetchImpl: archive(), now, waitUntil })), SCORES_MAX_RANGE);
+  assert.deepEqual([await used('movies-bytes'), await used('scores-bytes')], [8, 0], 'not the music budget');
+  const res = await moviesRange(ask(piece), env, 'ip', ACCOUNT, 'allied', { fetchImpl: archive(), now, waitUntil });
+  const reader = res.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  await Promise.all(pending.splice(0));
+  assert.equal(await used('movies-bytes'), 8, 'the cancelled piece was given back');
+  assert.equal(await used('movies-account-tries'), 2, 'its request was not');
+  // A day of requests, whatever their outcome: then 429 before any fetch.
+  for (let i = 2; i < MOVIES_ACCOUNT_ATTEMPTS; i++) await assert.rejects(moviesRange(ask(piece), env, `10.9.${i >> 8}.${i & 255}`, ACCOUNT, 'allied', { fetchImpl: archive({ allied: 'down' }), now }), (e) => e.status === 502);
+  const calls = [];
+  await assert.rejects(moviesRange(ask(piece), env, '10.10.0.1', ACCOUNT, 'allied', { fetchImpl: archive({}, calls), now }), (e) => e.status === 429 && e.extra.scope === 'account' && /movies too often/.test(e.message));
+  assert.equal(calls.length, 0);
+  // The MiB budget: a fresh account, two full sets of both archives.
+  assert.ok(MOVIES_DAILY_MIB >= 2 * Math.ceil((MOVIES.allied.bytes + MOVIES.soviet.bytes) / (1024 * 1024)));
 });

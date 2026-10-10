@@ -33,12 +33,14 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Rematch** like OpenRA: after (or during) an online game the host proposes playing again with the same settings; once every player accepts, everyone goes back to the same lobby (spectators too) and the host starts the next game
 - [x] **Custom maps online**: the host picks one of its own maps (made in the map editor, an imported `.oramap`, or a map from an earlier lobby; the game keeps them in a local map library) and shares it with the lobby only, never publishing it. Players without it see "Custom map: name by author. Install?", install it with one click (downloaded from the session, checked by the protocol package and the engine, pinned by hash) or decline; the host sees who lacks the map, and the game starts only when every player and spectator has it
 - [x] **Accounts**: sign in with a password, a passkey or Discord (email verification and password reset links once email sending is enabled); online play under your username, settings synchronized across devices, sessions you can see and revoke, data export and account deletion. Admins and moderators approve sign-ups (closed or open beta), ban accounts and IP ranges, edit accounts and site settings, with an audit log ([accounts API](docs/accounts-api.md), [privacy notice](https://webra.sherin.dev/privacy.html))
+- [x] **Error reports** to WebRA's own self-hosted Sentry (game, map editor, website and server): errors with the version, browser, game mode and, for engine panics, the panic's message, tick and state hashes; never names, chat, account data, cookies or addresses. Off until the operator sets a DSN (docs/deploy.md); then on by default, switched off per browser in the game's Settings (Privacy) or on the [privacy notice](https://webra.sherin.dev/privacy.html#error-reports) ([docs/security.md](docs/security.md), [docs/deploy.md](docs/deploy.md))
 - [x] **Reconnecting**: a player whose connection drops (or who reloads the page) rejoins the running game within 2 minutes; the server keeps the game's order log, the client fast-forwards to the current tick, checks the state hash and takes its seat back. The game never pauses for a missing player
 - [x] **Spectators**: lobby places for observers (the host picks 0 to 8, same password rules), also joining a game in progress; they watch the whole map or any player's view, with observer stats (cash, income, army value, kills and losses per player) and can never give orders
 - [x] **Replays**: every game (skirmish and online) is recorded as start settings plus order frames; download it from the game menu or the game over screen and watch it with play, pause, 1x to 8x speed, seeking and the player view switcher. Replays from another WebRA version say so instead of playing wrong
 - [x] **Save and load** for skirmish: save to the browser or to a file from the game menu, continue later with Load game; loading re-simulates the game and checks its state hash
 - [x] **Online saves**: any player asks to save an online game, everyone accepts, and each player keeps the save; later the host resumes it from Play online, the same players come back by their accounts, every client re-simulates to the save point and checks the agreed state hash, and the game goes on in lockstep
 - [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
+- [x] **Map versions**: every map file carries its format version and the WebRA release that wrote it. Maps made for an older release are upgraded automatically wherever they are loaded (skirmish lobby, online lobbies, the map editor, the server's map list) with a notice to save the upgrade; a map that cannot be upgraded automatically, or one from a newer release, says exactly that and what to do, and the map editor still opens it with every problem located and quick fixes. `node tools/map-upgrade.mjs <files>` upgrades map files in bulk ([contracts](docs/contracts.md), section 2, "Map versions")
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
 - [x] **OpenRA maps**: import `.oramap` files in the lobby and the map editor; the browser unpacks the package (with zip bomb limits), converts terrain from the Red Alert tilesets (roads, beaches, rivers, bridges), ore and gems, spawns and actors, including civilians, civilian and tech buildings, bridges, trees, barrels and ore mines, maps rules values onto WebRA's modded rules, and shows an import report of what was converted, skipped or not supported (Lua is never run)
 - [x] Lobby options like OpenRA: starting cash and units (MCV only, or OpenRA's light or heavy support per side: riflemen, rocket soldiers and a Ranger, light tank, APC or flak truck, plus medium or heavy tanks; or a construction yard), tech level, game speed, crates, short game, fog of war, explored map, build radius (also near allies), separate team spawns, redeployable MCVs, reusable engineers, kill bounties, ore regrowth, time limit and a handicap per player; plus map style, biome, tech buildings and weather. Game modes bundle them (Classic, Competitive, Rush, Turtle and more)
@@ -103,7 +105,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 
 ### Original content and texture packs
 - [x] **Original Red Alert graphics** like OpenRA: units, structures, infantry with walking, firing, standing, idle, dying and prone animations, make animations and damaged states, turrets, harvesters harvesting and docking, walls that connect, shadows, cameos and the theater's terrain tiles with ore and gems, cut from the original sprites with OpenRA's sequence definitions (pre-rendered facings, not rotated, composed sequences like Tanya's shooting put together from their parts); helicopter rotors, radar dishes, muzzle flashes, smoke over badly damaged vehicles and ships, the explosion of every warhead (OpenRA's CreateEffect per weapon), the working animations of structures (repair depot, helipad, airfield, Tesla charge, missile silo, construction yard, turret recoil), the transport ship's ramp, the V2 launcher reloading, the harvester docking, paratroopers and their opening parachutes, the Tesla zap and Red Alert's own animated mouse cursors; team colours keep working. **Graphics: WebRA / Original** switches at once, also in a running game; any sprite without an original keeps WebRA art
-- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: a one-click download (with the music from the freeware CDs for selected accounts), a freeware Red Alert CD image (`.iso`, read by slices), your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
+- [x] **One install flow** for graphics and sounds with progress, sizes and a remove button: one "Install everything" button for selected accounts (graphics, sounds and the music from the freeware CDs, one progress, the ZIP kept for updates, a clear installed or missing state), a freeware Red Alert CD image (`.iso`, read by slices), your own `main.mix`/`redalert.mix`, OpenRA's `ra-quickinstall.zip` (pick it or drop it on the game), or loose files
 - [x] **Texture packs** (`.webrapack`): sprites, cameos, terrain tiles and sounds made by players, with a preview of what a pack replaces before it is installed, and a pack manager (enable, order, remove). Cosmetic only, so safe in multiplayer. Format: [docs/texture-packs.md](docs/texture-packs.md); build one with `node tools/make-pack.mjs`
 
 ### Engineering
@@ -120,19 +122,28 @@ WebRA can use them when you install them; the game plays the same without
 them (WebRA's own art and synthesized sounds).
 
 - **Open the Original content dialog** (lobby button, or Original content in
-  the game menu). On the first start the game offers it once; "Don't ask
-  again" is remembered in this browser.
-- **One click:** "Download original Red Alert content (13.5 MB)" fetches
+  the game menu). It shows what is installed and what is missing. The start
+  screen shows how to install it until something is installed or you
+  dismiss the notice (remembered with your settings).
+- **One click (selected accounts):** "Install everything" installs the
+  graphics, sounds, voices, the announcer and the music in one go, with one
+  progress bar, one Cancel and a line per part. The graphics and sounds are
   OpenRA's `ra-quickinstall.zip`, EA's freeware files as OpenRA's content
-  installer uses them, from OpenRA's community mirrors **through
+  installer uses them, fetched from OpenRA's community mirrors **through
   webra.sherin.dev**: the WebRA server passes the file through as a stream
-  and keeps no copy (no cache, no storage; at most 3 downloads per hour per
-  network). So the WebRA server does relay EA's files when you click this.
-- **Music:** `ra-quickinstall.zip` has no music. Selected accounts get
-  "Music (from the freeware Red Alert CDs)": the WebRA server reads only
-  `scores.mix` (64 MB) out of the freeware CD images on the Internet Archive
-  by HTTP range and passes it through; the game resumes cut off downloads
-  and checks the file's SHA-256 before installing it. Everyone else
+  and keeps no copy (no cache, no storage; 8 completed downloads per account
+  a day, failed or cancelled ones are not counted). The game keeps the ZIP
+  on your device, so installing again or a WebRA update that uses more of
+  its files needs no new download. So the WebRA server does relay EA's files
+  when you click this.
+- **Mission movies (optional, selected accounts):** a button of their own
+  ("Install mission movies", about 748 MB) reads `movies1.mix` and
+  `movies2.mix` out of the freeware CD images the same way, checks every
+  8 MB piece against its pinned SHA-256, and installs the movies.
+- **Music:** `ra-quickinstall.zip` has no music. The one-click install reads
+  only `scores.mix` (64 MB) out of the freeware CD images on the Internet
+  Archive by HTTP range through the WebRA server; the game resumes cut off
+  downloads and checks the file's SHA-256 before installing it. Everyone else
   downloads the Allied or Soviet CD image (linked in the dialog) and drops
   the `.iso` on the game: it is read by slices, never loaded whole, and
   installs the music, sounds and graphics on the disc.
@@ -232,7 +243,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog and campaign missions from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, map-upgrade.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, accounts API, security, deploy, README assets
 ```
 
@@ -272,13 +283,14 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Regenerate the campaign missions (`apps/game/missions`; needs Node) | `python3 tools/gen_missions.py` |
+| Upgrade map files to the current map format version and list the ones that need an author (`--check` changes nothing) | `node tools/map-upgrade.mjs <files>` |
 | Run every mission headless for longer (ticks; one mission with `WEBRA_MISSION=allies-01`) | `WEBRA_MISSION_TICKS=9000 cargo test -p webra-sim --release every_mission` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 | Check the Lua interpreter's stack use in the wasm32 build | `npm run test:luastack` |
 
 ## Controls
 
-Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, health bars, relationship colours, render resolution and low quality, fullscreen, mouse capture) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
+Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, OpenRA's target lines from selected units to their targets, health bars, relationship colours, render resolution and low quality, fullscreen, mouse capture) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
 
 | Input | Action |
 |-------|--------|

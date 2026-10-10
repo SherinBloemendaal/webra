@@ -158,18 +158,83 @@
           noreply@webra.sherin.dev. WebRA sends no newsletters or marketing.
         </p>
 
+        <h2 id="error-reports">Error reports</h2>
+        <!-- The build keeps the section that applies (tools/sentry-config.mjs privacySections). -->
+        <!-- error-reports:off -->
+        <p>
+          Error reporting is currently off: neither your browser nor WebRA's server sends error reports anywhere. If the
+          site's operator turns it on, this section will say what a report holds and where it goes, and offer a switch to
+          turn it off for your browser.
+        </p>
+        <!-- /error-reports:off -->
+        <!-- error-reports:on -->
+        <p>
+          When something breaks in the game or on this website, your browser sends an error report to WebRA's own
+          <a href="https://sentry.io/">Sentry</a> server at <code>sentry.vitrion.dev</code>, run by WebRA's maintainer (not
+          Sentry the company). WebRA's server sends its own errors there too. Reports help find and fix bugs; nothing in
+          them is used for anything else, and they are not shared.
+        </p>
+        <p>A report holds:</p>
+        <ul>
+          <li>the error: its type, message and stack trace (where in WebRA's code it happened);</li>
+          <li>
+            WebRA's version and build, whether it came from the game, the map editor or the website, the game mode
+            (menu, skirmish, mission, online, replay), whether WebGPU is available, whether original graphics are in use
+            (on or off, never file names) and the multiplayer protocol version;
+          </li>
+          <li>
+            for errors of the game engine: the engine version, the game tick and the last few checksums of the game state
+            (numbers that say whether two players' games still agree, not what is in them);
+          </li>
+          <li>your browser and operating system with their versions (from the browser's user agent) and the page address, with the values after <code>?</code> and <code>#</code> removed;</li>
+          <li>
+            the last 50 steps before the error: which kind of button or element was clicked (never its text), pages
+            opened, requests to WebRA's server (address without the values after <code>?</code>, method and status) and the game's warnings and error messages.
+          </li>
+        </ul>
+        <p>
+          Reports never hold your username, display name, email address, account id, chat, player, lobby or map names,
+          cookies, sign-in or rejoin keys, or anything you typed: the game removes such text from messages before a report
+          leaves your browser. Reports carry no network address; reports from your browser also tell Sentry not to take it
+          from the connection, and the Sentry server is set not to store addresses. A small share of page loads (5%) also
+          sends how long the page took to load, with the same limits. There are no session recordings. Reports are kept
+          for 90 days.
+        </p>
+        <div class="panel" id="error-reports-switch">
+          <label><input type="checkbox" disabled /> Send error reports from this browser</label>
+          <p data-state>Error reports follow the setting in the game (Settings, Privacy): on unless you switch them off.</p>
+        </div>
+        <p>
+          The switch covers this browser: what your browser sends. The same switch is in the game's Settings under
+          Privacy. When you are signed in it is part of your synchronized settings, so it follows you to other devices
+          once the game or your account page runs there.
+        </p>
+        <p>
+          WebRA's server reports its own errors whatever the switch says, including a request of yours that failed on the
+          server. Those reports hold the error, the address on WebRA's site that was asked for (without anything after
+          <code>?</code>) and the method, never your account, network address, cookies, headers or what you sent.
+        </p>
+        <!-- /error-reports:on -->
+
         <h2>Original Red Alert files</h2>
         <p>
           The one-click install streams Electronic Arts' freeware Red Alert files from OpenRA's mirrors through WebRA's
           server to your browser. Nothing of it is stored on the server, and only accounts that are allowed to use it can.
+          To keep downloads within a budget, WebRA counts the completed downloads of each account per day, under a keyed
+          hash of the account id, and the downloads and download requests per network per hour (your address, or for IPv6
+          the first half of it that your network shares), under a keyed hash of that network. A download that does not
+          complete is not counted. Admins can see these counts for an account and reset them. The game keeps the
+          downloaded file in your browser so that installing again needs no new download; "Remove installed content"
+          deletes it.
         </p>
         <p>
           The one-click music install works the same way: WebRA's server reads the soundtrack out of the freeware Red Alert
           CD images on the Internet Archive (archive.org) and streams it to your browser. The Internet Archive sees a
           request from WebRA's server, never your address, cookies or account. To keep downloads within a budget, WebRA
           counts how much music each account asked for per day, rounded up to whole megabytes, under a keyed hash of the
-          account id, and the music requests per network address per hour, under a keyed hash of the address. Both
-          counters are deleted after two days. If you install from a CD image yourself, the file is read in your browser
+          account id, and the music requests per network per hour, under a keyed hash of the network. The optional
+          one-click install of the mission movies works the same way, with counters of its own (megabytes and requests
+          per account per day, requests per network per hour). All these counters are deleted after two days. If you install from a CD image yourself, the file is read in your browser
           and never uploaded.
         </p>
       </div>

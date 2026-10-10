@@ -118,6 +118,20 @@ export function ipRecord(text) {
 }
 
 /**
+ * The network an address belongs to, for rate limits that should cover one
+ * home rather than one device: an IPv4 address itself (a household shares
+ * it behind NAT), or the /64 of an IPv6 address (DEFAULT_V6_PREFIX: privacy
+ * addresses rotate inside it). Text that is not an address comes back as is.
+ */
+export function networkOf(text) {
+  const p = parseIp(text);
+  if (!p) return String(text);
+  if (p.v === 4) return formatIp(p);
+  const host = 128n - BigInt(DEFAULT_V6_PREFIX);
+  return `${formatIp({ v: 6, n: (p.n >> host) << host })}/${DEFAULT_V6_PREFIX}`;
+}
+
+/**
  * Parse a ban range: an address or address/prefix. Returns { cidr, v, start,
  * end, prefix } (start and end as fixed-width hex) or an error string.
  */

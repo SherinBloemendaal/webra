@@ -17,7 +17,7 @@
 // checks the whole file against SCORES_SHA256, and only then installs it
 // like a picked scores.mix. A file that does not match is thrown away.
 
-import { relayProblem } from './download.js';
+import { relayProblem, RelayLimitError } from './download.js';
 
 export const SCORES_URL = '/api/content/ra-scores';
 /** scores.mix on both freeware discs: its size and SHA-256 (the server pins the same). */
@@ -68,7 +68,7 @@ export class CancelledError extends Error {
   }
 }
 
-/** A refusal from the server that trying again will not change (401, 403, 416, 429). */
+/** A refusal from the server that trying again will not change (401, 403, 416; 429 is a RelayLimitError). */
 class Refused extends Error {}
 
 /** The relay could not reach the archive (5xx): worth one more try per download at most. */
@@ -77,22 +77,28 @@ class Unavailable extends Error {}
 /** Server errors retried per download (a click), in all: each costs the archive a round of requests. */
 export const UNAVAILABLE_RETRIES = 1;
 
-async function fetchPiece(i, { fetchImpl, signal, onBytes }) {
-  const start = i * SCORES_PIECE;
-  const end = start + pieceLength(i) - 1;
+/**
+ * Piece `i` of the file at `url` (`total` bytes, `piece` bytes per piece)
+ * through a relay: exactly the asked range, or a readable error.
+ */
+async function fetchPiece(i, { url, total, piece, fetchImpl, signal, onBytes }) {
+  const start = i * piece;
+  const end = Math.min(total, start + piece) - 1;
   let res;
   try {
-    res = await fetchImpl(SCORES_URL, { headers: { 'X-WebRA-Content': '1', Range: `bytes=${start}-${end}` }, cache: 'no-store', signal });
+    res = await fetchImpl(url, { headers: { 'X-WebRA-Content': '1', Range: `bytes=${start}-${end}` }, cache: 'no-store', signal });
   } catch (err) {
     if (signal?.aborted) throw new CancelledError();
     throw new Error(`the download could not start (${err.message ?? err})`);
   }
   if (res.status !== 206 || !res.body) {
     const problem = await relayProblem(res);
+    // A used up budget (429) keeps its time to try again; no refusal is retried here.
+    if (problem instanceof RelayLimitError) throw problem;
     if (res.status >= 400 && res.status < 500) throw new Refused(problem.message);
     throw res.status >= 500 ? new Unavailable(problem.message) : problem;
   }
-  if (res.headers.get('Content-Range') !== `bytes ${start}-${end}/${SCORES_BYTES}`) {
+  if (res.headers.get('Content-Range') !== `bytes ${start}-${end}/${total}`) {
     await res.body.cancel().catch(() => {});
     throw new Error('the server answered with another part of the file');
   }
@@ -124,6 +130,77 @@ async function fetchPiece(i, { fetchImpl, signal, onBytes }) {
 }
 
 /**
+ * Download a file through a relay in pieces, kept in `store` (partials
+ * under `key`) as they arrive, so a cut off download goes on where it
+ * stopped. Kept pieces of the right size are not asked for again (their
+ * indexes are read, not their bytes). `check(i, bytes)` may refuse a piece
+ * (it is not kept, and the download fails with its message); `onPiece(i,
+ * bytes)` sees every piece, kept ones (read only when `onPiece` wants them,
+ * `readKept`) and new ones. A dropped connection is tried again
+ * (PIECE_TRIES per piece), a server error once per call
+ * (UNAVAILABLE_RETRIES), a refusal (4xx, a used up budget) never.
+ */
+export async function downloadPieces({
+  url,
+  total,
+  key,
+  store,
+  piece = SCORES_PIECE,
+  check = () => null,
+  onPiece = () => {},
+  readKept = false,
+  onProgress = () => {},
+  fetchImpl = globalThis.fetch,
+  signal,
+}) {
+  const count = Math.ceil(total / piece);
+  const lengthOf = (i) => Math.min(piece, total - i * piece);
+  const have = new Set();
+  if (readKept) {
+    const kept = await store.partials(key);
+    for (const [i, bytes] of kept) {
+      if (Number.isInteger(i) && i >= 0 && i < count && bytes?.byteLength === lengthOf(i)) {
+        onPiece(i, new Uint8Array(bytes));
+        have.add(i);
+      }
+    }
+    kept.clear();
+  } else {
+    // Only which pieces are there; a piece of the wrong size is replaced when it is downloaded again.
+    const records = store.partialIndexes ? null : await store.partials(key);
+    const indexes = records ? [...records.keys()] : await store.partialIndexes(key);
+    for (const i of indexes) if (Number.isInteger(i) && i >= 0 && i < count) have.add(i);
+  }
+  let received = [...have].reduce((n, i) => n + lengthOf(i), 0);
+  onProgress(received, total);
+  const onBytes = (n) => {
+    received += n;
+    onProgress(received, total);
+  };
+  let unavailableLeft = UNAVAILABLE_RETRIES;
+  for (let i = 0; i < count; i++) {
+    if (have.has(i)) continue;
+    let bytes = null;
+    for (let attempt = 1; !bytes; attempt++) {
+      if (signal?.aborted) throw new CancelledError();
+      try {
+        bytes = await fetchPiece(i, { url, total, piece, fetchImpl, signal, onBytes });
+      } catch (err) {
+        if (err instanceof CancelledError || err instanceof Refused || err instanceof RelayLimitError || attempt >= PIECE_TRIES) throw err;
+        if (err instanceof Unavailable && unavailableLeft-- <= 0) throw err;
+      }
+    }
+    const problem = await check(i, bytes);
+    if (problem) {
+      onBytes(-bytes.length);
+      throw new Error(problem);
+    }
+    onPiece(i, bytes);
+    await store.putPartial(key, i, bytes.buffer);
+  }
+}
+
+/**
  * Download scores.mix through the relay, resuming from the pieces kept in
  * `store`. Returns a File named scores.mix whose SHA-256 is SCORES_SHA256;
  * throws with a readable message otherwise (CancelledError when `signal`
@@ -142,38 +219,18 @@ export async function downloadScores({
   digest = (b) => globalThis.crypto.subtle.digest('SHA-256', b),
   expected = SCORES_SHA256,
 }) {
-  const kept = await store.partials(SCORES_PARTIAL);
   const out = new Uint8Array(SCORES_BYTES);
-  const have = new Set();
-  for (const [i, bytes] of kept) {
-    if (Number.isInteger(i) && i >= 0 && i < PIECES && bytes?.byteLength === pieceLength(i)) {
-      out.set(new Uint8Array(bytes), i * SCORES_PIECE);
-      have.add(i);
-    }
-  }
-  kept.clear();
-  let received = [...have].reduce((n, i) => n + pieceLength(i), 0);
-  onProgress(received, SCORES_BYTES);
-  const onBytes = (n) => {
-    received += n;
-    onProgress(received, SCORES_BYTES);
-  };
-  let unavailableLeft = UNAVAILABLE_RETRIES;
-  for (let i = 0; i < PIECES; i++) {
-    if (have.has(i)) continue;
-    let piece = null;
-    for (let attempt = 1; !piece; attempt++) {
-      if (signal?.aborted) throw new CancelledError();
-      try {
-        piece = await fetchPiece(i, { fetchImpl, signal, onBytes });
-      } catch (err) {
-        if (err instanceof CancelledError || err instanceof Refused || attempt >= PIECE_TRIES) throw err;
-        if (err instanceof Unavailable && unavailableLeft-- <= 0) throw err;
-      }
-    }
-    out.set(piece, i * SCORES_PIECE);
-    await store.putPartial(SCORES_PARTIAL, i, piece.buffer);
-  }
+  await downloadPieces({
+    url: SCORES_URL,
+    total: SCORES_BYTES,
+    key: SCORES_PARTIAL,
+    store,
+    readKept: true,
+    onPiece: (i, bytes) => out.set(bytes, i * SCORES_PIECE),
+    onProgress,
+    fetchImpl,
+    signal,
+  });
   if (hex(await digest(out)) !== expected) {
     await store.clearPartials(SCORES_PARTIAL);
     throw new Error('the downloaded music does not match the freeware CDs (checksum), so it was thrown away; try again later');

@@ -2,6 +2,10 @@
 // the game's one-click install (apps/game/js/content/cdmusic.js), read by
 // HTTP range from the freeware Red Alert CDs that Electronic Arts released in
 // 2008 (the Allied and the Soviet disc), as hosted on the Internet Archive.
+// GET /api/content/ra-movies/allied and /soviet: the mission movies
+// (movies1.mix and movies2.mix, apps/game/js/content/cdmovies.js), the same
+// way out of the same discs, with budgets of their own (MOVIES_*) sized for
+// archives of hundreds of megabytes.
 //
 // The relay is as narrow as the music needs:
 //
@@ -25,9 +29,13 @@
 //   content_autoinstall flag or the admin role while the contentRelay site
 //   setting is on (accounts/play.js requireRelay, checked in index.js).
 // - Budgets in the D1 quota table (keys are salted hashes): SCORES_DAILY_MIB
-//   megabytes per account per day and SCORES_IP_LIMIT requests per IP per
-//   hour. A request over a budget costs no upstream fetch; a request whose
-//   upstream fails before anything streams (502) gets its bytes back.
+//   megabytes and SCORES_ACCOUNT_ATTEMPTS requests (never given back) per
+//   account per day, and SCORES_IP_LIMIT requests per network
+//   (an IPv4 address or an IPv6 /64, accounts/ip.js networkOf) per hour. A
+//   request over a budget costs no upstream fetch; a piece that does not
+//   arrive whole (the upstream fails before anything streams, the transfer
+//   breaks off, the player cancels) gets its megabytes back, so the
+//   client's retry of that piece is not charged twice.
 // - Nothing is stored or cached: `cache: 'no-store'` upstream and
 //   `Cache-Control: no-store` on the answer; no request header of the player
 //   (cookies, address) is passed upstream.
@@ -40,7 +48,8 @@
 
 import { HttpError } from './http.js';
 import { ipSalt } from './ipkey.js';
-import { refundQuota, takeQuota } from './quota.js';
+import { networkOf } from './accounts/ip.js';
+import { peekQuota, refundQuota, takeQuota } from './quota.js';
 import { CONTENT_HEADER, exactly } from './content.js';
 
 /** scores.mix as found in MAIN.MIX on both freeware discs (the same bytes on each). */
@@ -77,12 +86,31 @@ export const SCORES_MAX_RANGE = 8 * 1024 * 1024;
 /** Per account and UTC day, in MiB (each request counts its size rounded up): four full downloads. */
 export const SCORES_DAILY_MIB = 256;
 export const SCORES_DAY_MS = 24 * 60 * 60 * 1000;
-/** Requests per IP and hour (a full download is 8). */
+/** Requests per account and UTC day, whatever their outcome (a full download is 8): twelve downloads' worth. */
+export const SCORES_ACCOUNT_ATTEMPTS = 96;
+/** Requests per network and hour (a full download is 8). */
 export const SCORES_IP_LIMIT = 64;
 export const SCORES_IP_WINDOW_MS = 60 * 60 * 1000;
 /** Time for an upstream answer with headers, and for one piece's transfer. */
 export const SCORES_HEADER_TIMEOUT_MS = 15_000;
 export const SCORES_TRANSFER_TIMEOUT_MS = 120_000;
+/**
+ * The mission movies: movies1.mix in MAIN.MIX of the Allied disc and
+ * movies2.mix in MAIN.MIX of the Soviet disc (OpenRA's movies-allied and
+ * movies-soviet packages), each only on its own disc. `offset` is where the
+ * archive starts in the image, measured like scoresOffset.
+ */
+export const MOVIES = Object.freeze({
+  allied: Object.freeze({ name: 'movies1.mix', bytes: 369_362_336, offset: 19_846_497, disc: SCORES_DISCS[0] }),
+  soviet: Object.freeze({ name: 'movies2.mix', bytes: 415_334_456, offset: 19_834_209, disc: SCORES_DISCS[1] }),
+});
+/** MiB per account and UTC day (each request counts its size rounded up): both archives (750 MiB) twice. */
+export const MOVIES_DAILY_MIB = 1500;
+/** Requests per account and UTC day, never given back: three per 8 MiB piece of both archives (95 pieces). */
+export const MOVIES_ACCOUNT_ATTEMPTS = 288;
+/** Requests per network and hour: both archives twice (95 pieces each time). */
+export const MOVIES_IP_LIMIT = 192;
+
 /** Rounds over the discs (the archive's data nodes sometimes answer 500 once). */
 export const SCORES_ROUNDS = 2;
 
@@ -95,14 +123,19 @@ const REDIRECTS = new Set([301, 302, 303, 307, 308]);
  * { start, end } (inclusive) or throws 416.
  */
 export function parseScoresRange(header) {
-  const unsatisfiable = () => new HttpError(416, 'bad_range', 'Ask for one byte range of scores.mix.', { 'content-range': `bytes */${SCORES_BYTES}` });
+  return parseFileRange(header, SCORES_BYTES, 'scores.mix');
+}
+
+/** The same for any relayed file of `total` bytes (`name` for the message). */
+export function parseFileRange(header, total, name) {
+  const unsatisfiable = () => new HttpError(416, 'bad_range', `Ask for one byte range of ${name}.`, { 'content-range': `bytes */${total}` });
   if (typeof header !== 'string' || header.length > 64) throw unsatisfiable();
   const m = /^bytes=(\d{1,9})-(\d{0,9})$/.exec(header.trim());
   if (!m) throw unsatisfiable();
   const start = Number(m[1]);
-  let end = m[2] === '' ? Math.min(SCORES_BYTES - 1, start + SCORES_MAX_RANGE - 1) : Number(m[2]);
-  if (start >= SCORES_BYTES || end < start) throw unsatisfiable();
-  end = Math.min(end, SCORES_BYTES - 1);
+  let end = m[2] === '' ? Math.min(total - 1, start + SCORES_MAX_RANGE - 1) : Number(m[2]);
+  if (start >= total || end < start) throw unsatisfiable();
+  end = Math.min(end, total - 1);
   if (end - start + 1 > SCORES_MAX_RANGE) throw unsatisfiable();
   return { start, end };
 }
@@ -155,8 +188,8 @@ const contentRange = (start, end, total) => `bytes ${start}-${end}/${total}`;
  * 206 answer, or null (the body of a refused answer is cancelled).
  */
 async function fetchWindow(disc, start, end, fetchImpl) {
-  const from = disc.scoresOffset + start;
-  const to = disc.scoresOffset + end;
+  const from = disc.offset + start;
+  const to = disc.offset + end;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SCORES_HEADER_TIMEOUT_MS);
   const init = { method: 'GET', redirect: 'manual', cache: 'no-store', signal: controller.signal, headers: { Range: `bytes=${from}-${to}` } };
@@ -188,46 +221,66 @@ async function fetchWindow(disc, start, end, fetchImpl) {
   return { res, controller };
 }
 
+/** 429 for a used up budget: until the end of its window. */
+function overBudget(message, scope, windowMs, now) {
+  const retry = Math.ceil((windowMs - (now % windowMs)) / 1000);
+  return new HttpError(429, 'rate_limited', message, { 'retry-after': String(retry) }, { retryAfter: retry, scope });
+}
+
 /**
- * Handle the route for `account` (the user requireRelay let through).
- * `fetchImpl` and `discs` are replaceable for tests (tests never reach the
- * real archive).
+ * Relay one range of `file` (a file inside the pinned disc images):
+ * { name, total, sources: [{ url, isoBytes, offset }], budgets: { network:
+ * [purpose, limit, windowMs], tries: [purpose, limit, windowMs], bytes:
+ * [purpose, mib, windowMs] }, messages: { network, account, unavailable } }.
+ * The checks, budgets, redirects and refunds are the same for every file.
  */
-export async function scoresRange(request, env, ip, account, { fetchImpl = fetch, discs = SCORES_DISCS, now = Date.now(), salt = null } = {}) {
+async function relayFileRange(request, env, ip, account, file, { fetchImpl, now, salt, waitUntil }) {
   if (request.method !== 'GET') throw new HttpError(405, 'bad_message', 'Method not allowed.', { allow: 'GET' });
   if (request.headers.get(CONTENT_HEADER) !== '1') throw new HttpError(403, 'forbidden', 'This download is for the WebRA game page only.');
   const site = request.headers.get('Sec-Fetch-Site');
   if (site !== null && site !== 'same-origin') throw new HttpError(403, 'forbidden', 'Cross-site requests are not allowed.');
   if (!account?.id) throw new HttpError(401, 'unauthenticated', 'Sign in first.');
-  const { start, end } = parseScoresRange(request.headers.get('Range'));
+  const { start, end } = parseFileRange(request.headers.get('Range'), file.total, file.name);
   const length = end - start + 1;
   const key = salt ?? ipSalt(env, request);
-  if (!(await takeQuota(env.DB, key, 'scores-ip', ip, SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS, now))) {
-    const retry = Math.ceil((SCORES_IP_WINDOW_MS - (now % SCORES_IP_WINDOW_MS)) / 1000);
-    throw new HttpError(429, 'rate_limited', 'Too many music downloads from this network. Try again later.', { 'retry-after': String(retry) }, { retryAfter: retry });
+  // Requests of the account, never given back: refunds of unfinished pieces cannot buy unbounded traffic.
+  // An account that has used its day is refused by a read alone, before the network's counter (as content.js).
+  const [triesPurpose, triesLimit, triesWindow] = file.budgets.tries;
+  if ((await peekQuota(env.DB, key, triesPurpose, account.id, triesWindow, now)) >= triesLimit) {
+    throw overBudget(file.messages.account, 'account', triesWindow, now);
   }
+  const [netPurpose, netLimit, netWindow] = file.budgets.network;
+  if (!(await takeQuota(env.DB, key, netPurpose, networkOf(ip), netLimit, netWindow, now))) {
+    throw overBudget(file.messages.network, 'network', netWindow, now);
+  }
+  if (!(await takeQuota(env.DB, key, triesPurpose, account.id, triesLimit, triesWindow, now))) {
+    throw overBudget(file.messages.account, 'account', triesWindow, now);
+  }
+  const [bytesPurpose, mibLimit, bytesWindow] = file.budgets.bytes;
   const mib = Math.ceil(length / MIB);
-  if (!(await takeQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAILY_MIB, SCORES_DAY_MS, now, mib))) {
-    const retry = Math.ceil((SCORES_DAY_MS - (now % SCORES_DAY_MS)) / 1000);
-    throw new HttpError(429, 'rate_limited', 'This account downloaded the music too often today. Try again tomorrow.', { 'retry-after': String(retry) }, { retryAfter: retry });
+  if (!(await takeQuota(env.DB, key, bytesPurpose, account.id, mibLimit, bytesWindow, now, mib))) {
+    throw overBudget(file.messages.account, 'account', bytesWindow, now);
   }
+  const refund = () => refundQuota(env.DB, key, bytesPurpose, account.id, bytesWindow, now, mib).catch(() => {});
   for (let round = 0; round < SCORES_ROUNDS; round++) {
-    for (const disc of discs) {
+    for (const disc of file.sources) {
       const got = await fetchWindow(disc, start, end, fetchImpl);
       if (!got) continue;
       const { res, controller } = got;
       // The transfer has a deadline of its own; the stream ends with an error after it.
       const timer = setTimeout(() => controller.abort(), SCORES_TRANSFER_TIMEOUT_MS);
-      const out = exactly(res.body, length, () => {
+      // A piece that does not arrive whole is not charged: the client throws it away and asks again.
+      const out = exactly(res.body, length, (completed) => {
         clearTimeout(timer);
         controller.abort();
+        if (!completed) waitUntil(refund());
       });
       return new Response(out, {
         status: 206,
         headers: {
           'content-type': 'application/octet-stream',
           'content-length': String(length),
-          'content-range': contentRange(start, end, SCORES_BYTES),
+          'content-range': contentRange(start, end, file.total),
           'cache-control': 'no-store',
           'x-content-type-options': 'nosniff',
           'cross-origin-resource-policy': 'same-origin',
@@ -236,7 +289,69 @@ export async function scoresRange(request, env, ip, account, { fetchImpl = fetch
       });
     }
   }
-  // Nothing was streamed: the bytes go back to the account's daily budget (the IP request still counts).
-  await refundQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAY_MS, now, mib).catch(() => {});
-  throw new HttpError(502, 'unavailable', 'The Internet Archive did not answer with the Red Alert music. Try again later or install it from the CD image yourself.');
+  // Nothing was streamed: the bytes go back to the account's daily budget (the requests still count).
+  await refund();
+  throw new HttpError(502, 'unavailable', file.messages.unavailable);
+}
+
+/**
+ * Handle the music route for `account` (the user requireRelay let
+ * through). `fetchImpl` and `discs` are replaceable for tests (tests never
+ * reach the real archive).
+ */
+export function scoresRange(
+  request,
+  env,
+  ip,
+  account,
+  { fetchImpl = fetch, discs = SCORES_DISCS, now = Date.now(), salt = null, waitUntil = (p) => p.catch(() => {}) } = {},
+) {
+  const file = {
+    name: 'scores.mix',
+    total: SCORES_BYTES,
+    sources: discs.map((d) => ({ ...d, offset: d.scoresOffset })),
+    budgets: {
+      network: ['scores-ip', SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS],
+      tries: ['scores-account-tries', SCORES_ACCOUNT_ATTEMPTS, SCORES_DAY_MS],
+      bytes: ['scores-bytes', SCORES_DAILY_MIB, SCORES_DAY_MS],
+    },
+    messages: {
+      network: 'Too many music downloads from this network in the last hour.',
+      account: 'This account downloaded the music too often today.',
+      unavailable: 'The Internet Archive did not answer with the Red Alert music. Try again later or install it from the CD image yourself.',
+    },
+  };
+  return relayFileRange(request, env, ip, account, file, { fetchImpl, now, salt, waitUntil });
+}
+
+/**
+ * Handle a movies route (`which`: allied or soviet, MOVIES) for `account`:
+ * the same relay for the movie archive of that disc.
+ */
+export function moviesRange(
+  request,
+  env,
+  ip,
+  account,
+  which,
+  { fetchImpl = fetch, now = Date.now(), salt = null, waitUntil = (p) => p.catch(() => {}), movies = MOVIES } = {},
+) {
+  const m = Object.hasOwn(movies, which) ? movies[which] : null;
+  if (!m) throw new HttpError(404, 'not_found', 'No such movie archive.');
+  const file = {
+    name: m.name,
+    total: m.bytes,
+    sources: [{ ...m.disc, offset: m.offset }],
+    budgets: {
+      network: ['movies-ip', MOVIES_IP_LIMIT, SCORES_IP_WINDOW_MS],
+      tries: ['movies-account-tries', MOVIES_ACCOUNT_ATTEMPTS, SCORES_DAY_MS],
+      bytes: ['movies-bytes', MOVIES_DAILY_MIB, SCORES_DAY_MS],
+    },
+    messages: {
+      network: 'Too many movie downloads from this network in the last hour.',
+      account: 'This account downloaded the movies too often today.',
+      unavailable: 'The Internet Archive did not answer with the Red Alert movies. Try again later or install them from the CD images yourself.',
+    },
+  };
+  return relayFileRange(request, env, ip, account, file, { fetchImpl, now, salt, waitUntil });
 }

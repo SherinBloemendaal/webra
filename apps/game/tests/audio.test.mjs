@@ -832,9 +832,10 @@ test('mute and the music commands go through the audio system', () => {
     togglePause: () => calls.push('pause'),
     prev: () => calls.push('prev'),
     next: () => calls.push('next'),
-    // Settings changes sync the music too.
+    // Settings changes sync the music too (no background track installed).
     start() {},
     stop() {},
+    has: () => false,
   };
   for (const c of ['stop', 'pause', 'prev', 'next']) audio.music(c);
   assert.deepEqual(calls, ['stop'], 'out of a game only stop does something');

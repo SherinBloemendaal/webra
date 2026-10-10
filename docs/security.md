@@ -199,8 +199,35 @@ cross-origin isolated page, so the headers changed:
   webra.sherin.dev passes EA's files through; the project owner chose this
   with the risk explained (OpenRA itself only lets the client download from
   the mirrors). Limits: the game page only (`X-WebRA-Content` header, Origin
-  and `Sec-Fetch-Site` checks), 3 downloads per hour per IP through the D1
-  quota table (IP stored only as a salted hash, never logged), exactly
+  and `Sec-Fetch-Site` checks), the account gate (below), and budgets in the
+  D1 quota table that count completed downloads, not attempts: 8 per account
+  per UTC day and 20 per network per hour (an IPv4 address, or the /64 of an
+  IPv6 address, so a household behind one address and a phone with rotating
+  privacy addresses each count as one network), plus ceilings on requests
+  whatever their outcome, never given back: 24 per account per UTC day and
+  30 per network per hour. A download is charged when it starts and given
+  back (`refundQuota`) when it does not complete: no mirror answered (502),
+  the transfer broke off or ran too long, or the player cancelled (the
+  stream's end is seen by the Worker and the refund runs under
+  `waitUntil`); so a retry of a failed download is charged once. A
+  transfer counts as completed as soon as every byte went to the player
+  (the upstream is then cancelled), so a player closing right after the
+  last byte gets no refund; and since refunds never touch the attempt
+  ceilings, cancelling just before the end from many networks (a /56 holds
+  256 /64s) cannot buy more than 24 transfers a day. `takeQuota` gives back
+  what it took when a concurrent request took the last units between its
+  read and its write. A 429 with `scope: network` tells the player that
+  others on the same network used its budget (no more than the address
+  itself reveals to anyone on that network). An account over its day is refused by one read, without a
+  write or an attempt. Keys are salted hashes of the account id and the
+  network (never logged); a 429 carries `Retry-After` and `retryAfter` and
+  `scope` (`account` or `network`) in the body, and the game shows the time
+  and never retries on its own. Admins can see and reset an account's
+  budgets and those of the networks it used in the last day (audit logged,
+  without addresses: docs/accounts-api.md 8.10). The game keeps the
+  downloaded ZIP on the device (`content/index.js` `KEPT_PACKAGE`), so an
+  install in the same browser again or a WebRA update that uses more of its
+  files needs no new download. Exactly
   13,502,031 bytes or nothing (checked from `Content-Length` before
   streaming, cut off if the body runs longer), 15 s for a mirror to answer
   and 240 s for the transfer. Nothing is stored or cached: no Cache API, KV,
@@ -231,18 +258,23 @@ cross-origin isolated page, so the headers changed:
   `https://dn721505.ca.archive.org/0/items/command-conquer-red-alert_202309/Command%20%26%20Conquer%20Red%20Alert%20%5BCD1%5D.ISO`
   (earlier probes also saw `https://ia601402.us.archive.org/20/items/...`);
   a redirector that left `[`, `]` or `&` unescaped would match too. A
-  request whose upstream fails before anything streams (502) gives its
-  bytes back to the account's daily budget (`refundQuota`, never below
-  zero; the IP request still counts), and the game retries a 502 at most
-  once per click. The answer must be `206` with `Content-Range` of
+  piece that does not arrive whole (the upstream fails before anything
+  streams with a 502, the transfer breaks off, the player cancels) gives
+  its bytes back to the account's daily budget (`refundQuota`, never below
+  zero; the network request and the account's request still count: at
+  most 96 requests of at most 8 MiB per account per UTC day, so an account
+  can pull at most 768 MiB of music upstream a day whatever it cancels), so the game's retry of that
+  piece is charged once, and a piece counts as whole once every byte went
+  out; the game retries a 502 at most once per click and
+  never retries a 429. The answer must be `206` with `Content-Range` of
   exactly the asked window and the pinned image size (a changed or other
   image is refused) and is streamed through cut to the asked length. Only
   `GET`, the game page (`X-WebRA-Content`, Origin, `Sec-Fetch-Site`), the
   same account gate as the package relay (active, `content_autoinstall` or
   admin, `contentRelay` on, address not banned). Budgets in the D1 quota
   table: 256 MiB per account per UTC day (each request counts its size,
-  rounded up to whole MiB: four full downloads) and 64 requests per IP per
-  hour; keys are salted hashes. No player header (cookie, address) goes
+  rounded up to whole MiB: four full downloads) and 64 requests per network
+  (IPv4 address or IPv6 /64) per hour; keys are salted hashes. No player header (cookie, address) goes
   upstream; nothing is stored or cached (`cache: 'no-store'`, `Cache-Control:
   no-store`). At most four upstream attempts per request (two rounds over
   the two discs, the archive's data nodes sometimes answer 500 once), 15 s
@@ -257,6 +289,30 @@ cross-origin isolated page, so the headers changed:
   the `scores.mix` range was downloaded to hash it (the same hash on both
   discs). They are numbers about EA's files, not the files. Tests use
   synthetic bytes and a mocked archive.
+- **The movie relay reads the movie archives out of the same discs.** `GET
+  /api/content/ra-movies/allied` and `/soviet` (`moviesRange` in
+  `apps/server/src/cdmusic.js`) are the same relay for `movies1.mix`
+  (369,362,336 bytes at offset 19,846,497 of the Allied image) and
+  `movies2.mix` (415,334,456 bytes at offset 19,834,209 of the Soviet
+  image), each only from the disc that has it: the same Range rules (one
+  range of at most 8 MiB inside the archive, 416 otherwise), the same
+  redirect checks, `Content-Range` checks, account gate, no-store and
+  refunds. Their budgets are their own, sized for archives of hundreds of
+  megabytes: 1,500 MiB (both archives twice) and 288 requests (three per
+  piece of both) per account per UTC day, and 192 requests per network per
+  hour; the requests are never given back, so an account can pull at most
+  288 x 8 MiB = 2,304 MiB of movies upstream a day whatever it cancels. The game offers them as an
+  optional button with the size (about 748 MB) and never as part of
+  "Install everything". It checks every 8 MiB piece against its pinned
+  SHA-256 before it keeps it (`apps/game/js/content/cdmovies.js`; a whole
+  archive is never held in memory), installs the movies from the kept
+  pieces and then forgets them. The pins were measured on 2026-10-10 like
+  the music's: the offsets from the ISO 9660 directory and `MAIN.MIX`'s
+  index (the `scores.mix` offsets found the same way matched the existing
+  pins), the hashes by streaming each archive once by range through a hash
+  without writing it anywhere. The Counterstrike and Aftermath music is not
+  relayed: those expansion discs were not part of EA's 2008 freeware
+  release, so players install it from their own discs.
 - **CD images from the player.** A dropped or picked `.iso` is read by
   slices (`File.slice`), never loaded whole: the volume descriptor, the
   directories on the way to `MAIN.MIX` and `INSTALL/REDALERT.MIX`, then
@@ -390,8 +446,9 @@ data, admins only), roles (admin powers), and the right to play online.
 - **Content relay.** Only active accounts with the `content_autoinstall`
   flag (or admins), only while the site setting allows it, on top of the
   relay's existing header, origin and rate limit checks. The same gate
-  covers the music relay (`/api/content/ra-scores`), whose daily byte budget
-  is kept per account.
+  covers the music relay (`/api/content/ra-scores`). Both relays count
+  their main budget per account (completed package downloads, music bytes)
+  with a coarser per network ceiling against abuse.
 - **Abuse of the API.** Rate limits per IP and per account (section 9 of the
   accounts API), body size caps, strict schemas that refuse unknown fields,
   versioned writes (`If-Match`) for settings documents and site settings.
@@ -549,6 +606,60 @@ page's unit gallery draws with the game's sprite code, so signed-out visitors
 see a note instead of the art. The game is GPL software in a public
 repository: the gate controls who gets this site's running copy, not the
 source code.
+
+## Map versions (2026-10-10)
+
+Map files carry a format version and the release that wrote them, and older
+files are upgraded automatically (docs/contracts.md section 2, "Map
+versions"). What changed for validation:
+
+- **Upgrades run before every check, never instead of one.** `validateMap`
+  (protocol) upgrades a file and then validates the *result* in full; the
+  server then runs the engine's own validation on the upgraded canonical
+  text, exactly as for any upload. An upgrade cannot carry anything past the
+  checks: what is stored, hashed, shared and played is always a fully
+  validated current-format map. The engine refuses any other format version
+  when it reads the JSON (map files and mission maps), so a map that skipped
+  the upgrade cannot reach a game either.
+- **Strict version fields.** `formatVersion` must be a whole number from 1 to
+  65535 and `gameVersion` 1 to 32 of `0-9 A-Z a-z . + -` (null counts as
+  absent), in the protocol package and the engine alike; anything else is an
+  invalid map. Unknown fields stay refused (`deny_unknown_fields`); a newer
+  format is refused with an "update the game" message before anything else
+  of it is read.
+- **Bounded, pure migrations.** Migrations are data transforms over the
+  parsed file (at most 1 MiB, parsed after the size check): one pass per
+  version step, no clock, randomness, network or engine, so the same file
+  gives the same map on every client and on the server. A gap in the chain
+  is a programming error the tests refuse, never a file's fault.
+- **Messages carry no raw input.** The compatibility messages name only the
+  format version and the release (`gameVersion`, already restricted to
+  version characters). Problem lists and notes name actor ids, rule ids,
+  field names and values from the file only through the protocol's
+  `excerpt` (at most 40 characters, control and non-ASCII characters
+  replaced), and the map editor shows all of it as text nodes.
+- **No prototype pollution.** `__proto__`, `constructor` and `prototype`
+  are refused anywhere in a map file before any migration runs, as rule ids
+  and field names by the validator, and as segments of every key path the
+  migrations and quick fixes use; paths only descend own properties and
+  values are set as own properties. Quick-fix actions are checked like input
+  (kind, paths, actor matches, cells, values) before they apply.
+- **Stored maps.** Rows stored before a format change are rewritten only
+  through the same `prepareMap` an upload uses. One row can never take the
+  map list or the daily job down: a failure other than "not compatible" is
+  logged and the row stays as it was for a later try, and the list serves
+  the current rows even when the upgrade pass fails. Writes apply only to a
+  row that is still stale (no double counting under concurrent upgrades;
+  a hash clash is retried once). Aliases (`map_aliases`) map
+  an old hash or id to the row that holds the map now; they never widen who
+  can read a map: `GET /api/maps/:id` and picking by id still need a listed
+  row, unlisted maps are still served only through their sessions. A row
+  that cannot be upgraded keeps its text, leaves the community list and is
+  refused by lobbies; `GET /api/maps/:id` serves it as stored (clients run
+  the same upgrade and show why, the map editor opens it for repair).
+- **Saves and replays** keep their map as played and are validated without
+  upgrades (`upgrade: false`), so a saved game cannot be resumed on a
+  different map than the one its hashes were recorded with.
 
 ## Map sharing and rematches (2026-10-09)
 
@@ -732,6 +843,108 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
   seconds, at most 6 minutes), so a small file cannot make the decoder
   allocate a huge one; a broken file throws and the card shows instead. Videos are never
   bundled or uploaded.
+
+## Error reports (2026-10-10)
+
+The game, the map editor, the website and the Worker can report errors to
+WebRA's self-hosted Sentry at `sentry.vitrion.dev` (one project; its DSN is a
+public client key). Reporting is opt-in for the operator: no DSN is built in,
+and only a deploy with the repository variable `SENTRY_DSN` set reports
+anything (docs/deploy.md, "Error reports"). Without it the browser never
+loads the SDK, the Worker's wrapper does nothing, and the build writes the
+privacy notice's "Error reporting is currently off" section instead of the
+description below (`privacySections`, tools/sentry-config.mjs).
+
+- **What is sent.** Errors nothing caught (`window` error and
+  `unhandledrejection`, the Worker's handlers), errors the code reports on
+  purpose (engine panics and traps, a simulation worker that stopped, a 5xx
+  the Worker answers, failed background writes, failed cron runs), online
+  desyncs (`Lockstep desync`, with the newest state hashes), and a sampled
+  share (`SENTRY_TRACES_SAMPLE_RATE`, default 5%) of page loads and Worker
+  requests as performance traces. Each report has the release
+  (`webra@<version>+<commit>`), the environment, tags (`surface`: game,
+  website or worker; `mode`: menu, editor, skirmish, mission, online, replay,
+  stress; `renderer`: webgpu or unavailable; `original_content`: on or off;
+  `protocol`) and, for engine errors, the `engine` context: engine version,
+  mode, tick and the newest state hashes (checksums, no game content).
+  Browser reports keep the User-Agent (browser and GPU stack bugs need it);
+  the Worker's keep none.
+- **What is never sent.** Users (no id, name or email; no hashed id either:
+  errors are not tied to accounts), network addresses (both SDKs tell
+  Sentry not to infer them, `infer_ip: never`, and the project must have
+  "Prevent Storing of IP Addresses" on), cookies, request headers and
+  bodies (Authorization, `X-WebRA-Member`, `X-WebRA-Auth`, passwords, map
+  uploads), query strings and fragments (rejoin keys, invite links, OAuth
+  codes), local variables, session replays and sessions. Both SDKs run with
+  every `dataCollection` category off (in @sentry 11 it replaced
+  `sendDefaultPii`), and every event, transaction and breadcrumb passes
+  `packages/protocol/src/scrub.js` before it leaves: URLs lose user info,
+  query values (the names stay) and fragments,
+  path segments that look like tokens or ids; text loses URLs' secrets, email
+  addresses and long tokens; keys that name secrets (`password`, `token`,
+  `key`, `session`, `member`, `rejoin`, `cookie`, `auth`) are dropped;
+  console breadcrumbs are kept for warnings and errors only, without their
+  arguments, and click breadcrumbs lose the values
+  of their attributes; traces lose header, user agent, address, query and body
+  attributes and the time zone. Traces are sent as transactions
+  (`traceLifecycle: 'static'`), so they pass the same scrubber (the SDK's
+  default streams spans past `beforeSendTransaction`). Spans that the SDK
+  sends on their own bypass every `beforeSend*` hook, so: the browser traces
+  only page loads and navigations (LCP and CLS ride on the page load
+  transaction); INP, which is such a span named after the element clicked
+  (whose title or label can hold a player's name), long tasks and request
+  spans are off; `beforeSendSpan` scrubs every span; and the browser's
+  transport sends nothing while reports are switched off, whatever produced
+  the envelope. Neither SDK adds `sentry-trace` or `baggage` headers to any
+  request (`tracePropagationTargets: []`): not to the API, not to Discord,
+  the content mirrors or archive.org.
+- **Players' text.** Chat, player, lobby and map names cannot be recognized
+  by their shape, so the client remembers the text it receives and sends
+  (`noteUserText`: WebSocket messages and API answers in `js/net.js`,
+  `js/account/api.js` and the website's fetches, map files the lobby
+  checks, the player's own lobby name) and replaces it with `[redacted]`
+  wherever it shows up in a report. Residual risk: text that reaches an error
+  message without passing those points (none is known) would only lose its
+  URLs, email addresses and tokens.
+- **Consent.** Once the operator has turned reporting on, reports are on by
+  default and the player switches them off in
+  the game's Settings (Privacy) or on the privacy page; it is the settings
+  registry's `privacy.errorReports`, synced with the account. It is read
+  from localStorage before anything loads: switched off, the SDK is never
+  loaded. Switching it off later (this tab, another tab, an account sync)
+  drops every event, transaction and breadcrumb from then on and the
+  transport sends nothing; switching it on loads the SDK. The game menu's
+  Defaults button never switches it back on. The switch covers what this
+  browser sends: the Worker reports its own errors whatever it says, also of
+  a player's request that failed, with none of the player's data (above).
+- **Loading and CSP.** With a DSN, the SDK is bundled by `tools/build-dist.mjs` into
+  `/play/vendor/sentry.js` and `/lib/vendor/sentry.js` (only what WebRA uses:
+  no replay or feedback code) and loaded from the site's own origin: the CSP
+  keeps `script-src 'self'`. Only `connect-src` gained
+  `https://sentry.vitrion.dev`; the build stops when the DSN's host is not
+  in it. Reports are CORS requests, which COEP `require-corp` does not block.
+- **Worker.** `@sentry/cloudflare` wraps `fetch`, `scheduled` and the
+  `Session` Durable Object (fetch, alarms, WebSocket handlers, RPC methods)
+  only when `SENTRY_DSN` is set; it is empty in `wrangler.jsonc`, so
+  `wrangler dev` and the tests send nothing, and the deploy workflow sets it.
+  The SDK needs `AsyncLocalStorage` (compatibility flag `nodejs_als`).
+- **Engine panics.** The wasm32 engine aborts on a panic; a panic hook
+  (`engine/src/panic_report.rs`) keeps its message, source location (a path
+  in the repository) and the running tick for the JavaScript side. The tick
+  it notes is presentation only and never enters the simulation or
+  `state_hash`. The native `sentry` crate is not used: it needs threads and
+  a native HTTP transport, which `wasm32-unknown-unknown` lacks in the
+  browser and the Worker, and the native tools (the examples such as
+  `ai_vs_ai`, `shader-check`) run in CI and on developers' machines, where a
+  panic already fails the run with its message on stderr.
+- **Abuse.** The DSN is public by design: anyone can send made-up events to
+  the project. That costs Sentry quota and noise, never data: the project
+  holds nothing but these reports. Rate limits of the Sentry server apply.
+- **The Sentry server.** It sees each report's connection like any web
+  server. Required project settings (docs/deploy.md): "Prevent Storing of
+  IP Addresses" and 90 days of retention; recommended: the default data
+  scrubbers.
+  `apps/website/privacy.html` says all of this to players.
 
 ## Inherent to lockstep
 

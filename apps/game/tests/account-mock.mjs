@@ -18,6 +18,7 @@ export class MockAccountServer {
     this.sessions = new Map(); // id -> { id, userId, createdAt, lastUsedAt, expiresAt, deviceLabel, reauthUntil }
     this.cookie = null; // the session id of "this browser"
     this.settingsDocs = new Map(); // userId -> { version, updatedAt, settings }
+    this.relayQuotas = new Map(); // userId -> the relay view (docs/accounts-api.md 8.10) with its counters
     this.ipBans = [];
     this.audit = [];
     this.requests = [];
@@ -36,6 +37,17 @@ export class MockAccountServer {
   }
 
   // ---- Helpers ----------------------------------------------------------------------------
+
+  /** The one-click relay budgets of a user detail: what was set in relayQuotas, or nothing used. */
+  relayOf(id) {
+    const budget = (used, limit, unit, windowMs) => ({ used, limit, unit, resetsAt: Math.floor(this.now / windowMs) * windowMs + windowMs });
+    return (
+      this.relayQuotas.get(id) ?? {
+        account: { content: budget(0, 8, 'downloads', 864e5), music: budget(0, 256, 'MiB', 864e5) },
+        networks: [],
+      }
+    );
+  }
 
   addUser(fields) {
     const id = newId();
@@ -365,6 +377,7 @@ export class MockAccountServer {
             out.sessions = [...this.sessions.values()].filter((s) => s.userId === target.id).map(({ reauthUntil: _r, userId: _u, ...s }) => s);
             out.ips = target.ips;
             out.settings = this.settingsDocs.get(target.id) ?? { version: 0, updatedAt: 0, settings: {} };
+            out.relay = this.relayOf(target.id);
           }
           return reply(200, out);
         }
@@ -409,6 +422,12 @@ export class MockAccountServer {
         if (action === 'logout') {
           for (const [id, s] of this.sessions) if (s.userId === target.id) this.sessions.delete(id);
           return reply(204);
+        }
+        if (action === 'relay-quota' && method === 'DELETE') {
+          const before = this.relayOf(target.id);
+          this.relayQuotas.delete(target.id);
+          this.log(me, 'user.relay_quota_reset', { type: 'user', id: target.id, label: target.username }, { account: before.account }, null);
+          return reply(200, { relay: this.relayOf(target.id) });
         }
         if (action === 'sessions' && method === 'DELETE') {
           this.sessions.delete(m[3]);

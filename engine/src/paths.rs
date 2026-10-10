@@ -109,6 +109,10 @@ impl Route {
         if self.segments >= MAX_SEGMENTS {
             return false;
         }
+        // A segment of length zero is a target marker (shaders/line.wgsl).
+        if to == self.from {
+            return true;
+        }
         let c = self.col;
         lines.extend_from_slice(&[self.from.0, self.from.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
         self.from = to;

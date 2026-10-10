@@ -18,6 +18,8 @@ export const KEYS = Object.freeze({
   edgeScrollSpeed: ['game', 'edgeScrollSpeed'],
   keyScrollSpeed: ['game', 'keyScrollSpeed'],
   showUnitPaths: ['game', 'showUnitPaths'],
+  // OpenRA's target lines (js/targetlines.js): 'disabled', 'manual' or 'automatic'.
+  targetLines: ['game', 'targetLines'],
   healthBars: ['game', 'healthBars'],
   // OpenRA's relationship colours (TogglePlayerStanceColor): js/main.js.
   playerStanceColors: ['game', 'playerStanceColors'],
@@ -40,6 +42,8 @@ export const KEYS = Object.freeze({
   mouseCaptureSpeed: ['game', 'mouseCaptureSpeed'],
   mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
+  // "Send error reports" (js/telemetry/index.js follows it).
+  errorReports: ['privacy', 'errorReports'],
 });
 
 /**

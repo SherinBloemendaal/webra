@@ -4,6 +4,7 @@
 export * from './constants.js';
 export * from './accounts.js';
 export { ProtocolError, text, truncate, utf8Length } from './check.js';
+export { FILTERED, REDACTED, Redactor, scrubBreadcrumb, scrubEvent, scrubSpan, scrubText, scrubUrl, scrubValue } from './scrub.js';
 export { LOBBY_OPTION_KEYS, validateGameOptions, validateLobbyOptions } from './options.js';
 export {
   client,
@@ -28,7 +29,9 @@ export {
 export {
   base64Length,
   canonicalMapJson,
+  canonicalMapObject,
   decodeBase64,
+  encodeBase64,
   isModded,
   GEM_MAX,
   MAP_BIOMES,
@@ -40,16 +43,44 @@ export {
   MAP_MAX_SPAWNS,
   MAP_MIN_SIZE,
   MAP_MIN_SPAWNS,
+  mapFileJson,
   mapHash,
   mapSummary,
   MODDED_WARNING,
   ORE_MAX,
   parseMap,
+  salvageMap,
   sha256Hex,
   TERRAIN_MAX,
   validateMap,
   validateRules,
 } from './map.js';
+export {
+  addField,
+  applyMapFix,
+  GAME_VERSION_RE,
+  getPath,
+  incompatibleMapMessage,
+  MAP_FORMAT_HISTORY,
+  MAP_FORMAT_VERSION,
+  MAP_FORMAT_VERSION_MAX,
+  MAP_MIGRATIONS,
+  MAP_UPGRADED_NOTICE,
+  MAP_VERSIONS,
+  mapFormatVersionOf,
+  mapMadeFor,
+  moveField,
+  newerMapMessage,
+  remapTerrain,
+  renameActors,
+  renameRuleFields,
+  renameValues,
+  RESERVED_KEYS,
+  reservedKeyIn,
+  setPath,
+  upgradeMap,
+} from './mapversions.js';
+export { GAME_VERSION } from './version.js';
 export {
   encodeReplay,
   FramesDigest,

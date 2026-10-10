@@ -21,6 +21,7 @@ import {
   normalizeQuery,
   parseView,
   permissions,
+  relayLines,
   viewHash,
 } from '../js/account/admin-state.js';
 import { buildSettingsForm, controlFor, formatValue, parseValue } from '../js/account/admin-forms.js';
@@ -328,6 +329,45 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   const stored = server.settingsDocs.get(target.id);
   assert.equal(stored.version, 4);
   assert.equal(stored.settings.game.lowQuality, true);
+});
+
+test('admin state: relay budget lines name what is used and until when', () => {
+  const b = (used, limit, unit) => ({ used, limit, unit, resetsAt: 7200000 });
+  const r = relayLines(
+    { account: { content: b(2, 8, 'downloads'), music: b(0, 256, 'MiB') }, networks: [{ network: '203.0.113.7', lastSeen: 1, content: b(0, 20, 'downloads'), contentAttempts: b(0, 30, 'requests'), music: b(0, 64, 'requests') }] },
+    (ms) => `t${ms}`,
+  );
+  assert.deepEqual(r.account, ['Package downloads: 2 of 8 downloads, until t7200000', 'Music: 0 of 256 MiB']);
+  assert.deepEqual(r.networks[0], { network: '203.0.113.7', lines: ['Package downloads: 0 of 20 downloads', 'Package requests: 0 of 30 requests', 'Music: 0 of 64 requests'], used: false });
+  assert.equal(r.used, true);
+  assert.deepEqual(relayLines(undefined), { account: [], networks: [], used: false });
+});
+
+test('dashboard: the drawer shows the relay budgets and resets them after a confirmation', async () => {
+  const server = new MockAccountServer();
+  const { admin, users } = seed(server);
+  server.signIn(admin);
+  const target = users[12];
+  const b = (used, limit, unit) => ({ used, limit, unit, resetsAt: server.now + 3600e3 });
+  server.relayQuotas.set(target.id, {
+    account: { content: b(8, 8, 'downloads'), music: b(64, 256, 'MiB') },
+    networks: [{ network: '203.0.113.7', lastSeen: server.now, content: b(3, 20, 'downloads'), contentAttempts: b(5, 30, 'requests'), music: b(0, 64, 'requests') }],
+  });
+  const { root } = await dashboard(server, `#user=${target.id}`);
+  await settle(20);
+  const block = byText(root.querySelector('.drawer'), 'summary', /One-click relay budgets \(in use\)/).closest('details');
+  assert.match(textOf(block), /Package downloads: 8 of 8 downloads, until/);
+  assert.match(textOf(block), /Network 203\.0\.113\.7:.*Package requests: 5 of 30 requests/);
+  click(byText(block, 'button', /Reset relay budgets/));
+  await settle(5);
+  const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  assert.match(textOf(dialog), /others on those networks too/);
+  click(byText(dialog, 'button', /^Reset$/));
+  await settle(30);
+  assert.equal(server.relayQuotas.has(target.id), false);
+  assert.equal(server.audit[0].action, 'user.relay_quota_reset');
+  const after = byText(root.querySelector('.drawer'), 'summary', /One-click relay budgets/);
+  assert.doesNotMatch(textOf(after), /in use/);
 });
 
 test('dashboard: IP bans, site settings with unavailable services, and the audit log', async () => {

@@ -26,6 +26,7 @@ import {
   looksLikeCidr,
   parseView,
   permissions,
+  relayLines,
   viewHash,
 } from '/lib/js/account/admin-state.js';
 import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
@@ -482,12 +483,42 @@ export async function mountAdmin(root, deps = {}) {
     if (Array.isArray(d.passkeys) && d.passkeys.length) {
       parts.push(detailsBlock(`Passkeys (${d.passkeys.length})`, el('ul', { class: 'item-list' }, ...d.passkeys.map((p) => el('li', { class: 'item', text: `${p.name}, added ${formatDateTime(p.createdAt)}, last used ${formatDateTime(p.lastUsedAt)}${p.counterError ? ' (counter error: may be cloned)' : ''}` })))));
     }
+    if (can.relayQuota && d.relay) parts.push(relayBlock(u, d.relay, status, reload));
     if (can.settings) parts.push(settingsEditor(u));
     body.replaceChildren(...present(parts));
   }
 
-  function detailsBlock(title, content) {
-    return el('details', { class: 'detail-block' }, el('summary', { text: title }), content);
+  /** The one-click relay budgets (package and music) of the account and its recent networks, with a reset. */
+  function relayBlock(u, relay, status, reload) {
+    const r = relayLines(relay, formatDateTime);
+    const list = (lines) => el('ul', { class: 'item-list' }, ...lines.map((t) => el('li', { class: 'item', text: t })));
+    const reset = el('button', { type: 'button', class: 'btn btn-small', text: 'Reset relay budgets' });
+    reset.addEventListener('click', async () => {
+      const ok = await confirmDialog(
+        'Reset relay budgets',
+        `Give ${u.username} the one-click download budgets back, and the networks it used in the last day (others on those networks too)? This is audit logged.`,
+        { confirmText: 'Reset' },
+      );
+      if (!ok) return;
+      await busy(reset, status, async () => {
+        await api.resetRelayQuota(u.id);
+        status.show('The relay budgets are reset.', 'ok');
+        await reload();
+      }, errorText);
+    });
+    return detailsBlock(
+      `One-click relay budgets${r.used ? ' (in use)' : ''}`,
+      el('p', { class: 'form-help', text: 'This account:' }),
+      list(r.account),
+      ...(r.networks.length
+        ? r.networks.flatMap((n) => [el('p', { class: 'form-help' }, el('span', { text: 'Network ' }), el('code', { text: n.network }), el('span', { text: ':' })), list(n.lines)])
+        : [el('p', { class: 'form-help', text: 'No networks seen in the last day.' })]),
+      el('div', { class: 'form-actions' }, reset),
+    );
+  }
+
+  function detailsBlock(title, ...content) {
+    return el('details', { class: 'detail-block' }, el('summary', { text: title }), ...content);
   }
 
   function editForm(u, status, reload) {

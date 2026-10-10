@@ -9,14 +9,29 @@
 //   is bypassed) and `Cache-Control: no-store` on the response;
 // - only a response of exactly the known size (Content-Length) is relayed,
 //   and the stream is cut off if it runs longer;
-// - same-origin requests only (the game's own page), 3 downloads per hour
-//   per IP through the D1 quota table (IPs only as salted hashes, never
-//   logged), and a time limit per mirror and for the whole transfer.
+// - same-origin requests only (the game's own page), only for a signed-in,
+//   active account with the content_autoinstall flag or the admin role
+//   (accounts/play.js requireRelay, checked in index.js), and a time limit
+//   per mirror and for the whole transfer;
+// - budgets in the D1 quota table (keys are salted hashes, IPs never
+//   logged) that count completed downloads, not attempts:
+//   CONTENT_ACCOUNT_LIMIT per account per UTC day and CONTENT_NET_LIMIT per
+//   network (an IPv4 address or an IPv6 /64, accounts/ip.js networkOf) per
+//   hour. A download is charged when it starts and given back when it does
+//   not complete (no mirror answered, the transfer broke off, the player
+//   cancelled), so a retry of a failed download is never charged twice.
+//   CONTENT_ACCOUNT_ATTEMPTS requests per account per day and
+//   CONTENT_NET_ATTEMPTS per network per hour are ceilings on attempts of
+//   any outcome (never given back) against start and cancel loops, also
+//   from many networks. A transfer counts as completed once every byte went
+//   to the player (exactly), not when the upstream says so. A request over
+//   a budget costs no upstream fetch.
 // docs/security.md and docs/contracts.md section 4 describe the route.
 
 import { HttpError } from './http.js';
 import { ipSalt } from './ipkey.js';
-import { takeQuota } from './quota.js';
+import { networkOf } from './accounts/ip.js';
+import { peekQuota, refundQuota, takeQuota } from './quota.js';
 
 /** OpenRA's quick install mirrors (mods/ra/installer), tried in this order. */
 export const QUICKINSTALL_MIRRORS = Object.freeze([
@@ -26,8 +41,30 @@ export const QUICKINSTALL_MIRRORS = Object.freeze([
   'https://openra.ppmsite.com/ra-quickinstall.zip',
 ]);
 export const QUICKINSTALL_BYTES = 13_502_031;
-export const CONTENT_LIMIT = 3;
-export const CONTENT_WINDOW_MS = 60 * 60 * 1000;
+/**
+ * Completed downloads per account and UTC day. A player needs one per
+ * browser and device (the game keeps the ZIP, so updates need none): eight
+ * cover a desktop, a laptop, a phone and a tablet twice over, and cap an
+ * account at about 108 MB of mirror traffic a day.
+ */
+export const CONTENT_ACCOUNT_LIMIT = 8;
+export const CONTENT_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/**
+ * Requests per account and UTC day, whatever their outcome (never given
+ * back): three tries per completed download. Unfinished downloads are given
+ * back to CONTENT_ACCOUNT_LIMIT, so this is what bounds an account's
+ * traffic: at most 24 packages (about 324 MB) a day.
+ */
+export const CONTENT_ACCOUNT_ATTEMPTS = 24;
+/**
+ * Completed downloads per network and hour: a household or a LAN party
+ * behind one address (ten flagged players with two devices each) fits; one
+ * network cannot pull more than about 270 MB an hour through the relay.
+ */
+export const CONTENT_NET_LIMIT = 20;
+/** Requests per network and hour, whatever their outcome (never given back). */
+export const CONTENT_NET_ATTEMPTS = 30;
+export const CONTENT_NET_WINDOW_MS = 60 * 60 * 1000;
 /** Time for a mirror to answer with headers, and for the whole transfer. */
 export const HEADER_TIMEOUT_MS = 15_000;
 export const TRANSFER_TIMEOUT_MS = 240_000;
@@ -36,18 +73,22 @@ export const CONTENT_HEADER = 'X-WebRA-Content';
 
 /**
  * A stream of exactly `expected` bytes read from `upstream` (chunk by chunk,
- * nothing is held back): it errors on any more or less. `done` runs once
- * when it ends for any reason: finished, failed, or cancelled by the reader
- * (a player closing the page), so the transfer deadline never outlives it.
+ * nothing is held back): it errors on any more or less (more within the
+ * last chunk; the upstream is cancelled once `expected` bytes went out).
+ * `done(completed)` runs once when it ends for any reason: every byte
+ * passed on (`completed` true),
+ * failed, or cancelled by the reader (a player closing the page), so the
+ * transfer deadline never outlives it and an unfinished transfer can be
+ * given back to the budgets.
  */
 export function exactly(upstream, expected, done = () => {}) {
   const reader = upstream.getReader();
   let seen = 0;
   let finished = false;
-  const finish = () => {
+  const finish = (completed = false) => {
     if (finished) return;
     finished = true;
-    done();
+    done(completed);
   };
   return new ReadableStream({
     async pull(controller) {
@@ -60,7 +101,7 @@ export function exactly(upstream, expected, done = () => {}) {
         return;
       }
       if (r.done) {
-        finish();
+        finish(seen === expected);
         if (seen !== expected) controller.error(new Error('upstream sent less than the expected size'));
         else controller.close();
         return;
@@ -73,6 +114,12 @@ export function exactly(upstream, expected, done = () => {}) {
         return;
       }
       controller.enqueue(r.value);
+      // Every byte went out: complete now, whether or not the reader waits for the end of the stream.
+      if (seen === expected) {
+        finish(true);
+        controller.close();
+        reader.cancel().catch(() => {});
+      }
     },
     cancel(reason) {
       finish();
@@ -81,19 +128,78 @@ export function exactly(upstream, expected, done = () => {}) {
   });
 }
 
+/** Seconds until the fixed window of `windowMs` that holds `now` ends. */
+const untilWindowEnd = (windowMs, now) => Math.ceil((windowMs - (now % windowMs)) / 1000);
+
+/** 429 with Retry-After, and which budget refused (`scope`: account or network) in the body. */
+function overBudget(scope, windowMs, now) {
+  const retry = untilWindowEnd(windowMs, now);
+  const message =
+    scope === 'account'
+      ? 'This account has used its one-click downloads for today.'
+      : 'Too many one-click downloads from this network in the last hour.';
+  return new HttpError(429, 'rate_limited', message, { 'retry-after': String(retry) }, { retryAfter: retry, scope });
+}
+
 /**
- * Handle the route. `fetchImpl` and `mirrors` are replaceable for tests
- * (tests never reach the real mirrors).
+ * The relay's budgets for one request (see the top of this file): checks
+ * them, charges one download to the account and the network, and returns
+ * `refund()`, which gives that download back (once). Throws 429.
  */
-export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirrors = QUICKINSTALL_MIRRORS, now = Date.now(), salt = null } = {}) {
+export async function chargeDownload(db, salt, account, ip, now) {
+  const net = networkOf(ip);
+  // An account that has used its day is refused by a read alone: its clicks cost no write, not even an attempt.
+  if ((await peekQuota(db, salt, 'content-account', account.id, CONTENT_ACCOUNT_WINDOW_MS, now)) >= CONTENT_ACCOUNT_LIMIT) {
+    throw overBudget('account', CONTENT_ACCOUNT_WINDOW_MS, now);
+  }
+  // Attempts of the account, never given back: refunds of unfinished downloads cannot buy unbounded traffic
+  // (cancelling just before the end, from many networks).
+  if (!(await takeQuota(db, salt, 'content-account-tries', account.id, CONTENT_ACCOUNT_ATTEMPTS, CONTENT_ACCOUNT_WINDOW_MS, now))) {
+    throw overBudget('account', CONTENT_ACCOUNT_WINDOW_MS, now);
+  }
+  if (!(await takeQuota(db, salt, 'content-tries', net, CONTENT_NET_ATTEMPTS, CONTENT_NET_WINDOW_MS, now))) {
+    throw overBudget('network', CONTENT_NET_WINDOW_MS, now);
+  }
+  if (!(await takeQuota(db, salt, 'content-net', net, CONTENT_NET_LIMIT, CONTENT_NET_WINDOW_MS, now))) {
+    throw overBudget('network', CONTENT_NET_WINDOW_MS, now);
+  }
+  if (!(await takeQuota(db, salt, 'content-account', account.id, CONTENT_ACCOUNT_LIMIT, CONTENT_ACCOUNT_WINDOW_MS, now))) {
+    // Two downloads of one account raced for its last one: the network's charge goes back.
+    await refundQuota(db, salt, 'content-net', net, CONTENT_NET_WINDOW_MS, now).catch(() => {});
+    throw overBudget('account', CONTENT_ACCOUNT_WINDOW_MS, now);
+  }
+  let refunded = false;
+  return async () => {
+    if (refunded) return;
+    refunded = true;
+    // Given back in the window it was charged in (a later window starts from zero anyway).
+    await Promise.all([
+      refundQuota(db, salt, 'content-net', net, CONTENT_NET_WINDOW_MS, now),
+      refundQuota(db, salt, 'content-account', account.id, CONTENT_ACCOUNT_WINDOW_MS, now),
+    ]).catch(() => {});
+  };
+}
+
+/**
+ * Handle the route for `account` (the user requireRelay let through).
+ * `fetchImpl` and `mirrors` are replaceable for tests (tests never reach
+ * the real mirrors). `waitUntil` keeps the Worker alive for the refund of a
+ * transfer that ends after the response went out (ExecutionContext
+ * waitUntil).
+ */
+export async function quickInstall(
+  request,
+  env,
+  ip,
+  account,
+  { fetchImpl = fetch, mirrors = QUICKINSTALL_MIRRORS, now = Date.now(), salt = null, waitUntil = (p) => p.catch(() => {}) } = {},
+) {
   if (request.method !== 'GET') throw new HttpError(405, 'bad_message', 'Method not allowed.', { allow: 'GET' });
   if (request.headers.get(CONTENT_HEADER) !== '1') throw new HttpError(403, 'forbidden', 'This download is for the WebRA game page only.');
   const site = request.headers.get('Sec-Fetch-Site');
   if (site !== null && site !== 'same-origin') throw new HttpError(403, 'forbidden', 'Cross-site requests are not allowed.');
-  if (!(await takeQuota(env.DB, salt ?? ipSalt(env, request), 'content', ip, CONTENT_LIMIT, CONTENT_WINDOW_MS, now))) {
-    const retry = Math.ceil((CONTENT_WINDOW_MS - (now % CONTENT_WINDOW_MS)) / 1000);
-    throw new HttpError(429, 'rate_limited', 'Too many content downloads. Try again later.', { 'retry-after': String(retry) });
-  }
+  if (!account?.id) throw new HttpError(401, 'unauthenticated', 'Sign in first.');
+  const refund = await chargeDownload(env.DB, salt ?? ipSalt(env, request), account, ip, now);
   for (const url of mirrors) {
     const controller = new AbortController();
     let timer = setTimeout(() => controller.abort(), HEADER_TIMEOUT_MS);
@@ -113,9 +219,11 @@ export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirror
     // The transfer has a deadline of its own; the stream ends with an error after it.
     timer = setTimeout(() => controller.abort(), TRANSFER_TIMEOUT_MS);
     // The deadline is cleared however the stream ends (also when the reader cancels it).
-    const out = exactly(upstream.body, QUICKINSTALL_BYTES, () => {
+    // An unfinished transfer (cut off, too long, cancelled by the player) is not charged.
+    const out = exactly(upstream.body, QUICKINSTALL_BYTES, (completed) => {
       clearTimeout(timer);
       controller.abort();
+      if (!completed) waitUntil(refund());
     });
     return new Response(out, {
       status: 200,
@@ -130,5 +238,7 @@ export async function quickInstall(request, env, ip, { fetchImpl = fetch, mirror
       },
     });
   }
+  // Nothing was streamed: the download goes back to both budgets (the attempt still counts).
+  await refund();
   throw new HttpError(502, 'unavailable', 'None of the OpenRA mirrors answered with the Red Alert files. Try again later or download them yourself.');
 }

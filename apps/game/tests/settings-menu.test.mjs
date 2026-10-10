@@ -480,3 +480,22 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   assert.ok(!none.root.querySelectorAll('h2').some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
   assert.equal(none.root.querySelector('#game-menu-mouseCapture-always'), null);
 });
+
+test('privacy: the error report switch, with a note while this build reports nothing', async () => {
+  const { initTelemetry, resetTelemetry } = await import('../js/telemetry/index.js');
+  const NOTE = 'Error reporting is off on this site: nothing is sent, whatever this switch says.';
+  try {
+    const off = setup();
+    assert.ok($(off.root, '#game-menu-errorReports'), 'the switch');
+    assert.ok(textOf(off.root).includes(NOTE), 'no DSN: the note says nothing is sent');
+    const sdk = { init() {}, setTags() {} };
+    await initTelemetry({ surface: 'game', config: { dsn: 'https://0123456789abcdef0123456789abcdef@sentry.invalid/1', environment: 'test', release: '', tracesSampleRate: 0 }, storage: null, win: null, loadSdk: async () => sdk });
+    const on = setup();
+    assert.ok($(on.root, '#game-menu-errorReports'));
+    assert.equal(textOf(on.root).includes(NOTE), false, 'with a DSN the switch decides');
+    check($(on.root, '#game-menu-errorReports'), false);
+    assert.equal(on.registry.get('privacy', 'errorReports'), false);
+  } finally {
+    resetTelemetry();
+  }
+});

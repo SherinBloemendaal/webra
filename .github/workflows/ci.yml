@@ -5,9 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# All jobs run on the self-hosted ARC runner scale sets (labels small, medium,
+# large, enormous). Their image (ghcr.io/actions/actions-runner) is a minimal
+# Ubuntu and the runners are ephemeral: every job installs the system packages
+# and toolchains it needs and caches through actions/cache.
 
 # github.workflow is the caller's name when deploy.yml runs this file, so the
 # push run of CI and the CI inside a deploy never cancel each other.
@@ -18,8 +24,12 @@ concurrency:
 jobs:
   engine:
     name: Engine (fmt, clippy, tests)
-    runs-on: ubuntu-latest
+    runs-on: enormous
     steps:
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -33,12 +43,19 @@ jobs:
 
   data:
     name: Rules and tables in sync with data
-    runs-on: ubuntu-latest
+    runs-on: small
     steps:
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: python3 tools/gen_rules.py
       - run: python3 tools/gen_oramap_tables.py
       - run: python3 tools/gen_content_tables.py
@@ -49,8 +66,12 @@ jobs:
 
   shaders:
     name: WGSL shaders
-    runs-on: ubuntu-latest
+    runs-on: medium
     steps:
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -58,8 +79,12 @@ jobs:
 
   web:
     name: Web (wasm build, JS checks, API tests)
-    runs-on: ubuntu-latest
+    runs-on: large
     steps:
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -68,6 +93,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install wasm-pack
         run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
       - run: npm ci --ignore-scripts || npm install --ignore-scripts

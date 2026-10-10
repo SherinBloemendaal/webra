@@ -34,6 +34,7 @@ import {
   S2C,
   validOrder,
 } from './protocol.js';
+import { noteUserText } from './telemetry/index.js';
 
 // ---- HTTP API ---------------------------------------------------------------
 
@@ -59,6 +60,8 @@ async function request(path, init = {}) {
   let body = null;
   try {
     body = text ? JSON.parse(text) : null;
+    // Lobby, map and player names are cut out of error reports (js/telemetry).
+    noteUserText(body);
   } catch {
     // Not JSON (e.g. a static file server without the API).
   }
@@ -155,6 +158,8 @@ export class Connection {
           return;
         }
         const msg = r.msg;
+        // Chat, player and lobby names are cut out of error reports (js/telemetry).
+        noteUserText(msg);
         if (!settled) {
           if (msg.t === S2C.WELCOME) {
             settled = true;
@@ -187,6 +192,7 @@ export class Connection {
   /** Validate and send a client message. Throws ProtocolError when invalid. */
   send(msg) {
     const raw = encodeClient(msg);
+    noteUserText(msg);
     if (!this.closed && this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(raw);
   }
 

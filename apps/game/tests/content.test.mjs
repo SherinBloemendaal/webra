@@ -30,6 +30,7 @@ import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage } from
 import {
   originalTerrain,
   packTerrain,
+  PACK_CLASS_OF_TERRAIN,
   planTerrain,
   theaterPools,
   analyzeTile,
@@ -54,11 +55,11 @@ import {
 } from '../js/content/terrain.js';
 import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
-import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
+import { ContentSystem, orderPacks, mergePackPrefs, KEPT_PACKAGE, KEPT_META } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
 import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
-import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall } from '../js/content/download.js';
+import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall, formatWait, RelayLimitError, retryAfterOf } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
 import { buildAtlas, FRAME_FLOATS } from '../js/sprites.js';
 import { SoundBank } from '../js/audio/bank.js';
@@ -740,11 +741,11 @@ function terrainBytes(w, h) {
   return out;
 }
 
-/** Terrain bytes from rows of characters: . clear, ~ water, r rough, # rock, T tree, f ford. */
+/** Terrain bytes from rows of characters: . clear, ~ water, r rough, # rock, T tree, f ford, = road, b bridge, s beach, v river, l wall. */
 function terrainFrom(rows) {
   const h = rows.length;
   const w = rows[0].length;
-  const code = { '.': 0, r: 1, '#': 2, '~': 3, T: 4, f: 5 };
+  const code = { '.': 0, r: 1, '#': 2, '~': 3, T: 4, f: 5, '=': 6, b: 7, s: 8, v: 9, l: 10 };
   const out = new Uint8Array(w * h * 4);
   rows.forEach((row, y) => [...row].forEach((ch, x) => {
     out[(y * w + x) * 4] = code[ch];
@@ -857,6 +858,47 @@ test('terrain: the original theater atlas, cells, ore and gem overlays, rotating
   assert.equal(r.atlas.data[px], pal[index * 3], 'the pixel keeps its own colour too');
   // Not installed: null, the WebRA tiles stay.
   assert.equal(originalTerrain(() => null, 'TEMPERAT', terrainBytes(w, h), w, h), null);
+});
+
+test('terrain: fords are drawn as a crossing of rough ground, never as the open water around them', () => {
+  const files = syntheticTheater();
+  const pools = theaterPoolsOf(files);
+  // A river (rows 3 and 4) with a ford across it, a bridge deck and a road.
+  const { terrain, w, h } = terrainFrom([
+    '..........',
+    '..........',
+    '====......',
+    '~~~ff~~b~~',
+    '~~~ff~~b~~',
+    '..........',
+    '..........',
+  ]);
+  const { picks } = planTerrain(terrain, w, h, pools);
+  for (const y of [3, 4]) {
+    for (const x of [3, 4]) {
+      const p = picks[y * w + x];
+      assert.notEqual(p.role, 'water', `the ford at ${x},${y} is no water tile`);
+      assert.ok(p.info.regions[4] <= 0.5, `land in the middle of the ford at ${x},${y}`);
+    }
+    // The river beside the ford and under the bridge stays open water.
+    assert.equal(picks[y * w + 1].role, 'water');
+    assert.equal(picks[y * w + 7].role, 'water', 'the bridge actor draws the deck over the river');
+  }
+});
+
+test('terrain: pack tiles for roads, bridges, beaches, rivers and walls', () => {
+  const size = 24;
+  const strip = (n, v) => ({ width: size * n, height: size, rgba: new Uint8ClampedArray(size * n * size * 4).fill(v) });
+  const images = new Map([['c.png', strip(1, 10)], ['r.png', strip(1, 40)], ['k.png', strip(1, 50)], ['w.png', strip(1, 20)]]);
+  const t = { biomes: ['temperate'], tileSize: size, clear: 'c.png', rough: 'r.png', rock: 'k.png', water: 'w.png' };
+  const { terrain, w, h } = terrainFrom(['.=bsvlf~r#']);
+  const r = packTerrain(t, images, terrain, w, h);
+  const px = (x) => {
+    const tile = r.cells[x * 4];
+    return r.atlas.data[((Math.floor(tile / 16) * size + 3) * r.atlas.width + (tile % 16) * size + 3) * 4];
+  };
+  assert.deepEqual([...'.=bsvlf~r#'].map((_, x) => px(x)), [10, 10, 20, 40, 20, 50, 40, 20, 40, 50], 'clear, road, bridge, beach, river, wall, ford, water, rough, rock');
+  assert.deepEqual(PACK_CLASS_OF_TERRAIN.length, 11, 'a class for every engine terrain');
 });
 
 test('terrain: tile indexes skip the ore and gem tiles and go past 255 the way the shader reads them', () => {
@@ -977,7 +1019,27 @@ test('one-click download: progress, exact size, server errors; the notice rememb
   assert.equal(seen.at(-1), QUICKINSTALL_BYTES);
   await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response(chunks(1000)) }), /stopped after 1000/);
   await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response(chunks(QUICKINSTALL_BYTES + 1)) }), /larger/);
-  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 429 }) }), /too many/);
+  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 429 }) }), /Too many one-click downloads: try again later/);
+  // A used up budget: the server's reason and when to try again, as a RelayLimitError (never retried).
+  let asked = 0;
+  const limited = async () => {
+    asked++;
+    return new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'Too many one-click downloads from this network in the last hour.', retryAfter: 600, scope: 'network' } }), { status: 429 });
+  };
+  await assert.rejects(downloadQuickInstall({ fetchImpl: limited }), (e) => {
+    assert.ok(e instanceof RelayLimitError);
+    assert.match(e.message, /^Too many one-click downloads from this network in the last hour: try again in 10 minutes \(at .+\), or install the files yourself/);
+    assert.ok(Math.abs(e.retryAt - (Date.now() + 600_000)) < 5000);
+    return true;
+  });
+  assert.equal(asked, 1);
+  assert.equal(retryAfterOf(new Response('', { headers: { 'Retry-After': '42' } })), 42, 'the header when the body has none');
+  assert.equal(retryAfterOf(new Response('')), null);
+  const clock = (d) => d.toISOString().slice(11, 16);
+  const t0 = Date.UTC(2026, 9, 9, 12, 0, 0);
+  assert.equal(formatWait(30, t0, clock), 'in a minute (at 12:00)');
+  assert.equal(formatWait(45 * 60, t0, clock), 'in 45 minutes (at 12:45)');
+  assert.equal(formatWait(5 * 3600 - 10, t0, clock), 'in 5 hours (at 16:59)');
   await assert.rejects(
     downloadQuickInstall({ fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'mirrors down' } }), { status: 502 }) }),
     /mirrors down/,
@@ -1257,6 +1319,71 @@ function quickinstallZip() {
   const { conquer, temperat, sounds } = contentMix();
   return new File([buildZip([{ name: 'conquer.mix', data: conquer }, { name: 'temperat.mix', data: temperat }, { name: 'sounds.mix', data: sounds }])], 'ra-quickinstall.zip');
 }
+
+/** quickinstallZip padded to the package's exact size (the kept package is the real package's size). */
+function fullSizeZip() {
+  const { conquer, temperat, sounds } = contentMix();
+  const entries = [{ name: 'conquer.mix', data: conquer }, { name: 'temperat.mix', data: temperat }, { name: 'sounds.mix', data: sounds }];
+  const base = buildZip([...entries, { name: 'pad.bin', data: new Uint8Array(0), method: 0 }]).length;
+  const zip = buildZip([...entries, { name: 'pad.bin', data: new Uint8Array(QUICKINSTALL_BYTES - base), method: 0 }]);
+  assert.equal(zip.length, QUICKINSTALL_BYTES);
+  return new File([zip], 'ra-quickinstall.zip');
+}
+
+test('content system: ra-quickinstall.zip is kept; files a newer WebRA wants come out of it without a download; Remove forgets it', async () => {
+  const { content, store } = contentSystem();
+  await content.load();
+  assert.equal(await content.keptPackage(), null);
+  // A ZIP of another size (not the package) is not kept.
+  assert.equal((await content.install([quickinstallZip()])).kept, false);
+  assert.equal(await content.keptPackage(), null);
+  const r = await content.install([fullSizeZip()]);
+  assert.equal(r.kept, true);
+  const kept = await content.keptPackage();
+  assert.equal(kept.file.size, QUICKINSTALL_BYTES);
+  assert.ok(kept.checked.has('cannon1.aud'), 'with the names it was searched for');
+  // Nothing new wanted: no work at all.
+  assert.equal(await content.updateFromKept(), null);
+  // A start with nothing new to look for never reads the 13 MB package.
+  const reads = [];
+  const realRecords = store.partialRecords.bind(store);
+  store.partialRecords = (key) => (reads.push(key), realRecords(key));
+  assert.equal(await content.updateFromKept(), null);
+  assert.deepEqual(reads, [KEPT_META]);
+  store.partialRecords = realRecords;
+  // An older WebRA searched it for fewer names (it did not want cannon1.aud), so that file is not installed.
+  const [meta] = await store.partialRecords(KEPT_META);
+  await store.putPartial(KEPT_META, 0, new ArrayBuffer(0), { ...meta.info, checked: [...kept.checked].filter((n) => n !== 'cannon1.aud') });
+  await store.clear((n) => n === 'cannon1.aud');
+  assert.equal((await store.names()).includes('cannon1.aud'), false);
+  const update = await content.updateFromKept();
+  assert.equal(update.added, 1);
+  assert.deepEqual(update.byCategory.effects, 1);
+  assert.ok((await store.names()).includes('cannon1.aud'), 'back without any download');
+  assert.ok((await content.keptPackage()).checked.has('cannon1.aud'), 'searched for it now');
+  assert.equal(await content.updateFromKept(), null, 'the next start does not unpack it again');
+  // "Check for missing files" searches it for everything not installed.
+  await store.clear((n) => n === 'cannon1.aud');
+  assert.equal((await content.updateFromKept({ force: true })).added, 1);
+  // Installed files carry when they came in.
+  assert.ok((await content.summary()).installedAt > 0);
+  // Damaged bytes (not the SHA-256 taken when it was kept): forgotten, never installed from.
+  const [record] = await store.partialRecords(KEPT_PACKAGE);
+  const bad = new Uint8Array(record.bytes.slice(0));
+  bad[100] ^= 0xff;
+  await store.putPartial(KEPT_PACKAGE, 0, bad.buffer);
+  assert.equal(await content.keptPackage(), null);
+  assert.equal(await content.keptInfo(), null, 'both records are gone');
+  await content.install([fullSizeZip()]);
+  await content.removeOriginal();
+  assert.equal(await content.keptPackage(), null, 'Remove deletes the kept package too');
+  // And every other kept download (unfinished music and movie pieces).
+  await store.putPartial('ra-scores', 0, new ArrayBuffer(4));
+  await store.putPartial('ra-movies1', 3, new ArrayBuffer(4));
+  await content.removeOriginal();
+  assert.deepEqual([...(await store.partialIndexes('ra-scores')), ...(await store.partialIndexes('ra-movies1'))], []);
+  assert.deepEqual(await store.partialIndexes(KEPT_PACKAGE), []);
+});
 
 test('content system: the first graphics install switches to them at once; removal switches back', async () => {
   const { content, settings } = contentSystem();

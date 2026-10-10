@@ -1,19 +1,17 @@
-// The original art audit (js/content/audit.js) on synthetic files: every
-// file the sequence tables name is made up here, each frame a 4x2 picture
-// that spells its own file and frame number, so the audit can check that
-// every pose of every actor and special sprite shows OpenRA's frames in
-// OpenRA's order, facings, rate, mode and offset. No Electronic Arts file,
-// and nothing made from one, is in the repository.
+// The original art audit (js/content/audit.js) on synthetic files
+// (original-fixtures.mjs): every file the sequence tables name, each frame
+// a 4x2 picture that spells its own file and frame number, so the audit can
+// check that every pose of every actor and special sprite shows OpenRA's
+// frames in OpenRA's order, facings, rate, mode and offset.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACTOR_ART, ACTOR_PALETTE, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, RESOURCES, SEQUENCES, SMUDGES, SPECIAL_ART, TERRAIN, TREES } from '../js/content/tables.js';
+import { ACTOR_ART, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, SPECIAL_ART } from '../js/content/tables.js';
 import { RENDER_FACTS } from '../js/content/render-facts.js';
 import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS } from '../js/content/audit.js';
 import { originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
-import { resolveSequence, POSE, POSE_COUNT } from '../js/content/sequences.js';
-import { decodePalette, paletteLookup, ACTOR_SHADOW } from '../js/content/palette.js';
+import { POSE, POSE_COUNT } from '../js/content/sequences.js';
 import { SPECIALS } from '../js/content/packs.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
 import { NAVAL_SPECIALS } from '../js/art/naval.js';
@@ -25,81 +23,11 @@ import { DECORATION_SPECIALS } from '../js/art/decorations.js';
 import { EFFECT_SPECIALS } from '../js/art/effects.js';
 import { LEFTOVER_SPECIALS } from '../js/art/leftovers.js';
 import { INFANTRY_SPECIALS } from '../js/art/infantry.js';
-import { buildShp, buildPal } from './content-fixtures.mjs';
+import { syntheticFiles, identifier } from './original-fixtures.mjs';
 import init, { Game } from '../pkg/webra_sim.js';
 
 await init({ module_or_path: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 const ACTORS = JSON.parse(new Game(7, 'england', 'russia', 64).rules_json()).actors;
-
-// ---- Synthetic files ----------------------------------------------------------------
-
-/** Every file a sequence, tree, resource, smudge or theater names, and how many frames each needs. */
-function neededFrames() {
-  const need = new Map();
-  const want = (file, n) => need.set(file, Math.max(need.get(file) ?? 1, n));
-  const defs = [...Object.values(SEQUENCES).flatMap((seqs) => Object.values(seqs)), ...Object.values(TREES), ...RESOURCES.ore, ...RESOURCES.gems, ...[...SMUDGES.scorch, ...SMUDGES.crater].filter(Boolean)];
-  for (const def of defs) {
-    // OpenRA Combine: each part's listed frames of its file.
-    for (const part of def.parts ?? []) {
-      for (const file of [part.file, ...Object.values(part.tilesets ?? {})]) want(file, part.frames ? Math.max(...part.frames) + 1 : 1);
-    }
-    if (def.parts) continue;
-    for (const file of [def.file, ...Object.values(def.tilesets ?? {})]) {
-      if (def.length === -1) {
-        want(file, Math.max((def.start ?? 0) + 3, ...(def.frames ?? []).map((f) => f + 1)));
-        continue;
-      }
-      const r = resolveSequence(def, 4096);
-      want(file, Math.max(...r.fileFrames, ...(r.shadowFrames ?? [])) + 1);
-    }
-  }
-  for (const t of Object.values(TERRAIN)) for (const f of t.images) want(f, 1);
-  // Bridges are tileset templates per state (one frame per template cell).
-  for (const e of Object.values(ACTOR_ART)) {
-    for (const rec of Object.values(e.bridge ?? {})) {
-      for (const [state, file] of Object.entries(rec)) if (state !== 'size') want(file, rec.size[0] * rec.size[1]);
-    }
-  }
-  for (const c of Object.values(CURSOR_ART)) want(c.file, c.start + c.length);
-  return need;
-}
-
-/** Palette indices that spell numbers: clear of 0 (transparent), the shadow and the 80..95 remap range. */
-const DIGIT = 100;
-const digit = (v) => DIGIT + v;
-
-/** Synthetic files: frame k of file f is [k % 100, k / 100, f % 100, f / 100] in two rows. */
-function syntheticFiles() {
-  const need = neededFrames();
-  const names = [...need.keys()].sort();
-  const files = new Map();
-  names.forEach((name, f) => {
-    const frames = [];
-    for (let k = 0; k < need.get(name); k++) {
-      const row = [digit(k % 100), digit(Math.floor(k / 100)), digit(f % 100), digit(Math.floor(f / 100))];
-      frames.push(Uint8Array.from([...row, ...row]));
-    }
-    files.set(name, buildShp(4, 2, frames));
-  });
-  // Indices 100..199 as unique colours (6-bit: low six bits, then the rest).
-  const pal = buildPal((i) => [i & 63, i >> 6, 7]);
-  files.set(ACTOR_PALETTE, pal);
-  for (const t of Object.values(TERRAIN)) files.set(t.palette, pal);
-  return { files, names, pal };
-}
-
-/** Names the file and frame an atlas image was cut from (`null` for anything else). */
-function identifier(names, pal) {
-  const lookup = paletteLookup(decodePalette(pal), { remap: true, shadow: ACTOR_SHADOW });
-  const index = new Map();
-  for (let i = DIGIT; i < DIGIT + 100; i++) index.set(Array.from(lookup.color.subarray(i * 4, i * 4 + 3)).join(','), i - DIGIT);
-  return (img) => {
-    if (!img || img.width !== 4 || img.height !== 2) return null;
-    const d = [0, 1, 2, 3].map((x) => index.get(Array.from(img.color.subarray(x * 4, x * 4 + 3)).join(',')));
-    if (d.some((v) => v === undefined)) return null;
-    return { file: names[d[2] + d[3] * 100], frame: d[0] + d[1] * 100 };
-  };
-}
 
 const SYNTH = syntheticFiles();
 const getFile = (n) => SYNTH.files.get(n) ?? null;

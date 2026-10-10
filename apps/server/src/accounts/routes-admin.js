@@ -2,6 +2,7 @@
 // Every check is made here on the server; every change is audit logged.
 
 import { purgeOnlineSavesStatement } from '../onlinesaves.js';
+import { relayQuotas, resetRelayQuotas } from '../relayquota.js';
 import {
   ACCOUNT_FLAGS,
   ACCOUNT_ROLES,
@@ -159,6 +160,7 @@ async function userDetail(ctx, { id }) {
     ips: ips.map((r) => ({ ip: r.ip, firstSeen: r.first_seen, lastSeen: r.last_seen, count: r.count })),
     bans,
     settings: await getSettingsDoc(ctx.db, row.id),
+    relay: await relayQuotas(ctx.db, ctx.salt(), row.id, ctx.now),
   });
 }
 
@@ -397,6 +399,15 @@ async function resetLink(ctx, { id }) {
   return json({ url, expiresAt, sent }, 201);
 }
 
+/** Give the account (and its recent networks) their one-click relay budgets back (relayquota.js). */
+async function resetRelayQuota(ctx, { id }) {
+  const actor = await ctx.requireRole('admin');
+  const row = await target(ctx, id);
+  const before = await resetRelayQuotas(ctx.db, ctx.salt(), row.id, ctx.now);
+  await audit(ctx.db, { actor, action: 'user.relay_quota_reset', targetType: 'user', targetId: row.id, targetLabel: row.username, before, after: null }, ctx.now);
+  return json({ relay: await relayQuotas(ctx.db, ctx.salt(), row.id, ctx.now) });
+}
+
 async function getUserSettings(ctx, { id }) {
   await ctx.requireRole('admin');
   const row = await target(ctx, id);
@@ -608,6 +619,7 @@ export function registerAdminRoutes(router) {
     .add('POST', '/api/admin/users/:id/restore', restore)
     .add('POST', '/api/admin/users/:id/purge', purge)
     .add('POST', '/api/admin/users/:id/password-reset', resetLink)
+    .add('DELETE', '/api/admin/users/:id/relay-quota', resetRelayQuota)
     .add('GET', '/api/admin/users/:id/settings', getUserSettings, read)
     .add('PUT', '/api/admin/users/:id/settings', putUserSettings)
     .add('GET', '/api/admin/ip-bans', listIpBans, read)

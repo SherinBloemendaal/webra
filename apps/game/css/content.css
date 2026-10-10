@@ -209,6 +209,7 @@
   margin: 0;
 }
 
+/* The one-click row of the start screen notice. */
 .content-auto {
   display: flex;
   flex-direction: column;
@@ -220,6 +221,148 @@
 
 .content-auto .audio-note {
   margin: 0;
+}
+
+/* What is installed, with the one action that fits (js/content/panel.js contentState). */
+.content-state {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  background: var(--ui-metal-0);
+}
+
+.content-state[data-level='complete'] {
+  border-left-color: var(--ui-ok);
+}
+
+.content-state[data-level='partial'] {
+  border-left-color: var(--ui-warn);
+}
+
+.content-state h3 {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--ui-px));
+  margin: 0;
+}
+
+.content-state-icon:empty {
+  display: none;
+}
+
+.content-state[data-level='complete'] .content-state-icon::before {
+  content: '\2713';
+  color: var(--ui-ok);
+}
+
+.content-state[data-level='partial'] .content-state-icon::before {
+  content: '!';
+  color: var(--ui-warn);
+}
+
+.content-state-list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.content-missing li::marker {
+  color: var(--ui-warn);
+}
+
+.content-state .audio-note,
+.content-confirm .audio-note {
+  margin: 0;
+}
+
+.content-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--ui-px));
+  padding-top: calc(6 * var(--ui-px));
+  border-top: 1px solid var(--ui-line);
+}
+
+/* A line per part of the one-click install, with a retry for a failed one. */
+.content-parts {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--ui-px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ui-fs-s);
+}
+
+.content-part {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(6 * var(--ui-px));
+}
+
+.content-part-status {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.content-part[data-phase='done'] .content-part-status {
+  color: var(--ui-ok);
+}
+
+.content-part[data-phase='failed'] .content-part-status {
+  color: var(--ui-warn);
+}
+
+/* Ways to install: themed tabs like the statistics screen's. */
+.content-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(4 * var(--ui-px));
+  margin-top: calc(6 * var(--ui-px));
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.menu-card button.content-tab {
+  width: auto;
+  margin: 0;
+  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
+  font-size: var(--ui-fs-s);
+  border-bottom-width: 0;
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+}
+
+.menu-card button.content-tab[aria-selected='true'] {
+  background: var(--ui-accent-lo);
+  color: var(--ui-text);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
+
+.content-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--ui-px));
+}
+
+.content-tabpanel[hidden] {
+  display: none;
+}
+
+/* The lobby button shows the installed state. */
+#content-button[data-state='complete']::before {
+  content: '\2713 ';
+  color: var(--ui-ok);
+}
+
+#content-button[data-state='partial']::before {
+  content: '! ';
+  color: var(--ui-warn);
 }
 
 .content-other summary {
