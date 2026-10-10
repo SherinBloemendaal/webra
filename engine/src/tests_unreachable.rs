@@ -173,6 +173,38 @@ fn a_moving_target_out_of_reach_does_not_keep_chasers_busy() {
     assert!(work.worst_fields <= 1, "{work:?}");
 }
 
+/// Shelled from across the water by artillery it cannot reach, a unit does
+/// not set off after the attacker (return fire skips what it can never get
+/// in range of); one it can reach it goes for.
+#[test]
+fn return_fire_skips_attackers_out_of_reach() {
+    let mut w = arena(64, 48);
+    river(&mut w, 32, &[]);
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(20), cell_center(20), 0);
+    let arty = w.spawn_unit(ty(&w, "ARTY"), 1, cell_center(40), cell_center(20), 512);
+    see_all(&mut w, 0);
+    see_all(&mut w, 1);
+    w.order_attack(&[arty], tank, false);
+    let work = run(&mut w, 25 * 20, |w, _| {
+        assert_ne!(w.actors[tank].activity, Activity::Attack, "no chase of the artillery across the water");
+    });
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (20, 20), "stays put");
+    // Only the artillery's own approach computed a field.
+    assert!(work.fields <= 1, "{work:?}");
+    // The same artillery on the tank's side of the water is answered.
+    let arty = w.spawn_unit(ty(&w, "ARTY"), 1, cell_center(8), cell_center(20), 512);
+    w.order_attack(&[arty], tank, false);
+    let mut answered = false;
+    for _ in 0..25 * 20 {
+        w.step();
+        if w.actors[tank].activity == Activity::Attack && w.resolve(w.actors[tank].target) == Some(arty) {
+            answered = true;
+            break;
+        }
+    }
+    assert!(answered, "the tank goes for the artillery it can reach");
+}
+
 /// Force-fire at ground across the water and out of range ends too.
 #[test]
 fn attack_ground_at_an_unreachable_point_ends() {

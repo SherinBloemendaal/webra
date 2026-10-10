@@ -283,8 +283,16 @@ impl World {
         }
         let range =
             info.weapons.iter().filter(|&&w| self.rules.weapons[w].can_target_class(tclass)).map(|&w| self.rules.weapons[w].range).max()?;
-        if hold && self.target_distance(t, self.actors[i].x, self.actors[i].y) > range {
-            return None;
+        if self.target_distance(t, self.actors[i].x, self.actors[i].y) > range {
+            if hold {
+                return None;
+            }
+            // Shelled from across the water: no point in setting off after
+            // an attacker the unit can never get in range of (the attack
+            // would end at once, see `approach`).
+            if !self.can_close_in(i, t, range) {
+                return None;
+            }
         }
         if self.actors[i].stance > Stance::ReturnFire {
             if let Some(better) = self.scan_for_target(i) {
@@ -385,6 +393,22 @@ impl World {
         if !self.approach(i, tx, ty, Some(reach)) {
             self.attack_over(i);
         }
+    }
+
+    /// Whether unit `i` can get within `range` of actor `t` at all: the
+    /// nearest cell it can reach to the target's cell lies that close
+    /// (aircraft always can). The same test `approach` applies on its
+    /// first step.
+    pub(crate) fn can_close_in(&self, i: usize, t: usize, range: i32) -> bool {
+        if self.domain_of(i) == crate::rules::Domain::Air {
+            return true;
+        }
+        let (tx, ty) = self.tick_start_pos(t);
+        let (ux, uy) = (self.actors[i].x, self.actors[i].y);
+        let tc = self.cell_toward(tx, ty, ux, uy);
+        let Some(goal) = self.nearest_reachable(i, tc, self.cell_of(ux, uy)) else { return false };
+        let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
+        dist(gx, gy, tx, ty) <= range + self.target_extent(t) + CELL
     }
 
     /// How far the hit shape of `t` reaches from its position at most
