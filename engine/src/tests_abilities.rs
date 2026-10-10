@@ -433,7 +433,7 @@ fn supply_truck_delivers_cash_to_own_and_allied_structures_only() {
     use crate::world::PlayerSetup;
     let players: Vec<PlayerSetup> = [("allies", 1u8), ("england", 1), ("soviet", 2)]
         .iter()
-        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t, handicap: 0 })
+        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, bot: Default::default(), team: t, handicap: 0 })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
     flatten(&mut w);

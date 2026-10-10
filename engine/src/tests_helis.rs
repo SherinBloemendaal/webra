@@ -44,7 +44,7 @@ fn flat_world() -> World {
     let england = w.rules.faction_index("england").unwrap();
     w.add_player(soviet, false, (2, 2));
     w.add_player(england, false, (40, 40));
-    w.ai = (0..2).map(|p| crate::ai::AiState::new(p, AiDifficulty::Normal)).collect();
+    w.ai = (0..2).map(|p| crate::ai::AiState::new(&w.rules, p as u8, Default::default(), AiDifficulty::Normal)).collect();
     for (p, (x, y)) in [(0u8, (2, 2)), (1u8, (40, 40))] {
         w.spawn_building(ty(&w, "FACT"), p, x, y);
         w.spawn_building(ty(&w, "POWR"), p, x + 4, y);

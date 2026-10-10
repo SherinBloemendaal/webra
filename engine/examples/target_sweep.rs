@@ -43,6 +43,7 @@ fn play(seed: u64, passive: usize, minutes: u32, size: i32) -> Run {
         .map(|k| PlayerSetup {
             faction: "allies".into(),
             ai: Some(if k == passive { AiDifficulty::Easy } else { AiDifficulty::Normal }),
+            bot: Default::default(),
             team: 0,
             handicap: 0,
         })

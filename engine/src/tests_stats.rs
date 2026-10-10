@@ -52,7 +52,7 @@ fn flat_world() -> World {
 fn ai_world(seed: u64) -> World {
     let players: Vec<PlayerSetup> = ["allies", "soviet"]
         .iter()
-        .map(|f| PlayerSetup { faction: (*f).into(), ai: Some(AiDifficulty::Hard), team: 0, handicap: 0 })
+        .map(|f| PlayerSetup { faction: (*f).into(), ai: Some(AiDifficulty::Hard), bot: Default::default(), team: 0, handicap: 0 })
         .collect();
     World::with_options(seed, 64, &players, GameOptions::default())
 }

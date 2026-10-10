@@ -740,7 +740,15 @@ fn ai_starting_from_an_mcv_builds_a_base_at_every_difficulty() {
 
 fn setups(list: &[(&str, bool, u8)]) -> Vec<crate::world::PlayerSetup> {
     use crate::world::{AiDifficulty, PlayerSetup};
-    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team, handicap: 0 }).collect()
+    list.iter()
+        .map(|&(f, ai, team)| PlayerSetup {
+            faction: f.into(),
+            ai: ai.then_some(AiDifficulty::Normal),
+            bot: Default::default(),
+            team,
+            handicap: 0,
+        })
+        .collect()
 }
 
 #[test]

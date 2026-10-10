@@ -788,6 +788,18 @@ impl World {
         }
     }
 
+    /// Whether MCV `i` could deploy with the Construction Yard's top-left at
+    /// (cx, cy), wherever it stands now (the AI's MCV managers, ai_mcv.rs).
+    pub(crate) fn can_deploy_at(&self, i: usize, cx: i32, cy: i32) -> bool {
+        let a = &self.actors[i];
+        let Some(into) = self.rules.actors[a.ty as usize].transforms_into else { return false };
+        let Some(b) = self.rules.actors[into].building.as_ref() else { return false };
+        b.cells().all(|(dx, dy)| {
+            let (x, y) = (cx + dx, cy + dy);
+            self.map.contains(x, y) && self.cell_free_for(a.owner, b.on_water, self.map.idx(x, y), Some(i))
+        })
+    }
+
     pub fn deploy(&mut self, i: usize) -> bool {
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);

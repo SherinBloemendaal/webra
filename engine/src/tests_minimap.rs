@@ -36,7 +36,7 @@ fn arena(players: &[(&str, u8, (i32, i32))]) -> World {
         w.add_player(f, false, start);
         w.players[p].team = team;
         w.players[p].cash = 100_000;
-        w.ai.push(crate::ai::AiState::new(p as u32, crate::world::AiDifficulty::Normal));
+        w.ai.push(crate::ai::AiState::new(&w.rules, p as u8, Default::default(), crate::world::AiDifficulty::Normal));
         w.spawn_building(ty(&w, "FACT"), p as u8, start.0, start.1);
     }
     for p in w.players.iter_mut() {
@@ -234,7 +234,7 @@ fn neutral_actors_use_the_neutral_owner() {
     let f = w.players[0].faction;
     w.add_player(f, false, (50, 50));
     w.players[2].neutral = true;
-    w.ai.push(crate::ai::AiState::new(2, crate::world::AiDifficulty::Easy));
+    w.ai.push(crate::ai::AiState::new(&w.rules, 2, Default::default(), crate::world::AiDifficulty::Easy));
     w.players[2].explored.iter_mut().for_each(|e| *e = 1);
     let hut = w.spawn_building(ty(&w, "SILO"), 2, 14, 10).unwrap();
     run(&mut w, 2);

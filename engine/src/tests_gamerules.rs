@@ -24,7 +24,7 @@ fn unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
 }
 
 fn setup(faction: &str, team: u8) -> PlayerSetup {
-    PlayerSetup { faction: faction.into(), ai: None, team, handicap: 0 }
+    PlayerSetup { faction: faction.into(), ai: None, bot: Default::default(), team, handicap: 0 }
 }
 
 /// An open 48 by 48 map, spawns in the corners, players without a base.
@@ -423,7 +423,13 @@ fn games_with_every_option_stay_deterministic() {
     let players: Vec<PlayerSetup> = ["england", "russia"]
         .iter()
         .enumerate()
-        .map(|(k, f)| PlayerSetup { faction: (*f).into(), ai: Some(AiDifficulty::Hard), team: 0, handicap: (k * 10) as u8 })
+        .map(|(k, f)| PlayerSetup {
+            faction: (*f).into(),
+            ai: Some(AiDifficulty::Hard),
+            bot: Default::default(),
+            team: 0,
+            handicap: (k * 10) as u8,
+        })
         .collect();
     let options = GameOptions {
         crates: true,

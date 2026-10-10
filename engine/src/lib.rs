@@ -8,9 +8,18 @@ mod abilities;
 mod abilities_api;
 mod actor_table;
 mod ai;
-mod ai_arsenal;
+mod ai_base;
+pub mod ai_bots;
 mod ai_economy;
+mod ai_fuzzy;
+mod ai_harvest;
 mod ai_infantry;
+mod ai_mcv;
+mod ai_mines;
+mod ai_squads;
+mod ai_support;
+mod ai_units;
+mod ai_upkeep;
 mod air;
 pub mod beacons;
 mod cargo;
@@ -127,6 +136,9 @@ use world::{AiDifficulty, GameOptions, Order, PlayerSetup, StartingUnits, World,
 /// Version shown in the game: the crate version plus the git commit it was built from.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_HASH: &str = env!("WEBRA_GIT_HASH");
+
+/// One line about an AI player's bot state (examples/ai_probe.rs).
+pub use ai::debug_summary as ai_debug_summary;
 
 /// The built-in rules (engine/rules.json) as JSON: the base that map rules
 /// overrides apply to. Used by the map editor to validate and show defaults.
@@ -1638,7 +1650,16 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
                 .filter(|&h| h <= gamerules::MAX_HANDICAP as u64 && h % gamerules::HANDICAP_STEP as u64 == 0)
                 .ok_or_else(|| "players[].handicap must be 0 to 95 in steps of 5".to_string())? as u8,
         };
-        players.push(PlayerSetup { faction, ai, team, handicap });
+        // The OpenRA bot an AI slot plays (ai_bots.rs). Absent (lobbies and
+        // saves from before bot types): the Normal AI.
+        let bot = match p.get("bot") {
+            None => ai_bots::BotType::Normal,
+            Some(b) => b
+                .as_str()
+                .and_then(ai_bots::BotType::from_name)
+                .ok_or_else(|| "players[].bot must be rush, normal, turtle or naval".to_string())?,
+        };
+        players.push(PlayerSetup { faction, ai, bot, team, handicap });
     }
     if !(2..=8).contains(&players.len()) {
         return Err("a game needs 2 to 8 players".to_string());
