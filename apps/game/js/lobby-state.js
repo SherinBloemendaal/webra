@@ -6,6 +6,8 @@
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
 import { assignSpawns } from '../protocol/spawns.js';
+import { canonicalMapJson } from '../protocol/map.js';
+import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
 
 /** The installed map file lives in its own key (it can be large). */
 export const MAP_STORAGE_KEY = 'webra.lobby.map.v1';
@@ -549,25 +551,40 @@ export function storedSettings(state) {
 
 /**
  * Check a map file's text. `validate` is the engine's Game.validate_map
- * (parsed). Returns { ok, errors, modded, hash, name, author, width, height, spawns }.
+ * (parsed). An older format version is upgraded first (packages/protocol
+ * upgradeMap); the engine reads the current format only. Returns { ok,
+ * errors, modded, hash, name, author, width, height, spawns, spawnCells,
+ * biome, json, upgrade }: `json` is the text to install (the upgraded
+ * canonical map after an upgrade, else `text` as given), `upgrade` null or
+ * { from, message } (the notice to show). A map that is not compatible
+ * (or newer) fails with that message first.
  */
-export function inspectMapFile(text, validate) {
-  const fail = (msg) => ({ ok: false, errors: [msg] });
+export function inspectMapFile(text, validate, versions = undefined) {
+  const fail = (...errors) => ({ ok: false, errors });
   if (typeof text !== 'string' || text.length === 0) return fail('The file is empty.');
   if (new TextEncoder().encode(text).length > MAP_FILE_MAX_BYTES) return fail('The map file is larger than 1 MiB.');
-  let data;
+  let raw;
   try {
-    data = JSON.parse(text);
+    raw = JSON.parse(text);
   } catch {
     return fail('The file is not valid JSON.');
   }
+  const up = upgradeMap(raw, versions);
+  if (up.status === 'newer' || up.status === 'incompatible') return fail(up.message, ...up.problems.map((p) => p.message));
+  // Malformed `formatVersion` or `gameVersion`, or no object: the engine words it.
+  const json = up.status === 'upgraded' ? canonicalMapJson(up.map) : text;
+  const data = up.status === 'upgraded' ? up.map : raw;
   let v;
   try {
-    v = validate(text);
+    v = validate(json);
   } catch (err) {
     return fail(`Could not check the map: ${err?.message ?? err}`);
   }
-  if (!v || !v.ok) return { ok: false, errors: v?.errors?.length ? v.errors : ['The map is not valid.'] };
+  if (!v || !v.ok) {
+    const errors = v?.errors?.length ? v.errors : ['The map is not valid.'];
+    // Valid for the release that made it: the upgrade is why it fails now.
+    return up.status === 'upgraded' ? fail(incompatibleMapMessage(up.from, up.gameVersion, versions), ...errors) : fail(...errors);
+  }
   return {
     ok: true,
     errors: [],
@@ -581,6 +598,8 @@ export function inspectMapFile(text, validate) {
     spawnCells: data.spawns.map(([x, y]) => [x, y]),
     // Optional in the format: absent means temperate (engine/src/mapdata.rs).
     biome: typeof data.biome === 'string' ? data.biome : 'temperate',
+    json,
+    upgrade: up.status === 'upgraded' ? { from: up.from, message: up.message } : null,
   };
 }
 

@@ -4,7 +4,7 @@
 // object (spawns, actors) or property changes, then `commit()`. Cell changes are
 // stored as per-cell before/after values; objects and properties as snapshots.
 
-import { createMap, decodeLayers, encodeBase64, formatFor, holdsResource } from './mapformat.js';
+import { createMap, decodeLayers, encodeBase64, formatFor, holdsResource, MAP_FORMAT_VERSION } from './mapformat.js';
 import { pruneOverrides } from './overrides.js';
 
 const HISTORY_LIMIT = 200;
@@ -38,12 +38,15 @@ export class MapDoc {
   }
 
   /**
-   * The document as a map object: format 2 with a gems layer when any cell
-   * holds gems, format 1 without one otherwise (like the engine's exporter).
+   * The document as a map object of the current format version: format 2
+   * with a gems layer when any cell holds gems, format 1 without one
+   * otherwise (like the engine's exporter). It names its format version, so
+   * drafts and undo steps stay right after a later format change.
    */
   toMap() {
     const format = formatFor(this.gems);
     return {
+      formatVersion: MAP_FORMAT_VERSION,
       format,
       name: this.meta.name,
       author: this.meta.author,

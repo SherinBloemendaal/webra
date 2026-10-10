@@ -1,9 +1,14 @@
 // WebRA map formats 1 and 2 (`.webra-map.json`, docs/contracts.md section 2).
 // Format 2 is format 1 plus a `gems` layer; maps without gems are written as format 1.
 // Pure module: base64 layers, canonical JSON, sha256 identity and validation.
-// Runs in browsers and in Node (tests), no DOM access.
+// Runs in browsers and in Node (tests), no DOM access. The canonical form and
+// the file form come from the protocol package, like the format version
+// (`formatVersion`, upgrades in packages/protocol/src/mapversions.js).
 
+import { canonicalMapObject, MAP_FORMAT_VERSION, mapFileJson } from '../../js/protocol.js';
 import { validateOverrides } from './overrides.js';
+
+export { MAP_FORMAT_VERSION };
 
 /** The current format (with gems). */
 export const MAP_FORMAT = 2;
@@ -114,39 +119,25 @@ export function decodeBase64(text) {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** Recursively sort object keys (serde_json's default map order), for `rules`. */
-function sortKeys(v) {
-  if (Array.isArray(v)) return v.map(sortKeys);
-  if (!isObject(v)) return v;
-  const out = {};
-  for (const k of Object.keys(v).sort()) out[k] = sortKeys(v[k]);
-  return out;
+/**
+ * The map in canonical form (packages/protocol canonicalMapObject): top-level
+ * keys in contract order, every key present (`description` "", `actors` [],
+ * `rules` null when missing) except `gems`, which only a format 2 map has
+ * (after `ore`), `biome` (not when temperate) and `formatVersion` (not at
+ * version 1), actor keys in the order type, owner, x, y, facing, and `rules`
+ * keys sorted recursively. Never `gameVersion`.
+ */
+export function canonicalMap(map) {
+  return canonicalMapObject(map);
 }
 
 /**
- * The map in canonical form: top-level keys in contract order, every key present
- * (`description` "", `actors` [], `rules` null when missing) except `gems`,
- * which only a format 2 map has (after `ore`), actor keys in the order type,
- * owner, x, y, facing, and `rules` keys sorted recursively.
+ * The text of a map file as the editor saves it: the canonical form with the
+ * format version and this release's `gameVersion` in front (packages/protocol
+ * mapFileJson). Same identity as the canonical form.
  */
-export function canonicalMap(map) {
-  const gems = map.gems === undefined || map.gems === null ? {} : { gems: map.gems };
-  return {
-    format: map.format,
-    name: map.name,
-    author: map.author,
-    description: map.description ?? '',
-    width: map.width,
-    height: map.height,
-    terrain: map.terrain,
-    ore: map.ore,
-    ...gems,
-    spawns: (map.spawns ?? []).map((s) => [s[0], s[1]]),
-    actors: (map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
-    rules: map.rules === undefined || map.rules === null ? null : sortKeys(map.rules),
-    // Last, and only when not temperate: maps from before biomes keep their identity.
-    ...(map.biome === undefined || map.biome === 'temperate' ? {} : { biome: map.biome }),
-  };
+export function mapFileText(map) {
+  return mapFileJson(map);
 }
 
 /** Canonical JSON text: canonical form, no whitespace. */
@@ -188,6 +179,7 @@ export function createMap({ width = 96, height = 96, base = TERRAIN.CLEAR, name 
   const terrain = new Uint8Array(width * height).fill(base);
   const ore = new Uint8Array(width * height);
   return {
+    formatVersion: MAP_FORMAT_VERSION,
     format: MAP_FORMAT_ORE_ONLY,
     name,
     author,
@@ -284,7 +276,7 @@ export function catalogEntry(catalog, type) {
 // ---- Validation -------------------------------------------------------------------
 
 const isInt = (v) => Number.isInteger(v);
-const TOP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
+const TOP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
 
 /**
  * Validate a map against contract section 2.
@@ -315,6 +307,10 @@ export function validateMap(map, opts = {}) {
   }
   for (const k of Object.keys(map)) {
     if (!TOP_KEYS.includes(k)) error(`Unknown field "${k}".`);
+  }
+  // Files are upgraded before they get here (js/protocol.js upgradeMap): only the current version is edited.
+  if (map.formatVersion !== undefined && map.formatVersion !== MAP_FORMAT_VERSION) {
+    error(`formatVersion must be ${MAP_FORMAT_VERSION}; open the file to upgrade it.`);
   }
   const hasGems = map.gems !== undefined && map.gems !== null;
   if (map.format !== MAP_FORMAT && map.format !== MAP_FORMAT_ORE_ONLY) {

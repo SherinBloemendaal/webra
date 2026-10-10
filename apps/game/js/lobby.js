@@ -371,6 +371,7 @@ export class Lobby {
    *     validate: (json: string) => {ok: boolean, errors: string[], modded: boolean, hash: string},
    *     filePreview: (json: string) => Uint8Array,
    *     importOramap?: (bytes: Uint8Array, fileName: string) => Promise<{json: string, report: object}>,
+   *     versions?: object,  the map format version registry (tests; the protocol's by default)
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
@@ -443,10 +444,11 @@ export class Lobby {
     if (!this.maps) return null;
     const stored = readJson(MAP_STORAGE_KEY);
     if (!stored || typeof stored.json !== 'string') return null;
-    const info = inspectMapFile(stored.json, this.maps.validate);
+    const info = inspectMapFile(stored.json, this.maps.validate, this.maps.versions);
     // Only a map that still validates, and whose rules were accepted, comes back.
     if (!info.ok || (info.modded && stored.accepted !== info.hash)) return null;
-    return { json: stored.json, info, accepted: true };
+    // Stored by an older release: it comes back upgraded (no notice: the player's file is not at hand).
+    return { json: info.json, info: { ...info, upgrade: null }, accepted: true };
   }
 
   /** Spawn count and acceptance of the installed map, for startProblem. */
@@ -522,20 +524,21 @@ export class Lobby {
   offerMapText(text, source = 'file') {
     this.mapErrors = [];
     this.state.mapSource = 'file';
-    const info = inspectMapFile(text, this.maps.validate);
+    const info = inspectMapFile(text, this.maps.validate, this.maps.versions);
     if (!info.ok) {
       this.mapErrors = info.errors;
       this.renderMapSource();
       return;
     }
+    // An older format version arrives upgraded (info.json); the notice shows with the map.
     if (info.modded) {
       // Modded maps are installed only after the player accepts the warning.
-      this.pendingMap = { json: text, info, source };
+      this.pendingMap = { json: info.json, info, source };
       this.renderMapSource();
       this.acceptBtn.focus();
       return;
     }
-    this.installMap(text, info, source);
+    this.installMap(info.json, info, source);
   }
 
   /** Show why a requested map (for example from a link) could not be loaded. */
@@ -1231,6 +1234,12 @@ export class Lobby {
         title,
         el('span', 'lobby-muted', `by ${i.author}, ${i.width} x ${i.height}, ${i.spawns} start positions, ${capitalize(i.biome)}`),
       );
+      // Map versions: a file of an older format version was upgraded (non-blocking).
+      if (i.upgrade) {
+        const notice = el('span', 'lobby-muted lobby-map-notice', i.upgrade.message);
+        notice.setAttribute('role', 'status');
+        this.mapInfo.append(notice);
+      }
     }
 
     this.moddedBox.hidden = !this.pendingMap;

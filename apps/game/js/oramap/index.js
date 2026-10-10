@@ -10,7 +10,7 @@ import { looksLikeZip, openZip, ZipError } from './zip.js';
 import { MiniYamlError, parseMiniYaml } from './miniyaml.js';
 import { MapBinError, readMapBin } from './mapbin.js';
 import { convertOramap, OramapError, vetRules } from './convert.js';
-import { validateMap as protocolValidateMap } from '../protocol.js';
+import { mapFileJson, validateMap as protocolValidateMap } from '../protocol.js';
 
 export { OramapError } from './convert.js';
 
@@ -71,7 +71,7 @@ export async function importOramap(bytes, opts) {
     if (extra.length) report.unsupported.push(`Other files in the package were ignored: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? ', ...' : ''}.`);
 
     vetRules(map, report, opts.validate);
-    const json = JSON.stringify(map);
+    const json = mapFileJson(map);
     const checked = protocolValidateMap(map);
     const errors = checked.ok ? [] : checked.errors;
     if (checked.ok && typeof opts.validate === 'function') {

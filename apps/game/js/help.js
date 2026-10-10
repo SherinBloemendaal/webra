@@ -22,7 +22,7 @@ export const HELP = Object.freeze({
   mapSource: 'Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map.',
   mapSize: 'Width and height of a generated map in cells: Small 64, Medium 96, Large 128, Huge 160. Five or more players need at least Medium.',
   mapFile:
-    'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first.',
+    'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade.',
   onlineMap:
     'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it.',
   seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',

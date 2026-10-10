@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { installDom, uninstallDom, click, settle, textOf, FakeEvent } from './dom-fixtures.mjs';
 import { LIBRARY_MAX_MAPS, MapLibrary, MemoryMapBackend } from '../js/maplibrary.js';
-import { DEFAULT_OPTIONS, MEMBER_HEADER, mapHash, parseMap } from '../protocol/index.js';
+import { DEFAULT_OPTIONS, MAP_FORMAT_VERSION, MAP_UPGRADED_NOTICE, MEMBER_HEADER, mapHash, parseMap } from '../protocol/index.js';
+import { testVersions, v1Map } from '../../../packages/protocol/test/fixtures/map-test-versions.mjs';
 import { dialogContent, EndGameFlow, DIALOGS } from '../js/endgame.js';
 import { Director, EV, NO_PLAYER } from '../js/audio/director.js';
 
@@ -78,7 +79,7 @@ const SID = 'a'.repeat(64);
 const KEY = 'K'.repeat(43);
 
 /** An online lobby UI without a server: `fetch` and the engine are fakes. */
-async function mountLobby({ host, maps = [] }) {
+async function mountLobby({ host, maps = [], versions = undefined }) {
   const doc = installDom();
   const root = doc.createElement('div');
   doc.body.append(root);
@@ -105,10 +106,10 @@ async function mountLobby({ host, maps = [] }) {
   const { OnlineUI } = await import('../js/online.js');
   const ui = Object.create(OnlineUI.prototype);
   const sent = [];
-  const library = new MapLibrary(new MemoryMapBackend());
+  const library = new MapLibrary(new MemoryMapBackend(), undefined, versions);
   Object.assign(ui, {
     root,
-    ctx: { colors: COLORS, colorNames: [], Game },
+    ctx: { colors: COLORS, colorNames: [], Game, mapVersions: versions },
     installed: new Map(),
     mapStatus: { hash: null, text: '', ok: true },
     serverMaps: [],
@@ -259,6 +260,59 @@ test('online lobby: the host shares a map from its library and sees who lacks it
     // The host can remove the spectator who holds things up.
     click(root.querySelectorAll('.online-spectator button').find((b) => b.textContent === 'Remove'));
     assert.deepEqual(sent.at(-1), { t: 'kick', client: 3 });
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('online lobby: a host shares a map file of an older format: the lobby gets the upgraded map, the host a notice', async () => {
+  const versions = testVersions();
+  // No rules overrides: a modded map would ask the host first.
+  const text = JSON.stringify(v1Map({ name: 'Old harbour', rules: null }));
+  const r = parseMap(text, { versions });
+  const up = { canonical: r.canonical, hash: await mapHash(r.map), map: r.map };
+  assert.ok(up.canonical.startsWith('{"formatVersion":3,'));
+  const { root, ui, lobby, requests, responses } = await mountLobby({ host: true, maps: [up], versions });
+  try {
+    lobby(null);
+    responses.push({ status: 201, body: JSON.stringify({ id: '0123456789abcdef', hash: up.hash, upgradedFrom: 1 }) });
+    await ui.shareFile({ name: 'old-harbour.webra-map.json', size: text.length, text: async () => text });
+    const post = requests.at(-1);
+    assert.equal(post.url, `/api/sessions/${SID}/map`);
+    assert.equal(post.init.body, up.canonical, 'the session gets the upgraded map: every member plays the same');
+    assert.equal(ui.installed.get(up.hash), up.canonical);
+    lobby(ref(up, { width: 32, height: 32 }));
+    await settle();
+    const notice = root.querySelector('.online-map-notice');
+    assert.ok(notice, 'the host sees the notice');
+    assert.equal(textOf(notice), MAP_UPGRADED_NOTICE);
+    // Another map: the notice was about that file only.
+    lobby(null);
+    await settle();
+    assert.equal(root.querySelector('.online-map-notice'), null);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('online lobby: maps of a newer format or no longer compatible are refused with what to do', async () => {
+  const versions = testVersions();
+  const { root, ui, lobby, requests } = await mountLobby({ host: true, versions });
+  try {
+    lobby(null);
+    const before = requests.length;
+    const newer = JSON.stringify({ ...v1Map(), formatVersion: 4, gameVersion: '2.0.0' });
+    await ui.shareFile({ name: 'new.webra-map.json', size: newer.length, text: async () => newer });
+    assert.equal(textOf(root.querySelector('.online-error')), 'This map was made with a newer version of WebRA (2.0, format 4; this version reads format 3). Update the game to play it.');
+    const gone = JSON.stringify(v1Map({ actors: [{ type: 'GONE', owner: -1, x: 3, y: 9 }] }));
+    await ui.shareFile({ name: 'gone.webra-map.json', size: gone.length, text: async () => gone });
+    assert.equal(
+      textOf(root.querySelector('.online-error')),
+      'This map was made for WebRA 0.9 (format 1) and is no longer compatible with this version. Open it in the map editor and save it again.',
+    );
+    assert.equal(requests.length, before, 'nothing was uploaded');
+    // A download for a lobby is checked the same way: a newer map is not installed.
+    await assert.rejects(ui.checkMap(JSON.stringify({ ...v1Map(), formatVersion: MAP_FORMAT_VERSION + 9 })), /newer version of WebRA/);
   } finally {
     uninstallDom();
   }

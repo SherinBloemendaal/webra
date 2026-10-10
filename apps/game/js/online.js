@@ -38,6 +38,7 @@ import {
   DIFFICULTIES,
   BOTS,
   GAME_SPEEDS,
+  incompatibleMapMessage,
   MAP_SIZES,
   mapHash,
   MAX_PLAYERS,
@@ -392,6 +393,7 @@ export class OnlineUI {
    *   missionInfo?: (id: string) => Promise<object | null>,  its campaign index entry (briefing, option labels)
    *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
    *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
+   *   mapVersions?: object,  the map format version registry (tests; the protocol's by default)
    * }} ctx  account: signed-in players play under their username (protocol 5);
    *   sounds: OpenRA's chat and lobby sounds (js/audio/index.js)
    */
@@ -403,6 +405,8 @@ export class OnlineUI {
     this.state = null;
     this.installed = new Map();
     this.mapStatus = { hash: null, text: '', ok: true };
+    /** The host's notice for a shared map file of an older format version ({ hash, text } or null). */
+    this.mapNotice = null;
     this.serverMaps = [];
     /** Co-op mission previews by id (RGBA rows), and the index entries (briefing, option labels). */
     this.missionPreviews = new Map();
@@ -1360,6 +1364,11 @@ export class OnlineUI {
     const offer = this.renderMapOffer();
     if (offer) box.append(offer);
     box.append(el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text));
+    if (st.map && this.mapNotice?.hash === st.map.hash) {
+      const notice = el('p', 'online-muted online-map-notice', this.mapNotice.text);
+      notice.setAttribute('role', 'status');
+      box.append(notice);
+    }
     if (!this.isHost || st.resume) return;
 
     // Host controls: a generated map, a community map or one of the host's own maps.
@@ -1571,14 +1580,21 @@ export class OnlineUI {
    * { canonical, hash, modded, name } or throws with a readable message.
    */
   async checkMap(textValue) {
-    const r = parseMap(textValue);
-    if (!r.ok) throw new Error(`Invalid map: ${r.errors.slice(0, 3).join('; ')}`);
+    // An older format version is upgraded first (protocol mapversions.js); the
+    // hash is the upgraded map's, like the server's, so every member gets the same map.
+    // `ctx.mapVersions`: the format version registry (tests; the protocol's by default).
+    const r = parseMap(textValue, { versions: this.ctx.mapVersions });
+    // What is wrong with a map is told as it is (a ProtocolError), not as an unexpected error.
+    if (!r.ok) throw new ProtocolError(r.compat ? r.compat.message : `Invalid map: ${r.errors.slice(0, 3).join('; ')}`, 'invalid');
     const engine = JSON.parse(this.ctx.Game.validate_map(r.canonical));
-    if (!engine.ok) throw new Error(`Invalid map: ${engine.errors.slice(0, 3).join('; ')}`);
+    if (!engine.ok) {
+      const why = engine.errors.slice(0, 3).join('; ');
+      throw new ProtocolError(r.upgrade ? `${incompatibleMapMessage(r.upgrade.from, r.writtenBy, this.ctx.mapVersions)} (${why})` : `Invalid map: ${why}`, 'invalid');
+    }
     const hash = await mapHash(r.map);
     if (engine.hash !== hash) throw new Error('Map hash mismatch between the game and the protocol.');
     // Modded is decided from the content, never from what the server claims.
-    return { canonical: r.canonical, hash, modded: r.modded || engine.modded, name: r.map.name };
+    return { canonical: r.canonical, hash, modded: r.modded || engine.modded, name: r.map.name, upgrade: r.upgrade };
   }
 
   setMapStatus(hash, textValue, ok = true) {
@@ -1736,6 +1752,8 @@ export class OnlineUI {
       if (map.modded && !(await confirmModdedMap(map.name))) return;
       await this.library.add(map.canonical, { source });
       this.libraryMaps = await this.library.list();
+      // An older file: the lobby gets the upgraded map, the host a notice about the file.
+      this.mapNotice = map.upgrade ? { hash: map.hash, text: map.upgrade.message } : null;
       await this.shareMap(map.canonical);
     } catch (err) {
       this.setError(messageOf(err));
