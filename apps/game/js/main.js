@@ -80,6 +80,7 @@ import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart 
 import { CampaignMenu } from './campaign/menu.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
+import { createMoviePlayer } from './content/movies.js';
 
 const PLAYER = 0;
 
@@ -461,22 +462,30 @@ function setupOnline(lobby, gpuError) {
         account: account ? { session: account, signIn: (reason) => openSignIn(account, { reason }) } : undefined,
         // OpenRA's lobby and chat sounds (ChatLine, PlayerJoined, PlayerLeft, LobbyOptionChanged).
         sounds: audio ? { chatLine: () => audio.chatLine(), lobby: (event) => audio.lobby(event) } : undefined,
+        // Co-op missions: this game's own mission files (pinned by hash) and their index entries.
+        missionText: (id, hash) => missionFile(id, hash),
+        missionInfo: async (id) => findMission(await missionIndex(), id)?.mission ?? null,
         onBack: () => {
           root.hidden = true;
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null }) => {
           entry.hidden = true;
-          applyColors(options.players);
+          // A co-op mission: its players and colours; the people under their names.
+          const missionPlayers = mission ? host.game.info.mission.players : null;
+          if (missionPlayers) applyMissionColors(missionPlayers);
+          else applyColors(options.players);
+          const roster = missionPlayers ? coopRoster(missionPlayers, options.players) : viewerPlayers(options.players);
           start(host, {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
             online: { driver, onQuit, spectator, rematch, save },
             recorder,
-            viewer: spectator ? viewerPlayers(options.players) : null,
-            roster: viewerPlayers(options.players),
+            viewer: spectator ? roster : null,
+            roster,
+            mission: mission ? { entry: null, options: mission.options } : null,
           });
         },
       });
@@ -587,6 +596,11 @@ function missionOptions(entry, chosen = {}) {
 /** Names and colours of a mission's players (engine order), for statistics and the observer panel. */
 function missionRoster(players) {
   return players.map((p, i) => ({ name: p.name, color: TEAM_COLORS[i] ?? [1, 1, 1] }));
+}
+
+/** A co-op mission's players for statistics: the people (engine players 0..n-1) under their names. */
+function coopRoster(missionPlayers, people) {
+  return missionRoster(missionPlayers).map((p, i) => (i < people.length ? { ...p, name: people[i].name } : p));
 }
 
 /** A mission's players draw in their own colours (map.yaml Players: Color). */
@@ -849,8 +863,8 @@ async function watchMissionReplay(replay, lobby) {
     tickMs,
     player: 0,
     replay: new ReplayHandle(run.host, run.info.replayLength),
-    viewer: missionRoster(players),
-    mission: { entry: m.entry, options: replay.options.options },
+    viewer: replay.mode === 'online' ? coopRoster(players, replay.options.players) : missionRoster(players),
+    mission: { entry: m.entry, options: replay.mode === 'online' ? replay.mission.options : replay.options.options },
   });
 }
 
@@ -859,7 +873,7 @@ async function watchReplay(replay, lobby) {
   if (!renderer || !records) return;
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
-  if (replay.mode === 'mission') return watchMissionReplay(replay, lobby);
+  if (replay.mode === 'mission' || replay.mission) return watchMissionReplay(replay, lobby);
   try {
     if (!(await acceptMap(replay))) return;
   } catch (err) {
@@ -1204,6 +1218,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         },
         pxPerCell: rules.pxPerCell,
         tickMs,
+        // The engine's local player of this screen (co-op online: this client's seat).
+        localPlayer: player,
+        // The original movies, when the player installed them (js/content/movies.js); else a card.
+        movies: content
+          ? createMoviePlayer({
+              content,
+              // The movie's sound plays at the voices volume, silent until audio is unlocked.
+              audio: () => (audio?.mixer.ready && audio.prefs.get().enabled ? { context: audio.mixer.ctx, destination: audio.mixer.buses.voices } : null),
+            })
+          : null,
         onRestart: () => restartGame?.(),
         onLeave: () => leave(),
       })
@@ -1603,7 +1627,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       canRestart: canRestart(),
       restartLabel: restartLabel(),
       canDownload: !!download,
-      mission: mission && !replay ? { next: nextEntry?.title ?? null } : null,
+      mission: mission && !replay && !online ? { next: nextEntry?.title ?? null } : null,
     }),
     blocked: () => !!statsScreen?.isOpen || menu.isOpen,
   });

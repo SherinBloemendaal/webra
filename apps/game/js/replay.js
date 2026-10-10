@@ -12,6 +12,7 @@
 
 import { packOrders, splitOrders } from './net.js';
 import {
+  coopMission,
   encodeReplay,
   REPLAY_FORMAT,
   REPLAY_HASH_INTERVAL,
@@ -66,14 +67,26 @@ export function engineMismatch(replay, version) {
 export function newGame(Game, replay, missionText = null) {
   const options = JSON.stringify(replay.options);
   let game;
-  if (replay.mode === 'mission') {
+  if (replay.mode === 'mission' || replay.mission) {
     if (typeof missionText !== 'string') throw new Error('a mission replay needs its mission file');
-    game = Game.from_mission(missionText, options);
+    // An online co-op mission: its people, watched through the recording player's eyes.
+    game = replay.mode === 'mission' ? Game.from_mission(missionText, options) : Game.from_mission(missionText, coopStart(replay.mission, replay.options.seed, replay.player ?? 0));
   } else {
     game = replay.map ? Game.from_map(replay.map, options) : Game.from_options(options);
   }
   game.set_lockstep(true);
   return game;
+}
+
+/**
+ * `Game.from_mission` options of an online co-op mission (protocol
+ * mission.js): its options, every playable player a person in slot order,
+ * and the player of this screen.
+ */
+export function coopStart(mission, seed, localPlayer) {
+  const m = coopMission(mission.id);
+  if (!m) throw new Error(`${mission.id} is not a co-op mission of this version`);
+  return JSON.stringify({ seed, options: mission.options, humans: m.players, localPlayer });
 }
 
 /**
@@ -140,7 +153,7 @@ export class Recorder {
       ticks: ticksKept,
       frames: this.frames.filter(([t]) => t < ticksKept),
       hashes,
-      ...(this.start.mode === 'mission' ? { mission: this.start.mission } : {}),
+      ...(this.start.mission ? { mission: this.start.mission } : {}),
     };
   }
 

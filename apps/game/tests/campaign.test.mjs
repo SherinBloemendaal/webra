@@ -311,3 +311,35 @@ test('the campaign screen lists campaigns and missions, keeps chapters closed an
     uninstallDom();
   }
 });
+
+// ---- Co-op missions online ---------------------------------------------------------------
+
+test('co-op missions: the catalog matches the mission files, and both players compute the same game', async () => {
+  const { COOP_MISSIONS } = await import('../js/protocol.js');
+  const { coopStart } = await import('../js/replay.js');
+  assert.deepEqual(
+    COOP_MISSIONS.map((m) => m.id),
+    ['evacuation', 'exodus', 'infiltration'],
+  );
+  for (const m of COOP_MISSIONS) {
+    const entry = allMissions().find((x) => x.id === m.id);
+    assert.equal(m.hash, entry.sha256, m.id);
+    assert.deepEqual(m.players, entry.coop);
+    const text = missionText(m.id);
+    const mission = { id: m.id, hash: m.hash, options: { difficulty: m.options.difficulty.default } };
+    const a = Game.from_mission(text, coopStart(mission, 9, 0));
+    const b = Game.from_mission(text, coopStart(mission, 9, 1));
+    assert.equal(JSON.parse(a.rules_json()).actors.length, m.actors, `${m.id}: the server checks orders against this`);
+    assert.equal(JSON.parse(a.mission_state()).localPlayer, 0);
+    assert.equal(JSON.parse(b.mission_state()).localPlayer, 1);
+    a.set_lockstep(true);
+    b.set_lockstep(true);
+    for (let t = 0; t < 300; t++) {
+      a.tick();
+      b.tick();
+    }
+    assert.equal(a.state_hash(), b.state_hash(), m.id);
+    a.free();
+    b.free();
+  }
+});

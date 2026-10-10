@@ -16,7 +16,7 @@
 // Events (network sends, caught up, hash check) go out through `emit`.
 
 import { LockstepDriver } from '../net.js';
-import { LocalDriver, newGame, Recorder, ReplayController } from '../replay.js';
+import { coopStart, LocalDriver, newGame, Recorder, ReplayController } from '../replay.js';
 import { RECT_REC_FLOATS, SPRITE_EXTRA_FLOATS, SPRITE_REC_FLOATS } from '../crowd.js';
 import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
 
@@ -69,7 +69,8 @@ export class SimCore {
    *   save:     replay (the save), mission (its mission file's text for a mission save)
    *   replay:   replay, mission (likewise)
    *   stress:   seed, units, size
-   *   online:   options, map, player, spectator, delay, rejoining, recorder (start or null)
+   *   online:   options, map, player, spectator, delay, rejoining, recorder (start or null),
+   *             mission ({ text, id, hash, options } of a co-op mission, or null)
    * @returns {object} static facts about the game (see `info`)
    */
   start(spec) {
@@ -111,7 +112,9 @@ export class SimCore {
       }
       case 'online': {
         const json = JSON.stringify(spec.options);
-        this.game = spec.map ? G.from_map(spec.map, json) : G.from_options(json);
+        // A co-op mission (`mission`: its file's text, id, hash and options): every client is its own local player.
+        if (spec.mission) this.game = G.from_mission(spec.mission.text, coopStart(spec.mission, spec.options.seed, spec.player ?? 0));
+        else this.game = spec.map ? G.from_map(spec.map, json) : G.from_options(json);
         try {
           this.recorder = spec.recorder ? new Recorder(spec.recorder) : null;
         } catch {

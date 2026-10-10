@@ -33,6 +33,8 @@
 import {
   CHAT_MAX,
   COLOR_COUNT,
+  COOP_MISSIONS,
+  coopMission,
   DIFFICULTIES,
   GAME_SPEEDS,
   MAP_SIZES,
@@ -384,6 +386,8 @@ export class OnlineUI {
    *     => Promise<{ host: any, game: any, driver: any, recorder: any }>,  the simulation with its LockstepDriver (js/main.js, js/sim)
    *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
    *   onBack: () => void,
+   *   missionText?: (id: string, hash: string) => Promise<string>,  a co-op mission's file, checked against its hash (js/main.js)
+   *   missionInfo?: (id: string) => Promise<object | null>,  its campaign index entry (briefing, option labels)
    *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
    *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
    * }} ctx  account: signed-in players play under their username (protocol 5);
@@ -398,6 +402,9 @@ export class OnlineUI {
     this.installed = new Map();
     this.mapStatus = { hash: null, text: '', ok: true };
     this.serverMaps = [];
+    /** Co-op mission previews by id (RGBA rows), and the index entries (briefing, option labels). */
+    this.missionPreviews = new Map();
+    this.missionEntries = new Map();
     /** The local map library (js/maplibrary.js) and its list for the host's map picker. */
     this.library = ctx.library ?? mapLibrary();
     this.libraryMaps = [];
@@ -581,6 +588,7 @@ export class OnlineUI {
       if (s.locked) name.append(el('span', 'online-badge', 'PASSWORD'));
       const map = el('div', 'online-cell');
       map.append(el('span', null, s.map ? String(s.map.name) : 'Generated'));
+      if (s.map && s.map.mission) map.append(el('span', 'online-badge', 'CO-OP'));
       if (s.map && s.map.modded) map.append(el('span', 'online-badge online-badge-modded', 'MODDED'));
       const same = s.version === this.ctx.version;
       const join = button('Join', 'online-btn-primary', () => this.join(s));
@@ -990,6 +998,7 @@ export class OnlineUI {
       spectators: m.spectators,
       maxSpectators: m.maxSpectators,
       resume: m.resume ?? null,
+      mission: m.mission ?? null,
       lobbySeen: true,
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
@@ -1129,10 +1138,18 @@ export class OnlineUI {
       const row = el('div', `online-slot online-slot-${slot.type}`);
       row.setAttribute('role', 'row');
       const who = el('div', 'online-cell online-cell-player');
-      who.append(el('span', 'online-badge', `P${i + 1}`));
+      // A co-op mission's places are its playable players (Allies1, Allies2): faction, colour and team are the mission's.
+      const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
+      who.append(el('span', 'online-badge', mission && i < mission.players.length ? mission.players[i] : `P${i + 1}`));
       // A resumed save keeps its saved slots.
       const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
-      if (slot.type === 'human' || slot.type === 'ai') {
+      if (mission && slot.type === 'human') {
+        who.append(el('span', 'online-player-name', slot.name));
+        if (slot.account) who.append(accountMark());
+        if (slot.client === this.state.hostId) who.append(el('span', 'online-badge', 'HOST'));
+        if (i === mine) who.append(el('span', 'online-badge online-badge-you', 'YOU'));
+        row.append(who, el('div', 'online-cell online-muted', 'Set by the mission'), el('div', 'online-cell'), el('div', 'online-cell'));
+      } else if (slot.type === 'human' || slot.type === 'ai') {
         row.style.setProperty('--slot-color', rgbCss(this.ctx.colors[slot.color] || [1, 1, 1]));
         if (slot.type === 'human') {
           who.append(el('span', 'online-player-name', slot.name));
@@ -1196,9 +1213,11 @@ export class OnlineUI {
         const badge = this.mapBadge(slot);
         if (badge) action.append(badge);
       }
-      if (host && i !== mine && !this.state.resume) {
+      const missionPlaces = this.state.mission ? coopMission(this.state.mission.id).players.length : Infinity;
+      if (host && i !== mine && !this.state.resume && i < missionPlaces) {
         const current = slot.type === 'human' ? 'human' : slot.type;
-        const choices = [['open', 'Open'], ['closed', 'Closed'], ['ai', 'Computer']];
+        // People play a co-op mission: no computer players (OpenRA AllowBots: False).
+        const choices = this.state.mission ? [['open', 'Open'], ['closed', 'Closed']] : [['open', 'Open'], ['closed', 'Closed'], ['ai', 'Computer']];
         if (slot.type === 'human') choices.unshift(['human', 'Player (kick)']);
         const type = select(choices, current, (v) => {
           if (v !== 'human') this.send({ t: 'slot', slot: i, type: v });
@@ -1207,7 +1226,7 @@ export class OnlineUI {
         describedBy(type, this.columnTips.playerOnline);
         action.append(type);
       }
-      if (slot.type === 'open' && !this.state.resume) action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
+      if (slot.type === 'open' && !this.state.resume && i < missionPlaces) action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
       row.append(action);
       box.append(row);
     });
@@ -1247,10 +1266,13 @@ export class OnlineUI {
     };
     this.optionRows = {};
     const world = el('fieldset', 'online-world');
+    this.optionWorld = world;
     world.append(el('legend', 'online-world-title', 'World'), ...WORLD_OPTIONS.map(selectRow));
     const grid = el('div', 'online-option-grid');
     grid.append(...SELECT_OPTIONS.map(selectRow));
+    this.optionGrid = grid;
     const toggles = el('div', 'online-toggles');
+    this.optionToggles = toggles;
     for (const [key, label] of TOGGLES) {
       const row = el('div', 'online-toggle-row');
       const name = el('label', 'online-toggle');
@@ -1287,6 +1309,13 @@ export class OnlineUI {
     this.optionRows.techBuildings.hidden = !!this.state.map;
     this.cheatsWarning.hidden = !o.cheats;
     this.modePicker.render(o, { editable: host });
+    // A co-op mission brings its own world and rules: only the game speed applies.
+    const mission = !!this.state.mission;
+    this.modePicker.root.hidden = mission;
+    this.optionWorld.hidden = mission;
+    this.optionToggles.hidden = mission;
+    if (mission) this.cheatsWarning.hidden = true;
+    for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && key !== 'gameSpeed';
   }
 
   renderMap() {
@@ -1298,7 +1327,11 @@ export class OnlineUI {
     canvas.setAttribute('role', 'img');
     const caption = el('p', 'online-caption');
     const players = Math.max(MIN_PLAYERS, st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
-    if (st.map) {
+    if (st.mission) {
+      const m = coopMission(st.mission.id);
+      caption.append(el('span', null, `${m.title} (${m.players.length} players)`), el('span', 'online-badge', 'CO-OP MISSION'));
+      this.drawMissionPreview(canvas, st.mission);
+    } else if (st.map) {
       // Names and authors are text, never markup (they come from map files).
       caption.append(el('span', null, `${st.map.name} (${st.map.players} players)`));
       caption.append(el('span', 'online-badge', st.map.shared ? 'CUSTOM' : 'COMMUNITY'));
@@ -1316,6 +1349,7 @@ export class OnlineUI {
     canvas.setAttribute('aria-label', `Map preview: ${caption.textContent}`);
     box.append(canvas, caption);
     if (st.map) box.append(el('p', 'online-muted online-map-details', `By ${st.map.author}, ${st.map.width} x ${st.map.height} cells, ${formatBytes(st.map.bytes)}`));
+    if (st.mission) box.append(this.renderMission());
     const offer = this.renderMapOffer();
     if (offer) box.append(offer);
     box.append(el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text));
@@ -1329,12 +1363,14 @@ export class OnlineUI {
       parent.append(o);
     };
     option(source, 'generated', 'Generated map');
-    const current = st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
+    const current = st.mission ? `mission:${st.mission.id}` : st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
     const groups = [
       ['My maps', this.libraryMaps.map((m) => [`mine:${m.hash}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
       ['Community maps', this.serverMaps.map((m) => [`community:${m.id}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
     ];
     if (st.map && ![...groups[0][1], ...groups[1][1]].some(([v]) => v === current)) groups[st.map.shared ? 0 : 1][1].push([current, st.map.name]);
+    // OpenRA's co-op missions (map.yaml Visibility: Lobby), played by people only.
+    groups.push(['Co-op missions', COOP_MISSIONS.map((m) => [`mission:${m.id}`, `${m.title} (co-op, ${m.players.length} players)`])]);
     for (const [label, items] of groups) {
       if (!items.length) continue;
       const g = el('optgroup');
@@ -1346,7 +1382,7 @@ export class OnlineUI {
     source.addEventListener('change', () => this.pickMap(source.value));
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
-    if (!st.map) {
+    if (!st.map && !st.mission) {
       const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) =>
         this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }),
       );
@@ -1373,7 +1409,61 @@ export class OnlineUI {
     });
     const load = button('Load map file', null, () => file.click());
     load.title = 'Share a .webra-map.json file or an OpenRA .oramap map with this lobby';
+    if (st.mission) {
+      box.append(controls);
+      return;
+    }
     box.append(controls, load, file, el('p', 'online-muted online-map-note', 'Maps you share here go to the players of this session only; they are not published.'));
+  }
+
+  /** The lobby's co-op mission: briefing and its options (the host picks them). */
+  renderMission() {
+    const st = this.state;
+    const m = coopMission(st.mission.id);
+    const entry = this.missionEntries.get(m.id) ?? null;
+    if (!this.missionEntries.has(m.id) && this.ctx.missionInfo) {
+      this.missionEntries.set(m.id, null);
+      this.ctx
+        .missionInfo(m.id)
+        .then((e) => {
+          this.missionEntries.set(m.id, e);
+          if (this.state?.mission?.id === m.id) this.renderMap();
+        })
+        .catch(() => {});
+    }
+    const box = el('div', 'online-mission');
+    if (entry?.briefing) box.append(el('p', 'online-mission-briefing', entry.briefing));
+    const host = this.isHost && !st.resume;
+    for (const [key, o] of Object.entries(m.options)) {
+      const label = entry?.options?.[key]?.label ?? key;
+      const names = Object.fromEntries(entry?.options?.[key]?.values ?? []);
+      const control = select(o.values.map((v) => [v, names[v] ?? v]), st.mission.options[key], (v) =>
+        this.send({ t: 'mission', mission: { ...st.mission, options: { ...st.mission.options, [key]: v } } }),
+      );
+      control.disabled = !host;
+      box.append(field(label, control));
+    }
+    box.append(el('p', 'online-muted', 'Every place needs a player. Your game keeps the mission file of this version of WebRA; the server checks it is the same for everyone.'));
+    return box;
+  }
+
+  /** Draw a co-op mission's map (its file comes from this game's own server, pinned by hash). */
+  drawMissionPreview(canvas, mission) {
+    const cached = this.missionPreviews.get(mission.hash);
+    if (cached) {
+      this.drawPreview(canvas, () => cached.rgba, cached.width);
+      return;
+    }
+    if (!this.ctx.missionText || this.missionPreviews.has(`loading:${mission.hash}`)) return;
+    this.missionPreviews.set(`loading:${mission.hash}`, true);
+    this.ctx
+      .missionText(mission.id, mission.hash)
+      .then((textValue) => {
+        const width = JSON.parse(textValue).map.width;
+        this.missionPreviews.set(mission.hash, { rgba: this.ctx.Game.mission_preview(textValue), width });
+        if (this.state?.mission?.hash === mission.hash) this.renderMap();
+      })
+      .catch((err) => console.warn('Mission preview failed:', err));
   }
 
   /**
@@ -1584,6 +1674,11 @@ export class OnlineUI {
   async pickMap(value) {
     if (value === 'generated') return this.send({ t: 'map', map: null });
     const [kind, key] = value.split(':');
+    if (kind === 'mission') {
+      const m = coopMission(key);
+      if (m) this.send({ t: 'mission', mission: { id: m.id, hash: m.hash, options: Object.fromEntries(Object.entries(m.options).map(([k, o]) => [k, o.default])) } });
+      return undefined;
+    }
     if (kind === 'community') {
       const m = this.serverMaps.find((x) => x.id === key);
       if (m) this.send({ t: 'map', map: { id: m.id, hash: m.hash, name: m.name, modded: m.modded } });
@@ -1662,10 +1757,16 @@ export class OnlineUI {
     let mapText = null;
     let session;
     this.startingGame = true;
+    let missionText = null;
     try {
       if (m.map) {
         mapText = this.installed.get(m.map.hash) ?? (await this.installMapForGame(m.map));
         if (!mapText) throw new Error('The map is not installed.');
+      }
+      // A co-op mission: this game's own mission file, pinned by the hash everyone agreed on.
+      if (m.mission) {
+        if (!this.ctx.missionText) throw new Error('This game cannot load missions.');
+        missionText = await this.ctx.missionText(m.mission.id, m.mission.hash);
       }
       if (this.conn !== conn) return;
       // The game, its LockstepDriver and its recorder run where the
@@ -1675,6 +1776,7 @@ export class OnlineUI {
           kind: 'online',
           options: m.options,
           map: mapText,
+          mission: m.mission ? { text: missionText, ...m.mission } : null,
           player: me ? me.player : null,
           spectator,
           delay: m.delay,
@@ -1685,6 +1787,7 @@ export class OnlineUI {
             options: m.options,
             map: mapText,
             mapHash: m.map ? m.map.hash : null,
+            mission: m.mission ?? null,
             player: me ? me.player : null,
             engine: this.ctx.version,
             title: st.session.name,
@@ -1732,6 +1835,7 @@ export class OnlineUI {
     this.ctx.onStartGame({
       host,
       game,
+      mission: m.mission ?? null,
       player: me ? me.player : 0,
       driver,
       options: m.options,
