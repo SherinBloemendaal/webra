@@ -194,6 +194,51 @@ async function pathVariants() {
   console.log(`  path variants: ${VARIANTS.length} spellings x 4 methods x 3 header sets, statuses ${JSON.stringify(counts)}`);
 }
 
+/**
+ * The map editor as a browser loads it: every spelling of its URL ends on
+ * /play/editor/ (Static Assets redirects the others there), and the page,
+ * every file it names (resolved against its <base>), every module its
+ * scripts import (followed over HTTP) and the renderer's shaders come
+ * through the gate with the account's cookies, with the right types.
+ */
+async function editorPage(get, cookie, NAV, SUB, securityHeaders) {
+  const TYPES = { html: /text\/html/, js: /javascript/, css: /text\/css/, wgsl: /text\/plain|wgsl|octet-stream/, wasm: /application\/wasm/ };
+  let checked = 0;
+  for (const spelling of ['/play/editor', '/play/editor/', '/play/editor/index.html', '/play/editor?map=abc', '/play/editor/?map=abc', '/play//editor/']) {
+    let url = new URL(spelling, BASE);
+    let r = await get(url.pathname + url.search, NAV, cookie);
+    for (let hops = 0; r.status >= 300 && r.status < 400 && hops < 3; hops++) {
+      await r.arrayBuffer();
+      url = new URL(r.headers.get('location'), url);
+      r = await get(url.pathname + url.search, NAV, cookie);
+    }
+    assert.equal(r.status, 200, `${spelling} -> ${url.pathname}`);
+    assert.equal(url.pathname, '/play/editor/', `${spelling} ends on the canonical URL`);
+    securityHeaders(r, `editor ${spelling}`);
+    const html = await r.text();
+    const base = new URL(html.match(/<base href="([^"]+)"/)[1], url);
+    const queue = [...html.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => new URL(m[1], base).pathname).filter((p) => p !== '/play/');
+    for (const s of ['common', 'terrain', 'sprite', 'fog', 'rect', 'line', 'weather', 'sky', 'heat']) queue.push(`/play/shaders/${s}.wgsl`);
+    queue.push('/play/pkg/webra_sim_bg.wasm');
+    const seen = new Set();
+    while (queue.length) {
+      const path = queue.shift();
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const a = await get(path, SUB, cookie);
+      assert.equal(a.status, 200, `${spelling}: ${path}`);
+      const type = TYPES[path.split('.').pop()];
+      if (type) assert.match(a.headers.get('content-type') ?? '', type, `${path} content type`);
+      const body = await a.text();
+      if (path.endsWith('.js')) {
+        for (const m of body.matchAll(/(?:^|\n)\s*(?:import|export)[^'"]*?from\s+'(\.[^']+)'/g)) queue.push(new URL(m[1], new URL(path, BASE)).pathname);
+      }
+    }
+    checked = seen.size;
+  }
+  console.log(`  map editor: 6 URL spellings, ${checked} files each through the gate`);
+}
+
 /** The play gate (src/playgate.js): who gets /play, the pass, sign-out. */
 async function playGate(ADMIN, HOST) {
   const site = await api('/api/site');
@@ -288,6 +333,7 @@ async function playGate(ADMIN, HOST) {
   await worker.arrayBuffer();
   // The admin passes too.
   assert.equal((await get(WASM, SUB, cookies.get(ADMIN))).status, 200);
+  await editorPage(get, `${host}; ${pass}`, NAV, SUB, securityHeaders);
 
   // Signing out clears the pass; the old pass alone opens nothing.
   // (The pending account from above, approved: signups are rate limited per address.)
