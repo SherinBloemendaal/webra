@@ -18,11 +18,16 @@ import {
 
 const bundle = (over = {}) => ({ ...presetOptions(DEFAULT_OPTIONS), ...over });
 
-test('a mode sets every lobby option but the seed, the map size and the tech buildings', () => {
-  // techBuildings came after saved modes existed: a bundle that had to name it
-  // would refuse every mode saved before.
-  const left = new Set(['seed', 'mapSize', 'techBuildings']);
-  assert.deepEqual([...PRESET_KEYS].sort(), LOBBY_OPTION_KEYS.filter((k) => !left.has(k)).sort());
+test('a mode sets every lobby option but the seed and the map size', () => {
+  assert.deepEqual([...PRESET_KEYS].sort(), LOBBY_OPTION_KEYS.filter((k) => k !== 'seed' && k !== 'mapSize').sort());
+});
+
+test('a mode saved before techBuildings existed takes its default', () => {
+  const { techBuildings, ...old } = bundle({ techBuildings: 'oilrush' });
+  assert.equal(techBuildings, 'oilrush');
+  assert.equal(validatePresetOptions(old).techBuildings, DEFAULT_OPTIONS.techBuildings);
+  assert.equal(validatePresetOptions(bundle({ techBuildings: 'extra' })).techBuildings, 'extra');
+  assert.throws(() => validatePresetOptions(bundle({ techBuildings: 'lots' })), /techBuildings/);
 });
 
 test('built-in modes: unique ids and names, complete bundles the server accepts', () => {
@@ -111,8 +116,16 @@ test('the settings document takes saved modes and names the bad field', () => {
   assert.equal(field([{ name: 'A', options: bundle() }, { name: 'A', options: bundle() }]), 'settings.lobby.presets[1].name');
   assert.equal(field('all of them'), 'settings.lobby.presets');
   assert.equal(field(Array.from({ length: 17 }, (_, i) => ({ name: `M${i}`, options: bundle() }))), 'settings.lobby.presets');
-  // Sixteen modes with the longest names fit in the document with room to spare.
+  // Sixteen modes with the longest names fit in the document with room to spare
+  // (a quarter of SETTINGS_MAX_BYTES).
   const full = Array.from({ length: PRESETS_MAX }, (_, i) => ({ name: `${i}`.padEnd(PRESET_NAME_MAX, 'm'), options: bundle() }));
-  assert.ok(JSON.stringify(full).length < 6 * 1024);
+  assert.ok(JSON.stringify(full).length < 8 * 1024);
   assert.doesNotThrow(() => validateSettingsDocument({ lobby: { presets: full } }));
+});
+
+test('modes saved before the reusable engineers option keep it off', () => {
+  const options = { ...presetOptions(DEFAULT_OPTIONS) };
+  delete options.reusableEngineers;
+  const [p] = validateSavedPresets([{ name: 'Old mode', options }]);
+  assert.equal(p.options.reusableEngineers, false);
 });

@@ -310,9 +310,10 @@ test('the frame table matches the Frame struct of the sprite shader', () => {
 
 // ---- Cameos ---------------------------------------------------------------------------
 
-// The neutral world's structures have no cameo art (OpenRA gives them no icon):
-// js/cameo.js draws their sprite icon (drawIcon with the rules record) instead.
-const cameoActors = actors.filter((a) => a.kind !== 'mine' && !(a.kind === 'building' && isWorld(a)));
+// Mines, crates, husks and proxies (engine/src/infantry.rs) are never built: no cameo.
+// The neutral world's structures have no cameo art either (OpenRA gives them no
+// icon): js/cameo.js draws their sprite icon (drawIcon with the rules record).
+const cameoActors = actors.filter((a) => !['mine', 'crate', 'husk', 'proxy'].includes(a.kind) && !(a.kind === 'building' && isWorld(a)));
 
 /** One recorded cameo: [drawn, log]. */
 function recordCameo(id, kind, size = 64, opts = {}) {

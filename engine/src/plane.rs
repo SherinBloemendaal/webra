@@ -29,8 +29,11 @@
 //! helipad reservation), [`World::ammo_left`], [`World::max_ammo`],
 //! [`World::rearm_step`], [`World::find_rearm_base`], [`World::target_kind`].
 
+use crate::map::Terrain;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, turn_toward, CELL};
+use crate::render::{posed, Pose};
 use crate::rules::{Kind, SupportPowerInfo};
+use crate::sound_events::SoundEventKind;
 use crate::world::{Activity, SmartAction, World, MAX_WEAPONS, NONE};
 
 /// OpenRA `AttackAircraft.FacingTolerance` of the Yak and MiG.
@@ -39,6 +42,9 @@ const FACING_TOLERANCE: i32 = 80;
 const MAX_PITCH: i32 = 56;
 /// After passing over the target, fly on this far beyond the minimum range before turning back.
 const OVERSHOOT: i32 = 2 * CELL;
+/// Height of a paratrooper's canopy over it (OpenRA WithParachute Offset 0,0,427 of ^Infantry).
+const PARACHUTE_HEIGHT: i32 = 427;
+
 /// Ticks between searches for a free airfield while none is available.
 const BASE_RETRY: i32 = 25;
 /// `Parachutable.FallRate` of `^Soldier` (defaults.yaml): world units per tick.
@@ -69,6 +75,8 @@ pub enum Mission {
     SpyPlane,
     Paradrop,
     Bombing,
+    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over the target cell.
+    CrateDrop,
 }
 
 /// Per-actor aircraft state (planes; the ammo and base fields suit helicopters too).
@@ -99,6 +107,11 @@ pub struct AirState {
     pub cargo: Vec<u16>,
     /// Infantry hanging on a parachute (altitude > 0).
     pub parachute: bool,
+    /// Support power aircraft: the power that sent it (`sound_events::power_ref`)
+    /// and the tick it was launched, which tell the planes of one drop apart
+    /// for its ReinforcementsArrived event (sound only, not hashed).
+    pub power: i32,
+    pub launched: u32,
 }
 
 impl Default for AirState {
@@ -119,6 +132,8 @@ impl Default for AirState {
             entered: false,
             cargo: Vec::new(),
             parachute: false,
+            power: 0,
+            launched: 0,
         }
     }
 }
@@ -370,7 +385,13 @@ impl World {
         let f = self.flight(i);
         let on_base = self.resolve(self.actors[i].air.base).filter(|&b| self.is_rearm_base_for(i, b));
         let full = match on_base {
-            Some(_) => self.rearm_step(i),
+            Some(b) => {
+                // The airfield's rearm animation while there is ammo to load (fx.rs).
+                if self.actors[i].air.spent > 0 {
+                    self.note_service(b);
+                }
+                self.rearm_step(i)
+            }
             None => {
                 self.actors[i].air.base = NONE;
                 self.ammo_left(i) >= f.max_ammo
@@ -663,6 +684,52 @@ impl World {
         }
     }
 
+    // ---- Pilots ------------------------------------------------------------------------
+
+    /// OpenRA EjectOnDeath, when actor `i` is destroyed: unless its owner has
+    /// lost or it is off the map, with SuccessRate percent (the simulation's
+    /// random numbers) its PilotActor comes out where it is. In the air
+    /// (EjectInAir) the pilot comes down by parachute and dies if it lands
+    /// where it cannot stand (water, structures; Parachutable
+    /// KilledOnImpassableTerrain); at ground level (EjectOnGround) it stands
+    /// there. Without AllowUnsuitableCell no pilot comes out over a cell it
+    /// cannot enter. A plane that already started to fall ejected (or not)
+    /// when it was hit, not again where it crashes.
+    pub(crate) fn eject_pilot(&mut self, i: usize) {
+        let a = &self.actors[i];
+        let Some(e) = self.rules.actors[a.ty as usize].abilities.eject_on_death.as_ref() else { return };
+        if a.air.phase == Phase::Crashing || self.players.get(a.owner as usize).is_none_or(|p| p.defeated) {
+            return;
+        }
+        let (x, y, altitude, owner, facing, ty) = (a.x, a.y, a.altitude, a.owner, a.facing, a.ty);
+        let (cx, cy) = self.cell_of(x, y);
+        if !self.map.contains(cx, cy) {
+            return;
+        }
+        let (rate, in_air_ok, on_ground_ok, anywhere) = (e.success_rate, e.in_air, e.on_ground, e.allow_unsuitable_cell);
+        let Some(pilot) = self.rules.actor_index(&e.pilot) else { return };
+        if self.rng.range(0, 100) >= rate {
+            return;
+        }
+        let in_air = altitude > 0;
+        if (in_air && !in_air_ok) || (!in_air && !on_ground_ok) {
+            return;
+        }
+        if !anywhere && self.pass.blocked[self.map.idx(cx, cy)] {
+            return;
+        }
+        let p = self.spawn_unit(pilot as u16, owner, x, y, facing);
+        if in_air {
+            let pa = &mut self.actors[p];
+            pa.altitude = altitude;
+            pa.air.parachute = true;
+            // The pilot's parachute opens (fx.rs, presentation only).
+            self.note_drop(p);
+            // EjectOnDeath.ChuteSound, where the aircraft was.
+            self.sound.push(SoundEventKind::PilotEjected, ty as i32, x, y, owner, 0);
+        }
+    }
+
     // ---- Paratroopers ----------------------------------------------------------------
 
     /// Infantry under a parachute: sink at `FallRate`, then land. Landing on a
@@ -677,6 +744,10 @@ impl World {
         a.air.parachute = false;
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         if self.pass.blocked[ci] {
+            // Parachutable Ground/WaterImpactSound (sound_events.rs).
+            let (ty, x, y, owner) = (self.actors[i].ty as i32, self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+            let water = i32::from(self.map.terrain[ci] == Terrain::Water);
+            self.sound.push(SoundEventKind::ParachuteImpact, ty, x, y, owner, water);
             self.kill(i);
         }
     }
@@ -686,8 +757,17 @@ impl World {
     /// Launch the aircraft of an AirstrikePower (spy plane, parabombs) or a
     /// ParatroopersPower toward (x, y). `dir` is an optional second point: the
     /// planes fly from the target toward it; without one they come from the
-    /// player's base side. Returns false when the power cannot be launched.
-    pub(crate) fn launch_air_power(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32, dir: Option<(i32, i32)>) -> bool {
+    /// player's base side. `power` is the power's `sound_events::power_ref`.
+    /// Returns false when the power cannot be launched.
+    pub(crate) fn launch_air_power(
+        &mut self,
+        player: u8,
+        info: &SupportPowerInfo,
+        power: i32,
+        x: i32,
+        y: i32,
+        dir: Option<(i32, i32)>,
+    ) -> bool {
         let Some(ty) = self.rules.actor_index(&info.unit_type) else { return false };
         if self.rules.actors[ty].unit.as_ref().and_then(|u| u.aircraft.as_ref()).is_none() {
             return false;
@@ -736,6 +816,8 @@ impl World {
             a.air.ty = y + ry * across / 1024;
             a.air.camera_range = info.camera_range;
             a.air.camera_delay = info.camera_remove_delay;
+            a.air.power = power;
+            a.air.launched = self.tick;
             if mission == Mission::Paradrop {
                 a.air.cargo = drops.clone();
             }
@@ -758,6 +840,9 @@ impl World {
             }
             Mission::Paradrop => {
                 if d <= f.drop_range && !a.air.cargo.is_empty() {
+                    // OpenRA ParatroopersPower: the first plane in the drop zone announces the reinforcements.
+                    let (power, launched) = (a.air.power, a.air.launched);
+                    self.sound.push_arrival(owner, power, launched, tx, ty);
                     self.place_camera(i);
                     let ci = self.cell_index(x, y);
                     let on_map = x >= 0 && y >= 0 && x < self.map.width * CELL && y < self.map.height * CELL;
@@ -768,6 +853,11 @@ impl World {
                         let p = &mut self.actors[u];
                         p.altitude = alt;
                         p.air.parachute = true;
+                        // The parachute opens (fx.rs, presentation only).
+                        self.note_drop(u);
+                        // ParaDrop.ChuteSound at the plane.
+                        let plane_ty = self.actors[i].ty as i32;
+                        self.sound.push(SoundEventKind::ParaDrop, plane_ty, x, y, owner, 0);
                     }
                 }
             }
@@ -785,6 +875,11 @@ impl World {
                     let a = &mut self.actors[i];
                     a.air.spent += 1;
                     a.reload[slot] = reload;
+                }
+            }
+            Mission::CrateDrop => {
+                if !a.air.cargo.is_empty() && self.cell_of(x, y) == self.cell_of(tx, ty) {
+                    self.drop_crate(i);
                 }
             }
             Mission::None => {}
@@ -882,10 +977,19 @@ impl World {
                 }
                 let lift = px(a.altitude);
                 let at = SpriteRec::moving(from, to, 48.0);
-                let body = (a.ty * 2) as f32;
+                // With pre-rendered art: the falling pose (WithInfantryBody@PARACHUTE)
+                // and the canopy opening from the jump (WithParachute, fx.rs).
+                let (body, canopy) = if self.render_opts.poses {
+                    let age = crate::fx::age_of(a.fx.dropped, self.tick).unwrap_or(crate::render::MAX_POSE_AGE);
+                    (posed(a.ty as u32 * 2, Pose::Parachute, 0), posed(parachute as u32, Pose::Idle, age))
+                } else {
+                    ((a.ty * 2) as f32, parachute)
+                };
+                // OpenRA draws the canopy at WithParachute.Offset (0,0,427 for infantry: 10 pixels up).
+                let above = if self.render_opts.is_original(parachute as u32) { px(PARACHUTE_HEIGHT) } else { 7.0 };
                 sink.sprite(sprites, at.look(body, a.owner as f32, 0.9, 0.25, -1.0).offset(lift * 0.4, 0.0));
                 sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift));
-                sink.sprite(sprites, at.look(parachute, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift - 7.0));
+                sink.sprite(sprites, at.look(canopy, a.owner as f32, 1.0, 1.0, 0.0).offset(0.0, -lift - above));
                 continue;
             }
             if a.kind != Kind::Aircraft || a.altitude <= 0 || !self.is_plane(i) {

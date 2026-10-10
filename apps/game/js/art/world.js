@@ -855,21 +855,32 @@ export const CIVILIAN_DRAW = Object.fromEntries(
   Object.entries(CIVILIANS).map(([id, c]) => [id, { body: [10, 12, civilianDraw(c)], panic: [10, 12, civilianPanicDraw(c)] }]),
 );
 
+/** A tree fire `s` times the size of the small one (decoration specials 2, 4 and 5). */
+function treeFire(s) {
+  const w = Math.ceil(14 * s);
+  const h = Math.ceil(18 * s);
+  const k = (pts) => pts.map((v) => v * s);
+  return [w, h, (ctx, P) => {
+    oval(ctx, P.c('rgba(255,120,30,0.35)'), 7 * s, 13 * s, 6.5 * s, 4 * s);
+    poly(ctx, P.c('#d8481a'), k([1.5, 16, 3, 7, 5, 10, 7, 2, 9, 9, 11, 5, 12.5, 16]));
+    poly(ctx, P.c('#f59a2a'), k([3.5, 16, 5, 10, 7, 6, 9, 11, 10.5, 16]));
+    poly(ctx, P.c('#ffe08a'), k([5.5, 16, 7, 11, 8.5, 16]));
+  }];
+}
+
 /**
- * Decoration specials (art/decorations.js slots 2 and 3, engine neutral.rs
- * DECORATION_FLAME and DECORATION_RED_CROSS): flames on a burning tree and
- * the hospital's red cross over healed infantry.
+ * Decoration specials (art/decorations.js slots 2 to 5, engine neutral.rs
+ * DECORATION_*): the small fire on a burning tree, the hospital's red cross
+ * over healed infantry, then the medium and the large fire (OpenRA's
+ * burn-s, burn-m and burn-l by damage state).
  */
 export const WORLD_DECORATIONS = [
-  [14, 18, (ctx, P) => {
-    oval(ctx, P.c('rgba(255,120,30,0.35)'), 7, 13, 6.5, 4);
-    poly(ctx, P.c('#d8481a'), [1.5, 16, 3, 7, 5, 10, 7, 2, 9, 9, 11, 5, 12.5, 16]);
-    poly(ctx, P.c('#f59a2a'), [3.5, 16, 5, 10, 7, 6, 9, 11, 10.5, 16]);
-    poly(ctx, P.c('#ffe08a'), [5.5, 16, 7, 11, 8.5, 16]);
-  }],
+  treeFire(0.7),
   [7, 7, (ctx, P) => {
     rect(ctx, P.c('#f4f2ec'), 0, 0, 7, 7);
     rect(ctx, P.c('#c8261c'), 2.6, 1, 1.8, 5);
     rect(ctx, P.c('#c8261c'), 1, 2.6, 5, 1.8);
   }],
+  treeFire(0.85),
+  treeFire(1),
 ];

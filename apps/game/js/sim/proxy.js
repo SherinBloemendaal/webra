@@ -26,7 +26,7 @@ import {
   UI_STATE,
 } from './methods.js';
 
-const SETTINGS = ['set_audio_events', 'set_health_bars', 'set_building_overlays', 'set_sprite_poses'];
+const SETTINGS = ["set_audio_events", "set_health_bars", "set_building_overlays", "set_sprite_poses", "set_original_slots", "set_death_art"];
 /** A query stays live (asked again with every step) this long after the UI last called it. */
 export const LIVE_MS = 300;
 /** A query not called for this long is forgotten. */
@@ -439,5 +439,10 @@ export class RecorderHandle {
   /** `{ text, ticks, full }` of a save or replay of the game so far (rejects with the reason). */
   encode(kind) {
     return this.host.command('encode', [kind]);
+  }
+
+  /** The online save file at the agreed save point (`ticks`, `hash`, the server's record `id`). */
+  encodeOnlineSave(ticks, hash, id) {
+    return this.host.command('encodeOnlineSave', [ticks, hash, id]);
   }
 }

@@ -101,18 +101,11 @@ pub struct WorldTraits {
     pub indestructible: bool,
     /// HiddenUnderShroud: drawn once explored, also under the fog.
     pub shroud_only: bool,
-    /// OpenRA MustBeDestroyed: the owner is not defeated while it stands.
-    pub must_be_destroyed: bool,
-    /// OpenRA OwnerLostAction when the owner is defeated: "kill" or
-    /// "changeowner" (to the neutral player); None: nothing happens.
-    pub owner_lost: Option<String>,
     /// Further death weapons (FireWarheadsOnDeath@CIVPANIC).
     pub death_weapons: Vec<usize>,
     /// SpawnActorOnDeath: the actor (id) that takes its place.
     pub spawn_on_death: Option<String>,
     pub damage_explosions: Vec<DamageExplosion>,
-    /// Capturable.Types (the infantry capture code, captures.rs, checks them).
-    pub capturable: Option<Vec<String>>,
     /// GivesCashOnCapture.Amount.
     pub cash_on_capture: i32,
     pub cash_trickler: Option<CashTrickler>,
@@ -126,6 +119,10 @@ pub struct WorldTraits {
     /// OpenRA Selectable: can be selected and shows selection decorations
     /// (health bars); trees, barrels and husks cannot.
     pub selectable: bool,
+    /// WithDeathAnimation of a structure (the tech buildings' "dead"
+    /// sequence): a dying body where it stood, drawn with original art that
+    /// has it (infantry_render.rs corpses).
+    pub death_animation: bool,
     /// OpenRA RadarColorFromTerrain: shown on the radar in the colour of this
     /// terrain type (Tree, Ore, Gems, Wall) instead of its owner's.
     pub radar_terrain: Option<String>,
@@ -225,11 +222,6 @@ impl WorldTraits {
                 return Err(n("world.spawn_on_death must be a structure"));
             }
         }
-        if let Some(c) = &self.capturable {
-            if c.len() > 8 {
-                return Err(n("world.capturable may have at most 8 types"));
-            }
-        }
         within(&n("world.cash_on_capture"), self.cash_on_capture, 0, 1_000_000)?;
         if let Some(c) = &self.cash_trickler {
             within(&n("world.cash_trickler.interval"), c.interval, 1, TIMER)?;
@@ -267,11 +259,6 @@ impl WorldTraits {
         if let Some(b) = &self.bridge {
             b.validate(n, weapons, actors)?;
         }
-        if let Some(lost) = &self.owner_lost {
-            if lost != "kill" && lost != "changeowner" {
-                return Err(n("world.owner_lost must be kill or changeowner"));
-            }
-        }
         Ok(())
     }
 }
@@ -302,6 +289,11 @@ pub struct ActorWorld {
     /// Presentation only: hit by an Incendiary warhead while damaged (trees
     /// burn: OpenRA WithDamageOverlay@*Burn). Not part of the state hash.
     pub burning: bool,
+    /// Presentation only: per fire size (small, medium, large) the tick + 1
+    /// it started and the tick + 1 it ended (0: never), for the original
+    /// burn-s, burn-m and burn-l start, loop and end. Not part of the state hash.
+    pub fire_start: [u32; 3],
+    pub fire_end: [u32; 3],
 }
 
 impl ActorWorld {
@@ -349,32 +341,9 @@ pub struct NeutralState {
     /// Bridges (bridges.rs).
     pub bridges: crate::bridges::BridgeLayer,
     pub pending_spawns: Vec<PendingSpawn>,
-    /// The neutral player, if the game has one.
-    pub player: Option<u8>,
     /// Crushers' passability (wall crushing; derived from the world, not hashed).
     pub crush_blocked: Vec<CrushBlocked>,
-    /// Cash ticks rising over the battlefield (presentation, not hashed).
-    pub floating: Vec<FloatingText>,
 }
-
-/// OpenRA FloatingText of a cash tick ("+$100" in the owner's colour, from
-/// CashTrickler and GivesCashOnCapture ShowTicks): it rises from the actor's
-/// centre for `FLOATING_TEXT_TICKS` and is hidden under fog and shroud.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FloatingText {
-    pub x: i32,
-    pub y: i32,
-    /// Height above (x, y) in world units, `FLOATING_TEXT_RISE` more every tick.
-    pub z: i32,
-    pub owner: u8,
-    pub amount: i32,
-    pub ttl: i32,
-}
-
-/// OpenRA CashTrickler / GivesCashOnCapture DisplayDuration (ticks).
-pub const FLOATING_TEXT_TICKS: i32 = 30;
-/// OpenRA FloatingText.Velocity: 86 world units up per tick.
-pub const FLOATING_TEXT_RISE: i32 = 86;
 
 impl NeutralState {
     pub(crate) fn mix(&self, mix: &mut impl FnMut(i64)) {
@@ -397,11 +366,6 @@ impl World {
     #[inline]
     pub fn world_traits(&self, i: usize) -> &WorldTraits {
         &self.rules.actors[self.actors[i].ty as usize].world
-    }
-
-    /// The neutral player (created for maps with neutral actors or trees).
-    pub fn neutral_player(&self) -> Option<u8> {
-        self.neutral.player
     }
 
     // ---- Lifecycle ------------------------------------------------------------------
@@ -441,7 +405,7 @@ impl World {
     /// cell's position (the same map always gets the same trees). The cell
     /// becomes clear ground under the tree.
     fn trees_from_terrain(&mut self) {
-        let Some(owner) = self.neutral.player else { return };
+        let Some(owner) = self.neutral_player() else { return };
         let biome = self.env.biome.name();
         // (type, dx, dy of its one occupied cell)
         let mut kinds: Vec<(u16, i32, i32)> = Vec::new();
@@ -483,16 +447,22 @@ impl World {
     /// (after terrain changes: trees, bridges).
     pub(crate) fn update_world_terrain(&mut self) {
         for ci in 0..self.map.cells() {
-            let t = self.map.terrain[ci];
-            let b = self.building_at[ci];
-            let occupied = b != NONE && self.occupies(b as usize, ci);
-            self.pass.set_blocked(ci, occupied || !t.passable());
-            self.pass_water.set_blocked(ci, occupied || !t.ship_passable());
-            self.pass_landing.set_blocked(ci, occupied || !t.landing_passable());
+            self.set_cell_passability(ci);
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
         self.pass_landing.refresh(&self.map);
+    }
+
+    /// Cell `ci`'s passabilities from its terrain, the structure solid on it
+    /// and a husk on it (husks.rs); the caller refreshes the labels.
+    pub(crate) fn set_cell_passability(&mut self, ci: usize) {
+        let t = self.map.terrain[ci];
+        let b = self.building_at[ci];
+        let occupied = (b != NONE && self.occupies(b as usize, ci)) || self.husk_at(ci).is_some();
+        self.pass.set_blocked(ci, occupied || !t.passable());
+        self.pass_water.set_blocked(ci, occupied || !t.ship_passable());
+        self.pass_landing.set_blocked(ci, occupied || !t.landing_passable());
     }
 
     /// Whether structure `b` blocks cell `ci` (an Occupied footprint cell).
@@ -552,9 +522,31 @@ impl World {
         if types & self.rules.damage_type_bit(INCENDIARY) != 0 {
             self.actors[u].world.burning = true;
         }
+        if self.actors[u].world.burning {
+            self.update_fire(u, after);
+        }
         if let Some(chance) = self.rules.actors[ty].world.scaredy_cat.as_ref().map(|s| s.panic_chance) {
             if self.rng.range(0, 100) < chance {
                 self.panic(u);
+            }
+        }
+    }
+
+    /// The fire sizes of a burning actor in damage state `state` (OpenRA
+    /// ^Tree WithDamageOverlay@SmallBurn Light to Medium, @MediumBurn Medium
+    /// to Heavy, @LargeBurn from Heavy): the one burning starts, the others end.
+    fn update_fire(&mut self, u: usize, state: DamageState) {
+        let size = fire_size(state);
+        let now = self.tick + 1;
+        let w = &mut self.actors[u].world;
+        for s in 0..3 {
+            if Some(s) == size {
+                if w.fire_start[s] == 0 || w.fire_end[s] != 0 {
+                    w.fire_start[s] = now;
+                    w.fire_end[s] = 0;
+                }
+            } else if w.fire_start[s] != 0 && w.fire_end[s] == 0 {
+                w.fire_end[s] = now;
             }
         }
     }
@@ -582,6 +574,11 @@ impl World {
         for w in self.rules.actors[ty].world.death_weapons.clone() {
             self.queue_weapon(w, x, y, owner, shot, 1);
         }
+        if self.rules.actors[ty].world.death_animation {
+            // Presentation only, like the soldiers' (die1: the "dead" sequence).
+            let c = crate::infantry::Corpse { x, y, facing: 0, ty: ty as u16, owner, sequence: 1, tick: self.tick };
+            self.inf.corpses.push(c);
+        }
         if let Some(spawn) = self.rules.actors[ty].world.spawn_ty {
             // OpenRA SpawnActorOnDeath.Probability (100) still draws from the shared random.
             let _ = self.rng.range(0, 100);
@@ -596,9 +593,19 @@ impl World {
     /// Death weapons use this so chain reactions (barrels) ripple outward
     /// one step per tick instead of recursing.
     pub(crate) fn queue_weapon(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: crate::veterancy::Shot, min_delay: i32) {
-        for h in 0..self.rules.weapons[w].warheads.len() {
-            let delay = self.rules.weapons[w].warheads[h].delay.max(min_delay);
-            self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
+        // Damage warheads, then the effect warheads (smudges, resources: combat.rs).
+        for h in 0..self.warhead_count(w) {
+            let delay = self.warhead_delay(w, h).max(min_delay);
+            self.pending.push(PendingImpact {
+                tick: self.tick + delay as u32,
+                weapon: w as u16,
+                warhead: h as u8,
+                x,
+                y,
+                altitude: 0,
+                owner,
+                shot,
+            });
         }
         for (cw, cx, cy) in self.cluster_targets(w, x, y) {
             self.effects.push(Effect { x: cx, y: cy, tx: cx, ty: cy, kind: EffectKind::LargeExplosion, ttl: 18, max: 18 });
@@ -636,35 +643,6 @@ impl World {
 
     // ---- Owners -------------------------------------------------------------------------
 
-    /// Give actor `i` to `new_owner` (OpenRA Actor.ChangeOwner, for
-    /// `on_captured` and OwnerLostAction): it keeps its health and state;
-    /// production, power, prerequisites and vision follow the new owner from
-    /// the next tick.
-    pub(crate) fn hand_over(&mut self, i: usize, new_owner: u8) {
-        if !self.actors[i].alive || new_owner as usize >= self.players.len() || self.actors[i].owner == new_owner {
-            return;
-        }
-        let stance = self.initial_stance(self.actors[i].ty, new_owner);
-        let a = &mut self.actors[i];
-        a.owner = new_owner;
-        a.stance = stance;
-        a.target = NONE;
-        a.aggressor = NONE;
-        a.guard = NONE;
-        a.rally = None;
-        a.repairers.clear();
-        a.repair_active = false;
-        a.powered_off = false;
-        a.waypoints.clear();
-        if a.is_unit() {
-            a.activity = Activity::Idle;
-            a.goal = NONE;
-        }
-        self.tokens_dirty = true;
-        // Walls change who may crush them (pathfinding through walls).
-        self.pass.touch();
-    }
-
     /// The effects of a capture once actor `i` belongs to its new owner
     /// (`old_owner` had it): GivesCashOnCapture pays the new owner, and walls
     /// change who may crush them. The rest follows from the owner itself on
@@ -682,45 +660,19 @@ impl World {
         if cash > 0 && (new_owner as usize) < self.players.len() {
             // OpenRA PlayerResources.ChangeCash, shown as a cash tick (ShowTicks).
             self.players[new_owner as usize].cash += cash;
-            self.show_cash_tick(i, cash);
+            self.show_cash_tick(i, new_owner, cash);
         }
         self.pass.touch();
     }
 
-    /// Actor `i` was captured by `new_owner` (OpenRA CaptureManager): it
-    /// changes owner and gets the effects of `after_capture`. The capture
-    /// notifications (who hears what) belong to the capturing side.
+    /// Actor `i` was captured by `new_owner` without a captor (scripts,
+    /// tests): the same as an engineer's capture (infantry.rs `capture`:
+    /// owner change, CaptureNotification, then `after_capture`).
     pub fn on_captured(&mut self, i: usize, new_owner: u8) {
         if !self.actors[i].alive || new_owner as usize >= self.players.len() {
             return;
         }
-        let old = self.actors[i].owner;
-        if old == new_owner {
-            return;
-        }
-        self.hand_over(i, new_owner);
-        self.after_capture(i, old);
-    }
-
-    /// OpenRA OwnerLostAction when `player` is defeated: actors with
-    /// ChangeOwner (walls, tech buildings) go to the neutral player, actors
-    /// with Kill die.
-    pub(crate) fn owner_lost(&mut self, player: u8) {
-        for i in 0..self.actors.len() {
-            let a = &self.actors[i];
-            if !a.alive || a.owner != player || !a.in_world() {
-                continue;
-            }
-            match self.world_traits(i).owner_lost.as_deref() {
-                Some("changeowner") => {
-                    if let Some(n) = self.neutral.player {
-                        self.hand_over(i, n);
-                    }
-                }
-                Some("kill") => self.kill(i),
-                _ => {}
-            }
-        }
+        self.capture(i, new_owner, None);
     }
 
     // ---- Per tick ---------------------------------------------------------------------
@@ -729,7 +681,6 @@ impl World {
     /// husks and stumps appear, the hospital heals, oil derricks pay, mines
     /// grow ore, panics end and bridges are repaired or demolished span by span.
     pub(crate) fn tick_neutral(&mut self) {
-        self.tick_floating_texts();
         self.spawn_pending();
         let seeding = self.options.ore_regrowth;
         for i in 0..self.actors.len() {
@@ -829,29 +780,20 @@ impl World {
             let p = &mut self.players[owner];
             let paid = c.amount.max(-p.cash);
             p.cash += paid;
-            self.show_cash_tick(i, paid);
+            self.show_cash_tick(i, owner as u8, paid);
         }
     }
 
-    /// A cash tick over actor `i` in its owner's colour (OpenRA FloatingText
-    /// with FormatCashTick: "+$15", "-$20"); nothing for 0. Presentation only:
-    /// other cash effects (thieves, supply trucks) can show theirs the same way.
-    pub fn show_cash_tick(&mut self, i: usize, amount: i32) {
+    /// A cash tick over actor `i` in `owner`'s colour (OpenRA FloatingText
+    /// with FormatCashTick: "+$15", "-$20"; sound_events.rs CashTick, drawn by
+    /// js/battlefx.js); nothing for 0. Thieves and supply trucks show theirs
+    /// the same way (infantry.rs, cargo.rs).
+    pub fn show_cash_tick(&mut self, i: usize, owner: u8, amount: i32) {
         if amount == 0 {
             return;
         }
-        let a = &self.actors[i];
-        let (x, y, owner) = (a.x, a.y, a.owner);
-        self.neutral.floating.push(FloatingText { x, y, z: 0, owner, amount, ttl: FLOATING_TEXT_TICKS });
-    }
-
-    /// Cash ticks rise and run out.
-    fn tick_floating_texts(&mut self) {
-        for t in self.neutral.floating.iter_mut() {
-            t.ttl -= 1;
-            t.z += FLOATING_TEXT_RISE;
-        }
-        self.neutral.floating.retain(|t| t.ttl > 0);
+        let (x, y) = (self.actors[i].x, self.actors[i].y);
+        self.sound.push(SoundEventKind::CashTick, amount, x, y, owner, 0);
     }
 
     /// OpenRA SeedsResource (ore and gem mines): every `interval` ticks a
@@ -1051,7 +993,7 @@ impl World {
     /// Tests on open fields: take every neutral actor (the trees of the
     /// generated map) off the map at once, as if it was never there.
     pub(crate) fn clear_neutral_world(&mut self) {
-        let Some(n) = self.neutral.player else { return };
+        let Some(n) = self.neutral_player() else { return };
         for i in 0..self.actors.len() {
             if self.actors[i].alive && self.actors[i].owner == n {
                 self.remove(i);
@@ -1062,15 +1004,53 @@ impl World {
     }
 }
 
+/// The fire size (small, medium, large) that burns in a damage state, if any.
+fn fire_size(state: DamageState) -> Option<usize> {
+    match state {
+        DamageState::Undamaged | DamageState::Dead => None,
+        DamageState::Light => Some(0),
+        DamageState::Medium => Some(1),
+        DamageState::Heavy | DamageState::Critical => Some(2),
+    }
+}
+
 /// Decoration special sprites (apps/game/js/art/decorations.js, after the
 /// wrench and the power off icon of repair.rs): flames on a burning tree and
 /// the hospital's red cross.
 pub const DECORATION_FLAME: f32 = 2.0;
 pub const DECORATION_RED_CROSS: f32 = 3.0;
+/// The medium and the large fire (the small one is `DECORATION_FLAME`).
+pub const DECORATION_FLAME_MEDIUM: f32 = 4.0;
+pub const DECORATION_FLAME_LARGE: f32 = 5.0;
+/// Decoration slot of each fire size.
+const FIRE_SLOTS: [f32; 3] = [DECORATION_FLAME, DECORATION_FLAME_MEDIUM, DECORATION_FLAME_LARGE];
 /// OpenRA WithDecoration@REDCROSS BlinkInterval.
 const RED_CROSS_BLINK: u32 = 32;
 
 impl World {
+    /// The frame of fire `size` over burning actor `i`: with the original art
+    /// (`RenderOptions::fire_frames`) the frame of its start, loop and end in
+    /// a row, None once its end played; `u32::MAX` for WebRA's flame while it
+    /// burns. Presentation only.
+    pub(crate) fn fire_frame(&self, i: usize, size: usize) -> Option<u32> {
+        let w = &self.actors[i].world;
+        let (start, end) = (w.fire_start[size], w.fire_end[size]);
+        if start == 0 {
+            return None;
+        }
+        let slot = (crate::render::SpriteIds::new(self.rules.actors.len()).decorations_base + FIRE_SLOTS[size]) as u32;
+        let Some((ms, first, looped, last)) = self.render_opts.fire_frames[size].filter(|_| self.render_opts.is_original(slot)) else {
+            return (end == 0).then_some(u32::MAX);
+        };
+        let frames = |since: u32| self.tick.saturating_sub(since) * (1000 / crate::world::TICKS_PER_SECOND) / ms.max(1);
+        if end != 0 {
+            let e = frames(end);
+            return (e < last).then_some(first + looped + e);
+        }
+        let f = frames(start);
+        Some(if f < first { f } else { first + (f - first) % looped.max(1) })
+    }
+
     /// Flames on trees hit by fire while damaged (OpenRA WithDamageOverlay
     /// burn-s, burn-m and burn-l: bigger the worse the damage), and the red
     /// cross blinking on infantry the owner's hospital heals (shown to the
@@ -1084,22 +1064,20 @@ impl World {
                 continue;
             }
             if a.world.burning && a.kind == Kind::Building {
-                let max = self.rules.actors[a.ty as usize].hp;
-                let state = DamageState::of(a.hp, max);
-                if state == DamageState::Undamaged || !self.is_visible_to(i, player) {
+                if !self.is_visible_to(i, player) {
                     continue;
                 }
-                let scale = match state {
-                    DamageState::Light => 0.6,
-                    DamageState::Medium => 0.8,
-                    _ => 1.0,
-                };
-                // Over the cells the tree occupies.
+                // Over the cells the tree occupies, each fire that burns or is ending.
                 let b = self.rules.actors[a.ty as usize].building.as_ref().expect("a structure");
-                for (dx, dy) in b.cells() {
-                    let (x, y) = (px((a.cx + dx) * CELL + CELL / 2), px((a.cy + dy) * CELL + CELL / 2));
-                    if sink.visible([x, y], [x, y], 24.0) {
-                        sink.sprite(sprites, SpriteRec::at(x, y, 24.0).look(base + DECORATION_FLAME, a.owner as f32, scale, 0.9, 0.0));
+                for (size, &fire_slot) in FIRE_SLOTS.iter().enumerate() {
+                    let Some(frame) = self.fire_frame(i, size) else { continue };
+                    let slot = base + fire_slot;
+                    let id = if frame == u32::MAX { slot } else { crate::render::posed(slot as u32, crate::render::Pose::Idle, frame) };
+                    for (dx, dy) in b.cells() {
+                        let (x, y) = (px((a.cx + dx) * CELL + CELL / 2), px((a.cy + dy) * CELL + CELL / 2));
+                        if sink.visible([x, y], [x, y], 24.0) {
+                            sink.sprite(sprites, SpriteRec::at(x, y, 24.0).look(id, a.owner as f32, 1.0, 0.9, 0.0));
+                        }
                     }
                 }
                 continue;
@@ -1127,7 +1105,7 @@ pub fn world_json(a: &crate::rules::ActorInfo) -> serde_json::Value {
         "biomes": w.biomes,
         "selectable": w.selectable,
         "indestructible": w.indestructible,
-        "capturable": w.capturable.is_some(),
+        "capturable": a.abilities.capturable.is_some(),
         "bridgeHut": w.bridge_hut,
         "allyDescription": w.ally_description,
         "otherDescription": w.other_description,

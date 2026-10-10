@@ -23,7 +23,7 @@
 // disarms them. js/input.js asks this bar first through its hooks
 // (commandMouseDown, commandClick, commandCursor, cancelCommand, queueAttackMove).
 
-import { CURSORS } from './cursors.js';
+import { CURSORS, COMMAND_CURSOR_NAMES, registerCursors } from './cursors.js';
 import { formatCombo } from './hotkeys.js';
 import { actorInfo, askOf } from './sim/methods.js';
 import { attachTooltip } from './ui/tooltip.js';
@@ -48,7 +48,7 @@ export const COMMANDS = [
   { id: 'forceMove', label: 'Force move', hint: 'Alt+click', help: 'Move there, whatever is under the cursor.' },
   { id: 'forceAttack', label: 'Force attack', hint: 'Ctrl+click', help: 'Fire on the ground or on any unit, own ones too.' },
   { id: 'guard', label: 'Guard', action: 'guard', help: 'Click a unit to follow and protect it.' },
-  { id: 'deploy', label: 'Deploy', action: 'deploy', help: 'Deploy, unload or use the ability of the selected units.' },
+  { id: 'deploy', label: 'Deploy', action: 'deploy', help: 'Deploy, unload or use the ability of the selected units, or make the selected factory the primary one (new units leave it).' },
   { id: 'scatter', label: 'Scatter', action: 'scatter', help: 'Each unit steps aside to a free spot nearby.' },
   { id: 'stop', label: 'Stop', action: 'stop', help: 'Stop what the units are doing.' },
   { id: 'queue', label: 'Queue orders', hint: 'Shift+click', help: 'Add waypoints: moves run one after another.' },
@@ -126,6 +126,8 @@ export const COMMAND_CURSORS = {
     'pointer',
   ),
 };
+// With the original graphics: OpenRA's attack, guard and move cursors (cursors.js setCursorArt).
+registerCursors(COMMAND_CURSORS, COMMAND_CURSOR_NAMES);
 
 // ---- Pure state ----------------------------------------------------------------------------
 

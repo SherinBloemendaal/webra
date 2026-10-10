@@ -101,7 +101,7 @@ fn tree_terrain_becomes_neutral_tree_actors() {
         assert_eq!(info.world.category.as_deref(), Some("Tree"));
         assert_eq!(w.actors[b as usize].owner, n);
         assert!(w.pass.blocked[ci], "trees block movement");
-        assert_eq!(w.target_class(b as usize), 512, "trees are only hit by warheads that list Trees");
+        assert_eq!(w.target_class(b as usize), crate::rules::TARGET_TREES, "trees are only hit by warheads that list Trees");
         assert!(w.never_auto_targeted(b as usize) || !w.are_enemies(0, n));
     }
     // Every player is still playing: trees keep nobody in the game.
@@ -151,6 +151,52 @@ fn only_fire_burns_trees_down_to_stumps_that_still_block() {
 }
 
 // ---- Barrels ---------------------------------------------------------------------------
+
+#[test]
+fn burning_trees_show_their_fire_by_damage_state_with_start_loop_and_end() {
+    let mut w = world(vec![actor("T01", 30, 29)]);
+    let tree = w.building_at[w.map.idx(30, 30)] as usize;
+    let max = w.actors[tree].hp;
+    // The original art in use: burn-s, burn-m and burn-l at 40 ms a frame.
+    let slot = |size: f32| (crate::render::SpriteIds::new(w.rules.actors.len()).decorations_base + size) as u32;
+    let slots = [
+        slot(crate::neutral::DECORATION_FLAME),
+        slot(crate::neutral::DECORATION_FLAME_MEDIUM),
+        slot(crate::neutral::DECORATION_FLAME_LARGE),
+    ];
+    let info: Vec<i32> = (0..3).flat_map(|s| [3, s, 40, 4, 4, s, 10, 3]).collect();
+    w.render_opts.set_original_art(&slots, &info);
+    assert_eq!(w.render_opts.fire_frames[0], Some((40, 4, 10, 3)));
+    // Fire damage to Light: the small fire starts.
+    let incendiary = w.rules.damage_type_bit(crate::neutral::INCENDIARY);
+    w.damage_from(tree, max / 5, NONE, incendiary);
+    assert!(w.actors[tree].world.burning);
+    run(&mut w, 1);
+    assert_eq!(w.fire_frame(tree, 0), Some(0), "the start plays");
+    run(&mut w, 6);
+    assert_eq!(w.fire_frame(tree, 0), Some(4 + 2), "then the loop");
+    assert_eq!(w.fire_frame(tree, 1), None);
+    // Down to Medium: the small fire ends, the medium one starts.
+    w.damage(tree, max / 5 + 1);
+    run(&mut w, 1);
+    assert_eq!(w.fire_frame(tree, 0), Some(4 + 10), "the small fire's end");
+    assert_eq!(w.fire_frame(tree, 1), Some(0));
+    run(&mut w, 5);
+    assert_eq!(w.fire_frame(tree, 0), None, "the end played once");
+    // With WebRA's art: the flame of the burning size only.
+    w.render_opts.set_original_art(&[], &[]);
+    assert_eq!(w.fire_frame(tree, 1), Some(u32::MAX));
+    assert_eq!(w.fire_frame(tree, 0), None);
+}
+
+#[test]
+fn tech_buildings_leave_their_death_animation() {
+    let mut w = world(vec![actor("HOSP", 30, 30)]);
+    let hosp = find(&w, "HOSP")[0];
+    let ty = w.actors[hosp].ty;
+    w.kill(hosp);
+    assert!(w.inf.corpses.iter().any(|c| c.ty == ty && c.sequence == 1), "WithDeathAnimation dead (die1)");
+}
 
 #[test]
 fn barrels_explode_in_a_chain_and_hurt_what_is_near() {
@@ -263,6 +309,7 @@ fn a_captured_hospital_heals_the_new_owners_infantry() {
 #[test]
 fn oil_derricks_pay_their_owner_and_go_back_to_neutral_when_the_owner_loses() {
     let mut w = world(vec![actor("OILB", 30, 30)]);
+    w.sound.set_enabled(true);
     let oil = find(&w, "OILB")[0];
     let n = w.neutral_player().unwrap();
     run(&mut w, 800);
@@ -270,19 +317,21 @@ fn oil_derricks_pay_their_owner_and_go_back_to_neutral_when_the_owner_loses() {
     let cash = w.players[1].cash;
     w.on_captured(oil, 1);
     assert_eq!(w.players[1].cash, cash + 100, "GivesCashOnCapture 100");
-    // Shown as a cash tick in the new owner's colour (FloatingText "+$100"),
-    // rising for 30 ticks.
-    let tick = |w: &World| w.neutral.floating.iter().map(|t| (t.owner, t.amount)).collect::<Vec<_>>();
-    assert_eq!(tick(&w), vec![(1, 100)]);
-    run(&mut w, 10);
-    assert_eq!(w.neutral.floating[0].z, 10 * crate::neutral::FLOATING_TEXT_RISE);
-    run(&mut w, 20);
-    assert!(w.neutral.floating.is_empty(), "DisplayDuration 30");
+    // Shown as a cash tick in the new owner's colour (FloatingText "+$100").
+    let ticks = |ev: Vec<i32>| {
+        ev.chunks(6).filter(|e| e[0] == crate::sound_events::SoundEventKind::CashTick as i32).map(|e| (e[4], e[1])).collect::<Vec<_>>()
+    };
+    assert_eq!(ticks(w.sound.take()), vec![(1, 100)]);
+    run(&mut w, 30);
     // CashTrickler: 100 every Interval (375) ticks, paid when the countdown
     // drops below zero (so every 376 ticks).
-    run(&mut w, 346);
+    let mut shown = Vec::new();
+    for _ in 0..346 {
+        w.step();
+        shown.extend(ticks(w.sound.take()));
+    }
     assert_eq!(w.players[1].cash, cash + 200);
-    assert_eq!(tick(&w), vec![(1, 100)], "every payment shows");
+    assert_eq!(shown, vec![(1, 100)], "every payment shows");
     run(&mut w, 375);
     assert_eq!(w.players[1].cash, cash + 200);
     run(&mut w, 1);
@@ -300,48 +349,6 @@ fn oil_derricks_pay_their_owner_and_go_back_to_neutral_when_the_owner_loses() {
     let neutral_cash = w.players[n as usize].cash;
     run(&mut w, 800);
     assert_eq!(w.players[n as usize].cash, neutral_cash);
-}
-
-#[test]
-fn cash_ticks_read_like_openra_and_stay_hidden_under_the_fog() {
-    use crate::overlays::{cash_tick_text, push_cash_text};
-    assert_eq!(cash_tick_text(100), "+$100");
-    assert_eq!(cash_tick_text(-20), "-$20");
-    let mut rects = Vec::new();
-    let width = push_cash_text(15, 2, &mut rects);
-    assert!(!rects.is_empty() && rects.len() % 8 == 0);
-    for q in rects.chunks(8) {
-        assert!(q[0] >= -width / 2.0 - 0.01 && q[0] + q[2] <= width / 2.0 + 2.0, "inside the text: {q:?}");
-    }
-    // In the owner's colour (team colours are negative red channels), over a dark shadow.
-    assert!(rects.chunks(8).any(|q| q[4] == -3.0));
-    assert!(rects.chunks(8).any(|q| q[4] == 0.0 && q[7] > 0.5));
-    // Drawn for a player who sees the derrick, not for one under the shroud.
-    let mut w = world(vec![actor("OILB", 30, 30)]);
-    let oil = find(&w, "OILB")[0];
-    w.on_captured(oil, 0);
-    let count = |w: &World, player: u8| {
-        let mut sprites = Vec::new();
-        let mut rects = Vec::new();
-        let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
-        w.build_render(player, 1.0, &view, &[], &mut sprites, &mut rects);
-        rects.len()
-    };
-    run(&mut w, 10);
-    assert!(w.render_sees_cell(0, w.cell_index(w.actors[oil].x, w.actors[oil].y)));
-    let seen = count(&w, 0);
-    w.neutral.floating.clear();
-    assert!(seen > count(&w, 0), "the cash tick adds rects");
-    w.on_captured(oil, 1);
-    for e in w.players[0].explored.iter_mut() {
-        *e = 0;
-    }
-    for v in w.players[0].visible.iter_mut() {
-        *v = 0;
-    }
-    let hidden = count(&w, 0);
-    w.neutral.floating.clear();
-    assert_eq!(hidden, count(&w, 0), "hidden under the shroud");
 }
 
 #[test]
@@ -390,7 +397,7 @@ fn tech_buildings_say_what_capturing_gives_and_spef_is_map_only() {
         let t = &w.rules.actors[ty(&w, id) as usize].world;
         assert!(!t.ally_description.is_empty(), "{id} tells its owner what it gives");
         assert!(t.other_description.starts_with("Capture"), "{id}: {}", t.other_description);
-        assert!(t.capturable.is_some(), "{id} is capturable");
+        assert!(w.rules.actors[ty(&w, id) as usize].abilities.capturable.is_some(), "{id} is capturable");
     }
     // France's fake Sub Pen: placed by maps only (OpenRA Prerequisites ~disabled), on water.
     let spef = &w.rules.actors[ty(&w, "SPEF") as usize];
@@ -398,6 +405,106 @@ fn tech_buildings_say_what_capturing_gives_and_spef_is_map_only() {
     assert!(spef.building.as_ref().is_some_and(|b| b.cells().count() == 9), "a 3x3 Sub Pen look-alike");
     let spef_ty = ty(&w, "SPEF") as usize;
     assert!(w.rules.obtainable.iter().all(|f| !f[spef_ty]), "no faction ever builds SPEF");
+}
+
+// ---- Engineers (infantry.rs) on the neutral world --------------------------------------
+
+/// An engineer of `player` sent at `target` with a right click (the Smart order).
+fn send_engineer(w: &mut World, player: u8, target: usize, at: (i32, i32)) -> usize {
+    let e6 = unit(w, "E6", player, at.0, at.1);
+    w.rebuild_hash();
+    w.update_vision();
+    let (x, y) = (w.actors[target].x, w.actors[target].y);
+    assert_eq!(w.smart_action(player, &[e6], x, y), crate::world::SmartAction::Capture);
+    let ids = vec![w.make_ref(e6)];
+    w.queue_order(Order::Smart { player, ids, x, y });
+    e6
+}
+
+#[test]
+fn an_engineer_captures_an_oil_derrick_and_a_hospital_with_their_openra_effects() {
+    let mut w = world(vec![actor("OILB", 30, 30), actor("HOSP", 40, 30)]);
+    w.sound.set_enabled(true);
+    let oil = find(&w, "OILB")[0];
+    let hosp = find(&w, "HOSP")[0];
+    let cash = w.players[0].cash;
+    let e6 = send_engineer(&mut w, 0, oil, (31, 36));
+    for _ in 0..600 {
+        w.step();
+        if w.actors[oil].owner == 0 {
+            break;
+        }
+    }
+    assert_eq!(w.actors[oil].owner, 0, "captured by the engineer");
+    assert!(!w.actors[e6].alive, "the engineer went in");
+    // GivesCashOnCapture with its cash tick, and the CaptureNotification (eva).
+    assert_eq!(w.players[0].cash, cash + 100);
+    let cash_tick = crate::sound_events::SoundEventKind::CashTick as i32;
+    assert!(w.sound.take().chunks(6).any(|e| e[0] == cash_tick && e[1] == 100 && e[4] == 0), "a cash tick");
+    // CashTrickler pays the new owner.
+    run(&mut w, 380);
+    assert!(w.players[0].cash >= cash + 200, "the derrick pays: {}", w.players[0].cash - cash);
+    // The hospital heals the capturing player's infantry.
+    let soldier = unit(&mut w, "E1", 0, 10, 45);
+    let max = w.actors[soldier].hp;
+    w.actors[soldier].hp = max / 2;
+    send_engineer(&mut w, 0, hosp, (41, 36));
+    for _ in 0..600 {
+        w.step();
+        if w.actors[hosp].owner == 0 {
+            break;
+        }
+    }
+    assert_eq!(w.actors[hosp].owner, 0);
+    run(&mut w, 2);
+    assert!(w.hospital_healing(soldier), "ChangesHealth@HOSPITAL for the new owner's infantry");
+}
+
+#[test]
+fn ai_engineers_take_tech_buildings_like_openras_capture_module() {
+    // CaptureManagerBotModule: idle capturers go for the visible capturable
+    // structures of enemy or neutral players, the most valuable first
+    // (GetSellValue: tech buildings have none), each to the nearest one.
+    let mut w = world(vec![actor("OILB", 30, 30), actor("V01", 40, 30)]);
+    let oil = find(&w, "OILB")[0];
+    let e6 = unit(&mut w, "E6", 1, 31, 37);
+    w.update_vision();
+    crate::ai_infantry::command_capturers(&mut w, 1);
+    run(&mut w, 1);
+    if w.actors[e6].inf.enter.is_none() {
+        // The module waits for its first delay; once more after it.
+        run(&mut w, 400);
+        crate::ai_infantry::command_capturers(&mut w, 1);
+    }
+    for _ in 0..600 {
+        w.step();
+        if w.actors[oil].owner == 1 {
+            break;
+        }
+    }
+    assert_eq!(w.actors[oil].owner, 1, "the AI's engineer took the derrick");
+    // Civilian buildings are not capturable (no Capturable trait).
+    let v01 = find(&w, "V01")[0];
+    assert!(w.rules.actors[w.actors[v01].ty as usize].abilities.capturable.is_none());
+}
+
+#[test]
+fn captures_are_announced_to_both_sides() {
+    let mut w = world(vec![actor("OILB", 30, 30)]);
+    w.sound.set_enabled(true);
+    let oil = find(&w, "OILB")[0];
+    send_engineer(&mut w, 1, oil, (31, 36));
+    let mut heard = false;
+    for _ in 0..600 {
+        w.step();
+        let ev = w.sound.take();
+        heard |= ev.chunks(6).any(|e| e[0] == crate::sound_events::SoundEventKind::Captured as i32 && e[4] == 1);
+        if w.actors[oil].owner == 1 {
+            break;
+        }
+    }
+    assert_eq!(w.actors[oil].owner, 1);
+    assert!(heard, "Captured (33) for the new owner");
 }
 
 // ---- Bridges ---------------------------------------------------------------------------
@@ -476,6 +583,35 @@ fn bridges_fall_kill_what_is_on_them_and_engineers_repair_them_at_a_hut() {
     assert!(w.demolish_bridge_at_hut(huts[1], 1));
     assert_eq!(w.bridge_look(br), Some(BridgeLook::Destroyed));
     assert!(!w.can_demolish_bridge_at_hut(huts[1]));
+}
+
+#[test]
+fn an_engineer_repairs_a_fallen_bridge_through_its_hut() {
+    let mut w = bridge_world();
+    let br = find(&w, "BRIDGE1")[0];
+    let huts = find(&w, "BRIDGEHUT");
+    let max = w.actors[br].hp;
+    let e6 = unit(&mut w, "E6", 0, 26, 17);
+    // Intact: nothing to repair, so the engineer is not sent in.
+    assert!(!w.can_repair_bridge(e6, huts[0]));
+    w.damage(br, max);
+    assert_eq!(w.bridge_look(br), Some(BridgeLook::Destroyed));
+    let hut = huts.iter().copied().find(|&h| w.can_repair_bridge(e6, h)).expect("a hut on the engineer's side");
+    w.rebuild_hash();
+    w.update_vision();
+    let (x, y) = (w.actors[hut].x, w.actors[hut].y);
+    assert_eq!(w.smart_action(0, &[e6], x, y), crate::world::SmartAction::InstantRepair, "the repair cursor on the hut");
+    let ids = vec![w.make_ref(e6)];
+    w.queue_order(Order::Smart { player: 0, ids, x, y });
+    for _ in 0..600 {
+        w.step();
+        if w.bridge_look(br) == Some(BridgeLook::Healthy) {
+            break;
+        }
+    }
+    assert_eq!(w.bridge_look(br), Some(BridgeLook::Healthy), "repaired by the engineer");
+    assert!(!w.actors[e6].alive, "the engineer went into the hut");
+    assert!(!w.can_repair_bridge_at_hut(hut));
 }
 
 #[test]

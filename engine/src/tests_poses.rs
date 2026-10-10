@@ -78,12 +78,28 @@ fn infantry_report_walking_firing_and_standing() {
     let i = w.spawn_unit(e1, 0, cell_center(10), cell_center(10), 0);
     w.update_vision();
     let body = e1 as u32 * 2;
-    assert_eq!(pose_of(&w, body), Some((Pose::Idle as u32, 0)));
+    // Standing: stand or stand2, or an idle animation (infantry_render.rs).
+    let (pose, age) = pose_of(&w, body).unwrap();
+    assert_eq!((pose, age), {
+        let (p, a) = w.infantry_stand_pose(i);
+        (p as u32, a)
+    });
+    assert!([Pose::Idle, Pose::Stand2, Pose::Idle1, Pose::Idle2].iter().any(|&p| p as u32 == pose));
     w.actors[i].px -= 100;
     assert_eq!(pose_of(&w, body), Some((Pose::Move as u32, 0)));
     w.actors[i].px = w.actors[i].x;
     w.actors[i].activity = Activity::Attack;
-    assert_eq!(pose_of(&w, body), Some((Pose::Attack as u32, 0)));
+    // One of its attack sequences, picked per shot (AttackSequences).
+    let attack = w.infantry_attack_pose(i);
+    assert!(matches!(attack, Pose::Attack | Pose::Attack2));
+    assert_eq!(pose_of(&w, body), Some((attack as u32, 0)));
+    let picks: std::collections::BTreeSet<u32> = (1..40)
+        .map(|shot| {
+            w.actors[i].fx.fired = shot;
+            w.infantry_attack_pose(i) as u32
+        })
+        .collect();
+    assert_eq!(picks.len(), 2, "both attack sequences over many shots");
     // Prone infantry use the second slot with the same poses.
     w.actors[i].prone_ticks = 50;
     w.actors[i].px -= 100;

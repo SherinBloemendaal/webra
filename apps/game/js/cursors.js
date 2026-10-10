@@ -120,6 +120,36 @@ const BEACON =
   `<path d="M16 3 L16 19 M10 13 L16 19 L22 13" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
   `<path d="M16 3 L16 19 M10 13 L16 19 L22 13" fill="none" stroke="#7fd0ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`;
 
+/** A door frame with a chevron going in (OpenRA "enter"): infiltrate, capture. */
+const ENTER = (color) =>
+  `<rect x="6" y="6" width="20" height="23" fill="#2c2c26" stroke="${OUTLINE}" stroke-width="2"/>` +
+  `<rect x="10" y="10" width="12" height="19" fill="#141410"/>` +
+  `<path d="M11 3 L16 9 L21 3 M11 11 L16 17 L21 11" fill="none" stroke="${OUTLINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+  `<path d="M11 3 L16 9 L21 3 M11 11 L16 17 L21 11" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+/** A gold wrench (OpenRA "goldwrench"): an engineer repairs a structure. */
+const GOLDWRENCH = (fill) => WRENCH(fill) + `<circle cx="9" cy="8" r="1.6" fill="#fff3c0"/>`;
+
+/** C4 charge: a block with a blinking light and a wire (OpenRA "c4"). */
+const C4 =
+  `<rect x="7" y="11" width="18" height="13" rx="2" fill="#c8b070" stroke="${OUTLINE}" stroke-width="2"/>` +
+  `<rect x="10" y="14" width="12" height="3" fill="#8a7440"/>` +
+  `<circle cx="20" cy="20" r="2.4" fill="#ff4a3a" stroke="${OUTLINE}" stroke-width="1"/>` +
+  `<path d="M12 11 Q12 4 19 5 L25 3" fill="none" stroke="${OUTLINE}" stroke-width="3.4" stroke-linecap="round"/>` +
+  `<path d="M12 11 Q12 4 19 5 L25 3" fill="none" stroke="#e8463a" stroke-width="1.6" stroke-linecap="round"/>`;
+
+/** A red cross on a white disc (OpenRA "heal"): a medic heals. */
+const HEAL =
+  `<circle cx="16" cy="16" r="12" fill="#f4f2ea" stroke="${OUTLINE}" stroke-width="2.5"/>` +
+  `<path d="M13 7 L19 7 L19 13 L25 13 L25 19 L19 19 L19 25 L13 25 L13 19 L7 19 L7 13 L13 13 Z" fill="#d4281e" stroke="${OUTLINE}" stroke-width="1"/>`;
+
+/** A spy's hat over a target ring (OpenRA "ability"): disguise, reusable engineers. */
+const ABILITY =
+  `<ellipse cx="16" cy="25" rx="11" ry="4.5" fill="none" stroke="${OUTLINE}" stroke-width="5"/>` +
+  `<ellipse cx="16" cy="25" rx="11" ry="4.5" fill="none" stroke="#c89cff" stroke-width="2.4"/>` +
+  `<path d="M5 17 L27 17 L27 20 L5 20 Z M10 17 L11.5 6 L20.5 6 L22 17 Z" fill="#3a3a44" stroke="${OUTLINE}" stroke-width="1.8" stroke-linejoin="round"/>` +
+  `<rect x="10.6" y="13" width="10.8" height="2.4" fill="#c89cff"/>`;
+
 export const CURSORS = {
   select: cursor(ARROW, 3, 2, 'default'),
   // Building placement: valid spot (an invalid one shows `blocked`).
@@ -242,6 +272,14 @@ export const CURSORS = {
     16,
     'crosshair',
   ),
+  // Infantry orders (engine/src/infantry.rs).
+  enter: cursor(ENTER('#5fe36a'), 16, 16, 'pointer'),
+  enterBlocked: cursor(ENTER('#8a8a7a') + BAR, 16, 16, 'not-allowed'),
+  c4: cursor(C4, 16, 16, 'crosshair'),
+  heal: cursor(HEAL, 16, 16, 'pointer'),
+  goldwrench: cursor(GOLDWRENCH('#f2c94c'), 16, 16, 'pointer'),
+  goldwrenchBlocked: cursor(GOLDWRENCH('#8a8a7a') + BAR, 16, 16, 'not-allowed'),
+  ability: cursor(ABILITY, 16, 16, 'pointer'),
   blocked: cursor(
     `<circle cx="16" cy="16" r="11" fill="none" stroke="${OUTLINE}" stroke-width="6"/>` +
       `<circle cx="16" cy="16" r="11" fill="none" stroke="#ff4a3a" stroke-width="3"/>` +
@@ -253,18 +291,170 @@ export const CURSORS = {
   ),
 };
 
-/** Cursor for a smart action code from Game.cursor_action (0 none ... 7 deliver cash). */
-export const ACTION_CURSORS = [CURSORS.select, CURSORS.move, CURSORS.attack, CURSORS.harvest, CURSORS.dock, CURSORS.repair, CURSORS.load, CURSORS.deliver];
+/**
+ * The OpenRA cursor name of each cursor kind (mods/ra/cursors.yaml): with
+ * the original graphics installed a kind shows that cursor from Red Alert's
+ * mouse.shp (content/cursors.js, setCursorArt); kinds whose OpenRA cursor
+ * Red Alert has no art for keep WebRA's.
+ */
+export const CURSOR_NAMES = {
+  select: 'default',
+  // OpenRA shows the default cursor while placing; the footprint shows the cells.
+  place: 'default',
+  ...Object.fromEntries(
+    SCROLL_DIRS.flatMap(([dir], i) => {
+      const name = `scroll-${['t', 'tr', 'r', 'br', 'b', 'bl', 'l', 'tl'][i]}`;
+      return [
+        [`scroll${dir}`, name],
+        [`scroll${dir}Blocked`, `${name}-blocked`],
+      ];
+    }),
+  ),
+  move: 'move',
+  attack: 'attack',
+  attackMove: 'attackmove',
+  harvest: 'harvest',
+  dock: 'enter',
+  repair: 'enter',
+  rally: 'ability',
+  sell: 'sell',
+  sellBlocked: 'sell-blocked',
+  repairMode: 'repair',
+  repairBlocked: 'repair-blocked',
+  powerDown: 'powerdown',
+  powerDownBlocked: 'powerdown-blocked',
+  beacon: 'ability',
+  deploy: 'deploy',
+  load: 'enter',
+  deliver: 'enter',
+  mine: 'ability',
+  teleport: 'chrono-target',
+  ironCurtain: 'ability',
+  nuke: 'nuke',
+  blocked: 'generic-blocked',
+  // Infantry orders (engine/src/infantry.rs): the EnterCursor, Cursor and
+  // blocked cursors of Captures, Infiltrates, Demolition, InstantlyRepairs,
+  // the medic's Armament and Disguise.
+  enter: 'enter',
+  enterBlocked: 'enter-blocked',
+  c4: 'c4',
+  heal: 'heal',
+  goldwrench: 'goldwrench',
+  goldwrenchBlocked: 'goldwrench-blocked',
+  ability: 'ability',
+};
+
+/** OpenRA cursor names of the command bar's armed modes (js/commandbar.js COMMAND_CURSORS). */
+export const COMMAND_CURSOR_NAMES = { attackGround: 'attack', guard: 'guard', waypoint: 'move' };
+
+/** Cursor tables whose values setCursorArt replaces: [table, kind -> OpenRA name, built-in values]. */
+const TABLES = [];
+
+/**
+ * Let setCursorArt replace the cursors of `table` (kind -> CSS value) by
+ * their OpenRA cursor names in `names` (kind -> name), like CURSORS.
+ */
+export function registerCursors(table, names) {
+  TABLES.push([table, names, { ...table }]);
+}
+registerCursors(CURSORS, CURSOR_NAMES);
+
+/** Animated cursors in use: [table, kind, frames, fps]. */
+let animated = [];
+
+/**
+ * Cursors from other art (content/cursors.js originalCursors): `art` maps
+ * OpenRA cursor names to { frames: [CSS value], fps }; every kind whose
+ * name it has shows those frames, every other kind its built-in cursor.
+ * `null` restores the built-in cursors everywhere.
+ */
+export function setCursorArt(art) {
+  animated = [];
+  for (const [table, names, builtIn] of TABLES) {
+    for (const kind of Object.keys(builtIn)) {
+      const c = art?.get(names[kind]);
+      table[kind] = c?.frames.length ? c.frames[0] : builtIn[kind];
+      if (c && c.frames.length > 1) animated.push([table, kind, c.frames, c.fps]);
+    }
+  }
+}
+
+/** Step animated cursors to `timeMs` (OpenRA's cursors animate); returns whether any changed. */
+export function tickCursors(timeMs) {
+  let changed = false;
+  for (const [table, kind, frames, fps] of animated) {
+    const value = frames[Math.floor((Math.max(0, timeMs) / 1000) * fps) % frames.length];
+    if (table[kind] !== value) {
+      table[kind] = value;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** An array or object whose entries read `CURSORS` when used (so replaced cursors show everywhere). */
+function live(target, keys) {
+  for (const [k, kind] of Object.entries(keys)) {
+    Object.defineProperty(target, k, { get: () => (Array.isArray(kind) ? kind.map((c) => CURSORS[c]) : CURSORS[kind]), enumerable: true });
+  }
+  return target;
+}
+
+/**
+ * Cursor for a smart action code from Game.cursor_action (0 none ... 17
+ * capture from outside, ACTION below). The mechanic fixes with OpenRA's
+ * "repair" cursor (its Armament Cursor), the repair mode's kind; reusable
+ * engineers capture with "ability" (Captures@REUSABLE EnterCursor).
+ */
+export const ACTION_CURSORS = live(new Array(18), [
+  'select',
+  'move',
+  'attack',
+  'harvest',
+  'dock',
+  'repair',
+  'load',
+  'deliver',
+  'enter',
+  'enter',
+  'c4',
+  'goldwrench',
+  'heal',
+  'repairMode',
+  'ability',
+  'enterBlocked',
+  'goldwrenchBlocked',
+  'ability',
+]);
 
 /** Smart action codes, matching SmartAction in engine/src/world.rs. */
-export const ACTION = { NONE: 0, MOVE: 1, ATTACK: 2, HARVEST: 3, DOCK: 4, REPAIR: 5, LOAD: 6, DELIVER_CASH: 7 };
+export const ACTION = {
+  NONE: 0,
+  MOVE: 1,
+  ATTACK: 2,
+  HARVEST: 3,
+  DOCK: 4,
+  REPAIR: 5,
+  LOAD: 6,
+  DELIVER_CASH: 7,
+  CAPTURE: 8,
+  INFILTRATE: 9,
+  DEMOLISH: 10,
+  INSTANT_REPAIR: 11,
+  HEAL: 12,
+  FIX: 13,
+  DISGUISE: 14,
+  ENTER_BLOCKED: 15,
+  REPAIR_BLOCKED: 16,
+  CAPTURE_OUTSIDE: 17,
+};
 
 /** Targeting cursor per support power kind (OpenRA trait name). */
-export const POWER_CURSORS = {
-  ChronoshiftPower: CURSORS.teleport,
-  GrantExternalConditionPower: CURSORS.ironCurtain,
-  NukePower: CURSORS.nuke,
-};
+export const POWER_CURSORS = live({}, {
+  ChronoshiftPower: 'teleport',
+  GrantExternalConditionPower: 'ironCurtain',
+  NukePower: 'nuke',
+});
 
 /** Edge scroll cursor for a scroll direction (dx, dy in -1..1), or null when not scrolling. */
 export function scrollCursor(dx, dy, blocked = false) {
@@ -273,9 +463,9 @@ export function scrollCursor(dx, dy, blocked = false) {
 }
 
 /** Cursor of a sidebar mode (js/input.js `mode`) over a spot where it can act or not. */
-export const MODE_CURSORS = {
-  sell: [CURSORS.sell, CURSORS.sellBlocked],
-  repair: [CURSORS.repairMode, CURSORS.repairBlocked],
-  powerDown: [CURSORS.powerDown, CURSORS.powerDownBlocked],
-  beacon: [CURSORS.beacon, CURSORS.beacon],
-};
+export const MODE_CURSORS = live({}, {
+  sell: ['sell', 'sellBlocked'],
+  repair: ['repairMode', 'repairBlocked'],
+  powerDown: ['powerDown', 'powerDownBlocked'],
+  beacon: ['beacon', 'beacon'],
+});

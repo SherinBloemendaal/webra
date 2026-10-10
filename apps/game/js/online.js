@@ -8,6 +8,27 @@
 // drops during a game, this tab reconnects on its own with it and keeps its
 // game (the server sends the order log, the driver catches up and resumes);
 // after a page reload it rejoins and rebuilds the game from the log.
+//
+// Lobby maps (docs/security.md "Map sharing"): the host picks a generated
+// map, a community map or one of its own maps (js/maplibrary.js: map editor
+// maps, .oramap imports, maps from earlier lobbies), which it shares with
+// this session only. A player without that map sees "Custom map: <name> by
+// <author>. Install?": Install downloads it from the session (with this
+// member's rejoin key), checks it with the protocol package and the engine,
+// pins its hash and keeps it in the library; Decline leaves the player
+// unready, and the host sees who lacks the map.
+//
+// Online saves: any player proposes saving; once every player accepted and
+// reported the same state hash at the save point, every player's browser
+// keeps the save file (js/saves.js). "Resume a saved game" creates a session,
+// uploads the file (the server checks it against its record) and the lobby
+// waits for the game's players, matched by account; the game then continues
+// after the save point with every client fast-forwarded to it.
+//
+// Rematch: after (or during) a game the host proposes playing again with
+// the same settings; every player accepts in the game overlay or the end of
+// game dialog. The session goes back to its lobby and this page reloads,
+// which brings it back into that lobby with the stored rejoin key.
 
 import {
   CHAT_MAX,
@@ -35,6 +56,8 @@ import {
   STARTING_UNITS,
   TEAM_MAX,
   TECH_LEVELS,
+  TIME_LIMITS,
+  HANDICAPS,
   MAP_STYLES,
   BIOMES,
   WEATHER_MODES,
@@ -50,6 +73,10 @@ import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { hotkeys } from './hotkeys.js';
 import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from './chatkeys.js';
+import { mapLibrary } from './maplibrary.js';
+import { formatTicks } from './replay.js';
+import { SaveStore } from './saves.js';
+import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -103,13 +130,20 @@ const SELECT_OPTIONS = [
   ['startingUnits', 'Starting units', STARTING_UNITS.map((v) => [v, LABELS.startingUnits[v]])],
   ['techLevel', 'Tech level', TECH_LEVELS.map((v) => [v, LABELS.techLevel[v]])],
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
+  ['timeLimit', 'Time limit', TIME_LIMITS.map((v) => [v, v === 0 ? 'No limit' : `${v} minutes`])],
 ];
 const TOGGLES = [
+  ['crates', 'Crates'],
+  ['shortGame', 'Short game'],
   ['fog', 'Fog of war'],
   ['explored', 'Explored map'],
+  ['allyBuildRadius', 'Ally build radius'],
   ['buildRadius', 'Build radius'],
+  ['separateTeamSpawns', 'Separate team spawns'],
   ['redeployableMcv', 'Redeployable MCVs'],
+  ['bounty', 'Kill bounties'],
   ['oreRegrowth', 'Ore regrowth'],
+  ['reusableEngineers', 'Reusable engineers'],
   ['cheats', 'Debug menu (cheats)'],
 ];
 /** Every option of the online lobby with a "?" (tests check each one has help). */
@@ -125,8 +159,21 @@ export const ONLINE_HELP_KEYS = [
   'faction',
   'colorOnline',
   'team',
+  'handicap',
   'spectators',
 ];
+/** What a member's map state says in the lobby (protocol MAP_STATES). */
+const MAP_STATE_TEXT = { installed: 'Has map', missing: 'No map', declined: 'Declined map' };
+/** Map file size for people: 12 KB, 1.2 MB. */
+export function formatBytes(n) {
+  if (n < 1000) return `${n} bytes`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)} KB`;
+  return `${(n / 1_000_000).toFixed(1)} MB`;
+}
+/** The install question for a lobby map (text only: names are never markup). */
+export function mapQuestion(map) {
+  return `${map.shared ? 'Custom map' : 'Community map'}: ${map.name} by ${map.author}. Install?`;
+}
 
 // ---- DOM helpers -------------------------------------------------------------
 
@@ -338,7 +385,9 @@ export class OnlineUI {
    *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
    *   onBack: () => void,
    *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
-   * }} ctx  account: signed-in players play under their username (protocol 5)
+   *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
+   * }} ctx  account: signed-in players play under their username (protocol 5);
+   *   sounds: OpenRA's chat and lobby sounds (js/audio/index.js)
    */
   constructor(root, ctx) {
     this.root = root;
@@ -349,6 +398,21 @@ export class OnlineUI {
     this.installed = new Map();
     this.mapStatus = { hash: null, text: '', ok: true };
     this.serverMaps = [];
+    /** The local map library (js/maplibrary.js) and its list for the host's map picker. */
+    this.library = ctx.library ?? mapLibrary();
+    this.libraryMaps = [];
+    /** This member's credential for the session's map endpoints: { client, key } (the rejoin key). */
+    this.member = null;
+    /** The lobby map this player has not installed yet: { hash, declined, busy } or null. */
+    this.mapOffer = null;
+    /** The rematch proposal of the running game (`rematch` messages) or null, and who listens. */
+    this.rematch = null;
+    this.rematchSubs = new Set();
+    /** Saving the running game (`save` messages) or null, and who listens. */
+    this.saving = null;
+    this.saveSubs = new Set();
+    /** Saved games in this browser (online saves are stored here too). */
+    this.saves = ctx.saves ?? SaveStore.browser();
     this.refreshTimer = 0;
     this.inGame = false;
     this.root.classList.add('online');
@@ -361,13 +425,13 @@ export class OnlineUI {
   async rejoinAfterReload(record) {
     this.root.textContent = '';
     const page = el('div', 'online-page');
-    page.append(el('h1', 'online-title', 'Rejoining your game...'), el('p', 'online-muted', 'Reconnecting to the server.'));
+    page.append(el('h1', 'online-title', 'Rejoining your session...'), el('p', 'online-muted', 'Reconnecting to the server.'));
     this.root.append(page);
     try {
       await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true });
     } catch (err) {
       clearRejoin();
-      this.showBrowser(`Could not rejoin the game: ${messageOf(err)}`);
+      this.showBrowser(`Could not rejoin: ${messageOf(err)}`);
     }
   }
 
@@ -417,6 +481,7 @@ export class OnlineUI {
     tools.append(
       nameField,
       button('Host game', 'online-btn-primary', () => this.hostDialog()),
+      button('Resume a saved game', null, () => this.resumeDialog()),
       button('Refresh', null, () => this.refresh()),
     );
     const joinRow = el('div', 'online-tools');
@@ -534,22 +599,29 @@ export class OnlineUI {
     this.listStatus.textContent = sessions.length ? '' : 'No open public sessions. Host one!';
   }
 
-  async hostDialog() {
+  /**
+   * The host dialog; creates the session and joins it. `resume`: the text
+   * and parsed replay of an online save to continue in it.
+   */
+  async hostDialog(resume = null) {
     const name = this.playerName();
     if (!name) return;
-    const input = await modal('Host a game', (body, close) => {
+    const saved = resume?.replay ?? null;
+    const input = await modal(saved ? 'Resume a saved game' : 'Host a game', (body, close) => {
+      if (saved) body.append(el('p', 'online-muted', `${saved.title}: ${formatTicks(saved.ticks)} played. Its players come back by their accounts.`));
       const title = el('input', 'online-input');
       title.maxLength = SESSION_NAME_MAX;
-      title.value = `${name}'s game`;
-      const pub = switchInput({ checked: true });
+      title.value = saved ? saved.title.slice(0, SESSION_NAME_MAX) : `${name}'s game`;
+      const pub = switchInput({ checked: !saved });
       const pass = el('input', 'online-input');
       pass.type = 'password';
       pass.maxLength = PASSWORD_MAX;
       pass.autocomplete = 'new-password';
       pass.placeholder = 'Optional';
+      const need = saved ? Math.max(MIN_PLAYERS, saved.options.players.length) : MIN_PLAYERS;
       const max = select(
-        Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => [i + MIN_PLAYERS, String(i + MIN_PLAYERS)]),
-        4,
+        Array.from({ length: MAX_PLAYERS - need + 1 }, (_, i) => [i + need, String(i + need)]),
+        saved ? need : 4,
       );
       const pubRow = el('label', 'online-toggle');
       pubRow.append(pub, el('span', null, 'List in the server browser'));
@@ -566,8 +638,54 @@ export class OnlineUI {
       if (input.password) body.password = input.password;
       const { id, hostKey } = await api.createSession(body);
       await this.connect(id, { name, hostKey });
+      if (resume) await this.loadResume(resume.text);
     } catch (err) {
       this.showProblem(err);
+    }
+  }
+
+  /** Online saves in this browser; pick one to continue it in a new session. */
+  async resumeDialog() {
+    let saves = [];
+    try {
+      saves = (await this.saves.list()).filter((x) => x.mode === 'online');
+    } catch (err) {
+      return this.setError(`Saved games are unavailable: ${messageOf(err)}`);
+    }
+    const chosen = await modal('Resume a saved game', (body, close) => {
+      if (!saves.length) body.append(el('p', 'online-muted', 'No saved online games in this browser. Save one from the game menu during an online game.'));
+      const list = el('div', 'online-sessions');
+      for (const x of saves) {
+        const row = el('div', 'online-row');
+        const info = el('div', 'online-cell online-cell-name');
+        info.append(el('span', null, x.title), el('span', 'online-muted', ` ${formatTicks(x.ticks)} played, saved ${new Date(x.createdAt).toLocaleString()}`));
+        const go = button('Resume', 'online-btn-primary', () => close(x));
+        go.disabled = x.engine !== this.ctx.version;
+        if (go.disabled) go.title = `Made with WebRA ${x.engine}`;
+        row.append(info, go);
+        list.append(row);
+      }
+      const actions = el('div', 'online-dialog-actions');
+      actions.append(button('Cancel', null, () => close(null)));
+      body.append(list, actions);
+    });
+    if (!chosen) return undefined;
+    try {
+      const textValue = await this.saves.text(chosen.id);
+      const r = await this.saves.load(chosen.id, this.ctx.version);
+      if (!r.ok || !textValue) throw new Error(r.error ?? 'This save no longer exists.');
+      return this.hostDialog({ text: textValue, replay: r.replay });
+    } catch (err) {
+      return this.setError(messageOf(err));
+    }
+  }
+
+  /** Host: load the saved game into this lobby (the server checks it against its record). */
+  async loadResume(textValue) {
+    try {
+      await api.resumeSession(this.state.session.id, this.member, textValue);
+    } catch (err) {
+      this.setError(`Could not resume the saved game: ${messageOf(err)}`);
     }
   }
 
@@ -609,7 +727,7 @@ export class OnlineUI {
     conn
       .on('lobby', (m) => this.onLobby(m))
       .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null, !!m.team))
-      .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true))
+      .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
       .on('start', (m) => this.onStart(m))
@@ -618,6 +736,8 @@ export class OnlineUI {
       .on('log', (m) => this.net('log', m))
       .on('sync', (m) => this.net('sync', m))
       .on('desync', (d) => this.inGame && this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true))
+      .on('rematch', (m) => this.onRematch(m))
+      .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
     const welcome = await conn.open({ version: this.ctx.version, ...hello });
     clearInterval(this.refreshTimer);
@@ -625,6 +745,9 @@ export class OnlineUI {
     // Protocol 5: the server says which name this member got (the username when signed in).
     const memberName = typeof welcome.name === 'string' ? welcome.name : hello.name;
     if (welcome.key) saveRejoin({ id, client: welcome.you, key: welcome.key, name: memberName });
+    // The map endpoints take the same key (a rejoin keeps the one from the first join).
+    if (welcome.key) this.member = { client: welcome.you, key: welcome.key };
+    else if (hello.rejoin) this.member = { client: hello.rejoin.client, key: hello.rejoin.key };
     if (reconnect && this.driver) {
       // Same game, new connection: the driver catches up from the server's log.
       this.driver.reattach(conn);
@@ -646,6 +769,7 @@ export class OnlineUI {
       lobbySeen: false,
       rejoin,
     };
+    this.lobbyClients = null;
     if (inviteId()) history.replaceState(null, '', location.pathname);
     if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
     if (!rejoin) {
@@ -798,6 +922,11 @@ export class OnlineUI {
         this.columnTips[key] = infoTip(key, { label });
         c.append(this.columnTips[key].root);
       }
+      // The team column also holds the handicap (OpenRA's lobby column).
+      if (key === 'team') {
+        this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
+        c.append(' / Handicap', this.columnTips.handicap.root);
+      }
       this.slotHead.append(c);
     }
     this.spectatorTip = infoTip('spectators', { label: 'Spectators' });
@@ -829,13 +958,30 @@ export class OnlineUI {
     this.barStatus = el('span', 'online-muted');
     bar.append(this.barStatus, this.readyBtn, this.startBtn);
 
-    page.append(head, this.banner, body, bar);
+    this.resumeBox = el('section', 'online-panel online-resume');
+    this.resumeBox.setAttribute('role', 'status');
+    this.resumeBox.hidden = true;
+    page.append(head, this.banner, this.resumeBox, body, bar);
     this.root.append(page);
   }
 
   onLobby(m) {
     if (!this.state) return;
+    // A lobby during a game: the session went back to its lobby (a rematch
+    // this client missed while its connection was away). Reload into it.
+    if (this.inGame) {
+      this.returnToLobby();
+      return;
+    }
+    // Back in the lobby after a reload (a rematch): build it now.
+    if (!this.slotBox) {
+      this.state.rejoin = false;
+      this.pendingNet = this.state.role === 'spectator' ? [] : null;
+      this.buildLobby();
+      this.loadServerMaps();
+    }
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
+    this.lobbySounds(m, mapChanged);
     Object.assign(this.state, {
       slots: m.slots,
       options: m.options,
@@ -843,11 +989,31 @@ export class OnlineUI {
       hostId: m.hostId,
       spectators: m.spectators,
       maxSpectators: m.maxSpectators,
+      resume: m.resume ?? null,
       lobbySeen: true,
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
     this.renderLobby();
+  }
+
+  /**
+   * OpenRA LobbyLogic's sounds for a lobby update: PlayerJoined when this
+   * player enters the lobby or another one joins, LobbyOptionChanged when
+   * the options or the map change. (Leaving players: the `left` message.)
+   */
+  lobbySounds(m, mapChanged) {
+    const clients = new Set([...m.slots.filter((x) => x.type === 'human').map((x) => x.client), ...m.spectators.map((x) => x.client)]);
+    const before = this.lobbyClients;
+    this.lobbyClients = clients;
+    if (this.inGame) return;
+    if (!before) {
+      this.ctx.sounds?.lobby('joined');
+    } else if ([...clients].some((c) => !before.has(c) && c !== this.state.you)) {
+      this.ctx.sounds?.lobby('joined');
+    } else if (this.state.lobbySeen && (mapChanged || JSON.stringify(m.options) !== JSON.stringify(this.state.options))) {
+      this.ctx.sounds?.lobby('option');
+    }
   }
 
   mySlot() {
@@ -864,17 +1030,49 @@ export class OnlineUI {
     this.renderSpectators();
     this.readyBtn.hidden = this.isHost || !me;
     this.startBtn.hidden = !this.isHost;
-    this.readyBtn.textContent = me && me.ready ? 'Not ready' : 'Ready';
+    this.readyBtn.textContent = me && me.ready ? 'Not ready' : this.state.resume ? 'Ready to continue' : 'Ready';
+    this.renderResume();
     this.readyBtn.disabled = !mapReady && !(me && me.ready);
     const waiting = this.state.slots.filter((s) => s.type === 'human' && s.client !== this.state.hostId && !s.ready).length;
-    this.startBtn.disabled = waiting > 0 || !mapReady;
+    // Who still lacks the lobby's map (players and spectators; the server checks this too).
+    const lacking = this.lackingMap();
+    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0;
     this.barStatus.textContent = !mapReady
       ? this.mapStatus.text || 'Waiting for the map.'
-      : waiting > 0
-        ? `Waiting for ${waiting} player${waiting === 1 ? '' : 's'} to be ready.`
-        : this.isHost
-          ? 'Everyone is ready.'
-          : 'Waiting for the host to start.';
+      : lacking.length > 0
+        ? `Waiting for ${lacking.join(', ')} to install the map.`
+        : waiting > 0
+          ? `Waiting for ${waiting} player${waiting === 1 ? '' : 's'} to be ready.`
+          : this.isHost
+            ? 'Everyone is ready.'
+            : 'Waiting for the host to start.';
+  }
+
+  /** The saved game this lobby resumes, and whose players it still waits for. */
+  renderResume() {
+    const box = this.resumeBox;
+    if (!box) return;
+    const r = this.state.resume;
+    box.hidden = !r;
+    box.textContent = '';
+    if (!r) return;
+    box.append(el('strong', null, `Resuming "${r.title}"`), el('span', null, ` saved ${new Date(r.createdAt).toLocaleString()}, after ${formatTicks(r.ticks)}. The saved settings stay; getting ready means continuing this game.`));
+    if (r.waiting.length) box.append(el('p', 'online-warning', `Waiting for its players: ${r.waiting.join(', ')}.`));
+  }
+
+  /** Names of the members (players and spectators) without the lobby's map installed. */
+  lackingMap() {
+    const st = this.state;
+    if (!st.map) return [];
+    return [...st.slots.filter((s) => s.type === 'human'), ...st.spectators].filter((m) => m.mapState && m.mapState !== 'installed').map((m) => m.name);
+  }
+
+  /** A member's map state as a small badge (only while the lobby has a map). */
+  mapBadge(member) {
+    if (!this.state.map || !member.mapState) return null;
+    const badge = el('span', `online-badge online-map-${member.mapState}`, MAP_STATE_TEXT[member.mapState] ?? member.mapState);
+    badge.dataset.mapState = member.mapState;
+    return badge;
   }
 
   /** Spectator places: who watches, the host's limit, and switching sides. */
@@ -892,6 +1090,14 @@ export class OnlineUI {
       if (sp.account) row.append(accountMark());
       if (sp.client === st.hostId) row.append(el('span', 'online-badge', 'HOST'));
       if (sp.client === st.you) row.append(el('span', 'online-badge online-badge-you', 'YOU'));
+      const badge = this.mapBadge(sp);
+      if (badge) row.append(badge);
+      // The host can remove a spectator (for example one who declined the map).
+      if (this.isHost && sp.client !== st.you) {
+        const remove = button('Remove', 'online-btn-small', () => this.send({ t: 'kick', client: sp.client }));
+        remove.setAttribute('aria-label', `Remove ${sp.name}`);
+        row.append(remove);
+      }
       list.append(row);
     }
     if (!st.spectators.length) list.append(el('span', 'online-muted', 'Nobody is watching.'));
@@ -924,7 +1130,8 @@ export class OnlineUI {
       row.setAttribute('role', 'row');
       const who = el('div', 'online-cell online-cell-player');
       who.append(el('span', 'online-badge', `P${i + 1}`));
-      const editable = (slot.type === 'human' && i === mine) || (slot.type === 'ai' && host);
+      // A resumed save keeps its saved slots.
+      const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
       if (slot.type === 'human' || slot.type === 'ai') {
         row.style.setProperty('--slot-color', rgbCss(this.ctx.colors[slot.color] || [1, 1, 1]));
         if (slot.type === 'human') {
@@ -962,9 +1169,18 @@ export class OnlineUI {
         team.disabled = !editable;
         team.setAttribute('aria-label', `Player ${i + 1} team`);
         describedBy(team, this.columnTips.team);
-        const cells = [faction, color, team].map((c) => {
+        // OpenRA handicap: each player sets its own, the host an AI's.
+        const handicap = select(
+          HANDICAPS.map((h) => [h, `${h}%`]),
+          slot.handicap ?? 0,
+          (v) => this.send({ t: 'slot', slot: i, handicap: Number(v) }),
+        );
+        handicap.disabled = !editable;
+        handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
+        describedBy(handicap, this.columnTips.handicap);
+        const cells = [faction, color, [team, handicap]].map((c) => {
           const cell = el('div', 'online-cell');
-          cell.append(c);
+          cell.append(...[c].flat());
           return cell;
         });
         row.append(who, ...cells);
@@ -976,7 +1192,11 @@ export class OnlineUI {
       if (slot.type === 'human' && slot.client !== this.state.hostId) {
         action.append(el('span', slot.ready ? 'online-ready' : 'online-muted', slot.ready ? 'Ready' : 'Not ready'));
       }
-      if (host && i !== mine) {
+      if (slot.type === 'human') {
+        const badge = this.mapBadge(slot);
+        if (badge) action.append(badge);
+      }
+      if (host && i !== mine && !this.state.resume) {
         const current = slot.type === 'human' ? 'human' : slot.type;
         const choices = [['open', 'Open'], ['closed', 'Closed'], ['ai', 'Computer']];
         if (slot.type === 'human') choices.unshift(['human', 'Player (kick)']);
@@ -987,7 +1207,7 @@ export class OnlineUI {
         describedBy(type, this.columnTips.playerOnline);
         action.append(type);
       }
-      if (slot.type === 'open') action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
+      if (slot.type === 'open' && !this.state.resume) action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
       row.append(action);
       box.append(row);
     });
@@ -1051,7 +1271,8 @@ export class OnlineUI {
   renderOptions() {
     const o = this.state.options;
     if (!o || !this.optionControls) return;
-    const host = this.isHost;
+    // A resumed save keeps its options.
+    const host = this.isHost && !this.state.resume;
     for (const [key] of [...WORLD_OPTIONS, ...SELECT_OPTIONS]) {
       this.optionControls[key].value = String(o[key]);
       this.optionControls[key].disabled = !host;
@@ -1078,7 +1299,9 @@ export class OnlineUI {
     const caption = el('p', 'online-caption');
     const players = Math.max(MIN_PLAYERS, st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
     if (st.map) {
+      // Names and authors are text, never markup (they come from map files).
       caption.append(el('span', null, `${st.map.name} (${st.map.players} players)`));
+      caption.append(el('span', 'online-badge', st.map.shared ? 'CUSTOM' : 'COMMUNITY'));
       if (st.map.modded) caption.append(el('span', 'online-badge online-badge-modded', 'MODDED'));
       const json = this.installed.get(st.map.hash);
       if (json) this.drawPreview(canvas, () => this.ctx.Game.map_file_preview(json), JSON.parse(json).width);
@@ -1091,18 +1314,36 @@ export class OnlineUI {
       this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
     }
     canvas.setAttribute('aria-label', `Map preview: ${caption.textContent}`);
-    const status = el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text);
-    box.append(canvas, caption, status);
-    if (!this.isHost) return;
+    box.append(canvas, caption);
+    if (st.map) box.append(el('p', 'online-muted online-map-details', `By ${st.map.author}, ${st.map.width} x ${st.map.height} cells, ${formatBytes(st.map.bytes)}`));
+    const offer = this.renderMapOffer();
+    if (offer) box.append(offer);
+    box.append(el('p', this.mapStatus.ok ? 'online-muted' : 'online-warning', this.mapStatus.text));
+    if (!this.isHost || st.resume) return;
 
-    // Host controls: source, generated map settings, upload.
-    const choices = [['generated', 'Generated map'], ...this.serverMaps.map((m) => [m.id, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])];
-    if (st.map && !this.serverMaps.some((m) => m.id === st.map.id)) choices.push([st.map.id, st.map.name]);
-    const source = select(choices, st.map ? st.map.id : 'generated', (v) => {
-      if (v === 'generated') return this.send({ t: 'map', map: null });
-      const m = this.serverMaps.find((x) => x.id === v);
-      if (m) this.send({ t: 'map', map: { id: m.id, hash: m.hash, name: m.name, modded: m.modded } });
-    });
+    // Host controls: a generated map, a community map or one of the host's own maps.
+    const source = el('select', 'online-select');
+    const option = (parent, value, label) => {
+      const o = el('option', null, label);
+      o.value = value;
+      parent.append(o);
+    };
+    option(source, 'generated', 'Generated map');
+    const current = st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
+    const groups = [
+      ['My maps', this.libraryMaps.map((m) => [`mine:${m.hash}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
+      ['Community maps', this.serverMaps.map((m) => [`community:${m.id}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
+    ];
+    if (st.map && ![...groups[0][1], ...groups[1][1]].some(([v]) => v === current)) groups[st.map.shared ? 0 : 1][1].push([current, st.map.name]);
+    for (const [label, items] of groups) {
+      if (!items.length) continue;
+      const g = el('optgroup');
+      g.label = label;
+      for (const [v, text] of items) option(g, v, text);
+      source.append(g);
+    }
+    source.value = current;
+    source.addEventListener('change', () => this.pickMap(source.value));
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
     if (!st.map) {
@@ -1124,14 +1365,44 @@ export class OnlineUI {
     }
     const file = el('input');
     file.type = 'file';
-    file.accept = '.json,application/json';
+    file.accept = '.json,application/json,.oramap';
     file.hidden = true;
     file.addEventListener('change', () => {
-      if (file.files && file.files[0]) this.uploadMap(file.files[0]);
+      if (file.files && file.files[0]) this.shareFile(file.files[0]);
       file.value = '';
     });
-    const upload = button('Upload map file', null, () => file.click());
-    box.append(controls, upload, file);
+    const load = button('Load map file', null, () => file.click());
+    load.title = 'Share a .webra-map.json file or an OpenRA .oramap map with this lobby';
+    box.append(controls, load, file, el('p', 'online-muted online-map-note', 'Maps you share here go to the players of this session only; they are not published.'));
+  }
+
+  /**
+   * The install question for a lobby map this player does not have yet
+   * ("Custom map: <name> by <author>. Install?"), with Install and Decline;
+   * after a decline, Install stays offered. Null when there is nothing to ask.
+   */
+  renderMapOffer() {
+    const map = this.state.map;
+    const offer = this.mapOffer;
+    if (!map || !offer || offer.hash !== map.hash || this.installed.has(map.hash)) return null;
+    const box = el('div', 'online-map-offer');
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', 'Install the lobby map');
+    box.append(el('p', 'online-map-question', mapQuestion(map)));
+    const details = [`${map.players} players`, `${map.width} x ${map.height}`, formatBytes(map.bytes)];
+    if (map.modded) details.push('modded rules');
+    box.append(el('p', 'online-muted', details.join(', ')));
+    const actions = el('div', 'online-dialog-actions');
+    const install = button(offer.busy ? 'Installing...' : 'Install', 'online-btn-primary', () => this.installLobbyMap());
+    install.disabled = !!offer.busy;
+    actions.append(install);
+    if (!offer.declined) {
+      const decline = button('Decline', null, () => this.declineLobbyMap());
+      decline.disabled = !!offer.busy;
+      actions.append(decline);
+    }
+    box.append(actions);
+    return box;
   }
 
   /** Draw an RGBA-per-cell preview of `width` cells per row. */
@@ -1159,11 +1430,18 @@ export class OnlineUI {
     this.send({ t: 'ready', ready: !me.ready, mapHash: this.state.map ? this.state.map.hash : null });
   }
 
-  chatLine(name, textValue, system = false, team = false) {
+  /**
+   * A chat or system line. In the lobby its sound follows OpenRA's LobbyLogic
+   * (`sound`: 'chat' ChatLine, 'option' LobbyOptionChanged for system lines,
+   * 'left' PlayerLeft); in a game every line plays ChatLine (gameLine).
+   */
+  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option') {
     if (this.inGame) {
       this.gameLine(name ? `${team ? '[Team] ' : ''}${name}: ${textValue}` : textValue);
       return;
     }
+    if (sound === 'chat') this.ctx.sounds?.chatLine();
+    else this.ctx.sounds?.lobby(sound);
     if (!this.chatLog) return;
     const line = el('div', system ? 'online-chat-line online-chat-system' : 'online-chat-line');
     if (name) line.append(el('strong', null, `${name}: `));
@@ -1173,14 +1451,20 @@ export class OnlineUI {
     this.chatLog.scrollTop = this.chatLog.scrollHeight;
   }
 
+  /** The community map list and the host's own maps, for the map picker. */
   async loadServerMaps() {
+    try {
+      this.libraryMaps = await this.library.list();
+    } catch (err) {
+      console.warn('Map library unavailable:', err?.message ?? err);
+    }
     try {
       const maps = await api.maps();
       this.serverMaps = Array.isArray(maps) ? maps : [];
-      if (this.state) this.renderLobby();
     } catch (err) {
       console.warn('Map list unavailable:', err.message);
     }
+    if (this.state && this.slotBox) this.renderLobby();
   }
 
   // ---- Maps ------------------------------------------------------------------------
@@ -1202,42 +1486,155 @@ export class OnlineUI {
 
   setMapStatus(hash, textValue, ok = true) {
     this.mapStatus = { hash, text: textValue, ok };
-    if (this.state) this.renderLobby();
+    if (this.state && this.slotBox) this.renderLobby();
   }
 
-  /** Download, verify and (after the modded warning) install the lobby map. */
+  /** Tell the server whether this member has the lobby map with `hash`. */
+  reportMap(hash, state) {
+    if (this.state?.map?.hash === hash) this.send({ t: 'mapstate', hash, state });
+  }
+
+  /**
+   * The lobby's map changed. A map in this browser's library (checked again
+   * by the engine) is ready at once; otherwise the player is asked first.
+   */
   async ensureMap(ref) {
+    this.mapOffer = null;
     if (!ref) return this.setMapStatus(null, '');
-    if (this.installed.has(ref.hash)) return this.setMapStatus(ref.hash, 'Map installed.');
-    this.setMapStatus(ref.hash, 'Downloading the map...');
     const current = () => this.state && this.state.map && this.state.map.hash === ref.hash;
+    if (!this.installed.has(ref.hash)) {
+      try {
+        const entry = await this.library.get(ref.hash);
+        if (entry) {
+          const map = await this.checkMap(entry.json);
+          if (map.hash === ref.hash) {
+            this.installed.set(map.hash, map.canonical);
+            this.library.touch(map.hash).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('Map library entry unusable:', err?.message ?? err);
+      }
+    }
+    if (!current()) return undefined;
+    if (this.installed.has(ref.hash)) {
+      this.setMapStatus(ref.hash, 'Map installed.');
+      if (!this.isHost) this.reportMap(ref.hash, 'installed');
+      return undefined;
+    }
+    this.mapOffer = { hash: ref.hash, declined: false, busy: false };
+    // The host picked this community map: it installs without asking.
+    if (this.isHost) return this.installLobbyMap();
+    this.setMapStatus(ref.hash, 'You do not have this map yet.', false);
+    return undefined;
+  }
+
+  /** Install: download the lobby map from the session, check it, keep it, report it. */
+  async installLobbyMap() {
+    const ref = this.state?.map;
+    const offer = this.mapOffer;
+    if (!ref || !offer || offer.hash !== ref.hash || offer.busy) return;
+    const current = () => this.state && this.state.map && this.state.map.hash === ref.hash;
+    offer.busy = true;
+    this.setMapStatus(ref.hash, 'Downloading the map...');
     try {
-      const textValue = await api.mapText(ref.id);
-      const map = await this.checkMap(textValue);
-      if (map.hash !== ref.hash) throw new Error('The downloaded map does not match the lobby (hash mismatch).');
-      if (!current()) return undefined;
-      if (map.modded && !(await confirmModdedMap(map.name))) {
-        if (current()) this.setMapStatus(ref.hash, 'You declined the modded map, so you cannot be ready.', false);
-        return undefined;
+      const map = await this.downloadSessionMap(ref);
+      if (!current()) return;
+      if (!map) {
+        offer.busy = false;
+        this.declineLobbyMap();
+        return;
       }
       this.installed.set(map.hash, map.canonical);
-      if (current()) this.setMapStatus(ref.hash, 'Map installed.');
+      this.mapOffer = null;
+      this.setMapStatus(ref.hash, 'Map installed.');
+      this.reportMap(ref.hash, 'installed');
     } catch (err) {
+      offer.busy = false;
       if (current()) this.setMapStatus(ref.hash, messageOf(err), false);
+    }
+  }
+
+  /** Decline: this player stays unready, and the host sees it. */
+  declineLobbyMap() {
+    const ref = this.state?.map;
+    if (!ref || !this.mapOffer || this.mapOffer.hash !== ref.hash) return;
+    this.mapOffer.declined = true;
+    this.reportMap(ref.hash, 'declined');
+    this.setMapStatus(ref.hash, 'You declined the map, so you cannot be ready. Install it to play.', false);
+  }
+
+  /**
+   * The session's map with `ref.hash`, downloaded with this member's key,
+   * checked like any map (protocol and engine), pinned to the hash, accepted
+   * by the player when modded, and kept in the library. Returns checkMap's
+   * result, or null when the player declined the modded map.
+   */
+  async downloadSessionMap(ref) {
+    if (!this.member || !this.state?.session) throw new Error('Not connected to a session.');
+    const textValue = await api.sessionMap(this.state.session.id, this.member, ref.hash);
+    const map = await this.checkMap(textValue);
+    if (map.hash !== ref.hash) throw new Error('The downloaded map does not match the lobby (hash mismatch).');
+    if (map.modded && !(await confirmModdedMap(map.name))) return null;
+    await this.library.add(map.canonical, { source: 'lobby', expectHash: ref.hash }).catch((err) => console.warn('Map library:', err?.message ?? err));
+    return map;
+  }
+
+  /** Host: pick a map from the picker (`generated`, `community:<id>` or `mine:<hash>`). */
+  async pickMap(value) {
+    if (value === 'generated') return this.send({ t: 'map', map: null });
+    const [kind, key] = value.split(':');
+    if (kind === 'community') {
+      const m = this.serverMaps.find((x) => x.id === key);
+      if (m) this.send({ t: 'map', map: { id: m.id, hash: m.hash, name: m.name, modded: m.modded } });
+      return undefined;
+    }
+    if (kind !== 'mine') return undefined;
+    try {
+      const entry = await this.library.get(key);
+      if (!entry) throw new Error('That map is no longer in your library.');
+      await this.shareMap(entry.json);
+    } catch (err) {
+      this.setError(messageOf(err));
+      this.renderLobby();
     }
     return undefined;
   }
 
-  async uploadMap(file) {
+  /**
+   * Host: share map text with this session only (stored unlisted on the
+   * server; docs/security.md). Checked like any map first.
+   */
+  async shareMap(textValue) {
+    const map = await this.checkMap(textValue);
+    if (!this.member || !this.state?.session) throw new Error('Not connected to a session.');
+    this.setMapStatus(map.hash, 'Sharing the map with the lobby...');
+    const res = await api.shareSessionMap(this.state.session.id, this.member, map.canonical);
+    if (res.hash !== map.hash) throw new Error('The server computed a different map hash.');
+    this.installed.set(map.hash, map.canonical);
+    this.library.touch(map.hash).catch(() => {});
+    return map;
+  }
+
+  /** Host: a .webra-map.json or .oramap file: checked, kept in the library, then shared. */
+  async shareFile(file) {
     try {
-      if (file.size > 1024 * 1024) throw new Error('Map files are limited to 1 MiB.');
-      const map = await this.checkMap(await file.text());
+      let textValue;
+      let source = 'file';
+      if (isOramapFile(file.name)) {
+        if (!this.ctx.importOramap) throw new Error('OpenRA maps cannot be imported here.');
+        if (file.size > ORAMAP_MAX_BYTES) throw new Error(`The .oramap file is larger than ${ORAMAP_MAX_BYTES / 1024 / 1024} MiB.`);
+        textValue = (await this.ctx.importOramap(new Uint8Array(await file.arrayBuffer()), file.name)).json;
+        source = 'oramap';
+      } else {
+        if (file.size > 1024 * 1024) throw new Error('Map files are limited to 1 MiB.');
+        textValue = await file.text();
+      }
+      const map = await this.checkMap(textValue);
       if (map.modded && !(await confirmModdedMap(map.name))) return;
-      const res = await api.uploadMap(map.canonical);
-      if (res.hash !== map.hash) throw new Error('The server computed a different map hash.');
-      this.installed.set(map.hash, map.canonical);
-      await this.loadServerMaps();
-      this.send({ t: 'map', map: { id: res.id, hash: res.hash, name: map.name, modded: map.modded } });
+      await this.library.add(map.canonical, { source });
+      this.libraryMaps = await this.library.list();
+      await this.shareMap(map.canonical);
     } catch (err) {
       this.setError(messageOf(err));
     }
@@ -1257,7 +1654,9 @@ export class OnlineUI {
       return;
     }
     // Joining a running game (rejoin, late spectator): the order log follows.
-    const catchUp = st.rejoin || !st.lobbySeen;
+    // A resumed save starts like a rejoin: every client fast-forwards through the saved orders.
+    const catchUp = st.rejoin || !st.lobbySeen || !!m.resume;
+    let resumeFailed = false;
     this.pendingNet ??= [];
     const conn = this.conn;
     let mapText = null;
@@ -1294,13 +1693,16 @@ export class OnlineUI {
         conn,
         onCaughtUp: () => {
           // Players take their seat back; spectators confirm (the server counts them as catching up until then).
-          if (!spectator) this.send({ t: 'resume' });
+          if (!spectator && resumeFailed) {
+            this.gameLine('Your game differs from the saved one, so it cannot continue here. Leave and rejoin to try again.', true);
+          } else if (!spectator) this.send({ t: 'resume' });
           else {
             this.send({ t: 'synced' });
             this.gameLine('Caught up: watching live.');
           }
         },
         onCheck: (ok, tick) => {
+          if (!ok && m.resume) resumeFailed = true;
           if (!ok) this.gameLine(`After catching up, your game differs from the other players' (tick ${tick}). Leave and rejoin to try again.`, true);
         },
       });
@@ -1318,6 +1720,8 @@ export class OnlineUI {
     }
     const { host, game, driver, recorder } = session;
     this.driver = driver;
+    this.recorder = recorder;
+    this.mySeat = me ? me.player : null;
     // Messages that arrived while the game was being set up.
     const pending = this.pendingNet;
     this.pendingNet = null;
@@ -1337,15 +1741,244 @@ export class OnlineUI {
         this.leaveSession();
         driver.stop();
       },
+      rematch: this.rematchHandle(),
+      save: this.saveHandle(),
     });
+    if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
   }
 
-  /** The game's map when this client does not have it yet (rejoin after a reload, late spectator). */
+  // ---- Online saves --------------------------------------------------------------------
+
+  /**
+   * What this client can do about saving now: 'propose', 'accept' (a
+   * proposal waits for this player), 'waiting' (it accepted; others not
+   * yet), 'saving' (agreed, at the save point soon) or null (spectators).
+   */
+  saveAction() {
+    if (!this.inGame || this.mySeat === null || this.mySeat === undefined || this.returning) return null;
+    const sv = this.saving;
+    if (!sv) return 'propose';
+    if (sv.state === 'agreed') return 'saving';
+    if (sv.waiting.includes(this.state.you)) return 'accept';
+    return 'waiting';
+  }
+
+  /** The handle main.js uses for the game menu's Save game. */
+  saveHandle() {
+    const ui = this;
+    return {
+      action: () => ui.saveAction(),
+      run: () => ui.answerSave(true),
+      decline: () => ui.answerSave(false),
+      subscribe: (fn) => {
+        ui.saveSubs.add(fn);
+        return () => ui.saveSubs.delete(fn);
+      },
+    };
+  }
+
+  /** Propose or accept saving (`true`), decline or withdraw it (`false`). */
+  answerSave(accept) {
+    const action = this.saveAction();
+    if (accept && action !== 'propose' && action !== 'accept') return false;
+    if (!accept && (!this.saving || this.saving.state !== 'open')) return false;
+    this.send({ t: 'save', accept });
+    return true;
+  }
+
+  /** A `save` message: a proposal, the agreed save point, the record, or why it ended. */
+  async onSave(m) {
+    if (!this.inGame) return;
+    if (m.state === 'open') {
+      if (!this.saving) this.gameLine(`${m.by === this.state.you ? 'You want' : `${this.clientName(m.by)} wants`} to save the game.`, true);
+      this.saving = m;
+    } else if (m.state === 'agreed') {
+      this.saving = m;
+      this.gameLine(`Everyone agreed: saving the game at ${formatTicks(m.tick + 1)}.`, true);
+    } else if (m.state === 'cancelled') {
+      this.saving = null;
+      const why = {
+        declined: 'a player declined',
+        withdrawn: 'it was withdrawn',
+        left: 'a player left',
+        expired: 'not everyone answered in time',
+        desync: 'the players\' games differ',
+        accounts: 'every player must be signed in',
+        too_long: 'the game is too long',
+        failed: 'the server could not store it',
+      }[m.reason] ?? m.reason;
+      this.gameLine(`Not saved: ${why}.`, true);
+    } else if (m.state === 'saved') {
+      this.saving = null;
+      await this.storeOnlineSave(m);
+    }
+    this.renderSaveBar();
+    for (const fn of this.saveSubs) fn();
+  }
+
+  /** Keep the save file in this browser (players only: spectators cannot resume). */
+  async storeOnlineSave(m) {
+    if (this.mySeat === null || this.mySeat === undefined || !this.recorder) {
+      this.gameLine('The players saved the game.', true);
+      return;
+    }
+    try {
+      const textValue = await this.recorder.encodeOnlineSave(m.ticks, m.hash, m.id);
+      await this.saves.add(textValue);
+      this.gameLine('Game saved. Continue it later with its players: Play online, Resume a saved game.', true);
+    } catch (err) {
+      this.gameLine(`The game was saved on the server, but this browser could not keep the file: ${messageOf(err)}`, true);
+    }
+  }
+
+  /** The save line of the in-game overlay: the proposal with Accept and Decline, or whom it waits for. */
+  renderSaveBar() {
+    const bar = this.saveBar;
+    if (!bar) return;
+    bar.textContent = '';
+    const sv = this.saving;
+    bar.hidden = !sv;
+    if (!sv) return;
+    if (sv.state === 'agreed') {
+      bar.append(el('span', null, 'Saving the game...'));
+      return;
+    }
+    bar.append(el('span', null, `${sv.by === this.state.you ? 'You want' : `${this.clientName(sv.by)} wants`} to save the game.`));
+    const action = this.saveAction();
+    if (action === 'accept') {
+      bar.append(button('Accept', 'online-btn-primary', () => this.answerSave(true)), button('Decline', null, () => this.answerSave(false)));
+    } else if (sv.waiting.length) {
+      bar.append(el('span', 'online-muted', ` Waiting for ${sv.waiting.map((c) => this.clientName(c)).join(', ')}.`));
+    }
+    if (sv.by === this.state.you) bar.append(button('Withdraw', null, () => this.answerSave(false)));
+  }
+
+  // ---- Rematch ------------------------------------------------------------------------
+
+  /**
+   * What this client can do about a rematch now: 'propose' (the host, none
+   * open), 'accept' (an open proposal waits for this player), 'waiting' (it
+   * accepted or proposed; others have not yet) or null (spectators, no game).
+   */
+  rematchAction() {
+    const st = this.state;
+    if (!this.inGame || !st || this.returning) return null;
+    const r = this.rematch;
+    if (!r) return this.isHost ? 'propose' : null;
+    if (r.waiting.includes(st.you)) return 'accept';
+    if (r.accepted.includes(st.you) || r.by === st.you) return 'waiting';
+    return null;
+  }
+
+  /** The handle main.js uses in the end of game dialog, the statistics screen and the game menu. */
+  rematchHandle() {
+    const ui = this;
+    return {
+      action: () => ui.rematchAction(),
+      /** Button text for the current action. */
+      label: () => ({ propose: 'Rematch', accept: 'Accept rematch', waiting: 'Rematch proposed' })[ui.rematchAction()] ?? 'Rematch',
+      /** What the confirmation says. */
+      text: () =>
+        ui.rematchAction() === 'accept'
+          ? 'Play again with the same settings? Once every player accepts, everyone goes back to this lobby and the host starts the next game.'
+          : 'Propose playing again with the same settings? Once every player accepts, everyone goes back to this lobby and you start the next game. This game goes on until then.',
+      run: () => ui.answerRematch(true),
+      decline: () => ui.answerRematch(false),
+      subscribe: (fn) => {
+        ui.rematchSubs.add(fn);
+        return () => ui.rematchSubs.delete(fn);
+      },
+      /** Set by main.js: leave the finished game for the lobby (reloads the page without asking). */
+      set onLobby(fn) {
+        ui.onLobbyReturn = fn;
+      },
+    };
+  }
+
+  /** Propose or accept (`true`), decline or withdraw (`false`). */
+  answerRematch(accept) {
+    const action = this.rematchAction();
+    if (accept && action !== 'propose' && action !== 'accept') return;
+    if (!accept && !this.rematch) return;
+    this.send({ t: 'rematch', accept });
+  }
+
+  /** Who a client is, for rematch lines (players from the start message, the lobby's spectators). */
+  clientName(client) {
+    const p = this.startPlayers?.find((x) => x.client === client);
+    if (p) return p.name;
+    const sp = this.state?.spectators.find((x) => x.client === client);
+    return sp ? sp.name : 'The host';
+  }
+
+  /** A `rematch` message: an open proposal, its end, or the session back in its lobby. */
+  onRematch(m) {
+    if (!this.inGame) return;
+    if (m.state === 'open') {
+      if (!this.rematch) this.gameLine(`${m.by === this.state.you ? 'You propose' : `${this.clientName(m.by)} proposes`} a rematch with the same settings.`, true);
+      this.rematch = m;
+    } else if (m.state === 'cancelled') {
+      this.rematch = null;
+      const why = { declined: 'a player declined', expired: 'not everyone answered in time', left: 'the host left', withdrawn: 'the host withdrew it' }[m.reason] ?? m.reason;
+      this.gameLine(`No rematch: ${why}.`, true);
+    } else if (m.state === 'lobby') {
+      this.rematch = null;
+      this.gameLine('Everyone accepted: back to the lobby.', true);
+      this.returnToLobby();
+    }
+    this.renderRematchBar();
+    for (const fn of this.rematchSubs) fn();
+  }
+
+  /**
+   * Leave the finished game for the session's lobby: the page reloads and
+   * rejoins with the stored key (the server keeps this member's place).
+   * The connection is let go without `leave`, which would give the place up.
+   */
+  returnToLobby() {
+    if (this.returning) return;
+    this.returning = true;
+    this.reconnecting = false;
+    this.conn = null;
+    this.driver?.stop();
+    const go = this.onLobbyReturn ?? (() => location.reload());
+    go();
+  }
+
+  /** The rematch line of the in-game overlay: the proposal, Accept and Decline, or whom it waits for. */
+  renderRematchBar() {
+    const bar = this.rematchBar;
+    if (!bar) return;
+    bar.textContent = '';
+    const r = this.rematch;
+    bar.hidden = !r;
+    if (!r) return;
+    const action = this.rematchAction();
+    const by = r.by === this.state.you ? 'You proposed' : `${this.clientName(r.by)} proposes`;
+    bar.append(el('span', null, `${by} a rematch with the same settings.`));
+    if (action === 'accept') {
+      bar.append(button('Accept', 'online-btn-primary', () => this.answerRematch(true)), button('Decline', null, () => this.answerRematch(false)));
+    } else if (r.waiting.length) {
+      bar.append(el('span', 'online-muted', ` Waiting for ${r.waiting.map((c) => this.clientName(c)).join(', ')}.`));
+    }
+    if (r.by === this.state.you) bar.append(button('Withdraw', null, () => this.answerRematch(false)));
+  }
+
+  /**
+   * The game's map when this client does not have it in memory (rejoin after
+   * a reload, late spectator): from the library, else from the session.
+   */
   async installMapForGame(ref) {
-    const textValue = await api.mapText(ref.id);
-    const map = await this.checkMap(textValue);
-    if (map.hash !== ref.hash) throw new Error('The downloaded map does not match the game (hash mismatch).');
-    if (map.modded && !(await confirmModdedMap(map.name))) throw new Error('You declined the modded map.');
+    const entry = await this.library.get(ref.hash).catch(() => null);
+    if (entry) {
+      const map = await this.checkMap(entry.json);
+      if (map.hash === ref.hash) {
+        this.installed.set(map.hash, map.canonical);
+        return map.canonical;
+      }
+    }
+    const map = await this.downloadSessionMap(ref);
+    if (!map) throw new Error('You declined the modded map.');
     this.installed.set(map.hash, map.canonical);
     return map.canonical;
   }
@@ -1416,7 +2049,14 @@ export class OnlineUI {
     for (const h of CHAT_HOTKEYS) {
       hotkeys.registerAction(h.name, undefined, handlers[h.name] ?? (() => {}), { openra: h.openra, inControls: false, listOnly: h.listOnly });
     }
-    box.append(this.gameLog, this.waitLine, chatInput);
+    this.startPlayers = players;
+    this.rematchBar = el('div', 'online-game-rematch');
+    this.rematchBar.setAttribute('role', 'status');
+    this.rematchBar.hidden = true;
+    this.saveBar = el('div', 'online-game-rematch online-game-save');
+    this.saveBar.setAttribute('role', 'status');
+    this.saveBar.hidden = true;
+    box.append(this.gameLog, this.waitLine, this.rematchBar, this.saveBar, chatInput);
     field2.append(box);
     const list = names.join(', ');
     this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);
@@ -1428,6 +2068,8 @@ export class OnlineUI {
 
   gameLine(textValue, important = false) {
     if (!this.gameLog) return;
+    // OpenRA IngameChatLogic: chat, system and mission lines play ChatLine.
+    this.ctx.sounds?.chatLine();
     const line = el('div', important ? 'online-game-line online-game-important' : 'online-game-line', textValue);
     this.gameLog.append(line);
     while (this.gameLog.childElementCount > 8) this.gameLog.firstElementChild.remove();

@@ -30,9 +30,10 @@ import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { AudioSystem } from './audio/index.js';
+import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { mountMusicPanel } from './audio/musicplayer.js';
-import { CURSORS } from './cursors.js';
+import { CURSORS, setCursorArt, tickCursors } from './cursors.js';
 import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
@@ -41,6 +42,7 @@ import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
+import { BattleFx, motionReduced } from './battlefx.js';
 import { AttackMoveTip, TipView } from './hints.js';
 import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
@@ -316,6 +318,8 @@ function setupContent() {
     });
     const sync = () => {
       setCameoArt(content.cameos());
+      // Red Alert's own mouse cursors when the original graphics are in use (cursors.js).
+      setCursorArt(content.cursors());
       audio?.setPackSounds(content.packSounds()).catch((err) => console.warn('Texture pack sounds are unavailable:', err));
     };
     content.onChange(sync);
@@ -401,7 +405,7 @@ async function offerLinkedMap(lobby) {
   try {
     const { loadPendingMap } = await playAccess.load(() => import('./maploader.js'));
     const map = await loadPendingMap(params);
-    if (map) lobby.offerMapText(JSON.stringify(map));
+    if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link');
   } catch (err) {
     lobby.reportMapProblem(loadErrorText(err));
   }
@@ -433,20 +437,29 @@ function setupOnline(lobby, gpuError) {
         createGame: createOnlineGame,
         colors: TEAM_COLORS,
         colorNames: COLOR_NAMES,
+        // A host shares .oramap maps too: converted like in the skirmish lobby, checked by the engine.
+        importOramap: (bytes, fileName) =>
+          importOramap(bytes, {
+            baseRules: JSON.parse(base_rules_json()),
+            validate: (json) => JSON.parse(Game.validate_map(json)),
+            fileName,
+          }),
         account: account ? { session: account, signIn: (reason) => openSignIn(account, { reason }) } : undefined,
+        // OpenRA's lobby and chat sounds (ChatLine, PlayerJoined, PlayerLeft, LobbyOptionChanged).
+        sounds: audio ? { chatLine: () => audio.chatLine(), lobby: (event) => audio.lobby(event) } : undefined,
         onBack: () => {
           root.hidden = true;
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null }) => {
           entry.hidden = true;
           applyColors(options.players);
           start(host, {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator },
+            online: { driver, onQuit, spectator, rematch, save },
             recorder,
             viewer: spectator ? viewerPlayers(options.players) : null,
             roster: viewerPlayers(options.players),
@@ -619,6 +632,8 @@ async function acceptMap(replay) {
 /** Continue a saved skirmish: re-simulate it, check its state hash, play on. */
 async function loadSave(replay, lobby) {
   if (!renderer || !records) return;
+  // An online save continues only online, with its players (js/online.js).
+  if (replay.mode === 'online') return lobby.showError('This is a saved online game: resume it with its players from Play online.');
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
   try {
@@ -639,6 +654,7 @@ async function loadSave(replay, lobby) {
     roster: viewerPlayers(replay.options.players),
     // Restart plays the saved game again from its start, with its settings.
     restart: restartOf({ ...replay.options, map: replay.map ?? null }),
+    fromSave: true,
   });
 }
 
@@ -689,7 +705,7 @@ function recorderOf({ host, info }) {
 // view switcher and stats. `roster` names and colours the players of any
 // game (statistics, the observer panel after a defeat); `restart` is the
 // js/restart.js record of a single player game (null: no restart).
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null }) {
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false }) {
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
@@ -713,9 +729,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   });
   /** Whether the local player (not a spectator) is allied to `owner`. */
   const allied = (owner) => !viewer && allies(player, owner);
-  audio?.attachGame({ game, rules, player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
+  // Spectators and replays have no player of their own: they hear no player's
+  // private notifications (placement, deploy and sell sounds, "Unit ready", ...).
+  audio?.attachGame({ game, rules, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
+  // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
+  if (!stress && !fromSave) audio?.startGame();
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
   const watched = audio ? audio.watch(game) : game;
@@ -738,9 +758,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const applyArt = () => {
     const art = content?.art(rules.actors, biome) ?? null;
     let atlas = null;
+    let original = null;
     if (art?.slots.size) {
       try {
         atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
+        original = art.original;
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
@@ -748,10 +770,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     }
     atlas ??= buildAtlas(rules.actors, { biome });
     renderer.setAtlas(atlas);
+    // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
+    game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
     // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
     game.set_building_overlays(atlas.overlays);
     // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
     game.set_sprite_poses(atlas.filter === 'nearest');
+    // Dying soldiers play the death sequences of art that has them (engine infantry_render.rs).
+    game.set_death_art(Uint32Array.from(atlas.deaths), Uint32Array.from(atlas.deathTicks));
   };
   applyArt();
   const animClock = new AnimClock();
@@ -764,7 +790,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   renderer.pixelRatio = () => renderPixelRatio(window.devicePixelRatio || 1, settings.get('pixelRatioCap'), settings.get('lowQuality'));
   // Phone layouts (js/layout.js): the sidebar becomes a drawer, the HUD gets compact.
   const layout = new Layout({ app: $('app'), toggle: $('sidebar-toggle') });
-  renderer.setMapSize(game.map_width(), game.map_height());
+  const mapW = game.map_width();
+  const mapH = game.map_height();
+  renderer.setMapSize(mapW, mapH);
   // Terrain art of the map's biome (js/art/terrain.js), or tile terrain from
   // installed content (js/content/terrain.js); the cell layer is built from
   // the first terrain upload below (terrain types never change).
@@ -836,7 +864,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const input = new Input($('view'), ui, rules, player, {
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
-      if (key) audio?.selectTarget();
+      if (key) audio?.selectTarget(key);
     },
     onSelectionChanged: (ids, info) => {
       audio?.selection(ids, info);
@@ -850,6 +878,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     commandCursor: (w, mods) => commandBar?.cursor(w, mods) ?? null,
     cancelCommand: () => commandBar?.cancel() ?? false,
     queuesAttackMove: (shift) => commandBar?.queuesAttackMove(shift) ?? shift,
+    onSmartOrder: (action) => audio?.smartOrder(action),
     onPlainMove: (units, at) => {
       attackMoveTip?.plainMove(units, at).catch((err) => console.warn('attack-move tip:', err));
     },
@@ -884,13 +913,26 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
       onCashTick: (direction) => audio?.cashTick(direction),
+      onProductionClick: (id, outcome) => audio?.productionClick(id, outcome),
     },
     { ticksPerSecond: Game.ticks_per_second(), hotkeys },
   );
   applyRelationshipColors();
   // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
   // test leaves the slot empty, which shows "Radar offline".
-  const minimap = stress ? null : new Minimap($('radar'), { game: ui, fog: (p) => game.fog_bytes(p), player, input, colors: TEAM_COLORS, biome: sky.biome, pings });
+  const minimap = stress
+    ? null
+    : new Minimap($('radar'), {
+        game: ui,
+        fog: (p) => game.fog_bytes(p),
+        player,
+        input,
+        colors: TEAM_COLORS,
+        biome: sky.biome,
+        pings,
+        // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own).
+        onRadar: viewer ? null : (online) => audio?.radar(online),
+      });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
@@ -911,10 +953,24 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     });
   }
   audio?.onAnnounce((key) => notices.announce(key));
+  // Floating cash, camera shake, the nuke flash, game lines and the time limit
+  // clock of the lobby options and big warheads (js/battlefx.js, presentation only).
+  const cssColor = (c) => `rgb(${(c ?? [1, 1, 1]).slice(0, 3).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(', ')})`;
+  const battle = new BattleFx({
+    field: $('field'),
+    rules,
+    pxPerWorld: rules.pxPerCell / Game.world_units_per_cell(),
+    allied: (owner) => !!viewer || allies(player, owner),
+    colorOf: (owner) => cssColor(TEAM_COLORS[owner]),
+    nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
+    line: (text) => notices.push(text),
+    reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
+  });
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('field'), {
     ticksPerSecond: Game.ticks_per_second(),
     onSelect: (power) => input.startPowerTargeting(power),
+    onInsufficientPower: (power) => audio?.insufficientPower(power),
     onTargetLost: () => input.cancelPower(),
     hotkeys,
   });
@@ -1014,17 +1070,32 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // up), so there the menu opens over the running game. The debug menu can
   // also pause a local game without the menu (`paused` is declared above).
   let leaving = false;
-  const leave = () => {
+  // OpenRA IngameMenuLogic.OnQuit: "Battle control terminated" is heard before the game closes.
+  const leave = async () => {
     leaving = true;
     online?.onQuit();
     replay?.dispose();
+    await audio?.leave();
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
   // game reloads the page, which starts it again with the same settings and
   // fresh audio, notifications, statistics, minimap, sidebar, selection and
-  // camera. Online games have none.
-  const restartGame = replay
+  // camera. Online games have a rematch instead (js/online.js): the host
+  // proposes it, every player accepts, and the page reloads into the lobby.
+  const rematch = online?.rematch ?? null;
+  if (rematch) {
+    rematch.onLobby = () => {
+      leaving = true;
+      location.reload();
+    };
+  }
+  /** Whether the end of game screens offer the restart button now. */
+  const canRestart = () => (rematch ? ['propose', 'accept'].includes(rematch.action()) : !!restartGame);
+  const restartLabel = () => (rematch ? rematch.label() : replay ? 'Restart replay' : 'Play again');
+  const restartGame = rematch
+    ? () => rematch.run()
+    : replay
     ? () => {
         replay.seek(0);
         if (!replay.playing) replay.togglePlay();
@@ -1040,13 +1111,34 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
           location.reload();
         }
       : null;
-  const exit = () => {
+  const exit = async () => {
     leaving = true;
     online?.onQuit();
+    await audio?.leave();
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
-  const recordActions = records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress }) : [];
+  // Online: Save game asks every player (js/online.js); the file is kept once they all agree.
+  const onlineSave = online && !online.spectator ? (online.save ?? null) : null;
+  const onlineSaveAction = onlineSave
+    ? [
+        {
+          id: 'onlinesave',
+          label: 'Save game',
+          run: async () => {
+            const action = onlineSave.action();
+            if (action === 'propose' || action === 'accept') {
+              onlineSave.run();
+              return action === 'accept' ? 'You agreed to save the game.' : 'Every player must agree to save the game; it goes on meanwhile.';
+            }
+            if (action === 'waiting') return 'Waiting for the other players to agree.';
+            if (action === 'saving') return 'The game is being saved.';
+            return 'This game cannot be saved now.';
+          },
+        },
+      ]
+    : [];
+  const recordActions = [...onlineSaveAction, ...(records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress, onSaved: () => audio?.gameSaved() }) : [])];
   const fullscreen = {
     available: () => fullscreenAvailable(),
     active: () => isFullscreen(),
@@ -1095,7 +1187,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onSound: audioPanel ? () => audioPanel.open() : undefined,
     onContent: contentPanel ? () => contentPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),
-    restart: restartGame ? { replay: !!replay, run: restartGame } : undefined,
+    restart: rematch
+      ? { online: true, available: canRestart, label: () => rematch.label(), text: () => rematch.text(), run: restartGame }
+      : restartGame
+        ? { replay: !!replay, run: restartGame }
+        : undefined,
     onStats: statsScreen ? openStats : undefined,
     // Live statistics of the other players would give a player still in the game away.
     statsAvailable: () => watching() || flow.over,
@@ -1220,12 +1316,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     showToast(`The game stopped: ${message}`);
   });
   const download = recordActions.find((a) => a.id === 'replay');
-  if (statsScreen) {
-    statsScreen.opts.actions = [
-      ...(restartGame ? [{ label: replay ? 'Restart replay' : 'Play again', run: () => (replay ? (statsScreen.close(), restartGame()) : restartGame()) }] : []),
-      { label: online && !replay && !online.spectator ? 'Leave game' : 'Return to lobby', run: leave },
-    ];
-  }
+  /** The statistics screen's buttons (the rematch button follows the proposal). */
+  const statsActions = () => [
+    ...(canRestart() ? [{ label: restartLabel(), run: () => (replay ? (statsScreen.close(), restartGame()) : restartGame()) }] : []),
+    { label: online && !replay && !online.spectator ? 'Leave game' : 'Return to lobby', run: leave },
+  ];
+  if (statsScreen) statsScreen.opts.actions = statsActions();
 
   // ---- Defeat, victory and the end of the game (js/endgame.js) ----------------------
   /** Names of the winning side, from the newest player state. */
@@ -1271,8 +1367,17 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       leave,
       exit,
     },
-    context: () => ({ winnerText: winnerText(), canRestart: !!restartGame, canDownload: !!download }),
+    context: () => ({ winnerText: winnerText(), canRestart: canRestart(), restartLabel: restartLabel(), canDownload: !!download }),
     blocked: () => !!statsScreen?.isOpen || menu.isOpen,
+  });
+  // A rematch proposal changes what the end of game screens offer.
+  rematch?.subscribe(() => {
+    endDialog.render();
+    if (statsScreen) {
+      statsScreen.opts.actions = statsActions();
+      if (statsScreen.isOpen) statsScreen.render();
+    }
+    if (menu.isOpen) menu.render();
   });
   // Leaving the page by accident (a browser shortcut, a misclick) loses the game: ask first.
   if (!stress && !replay) {
@@ -1307,6 +1412,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Menus, the end of the game, statistics and modal dialogs (saves, online) get the OS cursor.
     mouseCapture?.setBlocked(suspend || !!document.querySelector('dialog[open]'));
     input.update(dt / 1000);
+    // Animated original cursors step like OpenRA's (cursors.js); the input shows the new frame.
+    if (tickCursors(now)) input.updateCursor();
     // Advance the simulation by this frame's time. In a worker this only
     // sends the time: the frame drawn below is the newest one it sent back.
     const v = input.viewRect();
@@ -1335,7 +1442,10 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const fresh = f.id !== drawn;
     if (fresh) {
       drawn = f.id;
+      const wasLoading = !!status.loading;
       status = f.status;
+      // OpenRA StartGameNotification LoadedNotification: the saved game is ready.
+      if (wasLoading && !status.loading && !status.loadError) audio?.gameLoaded();
       simMs = f.simMs;
       online?.driver.update(status.online);
       replay?.update(status.replay);
@@ -1372,6 +1482,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
     pings.onEvents(events, now);
+    battle.onEvents(events, BattleFx.ticksAt(now / 1000), (x, y) => {
+      // In sight now: the frame's fog (255 visible) of the cell.
+      const cx = Math.floor(x / rules.pxPerCell);
+      const cy = Math.floor(y / rules.pxPerCell);
+      const fog = f.fog();
+      return !!viewer || (cx >= 0 && cy >= 0 && cx < mapW && cy < mapH && fog[cy * mapW + cx] === 255);
+    });
     audio?.frame(v, () => f.fog(), events);
 
     // UI rects may call into wasm (placement preview, main thread mode), which
@@ -1392,7 +1509,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
-    renderer.draw(input.camera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
+    const fxTick = BattleFx.ticksAt(now / 1000);
+    const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
+    const drawCamera = shakeX || shakeY ? { ...input.camera, x: input.camera.x + shakeX, y: input.camera.y + shakeY } : input.camera;
+    renderer.draw(drawCamera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
       screenshotPending = false;
@@ -1432,6 +1554,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (f.weather) weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText);
       touch.update();
       if (state) debug.update(state);
+      // The time limit clock (js/battlefx.js), for players and spectators alike.
+      if (state) battle.timeLimit(state);
       if (state && !stress) {
         winner = state.winner ?? null;
         const event = flow.update(state, { ended: !!replay?.ended });

@@ -15,6 +15,7 @@
 
 use crate::ai_arsenal as arsenal;
 use crate::ai_economy as economy;
+use crate::ai_infantry as infantry;
 use crate::math::{dist, CELL};
 use crate::rules::{FootCell, Kind, QueueType};
 use crate::world::{cell_center, Activity, AiDifficulty, HarvState, Order, World};
@@ -73,6 +74,8 @@ pub struct AiState {
     pub passive: bool,
     /// Per player: last tick it damaged one of our structures.
     pub(crate) hurt_at: Vec<Option<u32>>,
+    /// Next capture orders for engineers (ai_infantry.rs; 0: not scheduled yet).
+    pub(crate) next_capture_at: u32,
 }
 
 impl AiState {
@@ -103,6 +106,7 @@ impl AiState {
             last_wave: 0,
             passive: false,
             hurt_at: Vec::new(),
+            next_capture_at: 0,
         }
     }
 }
@@ -145,6 +149,8 @@ pub fn think(w: &mut World, player: u8) {
     let target_player = w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t));
     arsenal::command_bombers(w, player, target_player);
     arsenal::command_jammers(w, player);
+    // Engineers capture (ai_infantry.rs).
+    infantry::command_capturers(w, player);
     use_support_powers(w, player);
 }
 
@@ -250,8 +256,14 @@ fn send_idle_harvesters(w: &mut World, player: u8) {
 /// layer or suicide unit; aircraft and ships have their own orders).
 pub(crate) fn is_army_unit(w: &World, ty: usize) -> bool {
     let info = &w.rules.actors[ty];
+    // Tanya fights infantry only but goes with the squads; dogs stay at home
+    // (OpenRA SquadManagerBotModule ExcludeFromSquadsTypes: dog), and healers
+    // have no weapon against enemies.
+    let fights = info.can_attack(&w.rules, Kind::Vehicle) || (info.kind == Kind::Infantry && info.can_attack(&w.rules, Kind::Infantry));
     matches!(info.kind, Kind::Infantry | Kind::Vehicle)
-        && info.can_attack(&w.rules, Kind::Vehicle)
+        && fights
+        && !info.targets_allies
+        && info.abilities.attack_leap.is_none()
         && info.abilities.demo_truck.is_none()
         && info.abilities.mad_tank.is_none()
 }
@@ -339,8 +351,8 @@ fn queue_buildings(w: &mut World, player: u8) {
             }
         }
     }
-    // The base stands: helipads, airfields and a naval yard.
-    if let Some(ty) = arsenal::next_building(w, player) {
+    // The base stands: a kennel (ai_infantry.rs), helipads, airfields and a naval yard.
+    if let Some(ty) = infantry::kennel(w, player).or_else(|| arsenal::next_building(w, player)) {
         w.start_production(player, ty, 1);
     }
 }
@@ -393,13 +405,15 @@ fn queue_units(w: &mut World, player: u8, starving: bool) {
     let (infantry, vehicles) = (count_kind(Kind::Infantry), count_kind(Kind::Vehicle));
     let iq = QueueType::Infantry as usize;
     if w.players[player as usize].queues[iq].items.len() < 2 && (infantry < 6 + vehicles * 2 || starving) && (order_done || funds >= 600) {
-        // Anti-air soldiers while enemy aircraft are about, else the cheapest soldier.
-        let inf = arsenal::anti_air_infantry(w, player, infantry + vehicles).or_else(|| {
-            candidates.iter().rev().copied().find(|&a| {
-                let info = &w.rules.actors[a as usize];
-                info.queue == QueueType::Infantry && !info.weapons.is_empty()
-            })
-        });
+        // Anti-air soldiers while enemy aircraft are about, else the mix of
+        // OpenRA's UnitsToBuild (ai_infantry.rs), else the cheapest soldier.
+        let inf =
+            arsenal::anti_air_infantry(w, player, infantry + vehicles).or_else(|| infantry::infantry_to_build(w, player)).or_else(|| {
+                candidates.iter().rev().copied().find(|&a| {
+                    let info = &w.rules.actors[a as usize];
+                    info.queue == QueueType::Infantry && !info.weapons.is_empty()
+                })
+            });
         if let Some(inf) = inf {
             w.start_production(player, inf, 1);
         }

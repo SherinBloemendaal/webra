@@ -4,6 +4,7 @@ use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::map::Resource;
 use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
 use crate::rules::Kind;
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
 
 /// Vehicles stop to turn when the heading is off by more than this (45 degrees).
@@ -47,6 +48,10 @@ impl World {
                 self.tick_defense(i);
                 continue;
             }
+            // Husks and crates tick on their own (husks.rs, crates.rs).
+            if matches!(self.actors[i].kind, Kind::Husk | Kind::Crate) {
+                continue;
+            }
             // Paratroopers sink on their parachute until they land (plane.rs).
             if self.actors[i].air.parachute {
                 self.tick_parachute(i);
@@ -70,6 +75,14 @@ impl World {
             if self.actors[i].alive {
                 self.tick_abilities(i);
             }
+            // Cloak UncloakOn: Move (the thief shows itself while it moves).
+            if self.actors[i].alive && self.actors[i].moved && self.actors[i].ab.cloaked {
+                self.uncloak_on(i, "Move");
+            }
+            // Driving onto a crate picks it up (crates.rs).
+            if self.actors[i].alive {
+                self.pick_up_crate(i);
+            }
             if self.actors[i].alive {
                 self.tick_self_heal(i);
                 // Prone countdown and elite self repair (veterancy.rs).
@@ -90,6 +103,10 @@ impl World {
             // Wanders restarts its countdown when the unit becomes idle (neutral.rs).
             self.actors[i].world.wander_busy = true;
         }
+        // A dog in the air does nothing else until it lands (dog.rs).
+        if self.tick_leap(i) {
+            return;
+        }
         match self.actors[i].activity {
             Activity::Idle => self.tick_idle(i),
             Activity::Move => self.tick_move(i),
@@ -101,6 +118,7 @@ impl World {
             Activity::Ability => self.tick_ability_activity(i),
             Activity::Guard => self.tick_guard(i),
             Activity::AttackGround => self.tick_attack_ground(i),
+            Activity::Enter => self.tick_enter(i),
         }
     }
 
@@ -414,7 +432,14 @@ impl World {
         let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
         // Rank speed bonus and prone infantry (veterancy.rs), panicking
         // civilians (neutral.rs), then weather (weather.rs).
-        let speed = self.weather_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100) * self.world_speed_modifier(i) / 100);
+        // Dogs stand still while they eat or reload and run while hunting (dog.rs).
+        if self.movement_paused(i) {
+            return;
+        }
+        let speed = self.weather_speed(
+            i,
+            self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)) * self.world_speed_modifier(i) / 100,
+        );
         let grip = self.grip_of(i, ci);
         let turn_speed = grip.map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1));
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
@@ -663,6 +688,8 @@ impl World {
                     a.refinery = rref;
                     a.harv = HarvState::Unloading;
                     a.harv_timer = hv.bale_unload_delay;
+                    // The dock animation (fx.rs, presentation only).
+                    self.note_dock(i, true);
                     return;
                 }
                 // Wait outside while another harvester unloads.
@@ -698,6 +725,7 @@ impl World {
                     self.actors[r].dock_user = NONE;
                     let a = &mut self.actors[i];
                     a.harv = HarvState::Search;
+                    self.note_dock(i, false);
                 }
             }
         }
@@ -846,34 +874,56 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.actors[i].hp >= max_hp {
+            let (width, height) = (binfo.width, binfo.height);
+            self.note_repaired(i, d);
             // Done: leave the pad toward the depot's rally point (or just below it).
-            let (rx, ry) = self.actors[d]
-                .rally
-                .unwrap_or((cell_center(self.actors[d].cx + binfo.width / 2), cell_center(self.actors[d].cy + binfo.height + 1)));
+            let (rx, ry) =
+                self.actors[d].rally.unwrap_or((cell_center(self.actors[d].cx + width / 2), cell_center(self.actors[d].cy + height + 1)));
             self.order_move(&[i], rx, ry, false);
             return;
         }
-        self.repair_step(i, &rep);
+        // The depot's repair animation (fx.rs, presentation only).
+        self.note_service(d);
+        self.repair_step(i, d, &rep);
     }
 
-    /// One RepairsUnits interval on unit `i`: heal HpPerStep when the owner can pay.
-    pub(crate) fn repair_step(&mut self, i: usize, rep: &crate::rules::RepairInfo) {
+    /// One RepairsUnits interval on unit `i` at structure `by`: heal HpPerStep
+    /// when the owner can pay. `repair_timer` is 0 until the first step.
+    pub(crate) fn repair_step(&mut self, i: usize, by: usize, rep: &crate::rules::RepairInfo) {
         let ty = self.actors[i].ty as usize;
         let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
         let a = &mut self.actors[i];
+        let first = a.repair_timer <= 0;
         a.repair_timer -= 1;
         if a.repair_timer > 0 {
             return;
         }
         a.repair_timer = rep.interval;
-        let step = rep.hp_per_step.min(max_hp - a.hp);
+        let (hp, owner, x, y) = (a.hp, a.owner, a.x, a.y);
+        if first {
+            // OpenRA Resupply: StartRepairingNotification at the first step, before paying.
+            let by_ty = self.actors[by].ty as i32;
+            self.sound.push(SoundEventKind::UnitRepairStarted, ty as i32, x, y, owner, by_ty);
+        }
+        let step = rep.hp_per_step.min(max_hp - hp);
         // OpenRA RepairsUnits: repair costs ValuePercent of the unit's value, pro rata.
         let price = ((cost as i64 * rep.value_percent as i64 * step as i64 + 100 * max_hp as i64 - 1) / (100 * max_hp as i64)) as i32;
-        let owner = a.owner;
         if self.spend(owner, price) {
             self.note_repair(owner, price);
             self.actors[i].hp += step;
             self.uncloak_on(i, "Heal");
+        }
+    }
+
+    /// Unit `i` is fully repaired at structure `by`: FinishRepairingNotification,
+    /// when a repair step happened since the repair order (an undamaged unit
+    /// sent to the depot gets no repair, like OpenRA's Resupply).
+    pub(crate) fn note_repaired(&mut self, i: usize, by: usize) {
+        let a = &self.actors[i];
+        if a.repair_timer > 0 {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            let by_ty = self.actors[by].ty as i32;
+            self.sound.push(SoundEventKind::UnitRepaired, ty, x, y, owner, by_ty);
         }
     }
 
@@ -890,7 +940,8 @@ impl World {
         for i in 0..n {
             let a = &self.actors[i];
             // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
-            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) {
+            // Leaping dogs and units walking into a target pass through the crowd (dog.rs, infantry.rs).
+            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) || self.passes_through(i) {
                 continue;
             }
             let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
@@ -908,7 +959,12 @@ impl World {
                         let b = &self.actors[j];
                         // Only units in the same domain bump into each other
                         // (aircraft fly over tanks, ships never meet tanks).
-                        if !b.alive || self.domain_of(i) != self.domain_of(j) || b.air.parachute || self.is_plane(j) {
+                        if !b.alive
+                            || self.domain_of(i) != self.domain_of(j)
+                            || b.air.parachute
+                            || self.is_plane(j)
+                            || self.passes_through(j)
+                        {
                             continue;
                         }
                         // A landed helicopter and one flying over it do not touch.
@@ -978,7 +1034,13 @@ impl World {
         self.jammed = jammed;
         for (k, crusher) in crushed {
             if self.actors[k].alive {
+                // Crushable.CrushSound, at the crusher (sound_events.rs).
+                let (c, v) = (&self.actors[crusher], &self.actors[k]);
+                let (vty, cx, cy, vowner, cowner) = (v.ty as i32, c.x, c.y, v.owner, c.owner);
+                self.sound.push(SoundEventKind::Crushed, vty, cx, cy, vowner, cowner as i32);
                 let source = self.make_ref(crusher);
+                // Crushed soldiers leave a flattened body (infantry_combat.rs).
+                self.note_crushed(k);
                 self.award_kill(k, source);
                 let by = self.actors[crusher].owner;
                 self.with_damage_source(by, |w| w.kill(k));

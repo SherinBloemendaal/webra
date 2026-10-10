@@ -52,6 +52,14 @@ const OPTIONS = {
   redeployableMcv: true,
   oreRegrowth: true,
   techBuildings: 'standard',
+  // OpenRA's other lobby options (protocol 6).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
+  reusableEngineers: false,
 };
 
 /** In-memory relay: client messages go through the protocol and the server's Lockstep. */

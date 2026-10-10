@@ -14,7 +14,8 @@
 // Every file is hostile: each offset and size is checked, sizes are capped
 // and decoding never reads or writes outside its buffers. The algorithms
 // follow OpenRA (OpenRA.Mods.Cnc ShpTDLoader, LCWCompression,
-// XORDeltaCompression, TmpRALoader, TmpTDLoader; GPL-3.0).
+// XORDeltaCompression, TmpRALoader, TmpTDLoader, ShpD2Loader,
+// RLEZerosCompression; GPL-3.0).
 
 export class ContentError extends Error {}
 
@@ -329,9 +330,111 @@ export function decodeTmp(bytes, limits = SPRITE_LIMITS) {
   return { width, height, tiles };
 }
 
+const D2_PALETTE_TABLE = 1;
+const D2_NOT_LCW = 2;
+const D2_VARIABLE_TABLE = 4;
+
+const u16le = (b, o) => b[o] | (b[o + 1] << 8);
+const u32le = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+
+/** Offsets of a Dune 2 layout SHP (count + 1 of them, the last the end of the file), or null (OpenRA ShpD2Loader.IsShpD2). */
+function shpD2Offsets(bytes) {
+  if (bytes.length < 6) return null;
+  const count = u16le(bytes, 0);
+  if (count === 0) return null;
+  const two = (u32le(bytes, 2) & 0xff0000) > 0;
+  const size = two ? 2 : 4;
+  const end = 2 + size * count;
+  if (end + size > bytes.length) return null;
+  const eof = two ? u16le(bytes, end) : u32le(bytes, end);
+  if (eof + 2 !== bytes.length) return null;
+  const offsets = [];
+  for (let i = 0; i <= count; i++) offsets.push((two ? u16le(bytes, 2 + i * size) : u32le(bytes, 2 + i * size)) + 2);
+  const first = offsets[0];
+  if (first + 2 > bytes.length) return null;
+  const flags = u16le(bytes, first);
+  return flags === 5 || flags <= 3 ? offsets : null;
+}
+
+/** Whether `bytes` look like a Dune 2 layout SHP (Red Alert's mouse.shp). */
+export function isShpD2(bytes) {
+  return !isShp(bytes) && shpD2Offsets(bytes) !== null;
+}
+
+/** OpenRA RLEZerosCompression: 0, n writes n zeros; any other byte is itself. */
+function rleZerosDecode(src, dest) {
+  let d = 0;
+  for (let s = 0; s < src.length; ) {
+    const cmd = src[s++];
+    if (cmd === 0) {
+      if (s >= src.length) throw new ContentError('corrupt RLE data (truncated run)');
+      const n = src[s++];
+      if (d + n > dest.length) throw new ContentError('corrupt RLE data (runs past the frame)');
+      d += n;
+    } else {
+      if (d >= dest.length) throw new ContentError('corrupt RLE data (runs past the frame)');
+      dest[d++] = cmd;
+    }
+  }
+}
+
+/** A Dune 2 layout SHP (OpenRA ShpD2Loader): `{ width, height, frames }`, frames of their own sizes. */
+export function decodeShpD2(bytes, limits = SPRITE_LIMITS) {
+  if (bytes.length > limits.maxBytes) throw new ContentError('file too large');
+  const offsets = shpD2Offsets(bytes);
+  if (!offsets) throw new ContentError('not a Dune 2 SHP');
+  if (offsets.length - 1 > limits.maxFrames) throw new ContentError('too many frames');
+  const frames = [];
+  let width = 0;
+  let height = 0;
+  for (let i = 0; i < offsets.length - 1; i++) {
+    let at = offsets[i];
+    if (at + 10 > bytes.length) throw new ContentError('corrupt Dune 2 SHP (frame header past the end)');
+    const flags = u16le(bytes, at);
+    const w = u16le(bytes, at + 3);
+    const h = bytes[at + 5];
+    let left = u16le(bytes, at + 6) - 10;
+    const decodedSize = u16le(bytes, at + 8);
+    at += 10;
+    if (w > limits.maxSide || h > limits.maxSide) throw new ContentError('frame too large');
+    let table = null;
+    if (flags & D2_PALETTE_TABLE) {
+      const n = flags & D2_VARIABLE_TABLE ? bytes[at++] : 16;
+      if (flags & D2_VARIABLE_TABLE) left -= 1;
+      if (at + n > bytes.length) throw new ContentError('corrupt Dune 2 SHP (table past the end)');
+      table = bytes.slice(at, at + n);
+      at += n;
+      left -= n;
+    } else {
+      table = Uint8Array.from({ length: 256 }, (_, k) => k);
+      table[1] = 0x7f;
+      table[2] = 0x7e;
+      table[3] = 0x7d;
+      table[4] = 0x7c;
+    }
+    if (left < 0 || at + left > bytes.length) throw new ContentError('corrupt Dune 2 SHP (data past the end)');
+    let packed = bytes.subarray(at, at + left);
+    if (!(flags & D2_NOT_LCW)) {
+      const temp = new Uint8Array(decodedSize);
+      const n = lcwDecode(packed, 0, temp);
+      packed = temp.subarray(0, n);
+    }
+    const data = new Uint8Array(w * h);
+    rleZerosDecode(packed, data);
+    for (let k = 0; k < data.length; k++) {
+      const v = table[data[k]];
+      data[k] = v === undefined ? 0 : v;
+    }
+    frames.push({ width: w, height: h, data });
+    width = Math.max(width, w);
+    height = Math.max(height, h);
+  }
+  return { width, height, frames };
+}
+
 /**
  * Any sprite file OpenRA's RA mod reads as a sprite (SpriteFormats: ShpTD,
- * TmpRA, TmpTD): `{ width, height, frames: [{ width, height, data } | null] }`.
+ * TmpRA, TmpTD, ShpD2): `{ width, height, frames: [{ width, height, data } | null] }`.
  * Template tiles become frames (empty slots null), as in OpenRA.
  */
 export function decodeSprite(bytes, limits = SPRITE_LIMITS) {
@@ -340,5 +443,6 @@ export function decodeSprite(bytes, limits = SPRITE_LIMITS) {
     const t = decodeTmp(bytes, limits);
     return { width: t.width, height: t.height, frames: t.tiles.map((data) => (data ? { width: t.width, height: t.height, data } : null)) };
   }
+  if (isShpD2(bytes)) return decodeShpD2(bytes, limits);
   throw new ContentError('not a sprite (SHP or TMP)');
 }

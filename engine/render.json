@@ -1,0 +1,1835 @@
+{
+ "actors": {
+  "1TNK": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       768,
+       0,
+       90
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "25mm"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "2TNK": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       720,
+       0,
+       80
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "90mm"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "3TNK": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       768,
+       85,
+       90
+      ],
+      [
+       768,
+       -85,
+       90
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "105mm"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "4TNK": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       900,
+       180,
+       340
+      ],
+      [
+       900,
+       -180,
+       340
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "120mm"
+    },
+    {
+     "offsets": [
+      [
+       -85,
+       384,
+       340
+      ],
+      [
+       -85,
+       -384,
+       340
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "MammothTusk"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "AFLD": {
+   "active": "resupply"
+  },
+  "AFLD.Ukraine": {
+   "active": "resupply"
+  },
+  "AGUN": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       520,
+       100,
+       450
+      ],
+      [
+       520,
+       -150,
+       450
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "ZSU-23"
+    }
+   ]
+  },
+  "APC": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       85,
+       0,
+       171
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": false,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "M60mg"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "ARTY": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       624,
+       0,
+       208
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": false,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "155mm"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "BOXES01": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES02": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES03": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES04": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES05": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES06": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES07": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES08": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "BOXES09": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "CA": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       480,
+       -100,
+       40
+      ],
+      [
+       480,
+       100,
+       40
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      -896,
+      0,
+      128
+     ],
+     "weapon": "8Inch"
+    },
+    {
+     "offsets": [
+      [
+       480,
+       -100,
+       40
+      ],
+      [
+       480,
+       100,
+       40
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      768,
+      0,
+      128
+     ],
+     "weapon": "8Inch"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "CTNK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "DD": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "DTRK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "FACT": {
+   "active": "placed"
+  },
+  "FIX": {
+   "active": "resupply"
+  },
+  "FTRK": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       512,
+       0,
+       192
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      -298,
+      0,
+      298
+     ],
+     "weapon": "FLAK-23-AA"
+    },
+    {
+     "offsets": [
+      [
+       512,
+       0,
+       192
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      -298,
+      0,
+      298
+     ],
+     "weapon": "FLAK-23-AG"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "GUN": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       512,
+       0,
+       112
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "TurretGun"
+    }
+   ],
+   "recoil": true
+  },
+  "HARV": {
+   "damage_smoke": "heavy",
+   "docking": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "HIND": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       85,
+       -213,
+       -85
+      ],
+      [
+       85,
+       213,
+       -85
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": false,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "ChainGun"
+    }
+   ]
+  },
+  "HPAD": {
+   "active": "resupply"
+  },
+  "ICE01": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "ICE02": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "ICE03": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "ICE04": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "ICE05": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "JEEP": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       128,
+       0,
+       43
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      128
+     ],
+     "weapon": "M60mg"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "LST": {
+   "damage_smoke": "heavy",
+   "landing_craft": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "MCV": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "MGG": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "MH60": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       85,
+       -213,
+       -85
+      ],
+      [
+       85,
+       213,
+       -85
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": false,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "ChainGun"
+    }
+   ]
+  },
+  "MNLY": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "MRJ": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "MSLO": {
+   "active": "launch"
+  },
+  "MSUB": {
+   "damage_smoke": "critical",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "PT": {
+   "damage_smoke": "heavy",
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       208,
+       0,
+       48
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      512,
+      0,
+      0
+     ],
+     "weapon": "2Inch"
+    },
+    {
+     "offsets": [
+      [
+       0,
+       0,
+       0
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      512,
+      0,
+      0
+     ],
+     "weapon": "DepthCharge"
+    }
+   ],
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "QTNK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "SAM": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       0,
+       0,
+       320
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": true,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "Nike"
+    }
+   ]
+  },
+  "SS": {
+   "damage_smoke": "critical",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "STNK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "T01": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T02": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T03": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T04": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T05": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T06": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T07": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T08": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T09": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T10": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T11": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T12": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T13": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T14": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T15": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T16": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "T17": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TC01": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TC02": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TC03": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TC04": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TC05": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "TRUK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "TSLA": {
+   "active": "charge"
+  },
+  "TTNK": {
+   "damage_smoke": "heavy",
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "UTILPOL1": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "UTILPOL2": {
+   "damage_smoke": "light",
+   "smoke_loops": [
+    1,
+    5
+   ]
+  },
+  "V2RL": {
+   "damage_smoke": "heavy",
+   "reload_body": true,
+   "smoke_loops": [
+    1,
+    3
+   ]
+  },
+  "YAK": {
+   "muzzles": [
+    {
+     "offsets": [
+      [
+       256,
+       -213,
+       0
+      ],
+      [
+       256,
+       213,
+       0
+      ]
+     ],
+     "sequence": "muzzle",
+     "turret": false,
+     "turret_offset": [
+      0,
+      0,
+      0
+     ],
+     "weapon": "ChainGun.Yak"
+    }
+   ]
+  }
+ },
+ "explosions": [
+  "artillery_explosion",
+  "building",
+  "flak_explosion_ground",
+  "large_explosion",
+  "large_napalm",
+  "large_splash",
+  "med_explosion",
+  "med_explosion_air",
+  "med_splash",
+  "napalm",
+  "nuke",
+  "piff",
+  "piffs",
+  "self_destruct",
+  "small_explosion",
+  "small_explosion_air",
+  "small_napalm",
+  "small_splash",
+  "water_piff",
+  "water_piffs"
+ ],
+ "weapons": {
+  "105mm": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "120mm": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "155mm": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "25mm": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "2Inch": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "8Inch": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "90mm": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "APMine": [
+   {
+    "delay": 0,
+    "explosions": [
+     9
+    ],
+    "valid": 3
+   }
+  ],
+  "APTusk": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "APTusk.stnk": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "ATMine": [
+   {
+    "delay": 0,
+    "explosions": [
+     3
+    ],
+    "valid": 3
+   }
+  ],
+  "ArtilleryExplode": [
+   {
+    "delay": 0,
+    "explosions": [
+     13
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "Atomic": [
+   {
+    "delay": 0,
+    "explosions": [
+     10
+    ],
+    "valid": 7
+   }
+  ],
+  "BarrelCluster": [
+   {
+    "delay": 5,
+    "explosions": [
+     4
+    ],
+    "valid": 13
+   }
+  ],
+  "BarrelExplode": [
+   {
+    "delay": 0,
+    "explosions": [
+     1
+    ],
+    "valid": 3
+   }
+  ],
+  "ChainGun": [
+   {
+    "delay": 0,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   }
+  ],
+  "ChainGun.Yak": [
+   {
+    "delay": 0,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   }
+  ],
+  "Colt45": [
+   {
+    "delay": 0,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   }
+  ],
+  "CrateExplosion": [
+   {
+    "delay": 0,
+    "explosions": [
+     13
+    ],
+    "valid": 15
+   }
+  ],
+  "CrateNapalm": [
+   {
+    "delay": 0,
+    "explosions": [
+     9
+    ],
+    "valid": 15
+   }
+  ],
+  "Demolish": [
+   {
+    "delay": 0,
+    "explosions": [
+     1
+    ],
+    "valid": 3
+   }
+  ],
+  "DepthCharge": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 8
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "Dragon": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "FLAK-23-AA": [
+   {
+    "delay": 0,
+    "explosions": [
+     15
+    ],
+    "valid": 7
+   }
+  ],
+  "FLAK-23-AG": [
+   {
+    "delay": 0,
+    "explosions": [
+     2
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "FireballLauncher": [
+   {
+    "delay": 0,
+    "explosions": [
+     9
+    ],
+    "valid": 3
+   }
+  ],
+  "Flamer": [
+   {
+    "delay": 0,
+    "explosions": [
+     16
+    ],
+    "valid": 3
+   }
+  ],
+  "Grenade": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "HellfireAA": [
+   {
+    "delay": 0,
+    "explosions": [
+     7
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "HellfireAG": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "M1Carbine": [
+   {
+    "delay": 0,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 2,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 2,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 4,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 4,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   }
+  ],
+  "M60mg": [
+   {
+    "delay": 0,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   }
+  ],
+  "MADTankDetonate": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 3
+   }
+  ],
+  "MammothTusk": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 1
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     7
+    ],
+    "valid": 4
+   }
+  ],
+  "Maverick": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "MiniNuke": [
+   {
+    "delay": 0,
+    "explosions": [
+     10
+    ],
+    "valid": 3
+   }
+  ],
+  "Nike": [
+   {
+    "delay": 0,
+    "explosions": [
+     7
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "OreExplosion": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 3
+   }
+  ],
+  "ParaBomb": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "Pistol": [
+   {
+    "delay": 0,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   }
+  ],
+  "RedEye": [
+   {
+    "delay": 0,
+    "explosions": [
+     7
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "SCUD": [
+   {
+    "delay": 0,
+    "explosions": [
+     9
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "SilencedPPK": [
+   {
+    "delay": 0,
+    "explosions": [
+     11
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     18
+    ],
+    "valid": 2
+   }
+  ],
+  "Stinger": [
+   {
+    "delay": 0,
+    "explosions": [
+     6
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "StingerAA": [
+   {
+    "delay": 0,
+    "explosions": [
+     7
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     8
+    ],
+    "valid": 2
+   }
+  ],
+  "SubMissile": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "SubMissileAA": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "TorpTube": [
+   {
+    "delay": 0,
+    "explosions": [
+     0
+    ],
+    "valid": 11
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "TurretGun": [
+   {
+    "delay": 0,
+    "explosions": [
+     14
+    ],
+    "valid": 9
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     17
+    ],
+    "valid": 2
+   }
+  ],
+  "UnitExplode": [
+   {
+    "delay": 0,
+    "explosions": [
+     13
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "UnitExplodePlane": [
+   {
+    "delay": 0,
+    "explosions": [
+     4
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "UnitExplodeShip": [
+   {
+    "delay": 0,
+    "explosions": [
+     1
+    ],
+    "valid": 3
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "UnitExplodeSmall": [
+   {
+    "delay": 0,
+    "explosions": [
+     3
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "UnitExplodeSubmarine": [
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "V2Explode": [
+   {
+    "delay": 0,
+    "explosions": [
+     9
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     5
+    ],
+    "valid": 2
+   }
+  ],
+  "Vulcan": [
+   {
+    "delay": 0,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 0,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 2,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 2,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 4,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 4,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 6,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 6,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 8,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 8,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   },
+   {
+    "delay": 10,
+    "explosions": [
+     12
+    ],
+    "valid": 13
+   },
+   {
+    "delay": 10,
+    "explosions": [
+     19
+    ],
+    "valid": 2
+   }
+  ],
+  "ZSU-23": [
+   {
+    "delay": 0,
+    "explosions": [
+     15
+    ],
+    "valid": 7
+   }
+  ]
+ }
+}

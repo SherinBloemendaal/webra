@@ -17,7 +17,8 @@ struct Frame {
     // Pose descriptor: first frame, frames per facing, frames per second, mode.
     anim: vec4f,
     // Head of a sequence slot: first pose descriptor, pose count (> 0 marks the slot).
-    // Pose descriptor: facings, flags (1 classic facings, 2 free rotation), interpolated facings.
+    // Pose descriptor: facings, flags (1 classic facings, 2 free rotation), interpolated facings,
+    // lead-in frames (MODE_LEAD).
     seq: vec4f,
 };
 
@@ -36,11 +37,15 @@ struct VsOut {
 
 const TURN: f32 = 6.28318530717958647692;
 const POSE_STRIDE: u32 = 4096u;
-const POSE_CODES: u32 = 16u;
+const POSE_CODES: u32 = 32u;
 const MODE_LOOP: u32 = 0u;
 const MODE_ONCE: u32 = 1u;
 const MODE_STILL: u32 = 2u;
 const MODE_INDEX: u32 = 3u;
+// The first seq.w frames once from the age, then the rest looping on the render clock.
+const MODE_LEAD: u32 = 4u;
+// Play once from the age, then nothing (infantry death animations).
+const MODE_VANISH: u32 = 5u;
 const FLAG_CLASSIC: u32 = 1u;
 const FLAG_ROTATE: u32 = 2u;
 // Simulation ticks per second: ages are in ticks (engine TICKS_PER_SECOND).
@@ -117,20 +122,26 @@ fn vs(@builtin(vertex_index) vi: u32,
     let phase = hash2(a.xy * 0.01);
     var index = slot;
     var angle = a.z;
+    // A finished VANISH pose (death animations) draws nothing.
+    var hidden = false;
     let head = frames[slot];
     if (head.seq.y > 0.5) {
         let base = u32(head.seq.x);
         var d = frames[base + min(pose, u32(head.seq.y) - 1u)];
         var mode = u32(d.anim.w);
         var k = 0u;
-        if (mode == MODE_ONCE) {
+        if (mode == MODE_ONCE || mode == MODE_VANISH) {
             let f = u32(floor(f32(age) * d.anim.z / TICKS_PER_SECOND));
-            if (f >= max(u32(d.anim.y), 1u)) {
+            let count = max(u32(d.anim.y), 1u);
+            if (f < count) {
+                k = f;
+            } else if (mode == MODE_VANISH) {
+                hidden = true;
+                k = count - 1u;
+            } else {
                 // Finished: the idle pose takes over.
                 d = frames[base];
                 mode = u32(d.anim.w);
-            } else {
-                k = f;
             }
         }
         let len = max(u32(d.anim.y), 1u);
@@ -140,6 +151,16 @@ fn vs(@builtin(vertex_index) vi: u32,
             k = min(age, len - 1u);
         } else if (mode == MODE_STILL) {
             k = 0u;
+        } else if (mode == MODE_LEAD) {
+            let lead = min(u32(d.seq.w), len);
+            let f = u32(floor(f32(age) * d.anim.z / TICKS_PER_SECOND));
+            if (f < lead) {
+                k = f;
+            } else if (len > lead) {
+                k = lead + anim_frame(g.anim.x, g.anim.y, d.anim.z, len - lead, phase);
+            } else {
+                k = len - 1u;
+            }
         }
         let facings = max(u32(d.seq.x), 1u);
         let flags = u32(d.seq.y);
@@ -163,7 +184,7 @@ fn vs(@builtin(vertex_index) vi: u32,
         index = u32(head.anim.x) + anim_frame(g.anim.x, g.anim.y, head.anim.z, u32(head.anim.y), phase);
     }
     let f = frames[index];
-    let local = ((corner - 0.5) * f.size.xy + f.size.zw) * b.y;
+    let local = ((corner - 0.5) * f.size.xy + f.size.zw) * select(b.y, 0.0, hidden);
     let c = cos(angle);
     let s = sin(angle);
     let rotated = vec2f(local.x * c - local.y * s, local.x * s + local.y * c);

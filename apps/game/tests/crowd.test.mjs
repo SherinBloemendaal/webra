@@ -117,6 +117,14 @@ test('records of a skirmish with selection, hover, all health bars and the obser
     redeployableMcv: true,
     oreRegrowth: true,
     techBuildings: 'standard',
+    // OpenRA's other lobby options (protocol 6).
+    crates: true,
+    shortGame: true,
+    bounty: false,
+    separateTeamSpawns: true,
+    allyBuildRadius: true,
+    timeLimit: 0,
+    reusableEngineers: false,
     cheats: false,
   };
   const game = Game.from_options(JSON.stringify(options));

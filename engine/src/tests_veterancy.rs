@@ -28,6 +28,7 @@ fn flat_world(cheats: bool) -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for b in 0..w.building_at.len() {
         if w.building_at[b] != NONE {
             w.pass.set_blocked(b, true);
@@ -82,7 +83,8 @@ fn rules_carry_the_ra_veterancy_and_take_cover_values() {
     assert_eq!(tc.modifiers, vec![(bit("Prone50Percent"), 50)]);
     // Rifle bullets throw soldiers down; only the types TakeCover uses get bits.
     let carbine = &w.rules.weapons[weapon(&w, "M1Carbine")].warheads[0];
-    assert_eq!(carbine.damage_types, bit("TriggerProne") | bit("Prone50Percent"));
+    // The death type picks the death animation (infantry_combat.rs).
+    assert_eq!(carbine.damage_types, bit("TriggerProne") | bit("Prone50Percent") | bit("DefaultDeath"));
     assert_eq!(w.rules.weapons[weapon(&w, "MADTankThump")].warheads[0].damage_types, 0);
     // Structures give experience but gain none; walls neither; ore trucks only give.
     let powr = &w.rules.actors[ty(&w, "POWR") as usize];

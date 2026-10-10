@@ -82,6 +82,8 @@ fn zoo() -> World {
         let info = &w.rules.actors[t];
         let owner = (t % 2) as u8;
         match info.kind {
+            // Proxies have no body (infantry.rs).
+            Kind::Proxy => {}
             Kind::Building => {
                 let (x, y) = next(6);
                 w.spawn_building(t as u16, owner, x, y);

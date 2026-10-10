@@ -44,7 +44,7 @@ jobs:
       - run: python3 tools/gen_content_tables.py
       - run: python3 tools/gen_hotkeys.py
       - run: node tools/gen-audio-catalog.mjs
-      - run: git diff --exit-code engine/rules.json apps/game/js/oramap/tables.js apps/game/js/content/tables.js apps/game/js/openra-hotkeys.js apps/game/js/audio/catalog-data.js
+      - run: git diff --exit-code engine/rules.json apps/game/js/oramap/tables.js apps/game/js/content/tables.js apps/game/js/content/render-facts.js engine/render.json apps/game/js/openra-hotkeys.js apps/game/js/audio/catalog-data.js
 
   shaders:
     name: WGSL shaders

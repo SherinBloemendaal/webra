@@ -27,6 +27,7 @@ const OPTIONS = {
   redeployableMcv: true,
   oreRegrowth: false,
   techBuildings: 'standard',
+  reusableEngineers: false,
 };
 
 /** A generated map with a Soviet helipad and a Hind hovering near player 0's base. */

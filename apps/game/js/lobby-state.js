@@ -5,6 +5,8 @@
 
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
+import { assignSpawns } from '../protocol/spawns.js';
+
 /** The installed map file lives in its own key (it can be large). */
 export const MAP_STORAGE_KEY = 'webra.lobby.map.v1';
 
@@ -85,6 +87,12 @@ export const TECH_LEVELS = [
   { value: 'high', label: 'No superweapons' },
   { value: 'unrestricted', label: 'Unrestricted' },
 ];
+
+/** OpenRA TimeLimitManager: minutes, 0 for none (the most experienced side wins when time runs out). */
+export const TIME_LIMITS = [0, 10, 20, 30, 40, 60, 90].map((v) => ({ value: v, label: v === 0 ? 'No limit' : `${v} minutes` }));
+
+/** OpenRA handicaps: 0 to 95 percent in steps of 5 (less firepower and armour, slower production). */
+export const HANDICAPS = Array.from({ length: 20 }, (_, i) => ({ value: i * 5, label: `${i * 5}%` }));
 
 export const GAME_SPEEDS = [
   { value: 'slowest', label: 'Slowest' },
@@ -169,12 +177,20 @@ export const DEFAULTS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  reusableEngineers: false,
   cheats: false,
+  // OpenRA's other lobby options (packages/protocol DEFAULT_OPTIONS).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
 };
 
 const DEFAULT_PLAYERS = [
-  { type: 'human', name: DEFAULT_NAME, faction: 'germany', color: 0, team: 0 },
-  { type: 'ai', difficulty: 'normal', faction: 'randomsoviet', color: 1, team: 0 },
+  { type: 'human', name: DEFAULT_NAME, faction: 'germany', color: 0, team: 0, handicap: 0 },
+  { type: 'ai', difficulty: 'normal', faction: 'randomsoviet', color: 1, team: 0, handicap: 0 },
 ];
 
 // ---- Small parsers ------------------------------------------------------------
@@ -290,6 +306,7 @@ function sanitizePlayer(raw, fallback) {
     faction: FACTIONS.has(p.faction) ? p.faction : fallback.faction,
     color: p.color,
     team: Number.isInteger(p.team) && p.team >= 0 && p.team <= TEAM_COUNT ? p.team : 0,
+    handicap: oneOf(p.handicap, HANDICAPS.map((h) => h.value), 0),
   };
 }
 
@@ -314,11 +331,18 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     startingUnits: oneOf(s.startingUnits, STARTING_UNITS.map((o) => o.value), DEFAULTS.startingUnits),
     techLevel: oneOf(s.techLevel, TECH_LEVELS.map((o) => o.value), DEFAULTS.techLevel),
     gameSpeed: oneOf(s.gameSpeed, GAME_SPEEDS.map((o) => o.value), DEFAULTS.gameSpeed),
+    timeLimit: oneOf(s.timeLimit, TIME_LIMITS.map((o) => o.value), DEFAULTS.timeLimit),
+    crates: bool('crates'),
+    shortGame: bool('shortGame'),
+    bounty: bool('bounty'),
+    separateTeamSpawns: bool('separateTeamSpawns'),
+    allyBuildRadius: bool('allyBuildRadius'),
     fog: bool('fog'),
     explored: bool('explored'),
     buildRadius: bool('buildRadius'),
     redeployableMcv: bool('redeployableMcv'),
     oreRegrowth: bool('oreRegrowth'),
+    reusableEngineers: bool('reusableEngineers'),
     cheats: bool('cheats'),
     stressUnits:
       Number.isInteger(s.stressUnits) && s.stressUnits >= UNITS_MIN && s.stressUnits <= UNITS_MAX
@@ -367,6 +391,7 @@ export function addSlot(state, colorCount, spawnLimit = MAX_SLOTS) {
     faction: 'random',
     color: firstFreeColor(state.players, colorCount),
     team: 0,
+    handicap: 0,
   });
   return state.players.length - 1;
 }
@@ -471,18 +496,25 @@ export function buildOptions(state, mapJson = null) {
     techBuildings: s.techBuildings,
     players: s.players.map((p, slot) => {
       if (p.type === 'closed') return { slot, type: 'closed' };
-      const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team };
+      const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
       return p.type === 'human' ? { ...base, name: cleanName(p.name) } : { ...base, difficulty: p.difficulty };
     }),
     startingCash: s.startingCash,
     startingUnits: s.startingUnits,
     techLevel: s.techLevel,
     gameSpeed: s.gameSpeed,
+    timeLimit: s.timeLimit,
+    crates: s.crates,
+    shortGame: s.shortGame,
+    bounty: s.bounty,
+    separateTeamSpawns: s.separateTeamSpawns,
+    allyBuildRadius: s.allyBuildRadius,
     fog: s.fog,
     explored: s.explored,
     buildRadius: s.buildRadius,
     redeployableMcv: s.redeployableMcv,
     oreRegrowth: s.oreRegrowth,
+    reusableEngineers: s.reusableEngineers,
     cheats: s.cheats,
     map: s.mapSource === 'file' ? mapJson : null,
   };
@@ -535,13 +567,19 @@ export function inspectMapFile(text, validate) {
 
 /**
  * Start markers for the preview. Spawn k goes to the k-th taking-part slot
- * (closed slots are skipped, like the engine does). Positions are percentages
- * of the map, at the centre of the 3 x 4 construction yard footprint.
+ * (closed slots are skipped, like the engine does), or with "Separate team
+ * spawns" in a team game where protocol `assignSpawns` puts each player (as
+ * the engine does, engine/src/gamerules.rs). Positions are percentages of
+ * the map, at the centre of the 3 x 4 construction yard footprint.
  */
 export function spawnMarkers(spawnCells, width, height, state) {
   const active = activeSlots(state);
+  const at = new Map();
+  if (active.length <= spawnCells.length) {
+    assignSpawns(spawnCells, active.map(({ p }) => ({ team: p.team })), !!state.separateTeamSpawns, state.mapSource !== 'file').forEach((s, k) => at.set(s, active[k]));
+  }
   return spawnCells.map(([x, y], k) => {
-    const a = active[k];
+    const a = at.get(k);
     return {
       left: ((x + 1.5) / width) * 100,
       top: ((y + 2) / height) * 100,

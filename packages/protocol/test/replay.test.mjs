@@ -62,7 +62,8 @@ test('saves need their owner and the hash of their last tick', async () => {
   assert.match((await check({ ...save, hashes: [[250, 'aa']] })).error, /last tick/);
   assert.match((await check({ ...save, player: 1 })).error, /human player/);
   assert.match((await check({ ...save, player: null })).error, /human player/);
-  assert.match((await check({ ...save, mode: 'online' })).error, /skirmish/);
+  // An online save needs the server's record (see the online save tests below).
+  assert.match((await check({ ...save, mode: 'online' })).error, /online must be an object/);
 });
 
 test('hostile or broken files are refused with a message', async () => {
@@ -149,4 +150,54 @@ test('files of another engine build are judged by their header only when the rea
   // A broken header is still refused, whatever the build.
   assert.equal((await parseReplay(JSON.stringify({ ...old, engine: 'not a version!' }), { version: 'x' })).ok, false);
   assert.equal((await parseReplay(JSON.stringify({ ...old, kind: 'movie' }), { version: '0.6.0+12345678' })).ok, false);
+});
+
+// ---- Online saves (protocol 6) ------------------------------------------------------------------
+
+const onlineSave = (patch = {}) => ({ ...base(), kind: 'save', mode: 'online', ticks: 501, hashes: [[250, 'aa'], [501, 'bb']], online: { id: '0123456789abcdef' }, ...patch });
+
+test('online saves name the server record and follow a hash tick', async () => {
+  const r = await check(onlineSave());
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.replay.online, { id: '0123456789abcdef' });
+  assert.deepEqual(JSON.parse(encodeReplay(onlineSave())).online, { id: '0123456789abcdef' });
+  assert.match((await check(onlineSave({ online: undefined }))).error, /online must be an object/);
+  assert.match((await check(onlineSave({ online: { id: 'xyz' } }))).error, /online.id/);
+  assert.match((await check(onlineSave({ online: { id: '0123456789abcdef', url: '/x' } }))).error, /unknown field/);
+  assert.match((await check(onlineSave({ ticks: 500, hashes: [[500, 'bb']] }))).error, /hash tick/);
+  // Skirmish saves and replays carry no online record.
+  assert.match((await check({ ...base(), online: { id: '0123456789abcdef' } })).error, /only online saves/);
+  assert.match((await check({ ...onlineSave(), mode: 'skirmish' })).error, /only online saves/);
+  // A replay of an online game stays a replay.
+  assert.ok((await check({ ...base(), mode: 'online' })).ok);
+});
+
+test('frames and options digests depend on the validated content only', async () => {
+  const { framesDigest, optionsDigest } = await import('../src/index.js');
+  const frames = base().frames;
+  const reordered = frames.map(([t, o]) => [t, o.map(([p, list]) => [p, list.map((x) => Object.fromEntries(Object.entries(x).reverse()))])]);
+  assert.equal(await framesDigest(reordered), await framesDigest(frames), 'key order does not matter');
+  assert.notEqual(await framesDigest(frames.slice(1)), await framesDigest(frames));
+  await assert.rejects(framesDigest([[1, [[0, [{ o: 'nope', player: 0 }]]]]]));
+  assert.equal(await optionsDigest(OPTIONS), await optionsDigest(structuredClone(OPTIONS)));
+  assert.notEqual(await optionsDigest({ ...OPTIONS, seed: OPTIONS.seed + 1 }), await optionsDigest(OPTIONS));
+});
+
+test('the frames digest chains frame by frame; files are bounded by bytes and by orders', async () => {
+  const { FramesDigest, framesDigest, sha256Hex } = await import('../src/index.js');
+  const frames = base().frames;
+  // The definition: h0 = SHA-256(''), h = SHA-256(h + JSON([tick, orders])).
+  let h = await sha256Hex('');
+  for (const f of frames) h = await sha256Hex(h + JSON.stringify(f));
+  assert.equal(await framesDigest(frames), h);
+  const d = new FramesDigest();
+  for (const f of frames) await d.add(f);
+  assert.equal(d.value(), h, 'incremental and whole agree');
+  await assert.rejects(d.add(frames[0]), /increase/);
+  // Size limits for an upload, and an orders budget counted while validating.
+  const text = JSON.stringify(onlineSave());
+  assert.match((await parseReplay(text, { maxBytes: 100 })).error, /larger/);
+  const r = await parseReplay(text, { maxFrameBytes: 60 });
+  assert.deepEqual([r.ok, r.code], [false, 'too_large']);
+  assert.ok((await parseReplay(text, { maxFrameBytes: 10_000 })).ok);
 });

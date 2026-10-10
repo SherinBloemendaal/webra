@@ -39,6 +39,11 @@ impl World {
         if let Some(c) = self.world_target_class(i) {
             return c;
         }
+        // Damaged units are also Heal or Repair targets (infantry_combat.rs).
+        self.kind_class(i) | self.support_class(i)
+    }
+
+    fn kind_class(&self, i: usize) -> u32 {
         let a = &self.actors[i];
         match a.kind {
             Kind::Ship => self.ship_target_class(i),
@@ -59,7 +64,10 @@ impl World {
     /// power down button (repair.rs; OpenRA's `disabled` condition).
     pub fn is_powered_down(&self, i: usize) -> bool {
         let a = &self.actors[i];
-        a.powered_off || (self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power())
+        a.powered_off
+            || (self.rules.actors[a.ty as usize].requires_power && self.players[a.owner as usize].low_power())
+            // A spy's power outage (InfiltrateForPowerOutage, infantry.rs).
+            || self.outage_disabled(i)
     }
 
     // ---- Target acquisition ------------------------------------------------
@@ -70,6 +78,10 @@ impl World {
     /// ReturnFire, also while attack-moving) only defences count among the
     /// structures (AutoTargetPriority@DEFAULT has Defense but not Structure).
     pub(crate) fn scan_for_target(&self, i: usize) -> Option<usize> {
+        // Medics and mechanics look for friends to treat (infantry_combat.rs).
+        if self.heals(i) {
+            return self.scan_for_heal_target(i);
+        }
         let a = &self.actors[i];
         let info = &self.rules.actors[a.ty as usize];
         let any_structure = a.stance == Stance::AttackAnything || !self.has_stance(i);
@@ -98,6 +110,8 @@ impl World {
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
                         || self.never_auto_targeted(u)
+                        // A disguised spy looks friendly (OpenRA AppearsHostileTo; infantry.rs).
+                        || !self.appears_hostile(u, i)
                         || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
@@ -118,6 +132,9 @@ impl World {
                         && !self.is_cloaked_from(b, a.owner)
                         // Walls, barrels and the like only when ordered (NoAutoTarget, neutral.rs).
                         && !self.never_auto_targeted(b)
+                        && !tinfo.is_wall()
+                        // An allied engineer is taking it over (CaptureManager.PreventsAutoTarget).
+                        && !self.capture_protected(b, a.owner)
                         && (any_structure || tinfo.defense)
                         && info.can_attack_class(&self.rules, self.target_class(b))
                     {
@@ -135,7 +152,11 @@ impl World {
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
     pub(crate) fn targetable(&self, t: usize, player: u8) -> bool {
         // Falling wrecks and the spy plane cannot be targeted (plane.rs); cloaked actors neither (abilities.rs).
-        self.is_visible_to(t, player) && !self.untargetable_aircraft(t) && !self.is_cloaked_from(t, player)
+        // Crates never; husks only with force-fire (`live_target`, husks.rs).
+        !matches!(self.actors[t].kind, Kind::Crate | Kind::Husk)
+            && self.is_visible_to(t, player)
+            && !self.untargetable_aircraft(t)
+            && !self.is_cloaked_from(t, player)
     }
 
     // ---- Fire targets -------------------------------------------------------------
@@ -221,7 +242,8 @@ impl World {
         }
         let stance = self.actors[i].stance;
         let hold = stance < Stance::AttackAnything;
-        if stance >= Stance::ReturnFire {
+        // Healers never shoot back (their weapons only treat friends).
+        if stance >= Stance::ReturnFire && !self.heals(i) {
             if let Some(t) = self.retaliation_target(i, aggressor, hold) {
                 self.engage(i, t, hold);
                 return true;
@@ -249,6 +271,10 @@ impl World {
         let info = &self.rules.actors[self.actors[i].ty as usize];
         let tclass = self.target_class(t);
         if !self.actors[t].in_world() || !self.are_enemies(owner, self.actors[t].owner) || !self.targetable(t, owner) {
+            return None;
+        }
+        // No retaliation against what looks friendly (AutoTarget: AppearsFriendlyTo).
+        if !self.appears_hostile(t, i) {
             return None;
         }
         let range =
@@ -285,8 +311,16 @@ impl World {
         // Forced attacks (force-fire) may target anyone, own actors included,
         // but never the attacker itself.
         let forced = self.actors[i].forced;
-        self.resolve(self.actors[i].target)
-            .filter(|&t| t != i && (forced || self.are_enemies(owner, self.actors[t].owner)) && self.targetable(t, owner))
+        // Healers treat own and allied units only (Armament TargetRelationships Ally).
+        let heals = self.heals(i);
+        self.resolve(self.actors[i].target).filter(|&t| {
+            let ok =
+                if heals { self.are_allies(owner, self.actors[t].owner) } else { forced || self.are_enemies(owner, self.actors[t].owner) };
+            t != i
+                && (ok && self.targetable(t, owner)
+                    // Husks: force-fire only (husks.rs).
+                    || !heals && forced && self.actors[t].kind == Kind::Husk && self.is_visible_to(t, owner))
+        })
     }
 
     // ---- Units ---------------------------------------------------------------
@@ -330,7 +364,12 @@ impl World {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let d = self.target_distance(t, x, y);
         if d <= range && d >= min_range {
-            self.aim_and_fire(i, t);
+            // Dogs leap onto their prey instead of firing from range (dog.rs).
+            if self.leaps(i) {
+                self.leap_attack(i, t);
+            } else {
+                self.aim_and_fire(i, t);
+            }
             return;
         }
         // Defend and ReturnFire fights never move the unit: out of reach ends them.
@@ -519,7 +558,8 @@ impl World {
             }
             // Submarines surface to fire (Cloak UncloakOn: Attack).
             self.naval_on_fire(i);
-            self.fire_on(i, ft, w);
+            // Armament.FireDelay holds the shot back (infantry_combat.rs).
+            self.fire_or_delay(i, slot, ft, w);
             // Firing heats vehicles up in a heat wave (weather.rs).
             self.actors[i].env.fired = true;
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
@@ -558,12 +598,14 @@ impl World {
             let muzzle = match a.kind {
                 Kind::Infantry => 128,
                 Kind::Building => 256,
-                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine => 384,
+                Kind::Vehicle | Kind::Ship | Kind::Aircraft | Kind::Mine | Kind::Husk | Kind::Crate | Kind::Proxy => 384,
             };
             (a.x + vx * muzzle / 1024, a.y + vy * muzzle / 1024, f, a.owner)
         };
         let shooter_ty = self.actors[i].ty as i32;
         self.sound.push(SoundEventKind::Fire, w as i32, sx, sy, owner, shooter_ty);
+        // Muzzle flash, recoil and the Tesla charge (fx.rs, presentation only).
+        self.note_fire(i, w);
         // The shooter gets the kill and its rank's firepower applies (veterancy.rs).
         let shot = self.shot_of(i);
         // Aim at the target's hit shape point closest to the shooter (buildings are big).
@@ -586,10 +628,14 @@ impl World {
         match wi.projectile {
             // Hitscan shots and Tesla bolts land at once, but their damage
             // waits until every actor has acted this tick (see `land_shot`).
-            ProjKind::Instant => self.land_shot(w, tx, ty, owner, shot, true),
+            ProjKind::Instant => {
+                let alt = self.fire_target_altitude(ft);
+                self.land_shot(w, tx, ty, alt, owner, shot, true);
+            }
             ProjKind::Tesla => {
                 self.effects.push(Effect { x: sx, y: sy, tx, ty, kind: EffectKind::TeslaBolt, ttl: 6, max: 6 });
-                self.land_shot(w, tx, ty, owner, shot, true);
+                let alt = self.fire_target_altitude(ft);
+                self.land_shot(w, tx, ty, alt, owner, shot, true);
             }
             ProjKind::Bullet | ProjKind::Missile => {
                 // Shots at the ground fly to the point; missiles home on actors only.
@@ -635,7 +681,7 @@ impl World {
             due
         };
         for p in due {
-            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.owner, p.shot);
+            self.apply_warhead(p.weapon as usize, p.warhead as usize, p.x, p.y, p.altitude, p.owner, p.shot);
         }
         let mut k = 0;
         while k < self.projectiles.len() {
@@ -654,8 +700,10 @@ impl World {
             let speed = wi.speed.max(1);
             if d <= speed {
                 let (w, owner, shot) = (p.weapon as usize, p.owner, p.shot);
+                // A shot at an aircraft bursts in the air (no smudges below, smudges.rs).
+                let alt = self.resolve(p.target).map_or(0, |t| self.actors[t].altitude);
                 self.projectiles.swap_remove(k);
-                self.impact_shot(w, tx, ty, owner, shot);
+                self.land_shot(w, tx, ty, alt, owner, shot, false);
                 continue;
             }
             let p = &mut self.projectiles[k];
@@ -678,7 +726,15 @@ impl World {
     /// A weapon lands at a point: each warhead applies now or after its delay.
     /// `shot` credits kills to the shooter and carries its firepower.
     pub(crate) fn impact_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot) {
-        self.land_shot(w, x, y, owner, shot, false);
+        self.land_shot(w, x, y, 0, owner, shot, false);
+    }
+
+    /// Height of what a shot was fired at (an aircraft in the air, or 0).
+    fn fire_target_altitude(&self, ft: FireTarget) -> i32 {
+        match ft {
+            FireTarget::Actor(t) => self.actors[t].altitude,
+            FireTarget::Ground(..) => 0,
+        }
     }
 
     /// `impact_shot`; with `end_of_tick`, warheads without a delay apply
@@ -686,38 +742,65 @@ impl World {
     /// acted this tick. Shots fired in the same tick then resolve together:
     /// the actor processed first does not kill its target before the target
     /// fires back, so mirrored fights do not depend on processing order.
-    fn land_shot(&mut self, w: usize, x: i32, y: i32, owner: u8, shot: Shot, end_of_tick: bool) {
-        let max_damage = self.rules.weapons[w].max_damage();
-        let (kind, ttl) = if max_damage >= 20000 {
-            (EffectKind::NukeExplosion, 40)
-        } else if max_damage >= 3000 {
-            (EffectKind::SmallExplosion, 12)
-        } else {
-            (EffectKind::Piff, 6)
-        };
-        // Shells landing in open water splash instead (naval.rs).
-        let splash = self.water_impact_effect(x, y, ttl);
-        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(splash.is_some()));
-        let (kind, ttl) = splash.unwrap_or((kind, ttl));
-        self.effects.push(Effect { x, y, tx: x, ty: y, kind, ttl, max: ttl });
-        for h in 0..self.rules.weapons[w].warheads.len() {
-            let delay = self.rules.weapons[w].warheads[h].delay;
+    /// `altitude`: the height it burst at (the warheads that change no
+    /// health skip their smudges and resource changes above the ground).
+    #[allow(clippy::too_many_arguments)]
+    fn land_shot(&mut self, w: usize, x: i32, y: i32, altitude: i32, owner: u8, shot: Shot, end_of_tick: bool) {
+        // The weapon's explosions where they land (OpenRA CreateEffect
+        // warheads: on the ground, in open water, on a ship or in the air; fx.rs).
+        let class = self.impact_class(x, y);
+        self.sound.push(SoundEventKind::Impact, w as i32, x, y, owner, i32::from(class == crate::fx::IMPACT_WATER));
+        self.spawn_weapon_effects(w, x, y, class);
+        // Damage warheads, then the ones that change no health (smudges.rs),
+        // numbered after them.
+        for h in 0..self.warhead_count(w) {
+            let delay = self.warhead_delay(w, h);
             if delay > 0 || end_of_tick {
-                self.pending.push(PendingImpact { tick: self.tick + delay as u32, weapon: w as u16, warhead: h as u8, x, y, owner, shot });
+                self.pending.push(PendingImpact {
+                    tick: self.tick + delay as u32,
+                    weapon: w as u16,
+                    warhead: h as u8,
+                    x,
+                    y,
+                    altitude,
+                    owner,
+                    shot,
+                });
             } else {
-                self.apply_warhead(w, h, x, y, owner, shot);
+                self.apply_warhead(w, h, x, y, altitude, owner, shot);
             }
         }
         // FireCluster warheads fire their weapon at the cells around (neutral.rs).
         for (cw, cx, cy) in self.cluster_targets(w, x, y) {
-            self.land_shot(cw, cx, cy, owner, shot, end_of_tick);
+            self.land_shot(cw, cx, cy, 0, owner, shot, end_of_tick);
+        }
+    }
+
+    /// Damage warheads plus the ones that change no health of weapon `w`.
+    pub(crate) fn warhead_count(&self, w: usize) -> usize {
+        let wi = &self.rules.weapons[w];
+        wi.warheads.len() + wi.effects.len()
+    }
+
+    /// Delay of warhead `h` (damage warheads first, then the effects).
+    pub(crate) fn warhead_delay(&self, w: usize, h: usize) -> i32 {
+        let wi = &self.rules.weapons[w];
+        match wi.warheads.get(h) {
+            Some(d) => d.delay,
+            None => wi.effects.get(h - wi.warheads.len()).map_or(0, |e| e.delay),
         }
     }
 
     /// Apply one damage warhead. Friendly fire applies, as in OpenRA.
     /// Kills are credited to `owner` for the observer stats (observer.rs) and
     /// to `shot.source` for veterancy (veterancy.rs).
-    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, owner: u8, shot: Shot) {
+    #[allow(clippy::too_many_arguments)]
+    fn apply_warhead(&mut self, w: usize, h: usize, x: i32, y: i32, altitude: i32, owner: u8, shot: Shot) {
+        let damage_warheads = self.rules.weapons[w].warheads.len();
+        if h >= damage_warheads {
+            self.apply_effect(w, h - damage_warheads, x, y, altitude);
+            return;
+        }
         let wh = &self.rules.weapons[w].warheads[h];
         let radius = wh.damage_radius();
         let r_cells = radius / CELL + 2;
@@ -732,7 +815,8 @@ impl World {
                 let ci = self.map.idx(xx, yy);
                 for &u in self.units_in_cell(ci) {
                     let u = u as usize;
-                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) {
+                    // Warhead.ValidRelationships (the Heal and Repair warheads only touch friends).
+                    if self.actors[u].alive && wh.affects_class(self.target_class(u)) && self.warhead_relates(wh, owner, u) {
                         let d = self.hit_distance(u, x, y);
                         if d <= radius {
                             hits.push((u, d));
@@ -743,19 +827,27 @@ impl World {
                 if b != NONE && !seen_buildings.contains(&(b as usize)) {
                     let b = b as usize;
                     seen_buildings.push(b);
-                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
+                    if self.actors[b].alive && wh.affects_class(self.target_class(b)) && self.warhead_relates(wh, owner, b) {
                         let d = self.hit_distance(b, x, y);
                         if d <= radius {
                             hits.push((b, d));
                         }
                     }
                 }
-                // Mines (abilities.rs) are GroundActor targets too.
+                // Mines (abilities.rs) are GroundActor targets too, and husks (husks.rs).
                 if let Some(m) = self.mine_at(ci) {
                     if wh.affects(Kind::Mine) {
                         let d = self.hit_distance(m, x, y);
                         if d <= radius {
                             hits.push((m, d));
+                        }
+                    }
+                }
+                if let Some(h) = self.husk_at(ci) {
+                    if wh.affects(Kind::Husk) {
+                        let d = self.hit_distance(h, x, y);
+                        if d <= radius {
+                            hits.push((h, d));
                         }
                     }
                 }
@@ -804,6 +896,11 @@ impl World {
     /// prone modifiers apply, a trigger type throws infantry prone, and a kill
     /// gives `source` experience (veterancy.rs).
     pub(crate) fn damage_from(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
+        // Negative damage heals (the Medic's and Mechanic's warheads, infantry_combat.rs).
+        if dmg < 0 {
+            self.heal_by(u, -dmg);
+            return;
+        }
         if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick || !self.has_health(u) {
             return;
         }
@@ -818,22 +915,34 @@ impl World {
         let tick = self.tick;
         let attacker = self.observer.source;
         let a = &mut self.actors[u];
-        // One "under attack" event per burst of fire on a structure, and one
-        // per burst of another player's fire on a unit (sound_events.rs).
+        // One "under attack" event per burst of another player's fire on a
+        // structure or a unit (sound_events.rs; OpenRA DamageNotifier ignores
+        // damage without an attacker and the owner's own).
         let quiet = a.last_damaged == 0 || tick >= a.last_damaged + DAMAGE_EVENT_QUIET_TICKS;
-        let report = a.kind == Kind::Building && quiet;
-        let report_unit = a.is_unit() && quiet && attacker.is_some_and(|o| o != a.owner);
+        let hostile = attacker.is_some_and(|o| o != a.owner);
+        let report = a.kind == Kind::Building && quiet && hostile;
+        let report_unit = a.is_unit() && quiet && hostile;
         let dealt = dmg.min(a.hp.max(0));
-        let old_hp = a.hp;
+        let before = a.hp;
+        let old_hp = before;
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
         if report || report_unit {
             let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
             let kind = if report { SoundEventKind::BuildingDamaged } else { SoundEventKind::UnitDamaged };
-            self.sound.push(kind, ty, x, y, owner, 0);
+            self.sound.push(kind, ty, x, y, owner, attacker.map_or(-1, i32::from));
+        }
+        // OpenRA SoundOnDamageTransition: DamagedSounds when it falls to Heavy (below half health) and lives.
+        let a = &self.actors[u];
+        let max = self.rules.actors[a.ty as usize].hp as i64;
+        if a.hp > 0 && (a.hp as i64) * 100 < max * 50 && (before as i64) * 100 >= max * 50 {
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::DamageHeavy, ty, x, y, owner, 0);
         }
         self.note_damage(u, dealt);
+        // Damage smoke (fx.rs, presentation only).
+        self.note_damage_fx(u);
         // An AI remembers who hits its structures (ai.rs target choice).
         if self.actors[u].kind == Kind::Building {
             if let Some(by) = self.observer.source {
@@ -848,6 +957,8 @@ impl World {
             return;
         }
         if self.actors[u].hp <= 0 {
+            // Which death animation and scream (infantry_combat.rs).
+            self.note_death_types(u, types);
             self.award_kill(u, source);
             self.kill(u);
             return;
@@ -870,10 +981,22 @@ impl World {
         if self.crashed(i) {
             return;
         }
+        // FireWarheadsOnDeath: its explosions where it dies (fx.rs).
+        if let Some(w) = self.rules.actors[self.actors[i].ty as usize].death_weapon {
+            let (x, y) = (self.actors[i].x, self.actors[i].y);
+            let class = self.impact_class(x, y);
+            self.spawn_weapon_effects(w, x, y, class);
+        }
         let a = &self.actors[i];
         // FireWarheadsOnDeath: the dying actor's firepower, nobody to credit (DamageSource Self).
         let shot = Shot { source: NONE, firepower: self.firepower_modifier(i) };
-        if let Some(w) = self.rules.actors[a.ty as usize].death_weapon {
+        let info = &self.rules.actors[a.ty as usize];
+        // An ore truck only explodes with ore on board (FireWarheadsOnDeath
+        // RequiresCondition: !no-ore): OreExplosion spills it (smudges.rs).
+        if info.options.death_needs_resources && a.bales == 0 {
+            return;
+        }
+        if let Some(w) = info.death_weapon {
             // One tick later, so chain reactions (barrels, neutral.rs) ripple
             // outward instead of recursing.
             let (x, y, owner) = (a.x, a.y, a.owner);

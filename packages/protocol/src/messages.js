@@ -20,6 +20,7 @@ import {
   HOST_SLOT_TYPES,
   LEFT_REASONS,
   MAP_ID_RE,
+  MAP_STATES,
   MAX_MESSAGE_BYTES,
   MAX_ORDERS_PER_TICK,
   MAX_PLAYERS,
@@ -31,6 +32,11 @@ import {
   ORDER_MAX_COUNT,
   ORDER_MAX_IDS,
   PASSWORD_MAX,
+  REMATCH_CANCEL_REASONS,
+  REMATCH_STATES,
+  SAVE_CANCEL_REASONS,
+  SAVE_ID_RE,
+  SAVE_STATES,
   ROLES,
   S2C,
   SEAT_KEY_RE,
@@ -45,6 +51,7 @@ import {
   TEAM_MAX,
   TICK_MAX,
   VERSION_RE,
+  HANDICAPS,
 } from './constants.js';
 import {
   bool,
@@ -61,6 +68,7 @@ import {
   truncate,
   utf8Length,
 } from './check.js';
+import { MAP_MAX_BYTES, MAP_MAX_SIZE, MAP_MIN_SIZE } from './map.js';
 import { validateGameOptions, validateLobbyOptions, validFaction } from './options.js';
 
 const CLIENT_ID_MAX = 0x7fffffff;
@@ -120,6 +128,8 @@ const ORDER_SCHEMA = {
   stop: { ids: idList },
   start_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), count: (v, w) => int(v, 1, ORDER_MAX_COUNT, w) },
   cancel_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w) },
+  // engine/src/production.rs: put the first queued item of a type on hold or resume it.
+  pause_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), paused: bool },
   place: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), cx: i32, cy: i32 },
   rally: { building: u32, x: i32, y: i32 },
   sell: { building: u32 },
@@ -209,18 +219,57 @@ export function validFrameOrders(v, what = 'frame.orders') {
   });
 }
 
-/** Map reference in a lobby: null for a generated map, else an uploaded map. */
-export function validMapRef(v, what = 'map', withPlayers = false) {
+const MAP_REF_KEYS = ['id', 'hash', 'name', 'modded'];
+/**
+ * What the server announces about a lobby or game map: the host's request
+ * fields plus what it looked up itself (players, author, size, file bytes,
+ * and `shared`: a map the host shared with this session only, see
+ * docs/security.md "Map sharing").
+ */
+const MAP_INFO_KEYS = [...MAP_REF_KEYS, 'players', 'author', 'width', 'height', 'bytes', 'shared'];
+
+/**
+ * Map reference in a lobby: null for a generated map, else a stored map. The
+ * host's `map` message names a community map with the four request fields;
+ * with `full` (lobby and start messages) the server's description of it.
+ */
+export function validMapRef(v, what = 'map', full = false) {
   if (v === null) return null;
-  object(v, withPlayers ? ['id', 'hash', 'name', 'modded', 'players'] : ['id', 'hash', 'name', 'modded'], what);
+  object(v, full ? MAP_INFO_KEYS : MAP_REF_KEYS, what);
   const out = {
     id: matches(v.id, MAP_ID_RE, `${what}.id`),
     hash: matches(v.hash, SHA256_RE, `${what}.hash`),
     name: text(v.name, 1, 64, `${what}.name`),
     modded: bool(v.modded, `${what}.modded`),
   };
-  if (withPlayers) out.players = int(v.players, MIN_PLAYERS, MAX_PLAYERS, `${what}.players`);
+  if (full) {
+    out.players = int(v.players, MIN_PLAYERS, MAX_PLAYERS, `${what}.players`);
+    out.author = text(v.author, 1, 64, `${what}.author`);
+    out.width = int(v.width, MAP_MIN_SIZE, MAP_MAX_SIZE, `${what}.width`);
+    out.height = int(v.height, MAP_MIN_SIZE, MAP_MAX_SIZE, `${what}.height`);
+    out.bytes = int(v.bytes, 1, MAP_MAX_BYTES, `${what}.bytes`);
+    out.shared = bool(v.shared, `${what}.shared`);
+  }
   return out;
+}
+
+/** A lobby member's map state, present on slots and spectators only while the lobby has a map. */
+function mapStateOf(v, out, what) {
+  if (has(v, 'mapState')) out.mapState = oneOf(v.mapState, MAP_STATES, `${what}.mapState`);
+  return out;
+}
+
+/** The `resume` field of a lobby message: the saved online game it continues. */
+export function validResumeInfo(v, what = 'resume') {
+  object(v, ['id', 'title', 'createdAt', 'ticks', 'waiting'], what);
+  if (!Array.isArray(v.waiting) || v.waiting.length > MAX_PLAYERS) fail(`${what}.waiting must list at most ${MAX_PLAYERS} names`);
+  return {
+    id: matches(v.id, SAVE_ID_RE, `${what}.id`),
+    title: text(v.title, 1, 64, `${what}.title`),
+    createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, `${what}.createdAt`),
+    ticks: int(v.ticks, 1, TICK_MAX, `${what}.ticks`),
+    waiting: v.waiting.map((n, i) => validName(n, `${what}.waiting[${i}]`)),
+  };
 }
 
 // ---- Client to server -------------------------------------------------------------------
@@ -248,8 +297,9 @@ const CLIENT = {
     return out;
   },
   [C2S.SLOT](m) {
-    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty'], 'slot');
+    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'handicap'], 'slot');
     const out = { t: C2S.SLOT, slot: int(m.slot, 0, SLOT_MAX, 'slot') };
+    if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, 'handicap');
     if (has(m, 'faction')) out.faction = validFaction(m.faction, 'faction');
     if (has(m, 'color')) out.color = int(m.color, 0, COLOR_COUNT - 1, 'color');
     if (has(m, 'team')) out.team = int(m.team, 0, TEAM_MAX, 'team');
@@ -316,6 +366,23 @@ const CLIENT = {
     object(m, ['t'], 'defeated');
     return { t: C2S.DEFEATED };
   },
+  [C2S.MAPSTATE](m) {
+    // Only for the lobby map with this hash; `missing` is the server's default, never sent.
+    object(m, ['t', 'hash', 'state'], 'mapstate');
+    return { t: C2S.MAPSTATE, hash: matches(m.hash, SHA256_RE, 'hash'), state: oneOf(m.state, ['installed', 'declined'], 'state') };
+  },
+  [C2S.KICK](m) {
+    object(m, ['t', 'client'], 'kick');
+    return { t: C2S.KICK, client: validClientId(m.client, 'client') };
+  },
+  [C2S.REMATCH](m) {
+    object(m, ['t', 'accept'], 'rematch');
+    return { t: C2S.REMATCH, accept: bool(m.accept, 'accept') };
+  },
+  [C2S.SAVE](m) {
+    object(m, ['t', 'accept'], 'save');
+    return { t: C2S.SAVE, accept: bool(m.accept, 'accept') };
+  },
 };
 
 // ---- Server to client ---------------------------------------------------------------------
@@ -334,7 +401,7 @@ function validSessionInfo(v, what = 'session') {
   };
 }
 
-const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready'];
+const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'ready', 'handicap', 'mapState'];
 
 /** One slot of the online lobby as the server publishes it. */
 export function validLobbySlot(v, what = 'slot') {
@@ -352,13 +419,18 @@ export function validLobbySlot(v, what = 'slot') {
     // Present (true) only when the name comes from a signed-in account.
     if (has(v, 'account') && bool(v.account, `${what}.account`)) out.account = true;
     if (has(v, 'difficulty')) fail(`${what}: humans have no difficulty`);
+    mapStateOf(v, out, what);
   } else {
-    if (has(v, 'client') || has(v, 'name') || has(v, 'ready') || has(v, 'account')) fail(`${what}: AI slots carry no client, name, account or ready`);
+    if (has(v, 'client') || has(v, 'name') || has(v, 'ready') || has(v, 'account') || has(v, 'mapState')) {
+      fail(`${what}: AI slots carry no client, name, account, ready or map state`);
+    }
     out.difficulty = oneOf(v.difficulty, DIFFICULTIES, `${what}.difficulty`);
   }
   out.faction = validFaction(v.faction, `${what}.faction`);
   out.color = int(v.color, 0, COLOR_COUNT - 1, `${what}.color`);
   out.team = int(v.team, 0, TEAM_MAX, `${what}.team`);
+  // Handicap: left out means 0.
+  if (has(v, 'handicap')) out.handicap = oneOf(v.handicap, HANDICAPS, `${what}.handicap`);
   return out;
 }
 
@@ -381,7 +453,7 @@ const SERVER = {
     return out;
   },
   [S2C.LOBBY](m) {
-    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators'], 'lobby');
+    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators', 'resume'], 'lobby');
     if (!Array.isArray(m.slots) || m.slots.length < MIN_PLAYERS || m.slots.length > MAX_PLAYERS) {
       fail('lobby.slots must list 2 to 8 slots');
     }
@@ -389,24 +461,32 @@ const SERVER = {
     if (!Array.isArray(m.spectators) || m.spectators.length > maxSpectators) fail('lobby.spectators must list at most maxSpectators');
     const clients = new Set();
     const spectators = m.spectators.map((v, i) => {
-      object(v, ['client', 'name', 'account'], `spectators[${i}]`);
+      object(v, ['client', 'name', 'account', 'mapState'], `spectators[${i}]`);
       const sp = { client: validClientId(v.client, `spectators[${i}].client`), name: validName(v.name, `spectators[${i}].name`) };
       if (has(v, 'account') && bool(v.account, `spectators[${i}].account`)) sp.account = true;
+      mapStateOf(v, sp, `spectators[${i}]`);
       if (clients.has(sp.client)) fail('lobby.spectators lists a client twice');
       clients.add(sp.client);
       return sp;
     });
     const slots = m.slots.map((s, i) => validLobbySlot(s, `slots[${i}]`));
     if (slots.some((s) => s.type === 'human' && clients.has(s.client))) fail('a spectator cannot hold a slot');
-    return {
+    const map = validMapRef(m.map, 'map', true);
+    // Map states describe the lobby's map: all members have one with a map, none without.
+    const members = [...slots.filter((s) => s.type === 'human'), ...spectators];
+    if (members.some((x) => (map !== null) !== (x.mapState !== undefined))) fail('lobby map states must match the map');
+    const out = {
       t: S2C.LOBBY,
       slots,
       options: validateLobbyOptions(m.options),
-      map: validMapRef(m.map, 'map', true),
+      map,
       hostId: m.hostId === null ? null : validClientId(m.hostId, 'hostId'),
       spectators,
       maxSpectators,
     };
+    // A lobby that resumes a saved online game: which one, and whose places still wait.
+    if (has(m, 'resume')) out.resume = validResumeInfo(m.resume);
+    return out;
   },
   [S2C.CHAT](m) {
     object(m, ['t', 'from', 'name', 'text', 'team'], 'chat');
@@ -420,7 +500,7 @@ const SERVER = {
     return out;
   },
   [S2C.START](m) {
-    object(m, ['t', 'seed', 'options', 'map', 'players', 'delay'], 'start');
+    object(m, ['t', 'seed', 'options', 'map', 'players', 'delay', 'resume'], 'start');
     const options = validateGameOptions(m.options);
     if (!Array.isArray(m.players) || m.players.length !== options.players.length) {
       fail('start.players must match options.players');
@@ -442,7 +522,7 @@ const SERVER = {
     });
     const seed = int(m.seed, 0, SEED_MAX, 'seed');
     if (seed !== options.seed) fail('start.seed must match options.seed');
-    return {
+    const out = {
       t: S2C.START,
       seed,
       options,
@@ -450,6 +530,14 @@ const SERVER = {
       players,
       delay: int(m.delay, 1, 25, 'delay'),
     };
+    // A resumed online save: the game continues after `ticks` ticks whose state hash is `hash`.
+    if (has(m, 'resume')) {
+      object(m.resume, ['ticks', 'hash'], 'start.resume');
+      const ticks = int(m.resume.ticks, 1, TICK_MAX, 'start.resume.ticks');
+      if ((ticks - 1) % HASH_INTERVAL !== 0) fail('start.resume.ticks must follow a hash tick');
+      out.resume = { ticks, hash: matches(m.resume.hash, STATE_HASH_RE, 'start.resume.hash') };
+    }
+    return out;
   },
   [S2C.FRAME](m) {
     object(m, ['t', 'tick', 'orders'], 'frame');
@@ -502,6 +590,69 @@ const SERVER = {
       name: validName(m.name),
       tick: validTick(m.tick),
     };
+  },
+  [S2C.REMATCH](m) {
+    // open: `by` proposed, `accepted` agreed, `waiting` still has to answer;
+    // cancelled: why (`reason`); lobby: the session is back in its lobby.
+    object(m, ['t', 'state', 'by', 'accepted', 'waiting', 'reason', 'msLeft'], 'rematch');
+    const state = oneOf(m.state, REMATCH_STATES, 'state');
+    const clients = (v, w) => {
+      if (!Array.isArray(v) || v.length > MAX_PLAYERS) fail(`${w} must list at most ${MAX_PLAYERS} clients`);
+      const list = v.map((c) => validClientId(c, w));
+      if (new Set(list).size !== list.length) fail(`${w} lists a client twice`);
+      return list;
+    };
+    const out = {
+      t: S2C.REMATCH,
+      state,
+      by: m.by === null ? null : validClientId(m.by, 'by'),
+      accepted: clients(m.accepted, 'accepted'),
+      waiting: clients(m.waiting, 'waiting'),
+    };
+    if (out.accepted.some((c) => out.waiting.includes(c))) fail('a client cannot both accept and wait');
+    if (state === 'cancelled') out.reason = oneOf(m.reason, REMATCH_CANCEL_REASONS, 'reason');
+    else if (has(m, 'reason')) fail('only a cancelled rematch has a reason');
+    // Milliseconds left to answer an open proposal.
+    if (state === 'open') out.msLeft = int(m.msLeft, 0, 24 * 60 * 60 * 1000, 'msLeft');
+    else if (has(m, 'msLeft')) fail('only an open rematch has a deadline');
+    return out;
+  },
+  [S2C.SAVE](m) {
+    // open: `by` proposed, `accepted` agreed, `waiting` still has to answer;
+    // agreed: the save point (`tick`, a hash tick every player reports);
+    // saved: the server's record (`id`) of the game after `ticks` ticks with state `hash`;
+    // cancelled: why (`reason`).
+    object(m, ['t', 'state', 'by', 'accepted', 'waiting', 'msLeft', 'tick', 'id', 'ticks', 'hash', 'reason'], 'save');
+    const state = oneOf(m.state, SAVE_STATES, 'state');
+    const clients = (v, w) => {
+      if (!Array.isArray(v) || v.length > MAX_PLAYERS) fail(`${w} must list at most ${MAX_PLAYERS} clients`);
+      const list = v.map((c) => validClientId(c, w));
+      if (new Set(list).size !== list.length) fail(`${w} lists a client twice`);
+      return list;
+    };
+    const out = { t: S2C.SAVE, state };
+    const allowed = { open: ['by', 'accepted', 'waiting', 'msLeft'], agreed: ['tick'], saved: ['id', 'ticks', 'hash'], cancelled: ['reason'] }[state];
+    for (const k of ['by', 'accepted', 'waiting', 'msLeft', 'tick', 'id', 'ticks', 'hash', 'reason']) {
+      if (has(m, k) !== allowed.includes(k)) fail(`a ${state} save ${allowed.includes(k) ? 'needs' : 'has no'} ${k}`);
+    }
+    if (state === 'open') {
+      out.by = validClientId(m.by, 'by');
+      out.accepted = clients(m.accepted, 'accepted');
+      out.waiting = clients(m.waiting, 'waiting');
+      if (out.accepted.some((c) => out.waiting.includes(c))) fail('a client cannot both accept and wait');
+      out.msLeft = int(m.msLeft, 0, 24 * 60 * 60 * 1000, 'msLeft');
+    } else if (state === 'agreed') {
+      out.tick = validTick(m.tick);
+      if (out.tick % HASH_INTERVAL !== 0) fail(`the save point is a multiple of ${HASH_INTERVAL}`);
+    } else if (state === 'saved') {
+      out.id = matches(m.id, SAVE_ID_RE, 'id');
+      out.ticks = int(m.ticks, 1, TICK_MAX, 'ticks');
+      if ((out.ticks - 1) % HASH_INTERVAL !== 0) fail('a save follows a hash tick');
+      out.hash = matches(m.hash, STATE_HASH_RE, 'hash');
+    } else {
+      out.reason = oneOf(m.reason, SAVE_CANCEL_REASONS, 'reason');
+    }
+    return out;
   },
   [S2C.ERROR](m) {
     object(m, ['t', 'code', 'message'], 'error');
@@ -589,5 +740,9 @@ export const client = {
   resume: () => ({ t: C2S.RESUME }),
   synced: () => ({ t: C2S.SYNCED }),
   defeated: () => ({ t: C2S.DEFEATED }),
+  mapstate: (hash, state) => ({ t: C2S.MAPSTATE, hash, state }),
+  kick: (clientId) => ({ t: C2S.KICK, client: clientId }),
+  rematch: (accept) => ({ t: C2S.REMATCH, accept }),
+  save: (accept) => ({ t: C2S.SAVE, accept }),
 };
 

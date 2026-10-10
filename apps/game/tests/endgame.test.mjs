@@ -51,6 +51,14 @@ const SKIRMISH = {
   redeployableMcv: true,
   oreRegrowth: true,
   techBuildings: 'standard',
+  // OpenRA's other lobby options (protocol 6).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
+  reusableEngineers: false,
   cheats: false,
   mapStyle: 'land',
   biome: 'temperate',
@@ -461,4 +469,14 @@ test('CSP safety: the end-game UI builds the DOM with text only, no HTML strings
   const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
   assert.match(html, /<link rel="stylesheet" href="css\/endgame.css" \/>/);
   assert.doesNotMatch(html, /\sstyle=|<script>|\son[a-z]+=/i, 'no inline styles or scripts in the page');
+});
+
+test('a game the time limit ends without a winner still ends (gameOver)', () => {
+  const flow = new EndGameFlow({});
+  assert.equal(flow.update(PLAYING), null);
+  // Everyone lost at once: the defeat is the final result.
+  assert.equal(flow.update({ defeated: true, won: false, winner: null, gameOver: true }), 'defeat');
+  assert.equal(flow.over, true);
+  const viewer = new EndGameFlow({ viewer: true });
+  assert.equal(viewer.update({ defeated: false, won: false, winner: null, gameOver: true }), 'over');
 });

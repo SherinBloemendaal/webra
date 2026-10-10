@@ -338,8 +338,10 @@ fn every_actor_is_reachable_for_the_right_factions() {
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
         // FACT comes from deploying an MCV; support power actors (paratroopers,
-        // spy plane, Badgers) and mines are never built.
-        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str()) || a.kind == Kind::Mine;
+        // spy plane, Badgers), mines, husks and crates are never built;
+        // proxies come from infiltrations (infantry.rs).
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str())
+            || matches!(a.kind, Kind::Mine | Kind::Husk | Kind::Crate | Kind::Proxy);
         // The neutral world (trees, civilians, bridges: gen_rules.py WORLD_ACTORS) and
         // map-only actors (France's fake Sub Pen) are never built.
         let map_only = a.prerequisites.iter().any(|p| r.tokens[p.token as usize] == crate::rules::TOKEN_DISABLED) && a.id != "FACT";
@@ -747,7 +749,7 @@ fn ai_starting_from_an_mcv_builds_a_base_at_every_difficulty() {
 
 fn setups(list: &[(&str, bool, u8)]) -> Vec<crate::world::PlayerSetup> {
     use crate::world::{AiDifficulty, PlayerSetup};
-    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team }).collect()
+    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team, handicap: 0 }).collect()
 }
 
 #[test]

@@ -31,6 +31,7 @@ fn busy_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for p in 0..2u8 {
         w.players[p as usize].cash = 1_000_000;
         w.players[p as usize].explored.iter_mut().for_each(|e| *e = 1);
@@ -38,7 +39,7 @@ fn busy_world() -> World {
     let types: Vec<u16> = (0..w.rules.actors.len() as u16).collect();
     for (k, &t) in types.iter().enumerate() {
         let kind = w.rules.actors[t as usize].kind;
-        if kind == Kind::Building || kind == Kind::Mine {
+        if kind == Kind::Building || kind == Kind::Mine || kind == Kind::Proxy {
             continue;
         }
         for p in 0..2u8 {
@@ -181,7 +182,10 @@ fn random_valid_rules_overrides_simulate_safely() {
     let base: serde_json::Value = serde_json::from_str(crate::rules::RULES_JSON).unwrap();
     let mut r = Rng::new(0x5eed);
     let mut played = 0;
-    for _ in 0..400 {
+    // Most picks are rejected (out of range or a bad index), more so with
+    // every bounded field the rules gain (build limits, bounties), so try
+    // enough sets for the 40 played games below.
+    for _ in 0..500 {
         let mut over = serde_json::Map::new();
         let mut actors = serde_json::Map::new();
         let mut weapons = serde_json::Map::new();
@@ -531,7 +535,7 @@ fn exercise(over: &serde_json::Value, seed: u64) {
             let k = t as i32;
             let (x, y) = (2 + (k % 12) * 5, 2 + (k / 12 % 3) * 5 + p as i32 * 32);
             match w.rules.actors[t].kind {
-                Kind::Mine => {}
+                Kind::Mine | Kind::Proxy => {}
                 Kind::Building => {
                     w.spawn_building(t as u16, p, x, y);
                 }

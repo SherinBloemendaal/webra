@@ -44,6 +44,7 @@
 
 use crate::math::{dist_sq, CELL};
 use crate::rules::{Kind, SupportPowerInfo};
+use crate::sound_events::{power_ref, SoundEventKind};
 use crate::world::World;
 
 /// One charging power of one player.
@@ -61,6 +62,10 @@ pub struct PowerInstance {
     pub total: i32,
     /// Charging this tick (a provider is powered).
     pub charging: bool,
+    /// The charging and ready notifications were reported (OpenRA
+    /// SupportPowerInstance notifiedCharging / notifiedReady; sound only, not hashed).
+    pub notified_charging: bool,
+    pub notified_ready: bool,
 }
 
 impl PowerInstance {
@@ -162,6 +167,22 @@ impl World {
                 }
             }
         }
+        // Proxies granted by infiltration (the Sonar Pulse; infantry.rs) are always powered.
+        for p in 0..n {
+            for &ty in &self.players[p].proxies {
+                let Some(list) = self.rules.actors[ty as usize].abilities.support_powers.as_ref() else { continue };
+                for (k, info) in list.iter().enumerate() {
+                    if !self.power_prereqs_met(p as u8, info) {
+                        continue;
+                    }
+                    match offered.iter_mut().find(|o| o.0 as usize == p && o.1 == info.key) {
+                        Some(o) => o.4 = true,
+                        None => offered.push((p as u8, info.key.clone(), ty, k, true)),
+                    }
+                }
+            }
+        }
+        let mut notices: Vec<(SoundEventKind, u16, usize, u8)> = Vec::new();
         for p in 0..n {
             let defeated = self.players[p].defeated;
             let spent = &self.powers.spent;
@@ -172,7 +193,16 @@ impl World {
             for o in &mine {
                 if !list.iter().any(|inst| inst.key == o.1) {
                     let total = self.rules.actors[o.2 as usize].abilities.support_powers.as_ref().unwrap()[o.3].charge.max(1);
-                    list.push(PowerInstance { key: o.1.clone(), provider_ty: o.2, index: o.3, remaining: total, total, charging: false });
+                    list.push(PowerInstance {
+                        key: o.1.clone(),
+                        provider_ty: o.2,
+                        index: o.3,
+                        remaining: total,
+                        total,
+                        charging: false,
+                        notified_charging: false,
+                        notified_ready: false,
+                    });
                 }
             }
             // Debug menu "instant charge" (debug.rs).
@@ -185,12 +215,26 @@ impl World {
                 if fast && !defeated {
                     inst.remaining = 0;
                 }
+                // OpenRA SupportPowerInstance.Tick: while active, "charging" once, then "ready" once (sound_events.rs).
+                if inst.charging {
+                    if !inst.notified_charging {
+                        inst.notified_charging = true;
+                        notices.push((SoundEventKind::PowerCharging, inst.provider_ty, inst.index, p as u8));
+                    }
+                    if inst.ready() && !inst.notified_ready {
+                        inst.notified_ready = true;
+                        notices.push((SoundEventKind::PowerReady, inst.provider_ty, inst.index, p as u8));
+                    }
+                }
             }
             let rules = &self.rules;
             let order = |inst: &PowerInstance| {
                 rules.actors[inst.provider_ty as usize].abilities.support_powers.as_ref().unwrap()[inst.index].palette_order
             };
             list.sort_by(|a, b| order(a).cmp(&order(b)).then_with(|| a.key.cmp(&b.key)));
+        }
+        for (kind, ty, index, player) in notices {
+            self.sound.push(kind, ty as i32, 0, 0, player, index as i32);
         }
         let tick = self.tick;
         self.powers.reveals.retain(|r| r.until >= tick);
@@ -211,15 +255,17 @@ impl World {
         let max_y = self.map.height * CELL - 1;
         let (x, y) = (x.clamp(0, max_x), y.clamp(0, max_y));
         let info = self.power_info(&inst).clone();
-        if !self.fire_support_power(player, &info, x, y, dir) {
+        if !self.fire_support_power(player, &info, power_ref(inst.provider_ty, inst.index), x, y, dir) {
             return false;
         }
         let code = crate::sound_events::power_code(&info.kind);
-        self.sound.push(crate::sound_events::SoundEventKind::PowerActivated, code, x, y, player, 0);
+        self.sound.push(SoundEventKind::PowerActivated, code, x, y, player, power_ref(inst.provider_ty, inst.index));
         self.note_power(player, key);
         let list = &mut self.powers.players[player as usize];
         if let Some(p) = list.iter_mut().find(|p| p.key == key) {
             p.remaining = p.total;
+            p.notified_charging = false;
+            p.notified_ready = false;
         }
         if info.one_shot {
             self.powers.spent.push((player, key.to_string()));
@@ -229,30 +275,43 @@ impl World {
 
     /// Whether the player owns a powered structure that provides `key` and meets its prerequisites.
     pub fn has_powered_provider(&self, player: u8, key: &str) -> bool {
-        (0..self.actors.len()).any(|i| {
-            let a = &self.actors[i];
-            a.alive
-                && a.owner == player
-                && a.kind == Kind::Building
-                && !self.is_powered_down(i)
-                && self.rules.actors[a.ty as usize]
+        let proxy = self.players.get(player as usize).is_some_and(|p| {
+            p.proxies.iter().any(|&ty| {
+                self.rules.actors[ty as usize]
                     .abilities
                     .support_powers
                     .as_ref()
-                    .is_some_and(|l| l.iter().any(|p| p.key == key && self.power_prereqs_met(player, p)))
-        })
+                    .is_some_and(|l| l.iter().any(|sp| sp.key == key && self.power_prereqs_met(player, sp)))
+            })
+        });
+        proxy
+            || (0..self.actors.len()).any(|i| {
+                let a = &self.actors[i];
+                a.alive
+                    && a.owner == player
+                    && a.kind == Kind::Building
+                    && !self.is_powered_down(i)
+                    && self.rules.actors[a.ty as usize]
+                        .abilities
+                        .support_powers
+                        .as_ref()
+                        .is_some_and(|l| l.iter().any(|p| p.key == key && self.power_prereqs_met(player, p)))
+            })
     }
 
     /// Dispatch on the power kind. Add new kinds here (see the module docs).
-    fn fire_support_power(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32, dir: Option<(i32, i32)>) -> bool {
+    /// `power` is the instance's `power_ref` (sound events of the aircraft it sends).
+    fn fire_support_power(&mut self, player: u8, info: &SupportPowerInfo, power: i32, x: i32, y: i32, dir: Option<(i32, i32)>) -> bool {
         match info.kind.as_str() {
             // plane.rs: spy plane, parabombs (AirstrikePower) and paratroopers.
-            "AirstrikePower" | "ParatroopersPower" => self.launch_air_power(player, info, x, y, dir),
+            "AirstrikePower" | "ParatroopersPower" => self.launch_air_power(player, info, power, x, y, dir),
             // abilities.rs: superweapons. Chronoshift takes the source area as the second point.
             "ChronoshiftPower" => self.fire_chronoshift(player, info, x, y, dir),
             "GrantExternalConditionPower" => self.fire_iron_curtain(info, x, y),
             "NukePower" => self.fire_nuke(player, info, x, y),
             "GpsPower" => self.fire_gps(player, info),
+            // infantry.rs: the Sonar Pulse a spy's infiltration grants.
+            "SpawnActorPower" => self.fire_spawn_actor(player, info, x, y),
             _ => false,
         }
     }

@@ -1,0 +1,207 @@
+//! Slots drawn from the original graphics (`RenderOptions::set_original_art`,
+//! apps/game/js/content/atlas.js originalSlotInfo): helicopter rotors play
+//! OpenRA's rotor sequences, explosions animate themselves, projectiles pick
+//! their own facing frame, spinners sit over their unit, the silo shows its
+//! storage level, and none of WebRA's own drawing is mixed in. Presentation
+//! only: the state hash never changes.
+
+use crate::overlays::{ORIGINAL_INFO_LEVEL, ORIGINAL_INFO_OVERLAY};
+use crate::render::{classic_offset, posed, Pose, SpriteIds, View, CLASSIC_PITCH_SIN, POSE_CODES, POSE_STRIDE, SPRITE_FLOATS};
+use crate::rules::Projectile as Flight;
+use crate::world::{cell_center, Effect, EffectKind, GameOptions, PlayerSetup, Projectile, World};
+
+fn ty(w: &World, id: &str) -> u16 {
+    w.rules.actor_index(id).unwrap() as u16
+}
+
+/// 64x64 world, everything explored and visible to both players, poses on.
+fn world() -> World {
+    let players = [PlayerSetup::new("england", None), PlayerSetup::new("russia", None)];
+    let mut w = World::with_options(11, 64, &players, GameOptions { ore_regrowth: false, ..GameOptions::default() });
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 1);
+        p.visible.iter_mut().for_each(|v| *v = 1);
+    }
+    w.render_opts.poses = true;
+    w
+}
+
+fn sprites(w: &World) -> Vec<[f32; SPRITE_FLOATS]> {
+    let view = View { x0: -100.0, y0: -100.0, x1: 64.0 * 24.0 + 100.0, y1: 64.0 * 24.0 + 100.0 };
+    let (mut out, mut rects) = (Vec::new(), Vec::new());
+    w.build_render(0, 1.0, &view, &[], &mut out, &mut rects);
+    out.chunks(SPRITE_FLOATS).map(|c| c.try_into().unwrap()).collect()
+}
+
+/// (slot, pose, age) of a sprite id.
+fn unpack(id: f32) -> (u32, u32, u32) {
+    let code = id as u32;
+    (code % POSE_STRIDE, (code / POSE_STRIDE) % POSE_CODES, code / POSE_STRIDE / POSE_CODES)
+}
+
+fn in_slot(all: &[[f32; SPRITE_FLOATS]], slot: u32) -> Vec<[f32; SPRITE_FLOATS]> {
+    all.iter().copied().filter(|s| unpack(s[3]).0 == slot).collect()
+}
+
+#[test]
+fn original_art_options_parse_slots_overlays_and_levels() {
+    let mut w = world();
+    w.render_opts.set_original_art(
+        &[9, 3, 3, 5],
+        &[ORIGINAL_INFO_OVERLAY, 7, -256, 0, ORIGINAL_INFO_LEVEL, 4, 5, 0, 99, 1, 2, 3, ORIGINAL_INFO_LEVEL, 6, 0, 0, 1, 2],
+    );
+    assert_eq!(w.render_opts.original_slots, vec![3, 5, 9], "sorted, once each");
+    assert!(w.render_opts.is_original(5) && !w.render_opts.is_original(4));
+    assert_eq!(w.render_opts.unit_overlay(7), Some((-256, 0)));
+    assert_eq!(w.render_opts.level_stages(4), Some(5));
+    assert_eq!(w.render_opts.level_stages(6), None, "no stages, no level");
+    assert_eq!(
+        (w.render_opts.unit_overlays.len(), w.render_opts.level_stages.len()),
+        (1, 1),
+        "unknown kinds and the partial record are ignored"
+    );
+    w.render_opts.set_original_art(&[], &[]);
+    assert!(w.render_opts.original_slots.is_empty() && w.render_opts.unit_overlays.is_empty());
+}
+
+#[test]
+fn original_rotors_play_the_ground_and_air_sequences_without_webra_discs() {
+    let mut w = world();
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let (tran_t, heli_t) = (ty(&w, "TRAN"), ty(&w, "HELI"));
+    let tran = w.spawn_unit(tran_t, 0, cell_center(20), cell_center(20), 0);
+    let heli = w.spawn_unit(heli_t, 0, cell_center(30), cell_center(20), 0);
+    w.actors[heli].altitude = 0;
+    let (tran_slot, heli_slot) = (tran_t as u32 * 2 + 1, heli_t as u32 * 2 + 1);
+    // WebRA art: blades plus a blurred disc in the air.
+    let flying = w.actors[tran].altitude > 0;
+    assert!(flying, "the Chinook spawns in the air");
+    let plain = sprites(&w);
+    assert_eq!(in_slot(&plain, tran_slot).len(), 2);
+    assert!(plain.iter().any(|s| s[3] == ids.helis_base), "WebRA's rotor disc");
+
+    w.render_opts.set_original_art(&[tran_slot, heli_slot], &[]);
+    let all = sprites(&w);
+    assert!(!all.iter().any(|s| s[3] == ids.helis_base || s[3] == ids.helis_base + 1.0), "no WebRA disc or wash");
+    // The Chinook in the air: the front rotor's air sequence (move) and the rear one's (aux move), opaque.
+    let mut tran_rotors: Vec<(u32, u32)> = in_slot(&all, tran_slot).iter().map(|s| (unpack(s[3]).1, s[6] as u32)).collect();
+    tran_rotors.sort();
+    assert_eq!(tran_rotors, vec![(Pose::Move as u32, 1), (Pose::AuxMove as u32, 1)]);
+    // The landed helicopter: the slow rotor (idle pose).
+    let heli_rotor = in_slot(&all, heli_slot);
+    assert_eq!(heli_rotor.len(), 1);
+    assert_eq!(unpack(heli_rotor[0][3]).1, Pose::Idle as u32);
+    // Landed, the Chinook's rotors take the ground sequences.
+    w.actors[tran].altitude = 0;
+    let mut landed: Vec<u32> = in_slot(&sprites(&w), tran_slot).iter().map(|s| unpack(s[3]).1).collect();
+    landed.sort();
+    assert_eq!(landed, vec![Pose::Idle as u32, Pose::AuxIdle as u32]);
+}
+
+#[test]
+fn original_explosions_animate_from_their_start_and_dust_is_left_out() {
+    let mut w = world();
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let fx = |kind, ttl, max| Effect { x: cell_center(10), y: cell_center(10), tx: cell_center(10), ty: cell_center(10), kind, ttl, max };
+    w.effects.push(fx(EffectKind::SmallExplosion, 10, 14));
+    w.effects.push(fx(EffectKind::Dust, 5, 12));
+    let plain = sprites(&w);
+    assert_eq!(plain.iter().filter(|s| s[3] == ids.small_explosion || s[3] == ids.large_explosion).count(), 2);
+    w.render_opts.set_original_art(&[ids.small_explosion as u32, ids.large_explosion as u32], &[]);
+    let all = sprites(&w);
+    let boom = in_slot(&all, ids.small_explosion as u32);
+    assert_eq!(boom.len(), 1);
+    assert_eq!(boom[0][3], posed(ids.small_explosion as u32, Pose::Make, 4), "the make pose, 4 ticks in");
+    assert_eq!((boom[0][5], boom[0][6]), (1.0, 1.0), "no WebRA growth or fade");
+    assert!(in_slot(&all, ids.large_explosion as u32).is_empty(), "OpenRA has no dust cloud");
+}
+
+#[test]
+fn original_missiles_pick_their_facing_frame_instead_of_turning_the_sprite() {
+    let mut w = world();
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let weapon = (0..w.rules.weapons.len())
+        .find(|&k| w.rules.weapons[k].projectile == Flight::Missile && w.naval_projectile_sprite(k).is_none())
+        .expect("a missile weapon") as u16;
+    let (x, y) = (cell_center(12), cell_center(12));
+    let shot = crate::veterancy::Shot::NONE;
+    w.projectiles.push(Projectile { x, y, tx: x + 1000, ty: y, weapon, owner: 0, target: crate::world::NONE, facing: 256, shot });
+    let angle = |all: &[[f32; SPRITE_FLOATS]]| in_slot(all, ids.missile as u32)[0][2];
+    let turned = angle(&sprites(&w));
+    w.render_opts.set_original_art(&[ids.missile as u32], &[]);
+    let own = angle(&sprites(&w));
+    // WebRA's missile art points east and is turned back a quarter; the original one is not turned.
+    let d = (own - turned).rem_euclid(std::f32::consts::TAU);
+    assert!((d - std::f32::consts::FRAC_PI_2).abs() < 1e-4, "{own} {turned}");
+}
+
+#[test]
+fn original_spinners_sit_over_units_and_the_silo_shows_the_storage_level() {
+    let mut w = world();
+    let mrj = ty(&w, "MRJ");
+    let i = w.spawn_unit(mrj, 0, cell_center(14), cell_center(14), 0);
+    let slot = mrj as u32 * 2 + 1;
+    assert!(in_slot(&sprites(&w), slot).is_empty(), "WebRA draws no second part on the Radar Jammer");
+    w.render_opts.set_original_art(&[slot], &[ORIGINAL_INFO_OVERLAY, mrj as i32, -256, 0]);
+    let all = sprites(&w);
+    let dish = in_slot(&all, slot);
+    assert_eq!(dish.len(), 1, "the dish over the jammer");
+    assert_eq!(unpack(dish[0][3]).1, Pose::Idle as u32);
+    let body = all.iter().find(|s| unpack(s[3]).0 == mrj as u32 * 2).expect("the body");
+    // 256 world units behind the body (facing north: below it on screen,
+    // shortened by OpenRA's classic perspective).
+    assert_eq!(w.actors[i].facing, 0);
+    let want = classic_offset(-256, 0, 0);
+    assert!(want[0].abs() < 1e-6 && (want[1] - 6.0 * CLASSIC_PITCH_SIN).abs() < 1e-5);
+    assert!((dish[0][0] - body[0] - want[0]).abs() < 1e-3 && (dish[0][1] - body[1] - want[1]).abs() < 1e-3, "{dish:?} {body:?}");
+
+    // The silo: stage (stages - 1) * resources / capacity of its owner.
+    let silo = ty(&w, "SILO");
+    let s = w.spawn_building(silo, 0, 30, 30).expect("room for a silo");
+    w.actors[s].born = 0;
+    w.render_opts.set_original_art(&[silo as u32 * 2], &[ORIGINAL_INFO_LEVEL, silo as i32, 5, 0]);
+    let stage = |w: &mut World, res: i32, cap: i32| {
+        w.players[0].resources = res;
+        w.players[0].storage = cap;
+        w.building_pose(s)
+    };
+    assert_eq!(stage(&mut w, 0, 3000), (Pose::Idle, 0));
+    assert_eq!(stage(&mut w, 1500, 3000), (Pose::Idle, 2));
+    assert_eq!(stage(&mut w, 2999, 3000), (Pose::Idle, 3));
+    assert_eq!(stage(&mut w, 3000, 3000), (Pose::Idle, 4));
+    assert_eq!(stage(&mut w, 100, 0), (Pose::Idle, 0), "no capacity: empty");
+    w.actors[s].hp = 1;
+    assert_eq!(stage(&mut w, 3000, 3000), (Pose::Damaged, 4), "damaged stages");
+}
+
+#[test]
+fn original_art_never_changes_the_simulation() {
+    let run = |original: bool| {
+        let mut w = world();
+        if original {
+            let slots: Vec<u32> = (0..w.rules.actors.len() as u32 * 2 + 60).collect();
+            w.render_opts.set_original_art(&slots, &[ORIGINAL_INFO_LEVEL, ty(&w, "SILO") as i32, 5, 0]);
+        }
+        w.spawn_unit(ty(&w, "HIND"), 0, cell_center(20), cell_center(20), 0);
+        for _ in 0..50 {
+            w.step();
+            let _ = sprites(&w);
+        }
+        w.rebuild_hash();
+        w.state_hash()
+    };
+    assert_eq!(run(false), run(true));
+}
+
+#[test]
+fn classic_offsets_shorten_the_north_south_part_like_openra() {
+    // OpenRA BodyOrientation.LocalToWorld with UseClassicPerspectiveFudge:
+    // (y, -sin(pitch) * x), pitch 40 degrees.
+    let north = classic_offset(1024, 0, 0);
+    assert!(north[0].abs() < 1e-5 && (north[1] + 24.0 * CLASSIC_PITCH_SIN).abs() < 1e-4, "{north:?}");
+    let east = classic_offset(1024, 0, 256);
+    assert!((east[0] - 24.0).abs() < 1e-4 && east[1].abs() < 1e-4, "{east:?}");
+    let right = classic_offset(0, 1024, 0);
+    assert!((right[0] - 24.0).abs() < 1e-4 && right[1].abs() < 1e-4, "{right:?}");
+    assert!((CLASSIC_PITCH_SIN - 654.0 / 1024.0).abs() < f32::EPSILON);
+}

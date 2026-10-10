@@ -336,19 +336,29 @@ fn check_no_leaks(w: &World, player: u8) {
 fn ai_games_never_leak_hidden_or_jammed_enemies() {
     // Hard AIs build radar domes, radar jammers, gap generators and cloaked units.
     let hard = |f: &str| crate::world::PlayerSetup::new(f, Some(crate::world::AiDifficulty::Hard));
-    let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], crate::world::GameOptions::default());
+    // Seed 5: an AI fields a jammer within the twelve minutes.
+    // The game this seed plays has the Soviet AI build a radar jammer; the
+    // tech buildings of a generated map (mapgen/settlements.rs) would make it
+    // a different game, so this one leaves them out.
+    let options = crate::world::GameOptions { tech_buildings: crate::mapgen::settlements::TechBuildings::None, ..Default::default() };
+    let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], options);
     let mut online = [false; 3];
+    let mut had_dome = [false; 3];
     let mut saw_jammer = false;
     for step in 0..(25 * 60 * 12) {
         w.step();
         if step % 50 == 0 {
             for p in 0..3u8 {
                 online[p as usize] |= w.radar_state(p) == RadarState::Online;
+                had_dome[p as usize] |=
+                    w.actors.iter().any(|a| a.alive && a.owner == p && w.rules.actors[a.ty as usize].abilities.provides_radar.is_some());
                 check_no_leaks(&w, p);
             }
             saw_jammer |= w.actors.iter().any(|a| a.alive && w.rules.actors[a.ty as usize].abilities.jams_radar.is_some());
         }
     }
-    assert!(online.iter().all(|&o| o), "every AI got its radar online");
+    // An AI overrun before its radar dome stood never gets one; the others do.
+    assert!(online.iter().zip(&had_dome).all(|(&o, &d)| o || !d), "every AI with a radar dome got its radar online");
+    assert!(online.iter().filter(|&&o| o).count() >= 2, "AIs build radar domes: {online:?}");
     assert!(saw_jammer, "an AI built a radar jammer");
 }

@@ -20,9 +20,10 @@
 
 import { openContentStore, storeError } from './store.js';
 import { installContent, contentSummary } from './install.js';
-import { originalSlots, combineSlots, TILESET_OF_BIOME } from './atlas.js';
+import { originalSlots, combineSlots, originalSlotInfo, TILESET_OF_BIOME } from './atlas.js';
 import { originalTerrain, packTerrain } from './terrain.js';
 import { cameoSource, originalCameoPixels } from './cameos.js';
+import { originalCursors } from './cursors.js';
 import { ACTOR_ART, ACTOR_PALETTE } from './tables.js';
 import { decodePackImages, packCameos, packId, packSlots, readPack, validateManifest, PackError } from './packs.js';
 import { defaultRegistry } from '../registry.js';
@@ -208,9 +209,10 @@ export class ContentSystem {
   }
 
   /**
-   * Sprite art for a game: `{ slots, layers, filter, poses, report }` for
-   * js/sprites.js buildAtlas (`poses` turns on Game.set_sprite_poses,
-   * `layers` are second slots drawn over structures).
+   * Sprite art for a game: `{ slots, layers, filter, poses, original, report }`
+   * for js/sprites.js buildAtlas (`poses` turns on Game.set_sprite_poses,
+   * `layers` are second slots drawn over structures, `original` is what
+   * Game.set_original_slots takes: atlas.js originalSlotInfo).
    * Empty slots (WebRA art only) when nothing is installed or chosen.
    */
   art(actors, biome = 'temperate') {
@@ -232,10 +234,22 @@ export class ContentSystem {
     }
     const { slots, source, layers } = combineSlots(actors.length, { packs, original });
     const pixelArt = slots.size > 0;
-    return { slots, source, layers, filter: pixelArt ? 'nearest' : 'linear', poses: pixelArt, report };
+    const info = originalSlotInfo(source, original);
+    return { slots, source, layers, filter: pixelArt ? 'nearest' : 'linear', poses: pixelArt, original: info, report };
   }
 
   /** Cameo pictures for js/cameo.js setCameoArt, or null for WebRA's own. */
+  /**
+   * Mouse cursors from the original graphics (content/cursors.js
+   * originalCursors: OpenRA cursor name -> { frames, fps }) for
+   * js/cursors.js setCursorArt, or null for WebRA's own.
+   */
+  cursors() {
+    if (!this.originalActive) return null;
+    const art = originalCursors((n) => this.getFile(n));
+    return art.size ? art : null;
+  }
+
   cameos() {
     const sources = this.enabledPacks()
       .filter((p) => Object.keys(p.manifest.cameos).length)

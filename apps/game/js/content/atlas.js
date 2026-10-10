@@ -21,8 +21,27 @@
 //   frame (engine/src/doors.rs) in the age of the idle or damaged pose, so
 //   those poses show frame `age` of the door sequence (MODE.INDEX) instead of
 //   looping it.
+//
+// Other parts:
+// - helicopter rotors (OpenRA WithIdleOverlay@ROTOR*) take the second slot:
+//   the ground sequence as the idle pose, the airborne one as the move pose,
+//   a second rotor (the Chinook's) as the aux poses; the engine picks the
+//   pose by altitude and draws each rotor at its offset (helicopter.rs);
+// - an overlay spinning on a unit without a turret (OpenRA
+//   WithIdleOverlay@SPINNER: the Radar Jammer's and the Mobile Gap
+//   Generator's dishes) takes the second slot and is listed in
+//   `unitOverlays` with its offset; on a turreted unit (the Tesla Tank) it
+//   is drawn as the turret;
+// - heights of turrets and overlays (the Z of OpenRA's offsets) are drawn
+//   into their frames (ACTOR_ART `lift`);
+// - the storage silo shows its fill level (OpenRA WithResourceLevelSpriteBody):
+//   the engine names the stage in the age, MODE.INDEX;
+// - special sprites (projectiles, explosions, the rally flag, mines; SPECIAL_ART)
+//   after the actor slots: "effect" ones play once from the age the engine
+//   gives with the make pose and then show nothing, the rest loop.
 
-import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES, TERRAIN } from './tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, EXPLOSION_ART, EXPLOSIONS, SEQUENCES, SPECIAL_ART, TERRAIN } from './tables.js';
+import { SPECIALS } from './packs.js';
 import { decodeSprite, trimFrame } from './shp.js';
 import { ACTOR_SHADOW, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { MODE, POSE, POSE_COUNT, resolveSequence, sequenceFile } from './sequences.js';
@@ -207,7 +226,7 @@ function stillPoses(images, names) {
 }
 
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
-function descriptor(resolved, frames, mode, def) {
+function descriptor(resolved, frames, mode, def, lead = 0) {
   return {
     frames,
     length: resolved.length,
@@ -217,23 +236,106 @@ function descriptor(resolved, frames, mode, def) {
     classic: !!def.classic,
     interpolatedFacings: def.interpolatedFacings ?? 0,
     rotate: false,
+    lead,
   };
+}
+
+/** A frame mirrored left to right and/or top to bottom (OpenRA FlipX, FlipY). */
+export function flipFrame(frame, flipX, flipY) {
+  if (!frame || (!flipX && !flipY)) return frame;
+  const { width: w, height: h } = frame;
+  const data = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) data[y * w + x] = frame.data[(flipY ? h - 1 - y : y) * w + (flipX ? w - 1 - x : x)];
+  }
+  return { ...frame, data };
+}
+
+/**
+ * The frames a sequence indexes, as `{ frames: [{ frame, offset, scale, key }] }`
+ * or `{ error }`: the frames of its file, or for an OpenRA Combine the frames
+ * of every part one after the other (each part a file's listed frames, or
+ * all of them), with the part's offset, flips and scale applied. The
+ * sequence's Start, Length, Facings and Frames then index this list
+ * (OpenRA DefaultSpriteSequence: a virtual sprite file).
+ */
+export function sequenceFrames(def, files, tileset) {
+  const parts = def.parts ?? [{ file: def.file, tilesets: def.tilesets, scale: def.scale }];
+  const frames = [];
+  for (const part of parts) {
+    const file = sequenceFile(part, tileset);
+    // No original on this tileset (OpenRA drew it, tools/gen_content_tables.py): WebRA art.
+    if (!file) return { none: true };
+    const { sprite, error } = files.get(file);
+    if (!sprite) return { error: `${file} ${error}` };
+    const list = part.frames ?? sprite.frames.map((_, i) => i);
+    for (const f of list) {
+      if (f < 0 || f >= sprite.frames.length) return { error: `${file} has no frame ${f}` };
+      frames.push({
+        frame: flipFrame(sprite.frames[f], part.flipX, part.flipY),
+        offset: part.offset ?? [0, 0],
+        scale: part.scale ?? 1,
+        key: `${file}#${f}#${part.flipX ? 1 : 0}${part.flipY ? 1 : 0}#${part.scale ?? 1}`,
+      });
+    }
+  }
+  return { frames };
+}
+
+/** The ways a loaded sequence can be played (vanish: once, then nothing, for deaths). */
+function modes(resolved, frames, def, lead = 0) {
+  return {
+    loop: descriptor(resolved, frames, lead ? MODE.LEAD : MODE.LOOP, def, lead),
+    once: descriptor(resolved, frames, MODE.ONCE, def),
+    still: descriptor(resolved, frames, MODE.STILL, def),
+    index: descriptor(resolved, frames, MODE.INDEX, def),
+    vanish: descriptor(resolved, frames, MODE.VANISH, def),
+  };
+}
+
+/**
+ * Two sequences one after the other, facing by facing (OpenRA plays the
+ * first, then the second): `{ resolved, frames }` with the frames of
+ * facing f the first's then the second's. Null when their facings differ.
+ */
+function joined(a, b) {
+  if (a.resolved.facings !== b.resolved.facings) return null;
+  const facings = a.resolved.facings;
+  const la = a.resolved.length;
+  const lb = b.resolved.length;
+  const frames = [];
+  for (let f = 0; f < facings; f++) frames.push(...a.frames.slice(f * la, (f + 1) * la), ...b.frames.slice(f * lb, (f + 1) * lb));
+  return { resolved: { ...b.resolved, length: la + lb }, frames, def: b.def };
+}
+
+/** A sequence played backwards, facing by facing (OpenRA PlayBackwards). */
+function reversed(a) {
+  const l = a.resolved.length;
+  const frames = [];
+  for (let f = 0; f < a.resolved.facings; f++) frames.push(...a.frames.slice(f * l, (f + 1) * l).reverse());
+  return { ...a, frames };
 }
 
 /**
  * Fill a pose table from the poses a slot has: every POSE gets a descriptor,
  * falling back to the idle pose (damaged still falls back to still).
- * `have` maps pose names (idle, move, attack, damaged, make, harvest, dock)
- * to { loop, once, still, index } descriptors. Walls and production doors
+ * `have` maps pose names (idle, move, attack, damaged, make, harvest, dock,
+ * aux-idle, aux-move, active, damaged-active, parachute, active-end, and
+ * the infantry's stand2, idle1, idle2, die1..die6, crushed, attack2) to { loop,
+ * once, still, index, vanish } descriptors. Walls and production doors
  * index their frames: the engine names the frame in the age (a wall's
  * connections, the door frame of OpenRA WithProductionDoorOverlay).
+ * `activeMode` "once" plays the working poses once from the age the engine
+ * gives (a Tesla charge, a launch), "loop" repeats them; a working pose
+ * with a lead-in loops after it either way. The active-end pose plays
+ * once and then shows idle.
  */
-export function poseTable(have, { wall = false, door = false } = {}) {
+export function poseTable(have, { wall = false, door = false, level = false, activeMode = 'loop' } = {}) {
   const idle = have.idle;
   if (!idle) return null;
   const pick = (name) => have[name] ?? idle;
   const poses = new Array(POSE_COUNT);
-  const main = (p) => (wall || door ? p.index : p.loop);
+  const main = (p) => (wall || door || level ? p.index : p.loop);
   poses[POSE.IDLE] = main(idle);
   poses[POSE.MOVE] = main(pick('move'));
   poses[POSE.ATTACK] = main(pick('attack'));
@@ -243,65 +345,151 @@ export function poseTable(have, { wall = false, door = false } = {}) {
   poses[POSE.DOCK] = main(pick('dock'));
   poses[POSE.STILL] = idle.still;
   poses[POSE.DAMAGED_STILL] = (have.damaged ?? idle).still;
+  // Standing infantry: stand2 loops, idle animations play once (then the idle pose).
+  poses[POSE.STAND2] = main(pick('stand2'));
+  poses[POSE.IDLE1] = have.idle1 ? have.idle1.once : main(idle);
+  poses[POSE.IDLE2] = have.idle2 ? have.idle2.once : poses[POSE.IDLE1];
+  // Deaths play once and vanish; a missing one falls back to die1 (the engine
+  // only asks for them when the art has die1, see `deathArt`).
+  const die1 = have.die1?.vanish ?? idle.vanish;
+  for (let n = 1; n <= 6; n++) poses[POSE.DIE1 + n - 1] = have[`die${n}`]?.vanish ?? die1;
+  poses[POSE.CRUSHED] = have.crushed?.vanish ?? die1;
+  // A second attack sequence (Tanya shoots left or right), else the first.
+  poses[POSE.ATTACK2] = have.attack2 ? main(have.attack2) : poses[POSE.ATTACK];
+  // A second overlay (a second rotor) falls back to the first one's poses.
+  poses[POSE.AUX_IDLE] = main(have['aux-idle'] ?? idle);
+  poses[POSE.AUX_MOVE] = main(have['aux-move'] ?? pick('move'));
+  const working = (p) => (activeMode === 'once' && p.loop.mode !== MODE.LEAD ? p.once : p.loop);
+  poses[POSE.ACTIVE] = have.active ? working(have.active) : poses[POSE.IDLE];
+  poses[POSE.DAMAGED_ACTIVE] = have['damaged-active'] ? working(have['damaged-active']) : have.active ? poses[POSE.ACTIVE] : poses[POSE.DAMAGED];
+  poses[POSE.PARACHUTE] = have.parachute ? have.parachute.loop : poses[POSE.IDLE];
+  poses[POSE.ACTIVE_END] = have['active-end'] ? have['active-end'].once : poses[POSE.IDLE];
   return poses;
+}
+
+/** Module order of the special slots after SPECIALS (js/sprites.js spriteList, engine/src/render.rs SpriteIds). */
+export const SPECIAL_MODULES = Object.freeze(['naval', 'planes', 'helis', 'abilities', 'veterancy', 'decorations', 'fx', 'leftovers', 'infantry']);
+/** Special slots per art module (js/sprites.js SPECIAL_SLOTS). */
+export const MODULE_SPECIAL_SLOTS = 8;
+
+/** The slot of a SPECIAL_ART key ("missile", "naval.0") for `actorCount` actors, or -1. */
+export function specialSlot(key, actorCount) {
+  const base = actorCount * 2;
+  const core = SPECIALS.indexOf(key);
+  if (core >= 0) return base + core;
+  const [mod, index] = key.split('.');
+  const m = SPECIAL_MODULES.indexOf(mod);
+  const k = Number(index);
+  if (m < 0 || !Number.isInteger(k) || k < 0 || k >= MODULE_SPECIAL_SLOTS) return -1;
+  return base + SPECIALS.length + m * MODULE_SPECIAL_SLOTS + k;
+}
+
+/** The first slot after the special sprites: actor `t`'s muzzle flash (engine/src/render.rs SpriteIds `muzzle_base`). */
+export function muzzleSlot(t, actorCount) {
+  return actorCount * 2 + SPECIALS.length + SPECIAL_MODULES.length * MODULE_SPECIAL_SLOTS + t;
+}
+
+/** Explosion `k` of EXPLOSIONS (engine/render.json), after the muzzle slots. */
+export function explosionSlot(k, actorCount) {
+  return muzzleSlot(actorCount, actorCount) + k;
 }
 
 /**
  * Pose tables of one OpenRA image's slot. `mapping` is pose name ->
- * sequence name (content/tables.js ACTOR_ART). Returns `{ art, problems }`
- * with `art` null when the idle pose cannot be made.
+ * sequence name (content/tables.js ACTOR_ART); `lead` names a sequence
+ * played once before a pose's own (which then loops), `reverseEnd` plays
+ * the active-end pose backwards. `effect` makes an effect slot: the make
+ * pose plays the idle sequence once, every other pose shows nothing.
+ * `index` makes every pose name its frame in the age. Returns `{ art,
+ * problems }` with `art` null when the idle pose cannot be made.
  */
-function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under = null, door = false }) {
+function slotArt(image, mapping, opts) {
+  const { files, tileset, lookup, offset, wall, under = null, door = false, level = false, lift = {}, effect = false, index = false } = opts;
+  const { lead = {}, reverseEnd = false, activeMode = 'loop' } = opts;
   const seqs = SEQUENCES[image] ?? {};
   const images = [];
   const imageIndex = new Map();
   const problems = [];
   const have = {};
-  for (const [pose, seqName] of Object.entries(mapping)) {
+  const load = (seqName, pose) => {
     const def = seqs[seqName];
-    if (!def) continue;
-    const file = sequenceFile(def, tileset);
-    if (!file) continue; // no original on this tileset: WebRA art
-    const { sprite, error } = files.get(file);
-    if (!sprite) {
-      problems.push(`${image}.${seqName}: ${file} ${error}`);
-      continue;
+    if (!def) return null;
+    // The frames the sequence indexes: one file's, or a Combine's parts one after the other.
+    const source = sequenceFrames(def, files, tileset);
+    if (source.none) return null; // no original on this tileset: WebRA art
+    if (source.error) {
+      problems.push(`${image}.${seqName}: ${source.error}`);
+      return null;
     }
     let resolved;
     try {
-      resolved = resolveSequence(def, sprite.frames.length);
+      resolved = resolveSequence(def, source.frames.length);
     } catch (err) {
       problems.push(`${image}.${seqName}: ${err.message}`);
-      continue;
+      return null;
     }
     const seqOffset = def.offset ?? [0, 0];
-    const at = [seqOffset[0] + offset[0], seqOffset[1] + offset[1]];
     const frames = resolved.fileFrames.map((f, k) => {
       const shadowFrame = resolved.shadowFrames ? resolved.shadowFrames[k] : -1;
-      const key = `${file}#${f}#${shadowFrame}#${at[0]},${at[1]}`;
+      const src = source.frames[f];
+      const at = [seqOffset[0] + offset[0] + src.offset[0], seqOffset[1] + offset[1] + src.offset[1] + (lift[pose] ?? 0)];
+      const key = `${src.key}#${shadowFrame}#${at[0]},${at[1]}`;
       if (!imageIndex.has(key)) {
-        const frame = sprite.frames[f];
-        const shadow = shadowFrame >= 0 ? sprite.frames[shadowFrame] : null;
+        const frame = src.frame;
+        const shadow = shadowFrame >= 0 ? source.frames[shadowFrame]?.frame : null;
         imageIndex.set(key, images.length);
         const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
+        if (src.scale !== 1) img.scale = src.scale;
         // OpenRA sequence Scale (the snow hut): drawn smaller, around its offset.
-        if (def.scale) {
-          img.scale = def.scale;
-          img.offset = [img.offset[0] * def.scale, img.offset[1] * def.scale];
-        }
+        if (def.scale && !def.parts) img.offset = [img.offset[0] * def.scale, img.offset[1] * def.scale];
         images.push(under ? compositeUnder(img, under) : img);
       }
       return imageIndex.get(key);
     });
-    have[pose] = {
-      loop: descriptor(resolved, frames, MODE.LOOP, def),
-      once: descriptor(resolved, frames, MODE.ONCE, def),
-      still: descriptor(resolved, frames, MODE.STILL, def),
-      index: descriptor(resolved, frames, MODE.INDEX, def),
-    };
+    return { resolved, frames, def };
+  };
+  for (const [pose, seqName] of Object.entries(mapping)) {
+    const names = Array.isArray(seqName) ? seqName : [seqName];
+    let seq = null;
+    for (const name of names) {
+      const next = load(name, pose);
+      if (!next) {
+        seq = null;
+        break;
+      }
+      seq = seq ? joined(seq, next) : next;
+      if (!seq) {
+        problems.push(`${image}.${names.join('+')}: the sequences have different facings`);
+        break;
+      }
+    }
+    if (!seq) continue;
+    let leadLength = 0;
+    if (lead[pose]) {
+      const first = load(lead[pose], pose);
+      const both = first && joined(first, seq);
+      if (both) {
+        leadLength = first.resolved.length;
+        seq = both;
+      } else if (first) problems.push(`${image}.${lead[pose]}: facings differ from ${seqName}`);
+    }
+    if (pose === 'active-end' && reverseEnd) seq = reversed(seq);
+    have[pose] = modes(seq.resolved, seq.frames, seq.def, leadLength);
   }
-  const poses = poseTable(have, { wall, door });
-  return { art: poses ? { images, poses } : null, problems };
+  if (effect && have.idle) {
+    // Plays once from the age the engine gives with the make pose, then nothing.
+    const blank = images.length;
+    images.push({ width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: [0, 0], scale: 1 });
+    const once = have.idle.once;
+    const empty = { ...have.idle.still, frames: [blank], length: 1, facings: 1, mode: MODE.STILL };
+    const poses = new Array(POSE_COUNT).fill(empty);
+    poses[POSE.MAKE] = once;
+    return { art: { images, poses }, problems };
+  }
+  if (index && have.idle) return { art: { images, poses: new Array(POSE_COUNT).fill(have.idle.index) }, problems };
+  const poses = poseTable(have, { wall, door, level, activeMode });
+  // `deaths`: the art has death sequences (js/sprites.js buildAtlas `deaths`).
+  return { art: poses ? { images, poses, deaths: !!have.die1 } : null, problems };
 }
 
 /**
@@ -316,13 +504,14 @@ function slotArt(image, mapping, { files, tileset, lookup, offset, wall, under =
  * @param {string} tileset OpenRA tileset id (TILESET_OF_BIOME)
  */
 export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
-  const out = { slots: new Map(), layers: new Set(), actors: [], missing: [], problems: [] };
+  const out = { slots: new Map(), layers: new Set(), unitOverlays: [], levels: [], smoke: null, fires: [], specials: [], explosions: [], actors: [], missing: [], problems: [] };
   const palBytes = getFile(ACTOR_PALETTE);
   if (!palBytes) {
     out.problems.push(`${ACTOR_PALETTE} is not installed`);
     out.missing = actors.map((a) => a.id);
     return out;
   }
+  out.actorCount = actors.length;
   let lookup;
   try {
     lookup = paletteLookup(decodePalette(palBytes), { remap: true, shadow: ACTOR_SHADOW });
@@ -387,7 +576,7 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
     if (!entry) {
-      if (a.kind !== 'mine') out.missing.push(a.id);
+      if (a.kind !== 'proxy') out.missing.push(a.id);
       return;
     }
     if (entry.bridge) {
@@ -405,9 +594,20 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     const bib = a.kind === 'building' && entry.bib ? bibOf(entry.image, entry.bib, a) : null;
     const ctx = { files, tileset, lookup, offset, wall: !!entry.wall };
     const make = (part, mapping) => {
-      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
+      const lift = part === 'second' ? (entry.lift ?? {}) : {};
+      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}|${JSON.stringify(lift)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
       if (!shared.has(key)) {
-        const partCtx = { ...ctx, under: part === 'body' ? bib : null, door: part === 'second' && entry.overlay === 'door' };
+        const partCtx = {
+          ...ctx,
+          under: part === 'body' ? bib : null,
+          door: part === 'second' && entry.overlay === 'door',
+          level: part === 'body' && !!entry.level,
+          lift,
+          lead: part === 'body' ? (entry.lead ?? {}) : {},
+          reverseEnd: part === 'body' && !!entry.reverseEnd,
+          // Turret recoil plays once per shot.
+          activeMode: part === 'body' ? (entry.activeMode ?? 'loop') : 'once',
+        };
         const r = slotArt(entry.image, mapping, partCtx);
         out.problems.push(...r.problems);
         shared.set(key, r.art);
@@ -425,9 +625,90 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     out.slots.set(2 * t, body);
     out.slots.set(2 * t + 1, second);
     if (second && entry.overlay) out.layers.add(2 * t + 1);
+    if (second && entry.unitOverlay) out.unitOverlays.push([t, entry.unitOverlay[0], entry.unitOverlay[1]]);
+    if (entry.level) out.levels.push([t, body.poses[POSE.IDLE].length]);
     out.actors.push(a.id);
   });
+  // Special sprites (SPECIAL_ART): null keeps WebRA's art.
+  for (const [key, spec] of Object.entries(SPECIAL_ART)) {
+    if (!spec) continue;
+    const slot = specialSlot(key, actors.length);
+    if (slot < 0) {
+      out.problems.push(`special ${key}: no such slot`);
+      continue;
+    }
+    const r = specialArt(spec, { files, tileset, lookup });
+    out.problems.push(...r.problems);
+    if (r.art) {
+      out.slots.set(slot, r.art);
+      out.specials.push(key);
+      if (key === SMOKE_KEY) out.smoke = smokeFrames(spec, files, tileset);
+      const fire = FIRE_KEYS.indexOf(key);
+      if (fire >= 0) {
+        const frames = sequenceLengths(spec, files, tileset, 3);
+        if (frames) out.fires.push([fire, ...frames]);
+      }
+    }
+  }
+  // Muzzle flashes (ACTOR_ART muzzle, OpenRA WithMuzzleOverlay): once per shot.
+  actors.forEach((a, t) => {
+    const entry = ACTOR_ART[a.id];
+    if (!entry?.muzzle) return;
+    const r = specialArt({ image: entry.image, sequences: [entry.muzzle], mode: 'effect' }, { files, tileset, lookup });
+    out.problems.push(...r.problems);
+    if (r.art) out.slots.set(muzzleSlot(t, actors.length), r.art);
+  });
+  // Explosions per name (EXPLOSIONS, OpenRA CreateEffect warheads): once each.
+  EXPLOSIONS.forEach((name, k) => {
+    const spec = EXPLOSION_ART[name];
+    if (!spec) return;
+    const r = specialArt(spec, { files, tileset, lookup });
+    out.problems.push(...r.problems);
+    if (r.art) {
+      out.slots.set(explosionSlot(k, actors.length), r.art);
+      out.explosions.push(name);
+    }
+  });
   return out;
+}
+
+/** The damage smoke's special (start and loop frames in a row, the engine names the frame). */
+const SMOKE_KEY = 'fx.0';
+
+/**
+ * The tree fires' specials (engine neutral.rs: small, medium and large, by
+ * damage state): start, loop and end frames in a row, the engine names the frame.
+ */
+const FIRE_KEYS = ['decorations.2', 'decorations.4', 'decorations.5'];
+
+/** [milliseconds per frame, frames of each sequence...] of a special with `n` sequences, or null. */
+function sequenceLengths(spec, files, tileset, n) {
+  const lengths = spec.sequences.map((name) => {
+    const def = SEQUENCES[spec.image]?.[name];
+    const file = def ? sequenceFile(def, tileset) : '';
+    const { sprite } = file ? files.get(file) : {};
+    try {
+      return sprite ? resolveSequence(def, sprite.frames.length) : null;
+    } catch {
+      return null;
+    }
+  });
+  if (lengths.length !== n || lengths.some((r) => !r)) return null;
+  return [Math.round(1000 / lengths[1].fps), ...lengths.map((r) => r.length)];
+}
+
+/** [milliseconds per frame, start frames, loop frames] of the original damage smoke, or null. */
+function smokeFrames(spec, files, tileset) {
+  return sequenceLengths(spec, files, tileset, 2);
+}
+
+/** A special sprite's pose table from its SPECIAL_ART entry (see the table for the modes). */
+function specialArt(spec, { files, tileset, lookup }) {
+  const ctx = { files, tileset, lookup, offset: [0, 0], wall: false };
+  if (spec.mode === 'lead') {
+    return slotArt(spec.image, { idle: spec.sequences[1] }, { ...ctx, lead: { idle: spec.sequences[0] } });
+  }
+  return slotArt(spec.image, { idle: spec.sequences }, { ...ctx, effect: spec.mode === 'effect', index: spec.mode === 'index' });
 }
 
 /**
@@ -474,7 +755,7 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       }
     }
   }
-  // Specials (projectiles, effects, decorations) after the actor slots: packs only.
+  // Specials (projectiles, effects, decorations) after the actor slots: packs, then the original graphics.
   for (const p of packs) {
     for (const [k, art] of p.slots) {
       if (k >= actorCount * 2 && !slots.has(k)) {
@@ -483,5 +764,49 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       }
     }
   }
+  if (original) {
+    for (const [k, art] of original.slots) {
+      if (k >= actorCount * 2 && !slots.has(k) && art) {
+        slots.set(k, art);
+        source.set(k, 'original');
+      }
+    }
+  }
   return { slots, source, layers };
+}
+
+/** Kinds of the records of originalSlotInfo `info` (engine/src/overlays.rs ORIGINAL_INFO_*). */
+export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2, FIRE: 3, FIRE_TAIL: 4 });
+
+/**
+ * What the engine needs to know about the original art in use
+ * (Game.set_original_slots): `slots`, the slots drawn from the original
+ * graphics (the engine then draws them the OpenRA way: rotor sequences
+ * instead of WebRA's spinning blades, explosions that animate themselves,
+ * projectiles with their own facings), and `info`, flat records [kind,
+ * actor type, a, b]: an overlay drawn over a unit without a turret
+ * (ORIGINAL_INFO.OVERLAY, forward and side offset in world units) for
+ * those whose second slot is original, a structure whose original
+ * body shows the storage level (ORIGINAL_INFO.LEVEL, the stage count) and
+ * the original damage smoke (ORIGINAL_INFO.SMOKE: milliseconds per frame,
+ * start frames, loop frames) and the tree fires (ORIGINAL_INFO.FIRE: size,
+ * milliseconds per frame, start frames; FIRE_TAIL: size, loop and end frames).
+ * `original` is originalSlots' result (or null).
+ */
+export function originalSlotInfo(source, original = null) {
+  const slots = [...source].filter(([, from]) => from === 'original').map(([k]) => k).sort((a, b) => a - b);
+  const info = [];
+  for (const [t, fwd, side] of original?.unitOverlays ?? []) {
+    if (source.get(2 * t + 1) === 'original') info.push(ORIGINAL_INFO.OVERLAY, t, fwd, side);
+  }
+  for (const [t, stages] of original?.levels ?? []) {
+    if (source.get(2 * t) === 'original') info.push(ORIGINAL_INFO.LEVEL, t, stages, 0);
+  }
+  const smokeSlot = original ? specialSlot(SMOKE_KEY, (original.actorCount ?? 0)) : -1;
+  if (original?.smoke && source.get(smokeSlot) === 'original') info.push(ORIGINAL_INFO.SMOKE, ...original.smoke);
+  for (const [size, ms, start, loop, end] of original?.fires ?? []) {
+    if (source.get(specialSlot(FIRE_KEYS[size], original.actorCount ?? 0)) !== 'original') continue;
+    info.push(ORIGINAL_INFO.FIRE, size, ms, start, ORIGINAL_INFO.FIRE_TAIL, size, loop, end);
+  }
+  return { slots: Uint32Array.from(slots), info: Int32Array.from(info) };
 }

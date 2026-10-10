@@ -10,6 +10,7 @@ mod actor_table;
 mod ai;
 mod ai_arsenal;
 mod ai_economy;
+mod ai_infantry;
 mod air;
 pub mod beacons;
 pub mod bridges;
@@ -17,10 +18,18 @@ mod cargo;
 mod combat;
 mod combined;
 mod commands;
+pub mod crates;
 pub mod debug;
+mod dog;
 pub mod doors;
 pub mod flowfield;
+pub mod fx;
+pub mod gamerules;
 mod helicopter;
+pub mod husks;
+pub mod infantry;
+mod infantry_combat;
+mod infantry_render;
 pub mod instances;
 pub mod map;
 pub mod mapdata;
@@ -34,11 +43,15 @@ pub mod overlays;
 pub mod paths;
 mod plane;
 mod powers;
+mod primary;
 mod production;
 pub mod render;
 mod repair;
 pub mod rng;
 pub mod rules;
+pub mod rules_options;
+mod sell;
+pub mod smudges;
 pub mod sound_events;
 mod trig_table;
 mod units;
@@ -62,15 +75,25 @@ mod tests_debug;
 #[cfg(test)]
 mod tests_doors;
 #[cfg(test)]
+mod tests_fx;
+#[cfg(test)]
+mod tests_gamerules;
+#[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
+mod tests_infantry;
+#[cfg(test)]
 mod tests_instances;
+#[cfg(test)]
+mod tests_leftovers;
 #[cfg(test)]
 mod tests_minimap;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
 mod tests_neutral;
+#[cfg(test)]
+mod tests_original_art;
 #[cfg(test)]
 mod tests_overlays;
 #[cfg(test)]
@@ -89,6 +112,8 @@ mod tests_replay;
 mod tests_security;
 #[cfg(test)]
 mod tests_sound;
+#[cfg(test)]
+mod tests_sound_eva;
 #[cfg(test)]
 mod tests_stats;
 #[cfg(test)]
@@ -142,6 +167,13 @@ pub struct Game {
     /// Lockstep multiplayer: orders wait in the outbox for the network.
     lockstep: bool,
     outbox: Vec<Order>,
+    /// Smudges as the view player last saw them (smudges.rs): a new one
+    /// shows once its cell is in sight, like OpenRA's SmudgeLayer under the
+    /// fog. Presentation only; the alpha byte of `terrain_ptr`.
+    smudges_shown: Vec<u8>,
+    /// Some smudge still waits for its cell to come into sight; checked at `smudges_tick`.
+    smudges_pending: bool,
+    smudges_tick: u32,
 }
 
 #[wasm_bindgen]
@@ -164,7 +196,7 @@ impl Game {
     /// apps/game/js/lobby.js and docs/contracts.md section 3). Factions must
     /// already be resolved (no "random"); closed slots are left out.
     pub fn from_options(json: &str) -> Result<Game, JsError> {
-        let o = parse_options(json)?;
+        let o = parse_options(json).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(World::with_options(o.seed, o.map_size, &o.players, o.options)))
     }
 
@@ -172,7 +204,7 @@ impl Game {
     /// Rules overrides of modded maps apply; the caller must have shown the warning.
     pub fn from_map(map_json: &str, options_json: &str) -> Result<Game, JsError> {
         let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
-        let o = parse_options(options_json)?;
+        let o = parse_options(options_json).map_err(|e| JsError::new(&e))?;
         let world = World::from_map(&data, o.seed, &o.players, o.options).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))
     }
@@ -282,6 +314,42 @@ impl Game {
             rect_records: Vec::new(),
             lockstep: false,
             outbox: Vec::new(),
+            smudges_shown: Vec::new(),
+            smudges_pending: false,
+            smudges_tick: u32::MAX,
+        }
+    }
+
+    /// Reveal changed smudges where the view player sees them (every cell
+    /// for spectators); marks the terrain dirty when one shows.
+    fn sync_smudges(&mut self, player: u8) {
+        let w = &mut self.world;
+        let cells = w.smudges.cells.len();
+        if self.smudges_shown.len() != cells {
+            self.smudges_shown = vec![smudges::NO_SMUDGE; cells];
+        }
+        if !w.smudges.changed && !(self.smudges_pending && self.smudges_tick != w.tick) {
+            return;
+        }
+        w.smudges.changed = false;
+        self.smudges_tick = w.tick;
+        let all = player == observer::OBSERVER || player == combined::COMBINED || player as usize >= w.players.len();
+        let (mut pending, mut shown) = (false, false);
+        for ci in 0..cells {
+            let s = w.smudges.cells[ci];
+            if s == self.smudges_shown[ci] {
+                continue;
+            }
+            if all || w.players[player as usize].visible[ci] != 0 {
+                self.smudges_shown[ci] = s;
+                shown = true;
+            } else {
+                pending = true;
+            }
+        }
+        self.smudges_pending = pending;
+        if shown {
+            w.terrain_dirty = true;
         }
     }
 
@@ -454,6 +522,9 @@ impl Game {
                         Kind::Ship => "ship",
                         Kind::Aircraft => "aircraft",
                         Kind::Mine => "mine",
+                        Kind::Husk => "husk",
+                        Kind::Crate => "crate",
+                        Kind::Proxy => "proxy",
                     },
                     "altitude": a.unit.as_ref().and_then(|u| u.aircraft.as_ref()).map_or(0, |ac| ac.cruise_altitude),
                     "queue": a.queue as usize,
@@ -477,6 +548,28 @@ impl Game {
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
                     // The neutral world (neutral.rs): editor category, biomes, bridge templates.
                     "world": neutral::world_json(a),
+                    // PrimaryBuilding (primary.rs): the deploy command makes it primary.
+                    "primary": a.options.primary_building,
+                    // Crate actions in rules order (crates.rs): their class (`key`,
+                    // sound_events.rs crate_action_code), sound, notification and animation.
+                    "crateActions": a.options.crate_info.as_ref().map(|c| c.actions.iter().map(|x| json!({
+                        "key": x.key,
+                        "kind": format!("{:?}", x.kind),
+                        "sequence": x.sequence,
+                        "sound": x.sound,
+                        "notification": x.notification,
+                        "amount": x.amount,
+                    })).collect::<Vec<_>>()),
+                    // Support power keys in rules order: audio events name a power by provider and index.
+                    "powers": a.abilities.support_powers.as_ref().map_or(Vec::new(), |l| l.iter().map(|p| p.key.as_str()).collect::<Vec<_>>()),
+                    "buildLimit": a.build_limit,
+                    // Infantry abilities (infantry.rs), for tooltips and order cursors.
+                    "heals": a.targets_allies,
+                    "disguise": a.abilities.disguise.is_some(),
+                    "captures": a.abilities.captures.is_some(),
+                    "infiltrates": a.abilities.infiltrates.is_some(),
+                    "demolition": a.abilities.demolition.is_some(),
+                    "leaps": a.abilities.attack_leap.is_some(),
                 })
             })
             .collect();
@@ -490,7 +583,12 @@ impl Game {
             "lowPowerModifier": r.player.low_power_modifier,
             // Teams (0: none, equal non-zero teams are allies) and neutral owners:
             // the client's relationship colours and radar pings follow them.
-            "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai, "team": p.team, "neutral": p.neutral})).collect::<Vec<_>>(),
+            "players": self.world.players.iter().map(|p| json!({"faction": r.factions[p.faction], "side": p.side, "ai": p.is_ai, "team": p.team, "neutral": p.neutral, "handicap": p.handicap})).collect::<Vec<_>>(),
+            // Time limit warnings (gamerules.rs): minutes left and the announcer line.
+            "timeLimit": {
+                "warnings": r.world.time_limit.warnings,
+                "notifications": r.world.time_limit.notifications,
+            },
         })
         .to_string()
     }
@@ -501,9 +599,13 @@ impl Game {
         self.world.terrain_dirty
     }
 
-    /// RGBA per cell. Clears the dirty flag.
+    /// RGBA per cell (R terrain, G ore, B gems, A the smudge the view player
+    /// saw, smudges.rs). Clears the dirty flag.
     pub fn terrain_ptr(&mut self) -> *const u8 {
         self.world.terrain_bytes(&mut self.terrain);
+        for (px, &s) in self.terrain.as_chunks_mut::<4>().0.iter_mut().zip(&self.smudges_shown) {
+            px[3] = s;
+        }
         self.world.terrain_dirty = false;
         self.terrain.as_ptr()
     }
@@ -552,6 +654,7 @@ impl Game {
     /// no owner-only decorations (observer.rs).
     pub fn build_render(&mut self, player: u8, alpha: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> usize {
         let view = View { x0, y0, x1, y1 };
+        self.sync_smudges(player);
         // Units that got into a transport drop out of the selection.
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
         // The spectator view renders as slot 0 with every visibility check
@@ -579,6 +682,7 @@ impl Game {
     /// the sprite record count; `record_ptr`, `record_extra_ptr` and
     /// `rect_record_ptr` (with their counts) locate the data.
     pub fn build_render_records(&mut self, player: u8) -> usize {
+        self.sync_smudges(player);
         self.selection.retain(|&r| self.world.resolve(r).is_some_and(|i| self.world.actors[i].in_world()));
         let observer = player == observer::OBSERVER;
         if player == combined::COMBINED {
@@ -686,6 +790,28 @@ impl Game {
     /// reads it, so the state hash is the same either way.
     pub fn set_sprite_poses(&mut self, on: bool) {
         self.world.render_opts.poses = on;
+    }
+
+    /// Actor types whose art has death sequences (apps/game/js/sprites.js
+    /// `buildAtlas` returns them as `deaths`): with sprite poses on, dying
+    /// soldiers of these types play them (infantry_render.rs). `ticks` has
+    /// eight numbers per type (`deathTicks`): how long die1..die6 and the
+    /// crushed body play, then the longest idle animation (0: none).
+    /// Presentation only: bodies are not part of the state hash.
+    pub fn set_death_art(&mut self, types: Vec<u32>, ticks: Vec<u32>) {
+        let n = self.world.rules.actors.len();
+        self.world.render_opts.set_death_art(n, &types, &ticks);
+    }
+
+    /// The sprite slots drawn from the original graphics and what they need
+    /// (apps/game/js/content/atlas.js originalSlotInfo, docs/contracts.md
+    /// section 8): those slots are drawn the OpenRA way (rotor sequences,
+    /// effects that animate themselves, projectiles with their own facings);
+    /// `info` holds `[kind, actor type, a, b]` records (overlays over units,
+    /// storage level stages; overlays.rs `RenderOptions::set_original_art`).
+    /// Presentation only: the state hash is the same either way.
+    pub fn set_original_slots(&mut self, slots: Vec<u32>, info: Vec<i32>) {
+        self.world.render_opts.set_original_art(&slots, &info);
     }
 
     /// The local player's control groups, for the numbers on their selection
@@ -820,11 +946,22 @@ impl Game {
             "repairers": a.repairers,
             "poweredOff": a.powered_off,
             "canPowerDown": self.world.has_power_down(i),
+            // Infantry abilities (infantry.rs): a spy's disguise (type and owner;
+            // only the owner and allies should be shown the spy behind it), a
+            // capture in progress, C4 ticking, a power outage.
+            "disguise": a.inf.disguise.map(|d| json!({"type": self.world.rules.actors[d.ty as usize].id, "owner": d.owner})),
+            "beingCaptured": self.world.being_captured(i),
+            "demolished": self.world.being_demolished(i),
+            "powerOutage": if self.world.outage_disabled(i) { self.world.power_outage(a.owner) } else { 0 },
         })
         .to_string()
     }
 
-    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock, 5 repair, 6 load (enter a transport).
+    /// What a right-click would do: 0 none, 1 move, 2 attack, 3 harvest, 4 dock,
+    /// 5 repair, 6 load (enter a transport), 7 deliver cash, 8 capture, 9
+    /// infiltrate, 10 C4, 11 engineer repair, 12 heal, 13 mechanic repair, 14
+    /// disguise, 15 blocked enter, 16 blocked engineer repair, 17 capture from
+    /// outside (reusable engineers) (world.rs SmartAction).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()
@@ -1117,12 +1254,16 @@ impl Game {
         self.submit(Order::Deploy { player, ids });
     }
 
-    /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here.
+    /// 0: cannot deploy, 1: can deploy now, 2: deployable but blocked here,
+    /// 3: a production structure the deploy command makes primary (primary.rs).
     /// A loaded transport "deploys" by unloading (2: no free cell to unload onto).
     pub fn deploy_state(&self, player: u8, id: u32) -> u8 {
         let Some(i) = self.world.resolve(id) else { return 0 };
         if self.world.actors[i].owner != player {
             return 0;
+        }
+        if self.world.can_be_primary(i) {
+            return 3;
         }
         if self.world.has_passengers(i) && self.world.can_unload(i) {
             return 1;
@@ -1174,6 +1315,13 @@ impl Game {
         }
     }
 
+    /// Put the first queued `actor` on hold (`paused`) or resume it (OpenRA PauseProduction).
+    pub fn pause_production(&mut self, player: u8, actor: &str, paused: bool) {
+        if let Some(ty) = self.world.rules.actor_index(actor) {
+            self.submit(Order::PauseProduction { player, ty: ty as u16, paused });
+        }
+    }
+
     pub fn place_building(&mut self, player: u8, actor: &str, cx: i32, cy: i32) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
             self.submit(Order::Place { player, ty: ty as u16, cx, cy });
@@ -1199,7 +1347,7 @@ impl Game {
                     .iter()
                     .map(|it| {
                         let progress = if it.total > 0 { (it.total - it.remaining) as f32 / it.total as f32 } else { 0.0 };
-                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done})
+                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done, "paused": it.paused, "started": it.paid > 0})
                     })
                     .collect::<Vec<_>>()
             })
@@ -1218,7 +1366,9 @@ impl Game {
                     "queue": w.rules.actors[t].queue as usize,
                     "requires": reqs.iter().filter(|r| !r.never).map(|r| &r.label).collect::<Vec<_>>(),
                     "exclusive": reqs.iter().find(|r| r.never).map(|r| &r.label),
-                    "buildTicks": w.build_time_with(t as u16, w.producer_count_in(&factories, t as u16)),
+                    "buildTicks": w.build_time_with(player, t as u16, w.producer_count_in(&factories, t as u16)),
+                    // Buildable.BuildLimit: how many more may be queued (null: no limit).
+                    "limitLeft": Some(w.build_limit_left(player, t as u16)).filter(|&n| n != i32::MAX),
                 })
             })
             .collect();
@@ -1265,6 +1415,10 @@ impl Game {
             "hasProducer": has_producer,
             "defeated": p.defeated,
             "winner": w.winner,
+            // The game ended, with or without a winner (gamerules.rs).
+            "gameOver": w.game_over,
+            // Time limit (gamerules.rs): ticks left and ticks per real second, or null.
+            "timeLimit": w.time_limit_ticks().map(|t| json!({"left": (t - w.tick as i64).max(0), "ticksPerSecond": w.ticks_per_real_second()})),
             "won": w.has_won(player),
             "team": p.team,
             "units": units,
@@ -1463,29 +1617,31 @@ struct ParsedOptions {
     options: GameOptions,
 }
 
-fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
+/// Lobby options of `from_options` and `from_map`; errors are plain text
+/// (wasm callers turn them into a JsError, native tests read them).
+fn parse_options(json: &str) -> Result<ParsedOptions, String> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("bad options: {e}"))?;
     let rules = rules::Rules::load();
     let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
     let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
     let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
     // Newer options: absent means the default, anything else must be a known name.
-    let name = |k: &str, d: &str| -> Result<String, JsError> {
+    let name = |k: &str, d: &str| -> Result<String, String> {
         match v.get(k) {
             None => Ok(d.to_string()),
             Some(serde_json::Value::String(s)) => Ok(s.chars().take(24).collect()),
-            Some(_) => Err(JsError::new(&format!("options.{k} must be a string"))),
+            Some(_) => Err(format!("options.{k} must be a string")),
         }
     };
     let mut players = Vec::new();
-    for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| JsError::new("options.players missing"))? {
+    for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| "options.players missing".to_string())? {
         let kind = p.get("type").and_then(|t| t.as_str()).unwrap_or("human");
         if kind == "closed" || kind == "open" {
             continue;
         }
         let faction = p.get("faction").and_then(|f| f.as_str()).unwrap_or("allies").to_string();
         if rules.faction_index(&faction).is_none() {
-            return Err(JsError::new(&format!("unknown faction {}", faction.chars().take(24).collect::<String>())));
+            return Err(format!("unknown faction {}", faction.chars().take(24).collect::<String>()));
         }
         let ai = match kind {
             "ai" => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
@@ -1496,10 +1652,18 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
             _ => None,
         };
         let team = p.get("team").and_then(|t| t.as_u64()).unwrap_or(0).min(8) as u8;
-        players.push(PlayerSetup { faction, ai, team });
+        // OpenRA handicap: 0 to 95 percent in steps of 5 (gamerules.rs).
+        let handicap = match p.get("handicap") {
+            None => 0,
+            Some(h) => h
+                .as_u64()
+                .filter(|&h| h <= gamerules::MAX_HANDICAP as u64 && h % gamerules::HANDICAP_STEP as u64 == 0)
+                .ok_or_else(|| "players[].handicap must be 0 to 95 in steps of 5".to_string())? as u8,
+        };
+        players.push(PlayerSetup { faction, ai, team, handicap });
     }
     if !(2..=8).contains(&players.len()) {
-        return Err(JsError::new("a game needs 2 to 8 players"));
+        return Err("a game needs 2 to 8 players".to_string());
     }
     let tech = text("techLevel", "unrestricted");
     let options = GameOptions {
@@ -1517,31 +1681,66 @@ fn parse_options(json: &str) -> Result<ParsedOptions, JsError> {
         redeployable_mcv: flag("redeployableMcv", true),
         ore_regrowth: flag("oreRegrowth", true),
         // Optional for older callers (tools, tests); a value that is present must be known.
-        map_style: parse_style(&name("mapStyle", "random")?)?,
-        biome: parse_biome(&name("biome", "temperate")?)?,
+        map_style: parse_style_text(&name("mapStyle", "random")?)?,
+        biome: parse_biome_text(&name("biome", "temperate")?)?,
         weather: weather::WeatherMode::from_name(&name("weather", "full")?)
-            .ok_or_else(|| JsError::new("options.weather must be full, cosmetic or off"))?,
+            .ok_or_else(|| "options.weather must be full, cosmetic or off".to_string())?,
         cheats: flag("cheats", false),
-        tech_buildings: parse_tech_buildings(&name("techBuildings", "standard")?)?,
+        tech_buildings: parse_tech_buildings_text(&name("techBuildings", "standard")?)?,
+        reusable_engineers: flag("reusableEngineers", false),
+        // Lobby options of OpenRA's world and player rules (gamerules.rs,
+        // crates.rs); absent keys (older callers) take OpenRA's defaults.
+        crates: flag("crates", true),
+        short_game: flag("shortGame", true),
+        time_limit: {
+            let t = num("timeLimit", rules.world.time_limit.default as i64);
+            if !rules.world.time_limit.options.iter().any(|&o| o as i64 == t) {
+                return Err("options.timeLimit is not one of the time limits".to_string());
+            }
+            t as i32
+        },
+        tick_ms: match name("gameSpeed", "normal")?.as_str() {
+            "slowest" => 80,
+            "slower" => 50,
+            "fast" => 35,
+            "faster" => 30,
+            "fastest" => 20,
+            _ => 40,
+        },
+        bounty: flag("bounty", false),
+        separate_team_spawns: flag("separateTeamSpawns", true),
+        ally_build_radius: flag("allyBuildRadius", true),
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }
 
 fn parse_tech_buildings(s: &str) -> Result<mapgen::settlements::TechBuildings, JsError> {
+    parse_tech_buildings_text(s).map_err(|e| JsError::new(&e))
+}
+
+fn parse_tech_buildings_text(s: &str) -> Result<mapgen::settlements::TechBuildings, String> {
     mapgen::settlements::TechBuildings::from_name(s)
-        .ok_or_else(|| JsError::new("tech buildings must be none, standard, extra, oilonly or oilrush"))
+        .ok_or_else(|| "tech buildings must be none, standard, extra, oilonly or oilrush".to_string())
 }
 
 fn parse_style(s: &str) -> Result<mapgen::MapStyle, JsError> {
-    mapgen::MapStyle::from_name(s).ok_or_else(|| JsError::new("map style must be random, land, rivers, lakes or islands"))
+    parse_style_text(s).map_err(|e| JsError::new(&e))
+}
+
+fn parse_style_text(s: &str) -> Result<mapgen::MapStyle, String> {
+    mapgen::MapStyle::from_name(s).ok_or_else(|| "map style must be random, land, rivers, lakes or islands".to_string())
 }
 
 /// A biome name, or None for "random".
 fn parse_biome(s: &str) -> Result<Option<weather::Biome>, JsError> {
+    parse_biome_text(s).map_err(|e| JsError::new(&e))
+}
+
+fn parse_biome_text(s: &str) -> Result<Option<weather::Biome>, String> {
     if s == "random" {
         return Ok(None);
     }
-    weather::Biome::from_name(s).map(Some).ok_or_else(|| JsError::new("biome must be random, temperate, snow or desert"))
+    weather::Biome::from_name(s).map(Some).ok_or_else(|| "biome must be random, temperate, snow or desert".to_string())
 }
 
 fn preview_rgba(m: &map::Map, biome: weather::Biome) -> Vec<u8> {

@@ -59,7 +59,10 @@ fn combat_reports_fire_impact_and_death() {
     assert!(all.iter().any(|e| e[0] == K::Fire as i32 && e[1] == weapon("M1Carbine") && e[4] == 1), "rifleman fired back");
     assert!(has(&all, K::Impact));
     let death = all.iter().find(|e| e[0] == K::Death as i32).expect("death event");
-    assert_eq!((death[1], death[4], death[5]), (rifle_ty, 1, 1), "infantry of player 1");
+    assert_eq!((death[1], death[4], death[5] & 0xff), (rifle_ty, 1, 1), "infantry of player 1");
+    // The death sequence of the killing damage type rides along (infantry.rs):
+    // the 25mm shell's ExplosionDeath plays die4.
+    assert_eq!(death[5] >> 8, 4, "ExplosionDeath plays die4");
 }
 
 #[test]
@@ -137,15 +140,23 @@ fn structures_under_fire_report_once_per_burst() {
     let p = w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy).unwrap();
     w.sound.set_enabled(true);
     w.tick = 100;
-    w.damage(p, 10);
-    w.damage(p, 10);
+    // Player 1's fire (the attacker's owner rides along like a weapon's damage source).
+    let hit = |w: &mut World| w.with_damage_source(1, |w| w.damage(p, 10));
+    hit(&mut w);
+    hit(&mut w);
     w.tick = 110;
-    w.damage(p, 10);
-    let n = |w: &mut World| events(w).iter().filter(|e| e[0] == K::BuildingDamaged as i32).count();
-    assert_eq!(n(&mut w), 1, "hits close together report once");
+    hit(&mut w);
+    let n = |w: &mut World| events(w).iter().filter(|e| e[0] == K::BuildingDamaged as i32).map(|e| e[5]).collect::<Vec<_>>();
+    assert_eq!(n(&mut w), vec![1], "hits close together report once, naming the attacker");
     w.tick = 110 + crate::sound_events::DAMAGE_EVENT_QUIET_TICKS;
+    hit(&mut w);
+    assert_eq!(n(&mut w).len(), 1, "after a quiet spell it reports again");
+    // Damage without an attacker, or the owner's own, is no attack (OpenRA DamageNotifier).
+    w.tick += 2 * crate::sound_events::DAMAGE_EVENT_QUIET_TICKS;
     w.damage(p, 10);
-    assert_eq!(n(&mut w), 1, "after a quiet spell it reports again");
+    w.tick += 2 * crate::sound_events::DAMAGE_EVENT_QUIET_TICKS;
+    w.with_damage_source(0, |w| w.damage(p, 10));
+    assert!(n(&mut w).is_empty());
 }
 
 #[test]

@@ -192,6 +192,37 @@ test('map style, biome and weather: host only, carried into the start options, d
   assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
 });
 
+test("OpenRA's other lobby options and handicaps: carried into the start options, defaults for old rooms", () => {
+  const { room, host, guest } = lobby(3);
+  const pick = { crates: false, shortGame: false, bounty: true, separateTeamSpawns: false, allyBuildRadius: false, timeLimit: 40 };
+  throwsRoom(() => room.setOptions(guest, { ...room.options, ...pick }), 'not_host');
+  room.setOptions(host, { ...room.options, ...pick });
+  // Each player sets its own handicap, the host an AI's; empty slots have none.
+  room.setSlot(guest, { slot: 1, handicap: 25 });
+  throwsRoom(() => room.setSlot(guest, { slot: 0, handicap: 10 }), 'forbidden');
+  room.setSlot(host, { slot: 2, type: 'ai', difficulty: 'easy', handicap: 50 });
+  room.setSlot(host, { slot: 2, handicap: 45 });
+  throwsRoom(() => room.setSlot(host, { slot: 2, type: 'closed', handicap: 5 }));
+  const view = room.lobbyView();
+  assert.deepEqual(view.slots.map((s) => s.handicap), [0, 25, 45]);
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...view })).ok);
+  room.setReady(guest, true, null);
+  const start = room.start(host, first);
+  for (const [k, v] of Object.entries(pick)) assert.equal(start.options[k], v, k);
+  assert.deepEqual(start.options.players.map((p) => p.handicap), [0, 25, 45]);
+  assert.ok(parseServerMessage(encodeServer({ t: 'start', ...start })).ok);
+
+  // A room stored before the options existed reads back with OpenRA's defaults.
+  const old = { ...DEFAULT_OPTIONS };
+  for (const k of Object.keys(pick)) delete old[k];
+  const back = Room.fromJSON({ ...lobby(2).room.toJSON(), options: { ...old, seed: 5 } });
+  assert.deepEqual(
+    Object.keys(pick).map((k) => back.options[k]),
+    [true, true, false, true, true, 0],
+  );
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...back.lobbyView() })).ok);
+});
+
 test('game modes are plain option bundles: the host sends them, guests cannot, nothing new on the wire', () => {
   const { room, host, guest } = lobby(2);
   for (const mode of BUILTIN_MODES.filter((m) => !m.skirmishOnly)) {

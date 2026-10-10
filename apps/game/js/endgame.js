@@ -74,7 +74,8 @@ export class EndGameFlow {
    */
   update(state, { ended = false } = {}) {
     if (!state) return null;
-    const over = state.winner !== null && state.winner !== undefined;
+    // A winner, or the end without one (`gameOver`: the time limit can end a game where everyone lost).
+    const over = (state.winner !== null && state.winner !== undefined) || !!state.gameOver;
     this.over = this.over || over;
     this.won = !!state.won;
     this.ended = this.ended || ended;
@@ -151,15 +152,16 @@ function button(text, className, onClick) {
  * `[{ id, label, primary? }]` in display order.
  *
  * @param {EndGameFlow} flow
- * @param {{ winnerText?: string, canRestart?: boolean, canDownload?: boolean }} ctx
+ * @param {{ winnerText?: string, canRestart?: boolean, restartLabel?: string, canDownload?: boolean }} ctx
+ *   `restartLabel`: the restart button's text (online: the rematch, js/online.js)
  */
-export function dialogContent(flow, { winnerText = '', canRestart = false, canDownload = false } = {}) {
+export function dialogContent(flow, { winnerText = '', canRestart = false, restartLabel = null, canDownload = false } = {}) {
   const paused = flow.paused ? 'The game is paused.' : flow.online && !flow.viewer ? 'Online games cannot be paused: the game goes on while this is open.' : '';
   const result = winnerText ? `${winnerText}.` : '';
   const tail = (list) => [
     ...list,
     { id: 'stats', label: 'View statistics' },
-    ...(canRestart ? [{ id: 'restart', label: flow.replay ? 'Restart replay' : 'Play again' }] : []),
+    ...(canRestart ? [{ id: 'restart', label: restartLabel ?? (flow.replay ? 'Restart replay' : 'Play again') }] : []),
     ...(canDownload ? [{ id: 'download', label: 'Download replay' }] : []),
     { id: 'leave', label: flow.online && !flow.viewer ? 'Leave game' : 'Return to lobby' },
     { id: 'exit', label: 'Exit' },

@@ -159,11 +159,14 @@ impl World {
             if !self.are_allies(a.owner, player) && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
-            if !unjammed(a.owner, a.x, a.y) {
+            // A disguised spy shows in its disguise's colour (OpenRA: the radar
+            // colour follows the effective owner; infantry.rs).
+            let shown = self.disguise_seen_by(i, player).map_or(a.owner, |d| d.owner);
+            if !unjammed(shown, a.x, a.y) {
                 continue;
             }
             let (cx, cy) = self.cell_of(a.x, a.y);
-            out.extend_from_slice(&[cx, cy, 1, 1, owner_of(a.owner)]);
+            out.extend_from_slice(&[cx, cy, 1, 1, owner_of(shown)]);
         }
     }
 }

@@ -19,6 +19,8 @@ import {
   TECH_LEVELS,
   TECH_BUILDINGS,
   GAME_SPEEDS,
+  TIME_LIMITS,
+  HANDICAPS,
   MAP_STYLES,
   BIOMES,
   WEATHER_MODES,
@@ -56,6 +58,7 @@ import { presetOptions } from './modes.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { switchInput } from './ui/controls.js';
+import { mapLibrary } from './maplibrary.js';
 import { attachTooltip } from './ui/tooltip.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
@@ -70,14 +73,21 @@ const SELECT_OPTIONS = [
   { key: 'startingUnits', label: 'Starting units', choices: STARTING_UNITS },
   { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
   { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
+  { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
 ];
 
 const TOGGLE_OPTIONS = [
+  { key: 'crates', label: 'Crates' },
+  { key: 'shortGame', label: 'Short game' },
   { key: 'fog', label: 'Fog of war' },
   { key: 'explored', label: 'Explored map' },
+  { key: 'allyBuildRadius', label: 'Ally build radius' },
   { key: 'buildRadius', label: 'Build radius' },
+  { key: 'separateTeamSpawns', label: 'Separate team spawns' },
   { key: 'redeployableMcv', label: 'Redeployable MCVs' },
+  { key: 'bounty', label: 'Kill bounties' },
   { key: 'oreRegrowth', label: 'Ore regrowth' },
+  { key: 'reusableEngineers', label: 'Reusable engineers' },
   { key: 'cheats', label: 'Debug menu' },
 ];
 
@@ -98,6 +108,7 @@ export const HELP_KEYS = [
   'color',
   'faction',
   'team',
+  'handicap',
 ];
 
 let uid = 0;
@@ -386,6 +397,8 @@ export class Lobby {
     this.storedMode = typeof stored?.mode === 'string' && stored.mode.length <= 64 ? stored.mode : null;
     /** Installed map file: { json, info, accepted } or null. */
     this.mapFile = this.loadStoredMap();
+    // A map installed before the library existed joins it too.
+    if (this.mapFile) this.addToLibrary(this.mapFile.json, 'file');
     /** A modded map waiting for the player to accept its rules. */
     this.pendingMap = null;
     /** Report of the last .oramap import (shown until another map is picked). */
@@ -462,7 +475,7 @@ export class Lobby {
       this.renderMapSource();
       return;
     }
-    this.offerMapText(text);
+    this.offerMapText(text, 'file');
   }
 
   /**
@@ -494,15 +507,16 @@ export class Lobby {
       return;
     }
     this.importReport = result.report;
-    this.offerMapText(result.json);
+    this.offerMapText(result.json, 'oramap');
   }
 
   /**
    * Offer a map (file contents, editor test play or a published map from a
    * link): validate it, and install it right away, or after the player
-   * accepts the warning when it is modded.
+   * accepts the warning when it is modded. `source` (js/maplibrary.js
+   * LIBRARY_SOURCES) says where it came from for the map library.
    */
-  offerMapText(text) {
+  offerMapText(text, source = 'file') {
     this.mapErrors = [];
     this.state.mapSource = 'file';
     const info = inspectMapFile(text, this.maps.validate);
@@ -513,12 +527,12 @@ export class Lobby {
     }
     if (info.modded) {
       // Modded maps are installed only after the player accepts the warning.
-      this.pendingMap = { json: text, info };
+      this.pendingMap = { json: text, info, source };
       this.renderMapSource();
       this.acceptBtn.focus();
       return;
     }
-    this.installMap(text, info);
+    this.installMap(text, info, source);
   }
 
   /** Show why a requested map (for example from a link) could not be loaded. */
@@ -528,15 +542,27 @@ export class Lobby {
     this.renderMapSource();
   }
 
-  installMap(json, info) {
+  installMap(json, info, source = 'file') {
     this.pendingMap = null;
     this.mapErrors = [];
     this.mapFile = { json, info, accepted: true };
     this.state.mapSource = 'file';
     writeJson(MAP_STORAGE_KEY, { json, accepted: info.modded ? info.hash : true });
+    this.addToLibrary(json, source);
     this.renderMapSource();
     this.renderSlots();
     this.schedulePreview();
+  }
+
+  /**
+   * Keep an installed map in the local map library (js/maplibrary.js), so a
+   * host can share it in an online lobby. The engine already accepted it.
+   */
+  addToLibrary(json, source) {
+    if (!this.maps) return;
+    mapLibrary()
+      .add(json, { source })
+      .catch((err) => console.warn('Map library:', err?.message ?? err));
   }
 
   setMapSource(source) {
@@ -746,7 +772,7 @@ export class Lobby {
     this.acceptBtn = el('button', 'lobby-btn lobby-btn-danger', 'Accept and install');
     this.acceptBtn.type = 'button';
     this.acceptBtn.addEventListener('click', () => {
-      if (this.pendingMap) this.installMap(this.pendingMap.json, this.pendingMap.info);
+      if (this.pendingMap) this.installMap(this.pendingMap.json, this.pendingMap.info, this.pendingMap.source);
     });
     const cancel = el('button', 'lobby-btn', 'Cancel');
     cancel.type = 'button';
@@ -813,6 +839,11 @@ export class Lobby {
       if (key) {
         this.columnTips[key] = infoTip(key, { label });
         c.append(this.columnTips[key].root);
+      }
+      // The team column also holds the handicap (OpenRA's lobby column).
+      if (key === 'team') {
+        this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
+        c.append(' / Handicap', this.columnTips.handicap.root);
       }
       this.slotHead.append(c);
     }
@@ -943,9 +974,20 @@ export class Lobby {
     team.addEventListener('change', () => {
       this.state.players[slot].team = Number(team.value);
       this.renderProblem();
+      // Separate team spawns move team mates together on the preview.
+      this.schedulePreview();
     });
-    teamCell.append(team);
-    rec.team = team;
+    // Handicap (OpenRA): less firepower and armour, slower production.
+    const handicap = buildSelect(HANDICAPS, 'lobby-select lobby-handicap');
+    handicap.value = String(player.handicap ?? 0);
+    handicap.disabled = closed;
+    handicap.setAttribute('aria-label', `Player ${slot + 1} handicap`);
+    describedBy(handicap, this.columnTips.handicap);
+    handicap.addEventListener('change', () => {
+      this.state.players[slot].handicap = Number(handicap.value);
+    });
+    teamCell.append(team, handicap);
+    Object.assign(rec, { team, handicap });
 
     // Remove.
     const removeCell = cell('lobby-cell-remove', '');
@@ -1017,6 +1059,7 @@ export class Lobby {
         this.state[opt.key] = box.checked;
         this.optionEdited();
         this.renderCheats();
+        if (opt.key === 'separateTeamSpawns') this.schedulePreview();
       });
       this.optionToggles[opt.key] = box;
       label.append(box, el('span', null, opt.label));

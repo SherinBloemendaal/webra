@@ -128,6 +128,7 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.actors[i].hp >= max_hp {
+            self.note_repaired(i, d);
             self.actors[i].activity = Activity::Idle;
             return;
         }
@@ -154,7 +155,8 @@ impl World {
             return;
         }
         let rep = self.rules.actors[self.actors[d].ty as usize].building.as_ref().unwrap().repairs.clone().unwrap();
-        self.repair_step(i, &rep);
+        self.note_service(d);
+        self.repair_step(i, d, &rep);
     }
 
     // ---- Submarines --------------------------------------------------------------
@@ -169,6 +171,7 @@ impl World {
         }
         let max = self.rules.actors[ty].hp;
         let a = &mut self.actors[i];
+        let was = a.submerged;
         if a.hp * 100 < max * CRITICAL_PERCENT {
             // PauseOnCondition: cloak-force-disabled (Critical): stays surfaced, timer frozen.
             a.submerged = false;
@@ -177,6 +180,9 @@ impl World {
                 a.cloak_timer -= 1;
             }
             a.submerged = a.cloak_timer <= 0;
+        }
+        if a.submerged != was {
+            self.note_cloak(i);
         }
         self.actors[i].detected_by = if self.actors[i].submerged { self.detectors_of(i, &cloak.types) } else { 0 };
     }
@@ -201,7 +207,8 @@ impl World {
                 mask |= 1 << d.owner;
             }
         }
-        mask
+        // Sonar Pulses (infantry.rs).
+        mask | self.pulse_detectors(x, y, owner, cloak_types)
     }
 
     /// Visibility rule for ships: submerged submarines show only to their
@@ -240,35 +247,33 @@ impl World {
         }
         let delay = cloak.cloak_delay;
         let a = &mut self.actors[i];
+        let was = a.submerged;
         a.submerged = false;
         a.detected_by = 0;
         a.cloak_timer = a.cloak_timer.max(delay);
+        if was {
+            self.note_cloak(i);
+        }
     }
 
     // ---- Effects -------------------------------------------------------------------
-
-    /// A shot landing in open water (no structure, no surface unit hit) makes a
-    /// splash instead of an explosion; depth charges on submerged subs too.
-    pub(crate) fn water_impact_effect(&self, x: i32, y: i32, ttl: i32) -> Option<(EffectKind, i32)> {
-        let ci = self.cell_index(x, y);
-        if self.map.terrain[ci] != crate::map::Terrain::Water || self.building_at[ci] != NONE {
-            return None;
-        }
-        let surface_hit = self.units_in_cell(ci).iter().any(|&u| {
-            let a = &self.actors[u as usize];
-            a.alive && !a.submerged && dist(x, y, a.x, a.y) <= CELL / 2
-        });
-        if surface_hit {
-            return None;
-        }
-        Some((EffectKind::Naval(NAVAL_SPLASH), SPLASH_TTL.max(ttl)))
-    }
 
     /// Ship death: a sinking wreck and a large splash on top of the explosion.
     pub(crate) fn ship_death_effect(&mut self, i: usize) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Naval(NAVAL_WRECK), ttl: WRECK_TTL, max: WRECK_TTL });
-        self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Naval(NAVAL_SPLASH), ttl: SPLASH_TTL * 2, max: SPLASH_TTL * 2 });
+        // The death weapon's own explosions replace WebRA's splash (fx.rs).
+        if !self.has_death_explosions(i) {
+            self.effects.push(Effect {
+                x,
+                y,
+                tx: x,
+                ty: y,
+                kind: EffectKind::Naval(NAVAL_SPLASH),
+                ttl: SPLASH_TTL * 2,
+                max: SPLASH_TTL * 2,
+            });
+        }
     }
 
     /// Naval special sprite for a projectile of weapon `w` (torpedoes, depth charges), if any.

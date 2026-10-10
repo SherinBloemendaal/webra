@@ -33,8 +33,8 @@ pub struct SpriteIds {
     pub large_explosion: f32,
     pub piff: f32,
     pub rally: f32,
-    pub at_mine: f32,
-    pub ap_mine: f32,
+    // b + 5, b + 6: reserved (the at_mine and ap_mine names of texture packs
+    // address the mine actors' bodies: mines are drawn as actors, abilities.rs).
     /// Drawn pointing east (screen +x).
     pub tesla_bolt: f32,
     /// Drawn pointing east (screen +x).
@@ -50,6 +50,17 @@ pub struct SpriteIds {
     pub veterancy_base: f32,
     /// Repair wrench and power off icon (repair.rs).
     pub decorations_base: f32,
+    /// Damage smoke and the original Tesla zap frames (fx.rs).
+    pub fx_base: f32,
+    /// Actor `t`'s muzzle flash is `muzzle_base + t` (fx.rs).
+    pub muzzle_base: f32,
+    /// Explosion `k` of `Rules::render.explosions` is `explosion_base + k` (fx.rs).
+    pub explosion_base: f32,
+    /// Husk fire, smoke, the PRIMARY tag and the crate pickup animations
+    /// (husks.rs `LEFTOVER_SPECIALS`, apps/game/js/art/leftovers.js).
+    pub leftovers_base: f32,
+    /// Infantry deaths, spy and fake tags, sonar ring (infantry_render.rs).
+    pub infantry_base: f32,
 }
 
 impl SpriteIds {
@@ -61,8 +72,6 @@ impl SpriteIds {
             large_explosion: b + 2.0,
             piff: b + 3.0,
             rally: b + 4.0,
-            at_mine: b + 5.0,
-            ap_mine: b + 6.0,
             tesla_bolt: b + 7.0,
             missile: b + 8.0,
             shell: b + 9.0,
@@ -74,11 +83,32 @@ impl SpriteIds {
             abilities_base: b + 36.0,
             veterancy_base: b + 44.0,
             decorations_base: b + 52.0,
+            fx_base: b + 60.0,
+            leftovers_base: b + 68.0,
+            infantry_base: b + 76.0,
+            muzzle_base: b + 84.0,
+            explosion_base: b + 84.0 + actor_count as f32,
         }
     }
 }
 
 const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
+
+/// Sine of OpenRA's BodyOrientation.CameraPitch (40 degrees, 113 angle
+/// units, WAngle.Sin 654 of 1024): with UseClassicPerspectiveFudge (on in Red Alert) the north-south
+/// part of an offset along the body is shortened by it on screen, the way
+/// the pre-rendered sprites are foreshortened.
+pub const CLASSIC_PITCH_SIN: f32 = 654.0 / 1024.0;
+
+/// Screen offset (world pixels) of a part `fwd` world units ahead of and
+/// `side` to the right of a body facing `facing` (WebRA angle units), the
+/// way OpenRA places turrets and overlays on pre-rendered art
+/// (BodyOrientation.LocalToWorld with the classic perspective fudge).
+pub fn classic_offset(fwd: i32, side: i32, facing: i32) -> [f32; 2] {
+    let (s, c) = (facing as f32 * std::f32::consts::TAU / 1024.0).sin_cos();
+    let (f, r) = (px(fwd), px(side));
+    [s * f + c * r, CLASSIC_PITCH_SIN * (-c * f + s * r)]
+}
 
 /// Opacity of the black layer over a disabled structure (OpenRA
 /// WithColoredOverlay@IDISABLE colour 000000B4: 180 of 255).
@@ -105,13 +135,58 @@ pub enum Pose {
     /// The first frame only: no power, or remembered under the fog.
     Still = 7,
     DamagedStill = 8,
+    /// A second overlay of the slot (the Chinook's rear rotor) on the ground and in the air.
+    AuxIdle = 9,
+    AuxMove = 10,
+    /// Working (fx.rs): resupplying, charging, launching, placing, recoiling,
+    /// the landing craft's doors open, the V2 launcher reloading.
+    Active = 11,
+    DamagedActive = 12,
+    /// A paratrooper falling under its parachute.
+    Parachute = 13,
+    /// Done working: the landing craft closing, the harvester leaving the refinery.
+    ActiveEnd = 14,
+    /// Infantry standing still: the second stand sequence (OpenRA
+    /// WithInfantryBody StandSequences `stand2`), and the two idle animations
+    /// (IdleSequences `idle1`, `idle2`), played once from the age.
+    Stand2 = 15,
+    Idle1 = 16,
+    Idle2 = 17,
+    /// Death animations die1..die6 (WithDeathAnimation) and the crushed body,
+    /// played once from the age (infantry_render.rs).
+    Die1 = 18,
+    Die2 = 19,
+    Die3 = 20,
+    Die4 = 21,
+    Die5 = 22,
+    Die6 = 23,
+    Crushed = 24,
+    /// A soldier's second attack sequence (WithInfantryBody AttackSequences
+    /// lists several, OpenRA picks one per shot: Tanya's shoot-left and
+    /// shoot-right; infantry_render.rs `infantry_attack_pose`).
+    Attack2 = 25,
+}
+
+impl Pose {
+    /// The pose of death sequence `n` (1..=6, `infantry::DEATH_CRUSHED` crushed).
+    pub fn death(n: u8) -> Pose {
+        match n {
+            1 => Pose::Die1,
+            2 => Pose::Die2,
+            3 => Pose::Die3,
+            4 => Pose::Die4,
+            5 => Pose::Die5,
+            6 => Pose::Die6,
+            _ => Pose::Crushed,
+        }
+    }
 }
 
 /// Sprite ids with poses: `slot + POSE_STRIDE * (pose + POSE_CODES * age)`.
 /// Slots stay below `POSE_STRIDE`, so `id % POSE_STRIDE` is always the slot
 /// (docs/contracts.md section 8).
 pub const POSE_STRIDE: u32 = 4096;
-pub const POSE_CODES: u32 = 16;
+pub const POSE_CODES: u32 = 32;
 /// Largest age the id carries (ticks since the actor appeared, or a wall's connection mask).
 pub const MAX_POSE_AGE: u32 = 127;
 
@@ -211,7 +286,13 @@ impl World {
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 // Interpolated by the frame's alpha like unit turrets (the angle used to be taken at the building's opacity).
                 let slot = a.ty as u32 * 2 + 1;
-                let turret = if self.render_opts.poses && self.heavily_damaged(i) { posed(slot, Pose::Damaged, 0) } else { slot as f32 };
+                let damaged = self.heavily_damaged(i);
+                let turret = match self.fx_turret_pose(i, damaged).filter(|_| self.render_opts.poses) {
+                    // Recoil after a shot (OpenRA WithTurretAttackAnimation, fx.rs).
+                    Some((pose, age)) => posed(slot, pose, age),
+                    None if self.render_opts.poses && damaged => posed(slot, Pose::Damaged, 0),
+                    None => slot as f32,
+                };
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(turret, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut building_turrets, r);
                 if dim {
@@ -219,6 +300,8 @@ impl World {
                     sink.sprite(&mut building_turrets, r);
                 }
             }
+            // Muzzle flashes of defences (fx.rs).
+            self.push_muzzle(i, at, 0.0, sink, &mut building_turrets);
         }
         // The spectator view (observer.rs) draws every structure live, no ghosts.
         for g in p.ghosts.values().filter(|_| !self.render_all) {
@@ -241,14 +324,19 @@ impl World {
         }
 
         sprites.extend_from_slice(&building_turrets);
+        // Husks and crates lie under the units (husks.rs).
+        self.render_leftovers(player, sink, &ids, sprites);
 
+        // Dying soldiers lie under the living (infantry_render.rs).
+        self.render_corpses(player, sink, &ids, sprites);
         // Units: bodies, then turrets on top; aircraft after everything on the
         // ground, raised by their altitude, with a dark shadow underneath.
         let mut turrets: Vec<f32> = Vec::new();
         let mut aircraft: Vec<f32> = Vec::new();
         for (i, a) in self.actors.iter().enumerate() {
-            // Passengers are inside their transport; mines are drawn by render_abilities.
-            if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine || !a.in_world() {
+            // Passengers are inside their transport; mines are drawn by
+            // render_abilities, husks and crates by render_leftovers.
+            if !a.alive || !a.is_unit() || !a.in_world() {
                 continue;
             }
             let (from, to) = ([px(a.px), px(a.py)], [px(a.x), px(a.y)]);
@@ -270,6 +358,8 @@ impl World {
                 }
                 // Helicopter rotors and rotor wash (helicopter.rs).
                 self.push_heli_rotors(i, at, lift, sink, sprites, &mut aircraft);
+                // Muzzle flashes (fx.rs).
+                self.push_muzzle(i, at, lift, sink, &mut aircraft);
                 continue;
             }
             // Paratroopers in the air are drawn with the aircraft extras (plane.rs).
@@ -280,18 +370,25 @@ impl World {
             let flash = (a.flash > 0) as i32 as f32;
             if a.kind == Kind::Ship {
                 self.push_ship(sink, sprites, &mut turrets, a, at, flash, &ids);
+                if !a.submerged {
+                    // Muzzle flashes and damage smoke (fx.rs).
+                    self.push_muzzle(i, at, 0.0, sink, &mut turrets);
+                    self.push_damage_smoke(i, at, 0.0, sink, &mut turrets);
+                }
                 continue;
             }
             // Cloaked units (Phase Transport) are drawn faint for their owner and allies.
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            // A disguised spy looks like its disguise to enemies (infantry.rs).
+            let (look, team) = self.disguise_seen_by(i, player).map_or((a.ty, a.owner), |d| (d.ty, d.owner));
             // Prone infantry lie flat (TakeCover, veterancy.rs); panicking
             // civilians run with their arms up (ScaredyCat, neutral.rs).
-            let body = if self.draws_prone(i) || self.draws_panic(i) { a.ty * 2 + 1 } else { a.ty * 2 };
+            let body = if self.draws_prone(i) || self.draws_panic(i) { look * 2 + 1 } else { look * 2 };
             sink.sprite(
                 sprites,
                 at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
                     self.body_sprite(i, body as u32),
-                    a.owner as f32,
+                    team as f32,
                     1.0,
                     body_alpha,
                     flash,
@@ -300,7 +397,15 @@ impl World {
             if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
                 let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
                 sink.sprite(&mut turrets, r);
+            } else if let Some((fwd, side)) = self.render_opts.unit_overlay(a.ty) {
+                // An original overlay over the body (OpenRA WithIdleOverlay@SPINNER) at its offset.
+                let turn = angle_diff(a.pfacing, a.facing);
+                let r = at.facing(a.pfacing, turn).look(posed(a.ty as u32 * 2 + 1, Pose::Idle, 0), a.owner as f32, 1.0, body_alpha, flash);
+                sink.sprite(&mut turrets, r.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
             }
+            // Muzzle flashes and damage smoke (fx.rs).
+            self.push_muzzle(i, at, 0.0, sink, &mut turrets);
+            self.push_damage_smoke(i, at, 0.0, sink, &mut turrets);
         }
         // Shot-down helicopters falling (helicopter.rs).
         self.push_heli_crashes(player, sink, sprites, &mut aircraft);
@@ -312,10 +417,14 @@ impl World {
         sprites.extend_from_slice(&aircraft);
         // Rank chevrons on top of every unit (veterancy.rs).
         self.render_veterancy(player, sink, ids.veterancy_base, sprites);
+        // Spy and fake tags, capture progress, outage bars, sonar rings (infantry_render.rs).
+        self.render_infantry(player, sink, &ids, selected, sprites, rects);
         // Repair wrenches and power off icons on structures (repair.rs).
         self.render_building_decorations(player, sink, ids.decorations_base, sprites);
         // Burning trees and the hospital's red cross (neutral.rs).
         self.render_world_decorations(player, sink, ids.decorations_base, sprites);
+        // The PRIMARY tag over a selected primary structure (primary.rs).
+        self.render_primary(player, sink, selected, &ids, sprites);
 
         for pr in &self.projectiles {
             let (x, y) = (px(pr.x), px(pr.y));
@@ -331,7 +440,8 @@ impl World {
                     _ => (ids.bullet, false),
                 };
                 let r = SpriteRec::at(x, y, 16.0).facing(pr.facing, 0).look(sprite, pr.owner as f32, 1.0, 1.0, 0.0);
-                if turned {
+                // Original projectiles pick their own facing frame (missiles and torpedoes have 32).
+                if turned && !self.render_opts.is_original(sprite as u32) {
                     sink.sprite(sprites, r.angle_affine(1.0, -QUARTER_TURN));
                 } else {
                     sink.sprite(sprites, r);
@@ -349,6 +459,39 @@ impl World {
             let age = |alpha: f32| 1.0 - (e.ttl as f32 - alpha).max(0.0) / e.max as f32;
             let (t0, t1) = (age(0.0), age(1.0));
             let (fade0, fade1) = ((1.0 - t0).max(0.0), (1.0 - t1).max(0.0));
+            if let EffectKind::Explosion(k, delay) = e.kind {
+                // An explosion of a CreateEffect warhead (fx.rs), after its delay.
+                let slot = ids.explosion_base as u32 + k as u32;
+                let age = e.max - e.ttl - delay as i32;
+                if age < 0 {
+                    continue;
+                }
+                if self.render_opts.is_original(slot) {
+                    // OpenRA's sequence plays once from its start.
+                    sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(posed(slot, Pose::Make, age as u32), 0.0, 1.0, 1.0, 0.0));
+                    continue;
+                }
+                let name = self.rules.render.explosions.get(k as usize).map_or("", String::as_str);
+                let (s0, s1, ticks) = crate::fx::webra_explosion(name);
+                if age >= ticks {
+                    continue;
+                }
+                let at = |f: f32| {
+                    let t = (f / ticks as f32).min(1.0);
+                    (s0 + (s1 - s0) * t, 1.0 - t)
+                };
+                let ((scale0, a0), (scale1, a1)) = (at(age as f32), at(age as f32 + 1.0));
+                sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(slot as f32, 0.0, scale0, a0, 0.0).fade_to(scale1, a1));
+                continue;
+            }
+            if e.kind == EffectKind::TeslaBolt && self.render_opts.is_original((ids.fx_base + crate::fx::FX_ZAP_BRIGHT) as u32) {
+                // OpenRA's Tesla zap (TeslaZap.Duration ticks), stepped along in litning.shp frames.
+                if e.max - e.ttl < crate::fx::ZAP_TICKS {
+                    let seed = crate::fx::fx_hash(e.x ^ e.tx, e.y ^ e.ty, (e.max - e.ttl) as u32);
+                    self.push_tesla_zap([x, y], [px(e.tx), px(e.ty)], seed, sink, sprites);
+                }
+                continue;
+            }
             if e.kind == EffectKind::TeslaBolt {
                 // A chain of short zigzag segments from the coil to the target.
                 let (tx, ty) = (px(e.tx), px(e.ty));
@@ -371,16 +514,27 @@ impl World {
                 EffectKind::ChronoShimmer => (ids.chrono, 0.6 + t * 0.8, fade),
                 EffectKind::Dust => (ids.large_explosion, 1.0 + t * 1.2, fade * 0.35),
                 EffectKind::Naval(n) => (ids.naval_base + n as f32, 0.7 + t * 0.6, fade),
-                EffectKind::TeslaBolt => unreachable!(),
+                // Smudge smoke and crate pickup animations (husks.rs LEFTOVER_*).
+                EffectKind::Leftover(n) => (ids.leftovers_base + n as f32, 1.0, fade.min(1.0) * 0.9 + 0.1),
+                EffectKind::TeslaBolt | EffectKind::Explosion(..) => unreachable!(),
             };
             let ((sprite, scale0, a0), (_, scale1, a1)) = (look(t0, fade0), look(t1, fade1));
+            if self.render_opts.is_original(sprite as u32) {
+                if e.kind == EffectKind::Dust {
+                    // WebRA's dust cloud borrows the explosion sprite; OpenRA has no dust.
+                    continue;
+                }
+                // An original explosion animates itself (OpenRA plays it once):
+                // the make pose with the ticks since the effect started.
+                let age = (e.max - e.ttl).max(0) as u32;
+                sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(posed(sprite as u32, Pose::Make, age), 0.0, 1.0, 1.0, 0.0));
+                continue;
+            }
             sink.sprite(sprites, SpriteRec::at(x, y, 48.0).look(sprite, 0.0, scale0, a0, 0.0).fade_to(scale1, a1));
         }
 
         // Health bars of the selection's targets and of hovered, damaged or all actors (overlays.rs).
         self.render_status_bars(player, sink, selected, rects);
-        // Cash ticks over oil derricks and captured buildings (overlays.rs).
-        self.render_floating_texts(player, sink, rects);
         // Selection: brackets, health bars, control group numbers and rally points.
         let mut rel: Vec<f32> = Vec::new();
         for &r in selected {
@@ -421,7 +575,7 @@ impl World {
             // The control group number, selected actors only (OpenRA's
             // control group decoration RequiresSelection; overlays.rs).
             if let Some(g) = self.render_opts.control_group(r) {
-                push_group_number(l, t, g, &mut rel);
+                push_group_number(l, t, w, h, g, &mut rel);
             }
             push_anchored_rects(sink, rects, &anchor, NO_CULL, &rel);
             // Rally point (OpenRA RallyPointIndicator): a marker at both ends of
@@ -502,8 +656,11 @@ impl World {
         let hull = at.facing(a.pfacing, turn);
         if a.submerged {
             sink.sprite(sprites, hull.look(body, team, 1.0, 0.3, 0.0));
+            // WebRA's ripple is not drawn over an original hull (OpenRA shows the submerged hull only).
             let ripple = ids.naval_base + crate::naval::NAVAL_RIPPLE as f32;
-            sink.sprite(sprites, hull.look(ripple, team, 1.0, 0.7, 0.0));
+            if !self.render_opts.is_original(body as u32) {
+                sink.sprite(sprites, hull.look(ripple, team, 1.0, 0.7, 0.0));
+            }
             return;
         }
         sink.sprite(sprites, hull.look(body, team, 1.0, 1.0, flash));
@@ -513,7 +670,13 @@ impl World {
         }
         let turret = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(body + 1.0, team, 1.0, 1.0, flash);
         let offsets: &[(i32, i32)] = if info.turret_offsets.is_empty() { &[(0, 0)] } else { &info.turret_offsets };
+        let original = self.render_opts.is_original(body as u32 + 1);
         for &(fwd, side) in offsets {
+            if original {
+                // OpenRA's placement on the pre-rendered hull (classic perspective).
+                sink.sprite(turrets, turret.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
+                continue;
+            }
             // Forward is (sin, -cos) of the hull angle, right is (cos, sin).
             sink.sprite(turrets, turret.extended().arm(px(fwd), px(side), a.pfacing, turn));
         }
@@ -555,6 +718,17 @@ impl World {
         if a.born > 0 && age < MAX_POSE_AGE {
             return (Pose::Make, age);
         }
+        // Working animations (fx.rs): resupplying, the Tesla charge, a launch, placing.
+        if let Some(working) = self.fx_building_pose(i, damaged) {
+            return working;
+        }
+        if let Some(stages) = self.render_opts.level_stages(a.ty) {
+            // OpenRA WithResourceLevelSpriteBody: the stage of the owner's storage
+            // level, (stages - 1) * resources / capacity, named in the age.
+            let p = &self.players[a.owner as usize];
+            let stage = if p.storage > 0 { (stages as i64 - 1) * p.resources.max(0) as i64 / p.storage as i64 } else { 0 };
+            return (if damaged { Pose::Damaged } else { Pose::Idle }, stage.clamp(0, stages as i64 - 1) as u32);
+        }
         if self.is_powered_down(i) {
             return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);
         }
@@ -577,7 +751,14 @@ impl World {
         if moving {
             Pose::Move
         } else if matches!(a.activity, Activity::Attack | Activity::AttackGround) {
-            Pose::Attack
+            if a.kind == Kind::Infantry {
+                self.infantry_attack_pose(i)
+            } else {
+                Pose::Attack
+            }
+        } else if a.kind == Kind::Infantry {
+            // Stand variants and idle animations (infantry_render.rs).
+            self.infantry_stand_pose(i).0
         } else {
             Pose::Idle
         }
@@ -588,7 +769,18 @@ impl World {
         if !self.render_opts.poses {
             return slot as f32;
         }
-        let (pose, age) = if self.actors[i].kind == Kind::Building { self.building_pose(i) } else { (self.unit_pose(i), 0) };
+        let (pose, age) = match self.actors[i].kind {
+            Kind::Building => self.building_pose(i),
+            // Working, docking, falling (fx.rs) before moving and attacking;
+            // standing soldiers vary their stance (infantry_render.rs).
+            kind => match self.fx_unit_pose(i) {
+                Some(p) => p,
+                None => match self.unit_pose(i) {
+                    Pose::Idle | Pose::Stand2 | Pose::Idle1 | Pose::Idle2 if kind == Kind::Infantry => self.infantry_stand_pose(i),
+                    p => (p, 0),
+                },
+            },
+        };
         posed(slot, pose, age)
     }
 

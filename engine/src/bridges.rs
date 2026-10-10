@@ -289,7 +289,7 @@ impl BridgeLayer {
     }
 }
 
-use crate::world::{World, NONE};
+use crate::world::World;
 
 impl World {
     /// The template of bridge actor type `ty` on this map's biome.
@@ -555,11 +555,7 @@ impl World {
             if !terrain.holds_ore() {
                 self.map.clear_resource(ci);
             }
-            let bld = self.building_at[ci];
-            let occupied = bld != NONE && self.occupies(bld as usize, ci);
-            self.pass.set_blocked(ci, occupied || !terrain.passable());
-            self.pass_water.set_blocked(ci, occupied || !terrain.ship_passable());
-            self.pass_landing.set_blocked(ci, occupied || !terrain.landing_passable());
+            self.set_cell_passability(ci);
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);

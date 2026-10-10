@@ -44,6 +44,7 @@ fn play(seed: u64, passive: usize, minutes: u32, size: i32) -> Run {
             faction: "allies".into(),
             ai: Some(if k == passive { AiDifficulty::Easy } else { AiDifficulty::Normal }),
             team: 0,
+            handicap: 0,
         })
         .collect();
     let options = GameOptions { map_style: MapStyle::Random, ..GameOptions::default() };

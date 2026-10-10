@@ -59,7 +59,34 @@ export const SPECIALS = Object.freeze([
   'nuke',
 ]);
 
-export const POSE_NAMES = Object.freeze(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock']);
+/**
+ * Special names that are actors: the engine draws mines with the bodies of
+ * the mine actors, so a pack's "at_mine" and "ap_mine" sprites replace those
+ * (their special slots stay reserved and empty, engine/src/render.rs SpriteIds).
+ */
+export const SPECIAL_ACTORS = Object.freeze({ at_mine: 'MINV', ap_mine: 'MINP' });
+
+export const POSE_NAMES = Object.freeze([
+  'idle',
+  'move',
+  'attack',
+  'damaged',
+  'make',
+  'harvest',
+  'dock',
+  // Infantry (engine/src/infantry_render.rs): stand variant, idle animations, deaths, second attack.
+  'stand2',
+  'idle1',
+  'idle2',
+  'die1',
+  'die2',
+  'die3',
+  'die4',
+  'die5',
+  'die6',
+  'crushed',
+  'attack2',
+]);
 export const TERRAIN_CLASSES = Object.freeze(['clear', 'rough', 'rock', 'water', 'tree', 'ford']);
 export const PACK_BIOMES = Object.freeze(['temperate', 'snow', 'desert']);
 const TOP_KEYS = new Set(['format', 'formatVersion', 'name', 'author', 'version', 'license', 'description', 'sprites', 'cameos', 'terrain', 'sounds']);
@@ -475,6 +502,11 @@ export function packSlots(manifest, images, actors) {
       const t = index.get(s.actor);
       if (t === undefined) continue;
       slot = 2 * t + (s.part === 'second' ? 1 : 0);
+    } else if (SPECIAL_ACTORS[s.special]) {
+      // The mines are actors (MINV, MINP): their special names address the actor's body.
+      const t = index.get(SPECIAL_ACTORS[s.special]);
+      if (t === undefined) continue;
+      slot = 2 * t;
     } else {
       slot = actors.length * 2 + SPECIALS.indexOf(s.special);
     }
@@ -507,14 +539,14 @@ export function packSlots(manifest, images, actors) {
         }
       }
       const desc = (mode) => ({ frames, length: s.frames, facings: s.facings, fps: s.fps, mode, classic: false, interpolatedFacings: 0, rotate: s.rotate });
-      have[s.pose ?? 'idle'] = { loop: desc(MODE.LOOP), once: desc(MODE.ONCE), still: desc(MODE.STILL), index: desc(MODE.INDEX) };
+      have[s.pose ?? 'idle'] = { loop: desc(MODE.LOOP), once: desc(MODE.ONCE), still: desc(MODE.STILL), index: desc(MODE.INDEX), vanish: desc(MODE.VANISH) };
     }
     if (!have.idle) {
       if (Object.keys(have).length) problems.push(`slot ${slot}: a pack sprite needs an idle pose`);
       continue;
     }
     const poses = poseTable(have);
-    if (poses && poses.length === POSE_COUNT) slots.set(slot, { images: all, poses });
+    if (poses && poses.length === POSE_COUNT) slots.set(slot, { images: all, poses, deaths: !!have.die1 });
   }
   return { slots, problems };
 }

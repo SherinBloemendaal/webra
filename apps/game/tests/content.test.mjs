@@ -9,6 +9,7 @@ import { lcwDecode, xorDeltaDecode, decodeShp, decodeTmp, decodeSprite, trimFram
 import { decodePalette, paletteLookup, REMAP_START, REMAP_END, SHADOW_ALPHA } from '../js/content/palette.js';
 import {
   POSE,
+  POSE_COUNT,
   POSE_STRIDE,
   POSE_CODES,
   MODE,
@@ -55,7 +56,7 @@ import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS } f
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
 import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
-import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS } from '../js/content/packs.js';
+import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
 import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
@@ -263,7 +264,7 @@ test('the sequences table covers the engine actors and names only files it lists
     'C11', 'OILB', 'RICE', 'RUSHOUSE', 'ASIANHUT', 'SNOWHUT', 'LHUS', 'WINDMILL', 'RAILMINE', 'CTFLAG', 'AMMOBOX1', 'AMMOBOX2',
     'AMMOBOX3', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BRIDGEHUT', 'BRIDGEHUT.small', 'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2', 'GMINE']);
   for (const a of BASE.actors) {
-    if (a.kind === 'mine') continue;
+    if (a.kind === 'proxy') continue;
     assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
@@ -279,7 +280,7 @@ test('the sequences table covers the engine actors and names only files it lists
     assert.ok(seqs, `${id}: image ${entry.image}`);
     for (const part of ['body', 'second']) {
       for (const [pose, name] of Object.entries(entry[part] ?? {})) {
-        assert.ok(['idle', 'move', 'attack', 'damaged', 'make', 'harvest', 'dock'].includes(pose), `${id} pose ${pose}`);
+        assert.ok([...POSE_NAMES, 'aux-idle', 'aux-move', 'active', 'damaged-active', 'parachute', 'active-end'].includes(pose), `${id} pose ${pose}`);
         const def = seqs[name];
         assert.ok(def, `${id}.${part}.${pose} -> ${name}`);
         assert.ok(files.has(def.file) || def.tilesets, `${def.file} is installed`);
@@ -292,9 +293,29 @@ test('the sequences table covers the engine actors and names only files it lists
   }
   assert.ok(files.has(ACTOR_PALETTE));
   for (const t of Object.values(TERRAIN)) assert.ok(files.has(t.palette));
-  // Infantry walk, fire and lie down; harvesters harvest and dock; structures are made and damaged.
-  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), ['attack', 'idle', 'move']);
-  assert.deepEqual(Object.keys(ACTOR_ART.E1.second).sort(), ['attack', 'idle', 'move']);
+  // Infantry walk, fire, stand two ways, idle, die, lie down and fall by
+  // parachute; harvesters harvest and dock; structures are made and damaged.
+  assert.deepEqual(Object.keys(ACTOR_ART.E1.body).sort(), [
+    'attack',
+    'crushed',
+    'die1',
+    'die2',
+    'die3',
+    'die4',
+    'die5',
+    'die6',
+    'idle',
+    'idle1',
+    'idle2',
+    'move',
+    'parachute',
+    'stand2',
+  ]);
+  assert.equal(ACTOR_ART.MEDI.body.attack, 'heal', 'DefaultAttackSequence');
+  assert.equal(ACTOR_ART.DOG.body.move, 'walk', 'MoveSequence');
+  // Prone: TakeCover's prefix on the stands, run and attack.
+  assert.deepEqual(Object.keys(ACTOR_ART.E1.second).sort(), ['attack', 'idle', 'move', 'stand2']);
+  assert.deepEqual([ACTOR_ART.E7.body.attack2, ACTOR_ART.E7.second.attack2], ['shoot-right', 'prone-shoot-right'], 'AttackSequences');
   assert.ok(ACTOR_ART.HARV.body.harvest && ACTOR_ART.HARV.body.dock);
   assert.ok(ACTOR_ART.POWR.body.make && ACTOR_ART.POWR.body.damaged);
   assert.ok(ACTOR_ART.SBAG.wall);
@@ -444,7 +465,7 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
     const t = ACTORS.findIndex((a) => a.id === 'E1');
     const head = entry(2 * t);
     const base = head[12];
-    assert.ok(head[13] === 9, 'nine poses');
+    assert.ok(head[13] === POSE_COUNT, 'a descriptor per pose');
     // The shader's lookup: descriptor of the pose, then first + facing * length + frame.
     const desc = entry(base + POSE.MOVE);
     const [first, length, fps, mode, facings] = desc.slice(8, 13);
@@ -479,8 +500,12 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
       .split('\n')
       .filter((l) => l && !l.startsWith('#')),
   );
-  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp']);
-  for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f), `${f} is made by OpenRA`);
+  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp', 'e6.shp']);
+  // Red Alert's own crate overlays (SCRATE and WCRATE in its source) share
+  // their names with OpenRA's crate files; only their first frame is used.
+  const crates = new Set(['scrate.shp', 'wcrate.shp']);
+  for (const f of GRAPHICS_FILES) assert.ok(!bits.has(f) || sameLayout.has(f) || crates.has(f), `${f} is made by OpenRA`);
+  for (const image of ['scrate', 'wcrate']) assert.deepEqual([SEQUENCES[image].land.start, SEQUENCES[image].land.length], [0, 1], image);
   // The War Factory: its roof and door from weap2.shp (four frames, then four damaged), a layer over the body.
   assert.equal(ACTOR_ART.WEAP.overlay, 'door');
   assert.deepEqual(ACTOR_ART.WEAP.second, { idle: 'build-top', damaged: 'damaged-build-top' });
@@ -491,7 +516,12 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
   assert.equal(SEQUENCES.tent.idle.file, 'tent.shp');
   assert.equal(SEQUENCES.tent.idle.tilesets, undefined);
   assert.equal(SEQUENCES.sam.turret.file, 'sam.shp');
-  assert.equal(SEQUENCES.silo.idle.file, 'silo.shp');
+  // The storage silo: silo2.shp has nine fill stages and nine damaged ones, the original silo.shp five and five.
+  assert.deepEqual(ACTOR_ART.SILO.body, { idle: 'stages', damaged: 'damaged-stages', make: 'make' });
+  assert.deepEqual([SEQUENCES.silo.stages.file, SEQUENCES.silo.stages.start, SEQUENCES.silo.stages.length], ['silo.shp', 0, 5]);
+  assert.deepEqual([SEQUENCES.silo['damaged-stages'].start, SEQUENCES.silo['damaged-stages'].length], [5, 5]);
+  // The Hind turns OpenRA's large rotor into the original helicopter rotor (same frames).
+  assert.equal(SEQUENCES.hind.rotor.file, 'lrotor.shp');
   assert.equal(SEQUENCES.tran.idle.file, 'tran.shp');
   // Bibs: the big ones (bib1-3) per theater; the small ones are OpenRA's and left out.
   assert.equal(ACTOR_ART.WEAP.bib, 'bib');
@@ -1147,6 +1177,26 @@ test('pack sprites: rows turn clockwise, frames become OpenRA order; team mask; 
   assert.equal(slots.get(2 * t + 1), null, 'the turret is hidden');
   const missile = slots.get(ACTORS.length * 2 + 8);
   assert.equal(missile.poses[0].rotate, true, 'specials turn like WebRA art');
+});
+
+test('lead poses: the lead-in once by age, then the rest looping on the render clock (shader MODE_LEAD)', async () => {
+  const { leadFrame } = await import('../js/content/sequences.js');
+  // 4 lead-in frames and 6 looping ones at 25 per second (one per tick).
+  assert.deepEqual([0, 1, 3].map((age) => leadFrame(age, 0, 1, 25, 10, 4, 0)), [0, 1, 3]);
+  assert.ok(leadFrame(5, 0, 1, 25, 10, 4, 0) >= 4, 'past the lead-in: the loop');
+  assert.equal(leadFrame(127, 0.2, 1, 25, 10, 4, 0), 4 + (5 % 6), 'the loop runs on the clock, not the capped age');
+  assert.equal(leadFrame(9, 0, 1, 25, 4, 4, 0), 3, 'nothing after the lead-in: its last frame');
+  assert.match(SPRITE_WGSL, /mode == MODE_LEAD/);
+});
+
+test('pack sprites: at_mine and ap_mine replace the bodies of the mine actors', () => {
+  const sheet = sheetRgba(4, 4, 1, 1);
+  const images = new Map([['mine.png', sheet]]);
+  const manifest = { sprites: ['at_mine', 'ap_mine'].map((special) => ({ special, image: 'mine.png', frameSize: [4, 4], facings: 1, frames: 1, fps: 1, offset: [0, 0], scale: 1, rotate: false })) };
+  const { slots } = packSlots(manifest, images, ACTORS);
+  const t = (id) => ACTORS.findIndex((a) => a.id === id);
+  assert.ok(slots.get(2 * t('MINV')) && slots.get(2 * t('MINP')));
+  assert.ok(!slots.has(ACTORS.length * 2 + 5) && !slots.has(ACTORS.length * 2 + 6), 'the reserved special slots stay empty');
 });
 
 test('sound priority: pack, then installed original, then synthesized', () => {

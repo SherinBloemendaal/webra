@@ -31,6 +31,14 @@ const OPTIONS = {
   redeployableMcv: true,
   oreRegrowth: true,
   techBuildings: 'standard',
+  // OpenRA's other lobby options (protocol 6).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
+  reusableEngineers: false,
   cheats: false,
 };
 
@@ -173,12 +181,14 @@ test('debug views are read only and only show what the player sees', () => {
     g.order_move(0, Uint32Array.from(units), sx + 6 * 24, sy + 8 * 24, false);
     ticks(g, 2);
   }
+  const neutral = JSON.parse(a.rules_json()).players.findIndex((p) => p.neutral);
   let flowSeen = false;
   for (let i = 0; i < 60; i++) {
     const cells = decodeGrid(a.debug_cells(0, -100, -100, 5000, 5000));
     assert.equal(cells.x0, 0, 'clamped to the map');
     const actors = JSON.parse(a.debug_actors(0, 0, 0, 64 * 24, 64 * 24));
-    assert.ok(actors.every((x) => x.owner === 0 || x.owner === 1));
+    // The players' actors and the neutral world's (trees, ore mines, tech buildings).
+    assert.ok(actors.every((x) => x.owner === 0 || x.owner === 1 || x.owner === neutral));
     for (const id of units) {
       const flow = a.debug_flow(0, id, 0, 0, 64 * 24, 64 * 24);
       if (flow.length > 0) {
@@ -198,7 +208,7 @@ test('debug views are read only and only show what the player sees', () => {
   assert.equal(a.state_hash(), b.state_hash(), 'the views changed nothing');
   // Under the shroud: the enemy base is not reported.
   const actors = JSON.parse(a.debug_actors(0, 0, 0, 64 * 24, 64 * 24));
-  assert.ok(actors.every((x) => x.owner === 0), 'no enemy actors seen yet');
+  assert.ok(actors.every((x) => x.owner === 0 || x.owner === neutral), 'no enemy actors seen yet');
   const own = actors.find((x) => x.type === 'MCV');
   assert.ok(own && !own.building && own.hp > 0 && own.maxHp >= own.hp && own.radius > 0);
   const stats = JSON.parse(a.debug_stats());

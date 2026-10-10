@@ -16,6 +16,7 @@
 use crate::map::{Resource, Terrain};
 use crate::math::{dist, dist_sq, facing_of, facing_vec, CELL};
 use crate::rules::{Domain, Kind, Projectile as ProjKind, SupportPowerInfo, WarheadKind};
+use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, Effect, EffectKind, World, NONE};
 
 /// Largest minefield one order may cover, in cells (bounds the work per order).
@@ -120,6 +121,11 @@ pub struct Nuke {
     pub camera_remove: i32,
 }
 
+/// OpenRA terrain type name of a WebRA terrain class (map.rs `Terrain::name`).
+pub(crate) fn terrain_name(t: Terrain) -> &'static str {
+    t.name()
+}
+
 /// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
 /// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
 fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
@@ -188,6 +194,7 @@ impl World {
             let Some(c) = info.abilities.cloak.as_ref() else { continue };
             let paused = c.off_when_critical && self.actors[i].hp * 100 <= info.hp * CRITICAL_PERCENT;
             let a = &mut self.actors[i];
+            let was = a.ab.cloaked;
             if paused {
                 a.ab.cloaked = false;
             } else {
@@ -195,6 +202,9 @@ impl World {
                     a.cloak_timer -= 1;
                 }
                 a.ab.cloaked = a.cloak_timer <= 0;
+            }
+            if a.ab.cloaked != was {
+                self.note_cloak(i);
             }
             let mask = if self.actors[i].ab.cloaked {
                 let types = self.rules.actors[self.actors[i].ty as usize].abilities.cloak.as_ref().unwrap().types.clone();
@@ -237,13 +247,32 @@ impl World {
         let delay = c.cloak_delay;
         let a = &mut self.actors[i];
         a.cloak_timer = a.cloak_timer.max(delay);
+        let was = a.ab.cloaked;
         a.ab.cloaked = false;
         a.detected_by = 0;
+        if was {
+            self.note_cloak(i);
+        }
+    }
+
+    /// CloakChanged for actor `i`, which just cloaked or uncloaked (land
+    /// units: `ab.cloaked`, submarines: `submerged`). Like OpenRA's Cloak, an
+    /// actor that starts out cloaked makes no sound.
+    pub(crate) fn note_cloak(&mut self, i: usize) {
+        let a = &self.actors[i];
+        if self.tick <= a.born + 1 {
+            return;
+        }
+        let on = if a.kind == Kind::Ship { a.submerged } else { a.ab.cloaked };
+        let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+        self.sound.push(SoundEventKind::CloakChanged, ty, x, y, owner, i32::from(on));
     }
 
     /// Called right after actor `i` fired a weapon.
     pub(crate) fn on_fire(&mut self, i: usize) {
         self.uncloak_on(i, "Attack");
+        // A spy drops its disguise when it attacks (Disguise RevealDisguiseOn: Attack; infantry.rs).
+        self.actors[i].inf.disguise = None;
         // Demolition truck: GrantConditionOnAttack -> KillsSelf (the MiniNuke goes off).
         if self.rules.actors[self.actors[i].ty as usize].abilities.demo_truck.is_some() {
             self.kill(i);
@@ -454,7 +483,7 @@ impl World {
         a.stuck_ticks = 0;
     }
 
-    fn on_cell(&self, i: usize, ci: u32) -> bool {
+    pub(crate) fn on_cell(&self, i: usize, ci: u32) -> bool {
         let a = &self.actors[i];
         dist(a.x, a.y, cell_center(ci as i32 % self.map.width), cell_center(ci as i32 / self.map.width)) <= ON_CELL
     }
@@ -462,7 +491,7 @@ impl World {
     /// Progress bookkeeping toward a cell, measured along the path; true
     /// when the unit has made no progress for too long or cannot reach the
     /// cell at all.
-    fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
+    pub(crate) fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.
@@ -660,6 +689,9 @@ impl World {
         if a.ab.timer >= delay {
             a.ab.timer = 0;
             a.ab.ammo += 1;
+            // Rearmable: AmmoPool.RearmSound for each magazine, to the owner.
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(SoundEventKind::Rearmed, ty, x, y, owner, 0);
         }
     }
 
@@ -702,6 +734,8 @@ impl World {
             let to = self.actors[t].owner;
             self.players[to as usize].cash += payload;
             self.note_earned(to, payload);
+            // DonateCash: a cash tick over the structure in its owner's colour.
+            self.show_cash_tick(t, to, payload);
             self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 12, max: 12 });
             self.remove(i);
             return;
@@ -1236,6 +1270,8 @@ impl World {
                 && self.rules.actors[a.ty as usize].abilities.support_powers.as_ref().is_some_and(|l| l.iter().any(|p| p.key == info.key))
         });
         let Some(silo) = silo else { return false };
+        // The silo opens (fx.rs, presentation only).
+        self.note_launch(silo);
         let launch = self.tick + info.missile_delay.max(0) as u32;
         self.abil.nukes.push(Nuke {
             owner: player,

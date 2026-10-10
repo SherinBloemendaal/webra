@@ -23,7 +23,9 @@ import {
   TEAM_MAX,
   TECH_BUILDINGS,
   TECH_LEVELS,
+  TIME_LIMITS,
   WEATHER_MODES,
+  HANDICAPS,
 } from './constants.js';
 import { bool, fail, int, isPlainObject, object, oneOf, text } from './check.js';
 
@@ -38,6 +40,7 @@ export const LOBBY_OPTION_KEYS = [
   'startingUnits',
   'techLevel',
   'gameSpeed',
+  'timeLimit',
   ...BOOLEAN_OPTIONS,
 ];
 
@@ -55,12 +58,13 @@ export function validateLobbyOptions(v, what = 'options') {
     startingUnits: oneOf(v.startingUnits, STARTING_UNITS, `${what}.startingUnits`),
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
+    timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
   };
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;
 }
 
-const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty'];
+const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty', 'handicap'];
 
 /**
  * Validate the options the engine receives at game start: lobby options plus
@@ -94,6 +98,8 @@ export function validateGameOptions(v, what = 'options') {
     if (colors.has(player.color)) fail(`${w}.color is used twice`);
     colors.add(player.color);
     player.team = int(p.team ?? 0, 0, TEAM_MAX, `${w}.team`);
+    // Handicap: left out means 0 (the engine's default), as in games before it existed.
+    if (p.handicap !== undefined) player.handicap = oneOf(p.handicap, HANDICAPS, `${w}.handicap`);
     return player;
   });
   return out;

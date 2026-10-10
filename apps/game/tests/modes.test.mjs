@@ -291,6 +291,7 @@ async function mountOnline({ host }) {
     installed: new Map(),
     mapStatus: { hash: null, text: '', ok: true },
     serverMaps: [],
+    libraryMaps: [],
     send: (m) => sent.push(m),
     state: {
       you: host ? 1 : 2,
@@ -343,7 +344,8 @@ test('online lobby: the host picks a mode and sends plain options', async () => 
     lobby(msg.options);
     assert.equal(select.value, 'rush');
     // A host edit goes out as an option change too, and reads as Custom once echoed.
-    const toggle = root.querySelectorAll('.online-toggles input')[0];
+    // Fog of war: third in OpenRA's order (crates, short game, fog of war, ...).
+    const toggle = root.querySelectorAll('.online-toggles input')[2];
     check(toggle, false);
     assert.equal(sent.at(-1).options.fog, false);
     lobby(sent.at(-1).options);

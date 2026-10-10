@@ -14,6 +14,7 @@ fn main() {
             faction: factions[k % 8].into(),
             ai: Some(AiDifficulty::Normal),
             team: c.to_digit(10).expect("team digit") as u8,
+            handicap: 0,
         })
         .collect();
     let mut w = World::with_options(seed, size, &players, GameOptions::default());

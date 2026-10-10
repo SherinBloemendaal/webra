@@ -754,13 +754,16 @@ Serialized size at most 32 KiB.
   protocol package, `src/presets.js`): a list of at most 16 entries
   `{ name, options }`. `name` is 1 to 32 characters of display text
   (normalized: single spaces, no control or bidi characters), unique
-  ignoring case and not the name of a built-in mode. `options` holds exactly
-  the mode keys (every lobby option but `seed`, `mapSize` and
-  `techBuildings`: `mapStyle`,
-  `biome`, `weather`, `startingCash`, `startingUnits`, `techLevel`,
-  `gameSpeed`, `fog`, `explored`, `buildRadius`, `redeployableMcv`,
-  `oreRegrowth`, `cheats`), each with a value the lobby options accept
-  (docs/contracts.md section 3).
+  ignoring case and not the name of a built-in mode. `options` holds the
+  mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
+  `biome`, `weather`, `techBuildings`, `startingCash`, `startingUnits`,
+  `techLevel`, `gameSpeed`, `timeLimit`, `fog`, `explored`, `buildRadius`,
+  `redeployableMcv`, `oreRegrowth`, `cheats` and the other boolean
+  options), each with a value the lobby options accept (docs/contracts.md
+  section 3). Keys added after modes could be saved (`ADDED_PRESET_KEYS`:
+  `timeLimit`, `crates`, `shortGame`, `bounty`, `separateTeamSpawns`,
+  `allyBuildRadius`, `reusableEngineers`, `techBuildings`) may be missing:
+  they take their defaults.
 
 ### 5.9 Data export and deletion
 
@@ -771,8 +774,11 @@ Serialized size at most 32 KiB.
   material or password hashes), Discord id and username, sessions (without
   their secrets), IP history (raw addresses with first and last seen), bans,
   the settings document, pending email tokens (purpose and dates only),
-  uploaded maps (ids and names), and audit log entries that target the
-  account.
+  uploaded maps (ids, names, hashes, `published`: in the community list or
+  only shared with online sessions, and when a session last used them),
+  saved online games it played in (`onlineSaves`: record id, time, session
+  name, ticks, game version and its seat), and audit log entries that target
+  the account.
 - `DELETE /api/account` `{ "confirm": "<username>" }` (recent
   re-authentication) -> `204`: the account becomes `deleted`, every session
   is revoked and the cookie cleared. It is purged 30 days later (an admin can
@@ -880,6 +886,16 @@ that is not banned, from an address that is not banned:
   account_required`, `account_inactive`, `banned`, `ip_banned`.
 - `POST /api/maps` (upload): the same. The uploader's account id is stored
   with the map.
+- `POST /api/sessions/:id/map` (a host shares a map with its lobby) and
+  `GET /api/sessions/:id/map` (a member downloads it): the same codes, plus
+  the session's own check of the member key in `X-WebRA-Member`, which only
+  works for the account it was issued to (`403 forbidden` otherwise; docs/
+  contracts.md section 4, "Lobby maps"). The sharer's account id is stored
+  with the map, which stays unlisted (not public).
+- `POST /api/sessions/:id/resume` (the host resumes a saved online game): a
+  signed-in account is always needed, also with the setting off (`403
+  account_required`), and it must have played in the save (`403 forbidden`).
+  Saving an online game needs every player signed in.
 - `GET /api/sessions/:id/ws`: the upgrade always succeeds for a well-formed
   request from the site's origin; the server answers the first `hello` with
   `error` and closes when the connection may not play: codes
@@ -903,6 +919,9 @@ Protocol 5 (`PROTOCOL_VERSION`, docs/contracts.md section 4):
   the original member (or anonymous for an anonymous member).
 - New error codes: `account_required`, `account_inactive`, `banned`,
   `ip_banned`.
+
+Protocol 6 keeps all of this. A member coming back into the lobby after a
+rematch rejoins with its key from the same account too.
 
 ### 7.3 Content relay
 
@@ -1010,8 +1029,11 @@ on plain users).
   the status it had (`active` when unknown).
 - `POST /api/admin/users/:id/purge` `{ "confirm": "<username>" }` (admin,
   only for `deleted` accounts) -> `204`: removes the account and everything
-  stored about it now. Audit entries about it keep the action, actor and
-  time; their before and after values are replaced by `{ "purged": true }`.
+  stored about it now (maps it only shared with online sessions and the
+  records of saved online games it played in included; maps it published
+  stay, without the uploader). Audit entries about it keep
+  the action, actor and time; their before and after values are replaced by
+  `{ "purged": true }`.
   Soft-deleted accounts are purged automatically after 30 days.
 
 ### 8.6 Password reset link

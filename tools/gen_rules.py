@@ -24,8 +24,8 @@ ACTORS = [
     'SBAG', 'FENC', 'BRIK', 'PBOX', 'HBOX', 'GUN', 'FTUR', 'TSLA', 'AGUN', 'SAM',
     # France: decoy structures
     'FPWR', 'TENF', 'SYRF', 'WEAF', 'DOMF', 'FIXF', 'FAPW', 'ATEF', 'PDOF', 'MSLF', 'FACF',
-    # Infantry (more later)
-    'E1', 'E3',
+    # Infantry
+    'E1', 'E2', 'E3', 'E4', 'E6', 'E7', 'DOG', 'MEDI', 'MECH', 'SPY', 'SPY.England', 'THF', 'SHOK',
     # Ground vehicles
     'HARV', 'MCV', 'TRUK', 'JEEP', 'APC', 'FTRK', '1TNK', '2TNK', '3TNK', '4TNK', 'V2RL', 'ARTY', 'MNLY',
     'MRJ', 'MGG', 'TTNK', 'DTRK', 'CTNK', 'STNK', 'QTNK',
@@ -42,8 +42,19 @@ EXTRA_ACTORS = [
     'E1R1', 'E3R1',            # paratroopers (ParatroopersPower DropItems)
     'U2', 'BADR', 'BADR.Bomber',  # spy plane, paratrooper transport, parabomb bomber
     'MINV', 'MINP',            # Minelayer mines (data/source/rules/misc.yaml)
+    # Crates (misc.yaml): CRATE is what the CrateSpawner drops; the others are
+    # for maps that place crates (OpenRA mission crates).
+    'CRATE', 'MONEYCRATE', 'HEALCRATE', 'WCRATE', 'SCRATE',
+    # Ground vehicle wrecks (data/source/rules/husks.yaml, SpawnActorOnDeath).
+    '2TNK.Husk', '3TNK.Husk', '4TNK.Husk', 'HARV.EmptyHusk', 'HARV.FullHusk', 'MCV.Husk', 'MGG.Husk',
+    # Proxies (OpenRA InfiltrateForSupportPower.Proxy, data/source/rules/misc.yaml):
+    # player-level actors a spy grants by infiltrating a structure. They have
+    # no body: the engine keeps them per player (infantry.rs) for their
+    # prerequisites and support powers.
+    'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse',
     'SPEF',                    # France's fake Sub Pen: map-only (OpenRA Prerequisites ~disabled)
 ]
+PROXIES = {'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse'}
 # The neutral world of OpenRA maps (data/source/rules/civilian.yaml,
 # decoration.yaml, husks.yaml, misc.yaml and the map-only walls of
 # structures.yaml): civilians, civilian and tech buildings, barrels, bridges,
@@ -107,6 +118,7 @@ FACING_TOLERANCE = 512              # OpenRA AttackBaseInfo.FacingTolerance defa
 # the OpenRA trait defaults for fields the RA rules leave out:
 GIVES_EXPERIENCE = -1               # GivesExperienceInfo.Experience: -1 = the actor's Valued cost
 ACTOR_EXPERIENCE_MODIFIER = 10000   # GivesExperienceInfo.ActorExperienceModifier (percent)
+PLAYER_EXPERIENCE_MODIFIER = 0      # GivesExperienceInfo.PlayerExperienceModifier (percent)
 TAKE_COVER_DURATION = 100           # TakeCoverInfo.Duration (ticks prone after the last hit)
 TAKE_COVER_SPEED = 50               # TakeCoverInfo.SpeedModifier (percent while prone)
 CHANGES_HEALTH_DELAY = 5            # ChangesHealthInfo.Delay
@@ -163,7 +175,8 @@ def load_ftl():
             attr = cur + '.' + m.group(1)
             out[attr] = m.group(2)
             continue
-        if line.startswith('        ') and attr:
+        # Continuation lines of a multi-line value are indented (4 spaces or more).
+        if line.startswith('    ') and line.strip() and attr:
             out[attr] = (out[attr] + ' ' + line.strip()).strip()
     return out
 
@@ -208,11 +221,16 @@ TARGET_BITS = {'GroundActor': 1 | 2 | 4, 'Infantry': 1, 'Vehicle': 2, 'Structure
                'Air': 8, 'WaterActor': 16, 'Water': 16, 'Ground': 256, 'Underwater': 64, 'Bridge': 0,
                # Trees (and boxes, ice floes, utility poles: ^Tree) are only
                # hit by warheads that list Trees (fire, V2, nukes, barrels).
-               'Trees': 512,
+               'Trees': 1024,
                # Submarine is its own class (surfaced and submerged subs): depth charge
                # warheads hit it, while Underwater only matches submerged subs.
                'Ship': 16, 'Submarine': 128,
-               'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0}
+               'DetonateAttack': 1 | 2 | 4, 'Wall': 4, 'Mine': 32, 'Husk': 0, 'Creep': 0,
+               # Damaged infantry (Targetable@HEAL) and damaged vehicles, ships and
+               # landed aircraft (Targetable@REPAIR): what the Medic's Heal and the
+               # Mechanic's Repair weapons fire at. The engine adds them to an
+               # actor's classes while it is damaged (combat.rs target_class).
+               'Heal': 2048, 'Repair': 4096}
 
 
 def target_mask(v):
@@ -252,6 +270,13 @@ def locomotor_info(name, locos):
     on_water = speeds[3] > 0
     domain = 'water' if on_water and not on_land else 'ground'
     return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
+
+
+# Warheads that change no health (combat.rs `land_shot`, smudges.rs): smudges
+# (presentation), resources destroyed or created (gameplay), screen shake and
+# the nuke flash (presentation).
+EFFECT_WARHEADS = {'LeaveSmudge': 'smudge', 'DestroyResource': 'destroy_resource', 'CreateResource': 'create_resource',
+                   'ShakeScreen': 'shake', 'FlashEffect': 'flash'}
 
 
 def spread_and_falloff(name, v):
@@ -302,6 +327,8 @@ def weapon_info(name, weapons, weapon_index):
         spread, falloff = spread_and_falloff(name, v)
         warheads.append({
             'kind': {'SpreadDamage': 'spread', 'TargetDamage': 'target', 'HealthPercentageDamage': 'percent'}[kind],
+            # WarheadInfo.ValidRelationships (default all): the Heal and Repair warheads only touch allies.
+            'relationships': relationship_mask(v.get('ValidRelationships', 'Ally, Neutral, Enemy')),
             'damage': int(v.get('Damage', 0)),
             'spread': spread,
             'falloff': falloff,
@@ -314,11 +341,38 @@ def weapon_info(name, weapons, weapon_index):
         })
     if not warheads:
         raise SystemExit(f'weapon {name} has no damage warhead')
+    effects = []
+    for k, v in w.items():
+        if not (k.startswith('Warhead') and isinstance(v, dict)) or v.get('_') not in EFFECT_WARHEADS:
+            continue
+        kind = EFFECT_WARHEADS[v['_']]
+        size = ints(v.get('Size', '0'))
+        e = {'kind': kind, 'delay': int(v.get('Delay', 0)),
+             # Warhead.ValidTargets / InvalidTargets defaults: Ground, Water / none.
+             'valid': target_mask(v.get('ValidTargets', 'Ground, Water')), 'invalid': target_mask(v.get('InvalidTargets', '')),
+             # Size: outer and inner radius in cells (FindTilesInAnnulus).
+             'size': [size[0], size[1] if len(size) > 1 else 0]}
+        if kind == 'smudge':
+            e['smudge_types'] = tokens(v.get('SmudgeType'))
+            e['chance'] = int(v.get('Chance', 100))
+        elif kind == 'destroy_resource':
+            e['amount'] = int(v.get('ResourceAmount', 0))
+            e['resource_types'] = tokens(v.get('ResourceTypes'))
+        elif kind == 'create_resource':
+            e['resource_types'] = [v['AddsResourceType']]
+        elif kind == 'shake':
+            e['duration'] = int(v.get('Duration', 0))
+            e['intensity'] = int(v.get('Intensity', 0))
+            e['multiplier'] = ints(v.get('Multiplier', '0,0'))[:2]
+        elif kind == 'flash':
+            e['duration'] = int(v['Duration'])
+            e['flash_type'] = v.get('FlashType') or ''
+        effects.append(e)
     projectile = {'Bullet': 'bullet', 'Missile': 'missile', 'InstantHit': 'instant', 'TeslaZap': 'tesla', 'GravityBomb': 'bomb',
                   None: 'instant'}[ptype]
     speed = 0
     if isinstance(proj, dict) and projectile in ('bullet', 'missile'):
-        speed = ints(proj.get('Speed', '213'))[0] if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
+        speed = wdist(tokens(proj['Speed'])[0]) if proj.get('Speed') else (213 if projectile == 'bullet' else 384)
     if projectile == 'bomb':
         # GravityBomb: falls straight down at Velocity (world units per tick, z component).
         speed = abs(ints(proj.get('Velocity', '0, 0, -50'))[2])
@@ -337,7 +391,16 @@ def weapon_info(name, weapons, weapon_index):
         'invalid': target_mask(w.get('InvalidTargets', '')),
         'warheads': warheads,
         'clusters': clusters,
+        'effects': effects,
     }
+
+
+# OpenRA PlayerRelationship as bits (rules.rs RELATION_*).
+RELATIONSHIPS = {'None': 0, 'Ally': 1, 'Neutral': 2, 'Enemy': 4}
+
+
+def relationship_mask(v):
+    return sum(RELATIONSHIPS[x] for x in tokens(v))
 
 
 def experience_info(t):
@@ -414,7 +477,10 @@ def gives_experience_info(t):
         return None
     g = t['GivesExperience'] if isinstance(t['GivesExperience'], dict) else {}
     return {'experience': int(g.get('Experience', GIVES_EXPERIENCE)),
-            'actor_modifier': int(g.get('ActorExperienceModifier', ACTOR_EXPERIENCE_MODIFIER))}
+            'actor_modifier': int(g.get('ActorExperienceModifier', ACTOR_EXPERIENCE_MODIFIER)),
+            # PlayerExperienceModifier: percent of the value the killing player gains
+            # (OpenRA PlayerExperience, the time limit's tie breaker).
+            'player_modifier': int(g.get('PlayerExperienceModifier', PLAYER_EXPERIENCE_MODIFIER))}
 
 
 def take_cover_info(t):
@@ -425,6 +491,188 @@ def take_cover_info(t):
     return {'duration': int(c.get('Duration', TAKE_COVER_DURATION)), 'speed_modifier': int(c.get('SpeedModifier', TAKE_COVER_SPEED)),
             'damage_triggers': tokens(c.get('DamageTriggers')),
             'damage_modifiers': [{'type': k, 'percent': int(v)} for k, v in (c.get('DamageModifiers') or {}).items()]}
+
+
+def must_be_destroyed(t):
+    """MustBeDestroyed: None without it, else its RequiredForShortGame (default false)."""
+    if 'MustBeDestroyed' not in t:
+        return None
+    m = t['MustBeDestroyed'] if isinstance(t['MustBeDestroyed'], dict) else {}
+    return str(m.get('RequiredForShortGame', 'false')).lower() == 'true'
+
+
+def owner_lost(t):
+    """OwnerLostAction.Action (default Kill) in snake case, or None without the trait."""
+    if 'OwnerLostAction' not in t:
+        return None
+    o = t['OwnerLostAction'] if isinstance(t['OwnerLostAction'], dict) else {}
+    return {'Kill': 'kill', 'Dispose': 'dispose', 'ChangeOwner': 'change_owner'}[o.get('Action', 'Kill')]
+
+
+def gives_bounty(t):
+    """GivesBounty.Percentage (default 10) of the actor's value, or None without the trait."""
+    if 'GivesBounty' not in t:
+        return None
+    g = t['GivesBounty'] if isinstance(t['GivesBounty'], dict) else {}
+    if g.get('RequiresCondition', 'global-bounty') != 'global-bounty':
+        raise SystemExit(f'GivesBounty condition {g.get("RequiresCondition")!r} is not the lobby option')
+    return int(g.get('Percentage', 10))
+
+
+def spawn_on_death(t, kind, ids_lower):
+    """SpawnActorOnDeath of a ground actor: the husk it leaves. Aircraft husks
+    (RequiresCondition: airborne) fall and explode instead (plane.rs, helicopter.rs)."""
+    s = first(t, 'SpawnActorOnDeath')
+    if not s or kind == 'aircraft':
+        return None
+    return ids_lower[s['Actor'].lower()]
+
+
+def full_husk(t, ids_lower):
+    """HarvesterHuskModifier: [husk of a harvester at least FullnessThreshold percent full, threshold]."""
+    h = t.get('HarvesterHuskModifier')
+    if not isinstance(h, dict):
+        return None
+    return [ids_lower[h['FullHuskActor'].lower()], int(h.get('FullnessThreshold', 50))]
+
+
+SELL_VALUE_PERCENT = 40             # SpawnActorsOnSellInfo.ValuePercent
+SELL_MIN_HP_PERCENT = 30            # SpawnActorsOnSellInfo.MinHpPercent
+
+
+def sell_survivors(t):
+    """SpawnActorsOnSell: the crew that leaves a sold structure. Actor names are
+    kept as OpenRA spells them (upper case); the engine skips types it does not
+    have, so the list fills in as more infantry is added."""
+    s = t.get('SpawnActorsOnSell')
+    if not isinstance(s, dict):
+        return None
+    return {'actor_types': [x.upper() for x in tokens(s.get('ActorTypes'))],
+            'guaranteed': [x.upper() for x in tokens(s.get('GuaranteedActorTypes'))],
+            'value_percent': int(s.get('ValuePercent', SELL_VALUE_PERCENT)),
+            'min_hp_percent': int(s.get('MinHpPercent', SELL_MIN_HP_PERCENT)),
+            'factions': tokens(s.get('Factions'))}
+
+
+def shake_on_death(t):
+    """ShakeOnDeath [Duration, Intensity] (defaults 10, 1), or None."""
+    if 'ShakeOnDeath' not in t:
+        return None
+    s = t['ShakeOnDeath'] if isinstance(t['ShakeOnDeath'], dict) else {}
+    return [int(s.get('Duration', 10)), int(s.get('Intensity', 1))]
+
+
+def unit_radius(aid, cost):
+    """Hit radius of a unit (world units): the heuristic of the unit export below."""
+    return 512 if cost >= 1500 and aid != 'DTRK' else 384
+
+
+def husk_info(t, actors, ids_lower, locos):
+    """^Husk: a wreck that blocks its cell and burns down (ChangesHealth with a
+    negative step), only force-fire targets it, and it can be captured back
+    (Capturable husk, TransformOnCapture, InfiltrateForTransform)."""
+    h = t['Husk'] if isinstance(t['Husk'], dict) else {}
+    burn = first(t, 'ChangesHealth')
+    into = ids_lower[t['TransformOnCapture']['IntoActor'].lower()] if isinstance(t.get('TransformOnCapture'), dict) else None
+    cap = first(t, 'Capturable') if has(t, 'Capturable') else None
+    inf = t.get('InfiltrateForTransform') if isinstance(t.get('InfiltrateForTransform'), dict) else None
+    loco = h.get('Locomotor')
+    return {
+        'allowed_terrain': tokens(h.get('AllowedTerrain')),
+        'crushes': locos[loco]['_crushes'] if loco else [],
+        # ChangesHealthInfo defaults: Delay 5, StartIfBelow 50.
+        'burn_step': int(burn.get('Step', 5)),
+        'burn_delay': int(burn.get('Delay', CHANGES_HEALTH_DELAY)),
+        'burn_start_if_below': int(burn.get('StartIfBelow', CHANGES_HEALTH_START_IF_BELOW)),
+        'force_fire_only': any(isinstance(v, dict) and str(v.get('RequiresForceFire', 'false')).lower() == 'true'
+                               for v in trait(t, 'Targetable').values()),
+        'radius': unit_radius(into, actors[into]['cost']) if into else 384,
+        # For capturing (engineers, mechanics): Capturable.Types and what it becomes.
+        'capturable': {'types': tokens(cap.get('Types')),
+                       'transform_into': into,
+                       # TransformOnCapture.ForceHealthPercentage (0: keep the health ratio).
+                       'force_health_percent': int(t['TransformOnCapture'].get('ForceHealthPercentage', 0))} if cap is not None and into else None,
+        'infiltrate': {'types': tokens(inf.get('Types')), 'transform_into': ids_lower[inf['IntoActor'].lower()],
+                       'force_health_percent': int(inf.get('ForceHealthPercentage', 0))} if inf else None,
+    }
+
+
+CRATE_DURATION = 0                   # CrateInfo.Duration (0: stays)
+CRATE_SHARES = 10                    # CrateActionInfo.SelectionShares
+CRATE_EFFECT_IMAGE = 'crate-effects'  # CrateActionInfo.Image
+LEVEL_UP_RANGE = 3                   # LevelUpCrateActionInfo.Range (WDist 3: world units)
+MAX_EXTRA_COLLECTORS = 4             # LevelUp / GrantExternalCondition MaxExtraCollectors
+DUPLICATE_MAX_RADIUS = 4             # DuplicateUnitCrateActionInfo.MaxRadius (cells)
+BASE_BUILDER_NO_BASE_SHARES = 1000   # GiveBaseBuilderCrateActionInfo.NoBaseSelectionShares
+CRATE_ACTIONS = {
+    'GiveCashCrateAction': 'give_cash', 'LevelUpCrateAction': 'level_up', 'ExplodeCrateAction': 'explode',
+    'HideMapCrateAction': 'hide_map', 'HealActorsCrateAction': 'heal_actors', 'RevealMapCrateAction': 'reveal_map',
+    'DuplicateUnitCrateAction': 'duplicate_unit', 'GiveBaseBuilderCrateAction': 'give_base_builder',
+    'GiveUnitCrateAction': 'give_unit', 'GrantExternalConditionCrateAction': 'grant_external_condition',
+}
+
+
+CRATE_ACTION_FIELDS = {
+    'give_cash': {'amount'},
+    'level_up': {'levels', 'range', 'max_extra'},
+    'explode': {'weapon'},
+    'hide_map': {'include_allies'},
+    'heal_actors': {'targets'},
+    'reveal_map': {'include_allies'},
+    'duplicate_unit': {'targets', 'min_amount', 'max_amount', 'max_duplicate_value', 'max_radius', 'factions'},
+    'give_base_builder': {'units', 'factions', 'no_base_shares'},
+    'give_unit': {'units', 'factions'},
+    'grant_external_condition': {'condition', 'levels', 'duration', 'range', 'max_extra'},
+}
+
+
+def crate_info(t, ids_lower, weapon_index):
+    """^Crate and its crate actions, in YAML order (Crate.OnCrushInner rolls over them in order)."""
+    c = t['Crate'] if isinstance(t['Crate'], dict) else {}
+    actions = []
+    for k, v in t.items():
+        base = k.split('@')[0]
+        if base not in CRATE_ACTIONS:
+            if base.endswith('CrateAction'):
+                raise SystemExit(f'unsupported crate action {k}')
+            continue
+        v = v if isinstance(v, dict) else {}
+        kind = CRATE_ACTIONS[base]
+        a = {
+            'key': k, 'kind': kind,
+            'shares': int(v.get('SelectionShares', CRATE_SHARES)),
+            'time_delay': int(v.get('TimeDelay', 0)),
+            'prerequisites': tokens(v.get('Prerequisites')),
+            'excluded': [ids_lower.get(x.lower(), x.upper()) for x in tokens(v.get('ExcludedActorTypes'))],
+            # Presentation: crate-effects sequence and sound (audio catalog).
+            'sequence': v.get('Sequence') or None,
+            'sound': v.get('Sound') or None,
+            'notification': v.get('Notification') or None,
+            'amount': int(v.get('Amount', 2000)) if kind == 'give_cash' else 0,
+            'levels': int(v.get('Levels', 1)),
+            'range': wdist(v.get('Range', str(LEVEL_UP_RANGE))),
+            'max_extra': int(v.get('MaxExtraCollectors', MAX_EXTRA_COLLECTORS)),
+            'weapon': weapon_index(v['Weapon']) if kind == 'explode' else None,
+            'include_allies': str(v.get('IncludeAllies', 'false')).lower() == 'true',
+            # HealActorsCrateAction.TargetTypes / DuplicateUnitCrateAction.ValidTargets (target class bits; 0: any).
+            'targets': target_mask(v.get('TargetTypes', '')) if kind == 'heal_actors'
+            else target_mask(v.get('ValidTargets', 'Ground, Water')) if kind == 'duplicate_unit' else 0,
+            'min_amount': int(v.get('MinAmount', 1)),
+            'max_amount': int(v.get('MaxAmount', 2)),
+            'max_duplicate_value': int(v.get('MaxDuplicateValue', -1)),
+            'max_radius': int(v.get('MaxRadius', DUPLICATE_MAX_RADIUS)),
+            'factions': tokens(v.get('ValidFactions')),
+            # Unit names as OpenRA spells them; the engine skips types it does not have.
+            'units': [x.upper() for x in tokens(v.get('Units'))],
+            'no_base_shares': int(v.get('NoBaseSelectionShares', BASE_BUILDER_NO_BASE_SHARES)),
+            'condition': v.get('Condition') or None,
+            'duration': int(v.get('Duration', 0)),
+        }
+        # Only the fields of this kind of action (the engine defaults the rest).
+        keep = {'key', 'kind', 'shares', 'time_delay', 'prerequisites', 'excluded', 'sequence', 'sound', 'notification'} | CRATE_ACTION_FIELDS[kind]
+        actions.append({f: x for f, x in a.items() if f in keep and (x or f in ('shares', 'kind', 'key'))})
+    return {'duration': int(c.get('Duration', CRATE_DURATION)), 'terrain': tokens(c.get('TerrainTypes')),
+            'crush_class': c.get('CrushClass', 'crate'), 'actions': actions}
 
 
 def has_damage(w):
@@ -461,6 +709,96 @@ def stances(t):
     return [STANCES[str(at.get('InitialStance', 'AttackAnything'))], STANCES[str(at.get('InitialStanceAI', 'AttackAnything'))]]
 
 
+# Target types that an Infiltrates trait can enter (Infiltrates.Types of the
+# Spy, Thief and Mechanic), exported per actor from its Targetable traits.
+INFILTRATE_TYPES = ['SpyInfiltrate', 'ThiefInfiltrate', 'Husk']
+# InfiltrateFor* traits on the infiltrated structure (OpenRA.Mods.Cnc
+# Traits/Infiltration) and the effect names the engine knows (infantry.rs).
+INFILTRATE_EFFECTS = {'InfiltrateForCash': 'cash', 'InfiltrateForExploration': 'exploration',
+                      'InfiltrateForPowerOutage': 'power_outage', 'InfiltrateForSupportPower': 'support_power',
+                      'InfiltrateForSupportPowerReset': 'power_reset', 'InfiltrateForDecoration': 'decoration',
+                      'InfiltrateForTransform': 'transform'}
+# OpenRA trait defaults of the infantry abilities (infantry.rs).
+INFILTRATE_CASH_PERCENT = 100       # InfiltrateForCashInfo.Percentage
+POWER_OUTAGE_DURATION = 500         # InfiltrateForPowerOutageInfo.Duration
+CAPTURE_DELAY = 0                   # CapturesInfo.CaptureDelay
+DEMOLITION_DELAY = 45               # DemolitionInfo.DetonationDelay
+DEMOLITION_FLASHES = 3              # DemolitionInfo.Flashes
+DEMOLITION_FLASH_DELAY = 4          # DemolitionInfo.FlashesDelay
+DEMOLITION_FLASH_INTERVAL = 4       # DemolitionInfo.FlashInterval
+LEAP_SPEED = '426'                  # AttackLeapInfo.Speed
+SPAWN_ACTOR_LIFETIME = 250          # SpawnActorPowerInfo.LifeTime
+ANNOUNCE_ON_KILL_INTERVAL = 750     # AnnounceOnKillInfo.Interval
+# The reusable engineers lobby option (player.yaml LobbyPrerequisiteCheckbox@REUSABLEENGINEERS)
+# grants this prerequisite; Captures traits switch on it.
+REUSABLE_ENGINEERS = 'global-reusable-engineers'
+
+
+def armament_info(t):
+    """Per weapon slot (the order of `weapons`): FireDelay; and whether the
+    armaments only target allies (TargetRelationships: Ally, the Medic and
+    Mechanic)."""
+    delays, allies = [], False
+    for arm in trait(t, 'Armament').values():
+        if isinstance(arm, dict) and arm.get('Name') != 'garrisoned':
+            delays.append(int(arm.get('FireDelay', 0)))
+            allies |= relationship_mask(arm.get('TargetRelationships', 'Enemy')) == RELATIONSHIPS['Ally']
+    return delays, allies
+
+
+def death_info(t):
+    """WithDeathAnimation: the death sequence number per damage type (die1..die6)
+    and whether crushing has its own sequence; None without the trait."""
+    d = t.get('WithDeathAnimation')
+    if not isinstance(d, dict) or str(d.get('UseDeathTypeSuffix', 'true')).lower() != 'true':
+        return None
+    types = d.get('DeathTypes') or {}
+    return {'types': [{'type': k, 'sequence': int(tokens(v)[0])} for k, v in types.items()],
+            'crushed': bool(d.get('CrushedSequence'))}
+
+
+def captures_info(t):
+    """Captures traits: types, delay, consumed and which lobby setting enables them."""
+    out = []
+    for v in trait(t, 'Captures').values():
+        v = v if isinstance(v, dict) else {}
+        cond = v.get('RequiresCondition', '')
+        if cond not in ('', REUSABLE_ENGINEERS, '!' + REUSABLE_ENGINEERS):
+            raise SystemExit(f'unsupported Captures condition {cond!r}')
+        out.append({'types': tokens(v.get('CaptureTypes')), 'delay': int(v.get('CaptureDelay', CAPTURE_DELAY)),
+                    'consumed': str(v.get('ConsumedByCapture', 'True')).lower() == 'true',
+                    'experience': int(v.get('PlayerExperience', 0)),
+                    # 1: only with reusable engineers, -1: only without, 0: always.
+                    'option': 1 if cond == REUSABLE_ENGINEERS else -1 if cond else 0})
+    return out
+
+
+def infiltrated_info(t, ids_lower):
+    """InfiltrateFor* effects of an infiltratable actor (structures, husks)."""
+    out = []
+    for k, v in t.items():
+        base = k.split('@')[0]
+        if base not in INFILTRATE_EFFECTS:
+            continue
+        v = v if isinstance(v, dict) else {}
+        e = {'kind': INFILTRATE_EFFECTS[base], 'types': tokens(v.get('Types')),
+             'experience': int(v.get('PlayerExperience', 0))}
+        if base == 'InfiltrateForCash':
+            e['percentage'] = int(v.get('Percentage', INFILTRATE_CASH_PERCENT))
+            e['minimum'] = int(v.get('Minimum', -1))
+            e['maximum'] = int(v.get('Maximum', 2 ** 31 - 1))
+            e['experience_percentage'] = int(v.get('PlayerExperiencePercentage', 0))
+        if base == 'InfiltrateForPowerOutage':
+            e['duration'] = int(v.get('Duration', POWER_OUTAGE_DURATION))
+        if base == 'InfiltrateForSupportPower':
+            e['proxy'] = ids_lower[v['Proxy'].lower()]
+        if base == 'InfiltrateForTransform':
+            e['into'] = ids_lower[v['IntoActor'].lower()]
+            e['health'] = int(v.get('ForceHealthPercentage', 0))
+        out.append(e)
+    return out
+
+
 def load_source_rules():
     """Resolved OpenRA actor rules from data/source (parse.py), keyed by actor name."""
     sys.path.insert(0, os.path.join(DATA, 'source'))
@@ -485,6 +823,58 @@ def beacon_duration(src):
     return int(pb.get('Duration', 750)) if isinstance(pb, dict) else 750
 
 
+# OpenRA defaults of the world traits below (CrateSpawnerInfo, StartingUnitsInfo,
+# TimeLimitManagerInfo) for fields RA's world.yaml leaves out.
+CRATE_SPAWNER_DEFAULTS = {'Minimum': 1, 'Maximum': 255, 'SpawnInterval': 4500, 'InitialSpawnDelay': 0, 'WaterChance': 20,
+                          'QuantizedFacings': 32, 'Cordon': '5120'}
+CRATE_VALID_GROUND = 'Clear, Rough, Road, Ore, Beach'
+CRATE_VALID_WATER = 'Water'
+STARTING_INNER_RADIUS = 2
+STARTING_OUTER_RADIUS = 4
+STARTING_BASE_FACING = 512
+TIME_LIMIT_OPTIONS = [0, 10, 20, 30, 40, 60, 90]
+
+
+def world_rules(src, ids_lower):
+    """Lobby option traits of OpenRA's World actor (world.yaml): the CrateSpawner
+    (crates.rs), the StartingUnits sets (gamerules.rs) and the TimeLimitManager."""
+    w = src.to_json(src.load('rules', ['world'])['World'][1])
+    cs = {**CRATE_SPAWNER_DEFAULTS, **w['CrateSpawner']}
+    actors = tokens(cs.get('CrateActors', 'crate'))
+    shares = ints(cs.get('CrateActorShares', '10'))
+    crates = {
+        'minimum': int(cs['Minimum']), 'maximum': int(cs['Maximum']),
+        'spawn_interval': int(cs['SpawnInterval']), 'initial_delay': int(cs['InitialSpawnDelay']),
+        'water_chance': int(cs['WaterChance']), 'quantized_facings': int(cs['QuantizedFacings']),
+        'cordon': wdist(cs['Cordon']),
+        'delivery_aircraft': ids_lower[cs['DeliveryAircraft'].lower()] if cs.get('DeliveryAircraft') else None,
+        'actors': [ids_lower[a.lower()] for a in actors], 'shares': shares,
+        'valid_ground': tokens(cs.get('ValidGround', CRATE_VALID_GROUND)),
+        'valid_water': tokens(cs.get('ValidWater', CRATE_VALID_WATER)),
+    }
+    starting = []
+    for k, v in w.items():
+        if k.split('@')[0] != 'StartingUnits':
+            continue
+        starting.append({
+            'class': v.get('Class', 'none'),
+            'factions': tokens(v.get('Factions')),
+            'base_actor': ids_lower[v['BaseActor'].lower()] if v.get('BaseActor') else None,
+            # Names as OpenRA spells them; the engine skips types it does not have.
+            'support_actors': [x.upper() for x in tokens(v.get('SupportActors'))],
+            'inner_radius': int(v.get('InnerSupportRadius', STARTING_INNER_RADIUS)),
+            'outer_radius': int(v.get('OuterSupportRadius', STARTING_OUTER_RADIUS)),
+            'base_facing': int(v.get('BaseActorFacing', STARTING_BASE_FACING)),
+        })
+    tl = w['TimeLimitManager']
+    warnings = sorted(((int(m), n) for m, n in tl.get('TimeLimitWarnings', {}).items()), reverse=True)
+    time_limit = {'options': ints(tl['TimeLimitOptions']) if 'TimeLimitOptions' in tl else TIME_LIMIT_OPTIONS,
+                  'default': int(tl.get('TimeLimitDefault', 0)),
+                  'warnings': [m for m, _ in warnings],
+                  'notifications': [n for _, n in warnings]}
+    return {'crates': crates, 'starting_units': starting, 'time_limit': time_limit}
+
+
 def extra_actor(src, aid):
     """An actors.json-style record for a non-buildable actor, from the OpenRA YAML."""
     tree = src.rules[aid]
@@ -503,8 +893,8 @@ def extra_actor(src, aid):
         'name': name,
         'description': src.tr(src.g(tree, 'Buildable/Description')) or '',
         'tooltipDescriptions': tips,
-        'queue': 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t
-        else 'Building' if 'Building' in t else 'Vehicle',
+        'queue': 'Building' if aid in PROXIES or 'Building' in t else 'Vehicle' if 'Crate' in t or 'Husk' in t
+        else 'Aircraft' if 'Aircraft' in t else 'Infantry' if 'Infantry' in t or 'Parachutable' in t else 'Vehicle',
         'cost': int(src.g(tree, 'Valued/Cost') or 0),
         'buildDuration': None,
         'buildDurationModifier': None,
@@ -668,7 +1058,6 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
     # (weapon null: the engine shows the explosion without damage).
     explosions = [{'weapon': damaging(v['Weapon']), 'state': v.get('DamageState', 'Heavy').lower()}
                   for k, v in sorted(trait(t, 'ExplosionOnDamageTransition').items()) if isinstance(v, dict)]
-    cap = first(t, 'Capturable') if has(t, 'Capturable') else None
     trickle = None
     if has(t, 'CashTrickler'):
         c = next(iter(trait(t, 'CashTrickler').values()))
@@ -695,7 +1084,6 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
         c = t['SeedsResource'] if isinstance(t['SeedsResource'], dict) else {}
         seeds = {'resource': c.get('ResourceType', 'Ore').lower(), 'interval': int(c.get('Interval', SEED_INTERVAL)),
                  'max_range': int(c.get('MaxRange', SEED_MAX_RANGE))}
-    lost = first(t, 'OwnerLostAction')
     category, biomes = editor_info(t)
     gives = first(t, 'GivesCashOnCapture') if has(t, 'GivesCashOnCapture') else {}
     return {
@@ -706,13 +1094,10 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
         'indestructible': kind == 'building' and 'Health' not in t,
         # HiddenUnderShroud: seen once explored, also under the fog (trees, rocks, mines).
         'shroud_only': 'HiddenUnderShroud' in t,
-        'must_be_destroyed': has(t, 'MustBeDestroyed'),
-        'owner_lost': (lost.get('Action') or 'Kill').lower() if has(t, 'OwnerLostAction') else None,
         'death_weapons': death,
         # Husks of the neutral world (trees, V19); unit husks are not part of it.
         'spawn_on_death': ids_lower[spawn['Actor'].lower()] if isinstance(spawn, dict) and neutral else None,
         'damage_explosions': explosions,
-        'capturable': tokens(cap.get('Types')) if cap is not None else None,
         'cash_on_capture': int(gives.get('Amount', 0)),
         'cash_trickler': trickle,
         'hospital_heal': hospital_heal(t) if kind == 'infantry' else None,
@@ -722,6 +1107,10 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
         'bridge': bridge_info(t, ids_lower, tilesets, weapon_index) if 'Bridge' in t else None,
         'bridge_hut': 'LegacyBridgeHut' in t,
         'selectable': has(t, 'Selectable'),
+        # WithDeathAnimation of a structure without the damage type suffix (the
+        # tech buildings' "dead" sequence): one death animation where it stood.
+        'death_animation': kind == 'building' and isinstance(t.get('WithDeathAnimation'), dict)
+        and str(t['WithDeathAnimation'].get('UseDeathTypeSuffix', 'true')).lower() == 'false',
         # RadarColorFromTerrain: the radar shows it in a terrain colour (trees, mines, walls).
         'radar_terrain': (t['RadarColorFromTerrain'].get('Terrain') if isinstance(t.get('RadarColorFromTerrain'), dict) else None),
         'category': category,
@@ -767,7 +1156,8 @@ def main():
     for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS:
         a = actors[aid]
         t = a['traits']
-        kind = 'building' if 'Building' in t else 'mine' if 'Mine' in t else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle')
+        kind = ('proxy' if aid in PROXIES else 'building' if 'Building' in t else 'mine' if 'Mine' in t else 'crate' if 'Crate' in t else 'husk' if 'Husk' in t
+                else {'Infantry': 'infantry', 'Ship': 'ship', 'Aircraft': 'aircraft'}.get(a['queue'], 'vehicle'))
         attack = first(t, 'AttackTurreted') or first(t, 'AttackFrontal') or first(t, 'AttackTesla') or first(t, 'AttackOmni')
         e = {
             'id': aid,
@@ -779,6 +1169,8 @@ def main():
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
+            # Buildable.BuildLimit: owned plus queued at most (production.rs; 0 = none).
+            'build_limit': int(t['Buildable'].get('BuildLimit', 0) or 0) if isinstance(t.get('Buildable'), dict) else 0,
             'prerequisites': a['prerequisites'],
             'build_at': (t['Buildable'].get('BuildAtProductionType') if isinstance(t.get('Buildable'), dict) else None) or a['queue'],
             'hp': a['hp'],
@@ -804,9 +1196,46 @@ def main():
             'experience': experience_info(t),
             'gives_experience': gives_experience_info(t),
             'take_cover': take_cover_info(t) if kind == 'infantry' else None,
+            # Game rules of the lobby options (gamerules.rs): MustBeDestroyed
+            # (null: does not keep its owner in the game; else
+            # RequiredForShortGame), OwnerLostAction, GivesBounty (percent of
+            # the value; the trait requires the `global-bounty` lobby option)
+            # and the ^PlayerHandicaps multipliers.
+            'must_be_destroyed': must_be_destroyed(t),
+            'owner_lost': owner_lost(t),
+            'gives_bounty': gives_bounty(t),
+            'handicaps': 'HandicapDamageMultiplier' in t,
+            # SpawnActorOnDeath: the husk a ground vehicle leaves (husks.rs);
+            # HarvesterHuskModifier: [full husk, fullness threshold percent].
+            # (The neutral world's husks, trees and the oil pump, are its own: world.spawn_on_death.)
+            'spawn_on_death': None if aid in WORLD_ACTORS else spawn_on_death(t, kind, ids_lower),
+            'full_husk': full_husk(t, ids_lower),
+            # SpawnActorsOnSell (sell.rs), PrimaryBuilding (primary.rs) and ShakeOnDeath
+            # ([duration, intensity]: a camera shake when it dies, presentation only).
+            'sell_survivors': sell_survivors(t),
+            'primary_building': 'PrimaryBuilding' in t,
+            'shake_on_death': shake_on_death(t),
+            # FireWarheadsOnDeath RequiresCondition !no-ore: only an ore truck with ore explodes.
+            'death_needs_resources': isinstance(t.get('FireWarheadsOnDeath'), dict)
+            and t['FireWarheadsOnDeath'].get('RequiresCondition') == '!no-ore',
+            'husk': husk_info(t, actors, ids_lower, locos) if kind == 'husk' else None,
+            'crate': crate_info(t, ids_lower, weapon_index) if kind == 'crate' else None,
+            # ProducibleWithLevel: produced with levels while the owner has the prerequisites.
+            'producible_level': {'prerequisites': tokens(t['ProducibleWithLevel'].get('Prerequisites')),
+                                 'levels': int(t['ProducibleWithLevel'].get('InitialLevels', 1))}
+            if isinstance(t.get('ProducibleWithLevel'), dict) else None,
+            'fire_delays': [],
+            'targets_allies': False,
+            # WithDeathAnimation (infantry deaths per damage type, infantry.rs).
+            'death': death_info(t) if kind == 'infantry' else None,
+            # Infiltrates.Types this actor can be entered with (its Targetable types).
+            'infiltrate_types': [x for x in INFILTRATE_TYPES if x in target_types(t)],
+            # Targetable type Disguise: a Spy can disguise as it.
+            'disguisable': 'Disguise' in target_types(t),
             # The neutral world's traits (engine/src/neutral.rs).
             'world': {**world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, aid in WORLD_ACTORS), **tooltip_descriptions(a)},
         }
+        e['fire_delays'], e['targets_allies'] = armament_info(t)
         if e['world'].get('indestructible'):
             e['hp'] = 1  # no Health trait: never damaged (the engine needs a positive value)
         # Only what differs from the engine's defaults (neutral.rs WorldTraits):
@@ -857,8 +1286,69 @@ def main():
                                'reload_delay': int(pool.get('ReloadDelay', 50)),
                                'terrain': tokens(t['Minelayer'].get('TerrainTypes', 'Clear, Road')),
                                'rearm_actors': [ids_lower[x.lower()] for x in tokens(rearm.get('RearmActors')) if x.lower() in ids_lower]}
+        if 'EjectOnDeath' in t:
+            ej = t['EjectOnDeath'] if isinstance(t['EjectOnDeath'], dict) else {}
+            # OpenRA EjectOnDeathInfo defaults: PilotActor E1, SuccessRate 50,
+            # EjectInAir false, EjectOnGround false, AllowUnsuitableCell false.
+            truth = lambda k, d: str(ej.get(k, d)).lower() == 'true'
+            ab['eject_on_death'] = {'pilot': ids_lower[str(ej.get('PilotActor', 'E1')).lower()],
+                                    'success_rate': int(ej.get('SuccessRate', 50)),
+                                    'in_air': truth('EjectInAir', 'false'),
+                                    'on_ground': truth('EjectOnGround', 'false'),
+                                    'allow_unsuitable_cell': truth('AllowUnsuitableCell', 'false')}
         if 'MineImmune' in t:
             ab['mine_immune'] = {}
+        # Infantry abilities (infantry.rs): engineers, spies, thieves, Tanya, dogs.
+        if has(t, 'Captures'):
+            ab['captures'] = captures_info(t)
+        if has(t, 'Capturable'):
+            c = first(t, 'Capturable') or next(iter(trait(t, 'Capturable').values()))
+            c = c if isinstance(c, dict) else {}
+            ab['capturable'] = {'types': sorted({x for v in trait(t, 'Capturable').values() if isinstance(v, dict) for x in tokens(v.get('Types'))}),
+                                'cancel_activity': str(c.get('CancelActivity', 'False')).lower() == 'true'}
+            # TransformOnCapture of husks: `husk` (husks.rs restore_husk) has what they turn into.
+        if 'InstantlyRepairs' in t:
+            ab['instantly_repairs'] = {}
+        if 'InstantlyRepairable' in t:
+            ab['instantly_repairable'] = {}
+        if 'RepairsBridges' in t:
+            ab['repairs_bridges'] = {}
+        if has(t, 'Infiltrates'):
+            v = next(iter(trait(t, 'Infiltrates').values()))
+            v = v if isinstance(v, dict) else {}
+            ab['infiltrates'] = {'types': tokens(v.get('Types')),
+                                 'relationships': relationship_mask(v.get('ValidRelationships', 'Neutral, Enemy'))}
+        infiltrated = infiltrated_info(t, ids_lower)
+        if infiltrated:
+            ab['infiltrated'] = infiltrated
+        if 'Disguise' in t:
+            ab['disguise'] = {}
+        if 'IgnoresDisguise' in t:
+            ab['ignores_disguise'] = {}
+        if 'AnnounceOnKill' in t:
+            k = t['AnnounceOnKill'] if isinstance(t['AnnounceOnKill'], dict) else {}
+            ab['announce_on_kill'] = {'interval': int(k.get('Interval', ANNOUNCE_ON_KILL_INTERVAL))}
+        if 'Demolition' in t:
+            d = t['Demolition'] if isinstance(t['Demolition'], dict) else {}
+            ab['demolition'] = {'delay': int(d.get('DetonationDelay', DEMOLITION_DELAY)),
+                                'flashes': int(d.get('Flashes', DEMOLITION_FLASHES)),
+                                'flash_delay': int(d.get('FlashesDelay', DEMOLITION_FLASH_DELAY)),
+                                'flash_interval': int(d.get('FlashInterval', DEMOLITION_FLASH_INTERVAL))}
+        if has(t, 'Demolishable'):
+            ab['demolishable'] = {}
+        if 'AttackLeap' in t:
+            lp = t['AttackLeap'] if isinstance(t['AttackLeap'], dict) else {}
+            # GrantConditionWhileAiming `run` speeds the dog up (SpeedMultiplier
+            # requiring run); GrantConditionOnAttack `eating` pauses it after a bite.
+            run = [int(v['Modifier']) for v in trait(t, 'SpeedMultiplier').values()
+                   if isinstance(v, dict) and v.get('RequiresCondition') == 'run']
+            eat = t.get('GrantConditionOnAttack') if isinstance(t.get('GrantConditionOnAttack'), dict) else {}
+            ab['attack_leap'] = {'speed': wdist(lp.get('Speed', LEAP_SPEED)), 'run_speed': run[0] if run else 100,
+                                 'eat_ticks': int(eat.get('RevokeDelay', 0))}
+        if aid in PROXIES:
+            # ProvidesPrerequisite without a Prerequisite provides the actor's own name.
+            ab['proxy'] = {'provides': [(p.get('Prerequisite') if isinstance(p, dict) else None) or aid.lower()
+                                        for p in trait(t, 'ProvidesPrerequisite').values()]}
         if 'AcceptsDeliveredCash' in t:
             ab['accepts_cash'] = {}
         # Iron Curtain (ExternalCondition@INVULNERABILITY): the Demolition Truck's
@@ -930,7 +1420,8 @@ def main():
         powers = []
         for k, v in t.items():
             base = k.split('@')[0]
-            if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower'):
+            if base in ('ChronoshiftPower', 'GrantExternalConditionPower', 'NukePower', 'GpsPower', 'AirstrikePower', 'ParatroopersPower',
+                        'SpawnActorPower'):
                 v = v if isinstance(v, dict) else {}
                 power = {'key': k, 'kind': base, 'name': ftl.get(v.get('Name', ''), v.get('Name', base)),
                          'description': ftl.get(v.get('Description', ''), ''),
@@ -962,6 +1453,16 @@ def main():
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
                 if base == 'GpsPower':
                     power['reveal_delay'] = int(v.get('RevealDelay', 0))
+                if base == 'SpawnActorPower':
+                    # The Sonar Pulse spawns SONAR for LifeTime ticks: a DetectCloaked
+                    # detector without a body (infantry.rs).
+                    spawned = src.to_json(src.rules[v['Actor'].upper()])
+                    det = spawned.get('DetectCloaked') if isinstance(spawned.get('DetectCloaked'), dict) else {}
+                    power['duration'] = int(v.get('LifeTime', SPAWN_ACTOR_LIFETIME))
+                    power['terrain'] = tokens(v.get('Terrain'))
+                    power['allow_under_shroud'] = str(v.get('AllowUnderShroud', 'True')).lower() == 'true'
+                    power['detect_range'] = wdist(det.get('Range', '5c0'))
+                    power['detect_types'] = tokens(det.get('DetectionTypes', 'Cloak'))
                 power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
                 powers.append(power)
         if powers:
@@ -1042,6 +1543,8 @@ def main():
                     'interval': int(rb.get('RepairInterval', 24)),
                     'step': int(rb.get('RepairStep', 7)),
                     'bonuses': ints(rb.get('RepairBonuses', '100, 150, 175, 200, 220, 240, 260, 280, 300')),
+                    # PlayerExperience: what an allied repairer gains when the repair completes.
+                    'player_experience': int(rb.get('PlayerExperience', 0)),
                 }
             # Power down button (OpenRA ToggleConditionOnOrder with OrderName
             # PowerDown, ^DisableOnLowPowerOrPowerDown): the `powerdown` condition
@@ -1054,8 +1557,8 @@ def main():
             e['building']['value'] = int(csv.get('Value', a['cost'])) if isinstance(csv, dict) else a['cost']
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
-        elif kind == 'mine':
-            pass  # Immobile: no unit info.
+        elif kind in ('mine', 'crate', 'husk', 'proxy'):
+            pass  # Immobile mines, crates and husks, bodiless proxies: no unit info.
         else:
             if kind == 'aircraft':
                 # Aircraft have no Mobile trait: they fly over everything.
@@ -1163,6 +1666,7 @@ def main():
         # Cluster warheads add the weapons they fire while this runs.
         'weapons': [weapon_info(w, weapons, weapon_index) for w in used_weapons],
         'locomotors': [locomotor_info(l, locos) for l in used_locos],
+        'world': world_rules(src, ids_lower),
     }
     with open(OUT, 'w') as fh:
         json.dump(rules, fh, indent=1)
