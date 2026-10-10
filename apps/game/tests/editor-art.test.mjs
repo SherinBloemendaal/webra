@@ -236,3 +236,28 @@ test('palette parity: every actor of the rules is in exactly one palette group, 
     assert.ok(rules.some((a) => a.kind === kind && PALETTE_GROUPS.some((g) => g.test(a))), `${kind}s can be placed`);
   }
 });
+
+import { publishMap } from '../editor/js/online.js';
+import { canonicalJson } from '../editor/js/mapformat.js';
+
+test('publishing sends the map data only: canonical JSON, no pictures or installed art', async () => {
+  const map = JSON.parse(mapJson([{ type: '1TNK', owner: 0, x: 10, y: 10, facing: 256 }]));
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url, init });
+    return new Response(JSON.stringify({ id: 'abc', hash: 'h' }), { status: 201, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await publishMap(map);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].url, '/api/maps');
+  assert.equal(sent[0].init.headers['Content-Type'], 'application/json');
+  assert.equal(typeof sent[0].init.body, 'string');
+  assert.equal(sent[0].init.body, canonicalJson(map));
+  assert.deepEqual(Object.keys(JSON.parse(sent[0].init.body)).sort(), Object.keys(map).filter((k) => map[k] !== undefined).sort());
+  assert.doesNotMatch(sent[0].init.body, /data:image|base64,|png/i);
+});
