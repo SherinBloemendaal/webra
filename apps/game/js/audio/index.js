@@ -41,6 +41,16 @@ export const ORDER_METHODS = new Set([
 /** What counts as a button for the interface click sound (installClicks). */
 export const CLICKABLE = 'button, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [role="option"], summary, select, input[type="checkbox"], input[type="radio"]';
 
+/**
+ * Events that count as a user gesture for starting audio (HTML user
+ * activation): a touch only counts when it ends (pointerup, touchend), a
+ * mouse button when it goes down (pointerdown, mousedown), keys on keydown.
+ */
+export const GESTURE_EVENTS = Object.freeze(['pointerdown', 'pointerup', 'mousedown', 'touchend', 'keydown']);
+
+/** Seconds a background track (the menu's intro) fades out while the next track fades in, and the music fades when the player leaves a game. */
+export const MUSIC_FADE = 1.5;
+
 const now = () => performance.now() / 1000;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
@@ -74,6 +84,12 @@ export class AudioSystem {
     this.listening = false;
     /** A track the music player picked before music could play (audio still locked): played once it can. */
     this.pendingTrack = null;
+    /** The player left the game (leave): the music fades out and stays off until the page reloads into the menu. */
+    this.leaving = false;
+    /** The page's document: audio starts on its first user gesture (installUnlock), or before where the browser allows it. */
+    this.gestureDoc = null;
+    this.gesturesWatched = false;
+    this.autoplayTried = false;
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
@@ -117,21 +133,64 @@ export class AudioSystem {
     );
   }
 
-  /** Browsers only allow audio after a user gesture: unlock on the first one. */
+  /**
+   * Browsers only allow audio after a user gesture, unless their autoplay
+   * policy allows it (a site the player often plays sound on, a reload after
+   * leaving a game, browser settings). Audio starts on the first gesture
+   * anywhere on the page, and before that at once where the browser allows it
+   * (syncMusic: the menu music asks for it). The music follows every state
+   * change of the context (started, suspended, interrupted).
+   */
   installUnlock(doc) {
-    if (!doc) return;
-    const unlock = () => {
-      if (!this.mixer.unlock()) return;
-      if (this.mixer.ctx.state === 'running') {
-        doc.removeEventListener('pointerdown', unlock, true);
-        doc.removeEventListener('keydown', unlock, true);
-        this.syncMusic();
-      } else {
-        this.mixer.ctx.addEventListener('statechange', () => this.syncMusic(), { once: true });
-      }
+    this.mixer.onStateChange = () => {
+      this.watchGestures();
+      this.syncMusic();
+      this.changed();
     };
-    doc.addEventListener('pointerdown', unlock, true);
-    doc.addEventListener('keydown', unlock, true);
+    if (!doc) return;
+    this.gestureDoc = doc;
+    this.onGesture = () => {
+      if (!this.mixer.unlock()) {
+        // No Web Audio in this browser: no gesture will change that.
+        this.gestureDoc = null;
+        this.setGestureListeners(doc, false);
+        return;
+      }
+      this.watchGestures();
+      this.syncMusic();
+    };
+    this.watchGestures();
+  }
+
+  /** Listen for gestures while audio cannot play (not started yet, or suspended or interrupted since). */
+  watchGestures() {
+    const doc = this.gestureDoc;
+    if (!doc) return;
+    const want = !this.mixer.ready && this.mixer.ctx?.state !== 'closed';
+    if (want !== this.gesturesWatched) this.setGestureListeners(doc, want);
+  }
+
+  setGestureListeners(doc, on) {
+    this.gesturesWatched = on;
+    for (const type of GESTURE_EVENTS) {
+      if (on) doc.addEventListener(type, this.onGesture, true);
+      else doc.removeEventListener?.(type, this.onGesture, true);
+    }
+  }
+
+  /**
+   * Start audio before any gesture where the browser may allow it: when it
+   * says autoplay is allowed, or cannot tell (a context created then starts
+   * if allowed, and stays suspended until the first gesture otherwise; some
+   * browsers log a console warning for that). Tried once, when menu music
+   * would play.
+   */
+  tryAutoplay() {
+    if (this.autoplayTried || !this.gestureDoc || this.mixer.ctx) return;
+    this.autoplayTried = true;
+    if (this.mixer.autoplayPolicy() === 'blocked') return;
+    this.mixer.unlock();
+    this.watchGestures();
   }
 
   /** The content store (js/content/store.js); IndexedDB, or memory when the browser blocks it. */
@@ -240,6 +299,8 @@ export class AudioSystem {
       allied,
     });
     this.inGame = true;
+    // The menu's intro paused by the player stays paused: resuming it in the game starts the playlist instead.
+    if (this.jukebox.paused?.background) this.jukebox.paused = { index: -1, buffer: null, at: 0, background: null };
     this.syncMusic();
   }
 
@@ -369,6 +430,11 @@ export class AudioSystem {
    * most `maxSeconds`, so the page can unload after it.
    */
   async leave(maxSeconds = 2.5) {
+    // The music fades out under the line; the menu's music starts after the reload.
+    this.leaving = true;
+    this.pendingTrack = null;
+    if (this.jukebox.handle) this.jukebox.stop({ fade: MUSIC_FADE });
+    else this.syncMusic();
     const key = PLAYER_LINES.leave;
     this.announce(key);
     if (!key || !this.prefs.get().enabled || !this.mixer.ready) return;
@@ -498,23 +564,32 @@ export class AudioSystem {
   musicWanted() {
     const p = this.prefs.get();
     // The playlist holds pack music, plus the installed originals when they are on (music.js).
-    return (this.inGame || this.listening) && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
+    return (this.inGame || this.listening) && !this.leaving && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
   }
 
   /**
-   * The background track that should play now, or null (OpenRA
-   * MusicPlaylist): the score or map track once the game is over, the intro
-   * behind the main menu (the shellmap's BackgroundMusic, unless "Main menu
-   * music" is off), while the player has not picked a track.
+   * The background track the settings and the screen ask for, whether or
+   * not audio can play yet, or null (OpenRA MusicPlaylist): the score or map
+   * track once the game is over, the intro behind the main menu and its
+   * screens (skirmish lobby, online games, campaign, settings: the
+   * shellmap's BackgroundMusic, unless "Main menu music" is off), while the
+   * player has not picked, stopped or paused a track.
    */
-  backgroundTrack() {
+  wantedBackground() {
     const p = this.prefs.get();
-    if (!p.enabled || !p.musicOn || p.music <= 0 || !this.mixer.ready || this.jukebox.stoppedByUser || this.jukebox.paused) return null;
+    if (this.leaving || !p.enabled || !p.musicOn || p.music <= 0 || this.jukebox.stoppedByUser || this.jukebox.paused) return null;
     const track = this.inGame ? this.gameOverTrack : !this.listening && p.menuMusic ? BACKGROUND_MUSIC.menu : null;
     return track && this.jukebox.has(track) ? track : null;
   }
 
+  /** The background track that should play now (audio running), or null. */
+  backgroundTrack() {
+    return this.mixer.ready ? this.wantedBackground() : null;
+  }
+
   syncMusic() {
+    // The menu music is the first thing that wants audio before a gesture.
+    if (!this.mixer.ctx && this.wantedBackground()) this.tryAutoplay();
     if (this.pendingTrack !== null && this.musicWanted()) {
       const index = this.pendingTrack;
       this.pendingTrack = null;
@@ -527,13 +602,18 @@ export class AudioSystem {
       if (this.jukebox.background !== bg) this.jukebox.playBackground(bg);
       return;
     }
-    // The background ended its turn (a game started, the menu music was switched off).
-    if (this.jukebox.background) this.jukebox.stop();
+    // The background ended its turn (a game started, the menu music was switched off): it fades into what follows.
+    if (this.jukebox.background) this.jukebox.stop({ fade: MUSIC_FADE });
     // The music hotkeys may have stopped or paused it: it stays so until the player starts it again.
     const want = this.musicWanted() && !this.jukebox.stoppedByUser && !this.jukebox.paused;
     // A playlist that ended (repeat off) stays quiet until the player asks for the next track.
-    if (want && !this.jukebox.handle && !this.jukebox.finished) this.jukebox.start();
-    else if (!want && this.jukebox.handle) this.jukebox.stop();
+    if (want && !this.jukebox.handle && !this.jukebox.finished) {
+      this.jukebox.start();
+      return;
+    }
+    if (!want && this.jukebox.handle) this.jukebox.stop();
+    // Nothing follows the faded background now: a track started later begins at once.
+    this.jukebox.fadeIn = 0;
   }
 
   /** Background music for the rest of the game (OpenRA MusicPlaylist.GameOver), when it is installed. */

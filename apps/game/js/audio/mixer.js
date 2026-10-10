@@ -1,7 +1,8 @@
-// Web Audio output: one AudioContext (created on the first user gesture, as
-// browsers require), a bus per volume setting into a master gain and a
-// limiter, and a voice limit per bus so thousands of units can never start
-// thousands of sources.
+// Web Audio output: one AudioContext (created as soon as the browser lets
+// audio start: at once when autoplay is allowed, otherwise on the first user
+// gesture), a bus per volume setting into a master gain and a limiter, and a
+// voice limit per bus so thousands of units can never start thousands of
+// sources.
 
 import { busGain } from './prefs.js';
 
@@ -14,18 +15,42 @@ export class Mixer {
     this.buses = null;
     this.active = { effects: [], voices: [], music: [] };
     this.prefs = null;
+    /** Called when the context starts, is suspended or interrupted (its statechange event). */
+    this.onStateChange = null;
   }
 
   get ready() {
     return !!this.ctx && this.ctx.state === 'running';
   }
 
-  /** Create or resume the context. Call from a user gesture (click, key). */
+  /**
+   * Whether the browser lets an AudioContext start without a user gesture
+   * now (Autoplay Policy Detection, navigator.getAutoplayPolicy): 'allowed',
+   * 'blocked' (also 'allowed-muted', which is no use for sound), or 'unknown'
+   * when the browser cannot tell. A context created then starts if the
+   * browser allows it, and stays suspended until the first gesture otherwise.
+   */
+  autoplayPolicy() {
+    const nav = globalThis.navigator;
+    if (typeof nav?.getAutoplayPolicy !== 'function') return 'unknown';
+    try {
+      return nav.getAutoplayPolicy('audiocontext') === 'allowed' ? 'allowed' : 'blocked';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Create or resume the context. From a user gesture (click, key, touch) it
+   * starts; outside one it starts only where the browser allows autoplay.
+   * Returns false when the browser has no Web Audio.
+   */
   unlock() {
     if (!this.ctx) {
       const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
       if (!AC) return false;
       this.ctx = new AC({ latencyHint: 'interactive' });
+      this.ctx.addEventListener?.('statechange', () => this.onStateChange?.(this.ctx.state));
       const limiter = this.ctx.createDynamicsCompressor();
       limiter.threshold.value = -10;
       limiter.knee.value = 6;
@@ -43,7 +68,8 @@ export class Mixer {
       }
       if (this.prefs) this.apply(this.prefs);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    // 'interrupted': Safari, after a phone call or another app took the audio.
+    if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') this.ctx.resume().catch(() => {});
     return true;
   }
 
@@ -65,11 +91,12 @@ export class Mixer {
   }
 
   /**
-   * Start a buffer on a bus, `offset` seconds into it. Returns a handle
-   * { stop(), ended: Promise, position(): seconds played into the buffer } or
-   * null when the context is not running or the bus is full of louder sounds.
+   * Start a buffer on a bus, `offset` seconds into it, rising from silence
+   * over `fadeIn` seconds. Returns a handle { stop(), fadeOut(seconds),
+   * ended: Promise, position(): seconds played into the buffer } or null when
+   * the context is not running or the bus is full of louder sounds.
    */
-  play(buffer, { bus = 'effects', gain = 1, pan = 0, rate = 1, onEnded = null, offset = 0 } = {}) {
+  play(buffer, { bus = 'effects', gain = 1, pan = 0, rate = 1, onEnded = null, offset = 0, fadeIn = 0 } = {}) {
     if (!this.ready || !buffer) return null;
     if (this.prefs && busGain(this.prefs, bus) <= 0 && bus !== 'music') return null;
     const list = this.active[bus];
@@ -86,7 +113,12 @@ export class Mixer {
     src.buffer = buffer;
     src.playbackRate.value = rate;
     const g = ctx.createGain();
-    g.gain.value = gain;
+    if (fadeIn > 0) {
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(gain, ctx.currentTime + fadeIn);
+    } else {
+      g.gain.value = gain;
+    }
     src.connect(g);
     let tail = g;
     if (pan && ctx.createStereoPanner) {
@@ -107,6 +139,18 @@ export class Mixer {
           src.stop();
         } catch {
           // already stopped
+        }
+      },
+      /** Fade to silence over `seconds`, then stop (ended resolves then). */
+      fadeOut: (seconds) => {
+        const t = ctx.currentTime;
+        try {
+          g.gain.cancelScheduledValues(t);
+          g.gain.setValueAtTime(g.gain.value, t);
+          g.gain.linearRampToValueAtTime(0, t + seconds);
+          src.stop(t + seconds);
+        } catch {
+          handle.stop();
         }
       },
     };

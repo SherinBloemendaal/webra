@@ -63,6 +63,8 @@ export class Jukebox {
     /** Paused (OpenRA PauseMusic): { index, buffer, at } to resume from, or null. */
     this.paused = null;
     this.buffer = null;
+    /** Seconds the next track rises from silence (after a faded out background track), 0 for at once. */
+    this.fadeIn = 0;
     /** Seconds per track file, once known (the AUD header, a texture pack track's length, a played track). */
     this.lengths = new Map();
   }
@@ -114,7 +116,8 @@ export class Jukebox {
     if (!this.handle && !this.finished) await this.next();
   }
 
-  stop() {
+  /** Stop the music; with `fade` (seconds) the track fades out and the next one fades in. */
+  stop({ fade = 0 } = {}) {
     this.wanted = false;
     this.background = null;
     this.token++;
@@ -122,7 +125,9 @@ export class Jukebox {
     this.handle = null;
     this.playing = null;
     this.paused = null;
-    h?.stop();
+    this.fadeIn = h && fade > 0 ? fade : 0;
+    if (h && fade > 0 && h.fadeOut) h.fadeOut(fade);
+    else h?.stop();
     this.onChange();
   }
 
@@ -295,7 +300,13 @@ export class Jukebox {
     old?.stop();
     this.background = track;
     const buffer = this.packBuffer(track) ?? (await this.load(track, token));
-    if (!buffer || token !== this.token) return false;
+    if (token !== this.token) return false;
+    if (!buffer) {
+      // Not loadable (a broken file, original sounds switched off meanwhile): nothing plays, so the next sync may try again.
+      this.background = null;
+      this.onChange();
+      return false;
+    }
     this.play(track, buffer, token);
     return true;
   }
@@ -355,10 +366,13 @@ export class Jukebox {
     this.stoppedByUser = false;
     this.playing = track.title;
     this.buffer = buffer;
+    const fadeIn = this.fadeIn;
+    this.fadeIn = 0;
     this.handle = this.mixer.play(buffer, {
       bus: 'music',
       gain: track.volume ?? 1,
       offset,
+      fadeIn,
       onEnded: () => {
         if (token !== this.token || !this.wanted) return;
         if (this.background === track) this.play(track, buffer, ++this.token);
