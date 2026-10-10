@@ -261,69 +261,11 @@ export function convertOramap(input, opts) {
   }
   const luaFiles = files.filter((f) => /\.lua$/i.test(f));
 
-  // ---- Terrain on the full map ----------------------------------------------------------
-  const full = new Uint8Array(W * H);
-  const letterCounts = new Map();
-  let unknownTemplates = 0;
-  let missingTiles = 0;
-  const pickAny = new Set(PICK_ANY[tileset] ?? []);
-  for (let i = 0; i < W * H; i++) {
-    const type = bin.tileType[i];
-    const letters = templateLetters(tileset, type);
-    let letter = 'c';
-    if (letters === undefined) {
-      unknownTemplates++;
-    } else {
-      let idx = bin.tileIndex[i];
-      if (pickAny.has(type) && idx >= letters.length) idx %= letters.length;
-      const l = letters[idx];
-      if (l === undefined || l === '.') missingTiles++;
-      else letter = l;
-    }
-    full[i] = ORA_TO_WEBRA_TERRAIN[letter];
-    const x = i % W;
-    const y = (i - x) / W;
-    if (x >= bx && x < bx + bw && y >= by && y < by + bh) bump(letterCounts, letter);
-  }
-  if (unknownTemplates) report.warnings.push(`${unknownTemplates} cells use tile templates the ${tileset} tileset does not have; they became clear ground.`);
-  if (missingTiles) report.warnings.push(`${missingTiles} cells use tiles their template does not have; they became clear ground.`);
-
-  // ---- Resources (OpenRA density recalculation, on the full map) -------------------------
-  const ore = new Uint8Array(W * H);
-  const gems = new Uint8Array(W * H);
-  const resourceCounts = new Map();
-  const unknownResources = new Map();
-  let resourcesBlocked = 0;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      const type = bin.resType[i];
-      if (type === 0) continue;
-      const info = RESOURCE_TYPES[type];
-      if (!info) {
-        bump(unknownResources, `type ${type}`);
-        continue;
-      }
-      let adjacent = 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && ny >= 0 && nx < W && ny < H && bin.resType[ny * W + nx] === type) adjacent++;
-        }
-      }
-      // OpenRA ResourceLayer: density = max(lerp(0, MaxDensity, adjacent, 9), 1).
-      const density = Math.max(Math.floor((info.maxDensity * adjacent) / 9), 1);
-      const t = full[i];
-      if (t !== TERRAIN.CLEAR && t !== TERRAIN.ROUGH) {
-        if (x >= bx && x < bx + bw && y >= by && y < by + bh) resourcesBlocked++;
-        continue;
-      }
-      // A cell holds one resource type (map.bin has one per cell), so ore and gems never share a cell.
-      (info.webra === 'gems' ? gems : ore)[i] = density;
-      if (x >= bx && x < bx + bw && y >= by && y < by + bh) bump(resourceCounts, info.name);
-    }
-  }
+  // ---- Terrain and resources on the full map ------------------------------------------
+  const { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked } = convertTerrain(
+    { tileset, bin, bounds: [bx, by, bw, bh] },
+    report,
+  );
 
   // ---- Actors -------------------------------------------------------------------------------
   const actorsNode = child(yaml, 'Actors')?.nodes ?? [];
@@ -581,6 +523,85 @@ export function convertOramap(input, opts) {
 // ---- Rules and weapons ------------------------------------------------------------------
 
 /** Rules nodes of map.yaml: inline children plus files listed in the value. */
+/**
+ * Terrain and resources of a whole OpenRA map (before cropping): every
+ * cell's tile looked up in the tileset tables and mapped to WebRA terrain,
+ * ore and gems with OpenRA's density recalculation. Warnings go to
+ * `report`; the counts are for its summary (cells inside `bounds`).
+ * Shared by `convertOramap` and the mission converter (mission.js).
+ * @param {{ tileset: string, bin: ReturnType<import('./mapbin.js').readMapBin>, bounds: number[] }} input
+ * @param {{ warnings: string[] }} report
+ */
+export function convertTerrain({ tileset, bin, bounds }, report) {
+  const W = bin.width;
+  const H = bin.height;
+  const [bx, by, bw, bh] = bounds;
+  const full = new Uint8Array(W * H);
+  const letterCounts = new Map();
+  let unknownTemplates = 0;
+  let missingTiles = 0;
+  const pickAny = new Set(PICK_ANY[tileset] ?? []);
+  for (let i = 0; i < W * H; i++) {
+    const type = bin.tileType[i];
+    const letters = templateLetters(tileset, type);
+    let letter = 'c';
+    if (letters === undefined) {
+      unknownTemplates++;
+    } else {
+      let idx = bin.tileIndex[i];
+      if (pickAny.has(type) && idx >= letters.length) idx %= letters.length;
+      const l = letters[idx];
+      if (l === undefined || l === '.') missingTiles++;
+      else letter = l;
+    }
+    full[i] = ORA_TO_WEBRA_TERRAIN[letter];
+    const x = i % W;
+    const y = (i - x) / W;
+    if (x >= bx && x < bx + bw && y >= by && y < by + bh) bump(letterCounts, letter);
+  }
+  if (unknownTemplates) report.warnings.push(`${unknownTemplates} cells use tile templates the ${tileset} tileset does not have; they became clear ground.`);
+  if (missingTiles) report.warnings.push(`${missingTiles} cells use tiles their template does not have; they became clear ground.`);
+
+  // Resources, with OpenRA's density recalculation.
+  const ore = new Uint8Array(W * H);
+  const gems = new Uint8Array(W * H);
+  const resourceCounts = new Map();
+  const unknownResources = new Map();
+  let resourcesBlocked = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const type = bin.resType[i];
+      if (type === 0) continue;
+      const info = RESOURCE_TYPES[type];
+      if (!info) {
+        bump(unknownResources, `type ${type}`);
+        continue;
+      }
+      let adjacent = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H && bin.resType[ny * W + nx] === type) adjacent++;
+        }
+      }
+      // OpenRA ResourceLayer: density = max(lerp(0, MaxDensity, adjacent, 9), 1).
+      const density = Math.max(Math.floor((info.maxDensity * adjacent) / 9), 1);
+      const t = full[i];
+      if (t !== TERRAIN.CLEAR && t !== TERRAIN.ROUGH) {
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) resourcesBlocked++;
+        continue;
+      }
+      // A cell holds one resource type (map.bin has one per cell), so ore and gems never share a cell.
+      (info.webra === 'gems' ? gems : ore)[i] = density;
+      if (x >= bx && x < bx + bw && y >= by && y < by + bh) bump(resourceCounts, info.name);
+    }
+  }
+
+  return { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked };
+}
+
 function collectNodes(yaml, key, yamlFile, report) {
   const node = child(yaml, key);
   if (!node) return [];
