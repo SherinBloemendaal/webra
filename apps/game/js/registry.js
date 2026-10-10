@@ -240,7 +240,7 @@ export const GROUPS = deepFreeze({
         type: 'boolean',
         default: true,
         label: 'Send error reports',
-        help: 'When something breaks, the game and the website in this browser send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account. The server reports its own errors either way, without player data.',
+        help: 'When the site has error reporting on and something breaks, the game and the website in this browser send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account. The server then reports its own errors either way, without player data.',
       },
     },
   },

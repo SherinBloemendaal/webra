@@ -159,6 +159,15 @@
         </p>
 
         <h2 id="error-reports">Error reports</h2>
+        <!-- The build keeps the section that applies (tools/sentry-config.mjs privacySections). -->
+        <!-- error-reports:off -->
+        <p>
+          Error reporting is currently off: neither your browser nor WebRA's server sends error reports anywhere. If the
+          site's operator turns it on, this section will say what a report holds and where it goes, and offer a switch to
+          turn it off for your browser.
+        </p>
+        <!-- /error-reports:off -->
+        <!-- error-reports:on -->
         <p>
           When something breaks in the game or on this website, your browser sends an error report to WebRA's own
           <a href="https://sentry.io/">Sentry</a> server at <code>sentry.vitrion.dev</code>, run by WebRA's maintainer (not
@@ -205,6 +214,7 @@
           server. Those reports hold the error, the address on WebRA's site that was asked for (without anything after
           <code>?</code>) and the method, never your account, network address, cookies, headers or what you sent.
         </p>
+        <!-- /error-reports:on -->
 
         <h2>Original Red Alert files</h2>
         <p>

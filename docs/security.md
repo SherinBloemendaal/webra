@@ -735,9 +735,14 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
 
 ## Error reports (2026-10-10)
 
-The game, the map editor, the website and the Worker report errors to
+The game, the map editor, the website and the Worker can report errors to
 WebRA's self-hosted Sentry at `sentry.vitrion.dev` (one project; its DSN is a
-public client key, set at build time: docs/deploy.md, "Error reports").
+public client key). Reporting is opt-in for the operator: no DSN is built in,
+and only a deploy with the repository variable `SENTRY_DSN` set reports
+anything (docs/deploy.md, "Error reports"). Without it the browser never
+loads the SDK, the Worker's wrapper does nothing, and the build writes the
+privacy notice's "Error reporting is currently off" section instead of the
+description below (`privacySections`, tools/sentry-config.mjs).
 
 - **What is sent.** Errors nothing caught (`window` error and
   `unhandledrejection`, the Worker's handlers), errors the code reports on
@@ -790,7 +795,8 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   wherever it shows up in a report. Residual risk: text that reaches an error
   message without passing those points (none is known) would only lose its
   URLs, email addresses and tokens.
-- **Consent.** Reports are on by default and the player switches them off in
+- **Consent.** Once the operator has turned reporting on, reports are on by
+  default and the player switches them off in
   the game's Settings (Privacy) or on the privacy page; it is the settings
   registry's `privacy.errorReports`, synced with the account. It is read
   from localStorage before anything loads: switched off, the SDK is never
@@ -800,7 +806,7 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   Defaults button never switches it back on. The switch covers what this
   browser sends: the Worker reports its own errors whatever it says, also of
   a player's request that failed, with none of the player's data (above).
-- **Loading and CSP.** The SDK is bundled by `tools/build-dist.mjs` into
+- **Loading and CSP.** With a DSN, the SDK is bundled by `tools/build-dist.mjs` into
   `/play/vendor/sentry.js` and `/lib/vendor/sentry.js` (only what WebRA uses:
   no replay or feedback code) and loaded from the site's own origin: the CSP
   keeps `script-src 'self'`. Only `connect-src` gained

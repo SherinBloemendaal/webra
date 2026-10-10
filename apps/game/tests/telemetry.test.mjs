@@ -35,7 +35,7 @@ import { createSettings } from '../js/settings.js';
 import { MENU_HELP_KEYS, MENU_SETTINGS } from '../js/gamemenu.js';
 import { HELP } from '../js/help.js';
 import { SITE_HEADERS } from '../../server/src/static-headers.js';
-import { connectSources, DEFAULT_SENTRY_DSN, sentryBuildConfig } from '../../../tools/sentry-config.mjs';
+import { connectSources, sentryBuildConfig } from '../../../tools/sentry-config.mjs';
 import { buildSentryBundle } from '../../../tools/vendor-sentry.mjs';
 import { WASM_PATH } from './sim-fixtures.mjs';
 
@@ -103,11 +103,12 @@ test('the repository build has no DSN: init, reports and tags do nothing and the
   assert.equal(active(), false);
 });
 
-test('a local build (no WEBRA_ENV) has no DSN unless SENTRY_DSN is set; production builds have the default', () => {
+test('no build has a DSN unless SENTRY_DSN is set, production builds included', () => {
   assert.equal(sentryBuildConfig({}).dsn, '');
   assert.equal(sentryBuildConfig({ NODE_ENV: 'test' }).dsn, '');
-  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production' }).dsn, DEFAULT_SENTRY_DSN);
+  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production' }).dsn, '');
   assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: 'off' }).dsn, '');
+  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: CONFIG.dsn }).dsn, CONFIG.dsn);
 });
 
 // ---- The player's switch ------------------------------------------------------------------
@@ -174,9 +175,11 @@ test('the switch is in the settings registry, the account document, the game men
   assert.equal(MENU_SETTINGS.includes('errorReports'), false, 'Defaults never switch reports back on');
   // The switch covers this browser; the server's own reports hold no player data.
   assert.match(HELP['settings.errorReports'], /covers this browser/);
-  assert.match(HELP['settings.errorReports'], /server reports its own errors either way/);
+  assert.match(HELP['settings.errorReports'], /server then reports its own errors either way/);
+  assert.match(HELP['settings.errorReports'], /operator has turned error reporting on/);
   const privacy = readFileSync(new URL('../../website/privacy.html', import.meta.url), 'utf8');
   assert.match(privacy, /The switch covers this browser/);
+  assert.match(privacy, /Error reporting is currently off/);
   assert.match(privacy, /WebRA's server reports its own errors whatever the switch says/);
   assert.match(privacy, /reports from your browser also tell Sentry not to take it\s+from the connection/);
 });
@@ -442,7 +445,7 @@ test('the CSP lets the game and the website reach sentry.vitrion.dev and nothing
   const headers = readFileSync(new URL('../../website/_headers', import.meta.url), 'utf8');
   assert.deepEqual(connectSources(headers), ["'self'", 'wss://webra.sherin.dev', 'https://sentry.vitrion.dev']);
   assert.ok(SITE_HEADERS['Content-Security-Policy'].includes("connect-src 'self' wss://webra.sherin.dev https://sentry.vitrion.dev;"));
-  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production' }).origin, 'https://sentry.vitrion.dev');
+  assert.equal(sentryBuildConfig({ SENTRY_DSN: 'https://0123456789abcdef0123456789abcdef@sentry.vitrion.dev/121' }).origin, 'https://sentry.vitrion.dev');
   // Scripts still come from this origin only: the SDK is vendored, never a CDN.
   assert.ok(SITE_HEADERS['Content-Security-Policy'].includes("script-src 'self' 'wasm-unsafe-eval';"));
   for (const page of ['../index.html', '../editor/index.html']) {

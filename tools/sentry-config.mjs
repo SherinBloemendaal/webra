@@ -1,11 +1,12 @@
 // Error report configuration of a build (docs/deploy.md and docs/security.md,
 // "Error reports"), from the environment:
 //
-//   SENTRY_DSN                 the project's DSN (public client key). Unset or
-//                              empty: the default below in production builds
-//                              (WEBRA_ENV=production, set by the deploy
-//                              workflow), none otherwise. "off": none.
-//   SENTRY_ENVIRONMENT         default "production" in production builds, else "dev"
+//   SENTRY_DSN                 the project's DSN (public client key). Error
+//                              reports are opt-in: unset, empty or "off", nothing
+//                              is reported. The deploy workflow takes it from the
+//                              repository variable SENTRY_DSN (docs/deploy.md).
+//   SENTRY_ENVIRONMENT         default "production" in production builds
+//                              (WEBRA_ENV=production), else "dev"
 //   SENTRY_TRACES_SAMPLE_RATE  share of page loads and requests traced, 0 to 1 (default 0.05)
 //
 // tools/build-dist.mjs writes it into the client (js/telemetry/config.js);
@@ -15,12 +16,12 @@
 //   node tools/sentry-config.mjs release       # webra@<version>+<commit> of dist/version.json
 //   node tools/sentry-config.mjs environment   # the Sentry environment
 //
-// Without a DSN nothing is reported: tests and local builds send nothing.
+// Without a DSN nothing is reported and the privacy notice says error
+// reporting is off (`privacySections`). No DSN is built in anywhere.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_SENTRY_DSN = 'https://<public key>@sentry.vitrion.dev/121';
 export const DEFAULT_TRACES_SAMPLE_RATE = 0.05;
 /** A Sentry DSN: https, a 32 hex public key, a host and a numeric project id. */
 const DSN_RE = /^https:\/\/[0-9a-f]{32}@([a-z0-9.-]+(?::\d{1,5})?)\/\d+$/;
@@ -36,7 +37,7 @@ export const releaseName = (build) => `webra@${build}`;
 export function sentryBuildConfig(env = process.env) {
   const production = env.WEBRA_ENV === 'production';
   const raw = (env.SENTRY_DSN ?? '').trim();
-  const dsn = raw === 'off' ? '' : raw || (production ? DEFAULT_SENTRY_DSN : '');
+  const dsn = raw === 'off' ? '' : raw;
   const m = dsn ? DSN_RE.exec(dsn) : null;
   if (dsn && !m) throw new Error('SENTRY_DSN is not a Sentry DSN (https://<32 hex key>@<host>/<project id>)');
   const rateRaw = (env.SENTRY_TRACES_SAMPLE_RATE ?? '').trim();
@@ -66,6 +67,21 @@ export function clientConfigModule({ dsn, environment, tracesSampleRate }, relea
 export function connectSources(headersText) {
   const m = /Content-Security-Policy:[^\n]*?connect-src ([^;\n]+)/.exec(headersText);
   return m ? m[1].trim().split(/\s+/) : [];
+}
+
+const SECTION = (state) => new RegExp(`<!-- error-reports:${state} -->([\\s\\S]*?)<!-- /error-reports:${state} -->\\n?`, 'g');
+
+/**
+ * apps/website/privacy.html for this build: the error report section that
+ * applies (`<!-- error-reports:on -->` when reports are on, `off` otherwise)
+ * stays without its markers, the other one goes. Throws when the page lacks
+ * either section, so the notice never says nothing or both.
+ */
+export function privacySections(html, on) {
+  for (const state of ['on', 'off']) {
+    if ((html.match(SECTION(state)) ?? []).length !== 1) throw new Error(`privacy.html needs exactly one <!-- error-reports:${state} --> section`);
+  }
+  return html.replace(SECTION(on ? 'on' : 'off'), '$1').replace(SECTION(on ? 'off' : 'on'), '');
 }
 
 /** wrangler deploy arguments that set the Worker's variables (apps/server/src/telemetry.js). */

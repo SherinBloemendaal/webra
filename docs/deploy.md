@@ -55,10 +55,11 @@ npm run build        # assembles dist/
 - `packages/protocol/src` to `dist/play/protocol/`
 - writes `dist/version.json`: `{ version, commit, builtAt }`, version from the
   root `package.json`, commit from `git rev-parse HEAD`
-- bundles the error report SDK (`@sentry/browser`, `tools/vendor-sentry.mjs`)
-  into `dist/play/vendor/sentry.js` and `dist/lib/vendor/sentry.js` with a
-  source map, and writes this build's error report settings into
-  `js/telemetry/config.js` there (see Error reports below)
+- writes this build's error report settings into `js/telemetry/config.js`
+  under `dist/play/` and `dist/lib/` and keeps the privacy notice's section
+  that applies; with a DSN, bundles the error report SDK (`@sentry/browser`,
+  `tools/vendor-sentry.mjs`) into `dist/play/vendor/sentry.js` and
+  `dist/lib/vendor/sentry.js` with a source map (see Error reports below)
 
 It stops with an error when `apps/game/pkg/webra_sim_bg.wasm` is missing, so a
 deploy can never ship a game without its engine.
@@ -73,7 +74,8 @@ dispatch (Actions, Deploy, Run workflow):
 2. `deploy` (GitHub environment `production`): installs Rust with the
    `wasm32-unknown-unknown` target, wasm-pack and Node 22, then `npm ci`,
    `npm run build:wasm` (with `WEBRA_GIT_HASH` set to the commit),
-   `npm run build` (with `WEBRA_ENV=production`, so error reports are on),
+   `npm run build` (with `WEBRA_ENV=production` and the error report
+   variables, see Error reports),
    and from `apps/server`:
    - `npx wrangler d1 migrations apply webra --remote`, only when
      `apps/server/migrations` exists
@@ -148,7 +150,7 @@ Node 22 installed:
 ```bash
 npm ci
 WEBRA_GIT_HASH=$(git rev-parse HEAD) npm run build:wasm
-WEBRA_ENV=production npm run build   # error reports on, like the deploy workflow
+WEBRA_ENV=production npm run build   # add SENTRY_DSN=<dsn> once error reports are turned on
 cd apps/server
 npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 # The d1 commands ignore account_id in wrangler.jsonc; with a login that sees
@@ -357,26 +359,55 @@ it locally: `npx wrangler dev --test-scheduled`, then
 
 ## Error reports
 
-The game, the map editor, the website and the Worker report errors to the
+The game, the map editor, the website and the Worker can report errors to the
 self-hosted Sentry at <https://sentry.vitrion.dev> (what a report holds and
 what it never holds: docs/security.md, "Error reports", and the privacy
-notice). Players switch reports off in the game's Settings (Privacy) or on
-the privacy page.
+notice). Reporting is **opt-in for the operator**: no DSN is built in, and
+until the repository variable `SENTRY_DSN` is set, deploys bundle no DSN, the
+browser never loads the SDK, the Worker's wrapper does nothing, and the
+privacy notice says "Error reporting is currently off". Once it is on,
+players switch reports off for their browser in the game's Settings
+(Privacy) or on the privacy page.
+
+### Turning error reports on
+
+In this order (the privacy notice describes the project settings of step 1
+as soon as step 2 is deployed):
+
+1. In Sentry (sentry.vitrion.dev), project settings of the WebRA project (id
+   121), Security & Privacy:
+   - turn **"Prevent Storing of IP Addresses"** on;
+   - set the **event retention to 90 days** (the privacy notice says so; on
+     self-hosted Sentry this is `SENTRY_EVENT_RETENTION_DAYS=90`);
+   - keep the default data scrubbers on (recommended).
+2. In GitHub (Settings, Secrets and variables, Actions, Variables): add the
+   repository variable `SENTRY_DSN` with the project's DSN:
+
+   ```
+   https://<public key>@sentry.vitrion.dev/121
+   ```
+
+   The next deploy builds the game and the website with it and passes it to
+   the Worker. Optional variables: `SENTRY_ENVIRONMENT` (default
+   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.05`).
+3. Optional, for releases, source files and deploy markers: see below.
+
+To turn reporting off again, delete the variable (or set it to `off`) and
+deploy.
 
 Configuration (`tools/sentry-config.mjs`), from the environment of `npm run
 build` and, for the Worker, passed by the deploy workflow as `--var`:
 
 | Name | Default | Purpose |
 |------|---------|---------|
-| `SENTRY_DSN` | the project's DSN in production builds (`WEBRA_ENV=production`), none otherwise | Where reports go (a public client key, not a secret). `off` turns reports off; a DSN for another host needs that host in the CSP `connect-src` (`apps/website/_headers` and `apps/server/src/static-headers.js`), or the build stops |
-| `SENTRY_ENVIRONMENT` | `production` in production builds, else `dev` | The Sentry environment |
+| `SENTRY_DSN` | none: nothing is reported | Where reports go (a public client key, not a secret). `off` is the same as unset. A DSN for another host needs that host in the CSP `connect-src` (`apps/website/_headers` and `apps/server/src/static-headers.js`), or the build stops |
+| `SENTRY_ENVIRONMENT` | `production` in production builds (`WEBRA_ENV=production`), else `dev` | The Sentry environment |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of page loads and Worker requests sent as performance traces (0 to 1) |
 
-In GitHub these are optional repository variables (Settings, Secrets and
-variables, Actions, Variables); unset, the defaults apply. Local builds,
-`wrangler dev` (`SENTRY_DSN` is empty in `wrangler.jsonc`) and the tests
-report nothing. To try reports locally, build with `SENTRY_DSN=<a DSN of a
-test project>` and start wrangler dev with `--var SENTRY_DSN:<that DSN>`.
+Local builds, `wrangler dev` (`SENTRY_DSN` is empty in `wrangler.jsonc`)
+and the tests report nothing. To try reports locally, build with
+`SENTRY_DSN=<a DSN of a test project>` and start wrangler dev with
+`--var SENTRY_DSN:<that DSN>`.
 
 The release is `webra@<version>+<commit>`, the build id of
 `dist/version.json` (`node tools/sentry-config.mjs release`); the game, the
@@ -384,8 +415,8 @@ website and the Worker report the same one.
 
 ### Releases, source files and deploy markers
 
-Optional. They need an auth token, which the owner creates and stores; never
-paste it anywhere else:
+Optional, after reports are on. They need an auth token, which the owner
+creates and stores; never paste it anywhere else:
 
 1. In Sentry (sentry.vitrion.dev): Settings, Developer Settings (or
    Organization Tokens), create an **organization auth token** (scopes
@@ -403,12 +434,9 @@ sources), finalizes it and records a deploy for the environment. Without the
 token those steps print a notice and are skipped; with the token but without
 `SENTRY_ORG` or `SENTRY_PROJECT` the deploy fails with an error.
 
-Required settings of the Sentry project, before the first deploy that
-reports (the privacy notice relies on them): Security & Privacy, "Prevent
-Storing of IP Addresses" on, and an event retention of 90 days. Recommended:
-the default data scrubbers on. Reports carry no addresses and tell Sentry not
-to infer them (`infer_ip: never`, browser and Worker); the project setting is
-the guard on the server's side.
+Reports carry no addresses and tell Sentry not to infer them (`infer_ip:
+never`, browser and Worker); "Prevent Storing of IP Addresses" is the guard
+on the server's side.
 
 ## Turning automatic deploys on
 

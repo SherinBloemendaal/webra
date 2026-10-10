@@ -34,9 +34,9 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Error reports (docs/deploy.md, "Error reports"): a production build
-      # reports to the default DSN of tools/sentry-config.mjs unless the
-      # repository variables say otherwise (SENTRY_DSN "off" turns them off).
+      # Error reports (docs/deploy.md, "Error reports") are opt-in: only with
+      # the repository variable SENTRY_DSN set do the game, the website and the
+      # Worker report anything; unset, the build and the Worker send nothing.
       WEBRA_ENV: production
       SENTRY_DSN: ${{ vars.SENTRY_DSN }}
       SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}

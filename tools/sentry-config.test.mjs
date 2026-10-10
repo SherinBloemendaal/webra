@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import {
   clientConfigModule,
   connectSources,
-  DEFAULT_SENTRY_DSN,
   DEFAULT_TRACES_SAMPLE_RATE,
+  privacySections,
   releaseName,
   sentryBuildConfig,
   workerVarArgs,
@@ -17,16 +17,23 @@ import {
 import { buildSentryBundle, SDK_EXPORTS, sdkVersion } from './vendor-sentry.mjs';
 
 const OTHER = 'https://0123456789abcdef0123456789abcdef@errors.example.org/7';
+/** A DSN of the operator's host (made-up key: the real DSN is only in docs/deploy.md). */
+const OPERATOR = 'https://0123456789abcdef0123456789abcdef@sentry.vitrion.dev/121';
 
-test('production builds report to the default DSN, other builds only when SENTRY_DSN is set', () => {
-  assert.deepEqual(sentryBuildConfig({ WEBRA_ENV: 'production' }), {
-    dsn: DEFAULT_SENTRY_DSN,
+test('reports are opt-in: no build has a DSN unless SENTRY_DSN is set, production builds included', () => {
+  assert.deepEqual(sentryBuildConfig({ WEBRA_ENV: 'production' }), { dsn: '', origin: null, environment: 'production', tracesSampleRate: DEFAULT_TRACES_SAMPLE_RATE });
+  // An unset GitHub variable arrives as an empty string.
+  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: '', SENTRY_ENVIRONMENT: '', SENTRY_TRACES_SAMPLE_RATE: '' }).dsn, '');
+  assert.deepEqual(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: OPERATOR }), {
+    dsn: OPERATOR,
     origin: 'https://sentry.vitrion.dev',
     environment: 'production',
     tracesSampleRate: DEFAULT_TRACES_SAMPLE_RATE,
   });
-  // An unset GitHub variable arrives as an empty string.
-  assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: '', SENTRY_ENVIRONMENT: '', SENTRY_TRACES_SAMPLE_RATE: '' }).dsn, DEFAULT_SENTRY_DSN);
+  // No DSN is built in anywhere in the code.
+  for (const file of ['./sentry-config.mjs', './build-dist.mjs', '../apps/game/js/telemetry/config.js', '../apps/server/wrangler.jsonc', '../.github/workflows/deploy.yml']) {
+    assert.doesNotMatch(readFileSync(new URL(file, import.meta.url), 'utf8'), /https:\/\/[0-9a-f]{32}@/, file);
+  }
   assert.deepEqual(sentryBuildConfig({}), { dsn: '', origin: null, environment: 'dev', tracesSampleRate: DEFAULT_TRACES_SAMPLE_RATE });
   assert.deepEqual(sentryBuildConfig({ SENTRY_DSN: OTHER, SENTRY_ENVIRONMENT: 'staging', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: OTHER, origin: 'https://errors.example.org', environment: 'staging', tracesSampleRate: 0 });
   assert.equal(sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: 'off' }).dsn, '');
@@ -37,18 +44,18 @@ test('production builds report to the default DSN, other builds only when SENTRY
 });
 
 test('the client config module and the Worker variables carry the same settings and release', async () => {
-  const config = sentryBuildConfig({ WEBRA_ENV: 'production' });
+  const config = sentryBuildConfig({ WEBRA_ENV: 'production', SENTRY_DSN: OPERATOR });
   const release = releaseName('0.9.0+abcdef12');
   assert.equal(release, 'webra@0.9.0+abcdef12');
   const text = clientConfigModule(config, release);
   const mod = await import(`data:text/javascript,${encodeURIComponent(text)}`);
-  assert.deepEqual(mod.TELEMETRY_CONFIG, { dsn: DEFAULT_SENTRY_DSN, environment: 'production', release, tracesSampleRate: 0.05 });
+  assert.deepEqual(mod.TELEMETRY_CONFIG, { dsn: OPERATOR, environment: 'production', release, tracesSampleRate: 0.05 });
   assert.ok(Object.isFrozen(mod.TELEMETRY_CONFIG));
   const off = await import(`data:text/javascript,${encodeURIComponent(clientConfigModule(sentryBuildConfig({}), release))}`);
   assert.deepEqual(off.TELEMETRY_CONFIG, { dsn: '', environment: 'dev', release: '', tracesSampleRate: 0 });
   assert.deepEqual(workerVarArgs(config, release), [
     '--var',
-    `SENTRY_DSN:${DEFAULT_SENTRY_DSN}`,
+    `SENTRY_DSN:${OPERATOR}`,
     '--var',
     'SENTRY_ENVIRONMENT:production',
     '--var',
@@ -56,15 +63,33 @@ test('the client config module and the Worker variables carry the same settings 
     '--var',
     'SENTRY_TRACES_SAMPLE_RATE:0.05',
   ]);
+  // Without a DSN the Worker gets an empty one (its wrapper does nothing).
+  assert.equal(workerVarArgs(sentryBuildConfig({ WEBRA_ENV: 'production' }), release)[1], 'SENTRY_DSN:');
   // The repository copy of the client config has no DSN.
   const repo = await import('../apps/game/js/telemetry/config.js');
   assert.equal(repo.TELEMETRY_CONFIG.dsn, '');
 });
 
-test('the default DSN host is in the CSP connect-src of the site and the game', () => {
+test('the operator\'s Sentry host is in the CSP connect-src of the site and the game', () => {
   const headers = readFileSync(new URL('../apps/website/_headers', import.meta.url), 'utf8');
-  assert.ok(connectSources(headers).includes(sentryBuildConfig({ WEBRA_ENV: 'production' }).origin));
+  assert.ok(connectSources(headers).includes(sentryBuildConfig({ SENTRY_DSN: OPERATOR }).origin));
   assert.deepEqual(connectSources('nothing here'), []);
+});
+
+test('the privacy notice says reporting is off without a DSN, and describes it with one', () => {
+  const html = readFileSync(new URL('../apps/website/privacy.html', import.meta.url), 'utf8');
+  const off = privacySections(html, false);
+  const on = privacySections(html, true);
+  for (const page of [off, on]) assert.doesNotMatch(page, /error-reports:(on|off)/);
+  assert.match(off, /Error reporting is currently off/);
+  assert.doesNotMatch(off, /sentry\.vitrion\.dev|error-reports-switch|A report holds/);
+  assert.match(on, /A report holds/);
+  assert.match(on, /id="error-reports-switch"/);
+  assert.doesNotMatch(on, /Error reporting is currently off/);
+  // Both keep the heading the game and README link to.
+  for (const page of [off, on]) assert.match(page, /<h2 id="error-reports">Error reports<\/h2>/);
+  assert.throws(() => privacySections('<p>no sections</p>', true), /needs exactly one/);
+  assert.throws(() => privacySections(`${html}<!-- error-reports:on -->x<!-- /error-reports:on -->`, true), /needs exactly one/);
 });
 
 test('the vendored SDK is one ES module exporting what js/telemetry uses, with a source map and its license', async () => {

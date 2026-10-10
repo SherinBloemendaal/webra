@@ -8,7 +8,8 @@
 //   dist/release-notes.json  CHANGELOG.md as data (tools/release-notes.mjs)
 //   dist/play/vendor/sentry.js, dist/lib/vendor/sentry.js  the error report SDK
 //                       (tools/vendor-sentry.mjs) and js/telemetry/config.js with
-//                       this build's settings (tools/sentry-config.mjs)
+//                       this build's settings (tools/sentry-config.mjs); the
+//                       privacy notice's error report section for that setting
 // No bundler for our own code: files are copied as they are.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
@@ -16,7 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { writeReleaseNotes } from './release-notes.mjs';
 import { libModules } from './shared-modules.mjs';
-import { clientConfigModule, connectSources, releaseName, sentryBuildConfig } from './sentry-config.mjs';
+import { clientConfigModule, connectSources, privacySections, releaseName, sentryBuildConfig } from './sentry-config.mjs';
 import { buildSentryBundle } from './vendor-sentry.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,7 +124,7 @@ if (!notes.releases.some((r) => r.version === version)) {
 
 // Error reports (docs/security.md, "Error reports"): this build's settings
 // replace js/telemetry/config.js (no DSN in the repository), and the SDK is
-// bundled next to js/ in /play and /lib. The DSN's host must be in the CSP's
+// bundled next to js/ in /play and /lib when there is a DSN. The DSN's host must be in the CSP's
 // connect-src, or browsers would block every report.
 let sentry;
 try {
@@ -134,6 +135,13 @@ try {
 if (sentry.origin && !connectSources(readFileSync(join(website, '_headers'), 'utf8')).includes(sentry.origin)) {
   fail(`the CSP connect-src in apps/website/_headers (and apps/server/src/static-headers.js) does not allow ${sentry.origin}, the SENTRY_DSN host`);
 }
+// The privacy notice describes error reports only when they are on, and says they are off otherwise.
+try {
+  const privacy = join(dist, 'privacy.html');
+  writeFileSync(privacy, privacySections(readFileSync(privacy, 'utf8'), !!sentry.dsn));
+} catch (err) {
+  fail(err.message);
+}
 const telemetryConfig = clientConfigModule(sentry, releaseName(info.build));
 let sdkBytes = 0;
 for (const base of [join(dist, 'play'), join(dist, 'lib')]) {
@@ -143,12 +151,13 @@ for (const base of [join(dist, 'play'), join(dist, 'lib')]) {
     continue;
   }
   writeFileSync(config, telemetryConfig);
-  sdkBytes = await buildSentryBundle(join(base, 'vendor/sentry.js'));
+  // Without a DSN the SDK is not shipped at all (js/telemetry never loads it then).
+  if (sentry.dsn) sdkBytes = await buildSentryBundle(join(base, 'vendor/sentry.js'));
 }
 
 const total = countFiles(dist);
 console.log(
   `build-dist: dist/ ready (webra ${info.version}, commit ${info.commit.slice(0, 12)}): ` +
     `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, ${lib.length} modules in lib/, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}, ` +
-    `error reports ${sentry.dsn ? `to ${sentry.origin} (${sentry.environment}, traces ${sentry.tracesSampleRate})` : 'off (no SENTRY_DSN)'}, SDK ${(sdkBytes / 1024).toFixed(0)} KiB with its map`,
+    `error reports ${sentry.dsn ? `to ${sentry.origin} (${sentry.environment}, traces ${sentry.tracesSampleRate}), SDK ${(sdkBytes / 1024).toFixed(0)} KiB with its map` : 'off (no SENTRY_DSN): no SDK, privacy notice says so'}`,
 );

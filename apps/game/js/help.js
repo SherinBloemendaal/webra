@@ -106,7 +106,7 @@ export const HELP = Object.freeze({
   'settings.mouseCaptureSpeed':
     'How fast the game cursor moves while the mouse is captured: 1x matches the normal pointer. Browsers that pass raw mouse movement (without the system acceleration) can feel slower; raise it then.',
   'settings.errorReports':
-    "When something breaks, sends the error with the game's version, your browser and the game mode to WebRA's own Sentry (sentry.vitrion.dev). Never your name, chat, maps or account. Off: nothing is sent from this browser (the switch covers this browser; signed in, it syncs to your other devices). WebRA's server reports its own errors either way, also of a request of yours that failed, without player data. The privacy notice on the website lists what a report holds.",
+    "When the site's operator has turned error reporting on, sends the error with the game's version, your browser and the game mode to WebRA's own Sentry (sentry.vitrion.dev) when something breaks. Never your name, chat, maps or account. Off: nothing is sent from this browser (the switch covers this browser; signed in, it syncs to your other devices). WebRA's server then reports its own errors either way, also of a request of yours that failed, without player data. The privacy notice on the website says whether reporting is on and what a report holds.",
   'settings.mouseCaptureEscMenu':
     'Off: with the mouse captured, the first Esc only releases it and the next Esc opens the menu. On: one Esc releases the mouse and also cancels the current mode or opens the menu.',
 
