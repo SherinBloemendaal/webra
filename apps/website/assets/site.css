@@ -1,6 +1,6 @@
 /* WebRA website, same theme as the game (apps/game/css/theme.css; keep the
    two palettes in step): gunmetal panels with bevels and rivets, faint
-   scanlines, steel-blue accents, and the red of the WebRA star. */
+   scanlines, and one accent: the Red Alert red of the WebRA star. */
 
 :root {
   --bg: #0a0c0f;
@@ -14,15 +14,30 @@
   --steel: #8f9aa6;
   --text: #e2e6ea;
   --muted: #9aa4af;
-  --accent: #4a82c4;
-  --accent-hi: #93c0f2;
-  --accent-lo: #1b3555;
-  --red: #c41a12;
-  --red-hi: #ff5a3c;
-  --blue: #4d8cf2;
+  /* The accent, as the game's --ui-accent* (same values). --accent is for
+     parts that are not text (at least 3:1 on the panels), --accent-hi for
+     text, links and the focus ring (at least 4.5:1), and white text on the
+     --primary* buttons is at least 4.5:1 (apps/game/tests/theme-tokens.test.mjs). */
+  --accent: #e0301f;
+  --accent-hi: #ff7a66;
+  --accent-hover: #ffb3a6;
+  --accent-lo: #4a1510;
+  --accent-glow: rgba(224, 48, 31, 0.45);
+  --accent-disabled: #6e3a34;
+  --primary: #b8231a;
+  --primary-hi: #d42318;
+  --primary-hover: #d8301f;
+  --primary-active: #8f1a12;
+  --primary-disabled: #3a2422;
+  --primary-shadow: #3a0703;
+  --focus: var(--accent-hi);
+  /* Meanings, not accents: errors, information, and the two sides. */
+  --danger: #ff5a3c;
+  --info: #4a82c4;
+  --side-allies: #4d8cf2;
+  --side-soviet: #ff5a3c;
   --ok: #4fd067;
   --money: #f0cf63;
-  --focus: #ffd75e;
   --radius: 2px;
   --bevel: inset 1px 1px 0 rgba(255, 255, 255, 0.13), inset -1px -1px 0 rgba(0, 0, 0, 0.62);
   --bevel-in: inset 1px 1px 0 rgba(0, 0, 0, 0.62), inset -1px -1px 0 rgba(255, 255, 255, 0.13);
@@ -50,14 +65,23 @@
   --ui-text: var(--text);
   --ui-muted: var(--muted);
   --ui-dim: #5f6873;
-  --ui-bad: var(--red-hi);
+  --ui-bad: var(--danger);
+  --ui-info: var(--info);
   --ui-focus: var(--focus);
   --ui-accent: var(--accent);
   --ui-accent-hi: var(--accent-hi);
+  --ui-accent-hover: var(--accent-hover);
   --ui-accent-lo: var(--accent-lo);
-  --ui-accent-glow: rgba(74, 130, 196, 0.45);
-  --ui-primary: #2f5f96;
-  --ui-primary-hi: #3d76b5;
+  --ui-accent-glow: var(--accent-glow);
+  --ui-accent-disabled: var(--accent-disabled);
+  --ui-primary: var(--primary);
+  --ui-primary-hi: var(--primary-hi);
+  --ui-primary-hover: var(--primary-hover);
+  --ui-primary-active: var(--primary-active);
+  --ui-primary-disabled: var(--primary-disabled);
+  --ui-primary-fill: linear-gradient(180deg, var(--primary-hi), var(--primary));
+  --ui-primary-fill-hover: linear-gradient(180deg, var(--primary-hover), var(--primary-hi));
+  --ui-primary-fill-active: linear-gradient(180deg, var(--primary), var(--primary-active));
   --ui-bevel: var(--bevel);
   --ui-bevel-in: var(--bevel-in);
   --ui-rivet: var(--rivet);
@@ -110,7 +134,7 @@ a {
 }
 
 a:hover {
-  color: #d3e6fb;
+  color: var(--accent-hover);
 }
 
 :focus-visible {
@@ -170,8 +194,8 @@ code {
   top: -60px;
   z-index: 100;
   padding: 8px 14px;
-  background: var(--accent);
-  color: #000;
+  background: var(--primary);
+  color: #fff;
   font-weight: 700;
 }
 
@@ -240,7 +264,7 @@ code {
 }
 
 .brand b {
-  color: var(--red-hi);
+  color: var(--accent-hi);
   font-weight: inherit;
 }
 
@@ -379,32 +403,43 @@ code {
 }
 
 .btn-primary {
-  background: linear-gradient(#e2321f, var(--red));
+  background: linear-gradient(var(--primary-hi), var(--primary));
   color: #fff;
   box-shadow:
     var(--bevel),
-    0 4px 0 #3a0703;
+    0 4px 0 var(--primary-shadow);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(#f2442f, #d42318);
+  background: linear-gradient(var(--primary-hover), var(--primary-hi));
 }
 
 .btn-primary:active {
+  background: linear-gradient(var(--primary), var(--primary-active));
   box-shadow:
     var(--bevel-in),
-    0 2px 0 #3a0703;
+    0 2px 0 var(--primary-shadow);
   transform: translateY(2px);
 }
 
+.btn-primary[disabled],
+.btn-primary[aria-disabled='true'] {
+  background: var(--primary-disabled);
+}
+
+/* A second action next to the main one: a red plate without the big shadow. */
 .btn-accent {
-  background: linear-gradient(180deg, #3d76b5, #2f5f96);
+  background: linear-gradient(180deg, var(--primary-hi), var(--primary));
   color: #fff;
 }
 
 .btn-accent:hover {
-  background: linear-gradient(180deg, #5089c8, #3d76b5);
+  background: linear-gradient(180deg, var(--primary-hover), var(--primary-hi));
   color: #fff;
+}
+
+.btn-accent:active {
+  background: linear-gradient(180deg, var(--primary), var(--primary-active));
 }
 
 .btn-small {
@@ -492,8 +527,8 @@ code {
   content: '';
   width: 8px;
   height: 8px;
-  background: var(--red-hi);
-  box-shadow: 0 0 8px var(--red-hi);
+  background: var(--accent-hi);
+  box-shadow: 0 0 8px var(--accent-hi);
 }
 
 /* The WebRA name on a riveted, bevelled steel plate. */
@@ -597,7 +632,7 @@ code {
 .kicker {
   display: block;
   margin-bottom: 8px;
-  color: var(--red-hi);
+  color: var(--accent-hi);
   font: 700 0.78rem/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -800,14 +835,14 @@ code {
 .notice {
   padding: 16px 18px;
   border: 1px solid var(--edge-hi);
-  border-left: 4px solid var(--accent);
+  border-left: 4px solid var(--info);
   border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
 }
 
 .notice-error {
-  border-left-color: var(--red-hi);
+  border-left-color: var(--danger);
 }
 
 .notice p:last-child {
@@ -828,11 +863,11 @@ code {
 }
 
 .side-allies {
-  --side: var(--blue);
+  --side: var(--side-allies);
 }
 
 .side-soviet {
-  --side: var(--red-hi);
+  --side: var(--side-soviet);
 }
 
 .side-head {
@@ -952,7 +987,7 @@ code {
   content: counter(step, decimal-leading-zero);
   display: block;
   margin-bottom: 10px;
-  color: var(--red-hi);
+  color: var(--accent-hi);
   font: 700 0.85rem/1 var(--mono);
   letter-spacing: 0.14em;
 }
@@ -1017,7 +1052,7 @@ code {
   justify-content: space-between;
   gap: 20px;
   padding: 28px;
-  border-left: 4px solid var(--red-hi);
+  border-left: 4px solid var(--accent);
 }
 
 .cta-band h2 {
@@ -1059,7 +1094,7 @@ code {
   background:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 24px),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 24px),
-    linear-gradient(180deg, #16202c, var(--bg));
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-lo) 45%, var(--bg)), var(--bg));
 }
 
 .page-head h1 {
@@ -1216,7 +1251,7 @@ code {
 }
 
 .badge-full {
-  color: var(--red-hi);
+  color: var(--danger);
 }
 
 .badge-open {
@@ -1276,7 +1311,7 @@ code {
   font-size: clamp(5rem, 22vw, 11rem);
   line-height: 1;
   color: transparent;
-  -webkit-text-stroke: 3px var(--red-hi);
+  -webkit-text-stroke: 3px var(--accent-hi);
 }
 
 .lost h1 {
@@ -1420,7 +1455,7 @@ code {
 }
 
 .release-breaking h3 {
-  color: var(--red-hi);
+  color: var(--danger);
 }
 
 .release-group h4 {

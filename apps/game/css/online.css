@@ -8,7 +8,7 @@
   top: 14px;
   z-index: 30;
   padding: 9px 16px;
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -23,15 +23,20 @@
 }
 
 #online-button:hover {
-  filter: brightness(1.2);
+  background: var(--ui-primary-fill-hover);
+}
+
+#online-button:active {
+  background: var(--ui-primary-fill-active);
 }
 
 #online-root {
   --o-panel: var(--ui-metal-1);
   --o-field: var(--ui-metal-0);
   --o-edge: var(--ui-line);
-  --o-gold: var(--ui-accent-hi);
-  --o-red: #8f2a1f;
+  --o-accent: var(--ui-accent-hi);
+  /* Destructive actions (leave, kick): a darker red than the accent. */
+  --o-danger: #8f2a1f;
   --o-red-edge: var(--ui-edge);
   position: fixed;
   inset: 0;
@@ -134,12 +139,33 @@
 
 .online-btn-primary,
 .online-btn-danger {
-  background: var(--o-red);
   border-color: var(--o-red-edge);
+}
+
+.online-btn-primary {
+  background: var(--ui-primary-fill);
+  color: #fff;
+}
+
+.online-btn-danger {
+  background: var(--o-danger);
 }
 
 .online-btn:hover:not(:disabled) {
   filter: brightness(1.2);
+}
+
+.online-btn-primary:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+  filter: none;
+}
+
+.online-btn-primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
+}
+
+.online-btn-primary:disabled {
+  background: var(--ui-primary-disabled);
 }
 
 .online-btn:disabled {
@@ -173,7 +199,7 @@
   font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--o-gold);
+  color: var(--o-accent);
 }
 
 .online-tools {
@@ -207,7 +233,7 @@
 }
 
 .online-badge-you {
-  color: var(--o-gold);
+  color: var(--o-accent);
 }
 
 /* A name that comes from an account (protocol 5 `account: true`). */
@@ -228,14 +254,18 @@
   gap: 8px;
   margin: 0 0 12px;
   padding: 8px 12px;
-  border: 1px solid var(--ui-accent-lo);
-  border-left: 3px solid var(--ui-accent);
+  border: 1px solid color-mix(in srgb, var(--ui-info) 35%, transparent);
+  border-left: 3px solid var(--ui-info);
   border-radius: 2px;
-  background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+  background: color-mix(in srgb, var(--ui-info) 10%, transparent);
 }
 
 .online-link {
   color: var(--ui-accent-hi);
+}
+
+.online-link:hover {
+  color: var(--ui-accent-hover);
 }
 
 .online-error .online-btn {
@@ -270,7 +300,7 @@
   font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--o-gold);
+  color: var(--o-accent);
 }
 
 .online-cell {
@@ -342,7 +372,7 @@
   font-size: 12px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--o-gold);
+  color: var(--o-accent);
 }
 
 .online-option-grid {

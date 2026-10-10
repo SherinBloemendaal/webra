@@ -168,17 +168,6 @@ export const FACTION_GROUPS = [
 export const FACTIONS = new Map();
 for (const g of FACTION_GROUPS) for (const f of g.items) FACTIONS.set(f.value, f);
 
-/**
- * Side of a lobby faction choice, for the UI theme: 'allies', 'soviet', or
- * null when it is not known yet (plain Random).
- */
-export function factionSide(faction) {
-  if (faction === 'randomallies') return 'allies';
-  if (faction === 'randomsoviet') return 'soviet';
-  const group = FACTION_GROUPS.find((g) => g.label !== 'Random' && g.items.some((f) => f.value === faction));
-  return group ? group.label.toLowerCase() : null;
-}
-
 export const DEFAULTS = {
   mapSize: 96,
   mapStyle: 'random',

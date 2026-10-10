@@ -2,11 +2,6 @@
    come from theme.css; the sidebar has its own stylesheet. Sizes are
    multiples of --ui-px, the UI scale unit of theme.css. */
 
-/* 1px where theme.css is not loaded (the map editor uses this sheet alone). */
-:root {
-  --ui-px: 1px;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -308,7 +303,7 @@ body {
 }
 
 /* Dialog card (game over, game menu, sound settings): a riveted metal plate
-   with the side's accent along the top. */
+   with the accent along the top. */
 .menu-card {
   position: relative;
   width: min(calc(440 * var(--ui-px)), 100%);
@@ -374,7 +369,7 @@ body {
 
 /* Selects and text fields in a card: the look is in css/controls.css. */
 
-/* Bevelled metal button; .primary is the side's colour. */
+/* Bevelled metal button; .primary is the accent red. */
 .menu-card button {
   width: 100%;
   margin-top: calc(10 * var(--ui-px));
@@ -392,7 +387,7 @@ body {
 }
 
 .menu-card button.primary {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
 }
 
@@ -403,6 +398,21 @@ body {
 .menu-card button:active:not(:disabled) {
   box-shadow: var(--ui-bevel-in);
   filter: brightness(0.92);
+}
+
+/* The red keeps its own steps, so white text stays readable (theme.css). */
+.menu-card button.primary:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+  filter: none;
+}
+
+.menu-card button.primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
+  filter: none;
+}
+
+.menu-card button.primary:disabled {
+  background: var(--ui-primary-disabled);
 }
 
 .menu-card button:disabled {

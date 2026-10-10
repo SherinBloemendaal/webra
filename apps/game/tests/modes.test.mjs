@@ -155,6 +155,42 @@ test('skirmish lobby: every option has a "?" tip wired to its control', async ()
   }
 });
 
+test('skirmish lobby: a slot shows its type, difficulty and bot in full, each select naming its choice', async () => {
+  const { root } = await mountLobby();
+  try {
+    const ai = root.querySelectorAll('.lobby-slot').find((r) => r.classList.contains('lobby-slot-ai'));
+    assert.ok(ai, 'the default game has an AI slot');
+    // Type (with the difficulty) and bot share one wrapping box next to the badge (css/lobby.css .lobby-who).
+    const selects = ai.querySelectorAll('.lobby-cell-player .lobby-who select');
+    assert.deepEqual(
+      selects.map((s) => s.className),
+      ['lobby-select lobby-type', 'lobby-select lobby-bot'],
+    );
+    const [type, bot] = selects;
+    assert.match(type.title, /^AI \((Easy|Normal|Hard)\)$/);
+    assert.equal(bot.title, 'Normal AI');
+    // The tooltip follows a new choice.
+    bot.value = 'turtle';
+    bot.dispatchEvent(new FakeEvent('change'));
+    assert.equal(bot.title, 'Turtle AI');
+    // A refused choice is put back, and so is its tooltip (two players are the least).
+    const before = type.title;
+    type.value = 'closed';
+    type.dispatchEvent(new FakeEvent('change'));
+    assert.notEqual(type.value, 'closed');
+    assert.equal(type.title, before);
+    // Faction, team and handicap name their choice too.
+    for (const s of ai.querySelectorAll('.lobby-cell-faction select, .lobby-cell-team select')) {
+      const chosen = s.querySelectorAll('option').find((o) => o.value === s.value);
+      assert.equal(s.title, chosen.textContent, s.getAttribute('aria-label'));
+    }
+    // Your own slot keeps its name field in the same box.
+    assert.ok(root.querySelector('.lobby-slot-human .lobby-who .lobby-name'));
+  } finally {
+    done();
+  }
+});
+
 test('skirmish lobby: map style, biome, tech buildings and weather form the World group', async () => {
   const { root, lobby } = await mountLobby();
   try {

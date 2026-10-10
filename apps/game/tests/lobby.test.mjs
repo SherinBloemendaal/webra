@@ -34,7 +34,6 @@ import {
   suggestedMapSize,
   inspectMapFile,
   spawnMarkers,
-  factionSide,
 } from '../js/lobby-state.js';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
@@ -300,17 +299,6 @@ test('value sets match the multiplayer protocol', () => {
   assert.deepEqual([...FACTIONS.keys()].sort(), [...protocol.FACTIONS].sort());
   assert.equal(TEAM_COUNT, protocol.TEAM_MAX);
   assert.equal(MAX_SLOTS, protocol.MAX_PLAYERS);
-});
-
-test('the lobby theme follows the side of the chosen faction', () => {
-  assert.equal(factionSide('england'), 'allies');
-  assert.equal(factionSide('germany'), 'allies');
-  assert.equal(factionSide('randomallies'), 'allies');
-  assert.equal(factionSide('russia'), 'soviet');
-  assert.equal(factionSide('ukraine'), 'soviet');
-  assert.equal(factionSide('randomsoviet'), 'soviet');
-  assert.equal(factionSide('random'), null);
-  assert.equal(factionSide('atlantis'), null);
 });
 
 test('map style, biome and weather: defaults, stored settings and what the engine starts', () => {

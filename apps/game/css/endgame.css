@@ -331,7 +331,7 @@
 }
 
 .observer-stats-button {
-  border-left-color: var(--ui-accent, #d9b23a);
+  border-left-color: var(--ui-accent);
 }
 
 @media (max-width: 560px) {
