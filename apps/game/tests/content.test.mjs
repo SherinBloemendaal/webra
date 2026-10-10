@@ -54,7 +54,7 @@ import {
 } from '../js/content/terrain.js';
 import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
-import { ContentSystem, orderPacks, mergePackPrefs, KEPT_PACKAGE } from '../js/content/index.js';
+import { ContentSystem, orderPacks, mergePackPrefs, KEPT_PACKAGE, KEPT_META } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
 import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
@@ -1302,9 +1302,16 @@ test('content system: ra-quickinstall.zip is kept; files a newer WebRA wants com
   assert.ok(kept.checked.has('cannon1.aud'), 'with the names it was searched for');
   // Nothing new wanted: no work at all.
   assert.equal(await content.updateFromKept(), null);
+  // A start with nothing new to look for never reads the 13 MB package.
+  const reads = [];
+  const realRecords = store.partialRecords.bind(store);
+  store.partialRecords = (key) => (reads.push(key), realRecords(key));
+  assert.equal(await content.updateFromKept(), null);
+  assert.deepEqual(reads, [KEPT_META]);
+  store.partialRecords = realRecords;
   // An older WebRA searched it for fewer names (it did not want cannon1.aud), so that file is not installed.
-  const [record] = await store.partialRecords(KEPT_PACKAGE);
-  await store.putPartial(KEPT_PACKAGE, 0, record.bytes, { checked: [...kept.checked].filter((n) => n !== 'cannon1.aud') });
+  const [meta] = await store.partialRecords(KEPT_META);
+  await store.putPartial(KEPT_META, 0, new ArrayBuffer(0), { ...meta.info, checked: [...kept.checked].filter((n) => n !== 'cannon1.aud') });
   await store.clear((n) => n === 'cannon1.aud');
   assert.equal((await store.names()).includes('cannon1.aud'), false);
   const update = await content.updateFromKept();
@@ -1318,8 +1325,17 @@ test('content system: ra-quickinstall.zip is kept; files a newer WebRA wants com
   assert.equal((await content.updateFromKept({ force: true })).added, 1);
   // Installed files carry when they came in.
   assert.ok((await content.summary()).installedAt > 0);
+  // Damaged bytes (not the SHA-256 taken when it was kept): forgotten, never installed from.
+  const [record] = await store.partialRecords(KEPT_PACKAGE);
+  const bad = new Uint8Array(record.bytes.slice(0));
+  bad[100] ^= 0xff;
+  await store.putPartial(KEPT_PACKAGE, 0, bad.buffer);
+  assert.equal(await content.keptPackage(), null);
+  assert.equal(await content.keptInfo(), null, 'both records are gone');
+  await content.install([fullSizeZip()]);
   await content.removeOriginal();
   assert.equal(await content.keptPackage(), null, 'Remove deletes the kept package too');
+  assert.deepEqual(await store.partialIndexes(KEPT_PACKAGE), []);
 });
 
 test('content system: the first graphics install switches to them at once; removal switches back', async () => {

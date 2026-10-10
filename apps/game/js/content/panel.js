@@ -31,7 +31,7 @@ import {
   QUICKINSTALL_BYTES,
   QUICKINSTALL_MIRRORS,
 } from './download.js';
-import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, SCORES_BYTES, SCORES_PARTIAL } from './cdmusic.js';
+import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, PIECES, pieceLength, SCORES_BYTES, SCORES_PARTIAL } from './cdmusic.js';
 
 export { QUICKINSTALL_MIRRORS };
 
@@ -459,11 +459,12 @@ export function mountContentSettings(root, content, audio, opts = {}) {
         ? 'Original sounds: effects, unit voices, announcer lines and music from your files. WebRA keeps its own sounds for anything missing.'
         : 'Original is off until the original content is installed: install it below to hear the original sounds.';
       const state = contentState(s);
-      const kept = !!(await content.keptPackage?.().catch(() => null));
+      // What is kept, without reading the kept files (the package's small record, the music pieces' keys).
+      const kept = !!(await (content.keptInfo ?? content.keptPackage)?.call(content).catch(() => null));
       let musicKept = 0;
       try {
         const store = await content.store?.();
-        for (const b of (await store?.partials?.(SCORES_PARTIAL))?.values() ?? []) musicKept += b?.byteLength ?? 0;
+        for (const i of (await store?.partialIndexes?.(SCORES_PARTIAL)) ?? []) if (i >= 0 && i < PIECES) musicKept += pieceLength(i);
       } catch {
         // No store: nothing kept.
       }

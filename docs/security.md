@@ -203,13 +203,22 @@ cross-origin isolated page, so the headers changed:
   D1 quota table that count completed downloads, not attempts: 8 per account
   per UTC day and 20 per network per hour (an IPv4 address, or the /64 of an
   IPv6 address, so a household behind one address and a phone with rotating
-  privacy addresses each count as one network), plus a ceiling of 30
-  requests per network per hour whatever their outcome. A download is
-  charged when it starts and given back (`refundQuota`) when it does not
-  complete: no mirror answered (502), the transfer broke off or ran too
-  long, or the player cancelled (the stream's end is seen by the Worker and
-  the refund runs under `waitUntil`); so a retry of a failed download is
-  charged once. An account over its day is refused by one read, without a
+  privacy addresses each count as one network), plus ceilings on requests
+  whatever their outcome, never given back: 24 per account per UTC day and
+  30 per network per hour. A download is charged when it starts and given
+  back (`refundQuota`) when it does not complete: no mirror answered (502),
+  the transfer broke off or ran too long, or the player cancelled (the
+  stream's end is seen by the Worker and the refund runs under
+  `waitUntil`); so a retry of a failed download is charged once. A
+  transfer counts as completed as soon as every byte went to the player
+  (the upstream is then cancelled), so a player closing right after the
+  last byte gets no refund; and since refunds never touch the attempt
+  ceilings, cancelling just before the end from many networks (a /56 holds
+  256 /64s) cannot buy more than 24 transfers a day. `takeQuota` gives back
+  what it took when a concurrent request took the last units between its
+  read and its write. A 429 with `scope: network` tells the player that
+  others on the same network used its budget (no more than the address
+  itself reveals to anyone on that network). An account over its day is refused by one read, without a
   write or an attempt. Keys are salted hashes of the account id and the
   network (never logged); a 429 carries `Retry-After` and `retryAfter` and
   `scope` (`account` or `network`) in the body, and the game shows the time
@@ -252,8 +261,10 @@ cross-origin isolated page, so the headers changed:
   piece that does not arrive whole (the upstream fails before anything
   streams with a 502, the transfer breaks off, the player cancels) gives
   its bytes back to the account's daily budget (`refundQuota`, never below
-  zero; the network request still counts), so the game's retry of that
-  piece is charged once; the game retries a 502 at most once per click and
+  zero; the network request and the account's request still count: at
+  most 96 requests per account per UTC day), so the game's retry of that
+  piece is charged once, and a piece counts as whole once every byte went
+  out; the game retries a 502 at most once per click and
   never retries a 429. The answer must be `206` with `Content-Range` of
   exactly the asked window and the pinned image size (a changed or other
   image is refused) and is streamed through cut to the asked length. Only

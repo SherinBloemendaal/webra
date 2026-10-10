@@ -7,12 +7,13 @@ import {
   quickInstall,
   QUICKINSTALL_BYTES,
   QUICKINSTALL_MIRRORS,
+  CONTENT_ACCOUNT_ATTEMPTS,
   CONTENT_ACCOUNT_LIMIT,
   CONTENT_NET_ATTEMPTS,
   CONTENT_NET_LIMIT,
   CONTENT_HEADER,
 } from '../src/content.js';
-import { peekQuota } from '../src/quota.js';
+import { peekQuota, takeQuota } from '../src/quota.js';
 import { checkOrigin, HttpError } from '../src/http.js';
 import { FakeQuotaDb as FakeDb } from './fake-quota-db.mjs';
 
@@ -122,7 +123,7 @@ test(`${CONTENT_ACCOUNT_LIMIT} completed downloads per account per UTC day, then
   // Stored keys are hashes, never the account id or the address.
   for (const key of env.DB.rows.keys()) {
     assert.ok(!key.includes(ACCOUNT.id) && !key.includes('10.0.'), key);
-    assert.match(key, /^content-(account|net|tries):[0-9a-f]{64}$/);
+    assert.match(key, /^content-(account|account-tries|net|tries):[0-9a-f]{64}$/);
   }
 });
 
@@ -192,6 +193,56 @@ test(`${CONTENT_NET_ATTEMPTS} attempts per network per hour, whatever their outc
   await assert.rejects(quickInstall(ok(), env, '198.51.100.7', ACCOUNT, { fetchImpl: down, now }), (e) => e.status === 429 && e.extra.scope === 'network');
   assert.equal(calls.length, before, 'no mirror request over the ceiling');
   assert.equal(await used(env, 'content-account', accountN(0).id, DAY, now), 0, 'failed attempts cost no download');
+});
+
+test(`${CONTENT_ACCOUNT_ATTEMPTS} attempts per account per UTC day across networks: refunds cannot buy unbounded traffic`, async () => {
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 10, 0, 0);
+  const late = lateWork();
+  // Cancel every download just before its end, each from another /64 of one /56.
+  for (let i = 0; i < CONTENT_ACCOUNT_ATTEMPTS; i++) {
+    const res = await quickInstall(ok(), env, `2001:db8:0:${i.toString(16)}::1`, ACCOUNT, { fetchImpl: mirrorFetch({}), now, waitUntil: late.waitUntil });
+    const reader = res.body.getReader();
+    await reader.read();
+    await reader.cancel();
+    await late.settle();
+  }
+  assert.equal(await used(env, 'content-account', ACCOUNT.id, DAY, now), 0, 'every unfinished download was given back');
+  const calls = [];
+  await assert.rejects(quickInstall(ok(), env, '2001:db8:0:ff::1', ACCOUNT, { fetchImpl: mirrorFetch({}, calls), now }), (e) => e.status === 429 && e.extra.scope === 'account');
+  assert.equal(calls.length, 0, 'no more mirror requests today');
+});
+
+test('a player that got every byte has a completed download, even if it closes before the end of the stream', async () => {
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 11, 0, 0);
+  const late = lateWork();
+  const res = await quickInstall(ok(), env, '192.0.2.77', ACCOUNT, { fetchImpl: mirrorFetch({}), now, waitUntil: late.waitUntil });
+  const reader = res.body.getReader();
+  let got = 0;
+  while (got < QUICKINSTALL_BYTES) got += (await reader.read()).value.byteLength;
+  // The stream ends once every byte went out; a reader that cancels now changes nothing.
+  assert.equal((await reader.read()).done, true);
+  await reader.cancel();
+  await late.settle();
+  assert.equal(await used(env, 'content-account', ACCOUNT.id, DAY, now), 1);
+});
+
+test('takeQuota gives back what it took when a race took the last units first', async () => {
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 12, 0, 0);
+  // Two requests read 0 of a limit of 1 before either writes.
+  const first = env.DB.prepare.bind(env.DB);
+  let reads = 0;
+  env.DB.prepare = (sql) => {
+    const st = first(sql);
+    if (!/^SELECT/.test(sql)) return st;
+    return { bind: (...a) => ({ first: async () => (reads++ < 2 ? null : st.bind(...a).first()) }) };
+  };
+  const [a, b] = await Promise.all([takeQuota(env.DB, SALT, 'race', 'x', 1, HOUR, now), takeQuota(env.DB, SALT, 'race', 'x', 1, HOUR, now)]);
+  assert.deepEqual([a, b].sort(), [false, true]);
+  env.DB.prepare = first;
+  assert.equal(await used(env, 'race', 'x', HOUR, now), 1, 'the loser gave its unit back');
 });
 
 test('the relay needs the account requireRelay let through', async () => {

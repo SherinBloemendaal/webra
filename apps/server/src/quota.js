@@ -54,7 +54,10 @@ export async function takeQuota(db, salt, purpose, subject, limit, windowMs, now
   const win = windowStart(now, windowMs);
   const key = await quotaKey(salt, purpose, subject);
   if ((await current(db, key, win)) + amount > limit) return false;
-  return (await bump(db, key, win, amount)) <= limit;
+  if ((await bump(db, key, win, amount)) <= limit) return true;
+  // Another request took the last units between the read and the write: this one gives its units back.
+  await refundQuota(db, salt, purpose, subject, windowMs, now, amount);
+  return false;
 }
 
 /** Attempts counted so far in the current window (a read only). */

@@ -942,7 +942,10 @@ per network per hour.
 
 Budgets of the package relay: 8 completed downloads per account per UTC
 day, 20 completed downloads per network per hour (an IPv4 address or an
-IPv6 /64), and 30 requests per network per hour whatever their outcome. A
+IPv6 /64), and requests whatever their outcome (never given back): 24 per
+account per UTC day and 30 per network per hour. The music relay also
+counts 96 requests per account per UTC day. A transfer is completed once
+every byte went out. A
 download (or a music piece) that does not complete is given back, so a
 retry of a failed one is charged once. Every budget answers `429
 rate_limited` with `Retry-After` (seconds) and the body
@@ -1115,7 +1118,9 @@ address or an IPv6 /64; other people on those networks count there too):
 {
   "account": {
     "content": { "used": 2, "limit": 8, "unit": "downloads", "resetsAt": 0 },
-    "music": { "used": 40, "limit": 256, "unit": "MiB", "resetsAt": 0 }
+    "music": { "used": 40, "limit": 256, "unit": "MiB", "resetsAt": 0 },
+    "contentAttempts": { "used": 3, "limit": 24, "unit": "requests", "resetsAt": 0 },
+    "musicAttempts": { "used": 8, "limit": 96, "unit": "requests", "resetsAt": 0 }
   },
   "networks": [
     {
@@ -1160,8 +1165,8 @@ write.
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
 | Data export | 5 per hour per account |
-| One-click package relay | 8 completed downloads per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
-| One-click music relay | 256 MiB per account per UTC day; 64 requests per network per hour (7.3) |
+| One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
+| One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 
 ## 10. Local development and bootstrap
 

@@ -20,9 +20,12 @@
 //   hour. A download is charged when it starts and given back when it does
 //   not complete (no mirror answered, the transfer broke off, the player
 //   cancelled), so a retry of a failed download is never charged twice.
-//   CONTENT_NET_ATTEMPTS requests per network per hour are a ceiling on
-//   attempts of any outcome (never given back) against start and cancel
-//   loops. A request over a budget costs no upstream fetch.
+//   CONTENT_ACCOUNT_ATTEMPTS requests per account per day and
+//   CONTENT_NET_ATTEMPTS per network per hour are ceilings on attempts of
+//   any outcome (never given back) against start and cancel loops, also
+//   from many networks. A transfer counts as completed once every byte went
+//   to the player (exactly), not when the upstream says so. A request over
+//   a budget costs no upstream fetch.
 // docs/security.md and docs/contracts.md section 4 describe the route.
 
 import { HttpError } from './http.js';
@@ -47,6 +50,13 @@ export const QUICKINSTALL_BYTES = 13_502_031;
 export const CONTENT_ACCOUNT_LIMIT = 8;
 export const CONTENT_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /**
+ * Requests per account and UTC day, whatever their outcome (never given
+ * back): three tries per completed download. Unfinished downloads are given
+ * back to CONTENT_ACCOUNT_LIMIT, so this is what bounds an account's
+ * traffic: at most 24 packages (about 324 MB) a day.
+ */
+export const CONTENT_ACCOUNT_ATTEMPTS = 24;
+/**
  * Completed downloads per network and hour: a household or a LAN party
  * behind one address (ten flagged players with two devices each) fits; one
  * network cannot pull more than about 270 MB an hour through the relay.
@@ -63,8 +73,10 @@ export const CONTENT_HEADER = 'X-WebRA-Content';
 
 /**
  * A stream of exactly `expected` bytes read from `upstream` (chunk by chunk,
- * nothing is held back): it errors on any more or less. `done(completed)`
- * runs once when it ends for any reason: finished (`completed` true),
+ * nothing is held back): it errors on any more or less (more within the
+ * last chunk; the upstream is cancelled once `expected` bytes went out).
+ * `done(completed)` runs once when it ends for any reason: every byte
+ * passed on (`completed` true),
  * failed, or cancelled by the reader (a player closing the page), so the
  * transfer deadline never outlives it and an unfinished transfer can be
  * given back to the budgets.
@@ -102,6 +114,12 @@ export function exactly(upstream, expected, done = () => {}) {
         return;
       }
       controller.enqueue(r.value);
+      // Every byte went out: complete now, whether or not the reader waits for the end of the stream.
+      if (seen === expected) {
+        finish(true);
+        controller.close();
+        reader.cancel().catch(() => {});
+      }
     },
     cancel(reason) {
       finish();
@@ -132,6 +150,11 @@ export async function chargeDownload(db, salt, account, ip, now) {
   const net = networkOf(ip);
   // An account that has used its day is refused by a read alone: its clicks cost no write, not even an attempt.
   if ((await peekQuota(db, salt, 'content-account', account.id, CONTENT_ACCOUNT_WINDOW_MS, now)) >= CONTENT_ACCOUNT_LIMIT) {
+    throw overBudget('account', CONTENT_ACCOUNT_WINDOW_MS, now);
+  }
+  // Attempts of the account, never given back: refunds of unfinished downloads cannot buy unbounded traffic
+  // (cancelling just before the end, from many networks).
+  if (!(await takeQuota(db, salt, 'content-account-tries', account.id, CONTENT_ACCOUNT_ATTEMPTS, CONTENT_ACCOUNT_WINDOW_MS, now))) {
     throw overBudget('account', CONTENT_ACCOUNT_WINDOW_MS, now);
   }
   if (!(await takeQuota(db, salt, 'content-tries', net, CONTENT_NET_ATTEMPTS, CONTENT_NET_WINDOW_MS, now))) {

@@ -479,8 +479,8 @@ account with the `content_autoinstall` flag (or an admin) and the
 `relay_forbidden` otherwise). The request must carry
 `X-WebRA-Content: 1`, come from the game page (`Origin` absent or ours,
 `Sec-Fetch-Site` absent or `same-origin`) and stay within the budgets: 8
-completed downloads per account per UTC day, 20 completed downloads and 30
-requests per network (an IPv4 address or an IPv6 /64) per hour (D1 quota
+completed downloads and 24 requests per account per UTC day, 20 completed
+downloads and 30 requests per network (an IPv4 address or an IPv6 /64) per hour (D1 quota
 table, account and network as salted hashes; a download that does not
 complete is given back; 429 with `Retry-After` and `retryAfter` and `scope`
 in the body, docs/accounts-api.md 7.3).

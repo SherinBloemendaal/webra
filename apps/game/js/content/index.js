@@ -41,6 +41,14 @@ export const GRAPHICS_SETTING = 'graphics';
  * of it without a new download (ContentSystem.updateFromKept).
  */
 export const KEPT_PACKAGE = 'ra-quickinstall';
+/** What is known about the kept package without reading it: { size, sha256, checked, at } in `info`. */
+export const KEPT_META = 'ra-quickinstall-meta';
+
+/** SHA-256 of bytes as hex. */
+async function sha256Hex(bytes) {
+  const d = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Stored pack records in the player's order, each with whether it is on:
@@ -352,14 +360,19 @@ export class ContentSystem {
 
   /**
    * Keep the ra-quickinstall.zip among `files` (the package's size, and it
-   * unpacked as content) with the names it was searched for. A browser
-   * without room for it installs all the same. Returns whether one was kept.
+   * unpacked as content) with its SHA-256 and the names it was searched for.
+   * A browser without room for it installs all the same. Returns whether
+   * one was kept.
    */
   async keepPackage(store, files, report, wanted) {
     const zip = [...files].find((f) => f.size === QUICKINSTALL_BYTES && report.zips?.includes(baseName(f.webkitRelativePath || f.name || '')));
     if (!zip) return false;
     try {
-      await store.putPartial(KEPT_PACKAGE, 0, await zip.arrayBuffer(), { checked: [...wanted].sort(), at: Date.now() });
+      const bytes = await zip.arrayBuffer();
+      const sha256 = await sha256Hex(bytes);
+      await store.putPartial(KEPT_PACKAGE, 0, bytes);
+      // The small record last: it only says "kept" once the bytes are there.
+      await store.putPartial(KEPT_META, 0, new ArrayBuffer(0), { size: bytes.byteLength, sha256, checked: [...wanted].sort(), at: Date.now() });
       return true;
     } catch (err) {
       console.warn('The downloaded package could not be kept:', err.message ?? err);
@@ -367,17 +380,40 @@ export class ContentSystem {
     }
   }
 
+  /** What is known about the kept package without reading it: { size, sha256, checked: Set }, or null. */
+  async keptInfo() {
+    try {
+      const store = await this.store();
+      const info = (await store.partialRecords(KEPT_META)).find((r) => r.index === 0)?.info;
+      if (!info || info.size !== QUICKINSTALL_BYTES || typeof info.sha256 !== 'string') return null;
+      return { size: info.size, sha256: info.sha256, checked: new Set(Array.isArray(info.checked) ? info.checked : []) };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forget the kept package (both records). */
+  async forgetPackage(store) {
+    await store.clearPartials(KEPT_META);
+    await store.clearPartials(KEPT_PACKAGE);
+  }
+
   /**
    * The kept ra-quickinstall.zip: { file, checked } (`checked`: the names it
-   * was searched for), or null when none is kept (or it is not whole).
+   * was searched for), or null when none is kept. A package whose bytes do
+   * not match the SHA-256 taken when it was kept is forgotten.
    */
-  async keptPackage() {
+  async keptPackage(info = null) {
+    info ??= await this.keptInfo();
+    if (!info) return null;
     try {
       const store = await this.store();
       const record = (await store.partialRecords(KEPT_PACKAGE)).find((r) => r.index === 0);
-      if (!record || record.bytes?.byteLength !== QUICKINSTALL_BYTES) return null;
-      const checked = new Set(Array.isArray(record.info?.checked) ? record.info.checked : []);
-      return { file: new File([record.bytes], 'ra-quickinstall.zip', { type: 'application/zip' }), checked };
+      if (!record || record.bytes?.byteLength !== info.size || (await sha256Hex(record.bytes)) !== info.sha256) {
+        await this.forgetPackage(store);
+        return null;
+      }
+      return { file: new File([record.bytes], 'ra-quickinstall.zip', { type: 'application/zip' }), checked: info.checked };
     } catch {
       return null;
     }
@@ -390,21 +426,26 @@ export class ContentSystem {
    * out of it, without any download. `force` searches it for every name
    * that is not installed ("Check for missing files"). Returns the install
    * report, or null when there was nothing to search for (no kept package,
-   * or no new name).
+   * or no new name). Reads the package only when there is a name to look for.
    */
   updateFromKept({ force = false, ...opts } = {}) {
     return this.exclusive(async () => {
-      const kept = await this.keptPackage();
-      if (!kept) return null;
+      const info = await this.keptInfo();
+      if (!info) return null;
       const wanted = wantedNames();
-      const fresh = [...wanted].filter((n) => force || !kept.checked.has(n));
+      const fresh = [...wanted].filter((n) => force || !info.checked.has(n));
       if (!fresh.length) return null;
       const store = await this.store();
       const installed = new Set(await store.names());
       const only = new Set(fresh.filter((n) => !installed.has(n)));
-      const report = only.size ? await installContent([kept.file], store, { ...opts, only }) : null;
+      let report = null;
+      if (only.size) {
+        const kept = await this.keptPackage(info);
+        if (!kept) return null;
+        report = await installContent([kept.file], store, { ...opts, only });
+      }
       // Searched now: the next start does not unpack it again for the same names.
-      await store.putPartial(KEPT_PACKAGE, 0, await kept.file.arrayBuffer(), { checked: [...wanted].sort(), at: Date.now() });
+      await store.putPartial(KEPT_META, 0, new ArrayBuffer(0), { size: info.size, sha256: info.sha256, checked: [...wanted].sort(), at: Date.now() });
       if (report?.added) await this.reload();
       return report;
     });
@@ -419,7 +460,7 @@ export class ContentSystem {
     return this.exclusive(async () => {
       const store = await this.store();
       await store.clear();
-      await store.clearPartials(KEPT_PACKAGE);
+      await this.forgetPackage(store);
       await this.reload();
       if (this.settings.get(GRAPHICS_SETTING) === 'original') this.settings.set(GRAPHICS_SETTING, 'webra');
     });

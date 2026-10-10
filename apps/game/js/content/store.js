@@ -17,9 +17,11 @@
 //   pieces of a download that is not finished yet, so a download cut off
 //   (closed tab, lost network) goes on where it stopped (removed once the
 //   download is installed or found to be wrong), and the last
-//   ra-quickinstall.zip (content/index.js KEPT_PACKAGE, with the names it
-//   was searched for in `info`), so files a newer WebRA wants come out of it
-//   without a new download (removed with the installed content).
+//   ra-quickinstall.zip (content/index.js KEPT_PACKAGE; its SHA-256 and the
+//   names it was searched for in a small record of its own, KEPT_META, so
+//   a start reads 13 MB only when there is something to look for), so files
+//   a newer WebRA wants come out of it without a new download (removed with
+//   the installed content).
 
 const DB_NAME = 'webra-content';
 const DB_VERSION = 3;
@@ -221,6 +223,13 @@ export class IdbStore {
     return all.filter((r) => r.key === key).map((r) => ({ index: r.index, bytes: r.bytes, info: r.info ?? null }));
   }
 
+  /** The indexes of the kept pieces of `key`, without reading the pieces (keys only). */
+  async partialIndexes(key) {
+    const tx = this.db.transaction(PARTIALS, 'readonly');
+    const ids = await done(tx.objectStore(PARTIALS).getAllKeys(partialRange(key)));
+    return ids.map((id) => Number(String(id).slice(key.length + 1))).filter(Number.isInteger);
+  }
+
   /** Forget the pieces of `key`. */
   async clearPartials(key) {
     const tx = this.db.transaction(PARTIALS, 'readwrite');
@@ -271,6 +280,9 @@ export class MemoryStore {
   }
   async partials(key) {
     return new Map([...this.partialMap.values()].filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+  async partialIndexes(key) {
+    return [...this.partialMap.values()].filter((r) => r.key === key).map((r) => r.index);
   }
   async partialRecords(key) {
     return [...this.partialMap.entries()]

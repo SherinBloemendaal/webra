@@ -207,6 +207,18 @@ test('installed state: none, partly with what is missing, and complete with coun
   assert.equal(view.level, 'complete');
 });
 
+test('installed state: kept music pieces count off the download size, read by key only', async () => {
+  const content = fakeContent();
+  content.installed = true;
+  const store = await content.store();
+  await store.putPartial('ra-scores', 0, new ArrayBuffer(8 * 1024 * 1024));
+  await store.putPartial('ra-scores', 1, new ArrayBuffer(8 * 1024 * 1024));
+  store.partials = () => assert.fail('the pieces themselves are not read');
+  const { root } = mount(content, fakeAudio(), { autoInstall: true });
+  await settle(10);
+  assert.match(textOf(root.querySelector('.content-install-all')), /^Install missing parts \(45\.2 MB\)$/);
+});
+
 test('installed state: the lobby button and the menu label say it', async () => {
   const button = doc.createElement('button');
   const panel = doc.createElement('div');

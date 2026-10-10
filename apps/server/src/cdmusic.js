@@ -25,7 +25,8 @@
 //   content_autoinstall flag or the admin role while the contentRelay site
 //   setting is on (accounts/play.js requireRelay, checked in index.js).
 // - Budgets in the D1 quota table (keys are salted hashes): SCORES_DAILY_MIB
-//   megabytes per account per day and SCORES_IP_LIMIT requests per network
+//   megabytes and SCORES_ACCOUNT_ATTEMPTS requests (never given back) per
+//   account per day, and SCORES_IP_LIMIT requests per network
 //   (an IPv4 address or an IPv6 /64, accounts/ip.js networkOf) per hour. A
 //   request over a budget costs no upstream fetch; a piece that does not
 //   arrive whole (the upstream fails before anything streams, the transfer
@@ -81,6 +82,8 @@ export const SCORES_MAX_RANGE = 8 * 1024 * 1024;
 /** Per account and UTC day, in MiB (each request counts its size rounded up): four full downloads. */
 export const SCORES_DAILY_MIB = 256;
 export const SCORES_DAY_MS = 24 * 60 * 60 * 1000;
+/** Requests per account and UTC day, whatever their outcome (a full download is 8): twelve downloads' worth. */
+export const SCORES_ACCOUNT_ATTEMPTS = 96;
 /** Requests per network and hour (a full download is 8). */
 export const SCORES_IP_LIMIT = 64;
 export const SCORES_IP_WINDOW_MS = 60 * 60 * 1000;
@@ -215,6 +218,11 @@ export async function scoresRange(
   if (!(await takeQuota(env.DB, key, 'scores-ip', networkOf(ip), SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS, now))) {
     const retry = Math.ceil((SCORES_IP_WINDOW_MS - (now % SCORES_IP_WINDOW_MS)) / 1000);
     throw new HttpError(429, 'rate_limited', 'Too many music downloads from this network in the last hour.', { 'retry-after': String(retry) }, { retryAfter: retry, scope: 'network' });
+  }
+  // Requests of the account, never given back: refunds of unfinished pieces cannot buy unbounded traffic.
+  if (!(await takeQuota(env.DB, key, 'scores-account-tries', account.id, SCORES_ACCOUNT_ATTEMPTS, SCORES_DAY_MS, now))) {
+    const retry = Math.ceil((SCORES_DAY_MS - (now % SCORES_DAY_MS)) / 1000);
+    throw new HttpError(429, 'rate_limited', 'This account downloaded the music too often today.', { 'retry-after': String(retry) }, { retryAfter: retry, scope: 'account' });
   }
   const mib = Math.ceil(length / MIB);
   if (!(await takeQuota(env.DB, key, 'scores-bytes', account.id, SCORES_DAILY_MIB, SCORES_DAY_MS, now, mib))) {
