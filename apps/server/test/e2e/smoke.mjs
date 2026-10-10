@@ -21,7 +21,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { encodeClient, encodeReplay, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
+import { COOP_MISSIONS, encodeClient, encodeReplay, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -314,6 +314,59 @@ async function playGate(ADMIN, HOST) {
  * installs it by hash and the game starts on it; then both go back to the
  * lobby and return with their keys.
  */
+/** A co-op mission online: the host picks Exodus, both people play, orders for its own actor types relay. */
+async function coopMissionLobby(HOST, GUEST) {
+  const created = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Co-op', public: true, maxPlayers: 3, version: VERSION }) }, HOST);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const { id, hostKey } = created.body;
+  const host = new Client('coop-host', HOST);
+  await host.open(id);
+  host.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, hostKey });
+  const hw = await host.type('welcome');
+  const guest = new Client('coop-guest', GUEST);
+  await guest.open(id);
+  guest.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  const gw = await guest.type('welcome');
+  await host.type('lobby', (m) => m.slots[1].type === 'human');
+  const m = COOP_MISSIONS.find((x) => x.id === 'exodus');
+  const mission = { id: m.id, hash: m.hash, options: { difficulty: 'easy' } };
+  host.send({ t: 'mission', mission });
+  const lobby = await guest.type('lobby', (l) => l.mission !== undefined);
+  assert.deepEqual(lobby.mission, mission);
+  assert.deepEqual(lobby.slots.map((x) => x.type), ['human', 'human', 'closed'], 'the mission has two places');
+  const listing = (await api('/api/sessions')).body.find((x) => x.id === id);
+  assert.deepEqual(listing.map, { mission: 'exodus', name: 'Exodus', modded: false }, 'listed under the mission title');
+  host.send({ t: 'slot', slot: 1, type: 'ai' });
+  assert.equal((await host.type('error')).code, 'invalid', 'people only');
+  guest.send({ t: 'ready', ready: true, mapHash: null });
+  await host.type('lobby', (l) => l.slots[1].ready === true);
+  host.send({ t: 'start' });
+  const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
+  assert.deepEqual(hs, gs);
+  assert.deepEqual(hs.mission, mission);
+  assert.equal(hs.options.cheats, false);
+  const hSeat = hs.players.find((p) => p.client === hw.you).player;
+  const gSeat = hs.players.find((p) => p.client === gw.you).player;
+  const guestFrames = [];
+  for (let tick = 0; tick < 30; tick++) {
+    const [, gf] = await Promise.all([host.type('frame', (f) => f.tick === tick), guest.type('frame', (f) => f.tick === tick)]);
+    guestFrames.push(gf);
+    // A production order for the mission's last actor type (past the engine's own rules).
+    host.send({ t: 'orders', tick: tick + 3, orders: tick === 4 ? [{ o: 'start_production', player: hSeat, ty: m.actors - 1, count: 1 }] : [] });
+    guest.send({ t: 'orders', tick: tick + 3, orders: [] });
+    if (tick > 0 && tick % 25 === 0) {
+      host.send({ t: 'hash', tick, hash: 'c0de' });
+      guest.send({ t: 'hash', tick, hash: 'c0de' });
+    }
+  }
+  const relayed = guestFrames.find((f) => f.tick === 7);
+  assert.deepEqual(relayed.orders, [[hSeat, [{ o: 'start_production', player: hSeat, ty: m.actors - 1, count: 1 }]]]);
+  assert.ok(gSeat !== hSeat);
+  host.send({ t: 'leave' });
+  guest.send({ t: 'leave' });
+  console.log('  co-op mission: lobby, start and relay ok');
+}
+
 async function sharedMapLobby(HOST, GUEST, WATCHER) {
   // Three places, so the public list shows the lobby (full lobbies are not listed).
   const created = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Shared map', public: true, maxPlayers: 3, version: VERSION }) }, HOST);
@@ -542,6 +595,7 @@ async function main() {
   }
   await playGate(ADMIN, HOST);
   await sharedMapLobby(HOST, GUEST, WATCHER);
+  await coopMissionLobby(HOST, GUEST);
 
   const stats = await api('/api/admin/stats', {}, ADMIN);
   assert.equal(stats.status, 200);
