@@ -969,3 +969,85 @@ body.editor {
 .issues li.ok {
   border-left-color: var(--ui-ok);
 }
+
+/* The map list's thumbnail (Map tab, published maps): one pixel per cell, scaled up crisp. */
+.editor .map-thumb {
+  display: block;
+  width: 100%;
+  max-width: 16rem;
+  height: auto;
+  border: 1px solid var(--ui-edge);
+  background: var(--ui-metal-0);
+  image-rendering: pixelated;
+}
+
+/* Setup tab: player slots and game options. */
+.slot-row {
+  margin: 0.6rem 0;
+  padding: 0.4rem 0.6rem 0.6rem;
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-line);
+  background: var(--ui-metal-1);
+}
+
+.slot-row h3,
+.editor .cargo h3 {
+  margin: 0.2rem 0;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+}
+
+.slot-row .grid2 {
+  gap: 0 0.5rem;
+}
+
+.slot-row .field[hidden] {
+  display: none;
+}
+
+.locks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.6rem;
+}
+
+.locks > .label {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.locks .ui-row {
+  min-height: 0;
+}
+
+.options-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-s);
+}
+
+.options-table th {
+  padding: 0.25em 0.3em;
+  font-weight: 400;
+  text-align: left;
+}
+
+.options-table td {
+  padding: 0.2em 0.3em;
+}
+
+.options-table .ui-row {
+  min-height: 0;
+}
+
+.cargo-list {
+  margin: 0.2rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cargo-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

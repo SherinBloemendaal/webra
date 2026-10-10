@@ -32,9 +32,11 @@ import { findFixes } from './js/fixes.js';
 import { LAYERS, fairnessView, historyList, keysList, layersList, problemsView, stampsList } from './js/panels.js';
 import { mapSizeDialog, modal, newMapDialog, testPlayDialog, BIOME_CHOICES } from './js/dialogs.js';
 import { editorIcon } from './js/icons.js';
+import { actorStateView, editSetup, optionsView, parseTags, slotsView } from './js/setup.js';
 import { PALETTE_GROUPS } from './js/palette.js';
 import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, mapFileText, parseMap, validateMap } from './js/mapformat.js';
 import { applyFix, openMapFile } from './js/upgrade.js';
+import { mapThumbnail } from '../js/protocol.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
 
@@ -375,6 +377,7 @@ function onDocChange(change, { initial = false } = {}) {
     renderOwnerOptions();
     renderSelection();
   }
+  if ((change.meta || change.objects || change.resized) && activeTab === 'setup') renderSetup();
   updateUndoButtons();
   updateModded();
   if (activeTab === 'history') renderHistory();
@@ -478,6 +481,7 @@ function runValidation() {
   tab.classList.toggle('bad', !engine.ok);
   $('#check-count').hidden = problems === 0;
   $('#check-count').textContent = String(problems);
+  renderThumbnail();
   $('#map-stats').textContent =
     `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
     `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
@@ -515,6 +519,16 @@ function fixOpened(p, fix) {
   }
   p.fixed = fix.label;
   doc.replace(next, fix.label);
+}
+
+/** The map list's thumbnail of this map (protocol mapThumbnail, as the server draws it). */
+function renderThumbnail() {
+  const canvas = $('#map-thumb');
+  if (!canvas) return;
+  const { width, height, rgba } = mapThumbnail(doc.toMap());
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
 }
 
 function renderFairness() {
@@ -776,6 +790,7 @@ function buildViewbar() {
 const TABS = [
   { id: 'map', label: 'Map' },
   { id: 'actors', label: 'Actors' },
+  { id: 'setup', label: 'Setup' },
   { id: 'layers', label: 'Layers' },
   { id: 'check', label: 'Check', badge: 'check-count' },
   { id: 'rules', label: 'Rules', badge: 'rules-count' },
@@ -817,6 +832,7 @@ function showTab(name) {
   document.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
   if (name === 'history') renderHistory();
   if (name === 'stamps') renderStamps();
+  if (name === 'setup') renderSetup();
   if (name === 'check') analysisDirty = true;
 }
 
@@ -845,6 +861,7 @@ function buildMapPane() {
     field('name', 'Name', LIMITS.nameMax),
     field('author', 'Author', LIMITS.authorMax),
     field('description', 'Description and briefing', LIMITS.descriptionMax, true),
+    tagsField(),
     el('label', { class: 'field stacked', title: 'Terrain look and weather of the map. Not a rules change: the map stays unmodded.' }, [
       el('span', { class: 'label' }, 'Biome'),
       el(
@@ -865,8 +882,41 @@ function buildMapPane() {
     graphicsControl(),
     el('div', { class: 'row wrap' }, [el('button', { type: 'button', onclick: () => sizeDialog() }, 'Size and turns...'), el('button', { type: 'button', onclick: () => run('new') }, 'New or generate...')]),
     el('p', { id: 'map-stats', class: 'hint' }),
-    el('p', { class: 'hint' }, 'Weather, starting cash, units and the other game options are set in the lobby when the map is played. Custom maps carry no scripts.'),
+    el('h2', {}, 'Thumbnail'),
+    el('canvas', { id: 'map-thumb', class: 'map-thumb', width: '1', height: '1', role: 'img', 'aria-label': 'The thumbnail the map list shows' }),
+    el('p', { class: 'hint' }, 'Drawn from the map itself (terrain, ore, actors, spawns in their slot colours), never from installed art: what the community map list shows.'),
+    el('p', { class: 'hint' }, 'Player slots and the game options the lobby starts with are in the Setup tab. Custom maps carry no scripts.'),
   );
+}
+
+/** Tags: comma separated, kept lower case (packages/protocol mapsetup.js). */
+function tagsField() {
+  const input = el('input', {
+    id: 'meta-tags',
+    class: 'ui-input',
+    placeholder: 'For example: 2 players, naval, islands',
+    onchange: () => {
+      const tags = parseTags(input.value);
+      editSetup(doc, 'Edit tags', (meta) => (meta.tags = tags), 'meta.tags');
+      input.value = tags.join(', ');
+    },
+  });
+  return el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, 'Tags'), input, el('span', { class: 'hint' }, 'Up to 8, separated by commas. The map list shows them.')]);
+}
+
+/** The Setup tab: player slots and the lobby options the map sets and locks. */
+function renderSetup() {
+  const pane = $('[data-pane="setup"]');
+  const scroll = pane.scrollTop;
+  pane.replaceChildren(
+    el('h2', {}, 'Player slots'),
+    el('p', { class: 'hint' }, 'What each slot holds when the map is loaded in a lobby, slot k starting at spawn k. Locked parts cannot be changed by the players.'),
+    slotsView(doc, (k) => teamCss(teamOf(k))),
+    el('h2', {}, 'Game options'),
+    el('p', { class: 'hint' }, 'The options the lobby starts with on this map. Locked ones cannot be changed by the host; online the server enforces them.'),
+    optionsView(doc),
+  );
+  pane.scrollTop = scroll;
 }
 
 /**
@@ -917,6 +967,8 @@ function syncMetaFields() {
     const input = $(`#meta-${k}`);
     if (input && input.value !== doc.meta[k]) input.value = doc.meta[k];
   }
+  const tags = $('#meta-tags');
+  if (tags && document.activeElement !== tags) tags.value = (doc.meta.tags ?? []).join(', ');
   const biome = $('#meta-biome');
   if (biome && biome.value !== (doc.meta.biome ?? 'temperate')) biome.value = doc.meta.biome ?? 'temperate';
   filterPalette();
@@ -1025,10 +1077,15 @@ function renderPaletteIcons() {
 }
 
 /** The selected actors' properties (owner, facing) or the selected spawn. */
+let selectionKey = '';
 function renderSelection() {
   const box = $('#selection-box');
   if (!box) return;
   const sel = [...ctl.selection];
+  // While a control of the box is in use (a slider being dragged), its own changes do not rebuild it.
+  const key = `${ctl.selectedSpawn}|${sel.map((a) => `${a.type}@${a.x},${a.y}`).join('|')}`;
+  if (key === selectionKey && box.contains(document.activeElement) && document.activeElement.type === 'range') return;
+  selectionKey = key;
   if (!sel.length && ctl.selectedSpawn < 0) {
     box.replaceChildren();
     return;
@@ -1068,7 +1125,7 @@ function renderSelection() {
     el('p', {}, names),
     el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Owner'), owner]),
     units.length ? facing.row : null,
-    el('p', { class: 'hint' }, 'Health, stance, veterancy and cargo of pre-placed actors are not part of the WebRA map format yet: actors start like freshly built ones.'),
+    actorStateView(sel, catalog, ctl),
     el('div', { class: 'row' }, [el('button', { type: 'button', class: 'danger', onclick: () => ctl.deleteSelection() }, `Delete (${keyOf('delete')})`)]),
   );
 }
@@ -1260,7 +1317,9 @@ async function browse() {
       { class: 'map-list' },
       maps.map((m) =>
         el('li', {}, [
+          typeof m.thumbnail === 'string' && m.thumbnail.startsWith('/api/maps/') ? el('img', { class: 'map-thumb', src: m.thumbnail, alt: '', loading: 'lazy' }) : null,
           el('div', { class: 'title' }, [String(m.name ?? m.id), m.modded ? el('span', { class: 'badge modded' }, 'MODDED') : null]),
+          Array.isArray(m.tags) && m.tags.length ? el('div', { class: 'muted' }, m.tags.join(', ')) : null,
           el('div', { class: 'muted' }, `${m.author ?? '?'}, ${m.width}x${m.height}, ${m.players} players, ${m.downloads ?? 0} downloads`),
           el('div', { class: 'row' }, [el('button', { type: 'button', onclick: () => openPublished(m) }, 'Open'), el('button', { type: 'button', class: 'link', onclick: () => copy(shareLink(m.id)) }, 'Copy play link')]),
         ]),
@@ -1415,7 +1474,7 @@ let lastTest = null;
 async function testPlay() {
   const { map, engine } = validateNow();
   if (!engine.ok && !confirm(`The map has problems:\n\n${engine.errors.join('\n')}\n\nThe game may refuse it. Test anyway?`)) return;
-  const setup = await testPlayDialog({ spawns: doc.spawns.length, last: lastTest });
+  const setup = await testPlayDialog({ spawns: doc.spawns.length, last: lastTest, setup: doc.meta });
   if (!setup) return;
   lastTest = setup;
   const r = view.viewRect();

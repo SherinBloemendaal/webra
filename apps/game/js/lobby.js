@@ -5,6 +5,12 @@
 // stored-settings migration and the options shape live in lobby-state.js.
 
 import {
+  applyMapSetup,
+  keepLockedOptions,
+  optionLockedBy,
+  slotLockedBy,
+  LOBBY_SELECT_OPTIONS,
+  LOBBY_TOGGLE_OPTIONS,
   MAP_STORAGE_KEY,
   NAME_MAX,
   DEFAULT_NAME,
@@ -64,32 +70,8 @@ import { attachTooltip } from './ui/tooltip.js';
 // Game option rows: the key in options (also its help text in js/help.js),
 // its label and choices. Map style, biome, tech buildings and weather are the
 // World group of the Battlefield panel.
-const SELECT_OPTIONS = [
-  {
-    key: 'startingCash',
-    label: 'Starting cash',
-    choices: STARTING_CASH.map((v) => ({ value: v, label: `$${v.toLocaleString('en-US')}` })),
-  },
-  { key: 'startingUnits', label: 'Starting units', choices: STARTING_UNITS },
-  { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
-  { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
-  { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
-];
-
-const TOGGLE_OPTIONS = [
-  { key: 'crates', label: 'Crates' },
-  { key: 'shortGame', label: 'Short game' },
-  { key: 'fog', label: 'Fog of war' },
-  { key: 'explored', label: 'Explored map' },
-  { key: 'allyBuildRadius', label: 'Ally build radius' },
-  { key: 'buildRadius', label: 'Build radius' },
-  { key: 'separateTeamSpawns', label: 'Separate team spawns' },
-  { key: 'redeployableMcv', label: 'Redeployable MCVs' },
-  { key: 'bounty', label: 'Kill bounties' },
-  { key: 'oreRegrowth', label: 'Ore regrowth' },
-  { key: 'reusableEngineers', label: 'Reusable engineers' },
-  { key: 'cheats', label: 'Debug menu' },
-];
+const SELECT_OPTIONS = LOBBY_SELECT_OPTIONS;
+const TOGGLE_OPTIONS = LOBBY_TOGGLE_OPTIONS;
 
 /** Every option of the lobby with a "?" (tests check each one has help). */
 export const HELP_KEYS = [
@@ -465,7 +447,7 @@ export class Lobby {
 
   /** Spawn count and acceptance of the installed map, for startProblem. */
   mapFileStatus() {
-    return this.mapFile ? { spawns: this.mapFile.info.spawns, accepted: this.mapFile.accepted } : null;
+    return this.mapFile ? { spawns: this.mapFile.info.spawns, accepted: this.mapFile.accepted, setup: this.mapFile.info.setup ?? null } : null;
   }
 
   spawnLimit() {
@@ -580,6 +562,9 @@ export class Lobby {
     this.state.mapSource = 'file';
     writeJson(MAP_STORAGE_KEY, { json, accepted: info.modded ? info.hash : true });
     this.addToLibrary(json, source);
+    // The map's slots and options (map format version 2): where the lobby starts on this map.
+    applyMapSetup(this.state, info.setup, this.colors.length, info.spawns);
+    this.renderAll();
     this.renderMapSource();
     this.renderSlots();
     this.schedulePreview();
@@ -1083,6 +1068,8 @@ export class Lobby {
       inputClass: 'lobby-input',
       onApply: (mode) => {
         Object.assign(this.state, presetOptions(mode.options));
+        // A game mode never changes what the map file locks.
+        if (this.state.mapSource === 'file') keepLockedOptions(this.state, this.mapFile?.info.setup);
         this.renderAll();
       },
     });
@@ -1201,9 +1188,23 @@ export class Lobby {
     const s = this.state;
     this.renderSeed();
     this.renderUnits();
-    for (const opt of SELECT_OPTIONS) this.optionSelects[opt.key].value = String(s[opt.key]);
-    for (const opt of TOGGLE_OPTIONS) this.optionToggles[opt.key].checked = s[opt.key];
+    // Options the map file locks (map format version 2) cannot be changed here.
+    const setup = this.mapFile?.info.setup ?? null;
+    const lock = (control, key) => {
+      const on = optionLockedBy(s, setup, key);
+      control.disabled = on;
+      control.title = on ? 'Locked by the map' : '';
+    };
+    for (const opt of SELECT_OPTIONS) {
+      this.optionSelects[opt.key].value = String(s[opt.key]);
+      lock(this.optionSelects[opt.key], opt.key);
+    }
+    for (const opt of TOGGLE_OPTIONS) {
+      this.optionToggles[opt.key].checked = s[opt.key];
+      lock(this.optionToggles[opt.key], opt.key);
+    }
     this.weatherSelect.value = s.weather;
+    lock(this.weatherSelect, 'weather');
     this.renderCheats();
     this.renderMode();
     this.renderMapSizes();
@@ -1316,6 +1317,20 @@ export class Lobby {
   renderSlot(slot) {
     const p = this.state.players[slot];
     const rec = this.slotRows[slot];
+    // Parts of the slot the map file locks (map format version 2).
+    const setup = this.mapFile?.info.setup ?? null;
+    const locked = (part) => slotLockedBy(this.state, setup, slot, part);
+    const lockControl = (control, part) => {
+      if (!control) return;
+      if (locked(part)) {
+        control.disabled = true;
+        control.title = 'Locked by the map';
+      }
+    };
+    lockControl(rec.faction, 'faction');
+    lockControl(rec.team, 'team');
+    lockControl(rec.type, 'type');
+    if (locked('color')) this.pickers[slot].button.disabled = true;
     const f = FACTIONS.get(p.faction);
     rec.row.className = `lobby-slot lobby-slot-${p.type}`;
     rec.row.style.setProperty('--slot-color', p.type === 'closed' ? 'var(--l-edge)' : rgbCss(this.colors[p.color]));

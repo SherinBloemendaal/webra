@@ -34,7 +34,7 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
-import { aiName } from './lobby-state.js';
+import { aiName, COLOR_NAMES } from './lobby-state.js';
 import { AudioSystem } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
@@ -89,7 +89,6 @@ const PLAYER = 0;
 
 // OpenRA game speeds: milliseconds per simulation tick.
 const SPEEDS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
-const COLOR_NAMES = ['Blue', 'Red', 'Gold', 'Green', 'Purple', 'Orange', 'Teal', 'White'];
 const RANDOM_POOLS = {
   random: ['england', 'france', 'germany', 'russia', 'ukraine'],
   randomallies: ['england', 'france', 'germany'],

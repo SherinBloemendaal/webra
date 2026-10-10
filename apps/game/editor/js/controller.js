@@ -495,7 +495,8 @@ export class Controller {
   /** Change a property of every selected actor (owner, facing) as one step. */
   setOnSelection(label, fn) {
     if (!this.selection.size) return;
-    this.doc.begin(label);
+    // Dragging a slider makes one undo step (coalesced by label).
+    this.doc.begin(label, `selection.${label}`);
     this.doc.touchObjects();
     for (const a of this.selection) fn(a, this.info(a.type));
     this.doc.commit();

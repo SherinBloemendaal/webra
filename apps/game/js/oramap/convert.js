@@ -288,9 +288,14 @@ export function convertOramap(input, opts) {
   const actorsNode = child(yaml, 'Actors')?.nodes ?? [];
   const playersNode = child(yaml, 'Players')?.nodes ?? [];
   const players = new Map();
+  // OpenRA's lobby slots Multi0, Multi1, ... become the map's player slots (map format version 2).
+  const slotRefs = [];
   for (const p of playersNode) {
     const name = childValue(p.nodes, 'Name', p.key.replace(/^PlayerReference@/, ''));
-    players.set(name, { playable: /^true$/i.test(childValue(p.nodes, 'Playable', 'False')) });
+    const playable = /^true$/i.test(childValue(p.nodes, 'Playable', 'False'));
+    players.set(name, { playable });
+    const multi = /^Multi(\d)$/.exec(name);
+    if (playable && multi) slotRefs[Number(multi[1])] = p.nodes;
   }
   const knownActors = new Map();
   for (const a of base.actors) {
@@ -300,6 +305,7 @@ export function convertOramap(input, opts) {
 
   const rawSpawns = [];
   const placed = [];
+  const actorStates = new Map();
   const skippedTypes = new Map();
   const outside = new Map();
   const engineOnly = new Map();
@@ -338,7 +344,16 @@ export function convertOramap(input, opts) {
       const f = wangle ? facingRaw : facingRaw * 4;
       facing = (((1024 - f) % 1024) + 1024) % 1024;
     }
-    placed.push({ info, owner: childValue(node.nodes, 'Owner', 'Neutral'), x: ax - bx, y: ay - by, facing, line: node.line });
+    // OpenRA actor inits a map may set (map format version 2): Health (HealthInit, percent) and
+    // Stance (StanceInit), where the actor has them. Other inits (Cargo with OpenRA's own names,
+    // Veterancy of mods) are not read.
+    const state = {};
+    const health = parseInteger(childValue(node.nodes, 'Health'));
+    if (health !== null && health >= 1 && health < 100 && info.kind !== 'crate') state.health = health;
+    const stance = OPENRA_STANCES[String(childValue(node.nodes, 'Stance', '')).toLowerCase()];
+    if (stance && Array.isArray(info.stance) && info.weapons?.length) state.stance = stance;
+    if (Object.keys(state).length) bump(actorStates, info.id);
+    placed.push({ info, owner: childValue(node.nodes, 'Owner', 'Neutral'), x: ax - bx, y: ay - by, facing, line: node.line, state });
   }
   // Bridges come first among the neutral actors: they claim no cells.
   const bridgesOutside = new Map();
@@ -467,7 +482,7 @@ export function convertOramap(input, opts) {
       }
       for (const [dx, dy] of cells) taken[(p.y + dy) * width + p.x + dx] = 1000 + actors.length;
     }
-    actors.push({ type: p.info.id, owner, x: p.x, y: p.y, facing: p.facing });
+    actors.push({ type: p.info.id, owner, x: p.x, y: p.y, facing: p.facing, ...p.state });
   }
 
   // ---- Rules ----------------------------------------------------------------------------------
@@ -502,6 +517,7 @@ export function convertOramap(input, opts) {
   if (skippedTypes.size) report.skipped.push(`Actors WebRA does not have: ${countList(skippedTypes)}.`);
   if (outside.size) report.skipped.push(`Actors outside the playable area: ${countList(outside)}.`);
   if (bridgesOutside.size) report.skipped.push(`Bridges outside the playable area: ${countList(bridgesOutside)}.`);
+  if (actorStates.size) report.converted.push(`Health and stances of pre-placed actors: ${countList(actorStates)}.`);
   if (overlapping.size) report.skipped.push(`Structures that overlap a start position, another structure or the map edge: ${countList(overlapping)}.`);
   if (engineOnly.size) report.skipped.push(`OpenRA script and editor markers: ${countList(engineOnly)}.`);
   if (badActors) report.warnings.push(`${badActors} actor entries without a type or location were ignored.`);
@@ -510,6 +526,8 @@ export function convertOramap(input, opts) {
   else if (TILESET_BIOMES[tileset] && tileset !== 'TEMPERAT') {
     report.warnings.push(`WebRA has no ${TILESET_BIOMES[tileset]} biome; the ${tileset} map is drawn temperate.`);
   }
+
+  const slots = slotSetup(slotRefs, spawns.length, report);
 
   // Format 2 (with a gems layer) only when a cell holds gems, like every WebRA writer.
   const format = formatFor(gemsOut);
@@ -531,10 +549,58 @@ export function convertOramap(input, opts) {
     rules,
     // Optional field: left out for temperate maps (their identity stays as before biomes).
     ...(biome !== 'temperate' ? { biome } : {}),
+    players: slots,
+    options: {},
+    lockedOptions: [],
+    tags: [],
   };
   report.modded = rules !== null;
   return { map, report };
 }
+
+/** OpenRA RA factions (and their random choices) to the lobby's. */
+const OPENRA_FACTIONS = Object.freeze({
+  random: 'random',
+  allies: 'randomallies',
+  soviet: 'randomsoviet',
+  england: 'england',
+  france: 'france',
+  germany: 'germany',
+  russia: 'russia',
+  ukraine: 'ukraine',
+});
+
+/**
+ * The map's player slots from OpenRA's playable PlayerReferences Multi0 to
+ * Multi<n> (`refs[k]`: its nodes): faction and team with their locks
+ * (LockFaction, LockTeam). Colours are OpenRA HSL values and are left to
+ * the lobby. Slots past the map's spawns, and trailing slots that set
+ * nothing, are left out.
+ */
+function slotSetup(refs, spawns, report) {
+  const out = [];
+  for (let k = 0; k < Math.min(refs.length, spawns); k++) {
+    const nodes = refs[k];
+    const slot = { faction: 'random', team: 0, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: [] };
+    if (nodes) {
+      const faction = OPENRA_FACTIONS[String(childValue(nodes, 'Faction', 'Random')).toLowerCase()];
+      if (faction) slot.faction = faction;
+      if (/^true$/i.test(childValue(nodes, 'LockFaction', 'False')) && faction) slot.lock.push('faction');
+      const team = parseInteger(childValue(nodes, 'Team'));
+      if (team !== null && team >= 0 && team <= 4) {
+        slot.team = team;
+        if (/^true$/i.test(childValue(nodes, 'LockTeam', 'False'))) slot.lock.push('team');
+      }
+    }
+    out.push(slot);
+  }
+  while (out.length && out.at(-1).faction === 'random' && out.at(-1).team === 0 && !out.at(-1).lock.length) out.pop();
+  if (out.length) report.converted.push(`Player slots (factions and teams of OpenRA's lobby slots): ${out.length}.`);
+  return out;
+}
+
+/** OpenRA UnitStance names (StanceInit) to WebRA's (engine rules.rs Stance). */
+const OPENRA_STANCES = Object.freeze({ attackanything: 'attack_anything', defend: 'defend', returnfire: 'return_fire', holdfire: 'hold_fire' });
 
 // ---- Rules and weapons ------------------------------------------------------------------
 

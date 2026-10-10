@@ -280,6 +280,39 @@ test('convert: terrain, crop, resources, the neutral world, spawns and actors', 
   assert.ok(protocolParseMap(JSON.stringify(map)).ok);
 });
 
+test('convert: OpenRA Health and Stance inits become the actors\' state where the actor has it', async () => {
+  const actors = [
+    { type: 'mpspawn', x: 8, y: 8 },
+    { type: 'mpspawn', x: 38, y: 38 },
+    { type: 'e1', owner: 'Multi0', x: 10, y: 12, health: 40, stance: 'HoldFire' },
+    { type: 'pbox', x: 25, y: 10, health: 100, stance: 'Defend' },
+    { type: 'v01', x: 15, y: 40, health: 25, stance: 'Defend' },
+  ];
+  const { map, report } = await parse(sampleOramap({ actors }));
+  const byType = Object.fromEntries(map.actors.map((a) => [a.type, a]));
+  assert.deepEqual([byType.E1.health, byType.E1.stance], [40, 'hold_fire']);
+  assert.equal(byType.PBOX.health, undefined, 'full health is the default');
+  assert.equal(byType.PBOX.stance, 'defend');
+  assert.deepEqual([byType.V01.health, byType.V01.stance], [25, undefined], 'a civilian building has no stance');
+  assert.ok(report.converted.some((l) => l.startsWith('Health and stances of pre-placed actors')));
+});
+
+test('convert: OpenRA lobby slots become the map\'s player slots with their faction and team locks', async () => {
+  const multi = [
+    ['\t\tFaction: soviet', '\t\tLockFaction: True', '\t\tTeam: 1', '\t\tLockTeam: True'],
+    ['\t\tFaction: england', '\t\tTeam: 2'],
+    ['\t\tFaction: Random'],
+  ];
+  const { map, report } = await parse(sampleOramap({ multi }));
+  assert.deepEqual(map.players, [
+    { faction: 'randomsoviet', team: 1, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: ['faction', 'team'] },
+    { faction: 'england', team: 2, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: [] },
+  ]);
+  assert.ok(report.converted.some((l) => l.startsWith('Player slots')));
+  const plain = await parse(sampleOramap());
+  assert.deepEqual(plain.map.players, [], 'slots that set nothing are left out');
+});
+
 test('convert: bridge templates become bridge actors over their terrain, roads and rivers keep their types', async () => {
   // BRIDGE1 (template 131, 5x3: .kggk / kggkk / ..k..) at 20,10 over a river row, a road to it.
   const rows = ['.kggk', 'kggkk', '..k..'];

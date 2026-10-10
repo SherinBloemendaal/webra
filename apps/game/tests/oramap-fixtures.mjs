@@ -115,6 +115,7 @@ export function mapYaml({
   actors = [],
   extra = '',
   format = 12,
+  multi = [['\t\tFaction: Random']],
 }) {
   const lines = [
     `MapFormat: ${format}`,
@@ -139,10 +140,8 @@ export function mapYaml({
     '\t\tOwnsWorld: True',
     '\t\tNonCombatant: True',
     '\t\tFaction: allies',
-    '\tPlayerReference@Multi0:',
-    '\t\tName: Multi0',
-    '\t\tPlayable: True',
-    '\t\tFaction: Random',
+    // The playable lobby slots Multi0, Multi1, ... with their extra lines.
+    ...multi.flatMap((extraLines, k) => [`\tPlayerReference@Multi${k}:`, `\t\tName: Multi${k}`, '\t\tPlayable: True', ...extraLines]),
     '\tPlayerReference@Creeps:',
     '\t\tName: Creeps',
     '\t\tFaction: allies',
@@ -152,6 +151,8 @@ export function mapYaml({
   actors.forEach((a, i) => {
     lines.push(`\tActor${i}: ${a.type}`, `\t\tOwner: ${a.owner ?? 'Neutral'}`, `\t\tLocation: ${a.x},${a.y}`);
     if (a.facing !== undefined) lines.push(`\t\tFacing: ${a.facing}`);
+    if (a.health !== undefined) lines.push(`\t\tHealth: ${a.health}`);
+    if (a.stance !== undefined) lines.push(`\t\tStance: ${a.stance}`);
   });
   if (extra) lines.push('', extra);
   return `${lines.join('\n')}\n`;
@@ -164,7 +165,7 @@ export const T = { CLEAR: 255, WATER: 1, ROCK: 57 };
  * A playable 48x48 test map: clear ground, a water pool, a rock strip, two
  * spawns, ore and gems fields, trees, a pillbox and a civilian building.
  */
-export function sampleOramap({ extraYaml = '', extraFiles = [], actors, rulesRef } = {}) {
+export function sampleOramap({ extraYaml = '', extraFiles = [], actors, rulesRef, multi } = {}) {
   const w = 48;
   const h = 48;
   const tile = (x, y) => {
@@ -190,7 +191,7 @@ export function sampleOramap({ extraYaml = '', extraFiles = [], actors, rulesRef
   ];
   let extra = extraYaml;
   if (rulesRef) extra = `Rules: ${rulesRef}\n${extra}`;
-  const yaml = mapYaml({ actors: list, extra });
+  const yaml = mapYaml({ actors: list, extra, ...(multi ? { multi } : {}) });
   return buildZip([
     { name: 'map.yaml', data: yaml },
     { name: 'map.bin', data: buildMapBin(w, h, tile, res) },

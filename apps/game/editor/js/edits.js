@@ -2,6 +2,7 @@
 // inside the caller's open transaction (doc.begin / doc.commit).
 
 import { LIMITS, TERRAIN, catalogEntry, decodeBase64, encodeBase64, footprintOf, holdsResource, isBuildable, isPassable } from './mapformat.js';
+import { validateActorState } from '../../js/protocol.js';
 import { SPAWN_H, SPAWN_W, applyTransform, mirroredOwner, symmetricPositions, transformCell, transformFacing, transformsFor } from './symmetry.js';
 
 export const BRUSH_SIZES = [1, 3, 5, 9];
@@ -428,7 +429,7 @@ export function copyRegion(doc, catalog, x0, y0, x1, y1) {
   }
   const actors = doc.actors
     .filter((a) => catalogEntry(catalog, a.type) && a.x >= ax && a.x <= bx && a.y >= ay && a.y <= by)
-    .map((a) => ({ type: a.type, owner: a.owner, dx: a.x - ax, dy: a.y - ay, facing: a.facing ?? 0 }));
+    .map(({ x, y, ...a }) => ({ ...a, facing: a.facing ?? 0, dx: x - ax, dy: y - ay }));
   return { w, h, terrain, ore, gems, actors };
 }
 
@@ -514,7 +515,8 @@ export function pasteRegion(doc, catalog, clip, x, y, symmetry, layers = { terra
         continue;
       }
       doc.touchObjects();
-      doc.actors.push({ type: a.type, owner: mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height), x: ax, y: ay, facing: a.facing });
+      const { dx: _dx, dy: _dy, ...rest } = a;
+      doc.actors.push({ ...rest, owner: mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height), x: ax, y: ay });
       result.actors++;
     }
   }
@@ -543,5 +545,14 @@ export function regionFromData(d) {
     return b;
   };
   if (!Number.isInteger(d.w) || !Number.isInteger(d.h) || d.w < 1 || d.h < 1 || n > LIMITS.maxSize * LIMITS.maxSize) throw new Error('the stamp is damaged');
-  return { w: d.w, h: d.h, terrain: layer(d.terrain), ore: layer(d.ore), gems: layer(d.gems), actors: Array.isArray(d.actors) ? d.actors.map((a) => ({ type: String(a.type), owner: a.owner | 0, dx: a.dx | 0, dy: a.dy | 0, facing: a.facing | 0 })) : [] };
+  const actor = (a) => {
+    let state = {};
+    try {
+      state = validateActorState(a, 'stamp actor');
+    } catch {
+      // A damaged state field: the actor keeps its defaults.
+    }
+    return { type: String(a.type), owner: a.owner | 0, dx: a.dx | 0, dy: a.dy | 0, facing: a.facing | 0, ...state };
+  };
+  return { w: d.w, h: d.h, terrain: layer(d.terrain), ore: layer(d.ore), gems: layer(d.gems), actors: Array.isArray(d.actors) ? d.actors.filter((a) => a && typeof a === 'object').map(actor) : [] };
 }

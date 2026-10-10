@@ -8,6 +8,7 @@ import { el } from './ui.js';
 import { segmented, toggle } from '../../js/ui/controls.js';
 import { BIOMES as LOBBY_BIOMES, BOT_TYPES, DIFFICULTIES, FACTION_GROUPS, MAP_STYLES, TECH_BUILDINGS, TEAMS, SEED_MAX, randomSeed } from '../../js/lobby-state.js';
 import { LIMITS, TERRAIN_NAMES, BIOMES } from './mapformat.js';
+import { canonicalSlot } from '../../js/protocol.js';
 
 /** A modal dialog; resolves with the value of the button that closed it ('' for Esc). */
 export function modal({ title, body, buttons, wide = false, id = null, onOpen = null }) {
@@ -164,17 +165,21 @@ export async function mapSizeDialog({ width, height, region }) {
  * and whether it starts right away. `spawns` is the map's start count.
  * Resolves { players, camera: boolean, autostart } or null.
  */
-export async function testPlayDialog({ spawns, last }) {
+export async function testPlayDialog({ spawns, last, setup = null }) {
   const n = Math.max(2, Math.min(8, spawns));
   const factions = FACTION_GROUPS.flatMap((g) => g.items.map((f) => ({ value: f.value, label: g.label === 'Random' ? f.label : `${f.label} (${g.label})` })));
   const types = [{ value: 'human', label: 'You' }, ...DIFFICULTIES.map((d) => ({ value: `ai:${d.value}`, label: `AI (${d.label})` })), { value: 'closed', label: 'Closed' }];
   const rows = [];
+  // Without an earlier choice the slots start as the map's Setup tab has them (you in the first open slot).
+  const slot = (k) => canonicalSlot(setup?.players?.[k] ?? {});
+  const firstOpen = Array.from({ length: n }, (_, k) => k).find((k) => slot(k).type === 'open') ?? 0;
   for (let k = 0; k < n; k++) {
-    const prev = last?.players?.[k];
-    const type = select(types, prev ? (prev.type === 'ai' ? `ai:${prev.difficulty ?? 'normal'}` : prev.type) : k === 0 ? 'human' : 'ai:normal');
-    const bot = select(BOT_TYPES, prev?.bot ?? 'normal');
-    const faction = select(factions, prev?.faction ?? 'random');
-    const team = select(TEAMS, prev?.team ?? 0);
+    const m = slot(k);
+    const prev = last?.players?.[k] ?? { type: m.type === 'open' ? (k === firstOpen ? 'human' : 'ai') : m.type, difficulty: m.difficulty, bot: m.bot, faction: m.faction, team: m.team };
+    const type = select(types, prev.type === 'ai' ? `ai:${prev.difficulty ?? 'normal'}` : prev.type);
+    const bot = select(BOT_TYPES, prev.bot ?? 'normal');
+    const faction = select(factions, prev.faction ?? 'random');
+    const team = select(TEAMS, prev.team ?? 0);
     const syncBot = () => (bot.disabled = !type.value.startsWith('ai'));
     type.addEventListener('change', syncBot);
     syncBot();

@@ -67,6 +67,8 @@ import {
   WEATHER_MODES,
   TECH_BUILDINGS,
   validName,
+  optionLocked,
+  slotLocked,
 } from './protocol.js';
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
@@ -1190,7 +1192,11 @@ export class OnlineUI {
           who.append(diff);
         }
         const faction = select(FACTION_GROUPS, slot.faction, (v) => this.send({ t: 'slot', slot: i, faction: v }), true);
-        faction.disabled = !editable;
+        // The lobby map's locks (map format version 2): the server refuses changes to them.
+        const setup = this.state.map?.setup ?? null;
+        const locked = (part) => !!setup && !this.state.resume && slotLocked(setup, i, part);
+        faction.disabled = !editable || locked('faction');
+        if (locked('faction')) faction.title = 'Locked by the map';
         faction.setAttribute('aria-label', `Player ${i + 1} faction`);
         describedBy(faction, this.columnTips.faction);
         const color = select(
@@ -1198,7 +1204,8 @@ export class OnlineUI {
           slot.color,
           (v) => this.send({ t: 'slot', slot: i, color: Number(v) }),
         );
-        color.disabled = !editable;
+        color.disabled = !editable || locked('color');
+        if (locked('color')) color.title = 'Locked by the map';
         color.setAttribute('aria-label', `Player ${i + 1} color`);
         describedBy(color, this.columnTips.colorOnline);
         const team = select(
@@ -1206,7 +1213,8 @@ export class OnlineUI {
           slot.team,
           (v) => this.send({ t: 'slot', slot: i, team: Number(v) }),
         );
-        team.disabled = !editable;
+        team.disabled = !editable || locked('team');
+        if (locked('team')) team.title = 'Locked by the map';
         team.setAttribute('aria-label', `Player ${i + 1} team`);
         describedBy(team, this.columnTips.team);
         // OpenRA handicap: each player sets its own, the host an AI's.
@@ -1246,6 +1254,10 @@ export class OnlineUI {
           if (v !== 'human') this.send({ t: 'slot', slot: i, type: v });
         });
         type.setAttribute('aria-label', `Player ${i + 1} slot type`);
+        if (this.state.map?.setup && slotLocked(this.state.map.setup, i, 'type')) {
+          type.disabled = true;
+          type.title = 'Locked by the map';
+        }
         describedBy(type, this.columnTips.playerOnline);
         action.append(type);
       }
@@ -1257,7 +1269,11 @@ export class OnlineUI {
 
   /** Send the options with `patch` applied (host only; the server checks). */
   sendOptions(patch) {
-    this.send({ t: 'options', options: { ...this.state.options, ...patch } });
+    const options = { ...this.state.options, ...patch };
+    // A game mode never changes what the lobby map locks (the server would refuse it).
+    const setup = this.state.map?.setup;
+    for (const k of setup?.lockedOptions ?? []) options[k] = setup.options[k];
+    this.send({ t: 'options', options });
   }
 
   /** The Game options panel: built once per lobby, renderOptions shows the current values. */
@@ -1318,13 +1334,18 @@ export class OnlineUI {
     if (!o || !this.optionControls) return;
     // A resumed save keeps its options.
     const host = this.isHost && !this.state.resume;
+    // Options the lobby map locks (map format version 2): the server refuses changes to them.
+    const setup = this.state.map?.setup ?? null;
+    const lockedOption = (key) => !!setup && optionLocked(setup, key);
     for (const [key] of [...WORLD_OPTIONS, ...SELECT_OPTIONS]) {
       this.optionControls[key].value = String(o[key]);
-      this.optionControls[key].disabled = !host;
+      this.optionControls[key].disabled = !host || lockedOption(key);
+      this.optionControls[key].title = lockedOption(key) ? 'Locked by the map' : '';
     }
     for (const [key] of TOGGLES) {
       this.optionControls[key].checked = o[key];
-      this.optionControls[key].disabled = !host;
+      this.optionControls[key].disabled = !host || lockedOption(key);
+      this.optionControls[key].title = lockedOption(key) ? 'Locked by the map' : '';
     }
     // A map file brings its own layout, biome and buildings; the weather still applies.
     this.optionRows.mapStyle.hidden = !!this.state.map;
