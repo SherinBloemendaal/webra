@@ -120,6 +120,8 @@ fn a_long_detour_is_not_mistaken_for_being_stuck() {
 
 /// A structure goes up on the goal while the group drives there. The old
 /// code left every unit waiting on an unreachable goal until it gave up.
+/// (An own structure: an enemy one would be shot down, and the units still
+/// on their way would then go on to the goal itself, units.rs `restore_dest`.)
 #[test]
 fn a_structure_on_the_goal_sends_the_group_to_the_nearest_open_cell() {
     let mut w = arena(64, 64);
@@ -130,7 +132,7 @@ fn a_structure_on_the_goal_sends_the_group_to_the_nearest_open_cell() {
         w.step();
     }
     let powr = ty(&w, "POWR");
-    w.spawn_building(powr, 1, 39, 39).unwrap();
+    w.spawn_building(powr, 0, 39, 39).unwrap();
     let o = outcome(&mut w, &units, gx, gy, 8 * CELL, 25 * 60);
     let mut goals: Vec<u32> = units.iter().map(|&i| w.actors[i].goal).collect();
     goals.sort();
