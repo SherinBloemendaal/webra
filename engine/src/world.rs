@@ -1,6 +1,6 @@
 //! World state, actor storage, orders and the fixed-step tick loop.
 
-use crate::flowfield::{nearest_in_component, FlowCache, Passability};
+use crate::flowfield::{FlowCache, Passability};
 use crate::map::Map;
 use crate::math::{dist, CELL, HALF_CELL};
 use crate::rng::Rng;
@@ -15,7 +15,6 @@ const IDX_BITS: u32 = 22;
 const IDX_MASK: u32 = (1 << IDX_BITS) - 1;
 const GEN_MASK: u32 = (1 << (32 - IDX_BITS)) - 1;
 pub const MAX_WEAPONS: usize = 4;
-const ORE_GROWTH_INTERVAL: u32 = 375;
 const VISION_INTERVAL: u32 = 2;
 /// Queued waypoints a unit keeps at most (Shift+click moves); later ones are dropped.
 pub const MAX_WAYPOINTS: usize = 16;
@@ -202,6 +201,9 @@ pub struct Actor {
     pub repair_active: bool,
     /// Switched off with the power down button (OpenRA `powerdown` condition).
     pub powered_off: bool,
+    /// State of the neutral world's traits (neutral.rs): panic, wandering,
+    /// hospital heal, oil derrick and ore mine timers.
+    pub world: crate::neutral::ActorWorld,
 
     /// Faction it was made for (OpenRA FactionInit): a captured structure
     /// keeps providing its own faction's prerequisites.
@@ -293,6 +295,7 @@ impl Actor {
             repair_ticks: 0,
             repair_active: false,
             powered_off: false,
+            world: crate::neutral::ActorWorld::default(),
             faction: 0,
             inf: Default::default(),
             leftover: Default::default(),
@@ -460,6 +463,9 @@ pub struct GameOptions {
     pub weather: crate::weather::WeatherMode,
     /// Lobby option "Debug menu" (OpenRA `cheats`): cheat orders work (debug.rs).
     pub cheats: bool,
+    /// Tech buildings of a generated map (OpenRA's map generator option
+    /// "Buildings", mapgen/settlements.rs). Map files bring their own.
+    pub tech_buildings: crate::mapgen::settlements::TechBuildings,
     /// Lobby option "Reusable engineers" (OpenRA `reusable-engineers`): engineers
     /// capture from outside and stay (Captures@REUSABLE; infantry.rs).
     pub reusable_engineers: bool,
@@ -496,6 +502,7 @@ impl Default for GameOptions {
             biome: Some(crate::weather::Biome::Temperate),
             weather: crate::weather::WeatherMode::Full,
             cheats: false,
+            tech_buildings: crate::mapgen::settlements::TechBuildings::Standard,
             // Tests and tools: no crates, the classic "everything must go"
             // victory and every slot at its own spawn, so scenarios stay as
             // they are set up. The lobby defaults (OpenRA's: crates, short
@@ -908,6 +915,8 @@ pub struct World {
     pub pass: Passability,
     /// Passability for ships.
     pub pass_water: Passability,
+    /// Passability for landing craft (the Transport): ships' water and beaches.
+    pub pass_landing: Passability,
     pub flow: FlowCache,
     pub actors: Vec<Actor>,
     free: Vec<u32>,
@@ -967,6 +976,8 @@ pub struct World {
     pub render_combined: bool,
     /// Map beacons players placed for their allies (beacons.rs).
     pub beacons: crate::beacons::Beacons,
+    /// The neutral world: bridges, husks to spawn, the neutral player (neutral.rs, bridges.rs).
+    pub neutral: crate::neutral::NeutralState,
     /// Crate spawner and crate delivery flights (crates.rs).
     pub crates: crate::crates::CrateState,
     /// Scorch marks and craters (smudges.rs): presentation only, never read
@@ -992,8 +1003,9 @@ pub struct World {
 /// Where a world's map came from (`World::setup`).
 enum MapSource<'a> {
     /// Generated: its spawns are listed by column, top first, for fair team
-    /// splits (gamerules.rs `assign_spawns`).
-    Generated,
+    /// splits (gamerules.rs `assign_spawns`); with its neutral actors (ore
+    /// mines, tech buildings and villages: mapgen/sites.rs, settlements.rs).
+    Generated(&'a [crate::mapdata::MapActor]),
     /// A prepared map without actors (`World::on_map`).
     Prepared,
     /// A map file with its pre-placed actors.
@@ -1011,7 +1023,9 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        World::setup(rules, map, seed, players, options, MapSource::Generated, biome)
+        // Ore mines in the fields, tech buildings and villages (mapgen/sites.rs, settlements.rs).
+        let actors = crate::mapgen::sites::world_actors(&map, &rules, biome, options.tech_buildings, seed);
+        World::setup(rules, map, seed, players, options, MapSource::Generated(&actors), biome)
     }
 
     /// World on a prepared map with the default rules: players start at the
@@ -1047,7 +1061,7 @@ impl World {
         biome: crate::weather::Biome,
     ) -> World {
         let (actors, generated) = match source {
-            MapSource::Generated => (&[][..], true),
+            MapSource::Generated(actors) => (actors, true),
             MapSource::Prepared => (&[][..], false),
             MapSource::File(actors) => (actors, false),
         };
@@ -1079,9 +1093,11 @@ impl World {
             w.spawn_start(slot as u8);
         }
         // Pre-placed map actors. Those of empty spawns are skipped; neutral
-        // ones belong to an extra, passive player. Crates and their delivery
-        // planes belong to that player too (OpenRA's world owner, crates.rs).
-        if actors.iter().any(|a| a.owner < 0) || options.crates {
+        // ones (and the trees of tree terrain, neutral.rs) belong to an
+        // extra, passive player. Crates and their delivery planes belong to
+        // that player too (OpenRA's world owner, crates.rs).
+        let trees = w.map.terrain.contains(&crate::map::Terrain::Tree);
+        if actors.iter().any(|a| a.owner < 0) || options.crates || trees {
             let fi = w.rules.faction_index("allies").unwrap();
             w.add_player(fi, false, (0, 0));
             let n = w.players.len() - 1;
@@ -1117,6 +1133,8 @@ impl World {
                 }
             }
         }
+        // Trees from tree terrain, bridges (neutral.rs, bridges.rs).
+        w.setup_neutral();
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
@@ -1126,11 +1144,13 @@ impl World {
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
         let pass = Passability::new(&map);
         let pass_water = Passability::water(&map);
+        let pass_landing = Passability::landing(&map);
         let cells = map.cells();
         World {
             rules,
             pass,
             pass_water,
+            pass_landing,
             flow: FlowCache::new(),
             actors: Vec::new(),
             free: Vec::new(),
@@ -1167,6 +1187,7 @@ impl World {
             render_all: false,
             render_combined: false,
             beacons: Default::default(),
+            neutral: Default::default(),
             crates: Default::default(),
             smudges: crate::smudges::Smudges::new(cells),
             game_over: false,
@@ -1303,6 +1324,7 @@ impl World {
         a.born = self.tick;
         self.actors[i] = a;
         self.init_abilities(i);
+        self.init_world_traits(i);
         // ProducibleWithLevel (infantry.rs).
         self.on_created(i);
         i
@@ -1350,10 +1372,13 @@ impl World {
         a.born = self.tick;
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset)).filter(|_| free_actor);
+        let crush = info.abilities.crushable.as_ref().map_or(0, crate::flowfield::crush_bits);
         self.actors[i] = a;
         self.init_abilities(i);
+        self.init_world_traits(i);
         for (dx, dy, c) in footprint {
-            if c == FootCell::Empty {
+            // Overlay cells (bridges and their huts) are not claimed.
+            if matches!(c, FootCell::Empty | FootCell::Overlay) {
                 continue;
             }
             // Checked by `fits` above.
@@ -1365,10 +1390,14 @@ impl World {
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);
                 self.pass_water.set_blocked(ci, true);
+                self.pass_landing.set_blocked(ci, true);
+                // Walls tanks may drive over (neutral.rs).
+                self.pass.set_crush(ci, crush);
             }
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -1437,6 +1466,8 @@ impl World {
             self.ship_death_effect(i);
         }
         self.death_explosion(i);
+        // Further death weapons and husks (neutral.rs).
+        self.on_world_killed(i);
         // Ground vehicles leave a husk (husks.rs, OpenRA SpawnActorOnDeath).
         self.spawn_husk(i);
         // Passengers die with their transport, or get out (Cargo.EjectOnDeath).
@@ -1475,6 +1506,8 @@ impl World {
                         self.building_at[ci] = NONE;
                         self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
                         self.pass_water.set_blocked(ci, !self.map.terrain[ci].ship_passable());
+                        self.pass_landing.set_blocked(ci, !self.map.terrain[ci].landing_passable());
+                        self.pass.set_crush(ci, 0);
                     }
                 }
                 self.tokens_dirty = true;
@@ -1499,6 +1532,7 @@ impl World {
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
     }
 
     // ---- Domains (ground, water, air) -----------------------------------------
@@ -1517,6 +1551,31 @@ impl World {
         }
     }
 
+    /// Whether unit `i` is a landing craft: a ship whose locomotor also
+    /// drives on beaches (OpenRA `lcraft`, TerrainSpeeds Beach: the Transport).
+    pub fn lands(&self, i: usize) -> bool {
+        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| {
+            let l = &self.rules.locomotors[u.locomotor];
+            l.domain == crate::rules::Domain::Water && l.speeds.get(crate::map::SPEED_BEACH).is_some_and(|&s| s > 0)
+        })
+    }
+
+    /// Passability for unit `i`: its domain's, or for landing craft water and beaches.
+    pub fn pass_of(&self, i: usize) -> &Passability {
+        if self.lands(i) {
+            &self.pass_landing
+        } else {
+            self.pass_for(self.domain_of(i))
+        }
+    }
+
+    /// Rebuild every passability from the map (after replacing it wholesale; tests, harnesses).
+    pub fn reset_passability(&mut self) {
+        self.pass = Passability::new(&self.map);
+        self.pass_water = Passability::water(&self.map);
+        self.pass_landing = Passability::landing(&self.map);
+    }
+
     /// Goal cell for moving actor `i` toward cell (gx, gy): the nearest cell it
     /// can actually reach in its domain (any cell for aircraft), or NONE.
     pub fn path_goal(&self, i: usize, gx: i32, gy: i32) -> u32 {
@@ -1532,9 +1591,8 @@ impl World {
         if d == crate::rules::Domain::Air {
             return self.map.idx(gx, gy) as u32;
         }
-        let pass = self.pass_for(d);
-        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        nearest_in_component(&self.map, pass, (gx, gy), pass.component[ci], from).unwrap_or(NONE)
+        // Crushers reach what lies behind walls they may crush (neutral.rs).
+        self.nearest_reachable(i, (gx, gy), from).unwrap_or(NONE)
     }
 
     // ---- Geometry helpers --------------------------------------------------
@@ -1569,6 +1627,10 @@ impl World {
         }
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            // Bridges are hit around their centre (bridges.rs).
+            if self.rules.actors[a.ty as usize].world.bridge.is_some() {
+                return self.bridge_hit_distance(i, x, y);
+            }
             let mut best = i32::MAX;
             for &(dx, dy) in &b.hit_cells {
                 let x0 = (a.cx + dx) * CELL;
@@ -1597,7 +1659,10 @@ impl World {
         }
         let vis = &self.players[player as usize].visible;
         if a.kind == Kind::Building {
-            let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            let info = &self.rules.actors[a.ty as usize];
+            let b = info.building.as_ref().unwrap();
+            // HiddenUnderShroud (trees, rocks, bridges): seen once explored (neutral.rs).
+            let vis = if info.world.shroud_only { &self.players[player as usize].explored } else { vis };
             b.footprint.iter().any(|&(dx, dy, c)| c != FootCell::Empty && vis[self.map.idx(a.cx + dx, a.cy + dy)] != 0)
         } else {
             // Passengers are inside their transport; submerged submarines need a detector.
@@ -1884,8 +1949,8 @@ impl World {
         let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
         let from = self.cell_of(cx, cy);
         let (gx, gy) = self.cell_toward(x, y, cx, cy);
-        // Reachable goals per (domain, component), shared by the group.
-        let mut goals: Vec<((crate::rules::Domain, u32), u32)> = Vec::new();
+        // Reachable goals per (domain, component, crushed walls), shared by the group.
+        let mut goals: Vec<((crate::rules::Domain, u32, u8), u32)> = Vec::new();
         for &i in units {
             if !self.actors[i].in_world() {
                 continue;
@@ -1895,13 +1960,14 @@ impl World {
             let comp = if d == crate::rules::Domain::Air {
                 0
             } else {
-                self.pass_for(d).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
+                self.pass_of(i).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
             };
-            let goal = match goals.iter().find(|(k, _)| *k == (d, comp)) {
+            let crush = self.crush_mask(i);
+            let goal = match goals.iter().find(|(k, _)| *k == (d, comp, crush)) {
                 Some(&(_, g)) => g,
                 None => {
                     let g = self.path_goal_from(i, gx, gy, from);
-                    goals.push(((d, comp), g));
+                    goals.push(((d, comp, crush), g));
                     g
                 }
             };
@@ -1990,7 +2056,22 @@ impl World {
         }
         // Husks (force-fire targets) and crates (husks.rs, crates.rs).
         let ci = self.map.idx(cx, cy);
-        self.husk_at(ci).or_else(|| self.crate_at(ci)).filter(|&l| self.is_visible_to(l, player))
+        if let Some(l) = self.husk_at(ci).or_else(|| self.crate_at(ci)).filter(|&l| self.is_visible_to(l, player)) {
+            return Some(l);
+        }
+        // A bridge hut (engineers repair its bridge from there, bridges.rs).
+        if let Some(h) = self.bridge_hut_at(x, y).filter(|&h| self.is_visible_to(h, player)) {
+            return Some(h);
+        }
+        // A bridge under the cursor (force fire on it, bridges.rs).
+        if let Some(b) = self.neutral.bridges.bridge_at(ci) {
+            if let Some(i) = self.resolve(self.neutral.bridges.bridges[b].actor) {
+                if self.is_visible_to(i, player) {
+                    return Some(i);
+                }
+            }
+        }
+        None
     }
 
     pub fn smart_action(&self, player: u8, units: &[usize], x: i32, y: i32) -> SmartAction {
@@ -2193,6 +2274,9 @@ impl World {
         self.tick_projectiles();
         self.tick_crashes();
         self.cleanup_dead();
+        // Husks, the hospital, oil derricks, ore mines (with the "Ore
+        // regrowth" option), panics and bridge repairs (neutral.rs).
+        self.tick_neutral();
         // Mission scripts (mission/): triggers, script activities, Tick().
         if self.mission.is_some() {
             self.tick_mission();
@@ -2200,12 +2284,6 @@ impl World {
         }
         if self.tokens_dirty {
             self.refresh_tokens();
-        }
-        if self.options.ore_regrowth && self.tick.is_multiple_of(ORE_GROWTH_INTERVAL) {
-            let max = self.rules.player.ore_max_density;
-            if self.map.grow_ore(&mut self.rng, max, &self.pass.blocked) {
-                self.terrain_dirty = true;
-            }
         }
         if self.tick.is_multiple_of(VISION_INTERVAL) {
             self.update_vision();
@@ -2274,8 +2352,12 @@ impl World {
                 mix(a.primary as i64);
                 // Infantry abilities (infantry.rs).
                 self.hash_infantry_actor(a, &mut mix);
+                // The neutral world's traits (neutral.rs).
+                a.world.mix(&mut mix);
             }
         }
+        // Bridges and husks to spawn (bridges.rs, neutral.rs).
+        self.neutral.mix(&mut mix);
         self.hash_infantry_world(&mut mix);
         // Lobby options (gamerules.rs, crates.rs): experience, losses and the spawner.
         for p in &self.players {

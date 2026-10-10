@@ -176,6 +176,8 @@ export function placementProblem(doc, catalog, type, x, y, ignore = null) {
     if (!doc.inside(cx, cy)) return 'outside the map';
     const i = doc.idx(cx, cy);
     const t = doc.terrain[i];
+    // A bridge brings its own terrain (stampBridge) and takes no cell.
+    if (c === 3) continue;
     if (info.kind === 'building' && c === 1) {
       if (!isBuildable(t)) return 'needs clear ground';
       if (occupied.has(i) || units.has(i)) return 'overlaps another actor';
@@ -207,9 +209,44 @@ export function placeActor(doc, catalog, { type, owner, x, y, facing }, symmetry
     };
     doc.actors.push(a);
     added.push(a);
+    stampBridge(doc, info, p.x, p.y);
   }
   return added;
 }
+
+/**
+ * A bridge placed in the editor brings its healthy template's terrain (the
+ * deck and its banks, engine bridges.rs: a game stamps it too when the
+ * ground matches no state of the bridge) for the map's biome. Other actors
+ * change nothing.
+ */
+export function stampBridge(doc, info, x, y) {
+  const templates = info?.world?.bridge;
+  if (!templates) return;
+  const t = templates[doc.meta?.biome ?? 'temperate'] ?? Object.values(templates)[0];
+  if (!t) return;
+  t.healthy.forEach((row, dy) => {
+    [...row].forEach((ch, dx) => {
+      const terrain = BRIDGE_LETTERS[ch];
+      if (terrain === undefined || !doc.inside(x + dx, y + dy)) return;
+      doc.setCell(x + dx, y + dy, terrain);
+    });
+  });
+}
+
+/** OpenRA terrain letters of bridge templates (engine map.rs Terrain::from_letter). */
+const BRIDGE_LETTERS = Object.freeze({
+  c: TERRAIN.CLEAR,
+  r: TERRAIN.ROUGH,
+  k: TERRAIN.ROCK,
+  w: TERRAIN.WATER,
+  t: TERRAIN.TREE,
+  d: TERRAIN.ROAD,
+  g: TERRAIN.BRIDGE,
+  b: TERRAIN.BEACH,
+  v: TERRAIN.RIVER,
+  l: TERRAIN.WALL,
+});
 
 /** The top-most actor covering cell (x, y), or null. Units win over the building under them. */
 export function actorAt(doc, catalog, x, y) {

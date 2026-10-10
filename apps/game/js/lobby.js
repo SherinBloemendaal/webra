@@ -17,6 +17,7 @@ import {
   STARTING_CASH,
   STARTING_UNITS,
   TECH_LEVELS,
+  TECH_BUILDINGS,
   GAME_SPEEDS,
   TIME_LIMITS,
   HANDICAPS,
@@ -61,8 +62,8 @@ import { mapLibrary } from './maplibrary.js';
 import { attachTooltip } from './ui/tooltip.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
-// its label and choices. Map style, biome and weather are the World group of
-// the Battlefield panel.
+// its label and choices. Map style, biome, tech buildings and weather are the
+// World group of the Battlefield panel.
 const SELECT_OPTIONS = [
   {
     key: 'startingCash',
@@ -97,6 +98,7 @@ export const HELP_KEYS = [
   'mapSize',
   'mapStyle',
   'biome',
+  'techBuildings',
   'weather',
   'mapFile',
   'seed',
@@ -692,6 +694,12 @@ export class Lobby {
       this.renderCaption();
       this.schedulePreview();
     });
+    // Tech buildings of a generated map (map files bring their own buildings).
+    this.techSelect = buildSelect(TECH_BUILDINGS, 'lobby-select');
+    this.techSelect.addEventListener('change', () => {
+      this.state.techBuildings = this.techSelect.value;
+      this.optionEdited();
+    });
     // Weather applies to map files too (they bring their biome, not the weather).
     this.weatherSelect = buildSelect(WEATHER_MODES, 'lobby-select');
     this.weatherSelect.addEventListener('change', () => {
@@ -793,10 +801,17 @@ export class Lobby {
     this.fileField = this.field('Map file', fileRow, 'mapFile', this.loadBtn);
     this.styleField = this.field('Map style', this.styleSelect, 'mapStyle');
     this.biomeField = this.field('Biome', this.biomeSelect, 'biome');
+    this.techField = this.field('Tech buildings', this.techSelect, 'techBuildings');
 
     // The climate of the battlefield: layout, biome and weather together.
     const world = el('fieldset', 'lobby-world');
-    world.append(el('legend', 'lobby-world-title', 'World'), this.styleField, this.biomeField, this.field('Weather', this.weatherSelect, 'weather'));
+    world.append(
+      el('legend', 'lobby-world-title', 'World'),
+      this.styleField,
+      this.biomeField,
+      this.techField,
+      this.field('Weather', this.weatherSelect, 'weather'),
+    );
     fields.append(this.sizeField, this.fileField, world, this.field('Seed', seedRow, 'seed', this.seedInput));
 
     content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, this.importBox, fields);
@@ -1172,8 +1187,10 @@ export class Lobby {
     this.sizeField.hidden = file;
     this.styleField.hidden = file;
     this.biomeField.hidden = file;
+    this.techField.hidden = file;
     this.styleSelect.value = this.state.mapStyle;
     this.biomeSelect.value = this.state.biome;
+    this.techSelect.value = this.state.techBuildings;
     this.fileField.hidden = !file && !this.pendingMap;
 
     this.mapInfo.textContent = '';

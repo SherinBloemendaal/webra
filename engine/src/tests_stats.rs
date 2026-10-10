@@ -29,6 +29,7 @@ fn refs(w: &World, v: &[usize]) -> Vec<u32> {
 /// 64x64 open map without ore, two human players that explored everything.
 fn flat_world() -> World {
     let mut w = World::new(11, 64, &[("allies", false), ("soviet", false)]);
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;
@@ -36,6 +37,7 @@ fn flat_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for b in 0..w.building_at.len() {
         if w.building_at[b] != crate::world::NONE {
             w.pass.set_blocked(b, true);

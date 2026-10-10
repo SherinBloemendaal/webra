@@ -90,6 +90,11 @@ fn draw(m: &Map) {
                     Terrain::Water => '~',
                     Terrain::Tree => 'T',
                     Terrain::Ford => '=',
+                    Terrain::Road => ':',
+                    Terrain::Bridge => 'H',
+                    Terrain::Beach => '_',
+                    Terrain::River => '-',
+                    Terrain::Wall => 'W',
                 }
             })
             .collect();

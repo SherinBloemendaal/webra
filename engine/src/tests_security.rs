@@ -31,6 +31,7 @@ fn busy_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for p in 0..2u8 {
         w.players[p as usize].cash = 1_000_000;
         w.players[p as usize].explored.iter_mut().for_each(|e| *e = 1);

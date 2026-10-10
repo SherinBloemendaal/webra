@@ -77,7 +77,8 @@ pub fn measure(m: &Map) -> MapStats {
             Terrain::Rock => s.rock += 1,
             Terrain::Tree => s.trees += 1,
             Terrain::Rough => s.rough += 1,
-            Terrain::Clear => {}
+            // The generator makes none of these (imported and edited maps can have them).
+            Terrain::Clear | Terrain::Road | Terrain::Bridge | Terrain::Beach | Terrain::River | Terrain::Wall => {}
         }
         if m.ore[i] > 0 {
             s.ore += 1;

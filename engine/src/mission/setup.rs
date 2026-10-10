@@ -86,6 +86,7 @@ impl World {
             tick_ms: 40,
             bounty: false,
             separate_team_spawns: false,
+            tech_buildings: crate::mapgen::settlements::TechBuildings::None,
         };
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
@@ -107,6 +108,7 @@ impl World {
                 bot,
                 objectives: Vec::new(),
                 win: WinState::Undefined,
+                coop: WinState::Undefined,
                 conditions: Vec::new(),
                 ai_enabled: false,
             });
@@ -162,8 +164,8 @@ impl World {
             game_over_at: None,
             next_token: 1,
             discovered: BTreeMap::new(),
-            panic: BTreeMap::new(),
             low_power_quiet: Default::default(),
+            player_actors: BTreeMap::new(),
             conditions: BTreeMap::new(),
             budget: LOAD_BUDGET,
         };
@@ -173,6 +175,8 @@ impl World {
             }
         }
         w.spawn_map_actors(&mut m);
+        // Bridges take their state from the terrain, trees of tree terrain become actors (neutral.rs).
+        w.setup_neutral();
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
@@ -252,9 +256,6 @@ impl World {
                 match i {
                     Some(i) => {
                         let r = self.make_ref(i);
-                        if data.indestructible.contains(&self.rules.actors[t].id) {
-                            self.actors[i].invulnerable_until = u32::MAX;
-                        }
                         if let Some(pct) = a.health {
                             let max = self.rules.actors[t].hp as i64;
                             self.actors[i].hp = ((max * pct.clamp(1, 100) as i64) / 100).max(1) as i32;
@@ -293,7 +294,10 @@ impl World {
                 continue;
             };
             m.handles[h as usize].tags = a.tags.clone();
-            m.named.push((a.name.clone(), h));
+            // Bridges of the map's templates have no name (OpenRA LegacyBridgeLayer).
+            if !a.name.is_empty() {
+                m.named.push((a.name.clone(), h));
+            }
         }
     }
 

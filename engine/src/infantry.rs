@@ -169,18 +169,6 @@ pub struct DelayedShot {
     pub weapon: u16,
 }
 
-/// A bridge hut the world objects registered (OpenRA BridgeHut): engineers
-/// with RepairsBridges enter it while its bridge is damaged.
-#[derive(Clone, Debug)]
-pub struct BridgeHut {
-    /// The hut actor.
-    pub actor: u32,
-    /// Its bridge is damaged (OpenRA BridgeHut.BridgeDamageState above Undamaged).
-    pub damaged: bool,
-    /// A repair is under way (OpenRA BridgeHut.Repairing).
-    pub repairing: bool,
-}
-
 /// Short visual effects of this module (presentation).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InfantryFxKind {
@@ -209,10 +197,6 @@ pub struct InfantryWorld {
     pub pulses: Vec<Pulse>,
     /// Shots waiting for their FireDelay.
     pub shots: Vec<DelayedShot>,
-    /// Bridge huts (registered by the world objects, see `register_bridge_hut`).
-    pub bridge_huts: Vec<BridgeHut>,
-    /// Huts an engineer entered since the world objects last asked (`take_bridge_repairs`).
-    pub bridge_repairs: Vec<u32>,
     /// Effects (presentation only).
     pub fx: Vec<InfantryFx>,
     /// This tick's captures in progress: (target, captor's owner, progress, total).
@@ -449,6 +433,8 @@ impl World {
         self.change_owner(t, new_owner, cancel);
         // CaptureNotification for both sides (sound_events.rs Captured).
         self.sound.push(SoundEventKind::Captured, ty as i32, x, y, new_owner, old as i32);
+        // GivesCashOnCapture and the like of the neutral world (neutral.rs).
+        self.after_capture(t, old);
     }
 
     /// Give actor `i` to `owner` (OpenRA Actor.ChangeOwner): what it was
@@ -485,6 +471,8 @@ impl World {
             self.actors[p].stance = self.initial_stance(self.actors[p].ty, owner);
         }
         self.tokens_dirty = true;
+        // Walls change who may crush them (neutral.rs wall crushing).
+        self.pass.touch();
     }
 
     // ---- Infiltration (Infiltrates, InfiltrateFor*) -----------------------------------
@@ -528,6 +516,8 @@ impl World {
                     self.spend(victim, take);
                     self.players[owner as usize].cash += give;
                     self.note_earned(owner, give);
+                    // InfiltrateForCash ShowTicks: over the target in the thief's colour.
+                    self.show_cash_tick(t, owner, give);
                     self.note_player_experience(owner, e.experience + take * e.experience_percentage / 100);
                 }
                 "exploration" => {
@@ -644,37 +634,13 @@ impl World {
         }
     }
 
-    /// Register a bridge hut (OpenRA BridgeHut) the world objects spawned, so
-    /// engineers with RepairsBridges can be sent into it.
-    pub fn register_bridge_hut(&mut self, hut: usize) {
-        let r = self.make_ref(hut);
-        if !self.inf.bridge_huts.iter().any(|h| h.actor == r) {
-            self.inf.bridge_huts.push(BridgeHut { actor: r, damaged: false, repairing: false });
-        }
-    }
-
-    /// Update a bridge hut's state: its bridge is damaged, a repair runs.
-    pub fn set_bridge_hut_state(&mut self, hut: usize, damaged: bool, repairing: bool) {
-        let r = self.make_ref(hut);
-        if let Some(h) = self.inf.bridge_huts.iter_mut().find(|h| h.actor == r) {
-            h.damaged = damaged;
-            h.repairing = repairing;
-        }
-    }
-
-    /// Bridge huts engineers entered since the last call: the world objects
-    /// start their bridge's repair (OpenRA RepairBridge activity).
-    pub fn take_bridge_repairs(&mut self) -> Vec<u32> {
-        std::mem::take(&mut self.inf.bridge_repairs)
-    }
-
     /// Whether unit `i` can repair the bridge of hut `t` (RepairsBridges: the
-    /// bridge is damaged and no repair runs yet).
+    /// bridge is damaged, no repair runs yet and it is not dangling;
+    /// bridges.rs `can_repair_bridge_at_hut`).
     pub fn can_repair_bridge(&self, i: usize, t: usize) -> bool {
-        let r = self.make_ref(t);
         self.actors[i].alive
             && self.rules.actors[self.actors[i].ty as usize].abilities.repairs_bridges.is_some()
-            && self.inf.bridge_huts.iter().any(|h| h.actor == r && h.damaged && !h.repairing)
+            && self.can_repair_bridge_at_hut(t)
     }
 
     // ---- Disguise ---------------------------------------------------------------------
@@ -948,11 +914,8 @@ impl World {
                 self.actors[i].inf.enter.as_mut().unwrap().phase = EnterPhase::Exiting;
             }
             EnterKind::RepairBridge => {
-                let r = self.make_ref(t);
-                if let Some(h) = self.inf.bridge_huts.iter_mut().find(|h| h.actor == r) {
-                    h.repairing = true;
-                }
-                self.inf.bridge_repairs.push(r);
+                // OpenRA RepairBridge: the hut's bridge is repaired span by span (bridges.rs).
+                self.repair_bridge_at_hut(t, owner);
                 self.remove(i);
             }
         }
@@ -1149,11 +1112,6 @@ impl World {
         }
         for s in &self.inf.shots {
             for v in [s.tick as i64, s.shooter as i64, s.target as i64, s.weapon as i64] {
-                mix(v);
-            }
-        }
-        for h in &self.inf.bridge_huts {
-            for v in [h.actor as i64, h.damaged as i64, h.repairing as i64] {
                 mix(v);
             }
         }

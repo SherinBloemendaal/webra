@@ -44,6 +44,7 @@ fn flat_world(factions: [&str; 2]) -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for b in 0..w.building_at.len() {
         if w.building_at[b] != crate::world::NONE {
             w.pass.set_blocked(b, true);
@@ -394,6 +395,7 @@ fn cloaking_and_uncloaking_are_heard_but_not_at_birth() {
         }
         w.pass = crate::flowfield::Passability::new(&w.map);
         w.pass_water = crate::flowfield::Passability::water(&w.map);
+        w.pass_landing = crate::flowfield::Passability::landing(&w.map);
         w.spawn_unit(t, 0, x, y, 0)
     };
     let ev = collect(&mut w, 130);

@@ -22,6 +22,8 @@ fn weapon(w: &World, name: &str) -> usize {
 fn world() -> World {
     let players = [PlayerSetup::new("england", None), PlayerSetup::new("russia", None)];
     let mut w = World::with_options(11, 64, &players, GameOptions { ore_regrowth: false, ..GameOptions::default() });
+    // Trees, mines and tech buildings of the generated map (neutral.rs) out of the way.
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = Terrain::Clear;
     }

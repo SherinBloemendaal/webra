@@ -109,6 +109,10 @@ export const ROLES = Object.freeze({
   trail: { special: { aircraft: 'planes.3', helicopter: 'helis.2' } },
   parachute: { special: { infantry: 'planes.0' } },
   'damage-smoke': { special: { vehicle: 'fx.0', ship: 'fx.0', building: 'fx.0', aircraft: 'fx.0', infantry: 'fx.0' } },
+  // Trees on fire (^Tree WithDamageOverlay@SmallBurn, @MediumBurn, @LargeBurn; engine neutral.rs).
+  'fire-small': { special: { building: 'decorations.2' } },
+  'fire-medium': { special: { building: 'decorations.4' } },
+  'fire-large': { special: { building: 'decorations.5' } },
 });
 
 /** Why a special sprite keeps WebRA's art. */
@@ -337,6 +341,12 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
       const base = { actor: a.id, role, openra };
       if (!original) {
         row({ ...base, status: 'webra-only', note: 'OpenRA made this art (bits.txt); Red Alert has none' });
+        continue;
+      }
+      // Original on other tilesets only (the desert's trees and gem mine): WebRA's art on this one.
+      const tilesetDef = SEQUENCES[image]?.[seq];
+      if (tilesetDef && sequenceFile(tilesetDef, tileset) === '') {
+        row({ ...base, status: 'webra-only', note: `OpenRA's own art on ${tileset} (bits.txt): WebRA draws it there` });
         continue;
       }
       const spec = ROLES[role];

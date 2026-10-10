@@ -23,6 +23,22 @@ pub enum ActorTrigger {
     OnSupportPowerActivated,
 }
 
+impl PlayerTrigger {
+    pub fn parse(name: &str) -> Option<PlayerTrigger> {
+        use PlayerTrigger::*;
+        Some(match name {
+            "OnPlayerWon" => OnPlayerWon,
+            "OnPlayerLost" => OnPlayerLost,
+            "OnObjectiveAdded" => OnObjectiveAdded,
+            "OnObjectiveCompleted" => OnObjectiveCompleted,
+            "OnObjectiveFailed" => OnObjectiveFailed,
+            "OnBuildingPlaced" => OnBuildingPlaced,
+            "OnPlayerDiscovered" => OnPlayerDiscovered,
+            _ => return None,
+        })
+    }
+}
+
 impl ActorTrigger {
     pub fn parse(name: &str) -> Option<ActorTrigger> {
         use ActorTrigger::*;

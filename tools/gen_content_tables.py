@@ -29,7 +29,11 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
   the engine's body slot (2t) and second slot (2t + 1: turret, prone for
   infantry, or the layer drawn over a structure: `overlay` names its kind,
   "door" for OpenRA WithProductionDoorOverlay) uses; `bib` is the
-  WithBuildingBib sequence drawn under the structure.
+  WithBuildingBib sequence drawn under the structure. Bridges (OpenRA
+  LegacyBridgeLayer: their art is terrain templates) have `bridge` instead:
+  per tileset the template files of each state (healthy, damaged,
+  destroyed, and the long bridge spans' destroyed_north, destroyed_south,
+  destroyed_both) and the template size.
 - TERRAIN[tileset] = { palette, rotation, images: [file], templates: [[image,
   width, height, role, cells]] }: the templates the tile terrain uses, by role
   (TERRAIN_ROLES), with the cells of the template that have a tile.
@@ -82,7 +86,8 @@ WATER_ROTATION = {'TEMPERAT': [96, 7], 'SNOW': [96, 7], 'DESERT': [32, 7]}
 # plain ground variants; water: open water; shore: beaches (the runtime
 # matches their tiles to the coastline by their pixels); rough: loose stones
 # on open ground; rock: boulders on open ground (impassable); water-rock:
-# rocks standing in water. Templates made by OpenRA (bits.txt) are left out.
+# rocks standing in water; road: plain road pieces. Templates made by OpenRA
+# (bits.txt) are left out.
 TERRAIN_ROLES = {
     'TEMPERAT': {
         'clear': ['clear1'],
@@ -91,6 +96,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
+        'road': ['d44', 'd45'],
     },
     'SNOW': {
         'clear': ['clear1'],
@@ -99,6 +105,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
+        'road': ['d44', 'd45'],
     },
     'DESERT': {
         'clear': ['clear1'],
@@ -107,6 +114,7 @@ TERRAIN_ROLES = {
         'rough': ['p01', 'p02', 'p03', 'p07'],
         'rock': ['p04'],
         'water-rock': [],
+        'road': ['d03'],
     },
 }
 
@@ -180,6 +188,13 @@ NO_ORIGINAL = {
     'rank.shp', 'allyrepair.shp', 'poweroff.shp',
     # The mines' sidebar icon.
     'jmin.shp',
+    # The neutral world's art OpenRA drew itself (it keeps WebRA art): ammo
+    # boxes, huts, the hospital icon, make animations of tech buildings, the
+    # oil derrick, ore and gem mines on some tilesets, poles, traps and more.
+    'ammobox1.shp', 'ammobox2.shp', 'ammobox3.shp', 'asianhut.shp', 'c11.shp', 'ctflag.shp', 'fcommake.shp',
+    'gmine.des', 'gmine.sno', 'gmine.tem', 'hospicon.shp', 'lhus.shp', 'mine.des', 'mine.int', 'missmake.shp', 'oilb.shp',
+    'railmine.des', 'railmine.sno', 'railmine.tem', 'rushouse.shp', 'snowhut.shp', 'tanktrap1.shp', 'tanktrap2.shp',
+    'rice.tem', 'tc01.des', 'utilpol1.shp', 'utilpol2.shp', 'v19.des', 'windmill.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
@@ -262,6 +277,14 @@ SPECIAL_ART = {
     # disabled frame, OpenRA's "powerdown" image).
     'decorations.0': ['select', 'repair', 'loop'],
     'decorations.1': ['powerdown', 'disabled', 'loop'],
+    # The neutral world (engine/src/neutral.rs): trees on fire (^Tree
+    # WithDamageOverlay@SmallBurn, @MediumBurn, @LargeBurn: start, loop and
+    # end in a row, the engine names the frame, MODE.INDEX) and the
+    # hospital's red cross over healed infantry (WithDecoration@REDCROSS).
+    'decorations.2': ['burn-s', ['start', 'loop', 'end'], 'index'],
+    'decorations.3': ['pips', 'medic', 'loop'],
+    'decorations.4': ['burn-m', ['start', 'loop', 'end'], 'index'],
+    'decorations.5': ['burn-l', ['start', 'loop', 'end'], 'index'],
     # Effects of the engine (fx.rs): damage smoke (WithDamageOverlay: the
     # start, then the loop LoopCount times; the engine names the frame of the
     # start and loop frames in a row, MODE.INDEX), the bright and dim Tesla
@@ -291,7 +314,7 @@ import parse  # noqa: E402 (data/source/parse.py: MiniYaml parser and inheritanc
 # Sequence fields this tool understands; anything else on a used sequence is an error.
 KNOWN_FIELDS = {
     'Filename', 'TilesetFilenames', 'Start', 'Length', 'Stride', 'Facings', 'Tick', 'ZOffset', 'ShadowStart', 'Frames',
-    'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint',
+    'Reverses', 'Transpose', 'Offset', 'UseClassicFacings', 'InterpolatedFacings', 'ZRamp', 'BlendMode', 'IgnoreWorldTint', 'Scale',
     'Combine',
 }
 # Fields of one part of a Combine (OpenRA DefaultSpriteSequence.ParseCombineFilenames
@@ -358,7 +381,7 @@ def normalize(image, name, tree, strict=True):
             raise SystemExit(f'{image}.{name}: unsupported sequence field {key}')
     out = {}
     fn = field(data, defaults, 'Filename')
-    out['file'] = (fn[0] or '').lower()
+    out['file'] = ((fn or [''])[0] or '').lower()
     if 'Combine' in data:
         # A virtual file: the parts' frames one after the other; the sequence's
         # own Start, Length, Facings and Frames index into it.
@@ -407,6 +430,9 @@ def normalize(image, name, tree, strict=True):
         parts = [int(float(x)) for x in offset[0].split(',')]
         if parts[:2] != [0, 0]:
             out['offset'] = parts[:2]
+    sc = field(data, defaults, 'Scale')
+    if sc and sc[0] and float(sc[0]) != 1:
+        out['scale'] = float(sc[0])
     if out['facings'] == 0 or abs(out['facings']) & (abs(out['facings']) - 1):
         raise SystemExit(f'{image}.{name}: Facings must be a power of two')
     return to_original(image, name, out, strict)
@@ -485,7 +511,10 @@ def to_original(image, name, out, strict=True):
         for tid, tfn in out['tilesets'].items():
             o = original_file(tfn, f'{image}.{name}', strict)
             if o is None:
-                return None
+                # No original on this tileset (OpenRA drew it, like the ore
+                # mine of the desert): no file there, the actor keeps WebRA art.
+                tilesets[tid] = ''
+                continue
             if o != fn:
                 tilesets[tid] = o
         if tilesets:
@@ -521,6 +550,46 @@ def trait(tree, name):
         if k == name or k.startswith(name + '@'):
             return ch
     return None
+
+
+# Bridge states (OpenRA BridgeInfo template fields) as ACTOR_ART bridge keys.
+BRIDGE_STATES = [('healthy', 'Template'), ('damaged', 'DamagedTemplate'), ('destroyed', 'DestroyedTemplate'),
+                 ('destroyed_north', 'DestroyedPlusNorthTemplate'), ('destroyed_south', 'DestroyedPlusSouthTemplate'),
+                 ('destroyed_both', 'DestroyedPlusBothTemplate')]
+
+
+def template_files():
+    """Template id -> (image file, [width, height]) per tileset id."""
+    out = {}
+    for tid, info in TILESETS.items():
+        with open(os.path.join(SRC, 'tilesets', info['file'] + '.yaml')) as f:
+            root = parse.parse_miniyaml(f.read())
+        out[tid] = {}
+        for _key, (_v, ch) in root['Templates'][1].items():
+            img = ch['Images'][0].split(',')[0].strip().lower()
+            out[tid][int(ch['Id'][0])] = (img, [int(x) for x in ch['Size'][0].split(',')])
+    return out
+
+
+def bridge_art(aid, templates):
+    """The template files of a bridge's states per tileset (the bridge art is terrain tiles)."""
+    b = trait(rules_of(aid), 'Bridge') or {}
+    out = {}
+    for tid in TILESETS:
+        healthy = templates[tid].get(int(b.get('Template', ['0'])[0] or 0))
+        if healthy is None:
+            continue
+        rec = {'size': healthy[1]}
+        for state, key in BRIDGE_STATES:
+            t = templates[tid].get(int(b.get(key, ['0'])[0] or 0))
+            if t is None:
+                continue
+            rec[state] = t[0]
+        # Templates OpenRA made (the desert and small bridges): WebRA art there.
+        if any(v in BITS for k, v in rec.items() if k != 'size'):
+            continue
+        out[tid] = rec
+    return out
 
 
 def infantry_body(tree):
@@ -595,6 +664,7 @@ def actor_art(actors, seqs):
     images = actor_images()
     used = {}
     art = {}
+    templates = template_files()
 
     def use(image, name):
         if image not in seqs or name not in seqs[image]:
@@ -616,6 +686,11 @@ def actor_art(actors, seqs):
     for a in actors:
         aid = a['id']
         kind = a['kind']
+        if a.get('bridge'):
+            bridge = bridge_art(aid, templates)
+            if bridge:
+                art[aid] = {'image': aid.lower(), 'bridge': bridge}
+            continue
         image = images.get(aid.upper(), aid.lower())
         if image not in seqs:
             continue
@@ -670,6 +745,20 @@ def actor_art(actors, seqs):
                 got = use(image, bib.get('Sequence', ['bib'])[0])
                 if got:
                     entry['bib'] = got
+            # The neutral world's structures that die with an animation (the
+            # tech buildings: WithDeathAnimation DeathSequence dead, without
+            # the damage type suffix): the engine plays it as a death (die1).
+            death = trait(tree, 'WithDeathAnimation')
+            dead = death.get('DeathSequence', ['die'])[0] if death is not None else None
+            if dead and death.get('UseDeathTypeSuffix', ['True'])[0].lower() == 'false' and dead in seqs.get(image, {}) \
+                    and normalize(image, dead, seqs[image], strict=False) is not None:
+                # (OpenRA drew some itself, the construction yard's: WebRA keeps none there.)
+                entry['body'].update(poses(image, {'die1': dead}))
+            # An idle overlay over a structure without a turret or door (the
+            # burning oil pump V19.Husk: WithIdleOverlay fire-loop).
+            spinner = [o for o in overlays_of(tree) if not o[2]]
+            if spinner and not entry['second']:
+                entry['second'] = poses(image, {'idle': spinner[0][1]})
         elif kind == 'crate':
             # The crate on land (body) and in water (second slot), OpenRA WithCrateBody.
             entry['body'] = poses(image, {'idle': 'land'})
@@ -693,6 +782,12 @@ def actor_art(actors, seqs):
                 if k.startswith('WithInfantryBody') and 'parachute' in cond and not cond.startswith('!'):
                     # Falling paratroopers (WithInfantryBody@PARACHUTE).
                     entry['body'].update(poses(image, {'parachute': tokens(ch.get('StandSequences', ['parachute'])[0])[0]}))
+            # Civilians never lie down; their second slot is the panic of
+            # ScaredyCat (IRenderInfantrySequenceModifier: PanicSequencePrefix).
+            scared = trait(rules_of(aid), 'ScaredyCat')
+            if scared is not None:
+                panic = scared.get('PanicSequencePrefix', ['panic-'])[0]
+                entry['second'] = poses(image, {'idle': panic + 'stand', 'move': panic + 'run'})
         else:
             mapping = {'idle': 'idle'}
             if a.get('harvester'):
@@ -829,6 +924,10 @@ def special_art(seqs, used, explosions):
 # Render traits whose sequences the audit (apps/game/js/content/audit.js)
 # checks, and the role each sequence plays. Decorations (selection, pips,
 # control groups, tooltips) are the engine's own drawing and are left out.
+# Burn overlays of the neutral world's trees by image: their audit roles.
+FIRE_ROLES = {'burn-s': 'fire-small', 'burn-m': 'fire-medium', 'burn-l': 'fire-large'}
+
+
 def render_facts(actors, seqs):
     """Per WebRA actor: [role, image, sequence, has original file] for every
     sequence OpenRA's render traits draw (OpenRA facts, not WebRA's choices)."""
@@ -887,6 +986,10 @@ def render_facts(actors, seqs):
                 # The primary armament's AttackSequences (one picked per shot), else DefaultAttackSequence.
                 attacks = ch.get('AttackSequences', ['', {}])[1]
                 shoots = tokens(attacks['primary'][0]) if 'primary' in attacks else [g('DefaultAttackSequence', 'shoot')]
+                # Only an armed actor ever plays them (WithInfantryBody.Attacking:
+                # unarmed civilians never shoot).
+                if not any(k == 'Armament' or k.startswith('Armament@') for k in tree):
+                    shoots = []
                 for shoot in shoots:
                     add('shoot', image, shoot)
                 for idle in tokens(g('IdleSequences', '')):
@@ -926,8 +1029,11 @@ def render_facts(actors, seqs):
                     add('muzzle', image, seq)
             elif name == 'WithDamageOverlay':
                 img = g('Image', 'smoke_m')
+                # Fires that only incendiary hits light (^Tree @SmallBurn,
+                # @MediumBurn, @LargeBurn: neutral.rs) are their own roles.
+                role = FIRE_ROLES.get(img, 'damage-smoke') if 'Incendiary' in tokens(g('DamageTypes', '')) else 'damage-smoke'
                 for key, default in [('StartSequence', 'start'), ('LoopSequence', 'loop'), ('EndSequence', 'end')]:
-                    add('damage-smoke', img, g(key, default))
+                    add(role, img, g(key, default))
             elif name in ('WithResupplyAnimation', 'WithSupportPowerActivationAnimation'):
                 add('active', image, g('Sequence', 'active'))
                 add('active', image, 'damaged-' + g('Sequence', 'active'))
@@ -1169,6 +1275,7 @@ def main():
             'turret': a.get('turret_turn_speed') is not None,
             'harvester': bool(a.get('unit') and a['unit'].get('harvester')),
             '_wall': a['id'].upper() in walls,
+            'bridge': bool(a.get('world', {}).get('bridge')),
         })
     render = render_data(rules)
     art, used = actor_art(actors, seqs)
@@ -1212,6 +1319,9 @@ def main():
     for image in used.values():
         for rec in image.values():
             add_seq(rec)
+    for entry in art.values():
+        for rec in entry.get('bridge', {}).values():
+            files.update(v for k, v in rec.items() if k != 'size')
     for rec in trees.values():
         add_seq(rec)
     for rec in resources['ore'] + resources['gems']:

@@ -26,6 +26,6 @@ test('converted .oramap maps pass the upload gates, tampered ones do not', async
   assert.equal(pm.modded, true);
 
   // The server does not trust the converter: an actor type the engine does not know is refused.
-  const bad = { ...map, actors: [...map.actors, { type: 'V01', owner: -1, x: 1, y: 1, facing: 0 }] };
+  const bad = { ...map, actors: [...map.actors, { type: 'NOSUCH', owner: -1, x: 1, y: 1, facing: 0 }] };
   await assert.rejects(prepareMap(JSON.stringify(bad)), (e) => e.status === 422 && /unknown actor type/.test(e.message));
 });

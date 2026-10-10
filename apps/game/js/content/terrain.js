@@ -16,7 +16,11 @@
 //   when nothing fits well, the cell keeps open water, never a stray tile;
 // - rough and rock cells take loose stones and boulders standing on plain
 //   ground (whole templates where a run of cells fits one), rock cells out
-//   in the water rocks standing in water.
+//   in the water rocks standing in water;
+// - road cells take plain road pieces, beaches are drawn like rough ground
+//   by the water (beach tiles where they fit), rivers and the river under a
+//   bridge like water (the bridge actor draws its template over it,
+//   content/atlas.js), walls like rock.
 //
 // Water moves the way OpenRA animates it (RotationPaletteEffect): the
 // terrain palette indices of `TERRAIN[tileset].rotation` cycle. Their
@@ -67,14 +71,19 @@ export const WATER_ALPHA = 248;
 /** Rotating water colours shaders/terrain.wgsl knows (WATER_COLORS there). */
 export const WATER_COLORS = 7;
 
-/** Engine terrain values (engine/src/map.rs): clear, rough, rock, water, tree, ford. */
+/** Engine terrain values (engine/src/map.rs): clear, rough, rock, water, tree, ford, road, bridge, beach, river, wall. */
 const CLEAR = 0;
 const ROUGH = 1;
 const ROCK = 2;
 const WATER = 3;
 const TREE = 4;
 const FORD = 5;
-const isWaterType = (v) => v === WATER || v === FORD;
+const ROAD = 6;
+const BRIDGE = 7;
+const BEACH = 8;
+const RIVER = 9;
+const WALL = 10;
+const isWaterType = (v) => v === WATER || v === FORD || v === RIVER || v === BRIDGE;
 
 export function hash(x, y, salt = 0) {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(salt + 1, 2246822519);
@@ -291,7 +300,11 @@ function fitScore(tile, want, seams) {
  * @param {Uint8Array} terrain engine terrain bytes (RGBA per cell, R = type)
  */
 export function planTerrain(terrain, w, h, pools) {
-  const type = (x, y) => terrain[(y * w + x) * 4];
+  // Walls are drawn as rock, beaches as rough ground (beach tiles by the water).
+  const type = (x, y) => {
+    const v = terrain[(y * w + x) * 4];
+    return v === WALL ? ROCK : v === BEACH ? ROUGH : v;
+  };
   const picks = new Array(w * h).fill(null);
   const trees = new Uint8Array(w * h);
   const coast = { cells: 0, fitted: 0 };
@@ -361,6 +374,10 @@ export function planTerrain(terrain, w, h, pools) {
       }
       if (isWaterType(v)) {
         picks[i] = pick(pools.water, x, y);
+        continue;
+      }
+      if (v === ROAD) {
+        picks[i] = pick(pools.road ?? [], x, y, 7) ?? pick(ground, x, y);
         continue;
       }
       // Clear and rough ground: a beach tile by the water when one fits better than the ground's own tile.
@@ -472,7 +489,7 @@ function halve(data, width, height) {
 export function theaterPools(tileset, sprite, lookup = null) {
   const info = TERRAIN[tileset];
   if (!info) return null;
-  const pools = { clear: [], water: [], shore: [], rough: [], rock: [], 'water-rock': [], templates: [] };
+  const pools = { clear: [], water: [], shore: [], rough: [], rock: [], 'water-rock': [], road: [], templates: [] };
   const raw = [];
   info.templates.forEach(([img, width, height, role, cells], id) => {
     const s = sprite(info.images[img]);

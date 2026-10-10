@@ -22,7 +22,10 @@ export const MAP_MAX_SIZE = 256;
 export const MAP_MIN_SPAWNS = 2;
 export const MAP_MAX_SPAWNS = 8;
 export const MAP_MAX_ACTORS = 2000;
-export const TERRAIN_MAX = 5; // 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford
+// 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford, 6 road, 7 bridge, 8 beach, 9 river, 10 wall (engine map.rs Terrain)
+export const TERRAIN_MAX = 10;
+/** Terrain that can hold ore or gems: clear, rough and road (engine map.rs Terrain::holds_ore). */
+const holdsResource = (t) => t === 0 || t === 1 || t === 6;
 /** Map biomes (engine/src/weather.rs); absent means temperate. */
 export const MAP_BIOMES = ['temperate', 'snow', 'desert'];
 export const ORE_MAX = 12;
@@ -244,8 +247,8 @@ export function validateMap(input, opts = {}) {
         if (ore[i] > ORE_MAX) fail(`invalid ore density ${ore[i]}`);
         if (gems[i] > GEM_MAX) fail(`invalid gem density ${gems[i]}`);
         // Resources lie on clear or rough ground only, one type per cell.
-        if (ore[i] > 0 && terrain[i] > 1) fail('ore can only lie on clear or rough ground');
-        if (gems[i] > 0 && terrain[i] > 1) fail('gems can only lie on clear or rough ground');
+        if (ore[i] > 0 && !holdsResource(terrain[i])) fail('ore can only lie on clear or rough ground or roads');
+        if (gems[i] > 0 && !holdsResource(terrain[i])) fail('gems can only lie on clear or rough ground or roads');
         if (ore[i] > 0 && gems[i] > 0) fail('a cell cannot hold both ore and gems');
       }
     });
@@ -276,7 +279,8 @@ export function validateMap(input, opts = {}) {
     return a.map((x, i) => {
       const w = `actor ${i + 1}`;
       object(x, ACTOR_KEYS, w);
-      if (typeof x.type !== 'string' || !/^[A-Za-z0-9]{1,16}$/.test(x.type)) fail(`${w} has an invalid type`);
+      // Actor ids: letters, digits and dots (T01.Husk, AFLD.Ukraine).
+      if (typeof x.type !== 'string' || !/^[A-Za-z0-9.]{1,16}$/.test(x.type)) fail(`${w} has an invalid type`);
       return {
         type: x.type,
         owner: int(x.owner, -1, spawnCount - 1, `${w} owner`),

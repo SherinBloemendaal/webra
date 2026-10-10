@@ -278,10 +278,10 @@ impl MapData {
                 return Err(format!("invalid gem density {g}"));
             }
             if o > 0 && !t[i].holds_ore() {
-                return Err("ore can only lie on clear or rough ground".into());
+                return Err("ore can only lie on clear or rough ground or roads".into());
             }
             if g > 0 && !t[i].holds_ore() {
-                return Err("gems can only lie on clear or rough ground".into());
+                return Err("gems can only lie on clear or rough ground or roads".into());
             }
             if o > 0 && g > 0 {
                 return Err("a cell cannot hold both ore and gems".into());
@@ -414,7 +414,7 @@ mod tests {
         let mut terrain = vec![0u8; n];
         terrain[1] = Terrain::Rock as u8;
         rock.terrain = b64().encode(terrain);
-        assert!(errs(&rock).contains(&"gems can only lie on clear or rough ground".to_string()));
+        assert!(errs(&rock).contains(&"gems can only lie on clear or rough ground or roads".to_string()));
         assert!(errs(&small(2, Some(vec![0; n - 1]))).contains(&"the gems layer must have 1024 bytes".to_string()));
         let mut garbled = small(2, None);
         garbled.gems = Some("!!".into());
@@ -545,9 +545,9 @@ mod tests {
         ore[0] = 3;
         d.ore = b64().encode(&ore);
         assert!(d.to_map().err().unwrap().contains("ore can only lie"));
-        terrain[0] = 6;
+        terrain[0] = crate::map::TERRAIN_COUNT;
         d.terrain = b64().encode(&terrain);
-        assert!(d.to_map().err().unwrap().contains("invalid terrain value 6"));
+        assert!(d.to_map().err().unwrap().contains("invalid terrain value 11"));
     }
 
     #[test]

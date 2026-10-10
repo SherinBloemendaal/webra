@@ -26,6 +26,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: false,
+  techBuildings: 'standard',
   reusableEngineers: false,
 };
 

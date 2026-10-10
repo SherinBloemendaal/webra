@@ -35,6 +35,10 @@ impl World {
     /// use their kind's class; submarines switch between surfaced and
     /// submerged classes (naval.rs).
     pub fn target_class(&self, i: usize) -> u32 {
+        // Trees, bridges and untargetable actors (neutral.rs).
+        if let Some(c) = self.world_target_class(i) {
+            return c;
+        }
         // Damaged units are also Heal or Repair targets (infantry_combat.rs).
         self.kind_class(i) | self.support_class(i)
     }
@@ -105,11 +109,11 @@ impl World {
                     let t = &self.actors[u];
                     if !t.alive
                         || !self.are_enemies(a.owner, t.owner)
+                        || self.never_auto_targeted(u)
                         // A disguised spy looks friendly (OpenRA AppearsHostileTo; infantry.rs).
                         || !self.appears_hostile(u, i)
                         || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
-                        || (self.mission.is_some() && self.mission_no_auto_target(u))
                     {
                         continue;
                     }
@@ -126,13 +130,15 @@ impl World {
                     if t.alive
                         && self.are_enemies(a.owner, t.owner)
                         && !self.is_cloaked_from(b, a.owner)
+                        // Walls, barrels and the like only when ordered (NoAutoTarget, neutral.rs).
+                        && !self.never_auto_targeted(b)
                         && !tinfo.is_wall()
                         // An allied engineer is taking it over (CaptureManager.PreventsAutoTarget).
                         && !self.capture_protected(b, a.owner)
                         && (any_structure || tinfo.defense)
-                        && info.can_attack(&self.rules, Kind::Building)
-                        // Barrels and untargetable mission actors (mission/conditions.rs).
-                        && !(self.mission.is_some() && self.mission_no_auto_target(b))
+                        && info.can_attack_class(&self.rules, self.target_class(b))
+                        // A mission condition can switch Targetable off (mission/conditions.rs).
+                        && !(self.mission.is_some() && self.mission_untargetable(b))
                     {
                         let d = self.target_distance(b, a.x, a.y);
                         if d <= range && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi)) {
@@ -562,6 +568,8 @@ impl World {
             self.actors[i].env.fired = true;
             // Uncloak on attack; a demolition truck detonates (abilities.rs).
             self.on_fire(i);
+            // Armed civilians may panic when they shoot (neutral.rs).
+            self.on_world_fired(i);
             if !self.actors[i].alive {
                 return;
             }
@@ -651,7 +659,8 @@ impl World {
 
     pub(crate) fn aim_point(&self, t: usize, sx: i32, sy: i32) -> (i32, i32) {
         let a = &self.actors[t];
-        if a.kind != Kind::Building {
+        // Bridges are aimed at their centre (bridges.rs).
+        if a.kind != Kind::Building || self.rules.actors[a.ty as usize].world.bridge.is_some() {
             return (a.x, a.y);
         }
         let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
@@ -765,6 +774,10 @@ impl World {
                 self.apply_warhead(w, h, x, y, altitude, owner, shot);
             }
         }
+        // FireCluster warheads fire their weapon at the cells around (neutral.rs).
+        for (cw, cx, cy) in self.cluster_targets(w, x, y) {
+            self.land_shot(cw, cx, cy, 0, owner, shot, end_of_tick);
+        }
     }
 
     /// Damage warheads plus the ones that change no health of weapon `w`.
@@ -844,6 +857,15 @@ impl World {
                 }
             }
         }
+        // Bridges lie over cells without claiming them (bridges.rs).
+        for b in self.bridges_near(cx, cy, r_cells) {
+            if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
+                let d = self.hit_distance(b, x, y);
+                if d <= radius {
+                    hits.push((b, d));
+                }
+            }
+        }
         let damages: Vec<(usize, i32)> = hits
             .iter()
             .map(|&(u, d)| {
@@ -883,7 +905,11 @@ impl World {
             self.heal_by(u, -dmg);
             return;
         }
-        if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick {
+        if dmg <= 0 || !self.actors[u].alive || self.actors[u].invulnerable_until > self.tick || !self.has_health(u) {
+            return;
+        }
+        // A destroyed bridge stays but takes no more damage (bridges.rs).
+        if self.actors[u].hp <= 0 {
             return;
         }
         let dmg = self.modified_damage(u, dmg, types);
@@ -902,6 +928,7 @@ impl World {
         let report_unit = a.is_unit() && quiet && hostile;
         let dealt = dmg.min(a.hp.max(0));
         let before = a.hp;
+        let old_hp = before;
         a.hp -= dmg;
         a.flash = 2;
         a.last_damaged = tick;
@@ -932,6 +959,12 @@ impl World {
             }
         }
         self.take_cover(u, types);
+        // Damage states, panics, burning trees and the hospital (neutral.rs).
+        self.on_world_damaged(u, old_hp, dmg, types);
+        // Bridges change their template instead of dying (bridges.rs).
+        if self.bridge_damaged(u) {
+            return;
+        }
         if self.actors[u].hp <= 0 {
             // Which death animation and scream (infantry_combat.rs).
             self.note_death_types(u, types);
@@ -974,20 +1007,10 @@ impl World {
             return;
         }
         if let Some(w) = info.death_weapon {
-            // One tick later, so chain reactions ripple outward instead of recursing.
-            for h in 0..self.warhead_count(w) {
-                let delay = self.warhead_delay(w, h).max(1);
-                self.pending.push(PendingImpact {
-                    tick: self.tick + delay as u32,
-                    weapon: w as u16,
-                    warhead: h as u8,
-                    x: a.x,
-                    y: a.y,
-                    altitude: 0,
-                    owner: a.owner,
-                    shot,
-                });
-            }
+            // One tick later, so chain reactions (barrels, neutral.rs) ripple
+            // outward instead of recursing.
+            let (x, y, owner) = (a.x, a.y, a.owner);
+            self.queue_weapon(w, x, y, owner, shot, 1);
         }
     }
 }

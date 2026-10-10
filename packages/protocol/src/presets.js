@@ -16,6 +16,7 @@ import {
   MAP_STYLES,
   STARTING_CASH,
   STARTING_UNITS,
+  TECH_BUILDINGS,
   TECH_LEVELS,
   TIME_LIMITS,
   WEATHER_MODES,
@@ -27,6 +28,7 @@ export const PRESET_KEYS = Object.freeze([
   'mapStyle',
   'biome',
   'weather',
+  'techBuildings',
   'startingCash',
   'startingUnits',
   'techLevel',
@@ -41,7 +43,16 @@ export const PRESET_KEYS = Object.freeze([
  * build radius and time limit; reusable engineers). A saved mode without them takes the
  * defaults, so older settings documents stay valid.
  */
-export const ADDED_PRESET_KEYS = Object.freeze(['timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers']);
+export const ADDED_PRESET_KEYS = Object.freeze([
+  'timeLimit',
+  'crates',
+  'shortGame',
+  'bounty',
+  'separateTeamSpawns',
+  'allyBuildRadius',
+  'reusableEngineers',
+  'techBuildings',
+]);
 
 /** Most saved modes per account. */
 export const PRESETS_MAX = 16;
@@ -124,6 +135,7 @@ export function validatePresetOptions(raw, what = 'options') {
     mapStyle: oneOf(v.mapStyle, MAP_STYLES, `${what}.mapStyle`),
     biome: oneOf(v.biome, BIOMES, `${what}.biome`),
     weather: oneOf(v.weather, WEATHER_MODES, `${what}.weather`),
+    techBuildings: oneOf(v.techBuildings, TECH_BUILDINGS, `${what}.techBuildings`),
     startingCash: oneOf(v.startingCash, STARTING_CASH, `${what}.startingCash`),
     startingUnits: oneOf(v.startingUnits, STARTING_UNITS, `${what}.startingUnits`),
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),

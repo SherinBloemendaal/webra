@@ -155,14 +155,17 @@ test('skirmish lobby: every option has a "?" tip wired to its control', async ()
   }
 });
 
-test('skirmish lobby: map style, biome and weather form the World group', async () => {
+test('skirmish lobby: map style, biome, tech buildings and weather form the World group', async () => {
   const { root, lobby } = await mountLobby();
   try {
     const world = root.querySelector('fieldset.lobby-world');
     assert.equal(textOf(world.querySelector('legend')), 'World');
     const selects = world.querySelectorAll('select');
-    assert.deepEqual(selects, [lobby.styleSelect, lobby.biomeSelect, lobby.weatherSelect]);
-    assert.deepEqual(world.querySelectorAll('.info-btn').map((b) => b.dataset.help), ['mapStyle', 'biome', 'weather']);
+    assert.deepEqual(selects, [lobby.styleSelect, lobby.biomeSelect, lobby.techSelect, lobby.weatherSelect]);
+    assert.deepEqual(world.querySelectorAll('.info-btn').map((b) => b.dataset.help), ['mapStyle', 'biome', 'techBuildings', 'weather']);
+    lobby.techSelect.value = 'oilrush';
+    lobby.techSelect.dispatchEvent(new FakeEvent('change'));
+    assert.equal(lobby.getOptions().techBuildings, 'oilrush');
     lobby.weatherSelect.value = 'cosmetic';
     lobby.weatherSelect.dispatchEvent(new FakeEvent('change'));
     assert.equal(lobby.getOptions().weather, 'cosmetic');
@@ -364,7 +367,7 @@ test('online lobby: guests see the mode and its options but cannot change them',
     assert.equal(root.querySelector('.mode-tools').hidden, true, 'no saving or deleting for guests');
     // The World group and every option show the values, read only.
     const world = root.querySelector('fieldset.online-world');
-    assert.deepEqual(world.querySelectorAll('select').map((s) => s.value), ['random', 'snow', 'full']);
+    assert.deepEqual(world.querySelectorAll('select').map((s) => s.value), ['random', 'snow', 'standard', 'full']);
     for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]')]) {
       assert.equal(c.disabled, true, c.id);
     }

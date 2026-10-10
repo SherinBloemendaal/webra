@@ -61,6 +61,7 @@ import {
   MAP_STYLES,
   BIOMES,
   WEATHER_MODES,
+  TECH_BUILDINGS,
   validName,
 } from './protocol.js';
 import { api, ApiError, Connection } from './net.js';
@@ -114,12 +115,14 @@ const LABELS = {
   mapStyle: { random: 'Random', land: 'Land', rivers: 'Rivers', lakes: 'Lakes', islands: 'Islands' },
   biome: { random: 'Random', temperate: 'Temperate', snow: 'Snow', desert: 'Desert' },
   weather: { full: 'On', cosmetic: 'Cosmetic only', off: 'Off' },
+  techBuildings: { none: 'None', standard: 'Standard', extra: 'Extra', oilonly: 'Oil only', oilrush: 'Oil rush' },
 };
 // Option rows: key (also the help text key in js/help.js), label, choices.
 // The World group holds the climate of the battlefield.
 const WORLD_OPTIONS = [
   ['mapStyle', 'Map style', MAP_STYLES.map((v) => [v, LABELS.mapStyle[v]])],
   ['biome', 'Biome', BIOMES.map((v) => [v, LABELS.biome[v]])],
+  ['techBuildings', 'Tech buildings', TECH_BUILDINGS.map((v) => [v, LABELS.techBuildings[v]])],
   ['weather', 'Weather', WEATHER_MODES.map((v) => [v, LABELS.weather[v]])],
 ];
 const SELECT_OPTIONS = [
@@ -1278,9 +1281,10 @@ export class OnlineUI {
       this.optionControls[key].checked = o[key];
       this.optionControls[key].disabled = !host;
     }
-    // A map file brings its own layout and biome; the weather still applies.
+    // A map file brings its own layout, biome and buildings; the weather still applies.
     this.optionRows.mapStyle.hidden = !!this.state.map;
     this.optionRows.biome.hidden = !!this.state.map;
+    this.optionRows.techBuildings.hidden = !!this.state.map;
     this.cheatsWarning.hidden = !o.cheats;
     this.modePicker.render(o, { editable: host });
   }

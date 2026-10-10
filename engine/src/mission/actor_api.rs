@@ -14,8 +14,6 @@ use crate::world::{cell_center, Activity, NONE};
 
 /// Activities one actor may finish in one tick (instant ones chain).
 const MAX_STEPS: usize = 32;
-/// OpenRA ScaredyCat.PanicLength.
-const PANIC_TICKS: u32 = 250;
 
 impl Ctx<'_> {
     // ---- Handle state ------------------------------------------------------------------
@@ -33,7 +31,7 @@ impl Ctx<'_> {
             Some(HState::Live(r)) => self.w.resolve(*r).is_none(),
             Some(HState::Gone { .. }) | None => true,
             Some(HState::Prop { alive, .. }) => !alive,
-            Some(HState::Limbo(_) | HState::Marker { .. }) => false,
+            Some(HState::Limbo(_) | HState::Marker { .. } | HState::PlayerActor) => false,
         }
     }
 
@@ -41,7 +39,7 @@ impl Ctx<'_> {
         match self.m.handle(h).map(|hd| &hd.state) {
             Some(HState::Live(_)) => self.engine_actor(h).is_some_and(|i| self.w.actors[i].in_world()),
             Some(HState::Prop { alive, .. }) => *alive,
-            Some(HState::Marker { .. }) => true,
+            Some(HState::Marker { .. } | HState::PlayerActor) => true,
             _ => false,
         }
     }
@@ -73,6 +71,7 @@ impl Ctx<'_> {
             HState::Gone { snap, .. } => Some((snap.x, snap.y, snap.altitude)),
             HState::Limbo(l) => Some((l.x, l.y, l.altitude.unwrap_or(0))),
             HState::Marker { x, y } | HState::Prop { x, y, .. } => Some((*x, *y, 0)),
+            HState::PlayerActor => None,
         }
     }
 
@@ -160,7 +159,7 @@ impl Ctx<'_> {
                 building && self.info(h).is_some_and(|i| i.building.as_ref().is_some_and(|b| b.repairable.is_some()))
             }
             "Sell" => building && self.info(h).is_some_and(|i| i.building.as_ref().is_some_and(|b| b.sell_refund > 0)),
-            "Panic" => self.m.data.scaredy.contains(&hd.ty),
+            "Panic" => self.info(h).is_some_and(|i| i.world.scaredy_cat.is_some()),
             "IsCloaked" => abilities.is_some_and(|a| a.cloak.is_some()),
             _ => false,
         }
@@ -215,7 +214,7 @@ impl Ctx<'_> {
             "HasTag" => return method(F::AHasTag),
             _ => {}
         }
-        if matches!(hd.state, HState::Marker { .. } | HState::Prop { .. }) {
+        if matches!(hd.state, HState::Marker { .. } | HState::Prop { .. } | HState::PlayerActor) {
             return err(format!("Actor ({}) does not define a member '{k}'", hd.ty));
         }
         if !self.has_property(h, k) {
@@ -778,8 +777,9 @@ impl Ctx<'_> {
                 none
             }
             F::APanic => {
-                if self.engine_actor(h).is_some() {
-                    self.m.panic.insert(h, self.w.tick + PANIC_TICKS);
+                if let Some(i) = self.engine_actor(h) {
+                    self.m.queues.remove(&h);
+                    self.w.panic(i);
                 }
                 none
             }
@@ -1002,9 +1002,6 @@ impl Ctx<'_> {
         if let Some(s) = l.stance {
             self.w.actors[i].stance = s;
         }
-        if self.m.data.indestructible.contains(&self.w.rules.actors[t].id) {
-            self.w.actors[i].invulnerable_until = u32::MAX;
-        }
         let r = self.w.make_ref(i);
         self.m.handles[h as usize].state = HState::Live(r);
         self.m.handle_of.insert(r, h);
@@ -1183,7 +1180,6 @@ impl Ctx<'_> {
             }
             self.run_queue(lua, h);
         }
-        self.tick_panic();
     }
 
     fn run_queue(&mut self, lua: &mut Lua, h: u32) {
@@ -1534,29 +1530,6 @@ impl Ctx<'_> {
             }
         }
         best.map(|(_, t)| t)
-    }
-
-    /// ScaredyCat: panicking civilians run to random nearby cells (OpenRA Flee).
-    fn tick_panic(&mut self) {
-        let tick = self.w.tick;
-        let list: Vec<(u32, u32)> = self.m.panic.iter().map(|(&h, &u)| (h, u)).collect();
-        for (h, until) in list {
-            let Some(i) = self.engine_actor(h) else {
-                self.m.panic.remove(&h);
-                continue;
-            };
-            if tick >= until {
-                self.m.panic.remove(&h);
-                continue;
-            }
-            if self.engine_idle(i) && self.m.queues.get(&h).is_none_or(|q| q.is_empty()) {
-                let (cx, cy) = self.w.cell_of(self.w.actors[i].x, self.w.actors[i].y);
-                let dx = self.w.rng.range(-4, 5);
-                let dy = self.w.rng.range(-4, 5);
-                let (nx, ny) = ((cx + dx).clamp(0, self.w.map.width - 1), (cy + dy).clamp(0, self.w.map.height - 1));
-                self.w.order_move(&[i], cell_center(nx), cell_center(ny), false);
-            }
-        }
     }
 }
 

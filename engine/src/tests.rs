@@ -293,7 +293,13 @@ fn harvesters_mine_gems_and_ore_and_refineries_pay_by_type() {
     assert!(saw_gems, "the truck carried gems");
     assert!(w.map.gems.iter().map(|&g| g as i32).sum::<i32>() < 24, "gems were mined");
     assert!(w.players[0].funds() - start >= 1000, "delivered at least a load: {}", w.players[0].funds() - start);
-    // Mined-out gem cells stay empty even with regrowth on.
+    // Mined-out gem cells stay empty even with regrowth on: only mines grow
+    // resources (neutral.rs SeedsResource), and this map's are taken away.
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.rules.actors[w.actors[i].ty as usize].world.seeds.is_some() {
+            w.remove(i);
+        }
+    }
     w.options.ore_regrowth = true;
     let gems = w.map.gems.clone();
     run(&mut w, 25 * 60);
@@ -336,7 +342,10 @@ fn every_actor_is_reachable_for_the_right_factions() {
         // proxies come from infiltrations (infantry.rs).
         let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str())
             || matches!(a.kind, Kind::Mine | Kind::Husk | Kind::Crate | Kind::Proxy);
-        assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
+        // The neutral world (trees, civilians, bridges: gen_rules.py WORLD_ACTORS) and
+        // map-only actors (France's fake Sub Pen) are never built.
+        let map_only = a.prerequisites.iter().any(|p| r.tokens[p.token as usize] == crate::rules::TOKEN_DISABLED) && a.id != "FACT";
+        assert!(any || support || map_only || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
     // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the
     // Chinook, the Soviets fly the Hind, the Allies the Black Hawk and Longbow.
@@ -795,7 +804,8 @@ fn eight_player_map_and_skirmish_setup() {
     let list: Vec<(&str, bool, u8)> =
         ["england", "france", "germany", "allies", "russia", "ukraine", "soviet", "russia"].iter().map(|&f| (f, true, 0)).collect();
     let w = World::with_options(8, 128, &setups(&list), opts());
-    assert_eq!(w.players.len(), 8);
+    // Eight players, and the neutral one the map's trees belong to.
+    assert_eq!(w.players.iter().filter(|p| !p.neutral).count(), 8);
     for p in 0..8u8 {
         assert_eq!(count(&w, p, "FACT"), 1, "player {p} has a base");
     }
@@ -1121,6 +1131,7 @@ fn lake_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     w.players[0].explored.iter_mut().for_each(|e| *e = 1);
     w
 }

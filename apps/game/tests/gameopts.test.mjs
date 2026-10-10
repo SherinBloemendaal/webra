@@ -123,6 +123,9 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
       0,
     );
     assert.deepEqual(fx.texts.visible(0).map((t) => t.text), ['+$1,000', '+$90']);
+    // Cash ticks (oil derricks, captures, thieves, supply trucks): for whoever sees the spot.
+    fx.onEvents([...ev(FX.CASH_TICK, 100, 4096, 0, 1, 0), ...ev(FX.CASH_TICK, -20, 0, 4096, 1, 0)], 1, (x) => x > 0);
+    assert.deepEqual(fx.texts.visible(1).map((t) => t.text), ['+$1,000', '+$90', '+$100']);
     assert.deepEqual(lines, ['Time limit has expired.', 'P1 is defeated.']);
     assert.notDeepEqual(fx.cameraOffset(1, 0, 0), [0, 0]);
     assert.ok(fx.flash.alpha(0) > 0.9);
@@ -147,8 +150,8 @@ test('battlefield effect kinds follow the engine and stay apart from the announc
     if (name !== 'CRATE_COLLECTED') assert.ok(!announcer.has(kind), `${name} ${kind} is not an announcer kind`);
   }
   // The effect kinds are one block no announcer kind falls into (later kinds,
-  // such as KillAnnounced 43, follow it).
-  const effects = Object.values(FX).filter((k) => k !== FX.CRATE_COLLECTED);
+  // such as KillAnnounced 43, follow it; CashTick 44 came after that).
+  const effects = Object.values(FX).filter((k) => k !== FX.CRATE_COLLECTED && k !== FX.CASH_TICK);
   const [lo, hi] = [Math.min(...effects), Math.max(...effects)];
   for (const k of announcer) assert.ok(k < lo || k > hi, `announcer kind ${k} is outside the effect kinds ${lo}..${hi}`);
 });

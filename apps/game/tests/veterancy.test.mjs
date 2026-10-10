@@ -12,6 +12,7 @@ import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
 import { DECORATION_SPECIALS } from '../js/art/decorations.js';
 import { LEFTOVER_SPECIALS, LEFTOVER_SPECIAL_OFFSET } from '../js/art/leftovers.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from '../js/art/veterancy.js';
+import { CIVILIAN_DRAW } from '../js/art/world.js';
 import { veterancyText } from '../js/sidebar.js';
 import { INFANTRY_PRONE } from '../js/art/infantry.js';
 
@@ -33,6 +34,7 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  techBuildings: 'standard',
   // OpenRA's other lobby options (protocol 6).
   crates: true,
   shortGame: true,
@@ -121,13 +123,23 @@ test('prone poses and rank decorations sit in the sprite slots the engine draws'
     if (a.kind !== 'infantry') continue;
     const key = a.id.replace(/R1$/, '');
     // Infantry have no turret: their second slot is the prone pose (the
-    // dog and the thief never go prone: they lie down as they stand).
-    assert.equal(list[2 * k + 1], PRONE_DRAW[key] ?? INFANTRY_PRONE[key.toUpperCase().replace('.ENGLAND', '')] ?? list[2 * k], a.id);
+    // dog and the thief never go prone: they lie down as they stand;
+    // civilians: the panic pose).
+    assert.equal(
+      list[2 * k + 1],
+      PRONE_DRAW[key] ?? INFANTRY_PRONE[key.toUpperCase().replace('.ENGLAND', '')] ?? CIVILIAN_DRAW[key]?.panic ?? list[2 * k],
+      a.id,
+    );
   }
 });
 
 test('veterancy art draws within its box', () => {
-  const draws = [...VETERANCY_SPECIALS, ...DECORATION_SPECIALS, ...Object.values(PRONE_DRAW)];
+  const draws = [
+    ...VETERANCY_SPECIALS,
+    ...DECORATION_SPECIALS,
+    ...Object.values(PRONE_DRAW),
+    ...Object.values(CIVILIAN_DRAW).flatMap((d) => [d.body, d.panic]),
+  ];
   for (const [w, h, draw] of draws) {
     let minX = Infinity;
     let minY = Infinity;
@@ -158,6 +170,10 @@ test('veterancy art draws within its box', () => {
       arc(x, y, r) {
         see(x - r, y - r);
         see(x + r, y + r);
+      },
+      ellipse(x, y, rx, ry) {
+        see(x - rx, y - ry);
+        see(x + rx, y + ry);
       },
     };
     draw(ctx, { team: () => '#888', c: (c) => c });

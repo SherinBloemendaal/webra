@@ -21,6 +21,7 @@ import {
   facingFrame,
   interpolatedRadians,
   resolveSequence,
+  sequenceFile,
   packSprite,
   unpackSprite,
 } from '../js/content/sequences.js';
@@ -256,12 +257,25 @@ test('sequences: OpenRA frame order for facings, stride, Length *, Frames, Rever
 test('the sequences table covers the engine actors and names only files it lists', () => {
   const files = new Set(GRAPHICS_FILES);
   // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert art: they keep WebRA's.
-  const openraOnly = new Set(['FTRK', 'MH60']);
+  // So does the neutral world art OpenRA drew itself (tools/gen_content_tables.py
+  // NO_ORIGINAL: huts, ammo boxes, poles, the oil derrick, the desert and small
+  // bridges, ...); bridge huts are invisible.
+  const openraOnly = new Set(['FTRK', 'MH60',
+    'C11', 'OILB', 'RICE', 'RUSHOUSE', 'ASIANHUT', 'SNOWHUT', 'LHUS', 'WINDMILL', 'RAILMINE', 'CTFLAG', 'AMMOBOX1', 'AMMOBOX2',
+    'AMMOBOX3', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BRIDGEHUT', 'BRIDGEHUT.small', 'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2', 'GMINE']);
   for (const a of BASE.actors) {
     if (a.kind === 'proxy') continue;
     assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
+    if (entry.bridge) {
+      // Bridges are tileset templates per state (healthy, damaged, destroyed, ...), not sequences.
+      for (const [tileset, rec] of Object.entries(entry.bridge)) {
+        assert.ok(rec.healthy && rec.size.length === 2, `${id} on ${tileset}`);
+        for (const [state, file] of Object.entries(rec)) if (state !== 'size') assert.ok(files.has(file), `${id} ${state}: ${file} is installed`);
+      }
+      continue;
+    }
     const seqs = SEQUENCES[entry.image];
     assert.ok(seqs, `${id}: image ${entry.image}`);
     for (const part of ['body', 'second']) {
@@ -306,6 +320,10 @@ test('the sequences table covers the engine actors and names only files it lists
   assert.ok(ACTOR_ART.POWR.body.make && ACTOR_ART.POWR.body.damaged);
   assert.ok(ACTOR_ART.SBAG.wall);
   assert.equal(ACTOR_ART.FPWR.image, 'powr');
+  // A tileset whose art OpenRA drew itself has no file: WebRA art there (the desert's TC01).
+  assert.equal(sequenceFile(SEQUENCES.tc01.idle, 'TEMPERAT'), 'tc01.tem');
+  assert.equal(sequenceFile(SEQUENCES.tc01.idle, 'SNOW'), 'tc01.sno');
+  assert.equal(sequenceFile(SEQUENCES.tc01.idle, 'DESERT'), '');
   assert.equal(RESOURCES.ore.length, 4);
 });
 

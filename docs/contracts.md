@@ -31,12 +31,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   "author": "Commander",            // 1..64 chars
   "description": "",                // 0..500 chars
   "width": 96, "height": 96,        // 32..256 each
-  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford
+  "terrain": "<base64>",            // width*height bytes, row-major, values: 0 clear, 1 rough, 2 rock, 3 water, 4 tree, 5 ford, 6 road, 7 bridge, 8 beach, 9 river, 10 wall
   "ore": "<base64>",                // width*height bytes, 0..12 ore density
   "gems": "<base64>",               // format 2 only: width*height bytes, 0..3 gem density
   "spawns": [[8, 8], [85, 84]],     // 2..8 top-left cells of the starting construction yard / MCV
   "actors": [                       // optional pre-placed actors
-    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral
+    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral; type: 1..16 of A-Z a-z 0-9 . (V19.Husk)
   ],
   "rules": null,                    // optional rules overrides, see below
   "biome": "snow"                   // optional: temperate (default, left out), snow or desert
@@ -48,6 +48,45 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   so a ground route over a river never cuts the water network. Structures
   never stand on a ford (naval yards need open water), and fords hold no ore
   or gems. Generated maps put fords where ground routes cross water.
+- Terrain types 6 to 10 are OpenRA's (`data/source/rules/world.yaml`,
+  `defaults.yaml`; speeds per locomotor in `engine/rules.json`): road (6)
+  is clear ground with OpenRA's road speed, buildable and able to hold
+  resources; bridge (7) is the deck of a bridge actor (as fast as a road,
+  never buildable); beach (8) is passable sand that slows everything,
+  wheeled vehicles most (50 %), and holds no resources or structures; river (9) and wall (10)
+  stop ground units and ships alike. The engine owns bridge cells: a
+  bridge actor writes its template's terrain over them when it is placed,
+  damaged, destroyed or repaired, so a destroyed span turns into river or
+  water under it (`engine/src/bridges.rs`).
+- The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
+  to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
+  (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
+  `FCOM`, `OILB`), barrels (`BARL`, `BRL3`, `AMMOBOX1`...), rocks, ice floes,
+  bridges (`BRIDGE1`...`BRIDGE4`, `SBRIDGE1`...`SBRIDGE4`, `BR1`...`BR3`),
+  ore mines (`MINE`, `GMINE`) and the map-only walls (`CYCL`, `BARB`,
+  `WOOD`) and France's fake Sub Pen (`SPEF`) are ordinary actors of the
+  `actors` list. Tree terrain (4) of older maps becomes tree actors when
+  the game starts (one per cell, deterministic). A bridge actor goes at the
+  top-left cell of its template; its footprint is all `-` (lies over the
+  cells without claiming them), and the engine places its huts itself.
+  Generated maps get an ore mine (gem mine on gems) at the heart of every
+  field, mirrored like the bases, and tech buildings and villages (section 3,
+  `techBuildings`).
+- Presentation of the neutral world: panicking civilians (ScaredyCat) draw
+  their second sprite slot, where soldiers have the prone pose (original
+  art: `panic-stand`, `panic-run`); burning trees show decoration special 2,
+  4 or 5 by damage state (Light, Medium, Heavy: OpenRA's burn-s, burn-m and
+  burn-l, whose start, loop and end frames the engine names from
+  `Game.set_original_slots` records 3 and 4: size, milliseconds per frame,
+  start frames; size, loop and end frames), special 3 is the hospital's red
+  cross (pips medic); tech buildings with WithDeathAnimation leave a dying
+  body that shows their `dead` sequence (die1) with the original art; cash ticks (OpenRA FloatingText,
+  `World::show_cash_tick(actor, owner, amount)`: "+$100" in that player's
+  colour over the actor, for everyone who sees the spot) are `CashTick` (44)
+  events that js/battlefx.js draws like the crate and bounty texts, from
+  GivesCashOnCapture, CashTrickler, InfiltrateForCash and DeliversCash. Landing craft (the Transport, locomotor
+  `lcraft`) use their own passability (`World::pass_landing`: water, fords
+  and beaches), so they run up on beach cells to unload and other ships do not.
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -64,12 +103,14 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   2 map with an all-zero gems layer is valid, but it is a different map
   (different hash) from its format 1 twin.
 - Resources (OpenRA `ResourceLayer`): ore holds up to 12 bales per cell,
-  gems up to 3. Both lie on clear or rough ground only, and a cell holds ore
+  gems up to 3. Both lie on clear or rough ground or roads only, and a cell holds ore
   or gems, never both. A bale pays `player.ore_value` (25) or
   `player.gem_value` (50) credits (OpenRA `PlayerResources.ResourceValues`);
   a harvester carries 20 bales of either or both and the refinery pays each
-  bale at its own value. With the `oreRegrowth` option ore regrows and
-  spreads onto free clear ground; gems neither regrow nor spread (Red Alert).
+  bale at its own value. With the `oreRegrowth` option ore mines (`MINE`)
+  and gem mines (`GMINE`) grow one bale every 75 ticks on the first cell of
+  a random walk from the mine that can take one (OpenRA `SeedsResource`);
+  without mines, fields never grow back.
   Gem cells slow units like ore cells (OpenRA gives the `Gems` and `Ore`
   terrain types the same locomotor speeds). Harvesters pick the nearest
   resource cell by distance only, gems or ore alike, as OpenRA does
@@ -81,7 +122,7 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 - Validation errors for the layers (engine wording, `packages/protocol`
   matches it): `format 1 maps have no gems layer`, `format 2 maps need a gems
   layer`, `unsupported map format N`, `invalid gem density N`, `gems can only
-  lie on clear or rough ground`, `a cell cannot hold both ore and gems`,
+  lie on clear or rough ground or roads`, `a cell cannot hold both ore and gems`,
   `the gems layer must have N bytes`, `gems is not valid base64`.
 - Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
   above (`description`, `actors` and `rules` always present, `gems` only in
@@ -192,7 +233,7 @@ human|ai|closed, name, faction, color, team, difficulty, handicap?}],
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
-weather, map`.
+weather, techBuildings, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -201,7 +242,21 @@ sky. A map file brings its own biome and ignores both. `weather` is `full`
 as under clear skies, including the biome effects) or `off` (clear skies).
 The protocol requires all three (protocol version 4); the engine treats
 missing keys as `random`, `temperate` and `full` (older callers, tools) and
-refuses unknown values. `cheats` is the "Debug menu"
+refuses unknown values. `techBuildings` (OpenRA's map generator option
+"Buildings", `engine/src/mapgen/settlements.rs`) is `none`, `standard`
+(default: an oil derrick in the back of every base area and a hospital in
+the middle), `extra` (also forward command posts and communications centers
+between neighbouring bases), `oilonly` (a derrick per base and one in the
+middle) or `oilrush` (two per base, in the middle and between neighbours).
+Everything is placed by the generator's symmetry (every image or none), so
+every base gets the same buildings; generated maps also get villages of
+civilian buildings of their biome, each building with a free ring around it
+so no passage closes. A map file brings its own actors and ignores it; the
+engine treats a missing key as `standard`. Game modes include it; a mode
+saved before it existed takes `standard`.
+`Game.generated_map_with(seed, size, players, style, biome, techBuildings)`
+exports such a map file (`generated_map_styled` is the same with
+`standard`). `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `reusableEngineers` is OpenRA's "Reusable
 Engineers" (default off): engineers capture from next to a structure after
@@ -217,7 +272,8 @@ moves it, below). `map` is the map file JSON string
 
 OpenRA's other lobby options (rules in `data/source/rules/world.yaml`,
 `player.yaml`, `misc.yaml`; protocol version 6 requires the keys, the
-engine treats a missing one as its OpenRA default):
+engine treats a missing one as its OpenRA default; `techBuildings` above
+joined protocol 6 the same way, without a version of its own):
 
 - `crates` (default on, OpenRA CrateSpawner): crates appear on land and water
   or are dropped by a neutral Badger (`engine/src/crates.rs`), with OpenRA's
@@ -977,10 +1033,12 @@ For the world objects: anything with `abilities.capturable` can be captured
 (`World::can_capture`, `World::capture(target, new_owner, captor)`); a
 captured husk becomes its vehicle again for the captor (husks.rs
 `restore_husk`, TransformOnCapture), and the mechanic's infiltration repairs
-an allied husk (InfiltrateForTransform). Bridge huts register with
-`World::register_bridge_hut`, report their bridge with
-`World::set_bridge_hut_state(hut, damaged, repairing)` and collect the huts
-engineers entered with `World::take_bridge_repairs`.
+an allied husk (InfiltrateForTransform). A capture of a neutral or tech
+building gets its effects through `World::after_capture` (neutral.rs:
+GivesCashOnCapture with its cash tick; derricks, the hospital and the
+prerequisites follow the owner). Engineers enter a bridge hut while
+`World::can_repair_bridge_at_hut` holds and start the repair with
+`World::repair_bridge_at_hut(hut, owner)` (bridges.rs).
 
 Audio: the `Death` event's `b` is the kind code with the death sequence
 (1..6 die1..die6, 7 crushed) in the bits above 8. Captures and stolen
@@ -1197,7 +1255,8 @@ minutes left, owner `ALL_PLAYERS`; `SoundEvents::push_time_limit`), 36
 CrateCollected (a: `crate_action_code`, b: the crate's type), 37
 PilotEjected (a: the aircraft's type; its EjectOnDeath ChuteSound), 43
 KillAnnounced (a: the killer's type; its AnnounceOnKill voice line, to its
-owner). Kinds 32 to 36
+owner), 44 CashTick (a: the amount; owner: whose colour; no sound, js/battlefx.js
+draws it). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.

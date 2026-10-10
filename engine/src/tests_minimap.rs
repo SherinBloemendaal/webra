@@ -31,6 +31,7 @@ fn arena(players: &[(&str, u8, (i32, i32))]) -> World {
     let mut w = World::empty(rules, map, 3);
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for (p, &(faction, team, start)) in players.iter().enumerate() {
         let f = w.rules.faction_index(faction).unwrap();
         w.add_player(f, false, start);
@@ -310,6 +311,14 @@ fn check_no_leaks(w: &World, player: u8) {
         }
     }
     for b in &list {
+        // Trees, mines and walls in their terrain colour (neutral.rs): only on cells the player explored.
+        if b[4] >= crate::neutral::RADAR_TERRAIN {
+            assert!(
+                w.players[player as usize].explored[w.map.idx(b[0], b[1])] != 0,
+                "player {player} sees terrain blip {b:?} it never explored"
+            );
+            continue;
+        }
         if b[4] != NEUTRAL_OWNER && w.are_allies(b[4] as u8, player) {
             continue;
         }
@@ -328,7 +337,11 @@ fn ai_games_never_leak_hidden_or_jammed_enemies() {
     // Hard AIs build radar domes, radar jammers, gap generators and cloaked units.
     let hard = |f: &str| crate::world::PlayerSetup::new(f, Some(crate::world::AiDifficulty::Hard));
     // Seed 5: an AI fields a jammer within the twelve minutes.
-    let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], crate::world::GameOptions::default());
+    // The game this seed plays has the Soviet AI build a radar jammer; the
+    // tech buildings of a generated map (mapgen/settlements.rs) would make it
+    // a different game, so this one leaves them out.
+    let options = crate::world::GameOptions { tech_buildings: crate::mapgen::settlements::TechBuildings::None, ..Default::default() };
+    let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], options);
     let mut online = [false; 3];
     let mut had_dome = [false; 3];
     let mut saw_jammer = false;

@@ -4,19 +4,18 @@
 //   node tools/mission-map.mjs <mission folder>  < {"actors": ["e1", "v01", ...]}
 //
 // stdin names the actor types (lower case) the mission has as actors (built-in
-// rules, mission rules, script props and markers). Map actors of other types
-// that are decorations (trees, rocks, ice; apps/game/js/oramap/tables.js)
-// become terrain like in an imported map; the rest are listed as actors with
-// their OpenRA inits. The map is cropped to its Bounds: `origin` is the
-// OpenRA cell of the first WebRA cell. Writes JSON to stdout.
+// rules, mission rules, script props and markers). Every map actor is listed
+// with its OpenRA inits, and the bridges of the map's bridge templates
+// (OpenRA LegacyBridgeLayer) as unnamed actors of the world's owner; types
+// the mission does not know are reported. The map is cropped to its Bounds:
+// `origin` is the OpenRA cell of the first WebRA cell. Writes JSON to stdout.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseMiniYaml, child, childValue, parseIntPair, parseIntQuad } from '../apps/game/js/oramap/miniyaml.js';
 import { readMapBin } from '../apps/game/js/oramap/mapbin.js';
 import { convertTerrain, TILESET_BIOMES } from '../apps/game/js/oramap/convert.js';
-import { DECORATIONS } from '../apps/game/js/oramap/tables.js';
-import { encodeBase64, TERRAIN } from '../apps/game/editor/js/mapformat.js';
+import { encodeBase64 } from '../apps/game/editor/js/mapformat.js';
 
 const folder = process.argv[2];
 if (!folder) {
@@ -31,32 +30,25 @@ const bin = readMapBin(new Uint8Array(readFileSync(join(folder, 'map.bin'))));
 const tileset = String(childValue(yaml, 'Tileset', '')).trim().toUpperCase();
 const [bx, by, bw, bh] = parseIntQuad(childValue(yaml, 'Bounds')) ?? [0, 0, bin.width, bin.height];
 const report = { warnings: [] };
-const { full, ore, gems } = convertTerrain({ tileset, bin, bounds: [bx, by, bw, bh] }, report);
+const { full, ore, gems, bridgeOrigins } = convertTerrain({ tileset, bin, bounds: [bx, by, bw, bh] }, report);
 
 const nodeInits = (nodes) => Object.fromEntries(nodes.map((n) => [n.key, n.nodes.length ? nodeInits(n.nodes) : String(n.value ?? '')]));
 
 const actors = [];
-const decorated = new Map();
+const unknown = new Map();
 for (const node of child(yaml, 'Actors')?.nodes ?? []) {
   const type = String(node.value ?? '').trim();
   const loc = parseIntPair(childValue(node.nodes, 'Location'));
   if (!type || !loc) continue;
   const lower = type.toLowerCase();
-  const deco = DECORATIONS[type.toUpperCase()];
-  if (!actorTypes.has(lower) && deco) {
-    for (const [dx, dy] of deco.cells) {
-      const x = loc[0] + dx;
-      const y = loc[1] + dy;
-      if (x < 0 || y < 0 || x >= bin.width || y >= bin.height) continue;
-      const i = y * bin.width + x;
-      full[i] = deco.kind === 'tree' ? TERRAIN.TREE : TERRAIN.ROCK;
-      ore[i] = 0;
-      gems[i] = 0;
-    }
-    decorated.set(lower, (decorated.get(lower) ?? 0) + 1);
-    continue;
-  }
+  if (!actorTypes.has(lower)) unknown.set(lower, (unknown.get(lower) ?? 0) + 1);
   actors.push({ name: node.key, type: lower, inits: nodeInits(node.nodes) });
+}
+// Bridges inside the playable area (convertOramap places them the same way).
+for (const [key, actorId] of [...bridgeOrigins].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+  const [x, y] = key.split(',').map(Number);
+  if (x < bx || y < by || x >= bx + bw || y >= by + bh) continue;
+  actors.push({ name: '', type: actorId.toLowerCase(), inits: { Location: `${x},${y}`, Owner: '' } });
 }
 
 const terrain = new Uint8Array(bw * bh);
@@ -90,7 +82,7 @@ process.stdout.write(
     },
     players,
     actors,
-    decorations: Object.fromEntries([...decorated].sort()),
+    unknown: Object.fromEntries([...unknown].sort()),
     warnings: report.warnings,
   }),
 );

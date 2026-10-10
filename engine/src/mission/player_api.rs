@@ -133,11 +133,18 @@ impl Ctx<'_> {
                     self.collection(lua, a, 0)?.iter().map(|v| v.to_text().unwrap_or_default()).collect()
                 };
                 let mut types = Vec::new();
+                let mut player_actor = false;
                 for n in &names {
+                    // The player actor itself (OpenRA's `player` actor type).
+                    if n.eq_ignore_ascii_case("player") {
+                        player_actor = true;
+                        continue;
+                    }
                     types.push(self.actor_type(n)? as u16);
                 }
-                let v = self.actors_list(lua, |w, i| w.actors[i].owner == p && types.contains(&w.actors[i].ty));
-                one(v)
+                let mut hs = if player_actor { vec![self.player_actor(p)] } else { Vec::new() };
+                hs.extend(self.actors_matching(|w, i| w.actors[i].owner == p && types.contains(&w.actors[i].ty)));
+                one(self.actor_list(lua, &hs))
             }
             F::PHasPrerequisites => {
                 let names: Vec<String> = self.collection(lua, a, 0)?.iter().map(|v| v.to_text().unwrap_or_default()).collect();
@@ -219,6 +226,16 @@ impl Ctx<'_> {
             }
             _ => err(format!("{} is not a player member", f.name())),
         }
+    }
+
+    /// The handle of player `p`'s PlayerActor.
+    pub(crate) fn player_actor(&mut self, p: u8) -> u32 {
+        if let Some(&h) = self.m.player_actors.get(&p) {
+            return h;
+        }
+        let h = self.m.new_handle("player".into(), p, HState::PlayerActor);
+        self.m.player_actors.insert(p, h);
+        h
     }
 
     /// `player.Build(types, func)` (OpenRA ClassicProductionQueueProperties.Build):

@@ -754,12 +754,16 @@ Serialized size at most 32 KiB.
   protocol package, `src/presets.js`): a list of at most 16 entries
   `{ name, options }`. `name` is 1 to 32 characters of display text
   (normalized: single spaces, no control or bidi characters), unique
-  ignoring case and not the name of a built-in mode. `options` holds exactly
-  the mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
-  `biome`, `weather`, `startingCash`, `startingUnits`, `techLevel`,
-  `gameSpeed`, `fog`, `explored`, `buildRadius`, `redeployableMcv`,
-  `oreRegrowth`, `cheats`), each with a value the lobby options accept
-  (docs/contracts.md section 3).
+  ignoring case and not the name of a built-in mode. `options` holds the
+  mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
+  `biome`, `weather`, `techBuildings`, `startingCash`, `startingUnits`,
+  `techLevel`, `gameSpeed`, `timeLimit`, `fog`, `explored`, `buildRadius`,
+  `redeployableMcv`, `oreRegrowth`, `cheats` and the other boolean
+  options), each with a value the lobby options accept (docs/contracts.md
+  section 3). Keys added after modes could be saved (`ADDED_PRESET_KEYS`:
+  `timeLimit`, `crates`, `shortGame`, `bounty`, `separateTeamSpawns`,
+  `allyBuildRadius`, `reusableEngineers`, `techBuildings`) may be missing:
+  they take their defaults.
 
 ### 5.9 Data export and deletion
 

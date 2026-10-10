@@ -99,18 +99,7 @@ impl World {
     /// Whether a mission condition makes actor `i` impossible to target
     /// (a Targetable trait that needs a condition it lacks, or is off while one holds).
     pub(crate) fn mission_untargetable(&self, i: usize) -> bool {
-        self.mission_indestructible(i) || self.condition_effect(i, "targetable").is_some_and(|holds| !holds)
-    }
-
-    /// Whether units leave actor `i` alone unless ordered to attack it (NoAutoTarget, mission conditions).
-    pub(crate) fn mission_no_auto_target(&self, i: usize) -> bool {
-        self.mission_untargetable(i)
-            || self.mission.as_ref().is_some_and(|m| m.data.no_auto_target.contains(&self.rules.actors[self.actors[i].ty as usize].id))
-    }
-
-    /// Mission actor types without health (`MissionData::indestructible`).
-    pub(crate) fn mission_indestructible(&self, i: usize) -> bool {
-        self.mission.as_ref().is_some_and(|m| m.data.indestructible.contains(&self.rules.actors[self.actors[i].ty as usize].id))
+        self.condition_effect(i, "targetable").is_some_and(|holds| !holds)
     }
 
     /// Whether a mission condition switches actor `i`'s Demolishable off.

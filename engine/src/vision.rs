@@ -34,8 +34,9 @@ impl World {
         let n = self.actors.len();
         for i in 0..n {
             let a = &self.actors[i];
-            // Passengers see nothing from inside their transport.
-            if !a.alive || !a.in_world() {
+            // Passengers see nothing from inside their transport; the
+            // neutral player's vision is never used (neutral.rs).
+            if !a.alive || !a.in_world() || self.players[a.owner as usize].neutral {
                 continue;
             }
             // Rain, snowfall and sandstorms shorten sight (weather.rs).
@@ -117,7 +118,8 @@ impl World {
             }
             for i in 0..self.actors.len() {
                 let a = &self.actors[i];
-                if !a.alive || a.kind != Kind::Building || a.owner == pid {
+                // Trees, rocks and bridges show once explored, without ghosts (neutral.rs).
+                if !a.alive || a.kind != Kind::Building || a.owner == pid || self.rules.actors[a.ty as usize].world.shroud_only {
                     continue;
                 }
                 if self.is_visible_to(i, pid) && !self.is_cloaked_from(i, pid) {

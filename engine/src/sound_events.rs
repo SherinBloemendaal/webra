@@ -156,6 +156,11 @@ pub enum SoundEventKind {
     /// A unit of `owner` killed an enemy and says so (OpenRA AnnounceOnKill,
     /// Tanya; infantry.rs); a = the killer's type.
     KillAnnounced = 43,
+    /// A cash tick over an actor at (x, y) (OpenRA FloatingText with
+    /// FormatCashTick, ShowTicks: CashTrickler, GivesCashOnCapture,
+    /// InfiltrateForCash, DeliversCash); a = the amount, owner = the player
+    /// whose colour it shows. Everyone who sees the spot sees it.
+    CashTick = 44,
 }
 
 /// `owner` of events every player hears (time limit warnings).

@@ -414,7 +414,11 @@ fn lobby_options_default_to_openra_and_reject_unknown_time_limits() {
     let o = &g.world.options;
     assert!(!o.crates && !o.short_game && o.bounty && !o.separate_team_spawns && !o.ally_build_radius);
     assert_eq!((o.time_limit, o.tick_ms), (30, 30));
-    assert!(g.world.neutral_player().is_none());
+    // Without crates a neutral player only comes with neutral actors: the
+    // trees, ore mines and tech buildings of the generated map (neutral.rs).
+    if let Some(n) = g.world.neutral_player() {
+        assert!(g.world.actors.iter().any(|a| a.alive && a.owner == n), "the neutral player owns the neutral world");
+    }
     assert!(crate::parse_options(&format!(r#"{{{base},"timeLimit":7}}"#)).is_err());
 }
 

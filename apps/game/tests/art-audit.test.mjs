@@ -54,6 +54,12 @@ function neededFrames() {
     }
   }
   for (const t of Object.values(TERRAIN)) for (const f of t.images) want(f, 1);
+  // Bridges are tileset templates per state (one frame per template cell).
+  for (const e of Object.values(ACTOR_ART)) {
+    for (const rec of Object.values(e.bridge ?? {})) {
+      for (const [state, file] of Object.entries(rec)) if (state !== 'size') want(file, rec.size[0] * rec.size[1]);
+    }
+  }
   for (const c of Object.values(CURSOR_ART)) want(c.file, c.start + c.length);
   return need;
 }
@@ -285,6 +291,12 @@ test('original slots: rotors, effects and levels as pose tables; what the engine
   assert.equal(silo.poses[POSE.IDLE].mode, 3);
   assert.deepEqual(out.levels, [[t('SILO'), silo.poses[POSE.IDLE].length]]);
   assert.deepEqual(out.unitOverlays.sort((a, b) => a[0] - b[0]), [[t('MRJ'), -256, 0], [t('MGG'), -299, 0]].sort((a, b) => a[0] - b[0]));
+  // The tree fires name their frames too: burn-s, burn-m and burn-l, start, loop and end in a row.
+  assert.deepEqual(out.fires.map((f) => f[0]), [0, 1, 2]);
+  for (const [size, , start, loop, end] of out.fires) {
+    const fire = out.slots.get(specialSlot(['decorations.2', 'decorations.4', 'decorations.5'][size], ACTORS.length));
+    assert.equal(fire.poses[POSE.IDLE].length, start + loop + end);
+  }
 
   // What Game.set_original_slots gets: original slots only, records for original parts only.
   const { source } = combineSlots(ACTORS.length, { original: out });
@@ -301,6 +313,11 @@ test('original slots: rotors, effects and levels as pose tables; what the engine
       [ORIGINAL_INFO.LEVEL, t('SILO'), silo.poses[POSE.IDLE].length, 0],
       // The damage smoke: 40 ms frames, then the start and loop frame counts.
       [ORIGINAL_INFO.SMOKE, ...out.smoke],
+      // The tree fires (small, medium, large): 40 ms frames, start frames; loop and end frames.
+      ...out.fires.flatMap(([size, ms, start, loop, end]) => [
+        [ORIGINAL_INFO.FIRE, size, ms, start],
+        [ORIGINAL_INFO.FIRE_TAIL, size, loop, end],
+      ]),
     ].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
   );
   // A pack's second slot wins over the original: no overlay record for it then.

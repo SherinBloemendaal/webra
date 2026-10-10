@@ -6,6 +6,7 @@
 // Helpers come from ./kit.js.
 
 import { circle, poly, ring } from './kit.js';
+import { WORLD_DECORATIONS } from './world.js';
 
 const OUTLINE = '#141414';
 
@@ -38,4 +39,6 @@ export const DECORATION_SPECIALS = [
     poly(ctx, P.c('#3a1010'), [5.4, 2.5, 8.6, 2.5, 7.6, 6.2, 6.4, 6.2]);
     poly(ctx, P.c('#ff4a3a'), [6.3, 2.2, 7.7, 2.2, 7.7, 7.4, 6.3, 7.4]);
   }],
+  // 2: flames on a burning tree, 3: the hospital's red cross (engine/src/neutral.rs)
+  ...WORLD_DECORATIONS,
 ];

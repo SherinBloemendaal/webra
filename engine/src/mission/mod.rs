@@ -146,6 +146,9 @@ pub(crate) enum HState {
     Gone { snap: Snapshot, died: bool },
     /// A waypoint (engine world position).
     Marker { x: i32, y: i32 },
+    /// The actor of a player (OpenRA PlayerActor: `player.GetActorsByType("player")`),
+    /// which carries the player's triggers.
+    PlayerActor,
     /// A camera or flare: reveals for its owner while it lasts.
     Prop { x: i32, y: i32, reveal: i32, image: Option<String>, alive: bool },
 }
@@ -192,6 +195,8 @@ pub struct MissionPlayer {
     pub bot: bool,
     pub objectives: Vec<Objective>,
     pub win: WinState,
+    /// Cooperative missions: this player's own result (OpenRA WinStateCooperative).
+    pub coop: WinState,
     /// Granted external conditions: token, name.
     pub conditions: Vec<(i32, String)>,
     /// OpenRA's skirmish bot modules switched on by a condition (soviet-05).
@@ -304,8 +309,8 @@ pub struct Mission {
     pub(crate) next_token: i32,
     /// Actors with an OnDiscovered trigger: players (bits) that saw them.
     pub(crate) discovered: BTreeMap<u32, u32>,
-    /// Panicking civilians (ScaredyCat): handle to the tick it ends.
-    pub(crate) panic: BTreeMap<u32, u32>,
+    /// Each player's PlayerActor handle, made when a script asks for it.
+    pub(crate) player_actors: BTreeMap<u8, u32>,
     /// Players whose low power notification a script switched off.
     pub(crate) low_power_quiet: BTreeSet<u8>,
     /// Granted actor conditions: handle to (token, condition, end tick or 0).
@@ -401,6 +406,7 @@ impl Mission {
                 HState::Live(r) => mix(2 + ((*r as i64) << 8)),
                 HState::Gone { died, .. } => mix(3 + *died as i64),
                 HState::Marker { .. } => mix(4),
+                HState::PlayerActor => mix(6),
                 HState::Prop { x, y, alive, .. } => {
                     mix(5 + *alive as i64);
                     mix(*x as i64);

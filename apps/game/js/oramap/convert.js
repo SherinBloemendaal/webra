@@ -7,17 +7,20 @@
 //   is mapped by ORA_TO_WEBRA_TERRAIN. The map is cropped to its Bounds.
 // - Resources: ore and gems with OpenRA's density recalculation, into the
 //   ore and gems layers (RESOURCE_TYPES). Maps with gems are format 2.
-// - Trees, rocks, ice and civilian buildings (actors in OpenRA) become tree or
-//   rock terrain under their footprint (DECORATIONS in tables.js).
-// - mpspawn actors become spawns; actors of types WebRA knows are kept.
+// - Bridges: OpenRA's LegacyBridgeLayer turns the map's bridge templates into
+//   bridge actors; so does the import (BRIDGES in tables.js), at the
+//   template's top-left cell, over the terrain of its tiles.
+// - mpspawn actors become spawns; actors of types WebRA knows are kept,
+//   among them the neutral world: trees, rocks, civilians, civilian and tech
+//   buildings, barrels, ore mines (engine/src/neutral.rs).
 // - Rules and Weapons values that have a WebRA rules field become `rules`
 //   overrides (a modded map, with the usual warning before it is installed).
 // Everything else (Lua, other rules, custom art and sounds, unknown actors) is
 // listed in the report and never applied.
 
-import { DECORATIONS, PICK_ANY, TILESETS } from './tables.js';
+import { BRIDGES, PICK_ANY, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
-import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, TERRAIN } from '../../editor/js/mapformat.js';
+import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, TERRAIN } from '../../editor/js/mapformat.js';
 
 export class OramapError extends Error {
   constructor(message, report = null) {
@@ -31,26 +34,24 @@ const MIN_SIZE = 32;
 const MAX_SIZE = 256;
 const MAX_SPAWNS = 8;
 const MAX_ACTORS = 2000;
-const ACTOR_TYPE_RE = /^[A-Za-z0-9]{1,16}$/;
+const ACTOR_TYPE_RE = /^[A-Za-z0-9.]{1,16}$/;
 
 /**
  * OpenRA terrain letter (see ORA_TERRAIN_LETTERS in tables.js) to WebRA
- * terrain. WebRA has five terrain types, so: roads, bridges and the ore/gems
- * tiles are clear; beaches are rough (passable, not buildable, as in OpenRA);
- * rivers and walls are rock (OpenRA lets neither ground units nor ships
- * through rivers, so water would wrongly open them to ships).
+ * terrain: the same types (roads and bridges faster, beaches slow wheels,
+ * rivers and walls stop everything); the ore and gem tiles are clear ground.
  */
 export const ORA_TO_WEBRA_TERRAIN = Object.freeze({
   c: TERRAIN.CLEAR,
-  d: TERRAIN.CLEAR,
-  g: TERRAIN.CLEAR,
+  d: TERRAIN.ROAD,
+  g: TERRAIN.BRIDGE,
   o: TERRAIN.CLEAR,
   m: TERRAIN.CLEAR,
   r: TERRAIN.ROUGH,
-  b: TERRAIN.ROUGH,
+  b: TERRAIN.BEACH,
   k: TERRAIN.ROCK,
-  l: TERRAIN.ROCK,
-  v: TERRAIN.ROCK,
+  l: TERRAIN.WALL,
+  v: TERRAIN.RIVER,
   w: TERRAIN.WATER,
   t: TERRAIN.TREE,
 });
@@ -157,8 +158,23 @@ function countList(counts, cap = 12) {
 
 const bump = (m, k, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
 
-/** Occupied cells of a WebRA building footprint (engine rules: strings of x X = + _). */
+/**
+ * Cells a WebRA building footprint claims (engine rules: strings of x X = +
+ * _ -; `_` is not part of it, `-` lies over a cell without claiming it:
+ * bridges and their huts).
+ */
 function buildingCells(info) {
+  const fp = info?.building?.footprint;
+  if (!Array.isArray(fp)) return [[0, 0]];
+  const cells = [];
+  fp.forEach((row, dy) => {
+    for (let dx = 0; dx < String(row).length; dx++) if (row[dx] !== '_' && row[dx] !== '-') cells.push([dx, dy]);
+  });
+  return cells;
+}
+
+/** Every cell that belongs to a WebRA building footprint (not `_`): all must lie on the map. */
+function areaCells(info) {
   const fp = info?.building?.footprint;
   if (!Array.isArray(fp)) return [[0, 0]];
   const cells = [];
@@ -261,8 +277,8 @@ export function convertOramap(input, opts) {
   }
   const luaFiles = files.filter((f) => /\.lua$/i.test(f));
 
-  // ---- Terrain and resources on the full map ------------------------------------------
-  const { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked } = convertTerrain(
+  // ---- Terrain, bridges and resources on the full map -----------------------------------
+  const { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked, bridgeOrigins } = convertTerrain(
     { tileset, bin, bounds: [bx, by, bw, bh] },
     report,
   );
@@ -286,8 +302,6 @@ export function convertOramap(input, opts) {
   const skippedTypes = new Map();
   const outside = new Map();
   const engineOnly = new Map();
-  const decorationCounts = new Map();
-  let decorationsOutside = 0;
   let badActors = 0;
   for (const node of actorsNode) {
     const type = String(node.value ?? '').trim();
@@ -300,23 +314,6 @@ export function convertOramap(input, opts) {
     const [ax, ay] = loc;
     if (lower === 'mpspawn') {
       rawSpawns.push([ax, ay]);
-      continue;
-    }
-    const deco = DECORATIONS[type.toUpperCase()];
-    if (deco) {
-      let any = false;
-      for (const [dx, dy] of deco.cells) {
-        const cx = ax + dx;
-        const cy = ay + dy;
-        if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
-        const ci = cy * W + cx;
-        full[ci] = deco.kind === 'tree' ? TERRAIN.TREE : TERRAIN.ROCK;
-        ore[ci] = 0;
-        gems[ci] = 0;
-        if (cx >= bx && cx < bx + bw && cy >= by && cy < by + bh) any = true;
-      }
-      if (any) bump(decorationCounts, deco.kind);
-      else decorationsOutside++;
       continue;
     }
     if (ENGINE_ONLY_ACTORS.has(lower)) {
@@ -341,6 +338,23 @@ export function convertOramap(input, opts) {
       facing = (((1024 - f) % 1024) + 1024) % 1024;
     }
     placed.push({ info, owner: childValue(node.nodes, 'Owner', 'Neutral'), x: ax - bx, y: ay - by, facing, line: node.line });
+  }
+  // Bridges come first among the neutral actors: they claim no cells.
+  const bridgesOutside = new Map();
+  let bridgeCount = 0;
+  for (const [key, actorId] of bridgeOrigins) {
+    const [ax, ay] = key.split(',').map(Number);
+    const info = knownActors.get(actorId.toLowerCase());
+    if (!info) {
+      bump(skippedTypes, actorId.toLowerCase());
+      continue;
+    }
+    if (ax < bx || ay < by || ax >= bx + bw || ay >= by + bh) {
+      bump(bridgesOutside, actorId);
+      continue;
+    }
+    placed.unshift({ info, owner: 'Neutral', x: ax - bx, y: ay - by, facing: 0, line: 0 });
+    bridgeCount++;
   }
 
   // ---- Crop and pad -------------------------------------------------------------------------
@@ -369,7 +383,7 @@ export function convertOramap(input, opts) {
       const cy = sy + dy;
       if (cx < 0 || cy < 0 || cx >= width || cy >= height) return false;
       const ci = cy * width + cx;
-      return terrain[ci] === TERRAIN.CLEAR && (taken[ci] === 0 || taken[ci] === self);
+      return isBuildable(terrain[ci]) && (taken[ci] === 0 || taken[ci] === self);
     });
 
   if (rawSpawns.length < 2) fatal(`The map has ${rawSpawns.length} start position(s) (mpspawn); WebRA needs at least 2.`);
@@ -442,11 +456,10 @@ export function convertOramap(input, opts) {
     }
     if (p.info.kind === 'building') {
       const cells = buildingCells(p.info);
-      const ok = cells.every(([dx, dy]) => {
-        const cx = p.x + dx;
-        const cy = p.y + dy;
-        return cx >= 0 && cy >= 0 && cx < width && cy < height && taken[cy * width + cx] === 0;
-      });
+      const inside = ([dx, dy]) => p.x + dx >= 0 && p.y + dy >= 0 && p.x + dx < width && p.y + dy < height;
+      const ok =
+        areaCells(p.info).every(inside) &&
+        cells.every(([dx, dy]) => inside([dx, dy]) && taken[(p.y + dy) * width + p.x + dx] === 0);
       if (!ok) {
         bump(overlapping, p.info.id);
         continue;
@@ -471,15 +484,14 @@ export function convertOramap(input, opts) {
     .map(([l, n]) => `${LETTER_NAMES[l] ?? l} ${n}`)
     .join(', ');
   report.converted.push(`Terrain: ${bw}x${bh} cells of the ${tileset} tileset (${terrainSummary}).`);
-  if (letterCounts.get('v')) report.converted.push('Rivers became rock: in OpenRA neither tanks nor ships cross them.');
-  if (letterCounts.get('b')) report.converted.push('Beaches became rough ground.');
-  if (letterCounts.get('d') || letterCounts.get('g')) report.converted.push('Roads and bridges became clear ground (WebRA has no road speed bonus, and bridges cannot be destroyed).');
+  if (letterCounts.get('d') || letterCounts.get('b') || letterCounts.get('v') || letterCounts.get('l')) {
+    report.converted.push('Roads, beaches, rivers and walls keep their OpenRA terrain types (roads are faster, beaches slow wheels, rivers and walls stop everything).');
+  }
+  if (bridgeCount) report.converted.push(`Bridges (${bridgeCount}) became bridge actors: they can be destroyed and repaired at their huts, like OpenRA's.`);
   report.converted.push(`Map cropped to its playable area (Bounds ${bx},${by} ${bw}x${bh} of ${W}x${H}).`);
   if (resourceCounts.size) report.converted.push(`Resources: ${[...resourceCounts].map(([k, n]) => `${k.toLowerCase()} ${n} cells`).join(', ')}, densities recalculated like OpenRA.`);
   if (resourcesBlocked) report.warnings.push(`${resourcesBlocked} resource cells lay on ground where WebRA has no ore and were dropped.`);
   if (unknownResources.size) report.skipped.push(`Unknown resource types: ${countList(unknownResources)}.`);
-  if (decorationCounts.get('tree')) report.converted.push(`Trees (${decorationCounts.get('tree')}) became tree terrain.`);
-  if (decorationCounts.get('block')) report.converted.push(`Rocks, ice floes, boxes and civilian buildings (${decorationCounts.get('block')}) became rock terrain.`);
   report.converted.push(`${spawns.length} start positions.`);
   if (actors.length) report.converted.push(`${actors.length} pre-placed actors (${countList(new Map(actors.map((a) => [a.type, actors.filter((b) => b.type === a.type).length])))}).`);
   if (ownerNotes.size) {
@@ -488,7 +500,7 @@ export function convertOramap(input, opts) {
   if (placed.some((p) => p.owner === 'Creeps')) report.warnings.push('Creeps actors became neutral; in WebRA neutral actors do not attack.');
   if (skippedTypes.size) report.skipped.push(`Actors WebRA does not have: ${countList(skippedTypes)}.`);
   if (outside.size) report.skipped.push(`Actors outside the playable area: ${countList(outside)}.`);
-  if (decorationsOutside) report.skipped.push(`${decorationsOutside} decorations outside the playable area.`);
+  if (bridgesOutside.size) report.skipped.push(`Bridges outside the playable area: ${countList(bridgesOutside)}.`);
   if (overlapping.size) report.skipped.push(`Structures that overlap a start position, another structure or the map edge: ${countList(overlapping)}.`);
   if (engineOnly.size) report.skipped.push(`OpenRA script and editor markers: ${countList(engineOnly)}.`);
   if (badActors) report.warnings.push(`${badActors} actor entries without a type or location were ignored.`);
@@ -526,7 +538,9 @@ export function convertOramap(input, opts) {
 /**
  * Terrain and resources of a whole OpenRA map (before cropping): every
  * cell's tile looked up in the tileset tables and mapped to WebRA terrain,
- * ore and gems with OpenRA's density recalculation. Warnings go to
+ * ore and gems with OpenRA's density recalculation, and the bridge actors its
+ * bridge templates stand for (`bridgeOrigins`: "x,y" of the top-left cell to
+ * the actor id). Warnings go to
  * `report`; the counts are for its summary (cells inside `bounds`).
  * Shared by `convertOramap` and the mission converter (mission.js).
  * @param {{ tileset: string, bin: ReturnType<import('./mapbin.js').readMapBin>, bounds: number[] }} input
@@ -541,8 +555,21 @@ export function convertTerrain({ tileset, bin, bounds }, report) {
   let unknownTemplates = 0;
   let missingTiles = 0;
   const pickAny = new Set(PICK_ANY[tileset] ?? []);
+  // Bridges (OpenRA LegacyBridgeLayer.ConvertBridgeToActor): a bridge actor at
+  // the top-left cell of every bridge template, found from any of its tiles.
+  const bridgeTable = BRIDGES[tileset] ?? {};
+  const bridgeOrigins = new Map(); // "x,y" -> bridge actor id
   for (let i = 0; i < W * H; i++) {
     const type = bin.tileType[i];
+    const bridge = bridgeTable[type];
+    if (bridge) {
+      const [actorId, tw] = bridge;
+      const x = i % W;
+      const y = (i - x) / W;
+      const idx = bin.tileIndex[i];
+      const key = `${x - (idx % tw)},${y - Math.floor(idx / tw)}`;
+      if (!bridgeOrigins.has(key)) bridgeOrigins.set(key, actorId);
+    }
     const letters = templateLetters(tileset, type);
     let letter = 'c';
     if (letters === undefined) {
@@ -589,7 +616,7 @@ export function convertTerrain({ tileset, bin, bounds }, report) {
       // OpenRA ResourceLayer: density = max(lerp(0, MaxDensity, adjacent, 9), 1).
       const density = Math.max(Math.floor((info.maxDensity * adjacent) / 9), 1);
       const t = full[i];
-      if (t !== TERRAIN.CLEAR && t !== TERRAIN.ROUGH) {
+      if (!holdsResource(t)) {
         if (x >= bx && x < bx + bw && y >= by && y < by + bh) resourcesBlocked++;
         continue;
       }
@@ -599,7 +626,7 @@ export function convertTerrain({ tileset, bin, bounds }, report) {
     }
   }
 
-  return { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked };
+  return { full, ore, gems, letterCounts, resourceCounts, unknownResources, resourcesBlocked, bridgeOrigins };
 }
 
 function collectNodes(yaml, key, yamlFile, report) {

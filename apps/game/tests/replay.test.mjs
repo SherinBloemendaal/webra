@@ -33,6 +33,7 @@ const SKIRMISH = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  techBuildings: 'standard',
   // OpenRA's other lobby options (protocol 6).
   crates: true,
   shortGame: true,
@@ -235,6 +236,7 @@ const ONLINE = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  techBuildings: 'standard',
   // OpenRA's other lobby options (protocol 6).
   crates: true,
   shortGame: true,

@@ -255,13 +255,12 @@ impl Ctx<'_> {
         let dead = &self.w.rules.actors[snap.ty as usize];
         let (w, h) = dead.building.as_ref().map_or((1, 1), |b| (b.width, b.height));
         let (cx, cy) = ((snap.x - w * CELL / 2).div_euclid(CELL), (snap.y - h * CELL / 2).div_euclid(CELL));
-        let i = match self.w.rules.actors[t].kind {
-            crate::rules::Kind::Building => self.w.spawn_building(t as u16, snap.owner, cx, cy),
-            _ => Some(self.w.spawn_unit(t as u16, snap.owner, snap.x, snap.y, snap.facing)),
-        };
-        if let Some(i) = i {
-            if self.m.data.indestructible.contains(&self.w.rules.actors[t].id) {
-                self.w.actors[i].invulnerable_until = u32::MAX;
+        match self.w.rules.actors[t].kind {
+            crate::rules::Kind::Building => {
+                self.w.spawn_building(t as u16, snap.owner, cx, cy);
+            }
+            _ => {
+                self.w.spawn_unit(t as u16, snap.owner, snap.x, snap.y, snap.facing);
             }
         }
     }
@@ -622,53 +621,90 @@ impl Ctx<'_> {
             .collect()
     }
 
-    fn player_won(&mut self, lua: &mut Lua, p: u8) {
-        if self.m.players[p as usize].win != WinState::Undefined {
-            return;
-        }
-        self.m.players[p as usize].win = WinState::Won;
-        for f in self.m.triggers.player_callbacks(p, PlayerTrigger::OnPlayerWon) {
-            if self.call(lua, &f, vec![player_value(p)]).is_none() {
-                break;
+    /// Combatant players allied to `p`, `p` included (OpenRA MissionObjectives allies).
+    fn allies_of(&self, p: u8) -> Vec<u8> {
+        (0..self.m.players.len() as u8).filter(|&q| !self.m.players[q as usize].non_combatant && self.w.are_allies(p, q)).collect()
+    }
+
+    fn set_win(&mut self, q: u8, state: WinState) {
+        let pl = &mut self.m.players[q as usize];
+        if pl.win == WinState::Undefined {
+            pl.win = state;
+            if state == WinState::Lost {
+                self.w.players[q as usize].defeated = true;
             }
         }
-        if self.m.data.objectives.early_game_over {
-            // ForceDefeat: every open objective of the enemies fails.
-            for q in self.enemies_of(p) {
-                let open: Vec<i64> = (0..self.m.players[q as usize].objectives.len() as i64)
-                    .filter(|&i| self.m.players[q as usize].objectives[i as usize].state == ObjectiveState::Incomplete)
-                    .collect();
-                for i in open {
-                    let _ = self.mark_objective(lua, q, i, false);
+    }
+
+    /// ForceDefeat: every open objective of `q` fails.
+    fn force_defeat(&mut self, lua: &mut Lua, q: u8) {
+        let open: Vec<i64> = (0..self.m.players[q as usize].objectives.len() as i64)
+            .filter(|&i| self.m.players[q as usize].objectives[i as usize].state == ObjectiveState::Incomplete)
+            .collect();
+        for i in open {
+            let _ = self.mark_objective(lua, q, i, false);
+        }
+    }
+
+    /// All required objectives of `p` are done (OpenRA INotifyWinStateChanged.OnPlayerWon:
+    /// the player's script triggers, then MissionObjectives).
+    fn player_won(&mut self, lua: &mut Lua, p: u8) {
+        for f in self.m.triggers.player_callbacks(p, PlayerTrigger::OnPlayerWon) {
+            if self.call(lua, &f, vec![player_value(p)]).is_none() {
+                return;
+            }
+        }
+        let early = self.m.data.objectives.early_game_over;
+        if self.m.data.objectives.cooperative {
+            self.m.players[p as usize].coop = WinState::Won;
+            let allies = self.allies_of(p);
+            if allies.iter().all(|&a| self.m.players[a as usize].coop == WinState::Won) {
+                for a in allies {
+                    self.set_win(a, WinState::Won);
                 }
-                if self.m.players[q as usize].win == WinState::Undefined && self.m.players[q as usize].objectives.is_empty() {
-                    self.m.players[q as usize].win = WinState::Lost;
+                if early {
+                    for q in self.enemies_of(p) {
+                        self.force_defeat(lua, q);
+                    }
+                }
+            }
+        } else {
+            self.set_win(p, WinState::Won);
+            if early {
+                for q in self.enemies_of(p) {
+                    self.force_defeat(lua, q);
                 }
             }
         }
         self.check_game_over();
     }
 
+    /// A required objective of `p` failed (OnPlayerLost).
     fn player_lost(&mut self, lua: &mut Lua, p: u8) {
-        if self.m.players[p as usize].win != WinState::Undefined {
-            return;
-        }
-        self.m.players[p as usize].win = WinState::Lost;
-        self.w.players[p as usize].defeated = true;
         for f in self.m.triggers.player_callbacks(p, PlayerTrigger::OnPlayerLost) {
             if self.call(lua, &f, vec![player_value(p)]).is_none() {
-                break;
+                return;
             }
         }
-        if self.m.data.objectives.early_game_over {
-            for q in self.enemies_of(p) {
-                if self.m.players[q as usize].win == WinState::Undefined {
-                    self.m.players[q as usize].win = WinState::Won;
-                    for f in self.m.triggers.player_callbacks(q, PlayerTrigger::OnPlayerWon) {
-                        if self.call(lua, &f, vec![player_value(q)]).is_none() {
-                            break;
-                        }
+        let early = self.m.data.objectives.early_game_over;
+        if self.m.data.objectives.cooperative {
+            self.m.players[p as usize].coop = WinState::Lost;
+            let allies = self.allies_of(p);
+            if allies.iter().any(|&a| self.m.players[a as usize].coop == WinState::Lost) {
+                for a in allies {
+                    self.set_win(a, WinState::Lost);
+                }
+                if early {
+                    for q in self.enemies_of(p) {
+                        self.set_win(q, WinState::Won);
                     }
+                }
+            }
+        } else {
+            self.set_win(p, WinState::Lost);
+            if early {
+                for q in self.enemies_of(p) {
+                    self.set_win(q, WinState::Won);
                 }
             }
         }
@@ -863,12 +899,21 @@ impl Ctx<'_> {
             }
             F::TriggerClearAll => {
                 let h = a.actor(0)?;
+                if let Some(p) = self.player_of_actor(h) {
+                    self.m.triggers.player.retain(|(q, _), _| *q != p);
+                }
                 self.m.triggers.clear_all(h);
                 Ok(Vec::new())
             }
             F::TriggerClear => {
                 let h = a.actor(0)?;
                 let name = a.string(1)?;
+                if let Some(p) = self.player_of_actor(h) {
+                    if let Some(t) = PlayerTrigger::parse(&name) {
+                        self.m.triggers.player.remove(&(p, t));
+                        return Ok(Vec::new());
+                    }
+                }
                 let t = ActorTrigger::parse(&name)
                     .ok_or_else(|| crate::lua::LuaError::runtime(format!("Requested value '{name}' was not found.")))?;
                 self.m.triggers.clear(h, t);
@@ -876,6 +921,12 @@ impl Ctx<'_> {
             }
             _ => err(format!("{} is not a global function", f.name())),
         }
+    }
+
+    /// The player whose PlayerActor handle `h` is.
+    fn player_of_actor(&self, h: u32) -> Option<u8> {
+        let hd = self.m.handle(h)?;
+        matches!(hd.state, HState::PlayerActor).then_some(hd.owner)
     }
 
     // ---- Build orders (player.Build, factory.Build) -----------------------------------

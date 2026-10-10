@@ -181,6 +181,50 @@ export function bibImage(tiles, lookup, width, height) {
   return { width: w, height: h, color, mask: null, offset, scale: 1 };
 }
 
+/**
+ * A bridge template (OpenRA LegacyBridgeLayer: bridges are terrain tiles) as
+ * an atlas image over the bridge's box: tile i of the template lies in
+ * column i % width and row i / width of the template, which starts at the
+ * box's top-left cell; `box` is the actor's footprint size in cells. Drawn
+ * with the theater's terrain palette. Null when the template is empty.
+ */
+export function templateImage(tiles, lookup, [width, height], [boxW, boxH]) {
+  const w = width * CELL_PX;
+  const h = height * CELL_PX;
+  const color = new Uint8ClampedArray(w * h * 4);
+  let any = false;
+  for (let i = 0; i < width * height && i < tiles.length; i++) {
+    const t = tiles[i];
+    if (!t || t.width !== CELL_PX || t.height !== CELL_PX) continue;
+    const ox = (i % width) * CELL_PX;
+    const oy = Math.floor(i / width) * CELL_PX;
+    for (let y = 0; y < CELL_PX; y++) {
+      for (let x = 0; x < CELL_PX; x++) {
+        const v = t.data[y * CELL_PX + x];
+        if (v === 0) continue;
+        color.set(lookup.color.subarray(v * 4, v * 4 + 4), ((oy + y) * w + ox + x) * 4);
+        any = true;
+      }
+    }
+  }
+  if (!any) return null;
+  // Centre of the template relative to the centre of the actor's box.
+  const offset = [w / 2 - (boxW * CELL_PX) / 2, h / 2 - (boxH * CELL_PX) / 2];
+  return { width: w, height: h, color, mask: null, offset, scale: 1 };
+}
+
+/** A pose table of single still images (bridge states): `images[k]` for pose name `names[k]`. */
+function stillPoses(images, names) {
+  const have = {};
+  names.forEach((name, k) => {
+    if (!images[k]) return;
+    const d = { frames: [k], length: 1, facings: 1, fps: 1, classic: false, interpolatedFacings: 0, rotate: false };
+    have[name] = { loop: { ...d, mode: MODE.LOOP }, once: { ...d, mode: MODE.ONCE }, still: { ...d, mode: MODE.STILL }, index: { ...d, mode: MODE.INDEX } };
+  });
+  const poses = poseTable(have);
+  return poses ? { images: images.map((img) => img ?? images.find(Boolean)), poses } : null;
+}
+
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
 function descriptor(resolved, frames, mode, def, lead = 0) {
   return {
@@ -216,10 +260,12 @@ export function flipFrame(frame, flipX, flipY) {
  * (OpenRA DefaultSpriteSequence: a virtual sprite file).
  */
 export function sequenceFrames(def, files, tileset) {
-  const parts = def.parts ?? [{ file: def.file, tilesets: def.tilesets }];
+  const parts = def.parts ?? [{ file: def.file, tilesets: def.tilesets, scale: def.scale }];
   const frames = [];
   for (const part of parts) {
     const file = sequenceFile(part, tileset);
+    // No original on this tileset (OpenRA drew it, tools/gen_content_tables.py): WebRA art.
+    if (!file) return { none: true };
     const { sprite, error } = files.get(file);
     if (!sprite) return { error: `${file} ${error}` };
     const list = part.frames ?? sprite.frames.map((_, i) => i);
@@ -370,6 +416,7 @@ function slotArt(image, mapping, opts) {
     if (!def) return null;
     // The frames the sequence indexes: one file's, or a Combine's parts one after the other.
     const source = sequenceFrames(def, files, tileset);
+    if (source.none) return null; // no original on this tileset: WebRA art
     if (source.error) {
       problems.push(`${image}.${seqName}: ${source.error}`);
       return null;
@@ -393,6 +440,8 @@ function slotArt(image, mapping, opts) {
         imageIndex.set(key, images.length);
         const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
         if (src.scale !== 1) img.scale = src.scale;
+        // OpenRA sequence Scale (the snow hut): drawn smaller, around its offset.
+        if (def.scale && !def.parts) img.offset = [img.offset[0] * def.scale, img.offset[1] * def.scale];
         images.push(under ? compositeUnder(img, under) : img);
       }
       return imageIndex.get(key);
@@ -455,7 +504,7 @@ function slotArt(image, mapping, opts) {
  * @param {string} tileset OpenRA tileset id (TILESET_OF_BIOME)
  */
 export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
-  const out = { slots: new Map(), layers: new Set(), unitOverlays: [], levels: [], smoke: null, specials: [], explosions: [], actors: [], missing: [], problems: [] };
+  const out = { slots: new Map(), layers: new Set(), unitOverlays: [], levels: [], smoke: null, fires: [], specials: [], explosions: [], actors: [], missing: [], problems: [] };
   const palBytes = getFile(ACTOR_PALETTE);
   if (!palBytes) {
     out.problems.push(`${ACTOR_PALETTE} is not installed`);
@@ -491,19 +540,54 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       const def = SEQUENCES[image]?.[seqName];
       if (def && terrainLookup) {
         const file = sequenceFile(def, tileset);
-        const { sprite, error } = files.get(file);
+        const { sprite, error } = file ? files.get(file) : { sprite: null, error: null };
         if (sprite) img = bibImage(sprite.frames, terrainLookup, a.width ?? 1, a.height ?? 1);
-        else out.problems.push(`${image}.${seqName}: ${file} ${error}`);
+        else if (file) out.problems.push(`${image}.${seqName}: ${file} ${error}`);
       }
       bibs.set(key, img);
     }
     return bibs.get(key);
   };
   const shared = new Map(); // image + slot kind + offset -> art (aliases share one copy)
+  // Bridges: the body shows the healthy and damaged templates (poses idle and
+  // damaged), the second slot the destroyed ones (engine bridges.rs
+  // bridge_sprite: idle destroyed, move with the north span, attack with
+  // the south span, harvest both).
+  const bridgeArt = (a, entry) => {
+    const rec = entry.bridge?.[tileset];
+    if (!rec || !terrainLookup) return null;
+    const image = (state) => {
+      const file = rec[state];
+      if (!file) return null;
+      const { sprite, error } = files.get(file);
+      if (!sprite) {
+        out.problems.push(`${a.id}: ${file} ${error}`);
+        return null;
+      }
+      return templateImage(sprite.frames, terrainLookup, rec.size, [a.width ?? 1, a.height ?? 1]);
+    };
+    const body = stillPoses([image('healthy'), image('damaged')], ['idle', 'damaged']);
+    const second = stillPoses(
+      [image('destroyed'), image('destroyed_north'), image('destroyed_south'), image('destroyed_both')],
+      ['idle', 'move', 'attack', 'harvest'],
+    );
+    return body ? { body, second } : null;
+  };
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
     if (!entry) {
       if (a.kind !== 'proxy') out.missing.push(a.id);
+      return;
+    }
+    if (entry.bridge) {
+      const art = bridgeArt(a, entry);
+      if (!art) {
+        out.missing.push(a.id);
+        return;
+      }
+      out.slots.set(2 * t, art.body);
+      out.slots.set(2 * t + 1, art.second);
+      out.actors.push(a.id);
       return;
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];
@@ -559,6 +643,11 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       out.slots.set(slot, r.art);
       out.specials.push(key);
       if (key === SMOKE_KEY) out.smoke = smokeFrames(spec, files, tileset);
+      const fire = FIRE_KEYS.indexOf(key);
+      if (fire >= 0) {
+        const frames = sequenceLengths(spec, files, tileset, 3);
+        if (frames) out.fires.push([fire, ...frames]);
+      }
     }
   }
   // Muzzle flashes (ACTOR_ART muzzle, OpenRA WithMuzzleOverlay): once per shot.
@@ -586,19 +675,31 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
 /** The damage smoke's special (start and loop frames in a row, the engine names the frame). */
 const SMOKE_KEY = 'fx.0';
 
-/** [milliseconds per frame, start frames, loop frames] of the original damage smoke, or null. */
-function smokeFrames(spec, files, tileset) {
+/**
+ * The tree fires' specials (engine neutral.rs: small, medium and large, by
+ * damage state): start, loop and end frames in a row, the engine names the frame.
+ */
+const FIRE_KEYS = ['decorations.2', 'decorations.4', 'decorations.5'];
+
+/** [milliseconds per frame, frames of each sequence...] of a special with `n` sequences, or null. */
+function sequenceLengths(spec, files, tileset, n) {
   const lengths = spec.sequences.map((name) => {
     const def = SEQUENCES[spec.image]?.[name];
-    const { sprite } = def ? files.get(sequenceFile(def, tileset)) : {};
+    const file = def ? sequenceFile(def, tileset) : '';
+    const { sprite } = file ? files.get(file) : {};
     try {
       return sprite ? resolveSequence(def, sprite.frames.length) : null;
     } catch {
       return null;
     }
   });
-  if (lengths.length !== 2 || lengths.some((r) => !r)) return null;
-  return [Math.round(1000 / lengths[1].fps), lengths[0].length, lengths[1].length];
+  if (lengths.length !== n || lengths.some((r) => !r)) return null;
+  return [Math.round(1000 / lengths[1].fps), ...lengths.map((r) => r.length)];
+}
+
+/** [milliseconds per frame, start frames, loop frames] of the original damage smoke, or null. */
+function smokeFrames(spec, files, tileset) {
+  return sequenceLengths(spec, files, tileset, 2);
 }
 
 /** A special sprite's pose table from its SPECIAL_ART entry (see the table for the modes). */
@@ -675,7 +776,7 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
 }
 
 /** Kinds of the records of originalSlotInfo `info` (engine/src/overlays.rs ORIGINAL_INFO_*). */
-export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2 });
+export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2, FIRE: 3, FIRE_TAIL: 4 });
 
 /**
  * What the engine needs to know about the original art in use
@@ -688,7 +789,8 @@ export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2 });
  * those whose second slot is original, a structure whose original
  * body shows the storage level (ORIGINAL_INFO.LEVEL, the stage count) and
  * the original damage smoke (ORIGINAL_INFO.SMOKE: milliseconds per frame,
- * start frames, loop frames).
+ * start frames, loop frames) and the tree fires (ORIGINAL_INFO.FIRE: size,
+ * milliseconds per frame, start frames; FIRE_TAIL: size, loop and end frames).
  * `original` is originalSlots' result (or null).
  */
 export function originalSlotInfo(source, original = null) {
@@ -702,5 +804,9 @@ export function originalSlotInfo(source, original = null) {
   }
   const smokeSlot = original ? specialSlot(SMOKE_KEY, (original.actorCount ?? 0)) : -1;
   if (original?.smoke && source.get(smokeSlot) === 'original') info.push(ORIGINAL_INFO.SMOKE, ...original.smoke);
+  for (const [size, ms, start, loop, end] of original?.fires ?? []) {
+    if (source.get(specialSlot(FIRE_KEYS[size], original.actorCount ?? 0)) !== 'original') continue;
+    info.push(ORIGINAL_INFO.FIRE, size, ms, start, ORIGINAL_INFO.FIRE_TAIL, size, loop, end);
+  }
   return { slots: Uint32Array.from(slots), info: Int32Array.from(info) };
 }

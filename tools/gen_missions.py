@@ -363,14 +363,6 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
     with open(out_path, encoding='utf-8') as fh:
         mission_rules = json.load(fh)
 
-    # Actors without a Health trait cannot be damaged in OpenRA (an oil
-    # derrick's burnt husk): the engine needs positive hit points, so they get
-    # one and the mission lists them as indestructible.
-    indestructible = []
-    for e in mission_rules['actors']:
-        if e['kind'] != 'proxy' and e['hp'] <= 0 and 'Health' not in parse.to_json(rules[e['id']]):
-            e['hp'] = 1
-            indestructible.append(e['id'])
     # SpawnActorOnDeath of something that is not a husk or a crate (an oil
     # derrick leaves its burning ruin, a building): the mission does it.
     kinds = {e['id']: e['kind'] for e in mission_rules['actors']}
@@ -380,6 +372,12 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
         if target and kinds.get(target) not in ('husk', 'crate'):
             death_spawns[e['id']] = target
             e['spawn_on_death'] = None
+        # Structures that leave a structure (world.spawn_on_death, neutral.rs);
+        # a church that leaves a crate is the mission's to do.
+        w = e.get('world')
+        if isinstance(w, dict) and w.get('spawn_on_death') and kinds.get(w['spawn_on_death']) != 'building':
+            death_spawns[e['id']] = w['spawn_on_death']
+            w['spawn_on_death'] = None
     # The difference to the built-in rules, in the generated order: entries
     # that patch a built-in one carry its key and the changed fields, new ones
     # are complete (appended in this order, so new weapon indices match).
@@ -419,15 +417,8 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
             info = condition_info(parse.to_json(rules[aid]))
             if info:
                 conditions[aid if aid not in ids_lower_base.values() else aid] = info
-    # Targetable NoAutoTarget (barrels): only attacked when ordered to.
-    no_auto_target = sorted(a['id'] for a in mission_rules['actors'] if 'NoAutoTarget' in gen_rules.target_types(parse.to_json(rules[a['id']])))
-    # ScaredyCat: civilians that panic (`actor.Panic()`), and when hit.
-    scaredy = sorted(a['id'] for a in mission_rules['actors'] if 'ScaredyCat' in parse.to_json(rules[a['id']]))
     return {
         'rules': {k: v for k, v in diff.items() if v},
-        'scaredy': scaredy,
-        'no_auto_target': no_auto_target,
-        'indestructible': indestructible,
         'death_spawns': death_spawns,
         'conditions': conditions,
         'props': props,
@@ -518,9 +509,10 @@ def player_info(p):
     return out
 
 
-def actor_info(a):
+def actor_info(a, world_owner):
     inits = a['inits']
-    out = {'name': a['name'], 'type': a['type'], 'owner': inits.get('Owner', 'Neutral')}
+    # Bridges of the map's templates belong to the world's owner.
+    out = {'name': a['name'], 'type': a['type'], 'owner': inits.get('Owner') or world_owner}
     x, y = (int(v) for v in inits['Location'].split(','))
     out['x'], out['y'] = x, y
     if 'Facing' in inits:
@@ -617,11 +609,8 @@ def mission_file(mission, campaign, gen, base_actor_ids):
         'map': {'format': 2 if 'gems' in m['map'] else 1, 'name': title[:64], 'author': (m['author'] or 'OpenRA')[:64], 'description': '',
                 **m['map'], 'spawns': []},
         'players': players,
-        'actors': [actor_info(a) for a in m['actors']],
+        'actors': [actor_info(a, next((p['name'] for p in players if p['owns_world']), 'Neutral')) for a in m['actors']],
         'rules': gen['rules'],
-        'indestructible': gen['indestructible'],
-        'scaredy': gen['scaredy'],
-        'no_auto_target': gen['no_auto_target'],
         'death_spawns': gen['death_spawns'],
         'conditions': gen['conditions'],
         'props': gen['props'],
@@ -640,7 +629,7 @@ def mission_file(mission, campaign, gen, base_actor_ids):
                        'cooperative': truthy((player.get('MissionObjectives') or {}).get('Cooperative'))},
         'bot_conditions': {k: sorted(v) for k, v in conditions.items()},
         'smudges': smudges,
-        'notes': gen['notes'] + [f'decorations as terrain: {", ".join(f"{k} x{n}" for k, n in m["decorations"].items())}'] if m['decorations'] else gen['notes'],
+        'notes': gen['notes'] + ([f'unknown map actor types: {", ".join(f"{k} x{n}" for k, n in m["unknown"].items())}'] if m['unknown'] else []),
     }
     assert human, mission
     return out

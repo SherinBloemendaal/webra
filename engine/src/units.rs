@@ -99,6 +99,10 @@ impl World {
     /// Domain modules (plane.rs, helicopter.rs, naval.rs) call it for the parts
     /// they do not override.
     pub(crate) fn tick_unit_activity(&mut self, i: usize) {
+        if self.actors[i].activity != Activity::Idle {
+            // Wanders restarts its countdown when the unit becomes idle (neutral.rs).
+            self.actors[i].world.wander_busy = true;
+        }
         // A dog in the air does nothing else until it lands (dog.rs).
         if self.tick_leap(i) {
             return;
@@ -122,6 +126,10 @@ impl World {
 
     fn tick_idle(&mut self, i: usize) {
         if self.try_idle_target(i) {
+            return;
+        }
+        // Civilians panic and wander (neutral.rs).
+        if self.tick_world_idle(i) {
             return;
         }
         // Idle ore trucks go back to work on their own after a short pause,
@@ -196,13 +204,8 @@ impl World {
     /// Field toward `goal` for unit `i`'s locomotor, or None for aircraft,
     /// which fly straight.
     fn unit_field(&mut self, i: usize, goal: u32) -> Option<&crate::flowfield::FlowField> {
-        let loco = self.rules.actors[self.actors[i].ty as usize].unit.as_ref()?.locomotor;
-        let pass = match self.rules.locomotors[loco].domain {
-            crate::rules::Domain::Air => return None,
-            crate::rules::Domain::Water => &self.pass_water,
-            crate::rules::Domain::Ground => &self.pass,
-        };
-        Some(self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco as u8))
+        // Crushers drive through walls they may crush (neutral.rs).
+        self.unit_flow_field(i, goal)
     }
 
     /// Flow direction toward `goal` at the cell of unit `i` (None for aircraft).
@@ -245,16 +248,15 @@ impl World {
             return true;
         }
         let Some(dir) = self.flow_dir(i, goal) else { return true };
-        let domain = self.domain_of(i);
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        let pass = self.pass_for(domain);
+        let pass = self.pass_of(i);
         // Standing on a structure: step off it first (move_toward).
         if dir != DIR_NONE || pass.blocked[ci] {
             return true;
         }
         let g = (goal as i32 % self.map.width, goal as i32 / self.map.width);
         // Ties go toward the old goal itself, so the whole group agrees.
-        let new = crate::flowfield::nearest_in_component(&self.map, pass, g, pass.component[ci], g).unwrap_or(NONE);
+        let new = self.nearest_reachable(i, g, g).unwrap_or(NONE);
         let a = &mut self.actors[i];
         if new == NONE || new == goal {
             a.activity = Activity::Idle;
@@ -285,7 +287,7 @@ impl World {
             Some(r) => r,
             None => {
                 let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-                if !self.pass_for(self.domain_of(i)).blocked[ci] {
+                if !self.pass_of(i).blocked[ci] {
                     return true;
                 }
                 // On a blocked cell (a structure went up around the unit):
@@ -359,7 +361,6 @@ impl World {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let ci = self.cell_index(x, y);
         let unit = Drive::of(self.rules.actors[self.actors[i].ty as usize].unit.as_ref().unwrap());
-        let loco = unit.locomotor as u8;
         let domain = self.rules.locomotors[unit.locomotor].domain;
         if domain == crate::rules::Domain::Air {
             // Aircraft fly straight to their goal.
@@ -368,9 +369,16 @@ impl World {
             return;
         }
         let (cx, cy) = self.cell_of(x, y);
-        let pass = if domain == crate::rules::Domain::Water { &self.pass_water } else { &self.pass };
-        let field = self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco);
-        let dir = field.dirs[ci];
+        // The neighbours' remaining path lengths, for stepping off a blocked cell.
+        let neighbours: Vec<Option<usize>> =
+            DIRS.iter().map(|&(dx, dy)| self.map.contains(cx + dx, cy + dy).then(|| self.map.idx(cx + dx, cy + dy))).collect();
+        let (dir, field_dist) = {
+            // Crushers drive through walls they may crush (neutral.rs).
+            let Some(field) = self.unit_flow_field(i, goal) else { return };
+            let dists: Vec<u16> = neighbours.iter().map(|n| n.map_or(crate::flowfield::DIST_NONE, |j| field.dist[j])).collect();
+            (field.dirs[ci], dists)
+        };
+        let pass = self.pass_of(i);
         let (wx, wy) = if dir == DIR_GOAL {
             (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width))
         } else if dir == DIR_NONE {
@@ -388,7 +396,7 @@ impl World {
                 if !self.map.contains(nx, ny) || pass.blocked[self.map.idx(nx, ny)] {
                     continue;
                 }
-                let key = (field.dist[self.map.idx(nx, ny)], d);
+                let key = (field_dist[d], d);
                 if best.is_none_or(|(bk, _)| key < bk) {
                     best = Some((key, (nx, ny)));
                 }
@@ -422,12 +430,16 @@ impl World {
         let loco = &self.rules.locomotors[unit.locomotor];
         let ship = loco.domain == crate::rules::Domain::Water;
         let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
-        // Rank speed bonus and prone infantry (veterancy.rs), then weather (weather.rs).
+        // Rank speed bonus and prone infantry (veterancy.rs), panicking
+        // civilians (neutral.rs), then weather (weather.rs).
         // Dogs stand still while they eat or reload and run while hunting (dog.rs).
         if self.movement_paused(i) {
             return;
         }
-        let speed = self.weather_speed(i, self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)));
+        let speed = self.weather_speed(
+            i,
+            self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)) * self.world_speed_modifier(i) / 100,
+        );
         let grip = self.grip_of(i, ci);
         let turn_speed = grip.map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1));
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
@@ -545,11 +557,15 @@ impl World {
             let from = self.cell_index(x, y);
             let to = self.cell_index(tx, ty);
             let d = self.domain_of(i);
-            if to == from || d == crate::rules::Domain::Air || self.may_enter(d, (x, y), (tx, ty)) {
+            if to == from || d == crate::rules::Domain::Air || self.may_enter(i, (x, y), (tx, ty)) {
                 let a = &mut self.actors[i];
                 a.x = tx;
                 a.y = ty;
                 a.moved = true;
+                // Driving onto a wall it may crush crushes it (neutral.rs).
+                if to != from {
+                    self.crush_wall_at(i, to);
+                }
                 return true;
             }
         }
@@ -562,17 +578,19 @@ impl World {
     /// flow fields and connectivity labels use (`flowfield::step`), so units
     /// never slip into a pocket their fields cannot lead them out of. A unit
     /// on a blocked cell (a structure went up around it) may leave any way.
-    fn may_enter(&self, d: crate::rules::Domain, a: (i32, i32), b: (i32, i32)) -> bool {
-        let blocked = &self.pass_for(d).blocked;
+    fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
+        let pass = self.pass_of(i);
+        // Walls the unit crushes are open to it, as in its flow field (neutral.rs).
+        let blocked = |ci: usize| pass.blocked[ci] && !(pass.crush[ci] != 0 && self.crushes_wall_at(i, ci));
         let (fx, fy) = self.cell_of(a.0, a.1);
         let (tx, ty) = self.cell_of(b.0, b.1);
-        if blocked[self.map.idx(tx, ty)] {
+        if blocked(self.map.idx(tx, ty)) {
             return false;
         }
-        if blocked[self.map.idx(fx, fy)] || fx == tx || fy == ty {
+        if blocked(self.map.idx(fx, fy)) || fx == tx || fy == ty {
             return true;
         }
-        !blocked[self.map.idx(tx, fy)] && !blocked[self.map.idx(fx, ty)]
+        !blocked(self.map.idx(tx, fy)) && !blocked(self.map.idx(fx, ty))
     }
 
     // ---- Harvesting --------------------------------------------------------
@@ -960,8 +978,10 @@ impl World {
                         if d2 >= (min as i64) * (min as i64) {
                             continue;
                         }
-                        // A moving crusher (tracked vehicles, ore truck) runs over enemy soldiers.
-                        if self.are_enemies(a.owner, b.owner) {
+                        // A moving crusher (tracked vehicles, ore truck) runs over
+                        // soldiers and civilians that are not its allies
+                        // (OpenRA Crushable: CrushedByFriendlies false).
+                        if !self.are_allies(a.owner, b.owner) {
                             let crush_reach = (min as i64) * (min as i64) * 9 / 16;
                             if d2 <= crush_reach {
                                 if a.moved && self.crushes(i, j) {
@@ -974,7 +994,10 @@ impl World {
                                 }
                             }
                         }
-                        let friends = !self.are_enemies(a.owner, b.owner);
+                        // A soldier or civilian a moving tank may crush stands in its way
+                        // like an enemy instead of being pushed aside.
+                        let crushable = !self.are_allies(a.owner, b.owner) && (self.crushes(i, j) || self.crushes(j, i));
+                        let friends = !self.are_enemies(a.owner, b.owner) && !crushable;
                         if friends {
                             jammed[i] |= b.moved;
                             jammed[j] |= a.moved;

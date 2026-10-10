@@ -37,6 +37,8 @@ pub const DIST_NONE: u16 = u16::MAX;
 pub struct FlowField {
     pub goal: u32,
     pub loco: u8,
+    /// 0, or 1 + the player whose units crush walls on the way (`Crush`).
+    pub crusher: u8,
     pub version: u32,
     pub dirs: Vec<u8>,
     /// Remaining path cost to the goal per cell, in cell steps on clear
@@ -54,6 +56,38 @@ pub struct Passability {
     pub component: Vec<u32>,
     pub version: u32,
     dirty: bool,
+    /// Crush classes of the wall on each blocked cell (`CRUSH_WALL`,
+    /// `CRUSH_HEAVY_WALL`; OpenRA Crushable CrushClasses), 0 elsewhere.
+    pub crush: Vec<u8>,
+    /// Connectivity labels with the walls of a crush class mask open, per
+    /// mask that walls on the map have (`components_for`).
+    crush_components: Vec<(u8, Vec<u32>)>,
+    /// Crush classes of all walls on the map, as of the last `refresh`.
+    pub crush_present: u8,
+}
+
+/// Crush class bits of walls (OpenRA Crushable CrushClasses `wall`, `heavywall`).
+pub const CRUSH_WALL: u8 = 1;
+pub const CRUSH_HEAVY_WALL: u8 = 2;
+
+/// The crush class bits of OpenRA crush class names.
+pub fn crush_bits<'a>(classes: impl IntoIterator<Item = &'a String>) -> u8 {
+    classes.into_iter().fold(0, |m, c| {
+        m | match c.as_str() {
+            "wall" => CRUSH_WALL,
+            "heavywall" => CRUSH_HEAVY_WALL,
+            _ => 0,
+        }
+    })
+}
+
+/// A flow field for units that crush walls (OpenRA Locomotor
+/// CanMoveFreelyInto: cells whose actors are all crushable by the player are
+/// free). `player` is the crushers' owner; `blocked` is the passability with
+/// the walls they may crush open (World::crusher_blocked).
+pub struct Crush<'a> {
+    pub player: u8,
+    pub blocked: &'a [bool],
 }
 
 impl Passability {
@@ -67,11 +101,51 @@ impl Passability {
         Passability::with(map, |t| t.ship_passable())
     }
 
+    /// Passability for landing craft: water, fords and beaches.
+    pub fn landing(map: &Map) -> Self {
+        Passability::with(map, |t| t.landing_passable())
+    }
+
     fn with(map: &Map, open: impl Fn(crate::map::Terrain) -> bool) -> Self {
         let blocked = map.terrain.iter().map(|&t| !open(t)).collect();
-        let mut p = Passability { blocked, component: vec![0; map.cells()], version: 1, dirty: true };
+        let n = map.cells();
+        let mut p = Passability {
+            blocked,
+            component: vec![0; n],
+            version: 1,
+            dirty: true,
+            crush: vec![0; n],
+            crush_components: Vec::new(),
+            crush_present: 0,
+        };
         p.refresh(map);
         p
+    }
+
+    /// Set the crush classes of the wall on cell `i` (0: none).
+    pub fn set_crush(&mut self, i: usize, bits: u8) {
+        if self.crush[i] != bits {
+            self.crush[i] = bits;
+            self.dirty = true;
+        }
+    }
+
+    /// Connectivity labels for units that crush walls of `mask` (any owner's
+    /// walls open), or the plain labels when no such wall is on the map.
+    pub fn components_for(&self, mask: u8) -> &[u32] {
+        self.crush_components.iter().find(|(m, _)| *m == mask).map_or(&self.component, |(_, c)| c)
+    }
+
+    /// Whether cell `i` is open for units that crush walls of `mask` (labels of `components_for`).
+    #[inline]
+    pub fn open_for(&self, i: usize, mask: u8) -> bool {
+        !self.blocked[i] || self.crush[i] & mask != 0
+    }
+
+    /// Something besides blocked cells changed that fields depend on (who
+    /// may crush a wall): fields recompute on the next lookup.
+    pub fn touch(&mut self) {
+        self.dirty = true;
     }
 
     pub fn set_blocked(&mut self, i: usize, b: bool) {
@@ -88,30 +162,48 @@ impl Passability {
         }
         self.dirty = false;
         self.version += 1;
-        let n = map.cells();
-        self.component.iter_mut().for_each(|c| *c = 0);
-        let mut next = 1u32;
-        let mut stack = Vec::new();
-        for start in 0..n {
-            if self.blocked[start] || self.component[start] != 0 {
-                continue;
+        label(map, &self.blocked, &mut self.component);
+        // Walls the crushers of a class mask drive through (OpenRA: tanks
+        // path over enemy walls): one more labelling per mask in use.
+        let present = self.crush.iter().fold(0u8, |m, &c| m | c);
+        self.crush_present = present;
+        self.crush_components.clear();
+        for mask in [CRUSH_WALL, CRUSH_WALL | CRUSH_HEAVY_WALL] {
+            if present & mask != 0 {
+                let open: Vec<bool> = (0..map.cells()).map(|i| self.blocked[i] && self.crush[i] & mask == 0).collect();
+                let mut labels = vec![0; map.cells()];
+                label(map, &open, &mut labels);
+                self.crush_components.push((mask, labels));
             }
-            self.component[start] = next;
-            stack.push(start);
-            while let Some(i) = stack.pop() {
-                let (x, y) = ((i as i32) % map.width, (i as i32) / map.width);
-                for d in 0..8 {
-                    if let Some(j) = step(map, &self.blocked, x, y, d) {
-                        if self.component[j] == 0 {
-                            self.component[j] = next;
-                            stack.push(j);
-                        }
+        }
+        true
+    }
+}
+
+/// Connectivity labels (1, 2, ...; 0 for blocked cells) of the open cells.
+fn label(map: &Map, blocked: &[bool], component: &mut [u32]) {
+    let n = map.cells();
+    component.iter_mut().for_each(|c| *c = 0);
+    let mut next = 1u32;
+    let mut stack = Vec::new();
+    for start in 0..n {
+        if blocked[start] || component[start] != 0 {
+            continue;
+        }
+        component[start] = next;
+        stack.push(start);
+        while let Some(i) = stack.pop() {
+            let (x, y) = ((i as i32) % map.width, (i as i32) / map.width);
+            for d in 0..8 {
+                if let Some(j) = step(map, blocked, x, y, d) {
+                    if component[j] == 0 {
+                        component[j] = next;
+                        stack.push(j);
                     }
                 }
             }
-            next += 1;
         }
-        true
+        next += 1;
     }
 }
 
@@ -137,7 +229,7 @@ pub fn step(map: &Map, blocked: &[bool], x: i32, y: i32, d: usize) -> Option<usi
 #[derive(Clone)]
 pub struct FlowCache {
     fields: Vec<FlowField>,
-    index: BTreeMap<(u32, u8), usize>,
+    index: BTreeMap<(u32, u8, u8), usize>,
     /// Slot of the last field looked up: units of one group ask for the same
     /// field one after another, so this skips most index lookups.
     last: usize,
@@ -152,21 +244,28 @@ impl FlowCache {
 
     /// Direction byte for `cell` in the field toward `goal`, computing the field if needed.
     pub fn dir(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, cell: usize) -> u8 {
-        let f = self.get(map, pass, locos, goal, loco);
+        let f = self.get(map, pass, locos, goal, loco, None);
         self.fields[f].dirs[cell]
     }
 
     /// The field toward `goal` for locomotor `loco`, computing it if needed.
     pub fn field(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> &FlowField {
-        let f = self.get(map, pass, locos, goal, loco);
+        let f = self.get(map, pass, locos, goal, loco, None);
         &self.fields[f]
     }
 
-    /// The cached field toward `goal` for locomotor `loco`, if it exists and
-    /// is current for passability `version`. Read only (debug views): never
-    /// computes, evicts or touches the use clock.
-    pub fn peek(&self, goal: u32, loco: u8, version: u32) -> Option<&[u8]> {
-        let &i = self.index.get(&(goal, loco))?;
+    /// `field` for units that crush walls (`Crush`): fields are per player then.
+    pub fn field_crushing(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, crush: Crush) -> &FlowField {
+        let f = self.get(map, pass, locos, goal, loco, Some(crush));
+        &self.fields[f]
+    }
+
+    /// The cached field toward `goal` for locomotor `loco` (and `crusher`:
+    /// 0, or 1 + the crushing player), if it exists and is current for
+    /// passability `version`. Read only (debug views): never computes,
+    /// evicts or touches the use clock.
+    pub fn peek(&self, goal: u32, loco: u8, crusher: u8, version: u32) -> Option<&[u8]> {
+        let &i = self.index.get(&(goal, loco, crusher))?;
         let f = &self.fields[i];
         (f.version == version).then_some(f.dirs.as_slice())
     }
@@ -180,18 +279,20 @@ impl FlowCache {
         self.fields.is_empty()
     }
 
-    fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> usize {
+    fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, crush: Option<Crush>) -> usize {
         self.clock += 1;
+        let crusher = crush.as_ref().map_or(0, |c| c.player + 1);
+        let blocked: &[bool] = crush.as_ref().map_or(&pass.blocked, |c| c.blocked);
         let hit = match self.fields.get(self.last) {
-            Some(f) if f.goal == goal && f.loco == loco => Some(self.last),
-            _ => self.index.get(&(goal, loco)).copied(),
+            Some(f) if f.goal == goal && f.loco == loco && f.crusher == crusher => Some(self.last),
+            _ => self.index.get(&(goal, loco, crusher)).copied(),
         };
         if let Some(i) = hit {
             self.last = i;
             let f = &mut self.fields[i];
             f.last_used = self.clock;
             if f.version != pass.version {
-                compute(map, pass, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
+                compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
                 f.version = pass.version;
                 self.computed += 1;
             }
@@ -200,23 +301,32 @@ impl FlowCache {
         let max = (CACHE_CELL_BUDGET / map.cells().max(1)).clamp(MIN_CACHED, MAX_CACHED);
         let slot = if self.fields.len() < max {
             let n = map.cells();
-            self.fields.push(FlowField { goal, loco, version: 0, dirs: vec![DIR_NONE; n], dist: vec![DIST_NONE; n], last_used: 0 });
+            self.fields.push(FlowField {
+                goal,
+                loco,
+                crusher,
+                version: 0,
+                dirs: vec![DIR_NONE; n],
+                dist: vec![DIST_NONE; n],
+                last_used: 0,
+            });
             self.fields.len() - 1
         } else {
             // Evict the least recently used field.
             let (i, _) = self.fields.iter().enumerate().min_by_key(|(_, f)| f.last_used).unwrap();
             let old = &self.fields[i];
-            self.index.remove(&(old.goal, old.loco));
+            self.index.remove(&(old.goal, old.loco, old.crusher));
             i
         };
         let f = &mut self.fields[slot];
         f.goal = goal;
         f.loco = loco;
+        f.crusher = crusher;
         f.last_used = self.clock;
-        compute(map, pass, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
+        compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
         f.version = pass.version;
         self.computed += 1;
-        self.index.insert((goal, loco), slot);
+        self.index.insert((goal, loco, crusher), slot);
         self.last = slot;
         slot
     }
@@ -230,13 +340,13 @@ impl Default for FlowCache {
 
 /// Dijkstra from the goal outward. Moving into a cell costs more on slow
 /// terrain for this locomotor (OpenRA TerrainSpeeds).
-fn compute(map: &Map, pass: &Passability, loco: &Locomotor, goal: u32, dirs: &mut [u8], dist: &mut [u16]) {
+fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut [u8], dist: &mut [u16]) {
     let n = map.cells();
     dirs.iter_mut().for_each(|d| *d = DIR_NONE);
     dist.iter_mut().for_each(|d| *d = DIST_NONE);
     let mut cost = vec![u32::MAX; n];
     let g = goal as usize;
-    if g >= n || pass.blocked[g] {
+    if g >= n || blocked[g] {
         return;
     }
     let ship = loco.domain == crate::rules::Domain::Water;
@@ -259,7 +369,7 @@ fn compute(map: &Map, pass: &Passability, loco: &Locomotor, goal: u32, dirs: &mu
         for d in 0..8 {
             // Neighbour n reaches i by stepping in the opposite direction; the
             // corner rule is symmetric so checking from i is equivalent.
-            if let Some(j) = step(map, &pass.blocked, x, y, d) {
+            if let Some(j) = step(map, blocked, x, y, d) {
                 let base = if d % 2 == 0 { COST_STRAIGHT } else { COST_DIAGONAL };
                 let nc = c + base * enter / 100;
                 if nc < cost[j] {
@@ -286,7 +396,7 @@ fn compute(map: &Map, pass: &Passability, loco: &Locomotor, goal: u32, dirs: &mu
         let (x, y) = ((j as i32) % map.width, (j as i32) / map.width);
         let mut best: Option<(i32, i32, u8)> = None;
         for (d, &(dx, dy)) in DIRS.iter().enumerate() {
-            let Some(i) = step(map, &pass.blocked, x, y, d) else { continue };
+            let Some(i) = step(map, blocked, x, y, d) else { continue };
             if cost[i] == u32::MAX {
                 continue;
             }
@@ -319,8 +429,21 @@ pub fn centre_distance(map: &Map, x: i32, y: i32) -> i32 {
 /// closest to the map centre, so the choice is the same on both halves of a
 /// symmetric map.
 pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), component: u32, from: (i32, i32)) -> Option<u32> {
+    nearest_in_labels(map, &pass.component, |i| !pass.blocked[i], goal, component, from)
+}
+
+/// `nearest_in_component` over connectivity `labels` whose cells `open` says
+/// a unit can stand on (crushers: `Passability::components_for`).
+pub fn nearest_in_labels(
+    map: &Map,
+    labels: &[u32],
+    open: impl Fn(usize) -> bool,
+    goal: (i32, i32),
+    component: u32,
+    from: (i32, i32),
+) -> Option<u32> {
     let gi = map.idx(goal.0, goal.1);
-    if pass.component[gi] == component && !pass.blocked[gi] {
+    if labels[gi] == component && open(gi) {
         return Some(gi as u32);
     }
     let max_r = map.width.max(map.height);
@@ -335,7 +458,7 @@ pub fn nearest_in_component(map: &Map, pass: &Passability, goal: (i32, i32), com
                     continue;
                 }
                 let i = map.idx(x, y);
-                if pass.component[i] == component && !pass.blocked[i] {
+                if labels[i] == component && open(i) {
                     let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
                     let df = (x - from.0).pow(2) + (y - from.1).pow(2);
                     let key = (d, df, centre_distance(map, x, y));
@@ -389,8 +512,9 @@ mod tests {
         let locos = vec![Locomotor {
             name: "t".into(),
             domain: crate::rules::Domain::Ground,
-            speeds: vec![100, 50, 88, 0],
+            speeds: vec![100, 50, 88, 0, 125, 125, 50],
             crushes_infantry: true,
+            crushes: vec!["infantry".into()],
         }];
         let mut cache = FlowCache::new();
         let goal = map.idx(15, 2) as u32;
@@ -416,8 +540,9 @@ mod tests {
         let locos = vec![Locomotor {
             name: "t".into(),
             domain: crate::rules::Domain::Ground,
-            speeds: vec![100, 50, 88, 0],
+            speeds: vec![100, 50, 88, 0, 125, 125, 50],
             crushes_infantry: true,
+            crushes: vec!["infantry".into()],
         }];
         let mut cache = FlowCache::new();
         let goal = map.idx(15, 2) as u32;

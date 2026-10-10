@@ -795,7 +795,7 @@ export class Sidebar {
     this.selHpFill.classList.toggle('mid', frac <= 0.5 && frac > 0.25);
     this.selHpFill.classList.toggle('low', frac <= 0.25);
     let detail = `${Math.ceil(hp)} / ${max}`;
-    if (shownOwner !== undefined && shownOwner !== this.playerId) detail += '  (enemy)';
+    if (shownOwner !== undefined && shownOwner !== this.playerId) detail += info.neutral ? '  (neutral)' : '  (enemy)';
     // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
     const vet = veterancyText(info, info.owner === this.playerId);
     if (vet) detail += `   ${vet}`;
@@ -815,6 +815,8 @@ export class Sidebar {
     if (info.beingCaptured) detail += '   Being captured';
     if (info.demolished) detail += '   C4 planted';
     if (info.powerOutage > 0) detail += `   Power outage ${Math.ceil(info.powerOutage / 25)} s`;
+    // Tech buildings: what capturing gives (OpenRA TooltipDescription, picked by main.js selectionInfo).
+    if (info.description) detail += `   ${info.description}`;
     setText(this.selDetailEl, detail);
   }
 

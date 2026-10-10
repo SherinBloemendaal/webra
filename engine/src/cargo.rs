@@ -275,7 +275,7 @@ impl World {
         if d == Domain::Air {
             return None;
         }
-        let pass = self.pass_for(d);
+        let pass = self.pass_of(p);
         let (tcx, tcy) = self.cell_of(self.actors[t].x, self.actors[t].y);
         for r in 1..=EXIT_RINGS {
             let mut cands: Vec<(i32, usize)> = Vec::new();
@@ -332,7 +332,7 @@ impl World {
         let (gx, gy) = (cell_center(cell as i32 % self.map.width), cell_center(cell as i32 / self.map.width));
         // Get out at the transport, or, where the passenger cannot stand (a
         // ship on water), at the edge of the exit cell facing the transport.
-        let (x, y) = if self.pass_for(self.domain_of(p)).blocked[self.cell_index(tx, ty)] {
+        let (x, y) = if self.pass_of(p).blocked[self.cell_index(tx, ty)] {
             let len = dist(gx, gy, tx, ty).max(1);
             let k = len.min(HALF_CELL - 64);
             (gx + (tx - gx) * k / len, gy + (ty - gy) * k / len)
@@ -406,7 +406,7 @@ impl World {
             // Ejected passengers need ground of their own domain under them.
             let ci = self.cell_index(x, y);
             let d = self.domain_of(p);
-            if eject && (d == Domain::Air || !self.pass_for(d).blocked[ci]) {
+            if eject && (d == Domain::Air || !self.pass_of(p).blocked[ci]) {
                 continue;
             }
             self.kill(p);

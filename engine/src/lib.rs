@@ -13,6 +13,7 @@ mod ai_economy;
 mod ai_infantry;
 mod air;
 pub mod beacons;
+pub mod bridges;
 mod cargo;
 mod combat;
 mod combined;
@@ -38,6 +39,7 @@ pub mod math;
 pub mod minimap;
 pub mod mission;
 mod naval;
+pub mod neutral;
 pub mod observer;
 pub mod overlays;
 pub mod paths;
@@ -92,6 +94,8 @@ mod tests_minimap;
 mod tests_mission;
 #[cfg(test)]
 mod tests_naval;
+#[cfg(test)]
+mod tests_neutral;
 #[cfg(test)]
 mod tests_original_art;
 #[cfg(test)]
@@ -238,6 +242,13 @@ impl Game {
     /// random, temperate, snow, desert (random ones are picked from the seed,
     /// as in a game).
     pub fn generated_map_styled(seed: u32, size: i32, players: u32, style: &str, biome: &str) -> Result<String, JsError> {
+        Game::generated_map_with(seed, size, players, style, biome, "standard")
+    }
+
+    /// `generated_map_styled` with the lobby option `techBuildings` (none,
+    /// standard, extra, oilonly, oilrush): the tech buildings the map gets.
+    pub fn generated_map_with(seed: u32, size: i32, players: u32, style: &str, biome: &str, tech: &str) -> Result<String, JsError> {
+        let tech = parse_tech_buildings(tech)?;
         let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
         let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
         let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style);
@@ -246,6 +257,9 @@ impl Game {
         let description = format!("Generated map: {}, {}", resolved.name(), biome.name());
         let mut data = mapdata::MapData::from_map(&m, &name, "WebRA", &description);
         data.biome = biome;
+        // The ore mines, tech buildings and villages a game on this map gets
+        // (mapgen/sites.rs, settlements.rs).
+        data.actors = mapgen::sites::world_actors(&m, &rules::Rules::load(), biome, tech, seed as u64);
         Ok(data.canonical_json())
     }
 
@@ -525,7 +539,7 @@ impl Game {
                     "height": b.map_or(1, |b| b.height),
                     // Where the art is centred relative to the footprint's centre, world pixels (OpenRA LocalCenterOffset).
                     "centerOffset": b.map_or([0.0, 0.0], |b| [px(b.center_offset.0), px(b.center_offset.1)]),
-                    "footprint": b.map(|b| b.footprint.iter().map(|&(x, y, c)| json!([x, y, match c { FootCell::Empty => 0, FootCell::Occupied => 1, FootCell::Passable => 2 }])).collect::<Vec<_>>()),
+                    "footprint": b.map(|b| b.footprint.iter().map(|&(x, y, c)| json!([x, y, match c { FootCell::Empty => 0, FootCell::Occupied => 1, FootCell::Passable => 2, FootCell::Overlay => 3 }])).collect::<Vec<_>>()),
                     "power": b.map_or(0, |b| b.power),
                     "turret": a.turret_turn_speed.is_some(),
                     "radius": a.unit.as_ref().map_or(0, |u| u.radius),
@@ -536,6 +550,8 @@ impl Game {
                     "repairable": b.is_some_and(|b| b.repairable.is_some()),
                     "powerDown": b.is_some_and(|b| b.power_down),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
+                    // The neutral world (neutral.rs): editor category, biomes, bridge templates.
+                    "world": neutral::world_json(a),
                     // PrimaryBuilding (primary.rs): the deploy command makes it primary.
                     "primary": a.options.primary_building,
                     // Crate actions in rules order (crates.rs): their class (`key`,
@@ -899,6 +915,12 @@ impl Game {
             "maxHp": info.hp,
             "building": a.kind == Kind::Building,
             "producer": info.building.as_ref().is_some_and(|b| !b.produces.is_empty() || b.repairs.is_some()),
+            // The neutral player's (civilian and tech buildings, neutral.rs), and the
+            // TooltipDescription texts of tech buildings: @ally for the owner and its
+            // allies, @other for everyone else.
+            "neutral": self.world.neutral_player() == Some(a.owner),
+            "allyDescription": info.world.ally_description,
+            "otherDescription": info.world.other_description,
             "bales": a.bales,
             "gemBales": a.gem_bales,
             "ability": self.world.ability_json(i),
@@ -1668,6 +1690,7 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         weather: weather::WeatherMode::from_name(&name("weather", "full")?)
             .ok_or_else(|| "options.weather must be full, cosmetic or off".to_string())?,
         cheats: flag("cheats", false),
+        tech_buildings: parse_tech_buildings_text(&name("techBuildings", "standard")?)?,
         reusable_engineers: flag("reusableEngineers", false),
         // Lobby options of OpenRA's world and player rules (gamerules.rs,
         // crates.rs); absent keys (older callers) take OpenRA's defaults.
@@ -1693,6 +1716,15 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         ally_build_radius: flag("allyBuildRadius", true),
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
+}
+
+fn parse_tech_buildings(s: &str) -> Result<mapgen::settlements::TechBuildings, JsError> {
+    parse_tech_buildings_text(s).map_err(|e| JsError::new(&e))
+}
+
+fn parse_tech_buildings_text(s: &str) -> Result<mapgen::settlements::TechBuildings, String> {
+    mapgen::settlements::TechBuildings::from_name(s)
+        .ok_or_else(|| "tech buildings must be none, standard, extra, oilonly or oilrush".to_string())
 }
 
 fn parse_style(s: &str) -> Result<mapgen::MapStyle, JsError> {

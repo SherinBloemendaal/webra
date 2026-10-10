@@ -104,6 +104,10 @@ impl World {
                 sink.sprite(sprites, at.look(posed(c.ty as u32 * 2, Pose::death(c.sequence), age), c.owner as f32, 1.0, 1.0, 0.0));
                 continue;
             }
+            // A structure's death animation (neutral.rs) only with art that has it.
+            if self.rules.actors[c.ty as usize].kind == Kind::Building {
+                continue;
+            }
             let life = if c.sequence == DEATH_CRUSHED { CRUSHED_TICKS } else { DEATH_TICKS } as f32;
             // Full strength for the first half of its life, then fading; at the
             // previous (alpha 0) and the current tick (alpha 1), affine in between.

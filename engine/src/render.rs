@@ -24,7 +24,8 @@ pub fn px(wu: i32) -> f32 {
 }
 
 /// Sprite ids: actor `t` has body `2t` and turret `2t + 1`; specials follow.
-/// Infantry have no turret: their `2t + 1` is the prone pose (veterancy.rs).
+/// Infantry have no turret: their `2t + 1` is the prone pose (veterancy.rs),
+/// or for civilians the panic pose (neutral.rs).
 /// Must match the SPECIALS order in apps/game/js/sprites.js.
 pub struct SpriteIds {
     pub bullet: f32,
@@ -259,12 +260,17 @@ impl World {
             if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
+            // Bridge huts have no art (OpenRA LegacyBridgeHut: no RenderSprites).
+            if self.rules.actors[a.ty as usize].world.bridge_hut {
+                continue;
+            }
             let (x, y) = (px(a.x), px(a.y));
             let Some(at) = sink.group([x, y], [x, y], 96.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
             let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
-            let body = self.body_sprite(i, a.ty as u32 * 2);
+            // Bridges show the template of their state (bridges.rs).
+            let body = self.bridge_sprite(i).unwrap_or_else(|| self.body_sprite(i, a.ty as u32 * 2));
             sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, alpha, flash));
             // Disabled (low power, switched off): darkened like OpenRA's
             // WithColoredOverlay@IDISABLE (black at 70 percent) over every layer.
@@ -375,8 +381,9 @@ impl World {
             let body_alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
             // A disguised spy looks like its disguise to enemies (infantry.rs).
             let (look, team) = self.disguise_seen_by(i, player).map_or((a.ty, a.owner), |d| (d.ty, d.owner));
-            // Prone infantry lie flat (TakeCover, veterancy.rs).
-            let body = if self.draws_prone(i) { look * 2 + 1 } else { look * 2 };
+            // Prone infantry lie flat (TakeCover, veterancy.rs); panicking
+            // civilians run with their arms up (ScaredyCat, neutral.rs).
+            let body = if self.draws_prone(i) || self.draws_panic(i) { look * 2 + 1 } else { look * 2 };
             sink.sprite(
                 sprites,
                 at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
@@ -414,6 +421,8 @@ impl World {
         self.render_infantry(player, sink, &ids, selected, sprites, rects);
         // Repair wrenches and power off icons on structures (repair.rs).
         self.render_building_decorations(player, sink, ids.decorations_base, sprites);
+        // Burning trees and the hospital's red cross (neutral.rs).
+        self.render_world_decorations(player, sink, ids.decorations_base, sprites);
         // The PRIMARY tag over a selected primary structure (primary.rs).
         self.render_primary(player, sink, selected, &ids, sprites);
 
