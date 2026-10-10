@@ -159,6 +159,24 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   cell in the biome's colours, spawns in player colours);
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
+- Map editor (presentation only, never ticked): `Game.editor_preview(mapJson)`
+  builds the world a game on a map file starts with (its actors, the trees of
+  tree terrain, bridges) without validating it and without starting units, for
+  `build_render` and `terrain_ptr` with the spectator view (player 255); spawn
+  k's actors are player k, neutral ones player 8. On such a preview,
+  `editor_cells()` gives per cell the flags 1 passable, 2 buildable, 4
+  reachable by ground from spawn 1, 8 on a shortest ground path between starts,
+  and in the high byte the spawn that reaches the cell first (255 none);
+  `editor_report()` is JSON with per spawn `rush` (ground steps to the nearest
+  other start, or null), `ore`, `oreCells`, `gems`, `gemCells`, `buildable`
+  (within `reach` cells), `zone`, `harbourCells`, `navalYardSite`, and the
+  totals and `unreachableSpawns`.
+- Editor test play: the editor writes the map to sessionStorage
+  `webra.editor.testMap` and a setup to `webra.editor.testSetup`
+  (`{ players: [{ type, faction, difficulty, bot, team }], camera: [x, y] |
+  null, autostart }`) and opens `/play/?editorTest=1`; the lobby checks the
+  slots like stored settings, the camera starts at `camera` (world pixels) and
+  `autostart` starts the game at once.
 
 ### Importing OpenRA maps (`.oramap`)
 

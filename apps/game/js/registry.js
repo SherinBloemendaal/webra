@@ -257,6 +257,16 @@ export const GROUPS = deepFreeze({
         label: 'Map editor: symmetry',
       },
       editorGrid: { type: 'boolean', default: true, label: 'Map editor: show grid' },
+      editorPaint: { type: 'choice', default: 'terrain', options: ['terrain', 'ore', 'gems'], label: 'Map editor: what the paint tools paint' },
+      editorShapeFill: { type: 'boolean', default: true, label: 'Map editor: filled rectangles and ellipses' },
+      editorAutoShore: { type: 'boolean', default: false, label: 'Map editor: beaches along painted water' },
+      editorLayers: {
+        type: 'json',
+        default: {},
+        maxBytes: 512,
+        label: 'Map editor: layers shown',
+        help: 'Which overlays the map editor shows (passability, zones, rush paths and more).',
+      },
       // How often the "Mouse captured" hint was shown (js/mouselock.js shows it the first few times).
       mouseCaptureHints: { type: 'integer', default: 0, min: 0, max: 99, label: 'Mouse capture hints shown' },
       // Campaign missions won (js/campaign/progress.js): mission id -> the difficulty it was won on ('' without one).
@@ -278,6 +288,8 @@ export const GROUPS = deepFreeze({
 export const DEVICE_DATA_KEYS = Object.freeze({
   'webra.lobby.map.v1': 'The map file installed in the skirmish lobby',
   'webra.editor.draft': 'The map editor draft',
+  'webra.editor.recovery': 'Map editor recovery copies of the last maps worked on',
+  'webra.editor.stamps': 'Map editor stamps (saved regions)',
 });
 
 /** Keys of the modules before the registry, read once by migrateLegacy. */

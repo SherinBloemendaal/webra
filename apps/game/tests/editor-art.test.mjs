@@ -222,3 +222,17 @@ test('with WebRA art the preview draws plain slots (no poses), tree terrain as t
   assert.equal(preview.terrain()[(10 * 32 + 10) * 4], TERRAIN.CLEAR, 'on clear ground');
   preview.dispose();
 });
+
+import { PALETTE_GROUPS, placedByTheGame } from '../editor/js/palette.js';
+
+test('palette parity: every actor of the rules is in exactly one palette group, except what the game places itself', () => {
+  const rules = JSON.parse(new Game(7, 'england', 'russia', 64).rules_json()).actors;
+  for (const a of rules) {
+    const groups = PALETTE_GROUPS.filter((g) => g.test(a)).map((g) => g.name);
+    if (placedByTheGame(a)) assert.deepEqual(groups, [], `${a.id} is placed by the game`);
+    else assert.equal(groups.length, 1, `${a.id} (${a.kind}, ${a.world?.category ?? 'no category'}) is in ${groups.join(', ') || 'no group'}`);
+  }
+  for (const kind of ['building', 'infantry', 'vehicle', 'ship', 'aircraft', 'mine', 'crate', 'husk']) {
+    assert.ok(rules.some((a) => a.kind === kind && PALETTE_GROUPS.some((g) => g.test(a))), `${kind}s can be placed`);
+  }
+});

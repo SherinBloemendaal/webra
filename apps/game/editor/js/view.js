@@ -21,7 +21,7 @@ export class EditorView {
   /**
    * @param canvas the WebGPU canvas
    * @param renderer Renderer from ../js/renderer.js
-   * @param handlers { down(cell, e), move(cell, e), up(cell, e), hover(cell), leave() }
+   * @param handlers { down(cell, e), move(cell, e), up(cell, e), hover(cell), leave(), cancel() }
    */
   constructor(canvas, renderer, handlers) {
     this.canvas = canvas;
@@ -30,6 +30,8 @@ export class EditorView {
     this.camera = { x: 0, y: 0, zoom: 1 };
     this.keys = new Set();
     this.pan = null;
+    /** Two fingers on a touch screen: pan and pinch zoom. */
+    this.pinch = null;
     this.spaceDown = false;
     this.mapW = 0;
     this.mapH = 0;
@@ -146,6 +148,17 @@ export class EditorView {
     this.camera.y = clampAxis(this.camera.y, vh, mh);
   }
 
+  /** Zoom by `factor` around the centre of the view. */
+  zoomBy(factor) {
+    this.zoomAt(this.canvas.clientWidth / 2, this.canvas.clientHeight / 2, factor);
+  }
+
+  /** Zoom by `factor` keeping world point (wx, wy) in the middle of the view. */
+  zoomAround(factor, wx, wy) {
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
+    this.centerOn(wx, wy);
+  }
+
   zoomAt(sx, sy, factor) {
     const before = this.screenToWorld(sx, sy);
     this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
@@ -163,8 +176,46 @@ export class EditorView {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Touch: one finger uses the tool; a second finger cancels it and pans and
+    // pinch-zooms the map with both until they lift.
+    const touches = new Map();
+    const pinchState = () => {
+      const [a, b] = [...touches.values()];
+      return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+    };
+    c.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      touches.set(e.pointerId, local(e));
+      if (touches.size === 2) {
+        this.handlers.cancel?.();
+        const st = pinchState();
+        this.pinch = { ...st, zoom: this.camera.zoom, world: this.screenToWorld(st.mx, st.my) };
+      }
+    });
+    c.addEventListener(
+      'pointermove',
+      (e) => {
+        if (!touches.has(e.pointerId)) return;
+        touches.set(e.pointerId, local(e));
+        if (!this.pinch || touches.size < 2) return;
+        e.stopImmediatePropagation();
+        const st = pinchState();
+        this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (this.pinch.zoom * st.d) / this.pinch.d));
+        this.camera.x = this.pinch.world.x - st.mx / this.camera.zoom;
+        this.camera.y = this.pinch.world.y - st.my / this.camera.zoom;
+        this.clamp();
+      },
+      { capture: true },
+    );
+    const lift = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) this.pinch = null;
+    };
+    c.addEventListener('pointerup', lift, { capture: true });
+    c.addEventListener('pointercancel', lift, { capture: true });
     c.addEventListener('pointerdown', (e) => {
       c.focus({ preventScroll: true });
+      if (this.pinch) return;
       const p = local(e);
       if (e.button === 1 || (e.button === 0 && this.spaceDown)) {
         e.preventDefault();
@@ -179,6 +230,7 @@ export class EditorView {
       }
     });
     c.addEventListener('pointermove', (e) => {
+      if (this.pinch) return;
       const p = local(e);
       if (this.pan) {
         this.camera.x = this.pan.cx - (p.x - this.pan.x) / this.camera.zoom;

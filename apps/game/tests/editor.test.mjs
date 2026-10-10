@@ -469,3 +469,45 @@ test('map resize, crop, shift and turns keep cells, spawns and actors in step', 
   assert.equal(flipped.actors.find((a) => a.type === '1TNK').x, 13);
   assert.ok(validateMap(turned, { catalog: CATALOG }).errors.every((e) => !/terrain|ore/.test(e)));
 });
+
+import { findFixes, nearestYard } from '../editor/js/fixes.js';
+
+test('quick fixes: spawn ground, overlapping spawns, foreign owners, actors off the ground; each is one undo step', () => {
+  const doc = newDoc(48, 40);
+  doc.begin('Problems');
+  doc.touchObjects();
+  doc.spawns = [[4, 4], [5, 5], [30, 20]];
+  for (let x = 30; x < 33; x++) doc.setCell(x, 21, TERRAIN.WATER);
+  doc.actors.push({ type: '1TNK', owner: 5, x: 20, y: 20, facing: 0 });
+  doc.actors.push({ type: 'SBAG', owner: -1, x: 10, y: 30, facing: 0 });
+  doc.actors.push({ type: 'NOPE', owner: -1, x: 1, y: 1, facing: 0 });
+  doc.commit();
+  doc.begin('Water under the sandbag');
+  doc.setCell(10, 30, TERRAIN.WATER);
+  doc.commit();
+  const fixes = findFixes(doc, CATALOG);
+  const keys = fixes.map((f) => f.key).sort();
+  assert.deepEqual(keys, ['actor-ground-1', 'actor-owner-0', 'actor-type-2', 'spawn-ground-2', 'spawn-overlap-0-1'].sort());
+  const apply = (key, n = 0) => {
+    const f = findFixes(doc, CATALOG).find((x) => x.key === key);
+    doc.begin(f.fixes[n].label);
+    f.fixes[n].apply(doc);
+    doc.commit();
+  };
+  apply('spawn-ground-2');
+  assert.equal(t(doc, 31, 21), TERRAIN.CLEAR);
+  apply('spawn-overlap-0-1');
+  const [x1, y1] = doc.spawns[1];
+  assert.ok(Math.abs(x1 - 4) >= 4 || Math.abs(y1 - 4) >= 5, 'moved clear of spawn 1');
+  apply('actor-owner-0');
+  assert.equal(doc.actors[0].owner, -1);
+  apply('actor-ground-1');
+  assert.equal(t(doc, 10, 30), TERRAIN.CLEAR);
+  apply('actor-type-2');
+  assert.equal(doc.actors.length, 2);
+  assert.deepEqual(findFixes(doc, CATALOG), []);
+  assert.ok(validateMap(doc.toMap(), { catalog: CATALOG }).ok, validateMap(doc.toMap(), { catalog: CATALOG }).errors.join('; '));
+  doc.undo();
+  assert.equal(doc.actors.length, 3, 'one fix, one undo step');
+  assert.equal(nearestYard(doc, CATALOG, 0, 0, -1).length, 2);
+});

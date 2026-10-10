@@ -1,7 +1,8 @@
 // WebRA map editor: boot, panels, commands, shortcuts and the render loop.
-// Reuses the game's engine package (actor catalog, generated maps, validation,
-// and the preview that draws the map's actors exactly as a game does:
-// js/world.js), WebGPU renderer, sprite atlas and installed content (js/art.js).
+// Reuses the game's engine package (actor catalog, map generator, validation,
+// fairness checks, and the preview that draws the map's actors exactly as a
+// game does: js/world.js), WebGPU renderer, sprite atlas, installed content
+// (js/art.js), themed controls, tooltips and hotkey registry.
 
 import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
 import { NEUTRAL_COLOR, Renderer, TEAM_COLORS } from '../js/renderer.js';
@@ -9,127 +10,88 @@ import { AnimClock } from '../js/anim.js';
 import { artActors } from '../js/gameart.js';
 import { defaultRegistry } from '../js/registry.js';
 import { settings } from '../js/settings.js';
+import { HotkeyRegistry, comboFromEvent, formatCombo, isMac, isReservedCombo } from '../js/hotkeys.js';
+import { attachTooltip } from '../js/ui/tooltip.js';
+import { segmented, slider, toggle } from '../js/ui/controls.js';
+import { TEST_MAP_KEY, TEST_SETUP_KEY } from '../js/maploader.js';
+import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
+import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
-import { TEST_MAP_KEY } from '../js/maploader.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, isTyping } from './js/view.js';
-import { Controller, TOOLS, teamOf } from './js/controller.js';
+import { Controller, teamOf } from './js/controller.js';
+import { COMMANDS, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
 import { Minimap, previewCanvas } from './js/preview.js';
 import { RulesPanel, MODDED_WARNING, loadRulesBase } from './js/rulespanel.js';
 import { ApiError, fetchMap, listMaps, publishMap, shareLink } from './js/online.js';
-import { BRUSH_SIZES } from './js/edits.js';
-import { SYMMETRY_MODES } from './js/symmetry.js';
-import {
-  LIMITS,
-  TERRAIN,
-  TERRAIN_NAMES,
-  BIOMES,
-  byteLength,
-  canonicalJson,
-  createMap,
-  isModded,
-  mapFileName,
-  parseMap,
-  validateMap,
-} from './js/mapformat.js';
+import { BRUSH_SIZES, copyRegion, clearRegion, regionFromData, regionToData, transformRegion } from './js/edits.js';
+import { SYMMETRY_MODES, modeFits } from './js/symmetry.js';
+import { cropMap, resizeMap, shiftMap, turnMap } from './js/transform.js';
+import { findFixes } from './js/fixes.js';
+import { LAYERS, fairnessView, historyList, keysList, layersList, problemsView, stampsList } from './js/panels.js';
+import { mapSizeDialog, modal, newMapDialog, testPlayDialog, BIOME_CHOICES } from './js/dialogs.js';
+import { editorIcon } from './js/icons.js';
+import { PALETTE_GROUPS } from './js/palette.js';
+import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, parseMap, validateMap } from './js/mapformat.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
-import { segmented } from '../js/ui/controls.js';
-import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
-import { renderReport } from '../js/oramap/report.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
+/** Recovery copies: the last maps worked on, kept when the draft moves on to another map. */
+const RECOVERY_KEY = 'webra.editor.recovery';
+const RECOVERY_COPIES = 3;
+const RECOVERY_EVERY_MS = 2 * 60 * 1000;
+const STAMPS_KEY = 'webra.editor.stamps';
+const STAMPS_MAX = 24;
 /** Tool choices and the author name live in the settings registry (js/registry.js, "extra" group, editor* keys). */
-const PREF_KEYS = ['material', 'size', 'ore', 'gems', 'symmetry', 'grid'];
+const PREF_KEYS = ['material', 'size', 'ore', 'gems', 'symmetry', 'paint', 'shapeFill', 'autoShore'];
 const prefKey = (k) => `editor${k[0].toUpperCase()}${k.slice(1)}`;
 
 const MATERIALS = [
-  { t: TERRAIN.CLEAR, key: '1', color: '#3e582c' },
-  { t: TERRAIN.ROUGH, key: '2', color: '#605c3a' },
-  { t: TERRAIN.ROCK, key: '3', color: '#807666' },
-  { t: TERRAIN.WATER, key: '4', color: '#244666' },
-  { t: TERRAIN.TREE, key: '5', color: '#1c3618' },
-  { t: TERRAIN.FORD, key: '6', color: '#4a7076' },
-  { t: TERRAIN.ROAD, key: '7', color: '#766852' },
-  { t: TERRAIN.BEACH, key: '8', color: '#b0a070' },
-  { t: TERRAIN.RIVER, key: '9', color: '#2c5270' },
-  { t: TERRAIN.WALL, key: '0', color: '#60605c' },
+  { t: TERRAIN.CLEAR, color: '#3e582c' },
+  { t: TERRAIN.ROUGH, color: '#605c3a' },
+  { t: TERRAIN.ROCK, color: '#807666' },
+  { t: TERRAIN.WATER, color: '#244666' },
+  { t: TERRAIN.TREE, color: '#1c3618' },
+  { t: TERRAIN.FORD, color: '#4a7076' },
+  { t: TERRAIN.ROAD, color: '#766852' },
+  { t: TERRAIN.BEACH, color: '#b0a070' },
+  { t: TERRAIN.RIVER, color: '#2c5270' },
+  { t: TERRAIN.WALL, color: '#60605c' },
 ];
-
-/**
- * The neutral world of OpenRA maps (engine/src/neutral.rs) by its OpenRA
- * map editor category (rules_json world.category); bridges by their own.
- */
-const WORLD_GROUPS = [
-  { name: 'Tech buildings', category: 'Tech building' },
-  { name: 'Civilian buildings', category: 'Civilian building' },
-  { name: 'Civilians', category: 'Civilian infantry' },
-  { name: 'Trees', category: 'Tree' },
-  { name: 'Decorations', category: 'Decoration' },
-  { name: 'Ore and gem mines', category: 'Resource spawn' },
-];
-const isWorld = (a) => !!a.world?.bridge || !!a.world?.bridgeHut || WORLD_GROUPS.some((g) => g.category === a.world?.category);
-const isWall = (a) => a.world?.category === 'Wall';
-const PALETTE_GROUPS = [
-  { name: 'Structures', test: (a) => a.kind === 'building' && a.queue === 0 && !isWorld(a) },
-  { name: 'Defenses', test: (a) => a.kind === 'building' && a.queue === 1 && !isWall(a) && !a.name.startsWith('Fake') && !isWorld(a) },
-  { name: 'Walls', test: (a) => isWall(a) },
-  { name: 'Fakes', test: (a) => a.kind === 'building' && a.name.startsWith('Fake') },
-  { name: 'Infantry', test: (a) => a.kind === 'infantry' && !isWorld(a) },
-  { name: 'Vehicles', test: (a) => a.kind === 'vehicle' },
-  // OpenRA's crates and husks (engine/src/crates.rs, husks.rs), as in its editor.
-  { name: 'Crates', test: (a) => a.kind === 'crate' },
-  { name: 'Husks', test: (a) => a.kind === 'husk' },
-  ...WORLD_GROUPS.map((g) => ({ name: g.name, test: (a) => a.world?.category === g.category })),
-  // Bridges bring their template's terrain when placed (js/edits.js stampBridge).
-  { name: 'Bridges', test: (a) => !!a.world?.bridge },
-];
-
-/** Hide palette actors that do not belong to the map's biome (OpenRA MapEditorData tilesets). */
-function filterPaletteByBiome() {
-  const biome = doc.meta.biome ?? 'temperate';
-  document.querySelectorAll('.palette-item').forEach((b) => {
-    const a = catalog[b.dataset.actor];
-    const biomes = a?.world?.biomes;
-    const bridge = a?.world?.bridge;
-    b.hidden = (Array.isArray(biomes) && !biomes.includes(biome)) || (!!bridge && !bridge[biome]);
-  });
-}
-
-const SHORTCUTS = [
-  ['B F R O C E S A V', 'Brush, fill, rectangle, ore, gems (crystals), eraser, spawns, actor, select'],
-  ['1 to 0', 'Terrain: clear, rough, rock, water, trees, ford, road, beach, river, wall'],
-  ['[ and ]', 'Brush size (1, 3, 5, 9)'],
-  ['- and =', 'Ore or gem density'],
-  ['M', 'Cycle symmetry mode'],
-  ['G', 'Toggle grid'],
-  [', and .', 'Rotate the actor to place (and selected units)'],
-  ['Delete', 'Delete the selected actors or spawn'],
-  ['Escape', 'Cancel the current drag, clear the selection'],
-  ['Right drag', 'Brush and rectangle paint clear ground, ore and gem brushes remove ore or gems, actor tool deletes'],
-  ['Arrows, middle drag, Space + drag', 'Pan the map'],
-  ['Wheel', 'Zoom at the cursor'],
-  ['Home', 'Fit the whole map'],
-  ['Ctrl+Z, Ctrl+Shift+Z (Ctrl+Y)', 'Undo, redo'],
-  ['Ctrl+S, Ctrl+O, Ctrl+Alt+N', 'Save, open (also OpenRA .oramap), new map'],
-  ['Ctrl+Enter', 'Test play'],
-  ['?', 'This help'],
-];
+const MATERIAL_HINTS = {
+  [TERRAIN.CLEAR]: 'Open ground: units drive, structures stand, ore lies.',
+  [TERRAIN.ROUGH]: 'Rough ground: slower, holds ore, no structures.',
+  [TERRAIN.ROCK]: 'Rock and cliffs: nobody passes.',
+  [TERRAIN.WATER]: 'Water: ships only. Shores get their tiles from the land around them.',
+  [TERRAIN.TREE]: 'Trees: each cell becomes a tree in the game.',
+  [TERRAIN.FORD]: 'Ford: shallow water units can cross, ships too.',
+  [TERRAIN.ROAD]: 'Road: faster, structures may stand on it. Pieces join up by themselves.',
+  [TERRAIN.BEACH]: 'Beach: sand by the water; landing craft run up on it.',
+  [TERRAIN.RIVER]: 'River: water that bridges can span.',
+  [TERRAIN.WALL]: 'Wall terrain: blocks like rock.',
+};
 
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
   tool: 'brush',
+  paint: 'terrain',
   material: TERRAIN.WATER,
   size: 3,
   ore: 8,
   gems: 3,
   symmetry: 'none',
-  grid: true,
+  shapeFill: true,
+  autoShore: false,
   actorType: null,
   owner: -1,
   facing: 0,
+  layers: { grid: true, actors: true, spawns: true, resources: false, passability: false, buildable: false, zones: false, rush: false, reach: false },
+  region: null,
+  clip: null,
+  pasteLayers: { terrain: true, resources: true, actors: true },
 };
 
 let doc;
@@ -142,9 +104,11 @@ let minimap;
 let renderer;
 let art;
 let preview;
+let keys;
 let engineResult = null;
 let jsResult = null;
 const animClock = new AnimClock();
+const tips = [];
 
 // ---- Boot ---------------------------------------------------------------------------
 
@@ -196,26 +160,28 @@ async function start() {
     move: (c, e) => ctl.move(c, e),
     up: (c, e) => ctl.up(c, e),
     leave: () => ctl.leave(),
+    cancel: () => ctl.cancel(),
   });
   ctl = new Controller(doc, view, catalog, state, {
     status: (text) => toast(text),
     hover: (cell) => updateStatus(cell),
     selectionChanged: () => renderSelection(),
+    regionChanged: () => syncRegion(),
+    picked: (what) => picked(what),
+    endPaste: () => setTool('region'),
   });
-  minimap = new Minimap($('#minimap'), (x, y) => view.centerOn(x, y));
+  minimap = new Minimap($('#minimap'), (x, y) => view.centerOn(x, y), (f, x, y) => view.zoomAround(f, x, y));
   applyArt();
   art.onChange(() => {
     applyArt();
     syncGraphics();
   });
 
+  keys = new HotkeyRegistry(settings);
+  buildTopbar();
   buildTools();
-  buildMapPane();
-  buildActorsPane();
-  new RulesPanel($('[data-pane="rules"]'), doc, rulesBase);
-  buildOnlinePane();
-  bindTopbar();
-  bindTabs();
+  buildViewbar();
+  buildPanels();
   bindKeys();
   bindDrop();
 
@@ -225,7 +191,12 @@ async function start() {
   onDocChange({ cells: true, objects: true, meta: true, resized: true }, { initial: true });
   $('#boot').hidden = true;
   if (note) toast(note);
-  window.webraEditor = { doc, view, ctl, catalog, rulesBase, state, art, preview };
+  window.webraEditor = { doc, view, ctl, catalog, rulesBase, state, art, preview, keys };
+  setInterval(saveRecovery, RECOVERY_EVERY_MS);
+  window.addEventListener('pagehide', () => {
+    autosave();
+    saveRecovery();
+  });
   requestAnimationFrame(frame);
 }
 
@@ -276,10 +247,14 @@ function newBlankMap(width = 96, height = 96, base = TERRAIN.CLEAR) {
 function loadPrefs() {
   const p = defaultRegistry().group('extra');
   for (const k of PREF_KEYS) state[k] = p[prefKey(k)];
+  state.layers.grid = p.editorGrid;
+  const saved = p.editorLayers ?? {};
+  for (const l of LAYERS) if (typeof saved[l.key] === 'boolean' && l.key !== 'grid') state.layers[l.key] = saved[l.key];
 }
 
 function savePrefs() {
-  defaultRegistry().patch('extra', Object.fromEntries(PREF_KEYS.map((k) => [prefKey(k), state[k]])));
+  const layers = Object.fromEntries(LAYERS.filter((l) => l.key !== 'grid').map((l) => [l.key, !!state.layers[l.key]]));
+  defaultRegistry().patch('extra', { ...Object.fromEntries(PREF_KEYS.map((k) => [prefKey(k), state[k]])), editorGrid: state.layers.grid, editorLayers: layers });
 }
 
 // ---- Render loop --------------------------------------------------------------------------
@@ -288,9 +263,14 @@ let last = performance.now();
 let minimapTime = 0;
 /** The map changed since the preview was built (js/world.js). */
 let previewDirty = true;
+/** The engine checks (Game.editor_cells, editor_report) are out of date. */
+let analysisDirty = true;
 /** When installed terrain tiles were last planned (they take a while on big maps). */
 let tilesTime = 0;
 const TILES_EVERY_MS = 250;
+
+/** Layers that need the engine's cell checks. */
+const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
 function frame(now) {
   const dt = Math.min(0.25, (now - last) / 1000);
@@ -302,6 +282,12 @@ function frame(now) {
     preview.update(JSON.stringify(doc.toMap()));
     if (preview.error) console.warn('Map preview:', preview.error);
     view.terrainDirty = true;
+    analysisDirty = true;
+  }
+  if (analysisDirty && preview.game && (ANALYSIS_LAYERS.some((k) => state.layers[k]) || activeTab === 'check')) {
+    analysisDirty = false;
+    ctl.analysis = preview.game.editor_cells();
+    if (activeTab === 'check') renderFairness();
   }
   if (view.terrainDirty) {
     // Installed tiles are planned for the whole map: during a stroke at most a few times a second.
@@ -312,8 +298,9 @@ function frame(now) {
     }
   }
   const scene = ctl.scene();
-  view.draw(animClock.uniform(), preview.sprites(view.viewRect()), scene);
-  placeLabels(scene.labels);
+  const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
+  view.draw(animClock.uniform(), actors, scene);
+  placeLabels(state.layers.spawns ? scene.labels : []);
   if (now - minimapTime > 66) {
     minimapTime = now;
     minimap.draw(doc, catalog, view.viewRect());
@@ -338,13 +325,14 @@ function placeLabels(labels) {
     }
     e.hidden = false;
     e.textContent = l.text;
-    const c = TEAM_COLORS[l.team];
-    e.style.color = `rgb(${c.map((v) => Math.round(v * 255)).join(',')})`;
+    e.style.setProperty('--team', teamCss(l.team));
     e.style.fontSize = `${Math.max(11, Math.min(40, 30 * cam.zoom))}px`;
     e.style.transform = `translate(${(l.x - cam.x) * cam.zoom}px, ${(l.y - cam.y) * cam.zoom}px) translate(-50%, -50%)`;
     e.classList.toggle('selected', l.selected);
   });
 }
+
+const teamCss = (team) => `rgb(${TEAM_COLORS[team].map((v) => Math.round(v * 255)).join(',')})`;
 
 // ---- Document changes ---------------------------------------------------------------------
 
@@ -353,7 +341,7 @@ let validateTimer = 0;
 
 function onDocChange(change, { initial = false } = {}) {
   if (change.resized) view.setMap(doc);
-  if (change.cells || change.objects || change.resized || change.meta || change.rules) previewDirty = true;
+  if (change.cells || change.objects || change.resized || change.meta) previewDirty = true;
   if (change.cells || change.objects || change.resized) minimap.invalidate();
   if (change.meta || change.resized) {
     syncMetaFields();
@@ -368,6 +356,7 @@ function onDocChange(change, { initial = false } = {}) {
   }
   updateUndoButtons();
   updateModded();
+  if (activeTab === 'history') renderHistory();
   clearTimeout(validateTimer);
   validateTimer = setTimeout(runValidation, initial ? 0 : 250);
   if (!initial) {
@@ -383,26 +372,54 @@ function autosave() {
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
+// ---- Recovery copies ------------------------------------------------------------------------
+
+function recoveryCopies() {
+  try {
+    const list = JSON.parse(store.get(RECOVERY_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter((r) => r && typeof r.savedAt === 'number' && r.map) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Keep a copy of the map now and then (and when the page goes away): the
+ * last few maps worked on, one copy per map name, so a crash, a closed tab
+ * or a "New map" too many loses little. Restored from the History tab.
+ */
+function saveRecovery() {
+  if (!doc) return;
+  const map = doc.toMap();
+  const list = recoveryCopies().filter((r) => r.map.name !== map.name);
+  list.unshift({ savedAt: Date.now(), map });
+  for (let n = Math.min(list.length, RECOVERY_COPIES); n > 0; n--) {
+    // Large maps may not fit next to the draft: keep fewer copies.
+    if (store.set(RECOVERY_KEY, JSON.stringify(list.slice(0, n)))) break;
+  }
+  if (activeTab === 'history') renderHistory();
+}
+
 function updateUndoButtons() {
   const u = $('[data-cmd="undo"]');
   const r = $('[data-cmd="redo"]');
+  if (!u || !r) return;
   u.disabled = !doc.canUndo;
   r.disabled = !doc.canRedo;
-  u.title = doc.canUndo ? `Undo ${doc.undoStack[doc.undoStack.length - 1].label} (Ctrl+Z)` : 'Nothing to undo';
-  r.title = doc.canRedo ? `Redo ${doc.redoStack[doc.redoStack.length - 1].label} (Ctrl+Shift+Z)` : 'Nothing to redo';
 }
 
 function updateModded() {
-  const map = { rules: doc.rules };
-  const modded = isModded(map);
+  const modded = isModded({ rules: doc.rules });
   $('#modded-badge').hidden = !modded;
   const n = countOverrides(doc.rules);
   const dot = $('#rules-count');
-  dot.hidden = n === 0;
-  dot.textContent = String(n);
+  if (dot) {
+    dot.hidden = n === 0;
+    dot.textContent = String(n);
+  }
 }
 
-// ---- Validation ---------------------------------------------------------------------------
+// ---- Validation -----------------------------------------------------------------------------
 
 /** Validate with the engine (source of truth) and the editor's located checks. */
 function validateNow() {
@@ -415,128 +432,220 @@ function validateNow() {
 
 function runValidation() {
   const { text, engine, js } = validateNow();
-  const box = $('#validation');
+  const fixes = findFixes(doc, catalog);
   const head = $('#validation-head');
   const bytes = byteLength(text);
+  const problems = engine.errors.length + fixes.length;
   head.className = `verdict ${engine.ok ? 'ok' : 'bad'}`;
   head.textContent = engine.ok
     ? `Valid map${js.warnings.length ? `, ${js.warnings.length} warning${js.warnings.length === 1 ? '' : 's'}` : ''}`
-    : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before publishing`;
-  const items = [];
-  for (const e of engine.errors) items.push(el('li', { class: 'error' }, e));
-  // Located issues from the editor's checks: click to jump there.
-  for (const i of js.issues) {
-    if (i.level === 'error' && engine.errors.length === 0) {
-      // The editor found something the engine accepts: show it as a warning.
-      items.push(issueItem({ ...i, level: 'warning' }));
-    } else if (i.level === 'warning' || i.x !== undefined) {
-      items.push(issueItem(i));
-    }
-  }
-  box.replaceChildren(...items);
+    : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before test play or publishing`;
+  $('#validation').replaceChildren(
+    problemsView(
+      { engine, issues: js.issues, fixes },
+      (p, f) => {
+        doc.begin(f.label);
+        f.apply(doc);
+        doc.commit();
+        toast(`${f.label}: done.`);
+      },
+      (x, y) => view.centerOnCell(x, y),
+    ),
+  );
+  const tab = $('[data-tab="check"]');
+  tab.classList.toggle('bad', !engine.ok);
+  $('#check-count').hidden = problems === 0;
+  $('#check-count').textContent = String(problems);
   $('#map-stats').textContent =
     `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
     `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
     (engine.hash ? `, hash ${engine.hash.slice(0, 12)}` : '');
 }
 
-function issueItem(i) {
-  const located = i.x !== undefined && i.y !== undefined;
-  return el(
-    'li',
-    {
-      class: `${i.level}${located ? ' jump' : ''}`,
-      title: located ? 'Show on the map' : '',
-      onclick: located ? () => view.centerOnCell(i.x, i.y) : undefined,
-    },
-    i.message,
+function renderFairness() {
+  const box = $('#fairness');
+  if (!box || !preview.game) return;
+  let report = null;
+  try {
+    report = JSON.parse(preview.game.editor_report());
+  } catch (err) {
+    box.replaceChildren(el('p', { class: 'error' }, `The checks failed: ${err.message ?? err}`));
+    return;
+  }
+  box.replaceChildren(fairnessView(report, (k) => teamCss(teamOf(k)), (k) => view.centerOnCell(doc.spawns[k][0] + 1, doc.spawns[k][1] + 2)));
+}
+
+// ---- Top bar ---------------------------------------------------------------------------------
+
+/** A button for a command: its icon, its label, and a tooltip with its key. */
+function commandButton(name, { icon, label, text = true, primary = false } = {}) {
+  const cmd = COMMANDS.find((c) => c.name === name);
+  const b = el('button', { type: 'button', class: `cmd${primary ? ' primary' : ''}${text ? '' : ' icon-only'}`, 'data-cmd': name, 'aria-label': label ?? cmd.label, onclick: () => run(name) }, [
+    icon ? editorIcon(icon) : null,
+    text ? el('span', {}, label ?? cmd.label) : null,
+  ]);
+  tips.push(attachTooltip(b, () => ({ title: cmd.label, hotkey: keyOf(name) })));
+  return b;
+}
+
+/** The key bound to a tool or command now, formatted, or ''. */
+function keyOf(id) {
+  const k = keys.bindingsFor(actionName(id))[0];
+  return k ? formatCombo(k) : '';
+}
+
+function buildTopbar() {
+  const file = el('div', { class: 'group', role: 'group', 'aria-label': 'File' }, [
+    commandButton('new', { label: 'New' }),
+    commandButton('open', { label: 'Open' }),
+    commandButton('save', { label: 'Save' }),
+    commandButton('png', { label: 'PNG' }),
+  ]);
+  const edit = el('div', { class: 'group', role: 'group', 'aria-label': 'Edit' }, [
+    commandButton('undo', { icon: 'undo', text: false }),
+    commandButton('redo', { icon: 'redo', text: false }),
+  ]);
+  const map = el('div', { class: 'group', role: 'group', 'aria-label': 'Map' }, [
+    el('button', { type: 'button', class: 'cmd', onclick: () => sizeDialog(), title: 'Resize, crop, shift, turn or mirror the map' }, 'Size'),
+  ]);
+  $('#commands').append(file, edit, map);
+  $('#actions').append(
+    commandButton('test', { icon: 'play', label: 'Test play', primary: true }),
+    commandButton('publish', { icon: 'upload', label: 'Publish' }),
+    commandButton('help', { icon: 'help', text: false }),
+    el('button', { type: 'button', class: 'cmd icon-only panels-toggle', 'aria-label': 'Panels', 'aria-expanded': 'false', onclick: (e) => togglePanels(e.currentTarget) }, editorIcon('panels')),
   );
 }
 
-// ---- Tools pane ----------------------------------------------------------------------------
+/** Phones: the side panels slide over the map. */
+function togglePanels(button) {
+  const open = document.body.classList.toggle('panels-open');
+  button.setAttribute('aria-expanded', String(open));
+}
+
+// ---- Tools ------------------------------------------------------------------------------------
 
 function buildTools() {
   const root = $('#tools');
-  const toolButtons = TOOLS.map((t) =>
-    el('button', { type: 'button', class: 'tool', 'data-tool': t.id, title: `${t.label} (${t.key}): ${t.hint}`, onclick: () => setTool(t.id) }, [
-      el('kbd', {}, t.key),
-      el('span', {}, t.label),
-    ]),
-  );
-  const materials = MATERIALS.map((m) =>
-    el('button', { type: 'button', class: 'swatch', 'data-material': String(m.t), title: `${TERRAIN_NAMES[m.t]} (${m.key})`, onclick: () => setMaterial(m.t) }, [
-      el('i', { style: `background:${m.color}` }),
-      el('span', {}, TERRAIN_NAMES[m.t]),
-    ]),
-  );
-  const sizes = BRUSH_SIZES.map((n) =>
-    el('button', { type: 'button', class: 'seg', 'data-size': String(n), title: `Brush size ${n}`, onclick: () => setSize(n) }, String(n)),
-  );
-  const ore = el('input', { type: 'range', id: 'ore-density', min: '1', max: String(LIMITS.maxOre), value: String(state.ore), oninput: () => setOre(Number(ore.value)) });
-  const gems = el('input', { type: 'range', id: 'gem-density', min: '1', max: String(LIMITS.maxGems), value: String(state.gems), oninput: () => setGems(Number(gems.value)) });
-  const symmetry = el(
-    'select',
-    { id: 'symmetry', onchange: () => setSymmetry(symmetry.value) },
-    SYMMETRY_MODES.map((m) => el('option', { value: m.id }, m.label)),
-  );
-  const grid = el('input', { type: 'checkbox', id: 'grid', onchange: () => setGrid(grid.checked) });
+  const toolButtons = TOOLS.filter((t) => t.id !== 'paste').map((t) => {
+    const b = el('button', { type: 'button', class: 'tool', 'data-tool': t.id, 'aria-label': t.label, onclick: () => setTool(t.id) }, [editorIcon(t.icon), el('span', { class: 'tool-label' }, t.label)]);
+    tips.push(attachTooltip(b, () => ({ title: t.label, hotkey: keyOf(`tool.${t.id}`), desc: t.hint }), { side: 'right' }));
+    return b;
+  });
+  const paint = segmented({ name: 'paint-layer', label: 'Paint', options: PAINT_LAYERS, value: state.paint, block: true, onChange: (v) => setPaint(v) });
+  paint.root.id = 'paint-layer';
+  const materials = MATERIALS.map((m, k) => {
+    const b = el('button', { type: 'button', class: 'swatch', 'data-material': String(m.t), 'aria-label': TERRAIN_NAMES[m.t], onclick: () => setMaterial(m.t) }, [el('i', { class: `terrain-${m.t}` }), el('span', {}, TERRAIN_NAMES[m.t])]);
+    tips.push(attachTooltip(b, () => ({ title: TERRAIN_NAMES[m.t], hotkey: keyOf(`material.${k}`), desc: MATERIAL_HINTS[m.t] })));
+    return b;
+  });
+  const sizes = segmented({ name: 'brush-size', label: 'Brush size', options: BRUSH_SIZES.map((n) => ({ value: String(n), label: String(n) })), value: String(state.size), block: true, onChange: (v) => setSize(Number(v)) });
+  sizes.root.id = 'brush-size';
+  const ore = slider({ id: 'ore-density', label: 'Ore density', min: 1, max: LIMITS.maxOre, value: state.ore, format: (v) => `${v} / ${LIMITS.maxOre}`, onInput: (v) => setOre(v) });
+  const gems = slider({ id: 'gem-density', label: 'Gem density', min: 1, max: LIMITS.maxGems, value: state.gems, format: (v) => `${v} / ${LIMITS.maxGems}`, onInput: (v) => setGems(v) });
+  const fillShapes = toggle({ id: 'shape-fill', label: 'Filled', hint: 'Rectangles and ellipses filled, or only their border.', checked: state.shapeFill, onChange: (on) => setPref('shapeFill', on) });
+  const shore = toggle({ id: 'auto-shore', label: 'Beaches along water', hint: 'Painting water turns the land next to it into beach.', checked: state.autoShore, onChange: (on) => setPref('autoShore', on) });
+  const symmetry = el('select', { id: 'symmetry', class: 'ui-input', 'aria-label': 'Symmetry', onchange: () => setSymmetry(symmetry.value) }, SYMMETRY_MODES.map((m) => el('option', { value: m.id }, m.label)));
+  const pasteLayer = (key, label) => toggle({ label, checked: state.pasteLayers[key], small: true, onChange: (on) => (state.pasteLayers[key] = on) }).row;
   root.append(
-    el('h2', {}, 'Tools'),
-    el('div', { class: 'tool-list' }, toolButtons),
-    el('div', { class: 'opt', 'data-for': 'brush fill rect' }, [el('h2', {}, 'Terrain'), el('div', { class: 'swatches' }, materials)]),
-    el('div', { class: 'opt', 'data-for': 'brush ore gems eraser' }, [el('h2', {}, 'Brush size'), el('div', { class: 'segs' }, sizes)]),
-    el('div', { class: 'opt', 'data-for': 'ore' }, [
-      el('h2', {}, ['Ore density ', el('span', { id: 'ore-value', class: 'muted' })]),
-      ore,
-      el('p', { class: 'hint' }, 'Ore only lies on clear or rough ground. It grows back and spreads when the lobby allows ore regrowth.'),
+    el('div', { class: 'tool-list', role: 'toolbar', 'aria-label': 'Tools' }, toolButtons),
+    el('div', { class: 'tool-options' }, [
+      el('section', { class: 'opt', 'data-for': 'brush line rect ellipse fill' }, [el('h2', {}, 'Paint'), paint.root]),
+      el('section', { class: 'opt', 'data-for': 'brush line rect ellipse fill', 'data-paint': 'terrain' }, [el('h2', {}, 'Terrain'), el('div', { class: 'swatches' }, materials)]),
+      el('section', { class: 'opt', 'data-for': 'brush line eraser' }, [el('h2', {}, 'Brush size'), sizes.root]),
+      el('section', { class: 'opt', 'data-for': 'brush line rect ellipse fill', 'data-paint': 'ore' }, [ore.row, el('p', { class: 'hint' }, 'Ore lies on clear or rough ground and roads. It grows back and spreads when the lobby allows ore regrowth.')]),
+      el('section', { class: 'opt', 'data-for': 'brush line rect ellipse fill', 'data-paint': 'gems' }, [gems.row, el('p', { class: 'hint' }, 'Gems pay twice as much as ore and never grow back.')]),
+      el('section', { class: 'opt', 'data-for': 'rect ellipse' }, [fillShapes.row]),
+      el('section', { class: 'opt', 'data-for': 'brush line rect ellipse fill', 'data-paint': 'terrain' }, [shore.row]),
+      el('section', { class: 'opt', 'data-for': 'actor' }, [el('h2', {}, 'Actor'), el('p', { id: 'actor-pick', class: 'hint' }), el('p', { class: 'hint' }, ['Facing ', el('span', { id: 'facing-value' })])]),
+      el('section', { class: 'opt', 'data-for': 'region' }, [
+        el('h2', {}, 'Region'),
+        el('p', { id: 'region-info', class: 'hint' }),
+        el('div', { class: 'row wrap' }, [
+          el('button', { type: 'button', onclick: () => run('copy') }, 'Copy'),
+          el('button', { type: 'button', onclick: () => run('cut') }, 'Cut'),
+          el('button', { type: 'button', onclick: () => run('delete') }, 'Clear'),
+          el('button', { type: 'button', onclick: () => saveStamp() }, 'Save as stamp'),
+          el('button', { type: 'button', onclick: () => cropToRegion() }, 'Crop map'),
+        ]),
+      ]),
+      el('section', { class: 'opt', 'data-for': 'paste' }, [
+        el('h2', {}, 'Paste'),
+        el('p', { id: 'clip-info', class: 'hint' }),
+        el('div', { class: 'row wrap' }, [
+          el('button', { type: 'button', onclick: () => run('turnClip') }, 'Turn'),
+          el('button', { type: 'button', onclick: () => run('mirrorClipX') }, 'Mirror'),
+          el('button', { type: 'button', onclick: () => run('mirrorClipY') }, 'Flip'),
+        ]),
+        pasteLayer('terrain', 'Terrain'),
+        pasteLayer('resources', 'Ore and gems'),
+        pasteLayer('actors', 'Actors'),
+      ]),
+      el('section', { class: 'opt always' }, [el('h2', {}, 'Symmetry'), symmetry, el('p', { id: 'symmetry-note', class: 'hint' })]),
+      el('p', { id: 'tool-hint', class: 'hint' }),
     ]),
-    el('div', { class: 'opt', 'data-for': 'gems' }, [
-      el('h2', {}, ['Gem density ', el('span', { id: 'gem-value', class: 'muted' })]),
-      gems,
-      el('p', { class: 'hint' }, 'Gems only lie on clear or rough ground. A bale of gems pays twice as much as ore; gems never grow back.'),
-    ]),
-    el('div', { class: 'opt', 'data-for': 'actor' }, [
-      el('h2', {}, 'Actor'),
-      el('p', { id: 'actor-pick', class: 'hint' }),
-      el('p', { class: 'hint' }, ['Facing ', el('span', { id: 'facing-value' }), ' (, and . rotate)']),
-    ]),
-    el('h2', {}, 'Symmetry'),
-    symmetry,
-    el('label', { class: 'check' }, [grid, ' Grid (G)']),
-    el('p', { id: 'tool-hint', class: 'hint' }),
   );
   syncTools();
 }
 
 function syncTools() {
-  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
+  document.querySelectorAll('[data-tool]').forEach((b) => {
+    const on = b.dataset.tool === state.tool;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
   document.querySelectorAll('[data-material]').forEach((b) => b.classList.toggle('active', Number(b.dataset.material) === state.material));
-  document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('active', Number(b.dataset.size) === state.size));
-  document.querySelectorAll('#tools .opt').forEach((o) => (o.hidden = !o.dataset.for.split(' ').includes(state.tool)));
-  $('#ore-value').textContent = `${state.ore} / ${LIMITS.maxOre}`;
-  $('#ore-density').value = String(state.ore);
-  $('#gem-value').textContent = `${state.gems} / ${LIMITS.maxGems}`;
-  $('#gem-density').value = String(state.gems);
+  document.querySelectorAll('#tools .opt').forEach((o) => {
+    if (o.classList.contains('always')) return;
+    const forTool = o.dataset.for.split(' ').includes(state.tool);
+    const forPaint = !o.dataset.paint || o.dataset.paint === state.paint || !TOOLS.find((t) => t.id === state.tool)?.paint;
+    o.hidden = !forTool || !forPaint;
+  });
+  $('#paint-layer') && document.querySelectorAll('#paint-layer input').forEach((i) => (i.checked = i.value === state.paint));
+  document.querySelectorAll('#brush-size input').forEach((i) => (i.checked = Number(i.value) === state.size));
   $('#symmetry').value = state.symmetry;
-  $('#grid').checked = state.grid;
-  $('#facing-value').textContent = `${state.facing} / 1024`;
+  for (const o of $('#symmetry').options) o.disabled = !modeFits(o.value, doc.width, doc.height);
+  $('#symmetry-note').textContent = modeFits(state.symmetry, doc.width, doc.height) ? '' : 'This map is not square: the quarter turns and diagonals are left out.';
+  $('#facing-value').textContent = `${state.facing} / 1024 (, and . turn it)`;
   const info = state.actorType ? catalog[state.actorType] : null;
   $('#actor-pick').textContent = info ? `${info.name} (${info.id}) for ${ownerName(state.owner)}` : 'Pick an actor in the Actors tab.';
   $('#tool-hint').textContent = TOOLS.find((t) => t.id === state.tool).hint;
   document.querySelectorAll('.palette-item').forEach((b) => b.classList.toggle('active', b.dataset.actor === state.actorType));
   $('#view').dataset.tool = state.tool;
+  syncRegion();
+}
+
+function syncRegion() {
+  const r = state.region;
+  const info = $('#region-info');
+  if (info) info.textContent = r ? `${r.x1 - r.x0 + 1} x ${r.y1 - r.y0 + 1} cells at ${r.x0},${r.y0}. Drag inside it to move it.` : 'Drag on the map to select cells.';
+  const c = state.clip;
+  const ci = $('#clip-info');
+  if (ci) ci.textContent = c ? `${c.w} x ${c.h} cells, ${c.actors.length} actor${c.actors.length === 1 ? '' : 's'}. Click to paste; right click stops.` : 'Copy a region or pick a stamp.';
 }
 
 function setTool(t) {
   ctl.cancel();
+  if (t === 'paste' && !state.clip) {
+    toast('Copy a region (M, then Ctrl+C) or pick a stamp first.');
+    return;
+  }
   state.tool = t;
   if (t === 'actor') showTab('actors');
   syncTools();
 }
 
+function setPaint(p) {
+  state.paint = p;
+  if (!TOOLS.find((t) => t.id === state.tool)?.paint) state.tool = 'brush';
+  savePrefs();
+  syncTools();
+}
+
 function setMaterial(t) {
   state.material = t;
-  if (!['brush', 'fill', 'rect'].includes(state.tool)) state.tool = 'brush';
+  state.paint = 'terrain';
+  if (!TOOLS.find((x) => x.id === state.tool)?.paint) state.tool = 'brush';
   savePrefs();
   syncTools();
 }
@@ -550,19 +659,22 @@ function setSize(n) {
 function setOre(n) {
   state.ore = Math.max(1, Math.min(LIMITS.maxOre, n));
   savePrefs();
+  const r = $('#ore-density');
+  if (r && Number(r.value) !== state.ore) r.value = String(state.ore);
   syncTools();
 }
 
 function setGems(n) {
   state.gems = Math.max(1, Math.min(LIMITS.maxGems, n));
   savePrefs();
+  const r = $('#gem-density');
+  if (r && Number(r.value) !== state.gems) r.value = String(state.gems);
   syncTools();
 }
 
-/** - and =: the density of the gem brush when it is active, else of the ore brush. */
-function stepDensity(d) {
-  if (state.tool === 'gems') return setGems(state.gems + d);
-  return setOre(state.ore + d);
+function setPref(key, value) {
+  state[key] = value;
+  savePrefs();
 }
 
 function setSymmetry(m) {
@@ -572,21 +684,95 @@ function setSymmetry(m) {
   toast(`Symmetry: ${SYMMETRY_MODES.find((s) => s.id === m).label}`);
 }
 
-function setGrid(on) {
-  state.grid = on;
-  savePrefs();
+/** - and =: the density of the gem paint when it is active, else of the ore paint. */
+function stepDensity(d) {
+  if (state.paint === 'gems') return setGems(state.gems + d);
+  return setOre(state.ore + d);
+}
+
+function picked(what) {
+  if (what.kind === 'actor') {
+    state.tool = 'actor';
+    renderOwnerOptions();
+    renderPaletteIcons();
+    toast(`Picked ${catalog[state.actorType]?.name ?? state.actorType} for ${ownerName(state.owner)}.`);
+  } else {
+    if (!TOOLS.find((t) => t.id === state.tool)?.paint) state.tool = 'brush';
+    toast(what.kind === 'terrain' ? `Picked ${TERRAIN_NAMES[what.terrain]}.` : `Picked ${what.kind}, density ${what.density}.`);
+    savePrefs();
+  }
   syncTools();
 }
 
-// ---- Map pane --------------------------------------------------------------------------------
+// ---- View bar ---------------------------------------------------------------------------------
+
+function buildViewbar() {
+  $('#viewbar').append(
+    commandButton('zoomIn', { icon: 'zoomIn', text: false }),
+    commandButton('zoomOut', { icon: 'zoomOut', text: false }),
+    commandButton('fit', { icon: 'fit', text: false }),
+  );
+}
+
+// ---- Side panels -------------------------------------------------------------------------------
+
+const TABS = [
+  { id: 'map', label: 'Map' },
+  { id: 'actors', label: 'Actors' },
+  { id: 'layers', label: 'Layers' },
+  { id: 'check', label: 'Check', badge: 'check-count' },
+  { id: 'rules', label: 'Rules', badge: 'rules-count' },
+  { id: 'history', label: 'History' },
+  { id: 'stamps', label: 'Stamps' },
+  { id: 'online', label: 'Online' },
+];
+let activeTab = 'map';
+
+function buildPanels() {
+  const tabs = $('#side .tabs');
+  const panes = $('#panes');
+  for (const t of TABS) {
+    tabs.append(
+      el('button', { type: 'button', role: 'tab', id: `tab-${t.id}`, 'data-tab': t.id, 'aria-controls': `pane-${t.id}`, onclick: () => showTab(t.id) }, [
+        t.label,
+        t.badge ? el('span', { id: t.badge, class: 'dot', hidden: true }) : null,
+      ]),
+    );
+    panes.append(el('section', { class: 'pane', id: `pane-${t.id}`, role: 'tabpanel', 'aria-labelledby': `tab-${t.id}`, 'data-pane': t.id, hidden: true }));
+  }
+  buildMapPane();
+  buildActorsPane();
+  buildLayersPane();
+  buildCheckPane();
+  new RulesPanel($('[data-pane="rules"]'), doc, rulesBase);
+  buildOnlinePane();
+  showTab('map');
+}
+
+function showTab(name) {
+  activeTab = name;
+  document.querySelectorAll('[data-tab]').forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
+  if (name === 'history') renderHistory();
+  if (name === 'stamps') renderStamps();
+  if (name === 'check') analysisDirty = true;
+}
+
+// ---- Map pane ----------------------------------------------------------------------------------
 
 function buildMapPane() {
   const pane = $('[data-pane="map"]');
   const field = (key, label, max, multiline = false) => {
     const input = el(multiline ? 'textarea' : 'input', {
       id: `meta-${key}`,
+      class: 'ui-input',
       maxlength: String(max),
-      rows: multiline ? '3' : undefined,
+      rows: multiline ? '4' : undefined,
       oninput: () => {
         doc.begin(`Edit ${label.toLowerCase()}`, `meta.${key}`);
         doc.touchMeta();
@@ -595,19 +781,20 @@ function buildMapPane() {
         if (key === 'author') defaultRegistry().set('extra', 'editorAuthor', input.value);
       },
     });
-    return el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, `${label} `), input]);
+    return el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, label), input]);
   };
   pane.append(
-    el('h2', {}, 'Properties'),
+    el('h2', {}, 'Map'),
     field('name', 'Name', LIMITS.nameMax),
     field('author', 'Author', LIMITS.authorMax),
-    field('description', 'Description', LIMITS.descriptionMax, true),
+    field('description', 'Description and briefing', LIMITS.descriptionMax, true),
     el('label', { class: 'field stacked', title: 'Terrain look and weather of the map. Not a rules change: the map stays unmodded.' }, [
-      el('span', { class: 'label' }, 'Biome '),
+      el('span', { class: 'label' }, 'Biome'),
       el(
         'select',
         {
           id: 'meta-biome',
+          class: 'ui-input',
           onchange: (e) => {
             doc.begin('Edit biome', 'meta.biome');
             doc.touchMeta();
@@ -615,15 +802,13 @@ function buildMapPane() {
             doc.commit();
           },
         },
-        BIOMES.map((b) => el('option', { value: b }, b.charAt(0).toUpperCase() + b.slice(1))),
+        BIOME_CHOICES.map((b) => el('option', { value: b.value }, b.label)),
       ),
     ]),
     graphicsControl(),
+    el('div', { class: 'row wrap' }, [el('button', { type: 'button', onclick: () => sizeDialog() }, 'Size and turns...'), el('button', { type: 'button', onclick: () => run('new') }, 'New or generate...')]),
     el('p', { id: 'map-stats', class: 'hint' }),
-    el('h2', {}, 'Validation'),
-    el('div', { id: 'validation-head', class: 'verdict' }),
-    el('ul', { id: 'validation', class: 'issues' }),
-    el('p', { class: 'hint' }, 'Checked by the game engine. Click an entry with a location to jump there.'),
+    el('p', { class: 'hint' }, 'Weather, starting cash, units and the other game options are set in the lobby when the map is played. Custom maps carry no scripts.'),
   );
 }
 
@@ -643,6 +828,7 @@ function graphicsControl() {
       { value: 'original', label: 'Original' },
     ],
     value: art.graphics,
+    block: true,
     describedBy: 'graphics-note',
     onChange: (v) => {
       art.graphics = v;
@@ -662,10 +848,10 @@ function syncGraphics() {
   const note = $('#graphics-note');
   if (note) {
     note.textContent = !has
-      ? 'The original Red Alert graphics are not installed on this device: install them from the game\'s Original content dialog to edit with them.'
+      ? "The original Red Alert graphics are not installed on this device: install them from the game's Original content dialog to edit with them."
       : art.originalActive
         ? 'The map is drawn with the original Red Alert graphics, as in a game with Graphics set to Original.'
-        : 'The map is drawn with WebRA\'s own art. The choice is the game\'s Graphics setting.';
+        : "The map is drawn with WebRA's own art. The choice is the game's Graphics setting.";
   }
 }
 
@@ -676,10 +862,11 @@ function syncMetaFields() {
   }
   const biome = $('#meta-biome');
   if (biome && biome.value !== (doc.meta.biome ?? 'temperate')) biome.value = doc.meta.biome ?? 'temperate';
-  filterPaletteByBiome();
+  filterPalette();
+  if ($('#symmetry')) syncTools();
 }
 
-// ---- Actors pane ----------------------------------------------------------------------------
+// ---- Actors pane ------------------------------------------------------------------------------
 
 function ownerName(owner) {
   return owner < 0 ? 'neutral' : `spawn ${owner + 1}`;
@@ -689,36 +876,40 @@ function buildActorsPane() {
   const pane = $('[data-pane="actors"]');
   const owner = el('select', {
     id: 'owner',
+    class: 'ui-input',
     onchange: () => {
       state.owner = Number(owner.value);
       renderPaletteIcons();
       syncTools();
     },
   });
+  const search = el('input', { type: 'search', id: 'palette-search', class: 'ui-input', placeholder: 'Find an actor', 'aria-label': 'Find an actor', oninput: () => filterPalette() });
   const groups = PALETTE_GROUPS.map((g) => {
     const actors = Object.values(catalog).filter(g.test);
     if (!actors.length) return null;
-    return el('details', { class: 'palette-group', open: true }, [
+    return el('details', { class: 'palette-group', open: !['Fakes', 'Husks', 'Decorations', 'Civilians', 'Other structures'].includes(g.name) }, [
       el('summary', {}, `${g.name} (${actors.length})`),
       el(
         'div',
         { class: 'palette' },
-        actors.map((a) =>
-          el(
+        actors.map((a) => {
+          const b = el(
             'button',
             {
               type: 'button',
               class: 'palette-item',
               'data-actor': a.id,
-              title: `${a.name} (${a.id})${a.kind === 'building' ? `, ${a.width}x${a.height}` : ''}`,
+              'aria-label': a.name,
               onclick: () => {
                 state.actorType = a.id;
                 setTool('actor');
               },
             },
-            [el('canvas', { width: '48', height: '40' }), el('span', {}, a.name)],
-          ),
-        ),
+            [el('canvas', { width: '64', height: '48' }), el('span', {}, a.name)],
+          );
+          tips.push(attachTooltip(b, () => ({ title: a.name, desc: `${a.id}${a.kind === 'building' ? `, ${a.width} x ${a.height} cells` : ''}${a.description ? `. ${a.description}` : ''}` })));
+          return b;
+        }),
       ),
     ]);
   });
@@ -726,22 +917,38 @@ function buildActorsPane() {
     el('div', { id: 'selection-box' }),
     el('h2', {}, 'Place for'),
     owner,
-    el('p', { class: 'hint' }, 'Pre-placed actors belong to a spawn (the player who starts there) or are neutral.'),
+    el('p', { class: 'hint' }, 'Pre-placed actors belong to a spawn (the player who starts there) or are neutral, like the civilians and trees of OpenRA maps.'),
+    search,
     ...groups,
   );
   renderOwnerOptions();
   renderPaletteIcons();
-  filterPaletteByBiome();
+  filterPalette();
+}
+
+/** Hide palette actors that do not belong to the map's biome (OpenRA MapEditorData tilesets) or do not match the search. */
+function filterPalette() {
+  const biome = doc.meta.biome ?? 'temperate';
+  const q = ($('#palette-search')?.value ?? '').trim().toLowerCase();
+  document.querySelectorAll('.palette-item').forEach((b) => {
+    const a = catalog[b.dataset.actor];
+    const biomes = a?.world?.biomes;
+    const bridge = a?.world?.bridge;
+    const wrongBiome = (Array.isArray(biomes) && !biomes.includes(biome)) || (!!bridge && !bridge[biome]);
+    const miss = q && !`${a.name} ${a.id}`.toLowerCase().includes(q);
+    b.hidden = wrongBiome || !!miss;
+  });
+  document.querySelectorAll('.palette-group').forEach((g) => {
+    g.hidden = ![...g.querySelectorAll('.palette-item')].some((b) => !b.hidden);
+    if (q && !g.hidden) g.open = true;
+  });
 }
 
 function renderOwnerOptions() {
   const owner = $('#owner');
   if (!owner) return;
   if (state.owner >= doc.spawns.length) state.owner = -1;
-  owner.replaceChildren(
-    el('option', { value: '-1' }, 'Neutral'),
-    ...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`)),
-  );
+  owner.replaceChildren(el('option', { value: '-1' }, 'Neutral'), ...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`)));
   owner.value = String(state.owner);
 }
 
@@ -750,42 +957,192 @@ function renderPaletteIcons() {
   const team = TEAM_COLORS[teamOf(state.owner)];
   document.querySelectorAll('.palette-item').forEach((b) => {
     const actor = catalog[b.dataset.actor];
-    const source = art.paintPalette(b.querySelector('canvas'), actor, ctl.order.get(actor.id) ?? -1, team);
-    b.dataset.art = source;
+    b.dataset.art = art.paintPalette(b.querySelector('canvas'), actor, ctl.order.get(actor.id) ?? -1, team);
   });
 }
 
+/** The selected actors' properties (owner, facing) or the selected spawn. */
 function renderSelection() {
   const box = $('#selection-box');
   if (!box) return;
   const sel = [...ctl.selection];
-  if (!sel.length) {
+  if (!sel.length && ctl.selectedSpawn < 0) {
     box.replaceChildren();
+    return;
+  }
+  if (!sel.length) {
+    const k = ctl.selectedSpawn;
+    const [x, y] = doc.spawns[k];
+    const owned = doc.actors.filter((a) => a.owner === k).length;
+    box.replaceChildren(
+      el('h2', {}, `Spawn ${k + 1}`),
+      el('p', {}, `At ${x},${y}. ${owned} pre-placed actor${owned === 1 ? '' : 's'} belong to it.`),
+      el('div', { class: 'row' }, [el('button', { type: 'button', class: 'danger', onclick: () => ctl.deleteSelection() }, 'Remove spawn')]),
+    );
     return;
   }
   const owners = new Set(sel.map((a) => a.owner));
   const owner = el(
     'select',
-    { onchange: () => ctl.setOwnerOfSelection(Number(owner.value)) },
+    { class: 'ui-input', onchange: () => ctl.setOwnerOfSelection(Number(owner.value)) },
     [el('option', { value: '-1' }, 'Neutral'), ...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`))],
   );
   owner.value = owners.size === 1 ? String([...owners][0]) : '';
+  const units = sel.filter((a) => catalog[a.type]?.kind !== 'building');
+  const facings = new Set(units.map((a) => a.facing));
+  const facing = slider({
+    label: 'Facing',
+    min: 0,
+    max: 1023,
+    step: 32,
+    value: facings.size === 1 ? [...facings][0] : 0,
+    format: (v) => `${v} (${['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(v / 128) % 8]})`,
+    onInput: (v) => ctl.setOnSelection('Change facing', (a, info) => info?.kind !== 'building' && (a.facing = v)),
+  });
   const names = sel.length === 1 ? `${catalog[sel[0].type]?.name ?? sel[0].type} at ${sel[0].x},${sel[0].y}` : `${sel.length} actors`;
   box.replaceChildren(
     el('h2', {}, 'Selection'),
     el('p', {}, names),
     el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Owner'), owner]),
-    el('button', { type: 'button', onclick: () => ctl.deleteSelection() }, 'Delete (Del)'),
+    units.length ? facing.row : null,
+    el('p', { class: 'hint' }, 'Health, stance, veterancy and cargo of pre-placed actors are not part of the WebRA map format yet: actors start like freshly built ones.'),
+    el('div', { class: 'row' }, [el('button', { type: 'button', class: 'danger', onclick: () => ctl.deleteSelection() }, `Delete (${keyOf('delete')})`)]),
   );
 }
 
-// ---- Online pane ------------------------------------------------------------------------------
+// ---- Layers pane ---------------------------------------------------------------------------------
+
+function buildLayersPane() {
+  const pane = $('[data-pane="layers"]');
+  pane.append(
+    el('h2', {}, 'Show on the map'),
+    layersList(state.layers, (key, on) => setLayer(key, on)),
+    el('p', { class: 'hint' }, 'Passability, buildable ground, zones, rush paths and reach are measured by the game engine on the map as a game starts it (trees, structures and walls block).'),
+  );
+}
+
+function setLayer(key, on) {
+  state.layers[key] = on;
+  if (ANALYSIS_LAYERS.includes(key)) analysisDirty = true;
+  savePrefs();
+  const box = document.querySelectorAll('.layers input')[LAYERS.findIndex((l) => l.key === key)];
+  if (box && box.checked !== on) box.checked = on;
+}
+
+// ---- Check pane ---------------------------------------------------------------------------------
+
+function buildCheckPane() {
+  $('[data-pane="check"]').append(
+    el('h2', {}, 'Problems'),
+    el('div', { id: 'validation-head', class: 'verdict' }),
+    el('div', { id: 'validation' }),
+    el('p', { class: 'hint' }, 'Checked by the game engine. Show jumps to the place; the buttons repair it as one undo step.'),
+    el('h2', {}, 'Fairness'),
+    el('div', { id: 'fairness' }),
+  );
+}
+
+// ---- History pane --------------------------------------------------------------------------------
+
+function renderHistory() {
+  const pane = $('[data-pane="history"]');
+  const copies = recoveryCopies();
+  pane.replaceChildren(
+    el('h2', {}, 'History'),
+    historyList(doc.undoStack, doc.redoStack, (steps) => goHistory(steps)),
+    el('p', { class: 'hint' }, `Up to 200 steps. Your draft is saved in this browser as you work.`),
+    el('h2', {}, 'Recovery copies'),
+    copies.length
+      ? el(
+          'ul',
+          { class: 'recovery' },
+          copies.map((c) =>
+            el('li', {}, [
+              el('span', {}, `${c.map.name || 'Untitled'}, ${c.map.width} x ${c.map.height}, ${new Date(c.savedAt).toLocaleString()}`),
+              el('button', { type: 'button', class: 'link', onclick: () => loadMap(c.map, `Restore ${c.map.name || 'copy'}`) && toast('Restored. Undo brings back the map you had.') }, 'Restore'),
+            ]),
+          ),
+        )
+      : el('p', { class: 'hint' }, 'Copies of the maps you work on are kept every two minutes and when the page closes.'),
+  );
+}
+
+function goHistory(steps) {
+  for (let i = 0; i < Math.abs(steps); i++) (steps < 0 ? doc.undo() : doc.redo());
+  toast(steps < 0 ? `Back ${-steps} step${steps === -1 ? '' : 's'}.` : `Forward ${steps} step${steps === 1 ? '' : 's'}.`);
+}
+
+// ---- Stamps --------------------------------------------------------------------------------------
+
+function loadStamps() {
+  try {
+    const list = JSON.parse(store.get(STAMPS_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter((s) => s && typeof s.name === 'string' && s.region) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStamps(list) {
+  if (!store.set(STAMPS_KEY, JSON.stringify(list))) toast('The stamps could not be saved (browser storage is full or blocked).', true);
+}
+
+async function saveStamp() {
+  const r = state.region;
+  if (!r) return toast('Select a region first (M).');
+  const name = el('input', { class: 'ui-input', maxlength: '40', value: `Stamp ${loadStamps().length + 1}` });
+  const ok = await modal({ title: 'Save as stamp', body: [el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, 'Name'), name])], buttons: [{ value: 'cancel', label: 'Cancel' }, { value: 'ok', label: 'Save', primary: true }] });
+  if (ok !== 'ok') return;
+  const list = loadStamps();
+  if (list.length >= STAMPS_MAX) return toast(`At most ${STAMPS_MAX} stamps: delete one first.`, true);
+  list.push({ name: name.value.trim() || 'Stamp', savedAt: Date.now(), region: regionToData(copyRegion(doc, catalog, r.x0, r.y0, r.x1, r.y1)) });
+  saveStamps(list);
+  toast('Saved as a stamp (Stamps tab).');
+  if (activeTab === 'stamps') renderStamps();
+}
+
+function renderStamps() {
+  const pane = $('[data-pane="stamps"]');
+  const list = loadStamps();
+  pane.replaceChildren(
+    el('h2', {}, 'Stamps'),
+    el('p', { class: 'hint' }, 'Regions you saved: bases, bridges with their banks, ore fields, villages. They are kept in this browser.'),
+    stampsList(list, {
+      onUse: (k) => {
+        try {
+          startPaste(regionFromData(list[k].region));
+        } catch (err) {
+          toast(`This stamp cannot be used: ${err.message}`, true);
+        }
+      },
+      onRename: async (k) => {
+        const name = el('input', { class: 'ui-input', maxlength: '40', value: list[k].name });
+        if ((await modal({ title: 'Rename stamp', body: [name], buttons: [{ value: 'cancel', label: 'Cancel' }, { value: 'ok', label: 'Rename', primary: true }] })) !== 'ok') return;
+        list[k].name = name.value.trim() || list[k].name;
+        saveStamps(list);
+        renderStamps();
+      },
+      onDelete: (k) => {
+        list.splice(k, 1);
+        saveStamps(list);
+        renderStamps();
+      },
+    }),
+  );
+}
+
+function startPaste(clip) {
+  state.clip = clip;
+  setTool('paste');
+}
+
+// ---- Online pane -----------------------------------------------------------------------------------
 
 function buildOnlinePane() {
   const pane = $('[data-pane="online"]');
   pane.append(
     el('h2', {}, 'Publish'),
-    el('p', { class: 'hint' }, 'Upload the map so others can play it. Published maps are public and identified by their hash.'),
+    el('p', { class: 'hint' }, 'Upload the map so others can play it. Published maps are public and identified by their hash. Only the map data is sent, never pictures or installed graphics.'),
     el('button', { type: 'button', class: 'primary wide', onclick: () => publish() }, 'Publish map'),
     el('div', { id: 'publish-result' }),
     el('h2', {}, ['Published maps ', el('button', { type: 'button', class: 'link', onclick: () => browse() }, 'Refresh')]),
@@ -798,8 +1155,8 @@ async function publish() {
   const out = $('#publish-result');
   const { map, engine } = validateNow();
   if (!engine.ok) {
-    out.replaceChildren(el('p', { class: 'error' }, 'Fix the validation errors first (Map tab).'));
-    showTab('map');
+    out.replaceChildren(el('p', { class: 'error' }, 'Fix the problems first (Check tab).'));
+    showTab('check');
     return;
   }
   if (engine.modded && !confirm(`${MODDED_WARNING}\n\nPublish this MODDED map anyway?`)) return;
@@ -807,13 +1164,10 @@ async function publish() {
   try {
     const { id, hash, localHash } = await publishMap(map);
     const link = shareLink(id);
-    const linkInput = el('input', { type: 'text', readonly: 'readonly', value: link, onfocus: () => linkInput.select() });
+    const linkInput = el('input', { type: 'text', class: 'ui-input', readonly: 'readonly', value: link, onfocus: () => linkInput.select() });
     out.replaceChildren(
       el('p', { class: 'ok' }, `Published. Map id: ${id}`),
-      el('div', { class: 'row' }, [
-        linkInput,
-        el('button', { type: 'button', onclick: () => copy(link) }, 'Copy link'),
-      ]),
+      el('div', { class: 'row' }, [linkInput, el('button', { type: 'button', onclick: () => copy(link) }, 'Copy link')]),
       hash && hash !== localHash ? el('p', { class: 'error' }, `The server's hash (${hash.slice(0, 12)}) differs from the editor's (${localHash.slice(0, 12)}).`) : null,
     );
   } catch (err) {
@@ -843,10 +1197,7 @@ async function browse() {
         el('li', {}, [
           el('div', { class: 'title' }, [String(m.name ?? m.id), m.modded ? el('span', { class: 'badge modded' }, 'MODDED') : null]),
           el('div', { class: 'muted' }, `${m.author ?? '?'}, ${m.width}x${m.height}, ${m.players} players, ${m.downloads ?? 0} downloads`),
-          el('div', { class: 'row' }, [
-            el('button', { type: 'button', onclick: () => openPublished(m) }, 'Open'),
-            el('button', { type: 'button', class: 'link', onclick: () => copy(shareLink(m.id)) }, 'Copy play link'),
-          ]),
+          el('div', { class: 'row' }, [el('button', { type: 'button', onclick: () => openPublished(m) }, 'Open'), el('button', { type: 'button', class: 'link', onclick: () => copy(shareLink(m.id)) }, 'Copy play link')]),
         ]),
       ),
     ),
@@ -872,7 +1223,7 @@ async function copy(text) {
   }
 }
 
-// ---- Commands ---------------------------------------------------------------------------------
+// ---- Commands ---------------------------------------------------------------------------------------
 
 function loadMap(map, label) {
   const res = validateMap(map, { catalog, rulesBase });
@@ -883,8 +1234,9 @@ function loadMap(map, label) {
     return false;
   }
   ctl.selection.clear();
+  ctl.setRegion(null);
   view.fit();
-  if (!res.ok) toast(`Opened with ${res.errors.length} validation error(s); see the Map tab.`, true);
+  if (!res.ok) toast(`Opened with ${res.errors.length} problem(s); see the Check tab.`, true);
   return true;
 }
 
@@ -914,7 +1266,8 @@ function openFile(file) {
  * Import an OpenRA .oramap package: convert it (js/oramap), show the import
  * report, and open the result for editing once the author confirms. Rules
  * the conversion kept make a modded map; the report repeats the modded
- * warning, and the author may open the map without them.
+ * warning, and the author may open the map without them. Lua scripts are
+ * never imported (custom maps carry no scripts).
  */
 async function importOramapFile(file) {
   if (file.size > ORAMAP_MAX_BYTES) {
@@ -955,7 +1308,7 @@ function showImportReport(report, map, failure) {
       map?.rules ? el('p', { class: 'error' }, MODDED_WARNING) : null,
       report ? renderReport(report) : null,
       map && report?.validation && !report.validation.ok ? el('p', { class: 'hint' }, 'Fix the listed problems in the editor before test play or publishing.') : null,
-      el('div', { class: 'row' }, buttons),
+      el('div', { class: 'row end' }, buttons),
     ]),
   ]);
   dialog.addEventListener('close', () => dialog.remove());
@@ -976,12 +1329,18 @@ function exportPng() {
   }, 'image/png');
 }
 
+let lastTest = null;
 async function testPlay() {
   const { map, engine } = validateNow();
-  if (!engine.ok && !confirm(`The map has validation errors:\n\n${engine.errors.join('\n')}\n\nThe game may refuse it. Test anyway?`)) return;
+  if (!engine.ok && !confirm(`The map has problems:\n\n${engine.errors.join('\n')}\n\nThe game may refuse it. Test anyway?`)) return;
+  const setup = await testPlayDialog({ spawns: doc.spawns.length, last: lastTest });
+  if (!setup) return;
+  lastTest = setup;
+  const r = view.viewRect();
   const text = canonicalJson(map);
   try {
     sessionStorage.setItem(TEST_MAP_KEY, text);
+    sessionStorage.setItem(TEST_SETUP_KEY, JSON.stringify({ players: setup.players, camera: setup.camera ? [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2] : null, autostart: setup.autostart }));
   } catch {
     toast('Cannot hand the map to the game: browser storage is blocked.', true);
     return;
@@ -991,102 +1350,146 @@ async function testPlay() {
   if (!window.open(url, '_blank')) location.href = url;
 }
 
-function newMapDialog() {
-  const width = el('input', { type: 'number', min: String(LIMITS.minSize), max: String(LIMITS.maxSize), value: String(doc.width) });
-  const height = el('input', { type: 'number', min: String(LIMITS.minSize), max: String(LIMITS.maxSize), value: String(doc.height) });
-  const base = el('select', {}, MATERIALS.map((m) => el('option', { value: String(m.t) }, TERRAIN_NAMES[m.t])));
-  const seed = el('input', { type: 'number', min: '0', value: String(Math.floor(Math.random() * 100000)) });
-  const players = el('select', {}, [2, 3, 4, 5, 6, 7, 8].map((n) => el('option', { value: String(n) }, `${n} players`)));
-  const genSize = el('input', { type: 'number', min: String(LIMITS.minSize), max: String(LIMITS.maxSize), value: '96' });
-  const option = (v) => el('option', { value: v }, v.charAt(0).toUpperCase() + v.slice(1));
-  const genStyle = el('select', {}, ['random', 'land', 'rivers', 'lakes', 'islands'].map(option));
-  const genBiome = el('select', {}, ['random', ...BIOMES].map(option));
-  // Tech buildings (OpenRA's map generator option "Buildings", engine mapgen/settlements.rs).
-  const techLabels = { none: 'None', standard: 'Standard', extra: 'Extra', oilonly: 'Oil only', oilrush: 'Oil rush' };
-  const genTech = el('select', {}, Object.entries(techLabels).map(([v, label]) => el('option', { value: v }, label)));
-  genTech.value = 'standard';
-  const hasTech = typeof Game.generated_map_with === 'function';
-  const hasGenerator = typeof Game.generated_map === 'function';
-  const hasStyles = typeof Game.generated_map_styled === 'function';
-  const kind = (v) => el('input', { type: 'radio', name: 'newkind', value: v, checked: v === 'blank' });
-  const blankRadio = kind('blank');
-  const genRadio = kind('generated');
-  genRadio.disabled = !hasGenerator;
-  const error = el('p', { class: 'error' });
-  const dialog = el('dialog', { class: 'menu-card dialog' }, [
-    el('form', { method: 'dialog' }, [
-      el('h1', {}, 'New map'),
-      el('label', { class: 'check' }, [blankRadio, ' Blank map']),
-      el('div', { class: 'indent' }, [
-        el('label', {}, ['Width ', width]),
-        el('label', {}, ['Height ', height]),
-        el('label', {}, ['Terrain ', base]),
-      ]),
-      el('label', { class: 'check' }, [genRadio, ' Generated skirmish map']),
-      el('div', { class: 'indent' }, [
-        el('label', {}, ['Size ', genSize]),
-        el('label', {}, ['Players ', players]),
-        el('label', {}, ['Seed ', seed]),
-        hasStyles ? el('label', {}, ['Style ', genStyle]) : null,
-        hasStyles ? el('label', {}, ['Biome ', genBiome]) : null,
-        hasTech ? el('label', {}, ['Tech buildings ', genTech]) : null,
-        hasGenerator ? null : el('p', { class: 'hint' }, 'Needs an engine build with Game.generated_map.'),
-      ]),
-      el('p', { class: 'hint' }, 'The current map stays in the undo history.'),
-      error,
-      el('div', { class: 'row' }, [
-        el('button', { type: 'submit', value: 'cancel' }, 'Cancel'),
-        el('button', { type: 'submit', value: 'ok', class: 'primary' }, 'Create'),
-      ]),
-    ]),
-  ]);
-  const num = (input) => Number(input.value);
-  const inRange = (n) => Number.isInteger(n) && n >= LIMITS.minSize && n <= LIMITS.maxSize;
-  dialog.addEventListener('close', () => {
-    dialog.remove();
-    if (dialog.returnValue !== 'ok') return;
-    let map;
-    if (genRadio.checked) {
-      if (!inRange(num(genSize))) return toast(`Size must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
-      const genSeed = Math.max(0, num(seed)) >>> 0;
-      map = JSON.parse(
-        hasTech
-          ? Game.generated_map_with(genSeed, num(genSize), num(players), genStyle.value, genBiome.value, genTech.value)
-          : hasStyles
-            ? Game.generated_map_styled(genSeed, num(genSize), num(players), genStyle.value, genBiome.value)
-            : Game.generated_map(genSeed, num(genSize), num(players)),
-      );
-      map.author = defaultRegistry().get('extra', 'editorAuthor') || map.author;
+async function newMap() {
+  let choice;
+  try {
+    choice = await newMapDialog({ width: doc.width, height: doc.height, materials: MATERIALS.map((m) => m.t), generator: typeof Game.generated_map_with === 'function' });
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+  if (!choice) return;
+  saveRecovery();
+  let map;
+  if (choice.kind === 'generated') {
+    map = JSON.parse(Game.generated_map_with(choice.seed, choice.size, choice.players, choice.style, choice.biome, choice.tech));
+    map.author = defaultRegistry().get('extra', 'editorAuthor') || map.author;
+  } else {
+    map = newBlankMap(choice.width, choice.height, choice.base);
+  }
+  loadMap(map, 'New map');
+}
+
+async function sizeDialog() {
+  const choice = await mapSizeDialog({ width: doc.width, height: doc.height, region: state.region });
+  if (!choice) return;
+  applyTransform(choice);
+}
+
+function cropToRegion() {
+  if (!state.region) return toast('Select a region first (M).');
+  applyTransform({ op: 'crop' });
+}
+
+/** Resize, crop, shift, turn or mirror the whole map as one undo step. */
+function applyTransform(choice) {
+  const map = doc.toMap();
+  let result;
+  try {
+    if (choice.op === 'resize') {
+      const ox = Math.round((choice.width - map.width) * choice.anchorX);
+      const oy = Math.round((choice.height - map.height) * choice.anchorY);
+      result = resizeMap(map, catalog, choice.width, choice.height, ox, oy);
+    } else if (choice.op === 'crop') {
+      const r = state.region;
+      result = cropMap(map, catalog, r.x0, r.y0, r.x1, r.y1);
+    } else if (choice.op === 'shift') {
+      result = shiftMap(map, catalog, choice.dx, choice.dy);
     } else {
-      if (!inRange(num(width)) || !inRange(num(height))) return toast(`Width and height must be ${LIMITS.minSize}..${LIMITS.maxSize}.`, true);
-      map = newBlankMap(num(width), num(height), Number(base.value));
+      result = turnMap(map, catalog, choice.op);
     }
-    loadMap(map, 'New map');
-  });
-  document.body.append(dialog);
-  dialog.showModal();
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+  const label = { resize: 'Resize map', crop: 'Crop map', shift: 'Shift map', rotate90: 'Turn map right', rotate270: 'Turn map left', rotate180: 'Turn map', flipX: 'Mirror map', flipY: 'Flip map' }[choice.op];
+  if (loadMap(result.map, label)) {
+    const d = result.dropped;
+    const lost = [d.spawns ? `${d.spawns} spawn${d.spawns === 1 ? '' : 's'}` : '', d.actors ? `${d.actors} actor${d.actors === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+    toast(lost ? `${label}: ${lost} off the map were removed. Undo brings them back.` : `${label}.`);
+  }
 }
 
 function helpOverlay() {
   if ($('#help')) return $('#help').close();
-  const dialog = el('dialog', { id: 'help', class: 'menu-card dialog wide' }, [
-    el('form', { method: 'dialog' }, [
-      el('h1', {}, 'Shortcuts'),
-      el('table', { class: 'keys' }, SHORTCUTS.map(([k, d]) => el('tr', {}, [el('th', {}, k), el('td', {}, d)]))),
-      el('p', { class: 'hint' }, 'Spawns are the top-left cell of each player\'s 3x4 construction yard and need clear ground. Ore and gems only lie on clear or rough ground.'),
-      el('div', { class: 'row' }, el('button', { type: 'submit', class: 'primary' }, 'Close')),
-    ]),
-  ]);
-  dialog.addEventListener('close', () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
+  let listening = null;
+  const body = el('div', {});
+  const render = () =>
+    body.replaceChildren(
+      el('p', {}, 'Tools paint with symmetry: every edit also lands at its mirror images. Right drag undoes what a tool does (paints clear ground, removes ore). Middle drag, Space and drag, two fingers or the arrow keys move the map; the wheel and pinching zoom.'),
+      keysList(keys.list().filter((a) => a.context === 'editor'), {
+        listening,
+        mac: isMac(),
+        onRebind: (name) => {
+          listening = name;
+          render();
+        },
+        onReset: (name) => {
+          keys.reset(name);
+          render();
+        },
+      }),
+      el('p', { class: 'hint' }, 'Keys are kept with the game\'s (game menu, Settings, Controls) and follow your account.'),
+    );
+  const capture = (e) => {
+    if (!listening) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      listening = null;
+      render();
+      return;
+    }
+    const combo = comboFromEvent(e);
+    if (!combo) return;
+    const reserved = isReservedCombo(combo);
+    if (reserved) {
+      toast(reserved, true);
+      return;
+    }
+    const r = keys.rebind(listening, combo);
+    if (r.displaced) toast(`${formatCombo(combo)} moved from "${keys.list().find((a) => a.name === r.displaced)?.label}".`);
+    listening = null;
+    render();
+  };
+  render();
+  modal({
+    id: 'help',
+    title: 'Shortcuts',
+    wide: true,
+    body: [body],
+    buttons: [{ value: 'close', label: 'Close', primary: true }],
+    onOpen: (dialog) => dialog.addEventListener('keydown', capture, true),
+  });
 }
 
-const COMMANDS = {
-  new: newMapDialog,
+/** Copy the region to the clipboard (Ctrl+C), also for Cut. */
+function copyRegionCmd(cut) {
+  const r = state.region;
+  if (!r) return toast('Select a region first (M).');
+  state.clip = copyRegion(doc, catalog, r.x0, r.y0, r.x1, r.y1);
+  if (cut) {
+    doc.begin('Cut region');
+    clearRegion(doc, catalog, r.x0, r.y0, r.x1, r.y1);
+    doc.commit();
+  }
+  syncRegion();
+  toast(`${cut ? 'Cut' : 'Copied'} ${state.clip.w} x ${state.clip.h} cells. Ctrl+V pastes.`);
+}
+
+function transformClip(op) {
+  if (!state.clip) return;
+  state.clip = transformRegion(state.clip, catalog, op);
+  syncRegion();
+}
+
+const COMMAND_RUN = {
+  new: newMap,
   open: () => $('#file-input').click(),
   save: saveFile,
   png: exportPng,
+  test: testPlay,
+  publish,
   undo: () => {
     const label = doc.undo();
     if (label) toast(`Undo: ${label}`);
@@ -1095,29 +1498,55 @@ const COMMANDS = {
     const label = doc.redo();
     if (label) toast(`Redo: ${label}`);
   },
-  test: testPlay,
-  publish,
+  copy: () => copyRegionCmd(false),
+  cut: () => copyRegionCmd(true),
+  paste: () => (state.clip ? setTool('paste') : toast('Nothing copied yet.')),
+  delete: () => ctl.deleteSelection(),
+  selectAll: () => {
+    setTool('select');
+    ctl.selectAll();
+  },
+  turnClip: () => transformClip('rotate'),
+  mirrorClipX: () => transformClip('flipX'),
+  mirrorClipY: () => transformClip('flipY'),
+  rotateLeft: () => {
+    ctl.rotate(-1);
+    syncTools();
+  },
+  rotateRight: () => {
+    ctl.rotate(1);
+    syncTools();
+  },
+  sizeDown: () => setSize(BRUSH_SIZES[Math.max(0, BRUSH_SIZES.indexOf(state.size) - 1)]),
+  sizeUp: () => setSize(BRUSH_SIZES[Math.min(BRUSH_SIZES.length - 1, BRUSH_SIZES.indexOf(state.size) + 1)]),
+  densityDown: () => stepDensity(-1),
+  densityUp: () => stepDensity(1),
+  paintTerrain: () => setPaint('terrain'),
+  paintOre: () => setPaint('ore'),
+  paintGems: () => setPaint('gems'),
+  symmetry: () => {
+    const usable = SYMMETRY_MODES.filter((m) => modeFits(m.id, doc.width, doc.height));
+    const i = usable.findIndex((s) => s.id === state.symmetry);
+    setSymmetry(usable[(i + 1) % usable.length].id);
+  },
+  zoomIn: () => view.zoomBy(1.25),
+  zoomOut: () => view.zoomBy(0.8),
+  fit: () => view.fit(),
+  grid: () => setLayer('grid', !state.layers.grid),
+  layerPassability: () => setLayer('passability', !state.layers.passability),
+  layerZones: () => setLayer('zones', !state.layers.zones),
   help: helpOverlay,
 };
 
-function bindTopbar() {
-  document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => COMMANDS[b.dataset.cmd]()));
+function run(name) {
+  COMMAND_RUN[name]?.();
+}
+
+function bindDrop() {
   $('#file-input').addEventListener('change', (e) => {
     openFile(e.target.files[0]);
     e.target.value = '';
   });
-}
-
-function showTab(name) {
-  document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
-}
-
-function bindTabs() {
-  document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
-}
-
-function bindDrop() {
   window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => {
     e.preventDefault();
@@ -1125,73 +1554,33 @@ function bindDrop() {
   });
 }
 
-// ---- Keyboard ---------------------------------------------------------------------------------
+// ---- Keyboard ---------------------------------------------------------------------------------------
 
+/**
+ * Every tool, terrain and command is an action of the hotkey registry
+ * (context "editor"): rebindable in the Shortcuts dialog, kept with the
+ * game's keys. Escape always cancels; Space held pans (js/view.js).
+ */
 function bindKeys() {
+  const reg = (id, label, group, defaults, fn) => keys.registerAction(actionName(id), defaults, fn, { label, group: `Map editor: ${group}`, context: 'editor' });
+  for (const t of TOOLS) if (t.key) reg(`tool.${t.id}`, t.label, 'Tools', [t.key], () => setTool(t.id));
+  MATERIALS.forEach((m, k) => reg(`material.${k}`, TERRAIN_NAMES[m.t], 'Terrain', [MATERIAL_KEYS[k]], () => setMaterial(m.t)));
+  for (const c of COMMANDS) reg(c.name, c.label, c.group, c.keys, () => run(c.name));
   window.addEventListener('keydown', (e) => {
     if (document.querySelector('dialog[open]')) return;
-    const mod = e.ctrlKey || e.metaKey;
-    const k = e.key.toLowerCase();
-    if (mod) {
-      const run = (cmd) => {
-        e.preventDefault();
-        COMMANDS[cmd]();
-      };
-      if (k === 'z' && e.shiftKey) return run('redo');
-      if (k === 'z' || k === 'y') {
-        if (isTyping(e)) return; // let fields undo their own text
-        return run(k === 'y' ? 'redo' : 'undo');
+    if (e.key === 'Escape') {
+      if (!ctl.cancel()) {
+        if (state.tool === 'paste') setTool('region');
+        ctl.selection.clear();
+        ctl.selectedSpawn = -1;
+        ctl.setRegion(null);
+        renderSelection();
       }
-      if (k === 's') return run('save');
-      if (k === 'o') return run('open');
-      if (k === 'n' && e.altKey) return run('new');
-      if (k === 'enter') return run('test');
       return;
     }
-    if (isTyping(e) || e.altKey) return;
-    const tool = TOOLS.find((t) => t.key.toLowerCase() === k);
-    if (tool) return setTool(tool.id);
-    const mat = MATERIALS.find((m) => m.key === e.key);
-    if (mat) return setMaterial(mat.t);
-    switch (e.key) {
-      case '[':
-      case ']': {
-        const i = BRUSH_SIZES.indexOf(state.size) + (e.key === ']' ? 1 : -1);
-        return setSize(BRUSH_SIZES[Math.max(0, Math.min(BRUSH_SIZES.length - 1, i))]);
-      }
-      case '-':
-        return stepDensity(-1);
-      case '=':
-      case '+':
-        return stepDensity(1);
-      case 'm':
-      case 'M': {
-        const i = SYMMETRY_MODES.findIndex((s) => s.id === state.symmetry);
-        return setSymmetry(SYMMETRY_MODES[(i + 1) % SYMMETRY_MODES.length].id);
-      }
-      case 'g':
-      case 'G':
-        return setGrid(!state.grid);
-      case ',':
-      case '.':
-        ctl.rotate(e.key === '.' ? 1 : -1);
-        return syncTools();
-      case 'Delete':
-      case 'Backspace':
-        if (ctl.deleteSelection()) e.preventDefault();
-        return;
-      case 'Escape':
-        if (!ctl.cancel()) {
-          ctl.selection.clear();
-          ctl.selectedSpawn = -1;
-          renderSelection();
-        }
-        return;
-      case 'Home':
-        return view.fit();
-      case '?':
-        return helpOverlay();
-    }
+    // Text fields keep their keys (and their own undo).
+    if (isTyping(e)) return;
+    keys.handle(e);
   });
 }
 
@@ -1199,13 +1588,16 @@ function bindKeys() {
 
 function updateStatus(cell) {
   const s = $('#status');
+  const sym = SYMMETRY_MODES.find((m) => m.id === state.symmetry).label;
   if (!cell || !doc.inside(cell.x, cell.y)) {
-    s.textContent = `${doc.width} x ${doc.height}  |  ${SYMMETRY_MODES.find((m) => m.id === state.symmetry).label}`;
+    s.textContent = `${doc.width} x ${doc.height}  |  symmetry: ${sym}`;
     return;
   }
   const i = doc.idx(cell.x, cell.y);
   const ore = doc.ore[i] ? `, ore ${doc.ore[i]}` : doc.gems[i] ? `, gems ${doc.gems[i]}` : '';
-  s.textContent = `${cell.x}, ${cell.y}  ${TERRAIN_NAMES[doc.terrain[i]]}${ore}  |  zoom ${view.camera.zoom.toFixed(2)}`;
+  const zone = ctl.analysis?.[i];
+  const z = zone !== undefined && zone >> 8 !== 255 && (state.layers.zones || activeTab === 'check') ? `, zone of spawn ${(zone >> 8) + 1}` : '';
+  s.textContent = `${cell.x}, ${cell.y}  ${TERRAIN_NAMES[doc.terrain[i]]}${ore}${z}  |  zoom ${view.camera.zoom.toFixed(2)}  |  symmetry: ${sym}`;
 }
 
 let toastTimer = 0;
