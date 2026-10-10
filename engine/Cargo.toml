@@ -16,3 +16,16 @@ sha2 = "0.11"
 base64 = "0.23"
 # Pure Rust math (a musl port): the same results on every platform, for mission scripts.
 libm = "0.2"
+
+[features]
+# The native stack probe of the Lua interpreter (src/stack_check.rs), for the
+# wasm32 measurement (examples/lua_stack.rs, tools/lua-stack-wasm.mjs). Never
+# in the game's build.
+stack-probe = []
+
+# The interpreter's stack use per level, built for wasm32 and run by node
+# (tools/lua-stack-wasm.mjs): the per-target budget check of MAX_LEVELS.
+[[example]]
+name = "lua_stack"
+crate-type = ["cdylib"]
+required-features = ["stack-probe"]

@@ -82,7 +82,7 @@ impl Lua {
             return Err(LuaError::runtime("stack overflow"));
         }
         self.levels += levels;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "stack-probe"))]
         stack_probe::note(self.levels);
         Ok(())
     }
@@ -689,10 +689,11 @@ impl Lua {
     }
 }
 
-/// Test builds: the lowest native stack address the interpreter reached, to
-/// measure what one level costs (`tests.rs` `native_stack_per_level`).
-#[cfg(test)]
-pub(crate) mod stack_probe {
+/// Test and `stack-probe` builds: the lowest stack address the interpreter
+/// reached (in wasm32 the shadow stack in linear memory, where address-taken
+/// locals live), to measure what one level costs (src/stack_check.rs).
+#[cfg(any(test, feature = "stack-probe"))]
+pub mod stack_probe {
     use std::cell::Cell;
 
     thread_local! {

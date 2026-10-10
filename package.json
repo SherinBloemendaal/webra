@@ -19,6 +19,7 @@
     "test:tools": "node --test tools/*.test.mjs",
     "test": "npm run test:engine && npm run test:protocol && npm run test:server && npm run build:wasm && npm run check:js && npm run test:web && npm run test:tools",
     "test:protocol": "node --test packages/protocol/test/*.test.mjs",
-    "test:server": "node --test apps/server/test/*.test.mjs"
+    "test:server": "node --test apps/server/test/*.test.mjs",
+    "test:luastack": "cargo build --release --target wasm32-unknown-unknown -p webra-sim --example lua_stack --features stack-probe && node tools/lua-stack-wasm.mjs && node --stack-size=300 tools/lua-stack-wasm.mjs"
   }
 }

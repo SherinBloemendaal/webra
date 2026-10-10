@@ -65,6 +65,8 @@ pub mod rules_options;
 mod sell;
 pub mod smudges;
 pub mod sound_events;
+#[cfg(any(test, feature = "stack-probe"))]
+pub mod stack_check;
 mod trig_table;
 mod units;
 mod veterancy;

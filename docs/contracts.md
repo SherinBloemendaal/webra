@@ -1891,9 +1891,15 @@ lockstep simulation rather than embedding a C Lua:
   budget (statements, loop rounds and calls; library functions charge for
   their work), calls nest at most 120 deep, every recursive evaluation
   (expressions, blocks, calls, host round trips such as `Utils.Do`) takes
-  native stack levels, at most 540, measured at about 560 to 680 bytes each
-  so a run stays within 384 KiB of the 1 MiB WebAssembly stack, and the heap
-  is bounded. Running out of budget or heap is a script error no `pcall`
+  native stack levels, at most 400, and the heap is bounded. The levels are
+  sized from per-target measurements (`engine/src/stack_check.rs`): the
+  wasm32 build the game and the server run takes about 150 to 340 bytes of
+  its 1 MiB stack per level, under 140 KiB for the deepest run (budget 512
+  KiB), and under 160 KiB of the JS engine's own stack (node's default is
+  984 KiB; checked at 300 KiB). `npm run test:luastack` builds
+  `examples/lua_stack.rs` for wasm32 and checks this in CI; the native tests
+  check their own target (490 to 680 bytes per level on macOS, about 850 on
+  Linux x86_64; budget 512 KiB of a 1 MiB thread). Running out of budget or heap is a script error no `pcall`
   can catch; a stack overflow is an ordinary Lua error. Integers from
   scripts are checked or saturated; script positions and distances are
   clamped to 2^20 cells and 2^29 world units, so no engine arithmetic on

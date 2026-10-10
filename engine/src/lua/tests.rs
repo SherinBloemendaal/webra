@@ -250,23 +250,15 @@ fn runaway_scripts_stop_deterministically() {
 
 #[test]
 fn deep_recursion_fits_in_a_small_stack() {
-    // The WebAssembly stack is about 1 MiB: the limits must hold within half
-    // of it in an optimised build (debug builds use far bigger frames).
+    // Every kind of unbounded recursion ends in "stack overflow" within the
+    // native test stack (src/stack_check.rs; debug builds use far bigger
+    // frames and get more).
     let h = std::thread::Builder::new()
-        .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { 512 << 10 })
+        .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { crate::stack_check::NATIVE_TEST_STACK })
         .spawn(|| {
-            let e = run("local function f(n) return 1 + f(n + 1) end return f(1)").unwrap_err();
-            assert!(e.message().contains("stack overflow"));
-            let e = run("local function f(t) return {f({t})} end return f({})").unwrap_err();
-            assert!(e.message().contains("stack overflow"));
-            // Recursion inside the deepest expressions the parser takes, and
-            // through library calls: the level budget stops it first.
-            let src = format!("local function f(n) return {}f(n + 1){} end return f(1)", "(1 + ".repeat(45), ")".repeat(45));
-            assert!(run(&src).unwrap_err().message().contains("stack overflow"));
-            // pcall turns the overflow into a value at the deepest level; it comes back up.
-            assert!(eval("local function f(n) return select(2, pcall(f, n + 1)) end return f(1)").contains("stack overflow"));
-            let e = run("local function f(t) table.sort({1, 2, 3}, function(a, b) f(t) return a < b end) end f(1)").unwrap_err();
-            assert!(e.message().contains("stack overflow"), "{}", e.message());
+            for src in crate::stack_check::overflow_cases() {
+                assert!(crate::stack_check::lua_overflows(&src), "{src}");
+            }
             // Deeply nested expressions are refused by the parser.
             let src = format!("return {}1{}", "(".repeat(300), ")".repeat(300));
             assert!(run(&src).unwrap_err().message().contains("syntax levels"));
@@ -409,52 +401,32 @@ fn host_functions_objects_and_arithmetic() {
     assert_eq!(e.message(), "host.lua:1: read only");
 }
 
-/// The stack one level costs, measured in this build for the deepest kinds
-/// of nesting (expressions, Lua calls, library calls; host round trips are
-/// measured in tests_mission.rs). Every kind must fit MAX_LEVELS levels in
-/// `STACK_FOR_LEVELS` bytes, so a run never uses more native stack than that:
-/// with the caller's frames it stays inside 512 KiB, half the 1 MiB
-/// WebAssembly stack. (An optimised build measured about 560 to 680 bytes
-/// per level.)
-pub(crate) const STACK_FOR_LEVELS: usize = 384 << 10;
-
-pub(crate) fn assert_levels_fit(what: &str, used: usize, levels: u32) {
-    let per_level = used as f64 / levels.max(1) as f64;
-    let worst = per_level * MAX_LEVELS as f64;
-    eprintln!("{what}: {used} bytes for {levels} levels, {per_level:.0} per level, {worst:.0} for MAX_LEVELS");
+/// Fail when MAX_LEVELS levels of a kind would take more than this target's
+/// budget (src/stack_check.rs; the wasm32 build is checked by
+/// tools/lua-stack-wasm.mjs). Debug builds use far bigger frames and only print.
+pub(crate) fn assert_levels_fit(what: &str, m: crate::stack_check::Measured) {
+    let budget = crate::stack_check::budget();
+    eprintln!(
+        "{what}: {} bytes for {} levels, {:.0} per level, {:.0} for MAX_LEVELS (budget {budget})",
+        m.bytes,
+        m.levels,
+        m.per_level(),
+        m.worst()
+    );
+    assert!(m.levels >= 90, "{what}: only {} levels measured", m.levels);
     if !cfg!(debug_assertions) {
-        assert!(worst <= STACK_FOR_LEVELS as f64, "{what}: {worst:.0} bytes for MAX_LEVELS levels, more than {STACK_FOR_LEVELS}");
+        assert!(m.worst() <= budget as f64, "{what}: {:.0} bytes for MAX_LEVELS levels, more than {budget}", m.worst());
     }
 }
 
 #[test]
 fn native_stack_per_level() {
-    use super::interp::stack_probe;
     let h = std::thread::Builder::new()
         .stack_size(64 << 20)
         .spawn(|| {
-            let cases = [
-                ("nested parentheses", format!("return {}1{}", "(".repeat(95), ")".repeat(95))),
-                ("Lua calls", "local function f(n) if n == 0 then return 0 end return 1 + f(n - 1) end return f(70)".to_string()),
-                (
-                    "library calls",
-                    "local function f(n) if n == 0 then return 0 end return select(2, pcall(f, n - 1)) end return f(55)".to_string(),
-                ),
-                (
-                    "calls in nested expressions",
-                    format!(
-                        "local function f(n) if n == 0 then return 0 end return {}f(n - 1){} end return f(10)",
-                        "(1 + ".repeat(20),
-                        ")".repeat(20)
-                    ),
-                ),
-            ];
-            for (what, src) in cases {
-                let start = stack_probe::start();
-                run(&src).unwrap_or_else(|e| panic!("{what}: {}", e.message()));
-                let (used, levels) = stack_probe::used(start);
-                assert!(levels >= 90, "{what}: only {levels} levels");
-                assert_levels_fit(what, used, levels);
+            for (what, src) in crate::stack_check::lua_cases() {
+                let m = crate::stack_check::measure_lua(&src).unwrap_or_else(|e| panic!("{what}: {e}"));
+                assert_levels_fit(what, m);
             }
         })
         .unwrap();

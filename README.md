@@ -274,6 +274,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Regenerate the campaign missions (`apps/game/missions`; needs Node) | `python3 tools/gen_missions.py` |
 | Run every mission headless for longer (ticks; one mission with `WEBRA_MISSION=allies-01`) | `WEBRA_MISSION_TICKS=9000 cargo test -p webra-sim --release every_mission` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
+| Check the Lua interpreter's stack use in the wasm32 build | `npm run test:luastack` |
 
 ## Controls
 

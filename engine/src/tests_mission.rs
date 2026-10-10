@@ -485,32 +485,27 @@ fn coop_missions_agree_between_their_players() {
 /// Host round trips (`Utils.Do` calling back into Lua) nest the mission API's
 /// frames between the interpreter's: they take HOST_LEVELS levels each, which
 /// must keep MAX_LEVELS inside the interpreter's stack bound, and unbounded
-/// round trips end in a "stack overflow" error within 512 KiB of stack.
+/// round trips end in a "stack overflow" error within the native test stack.
 #[test]
 fn host_round_trips_fit_the_native_stack() {
-    use crate::lua::interp::stack_probe;
     let measure = start("allies-01", None);
     let h = std::thread::Builder::new()
         .stack_size(64 << 20)
         .spawn(move || {
             let mut w = measure;
-            let begin = stack_probe::start();
-            w.mission_exec("local function f(n) if n == 0 then return end Utils.Do({ 1 }, function() f(n - 1) end) end f(25)").unwrap();
-            let (used, levels) = stack_probe::used(begin);
-            assert!(levels > 200, "only {levels} levels");
-            crate::lua::tests::assert_levels_fit("host round trips", used, levels);
+            let m = crate::stack_check::measure_mission(&mut w, crate::stack_check::HOST_CASE).unwrap();
+            crate::lua::tests::assert_levels_fit("host round trips", m);
         })
         .unwrap();
     h.join().unwrap();
     let deep = start("allies-01", None);
     let h = std::thread::Builder::new()
-        .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { 512 << 10 })
+        .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { crate::stack_check::NATIVE_TEST_STACK })
         .spawn(move || {
             let mut w = deep;
-            let e = w.mission_exec("local function f() Utils.Do({ 1 }, function() f() end) end f()").unwrap_err();
-            assert!(e.contains("stack overflow"), "{e}");
-            let e = w.mission_exec("local function f() Utils.Do({ 1 }, function() return ((((((((f())))))))) end) end f()").unwrap_err();
-            assert!(e.contains("stack overflow"), "{e}");
+            for src in crate::stack_check::HOST_OVERFLOW_CASES {
+                assert!(crate::stack_check::mission_overflows(&mut w, src), "{src}");
+            }
         })
         .unwrap();
     h.join().unwrap();

@@ -579,10 +579,11 @@ pub(crate) fn api_limits() -> (i32, i32) {
     (api::MAX_SCRIPT_CELL, api::MAX_SCRIPT_WORLD)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "stack-probe"))]
 impl World {
-    /// Tests: run a chunk of Lua in the mission's interpreter, with the API.
-    pub(crate) fn mission_exec(&mut self, src: &str) -> Result<Vec<Value>, String> {
+    /// Tests and the stack measurement (src/stack_check.rs): run a chunk of
+    /// Lua in the mission's interpreter, with the API.
+    pub fn mission_exec(&mut self, src: &str) -> Result<Vec<Value>, String> {
         let mut m = self.mission.take().expect("a mission");
         let mut lua = m.lua.take().expect("mission interpreter");
         lua.set_budget(TICK_BUDGET);
@@ -594,7 +595,10 @@ impl World {
         self.mission = Some(m);
         r
     }
+}
 
+#[cfg(test)]
+impl World {
     /// Tests: a global of the mission's scripts as text.
     pub(crate) fn mission_global(&self, name: &str) -> Option<String> {
         self.mission.as_ref()?.lua.as_ref()?.global(name).to_text()

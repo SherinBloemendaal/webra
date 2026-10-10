@@ -74,6 +74,8 @@ jobs:
       - run: npm run build:wasm
         env:
           WEBRA_GIT_HASH: ${{ github.sha }}
+      # The Lua interpreter's stack use in the wasm32 build against MAX_LEVELS (engine/src/stack_check.rs).
+      - run: npm run test:luastack
       - run: npm run check:js
       - run: npm run test:protocol
       - run: npm run test:server

@@ -33,6 +33,8 @@
 mod ast;
 mod heap;
 pub(crate) mod interp;
+#[cfg(any(test, feature = "stack-probe"))]
+pub use interp::stack_probe;
 mod lexer;
 mod number;
 mod parser;
@@ -62,10 +64,14 @@ pub const MAX_DEPTH: u32 = 120;
 /// Native stack budget of one run, in levels: every recursive evaluation of
 /// an expression, block or call nests the interpreter's Rust frames, so each
 /// one takes levels and running out is a "stack overflow" error before the
-/// real stack (1 MiB in WebAssembly) can run out. Sized from measured frame
-/// costs (`tests.rs` `native_stack_per_level`: about 560 to 680 bytes per
-/// level in an optimised build) so the deepest run fits in 384 KiB.
-pub const MAX_LEVELS: u32 = 540;
+/// real stack can run out. Sized from measured frame costs on every target
+/// (src/stack_check.rs): in the wasm32 build the game and the server run,
+/// about 150 to 340 bytes per level, so the deepest run takes under 140 KiB
+/// of the 1 MiB stack (budget 512 KiB, tools/lua-stack-wasm.mjs); in
+/// optimised native builds 490 to 680 bytes on arm64 and x86_64 macOS and
+/// about 850 on Linux x86_64, under 350 KiB (budget 512 KiB). A plain Lua
+/// recursion goes about 55 calls deep.
+pub const MAX_LEVELS: u32 = 400;
 /// Levels a call into a Lua function takes (its call and block frames).
 pub const CALL_LEVELS: u32 = 3;
 /// Levels a call into a library function takes.

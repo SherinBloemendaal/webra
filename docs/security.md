@@ -701,9 +701,12 @@ The campaign runs OpenRA's Lua mission scripts inside the simulation
   (test: `a_script_that_never_ends_is_stopped`). Native recursion (nested
   expressions, blocks, calls and host round trips like `Utils.Do`) is
   counted in stack levels sized from measured frame costs, so a script hits
-  "stack overflow" well before the WebAssembly stack does (tests:
-  `native_stack_per_level`, `deep_recursion_fits_in_a_small_stack`,
-  `host_round_trips_fit_the_native_stack`, at 512 KiB). Integer arguments
+  "stack overflow" well before the WebAssembly stack does. The wasm32 build
+  itself is measured in CI (`npm run test:luastack`: the deepest run takes
+  under 140 KiB of its 1 MiB stack and under 160 KiB of the JS engine's
+  stack, checked at 300 KiB), the native builds by `native_stack_per_level`,
+  `deep_recursion_fits_in_a_small_stack` and
+  `host_round_trips_fit_the_native_stack` on a 1 MiB thread. Integer arguments
   are checked or saturated (`string.rep`, `unpack`, `select`, positions,
   delays; `huge_integers_never_overflow`, `script_positions_never_overflow`
   with 2^62 and +-1e300), and `string.byte` results cost budget.
