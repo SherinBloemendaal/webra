@@ -109,7 +109,7 @@ test('settings page: display, scrolling, mouse capture and audio sections, with 
 });
 
 test('settings page: UI scale shows Auto with its value, previews live while dragging, stores on release, Reset goes back to Auto', () => {
-  const { root, settings, page, uiScale } = setup({ win: fakeWindow(1512, 982, 2) });
+  const { root, settings, page, uiScale } = setup({ win: fakeWindow(1366, 768, 2) });
   const slider = $(root, '#game-menu-uiScale');
   const row = slider.closest('.game-menu-scale');
   const out = row.querySelector('output');
@@ -159,7 +159,7 @@ test('settings page: closing the menu mid-drag ends the preview; nothing is left
   slider.dispatchEvent(new FakeEvent('input'));
   assert.equal(page.style.props.get('--ui-scale'), '1.5');
   menu.close();
-  assert.equal(page.style.props.get('--ui-scale'), '0.9', 'back to the stored setting (Auto)');
+  assert.equal(page.style.props.get('--ui-scale'), '1', 'back to the stored setting (Auto)');
   assert.equal(root.style.props.has('--ui-scale'), false);
   assert.equal(settings.get('uiScale'), 'auto');
   assert.ok(audio.prefs.listeners.size < listeners, 'the Audio section stopped following the settings');

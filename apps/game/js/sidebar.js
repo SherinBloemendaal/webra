@@ -9,7 +9,8 @@
 
 import { heatText } from './weather-fx.js';
 import { TEAM_COLORS } from './renderer.js';
-import { cameoPainter } from './cameo.js';
+import { cameoBacking, cameoPainter } from './cameo.js';
+import { watchPixelRatio } from './scale.js';
 import { icon } from './ui-icons.js';
 import { formatCombo } from './hotkeys.js';
 import { attachTooltip } from './ui/tooltip.js';
@@ -35,9 +36,11 @@ const QUEUE_ICONS = ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft',
 const QUEUE_ACTIONS = ['productionTabBuildings', 'productionTabDefense', 'productionTabInfantry', 'productionTabVehicles', 'productionTabAircraft', 'productionTabNaval'];
 const QUEUE_BUILDINGS = 0;
 
-// Cameo canvas size in CSS pixels (square, see js/cameo.js); the backing
-// store is scaled by devicePixelRatio.
-const CAMEO_SIZE = 64;
+// Cameo size in CSS pixels at UI scale 1: Red Alert's 64x48 cameos (OpenRA's
+// RA sidebar). The canvases are drawn at the size the cards really have on
+// the screen (fitCameos), so they stay sharp at any UI scale and pixel ratio.
+const CAMEO_WIDTH = 64;
+const CAMEO_HEIGHT = 48;
 
 // Power meter: above this share of the generated power the bar turns amber.
 const POWER_TIGHT = 0.85;
@@ -101,6 +104,8 @@ export class Sidebar {
     this.placingId = null;
     this.state = null;
     this.iconFailures = new Set();
+    /** Backing store size of the cameo canvases, in device pixels (fitCameos). */
+    this.cameoPx = cameoBacking(CAMEO_WIDTH, CAMEO_HEIGHT, globalThis.devicePixelRatio);
 
     // Credits counter (js/cashcounter.js): ticks toward the real value like
     // OpenRA's, with its cash tick sounds (callbacks.onCashTick).
@@ -265,6 +270,7 @@ export class Sidebar {
     this.gridEl = el('div', 'sb-grid');
     this.gridEl.id = 'sb-grid';
     this.gridEl.setAttribute('role', 'tabpanel');
+    this.watchCameoSize();
     this.emptyEl = el('div', 'sb-empty', 'Nothing available');
 
     const main = el('div', 'sb-main');
@@ -299,10 +305,8 @@ export class Sidebar {
     btn.dataset.clickSound = 'own';
 
     const canvas = el('canvas', 'sb-icon');
-    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    canvas.width = Math.round(CAMEO_SIZE * dpr);
-    canvas.height = Math.round(CAMEO_SIZE * dpr);
-    this.paintIcon(canvas, actor);
+    canvas.width = this.cameoPx.width;
+    canvas.height = this.cameoPx.height;
 
     // Build clock: a clock-wipe shade over the picture, with the time left.
     const clock = el('div', 'sb-clock');
@@ -321,6 +325,7 @@ export class Sidebar {
     req.setAttribute('aria-hidden', 'true');
     req.hidden = true;
     btn.append(canvas, clock, eta, count, ready, hold, slot, req, name);
+    this.paintIcon(canvas, actor, btn);
 
     // shiftLatched: the touch action bar's Add toggle stands in for Shift.
     btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
@@ -375,12 +380,49 @@ export class Sidebar {
 
   /** Paint every card's picture again (installed content or the graphics choice changed). */
   repaintIcons() {
-    for (const c of this.cards.values()) this.paintIcon(c.canvas, c.actor);
+    for (const c of this.cards.values()) this.paintIcon(c.canvas, c.actor, c.btn);
   }
 
-  paintIcon(canvas, actor) {
+  /**
+   * Draw the cameos at the size the cards have on the screen: the grid's
+   * width follows the UI scale and the layout, the backing store the pixel
+   * ratio. Called when the grid is resized or the pixel ratio changes.
+   */
+  fitCameos() {
+    const shown = [...this.cards.values()].find((c) => c.canvas.isConnected && c.canvas.clientWidth > 0);
+    if (!shown) return;
+    const px = cameoBacking(shown.canvas.clientWidth, shown.canvas.clientHeight, globalThis.devicePixelRatio);
+    if (px.width === this.cameoPx.width && px.height === this.cameoPx.height) return;
+    this.cameoPx = px;
+    for (const c of this.cards.values()) {
+      c.canvas.width = px.width;
+      c.canvas.height = px.height;
+      this.paintIcon(c.canvas, c.actor, c.btn);
+    }
+  }
+
+  /** Refit the cameos while this sidebar's grid is on the page. */
+  watchCameoSize() {
+    const fit = () => {
+      if (!this.gridEl.isConnected) {
+        stop();
+        return;
+      }
+      this.fitCameos();
+    };
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+    observer?.observe(this.gridEl);
+    const unwatch = watchPixelRatio(globalThis.window, fit);
+    const stop = () => {
+      observer?.disconnect();
+      unwatch();
+    };
+  }
+
+  paintIcon(canvas, actor, btn) {
     try {
-      cameoPainter.paint(canvas, actor, this.teamRgb);
+      // Red Alert's own cameos have the name in the picture: no second label over it.
+      btn.classList.toggle('labelled', cameoPainter.paint(canvas, actor, this.teamRgb) === 'labelled');
     } catch (err) {
       // An icon without a draw routine must not break the whole sidebar;
       // report once per type so the missing art is visible in the console.
@@ -557,6 +599,8 @@ export class Sidebar {
       const nodes = ids.map((id) => this.card(id).btn);
       if (nodes.length === 0) nodes.push(this.emptyEl);
       this.gridEl.replaceChildren(...nodes);
+      // New cards start at the last fitted size; the first ones learn it here.
+      this.fitCameos();
     }
 
     ids.forEach((id, i) => {

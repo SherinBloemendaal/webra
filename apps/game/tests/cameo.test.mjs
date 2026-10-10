@@ -2,7 +2,7 @@
 // A fake 2D context records the calls, so no canvas is needed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cameoPainter, createCameoPainter, paintBackdrop } from '../js/cameo.js';
+import { cameoBacking, cameoPainter, createCameoPainter, paintBackdrop } from '../js/cameo.js';
 
 function fakeCanvas(width, height) {
   const calls = [];
@@ -71,4 +71,19 @@ test('the backdrop fills the whole cameo', () => {
   const canvas = fakeCanvas(64, 64);
   paintBackdrop(canvas.getContext('2d'), 64, 64);
   assert.ok(canvas.calls.some(([op, x, y, w, h]) => op === 'fillRect' && x === 0 && y === 0 && w === 64 && h === 64));
+});
+
+test('a picture with the name in it (Red Alert\'s own cameos) paints as labelled, so the sidebar leaves out its label', () => {
+  const painter = createCameoPainter({ art: () => ({ labelled: true }), fallback: () => assert.fail('no fallback') });
+  assert.equal(painter.paint(fakeCanvas(128, 96), actor, [1, 0, 0]), 'labelled');
+  const plain = createCameoPainter({ art: () => ({ labelled: false }), fallback: () => assert.fail('no fallback') });
+  assert.equal(plain.paint(fakeCanvas(128, 96), actor, [1, 0, 0]), 'art');
+});
+
+test('cameo canvases are drawn at the size they are shown, times the pixel ratio (1 to 3)', () => {
+  assert.deepEqual(cameoBacking(64, 48, 1), { width: 64, height: 48 });
+  assert.deepEqual(cameoBacking(94, 70.5, 2), { width: 188, height: 141 }, 'UI scale 150% on a retina screen: sharp, not stretched');
+  assert.deepEqual(cameoBacking(64, 48, 4), { width: 192, height: 144 }, 'capped at 3');
+  assert.deepEqual(cameoBacking(64, 48, NaN), { width: 64, height: 48 });
+  assert.deepEqual(cameoBacking(0, 0, 2), { width: 1, height: 1 }, 'a hidden grid still gives a valid canvas');
 });

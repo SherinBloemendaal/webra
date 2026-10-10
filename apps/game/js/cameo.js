@@ -40,6 +40,15 @@ export function paintBackdrop(ctx, w, h) {
 }
 
 /**
+ * Backing store size (device pixels) of a cameo canvas shown at `cssWidth`
+ * x `cssHeight` CSS pixels on a screen with this pixel ratio (1 to 3).
+ */
+export function cameoBacking(cssWidth, cssHeight, pixelRatio) {
+  const dpr = Number.isFinite(pixelRatio) && pixelRatio > 0 ? Math.min(3, Math.max(1, pixelRatio)) : 1;
+  return { width: Math.max(1, Math.round(cssWidth * dpr)), height: Math.max(1, Math.round(cssHeight * dpr)) };
+}
+
+/**
  * A cameo painter. `art`, `fallback` and `backdrop` are injectable so the
  * choice is unit tested without a canvas (tests/cameo.test.mjs).
  *
@@ -48,7 +57,8 @@ export function paintBackdrop(ctx, w, h) {
  *   cached cameo picture, or null when the type has no cameo art
  * @param {(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]) => void} [o.fallback] sprite icon painter
  * @param {(ctx: CanvasRenderingContext2D, w: number, h: number) => void} [o.backdrop]
- * @returns {{ paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): 'art' | 'sprite' }}
+ * @returns {{ paint(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): 'art' | 'labelled' | 'sprite' }}
+ *   'labelled' when the picture has the name in it (Red Alert's own cameos), 'art' for other cameo art
  */
 export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
   return {
@@ -59,7 +69,7 @@ export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdr
       if (picture) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(picture, 0, 0, canvas.width, canvas.height);
-        return 'art';
+        return picture.labelled ? 'labelled' : 'art';
       }
       // drawIcon clears the canvas, so it draws first and the backdrop goes
       // underneath with destination-over.

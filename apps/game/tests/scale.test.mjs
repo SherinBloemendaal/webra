@@ -82,16 +82,16 @@ const memorySettings = () => createSettings(createRegistry({ storage: null }));
 
 // ---- UI scale ----------------------------------------------------------------------------
 
-test('ui scale: auto picks 100% on large windows and phones, smaller on small and high-density desktops, never below readable', () => {
+test('ui scale: auto picks 100% on large windows and phones, smaller in small windows, never below readable, whatever the pixel density', () => {
   assert.equal(autoUiScale({ width: 1920, height: 1080, dpr: 1 }), 1);
   assert.equal(autoUiScale({ width: 3840, height: 2160, dpr: 1 }), 1, 'never above 100%');
   assert.equal(autoUiScale({ width: 1366, height: 768, dpr: 1 }), 0.85, 'small laptop: fits, at the floor');
   assert.equal(autoUiScale({ width: 1600, height: 900, dpr: 1 }), 1);
-  // Retina laptops and 4K monitors at 200%: smaller chrome, down to the dense floor.
-  assert.equal(autoUiScale({ width: 1512, height: 982, dpr: 2 }), 0.85);
-  assert.equal(autoUiScale({ width: 1920, height: 1080, dpr: 2 }), 0.9);
-  assert.equal(autoUiScale({ width: 1280, height: 800, dpr: 2 }), 0.8, 'dense floor');
-  assert.equal(autoUiScale({ width: 800, height: 600, dpr: 1 }), 0.85, 'standard floor');
+  // Retina laptops and 4K monitors at 200%: CSS pixels have the usual size, so the same scale as at 1x.
+  assert.equal(autoUiScale({ width: 1512, height: 982, dpr: 2 }), 0.95);
+  assert.equal(autoUiScale({ width: 1920, height: 1080, dpr: 2 }), 1);
+  assert.equal(autoUiScale({ width: 1280, height: 800, dpr: 2 }), autoUiScale({ width: 1280, height: 800, dpr: 1 }));
+  assert.equal(autoUiScale({ width: 800, height: 600, dpr: 1 }), 0.85, 'readable floor');
   // Phones keep their touch layout at 100%.
   assert.equal(autoUiScale({ width: 390, height: 844, dpr: 3, compact: true }), 1);
   // Every auto value is a step of the setting and inside its limits.
@@ -99,7 +99,7 @@ test('ui scale: auto picks 100% on large windows and phones, smaller on small an
     for (const h of [480, 700, 800, 900, 1080, 1440]) {
       for (const dpr of [1, 1.25, 1.5, 2, 3]) {
         const v = autoUiScale({ width: w, height: h, dpr });
-        assert.ok(v >= 0.8 && v <= 1, `${w}x${h}@${dpr}: ${v}`);
+        assert.ok(v >= 0.85 && v <= 1, `${w}x${h}@${dpr}: ${v}`);
         assert.equal(v, roundStep(v, UI_SCALE_LIMITS.step));
       }
     }
@@ -130,8 +130,10 @@ test('ui scale: --ui-scale follows the setting, the window and its pixel ratio, 
   ui.onChange((v) => heard.push(v));
   win.resize(1366, 768);
   assert.equal(root.props.get('--ui-scale'), '0.85', 'auto follows the window');
-  win.resize(1920, 1080, 2);
-  assert.equal(root.props.get('--ui-scale'), '0.9', 'auto follows the pixel ratio (another monitor)');
+  win.resize(1440, 810, 2);
+  assert.equal(root.props.get('--ui-scale'), '0.9', 'auto follows the window on another monitor');
+  win.resize(1440, 810, 1);
+  assert.equal(root.props.get('--ui-scale'), '0.9', 'and not its pixel ratio');
   settings.set('uiScale', 1.5);
   assert.equal(root.props.get('--ui-scale'), '1.5');
   win.resize(800, 600);

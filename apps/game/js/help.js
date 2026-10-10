@@ -89,7 +89,7 @@ export const HELP = Object.freeze({
   'settings.gameScale':
     'How big units and terrain look, from 50 % to 300 %: the zoom a game starts at and Reset zoom returns to. The mouse wheel, pinch and the zoom keys zoom from there. The marks on the slider are the scales where pixel art is sharpest. Unlike Max resolution and Low quality, it changes size, not sharpness.',
   'settings.scaleAuto':
-    'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900 (90 % on high-density screens), smaller in smaller windows, never below 85 % (80 % on high-density screens). Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones.',
+    'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900, smaller in smaller windows, never below 85 %, the same on retina and other screens. Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones.',
   'settings.pixelRatioCap':
     'Highest number of pixels the battlefield is drawn with per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer. Sharpness and speed only: sizes are UI scale and game scale.',
   'settings.lowQuality':

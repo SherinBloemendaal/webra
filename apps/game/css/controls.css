@@ -66,8 +66,29 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 3.4em;
 }
 
+/* A choice: the label, then the segmented control on the same line while
+   both fit, or on a line of its own (larger UI scales, narrow cards). As a
+   grid column the control took its full width and squeezed the label to a
+   word per line. */
 .ui-row.ui-row-choice {
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ui-row.ui-row-choice > :first-child {
+  flex: 1 1 10em;
+  min-width: min(10em, 100%);
+}
+
+.ui-row.ui-row-choice > .ui-segmented,
+.ui-row.ui-row-choice > select {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.ui-row.ui-row-choice > .ui-hint {
+  flex: 1 0 100%;
 }
 
 /* A narrow card: the label takes a line of its own above the control. */
@@ -80,8 +101,10 @@
     grid-column: 1 / -1;
   }
 
-  .ui-row.ui-row-choice {
-    grid-template-columns: minmax(0, 1fr);
+  .ui-row.ui-row-choice > .ui-segmented,
+  .ui-row.ui-row-choice > select {
+    flex-basis: 100%;
+    margin-left: 0;
   }
 }
 

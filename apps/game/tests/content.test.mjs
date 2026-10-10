@@ -659,6 +659,7 @@ test('original cameos come from the icon sequence, opaque, without team remap', 
   const files = syntheticGraphics();
   const pic = originalCameoPixels('1TNK', (n) => files.get(n) ?? null);
   assert.deepEqual([pic.width, pic.height], [64, 48]);
+  assert.equal(pic.labelled, true, 'Red Alert cameos have the name in the picture');
   for (let i = 3; i < pic.rgba.length; i += 4) assert.equal(pic.rgba[i], 255);
   assert.equal(originalCameoPixels('3TNK', (n) => files.get(n) ?? null), null);
 });

@@ -50,31 +50,24 @@ export function screenOf(win) {
 
 /** The chrome is drawn for windows of at least this size (CSS px) at 100%. */
 export const UI_REFERENCE = Object.freeze({ width: 1600, height: 900 });
-/** Device pixel ratio from which a screen counts as high density (retina). */
-export const DENSE_RATIO = 1.75;
 /**
- * Auto on high-density desktop screens is this much smaller: their CSS
- * pixels are as large as on other screens, but they are laptops and close
- * monitors whose small text stays crisp, and the 100% sidebar looks big there.
+ * Auto never goes below this, so text stays readable (11 px text at 85% is
+ * 9.35 px). Auto ignores the pixel density: a CSS pixel has about the same
+ * size on retina and other screens, so the chrome does too.
  */
-export const DENSE_UI_FACTOR = 0.9;
-/** Auto never goes below these, so text stays readable (11 px text at 0.8 is 8.8 px, 17.6 device px on retina). */
-export const UI_AUTO_FLOOR = Object.freeze({ standard: 0.85, dense: 0.8 });
+export const UI_AUTO_FLOOR = 0.85;
 
 /**
  * The UI scale Auto picks. Phone layouts keep 100% (their drawers and touch
  * targets are made for the screen, css/touch.css). Desktop windows smaller
- * than UI_REFERENCE shrink the chrome so the battlefield keeps its room, a
- * little more on high-density screens, never below the readable floor and
- * never above 100%.
+ * than UI_REFERENCE shrink the chrome so the battlefield keeps its room,
+ * never below the readable floor and never above 100%.
  * @param {{ width: number, height: number, dpr?: number, compact?: boolean }} screen
  */
-export function autoUiScale({ width, height, dpr = 1, compact = false }) {
+export function autoUiScale({ width, height, compact = false }) {
   if (compact) return 1;
   const fit = Math.min(1, positive(width, UI_REFERENCE.width) / UI_REFERENCE.width, positive(height, UI_REFERENCE.height) / UI_REFERENCE.height);
-  const dense = positive(dpr, 1) >= DENSE_RATIO;
-  const floor = dense ? UI_AUTO_FLOOR.dense : UI_AUTO_FLOOR.standard;
-  return roundStep(clamp(fit * (dense ? DENSE_UI_FACTOR : 1), floor, 1), UI_SCALE_LIMITS.step);
+  return roundStep(clamp(fit, UI_AUTO_FLOOR, 1), UI_SCALE_LIMITS.step);
 }
 
 /** The UI scale for a setting value ('auto' or a factor) on a screen. */

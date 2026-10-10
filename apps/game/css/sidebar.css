@@ -391,6 +391,10 @@
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Rows as tall as their cameos: the cards clip their overflow, which lets
+     auto rows shrink below them to fit the grid, and then each row covered
+     the bottom of the one above. The grid scrolls instead. */
+  grid-auto-rows: max-content;
   gap: var(--sb-cameo-gap);
   align-content: start;
   padding: var(--sb-cameo-gap);
@@ -415,7 +419,8 @@
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 1;
+  /* Red Alert's 64x48 cameos (js/sidebar.js CAMEO_WIDTH, CAMEO_HEIGHT). */
+  aspect-ratio: 4 / 3;
   padding: 0;
   overflow: hidden;
   background: var(--ui-metal-0);
@@ -442,22 +447,31 @@
   height: 100%;
 }
 
+/* The name, on two lines at most (a long name ends in an ellipsis; the
+   tooltip has it in full). */
 #sidebar .sb-name {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   padding: 1px calc(2 * var(--ui-px));
   overflow: hidden;
   background: rgba(0, 0, 0, 0.72);
   color: #eef1f4;
-  font: 700 calc(8.5 * var(--ui-px)) / 1.25 var(--ui-font);
-  letter-spacing: 0.02em;
+  font: 700 calc(8 * var(--ui-px)) / 1.15 var(--ui-font);
   text-align: center;
-  text-overflow: ellipsis;
   text-transform: uppercase;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   pointer-events: none;
+}
+
+/* Red Alert's own cameos show the name in the picture. */
+#sidebar .sb-card.labelled .sb-name {
+  display: none;
 }
 
 /* Build clock: a shade that the progress wipes away clockwise from 12. */

@@ -7,9 +7,10 @@ import { decodeSprite } from './shp.js';
 import { decodePalette, paletteLookup } from './palette.js';
 
 /**
- * RGBA pixels of an actor's original cameo: `{ width, height, rgba }` or
- * null. Cameos keep their own colours (OpenRA draws them with the chrome
- * palette, no team remap).
+ * RGBA pixels of an actor's original cameo: `{ width, height, rgba, labelled }`
+ * or null. Cameos keep their own colours (OpenRA draws them with the chrome
+ * palette, no team remap). Red Alert's cameos have the name in the picture
+ * (`labelled`), so the sidebar leaves out its own label.
  */
 export function originalCameoPixels(actorId, getFile) {
   const entry = ACTOR_ART[String(actorId)] ?? ACTOR_ART[String(actorId).toUpperCase()];
@@ -30,7 +31,7 @@ export function originalCameoPixels(actorId, getFile) {
       // Cameos are opaque pictures: index 0 is black there, not a hole.
       if (v === 0) rgba[i * 4 + 3] = 255;
     }
-    return { width: frame.width, height: frame.height, rgba };
+    return { width: frame.width, height: frame.height, rgba, labelled: true };
   } catch {
     return null;
   }
@@ -39,8 +40,10 @@ export function originalCameoPixels(actorId, getFile) {
 /**
  * A cameo source for js/cameo.js: `(typeName, width, height) => canvas | null`.
  * `sources` are tried in order: each `(typeName) => { width, height, rgba }
- * | ImageBitmap-like { width, height, image } | null`. Pictures are scaled to
- * the button with nearest-neighbour sampling and cached per size.
+ * | ImageBitmap-like { width, height, image } | null`, with `labelled` when the
+ * picture shows the name. Pictures are scaled to the button with
+ * nearest-neighbour sampling and cached per size; the canvas carries
+ * `labelled` on to js/cameo.js.
  */
 export function cameoSource(sources, doc = globalThis.document) {
   const cache = new Map();
@@ -69,6 +72,7 @@ export function cameoSource(sources, doc = globalThis.document) {
       const w = Math.round(pic.width * scale);
       const h = Math.round(pic.height * scale);
       ctx.drawImage(src, Math.floor((width - w) / 2), Math.floor((height - h) / 2), w, h);
+      canvas.labelled = !!pic.labelled;
       break;
     }
     cache.set(key, canvas);
