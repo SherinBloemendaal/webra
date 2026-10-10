@@ -102,6 +102,11 @@ OVERRIDES = {
 }
 
 
+# Weapons and locomotors to number first (tools/gen_missions.py sets them).
+WEAPON_ORDER = []
+LOCOMOTOR_ORDER = []
+
+
 def wdist(v):
     """Parse an OpenRA WDist ('4c768' or '512') into world units (1 cell = 1024)."""
     if v is None or v == '':
@@ -834,7 +839,9 @@ def main():
     locos = parse_locomotors()
     ids_lower = {k.lower(): k for k in actors}
 
-    out_actors, used_weapons, used_locos = [], [], []
+    # Weapons and locomotors are numbered in order of first use; tools/gen_missions.py
+    # starts from the built-in order so mission rules keep the same indices.
+    out_actors, used_weapons, used_locos = [], list(WEAPON_ORDER), list(LOCOMOTOR_ORDER)
 
     def weapon_index(wname):
         wn = wl[wname.lower()]
@@ -1240,7 +1247,8 @@ def main():
             if loco not in used_locos:
                 used_locos.append(loco)
             e['unit'] = {
-                'speed': int(m['Speed']),
+                # MobileInfo / AircraftInfo.Speed default 1.
+                'speed': int(m.get('Speed', 1)),
                 'turn_speed': int(m.get('TurnSpeed', 512)),
                 'turn_in_place': str(m.get('AlwaysTurnInPlace', 'false')).lower() == 'true' or kind == 'infantry',
                 'locomotor': used_locos.index(loco),
