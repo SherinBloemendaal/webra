@@ -12,7 +12,8 @@
         { "type": "json", "path": "apps/game/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/server/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/website/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/protocol/package.json", "jsonpath": "$.version" }
+        { "type": "json", "path": "packages/protocol/package.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "packages/protocol/src/version.js" }
       ]
     }
   }

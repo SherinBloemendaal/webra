@@ -275,7 +275,8 @@ impl Game {
         // The ore mines, tech buildings and villages a game on this map gets
         // (mapgen/sites.rs, settlements.rs).
         data.actors = mapgen::sites::world_actors(&m, &rules::Rules::load(), biome, tech, seed as u64);
-        Ok(data.canonical_json())
+        // A map file of the current format, stamped with this release (docs/contracts.md "Map versions").
+        Ok(data.file_json())
     }
 
     /// Lobby preview of a map file: RGBA, one pixel per cell, spawns marked.
