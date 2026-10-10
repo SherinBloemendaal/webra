@@ -478,8 +478,12 @@ account with the `content_autoinstall` flag (or an admin) and the
 `contentRelay` site setting (401, 403 `account_inactive` or
 `relay_forbidden` otherwise). The request must carry
 `X-WebRA-Content: 1`, come from the game page (`Origin` absent or ours,
-`Sec-Fetch-Site` absent or `same-origin`) and stay within 3 downloads per
-hour per IP (D1 quota table, IP as a salted hash; 429 with `Retry-After`).
+`Sec-Fetch-Site` absent or `same-origin`) and stay within the budgets: 8
+completed downloads per account per UTC day, 20 completed downloads and 30
+requests per network (an IPv4 address or an IPv6 /64) per hour (D1 quota
+table, account and network as salted hashes; a download that does not
+complete is given back; 429 with `Retry-After` and `retryAfter` and `scope`
+in the body, docs/accounts-api.md 7.3).
 The Worker tries the mirrors in order (`openra.baxxster.no`,
 `republic.community`, `openra.0x47.net`, `openra.ppmsite.com`) with
 `cache: 'no-store'` (Cloudflare's cache bypassed), takes the first answer
@@ -496,8 +500,9 @@ same-origin checks as above. The request carries `Range: bytes=a-b` (or
 `bytes=a-`): one range inside `scores.mix` (64,171,360 bytes), at most
 8 MiB (8,388,608 bytes); otherwise `416 bad_range` with `Content-Range:
 bytes */64171360`. Budgets: 256 MiB per account per UTC day (each request
-counts its length rounded up to whole MiB) and 64 requests per IP per hour
-(429 with `Retry-After`). The Worker reads the matching window of the
+counts its length rounded up to whole MiB; a piece that does not arrive
+whole is given back) and 64 requests per network per hour (429 with
+`Retry-After`, `retryAfter` and `scope`). The Worker reads the matching window of the
 pinned Allied disc image, then the Soviet one (`scores.mix` is the same on
 both), from the Internet Archive with `Range`, `redirect: 'manual'` (one
 redirect to an archive data node with the same item and path) and `cache:

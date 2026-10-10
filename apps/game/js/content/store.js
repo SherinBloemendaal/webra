@@ -4,18 +4,22 @@
 //
 // Object stores of the "webra-content" database:
 // - files: { name, bytes (ArrayBuffer), size, from, kind } from the player's
-//   own Red Alert files: sounds (.aud and voice variants, kind "sound"),
+//   own Red Alert files (and `at`, when it was installed): sounds (.aud and voice variants, kind "sound"),
 //   graphics (.shp, .pal, .tem, .sno, .des, kind "graphics") and movies
 //   (.vqa, kind "movie").
-// - meta: { name, size, kind } per file, so the settings panel can show what
-//   is installed without reading every file.
+// - meta: { name, size, kind, at? } per file (`at`: when it was installed),
+//   so the settings panel can show what is installed without reading every
+//   file.
 // - packs: texture packs, { id, name, author, version, license, description,
 //   manifest, files: { path: ArrayBuffer }, size, enabled, order, installedAt }.
-// - partials: pieces of a download that is not finished yet, { id
-//   ("<download>:<index>"), key, index, bytes (ArrayBuffer) }, so a download
-//   cut off (closed tab, lost network) goes on where it stopped. They are
-//   removed once the download is installed or found to be wrong; they are
-//   never content the game uses.
+// - partials: downloads kept by the installer, { id ("<download>:<index>"),
+//   key, index, bytes (ArrayBuffer), info? }, never content the game uses:
+//   pieces of a download that is not finished yet, so a download cut off
+//   (closed tab, lost network) goes on where it stopped (removed once the
+//   download is installed or found to be wrong), and the last
+//   ra-quickinstall.zip (content/index.js KEPT_PACKAGE, with the names it
+//   was searched for in `info`), so files a newer WebRA wants come out of it
+//   without a new download (removed with the installed content).
 
 const DB_NAME = 'webra-content';
 const DB_VERSION = 3;
@@ -69,7 +73,7 @@ const finished = (tx) =>
     tx.onabort = () => reject(storageProblem(tx.error ?? new Error('transaction aborted')));
   });
 
-const metaOf = (r) => ({ name: r.name, size: r.size ?? r.bytes?.byteLength ?? 0, kind: r.kind ?? kindOf(r.name) });
+const metaOf = (r) => ({ name: r.name, size: r.size ?? r.bytes?.byteLength ?? 0, kind: r.kind ?? kindOf(r.name), ...(Number.isFinite(r.at) ? { at: r.at } : {}) });
 
 export class IdbStore {
   constructor(db) {
@@ -191,12 +195,12 @@ export class IdbStore {
 
   // ---- Unfinished downloads ---------------------------------------------------------
 
-  /** Keep piece `index` of the download `key` (StorageError when the browser cannot). */
-  async putPartial(key, index, bytes) {
+  /** Keep piece `index` of the download `key`, with `info` about it (StorageError when the browser cannot). */
+  async putPartial(key, index, bytes, info = null) {
     let tx;
     try {
       tx = this.db.transaction(PARTIALS, 'readwrite');
-      tx.objectStore(PARTIALS).put({ id: partialId(key, index), key, index, bytes });
+      tx.objectStore(PARTIALS).put({ id: partialId(key, index), key, index, bytes, ...(info === null ? {} : { info }) });
     } catch (err) {
       throw storageProblem(err);
     }
@@ -208,6 +212,13 @@ export class IdbStore {
     const tx = this.db.transaction(PARTIALS, 'readonly');
     const all = await done(tx.objectStore(PARTIALS).getAll(partialRange(key)));
     return new Map(all.filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+
+  /** The kept pieces of `key` with their info: [{ index, bytes, info }] by index. */
+  async partialRecords(key) {
+    const tx = this.db.transaction(PARTIALS, 'readonly');
+    const all = await done(tx.objectStore(PARTIALS).getAll(partialRange(key)));
+    return all.filter((r) => r.key === key).map((r) => ({ index: r.index, bytes: r.bytes, info: r.info ?? null }));
   }
 
   /** Forget the pieces of `key`. */
@@ -255,11 +266,18 @@ export class MemoryStore {
   async deletePack(id) {
     this.packMap.delete(id);
   }
-  async putPartial(key, index, bytes) {
-    this.partialMap.set(partialId(key, index), { key, index, bytes });
+  async putPartial(key, index, bytes, info = null) {
+    this.partialMap.set(partialId(key, index), { key, index, bytes, info });
   }
   async partials(key) {
     return new Map([...this.partialMap.values()].filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+  async partialRecords(key) {
+    return [...this.partialMap.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, r]) => r)
+      .filter((r) => r.key === key)
+      .map((r) => ({ index: r.index, bytes: r.bytes, info: r.info ?? null }));
   }
   async clearPartials(key) {
     for (const [id, r] of [...this.partialMap]) if (r.key === key) this.partialMap.delete(id);

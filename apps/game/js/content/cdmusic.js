@@ -17,7 +17,7 @@
 // checks the whole file against SCORES_SHA256, and only then installs it
 // like a picked scores.mix. A file that does not match is thrown away.
 
-import { relayProblem } from './download.js';
+import { relayProblem, RelayLimitError } from './download.js';
 
 export const SCORES_URL = '/api/content/ra-scores';
 /** scores.mix on both freeware discs: its size and SHA-256 (the server pins the same). */
@@ -68,7 +68,7 @@ export class CancelledError extends Error {
   }
 }
 
-/** A refusal from the server that trying again will not change (401, 403, 416, 429). */
+/** A refusal from the server that trying again will not change (401, 403, 416; 429 is a RelayLimitError). */
 class Refused extends Error {}
 
 /** The relay could not reach the archive (5xx): worth one more try per download at most. */
@@ -89,6 +89,8 @@ async function fetchPiece(i, { fetchImpl, signal, onBytes }) {
   }
   if (res.status !== 206 || !res.body) {
     const problem = await relayProblem(res);
+    // A used up budget (429) keeps its time to try again; no refusal is retried here.
+    if (problem instanceof RelayLimitError) throw problem;
     if (res.status >= 400 && res.status < 500) throw new Refused(problem.message);
     throw res.status >= 500 ? new Unavailable(problem.message) : problem;
   }
@@ -167,7 +169,7 @@ export async function downloadScores({
       try {
         piece = await fetchPiece(i, { fetchImpl, signal, onBytes });
       } catch (err) {
-        if (err instanceof CancelledError || err instanceof Refused || attempt >= PIECE_TRIES) throw err;
+        if (err instanceof CancelledError || err instanceof Refused || err instanceof RelayLimitError || attempt >= PIECE_TRIES) throw err;
         if (err instanceof Unavailable && unavailableLeft-- <= 0) throw err;
       }
     }

@@ -1,13 +1,15 @@
 // Original Red Alert content: the "Original content" dialog (lobby button,
 // game menu, Sound dialog) and the start screen notice.
 //
-// The dialog: the graphics and sounds choice; installing the original
-// content (sounds and graphics in one flow) in three steps (download
-// ra-quickinstall.zip from a mirror, drop or pick it, done) with live
-// progress and a summary; the one-click download through WebRA's server
-// for accounts allowed to use it (content/download.js canAutoInstall),
-// with the music from the freeware CDs (content/cdmusic.js) next to it;
-// other ways (a freeware CD image, own Red Alert files, a folder); the
+// The dialog: what is installed (none, partly, everything the one-click
+// install covers, with counts, date and storage) and the one action that
+// fits it; for accounts allowed to use WebRA's relays (content/download.js
+// canAutoInstall) one "Install everything" button for every part the relays
+// serve (the package and the music from the freeware CDs, content/cdmusic.js)
+// with one progress, a line per part, one Cancel and a summary; the ways to
+// install in tabs (the one-click install, and the manual steps: download
+// ra-quickinstall.zip from a mirror, drop or pick it, done; a freeware CD
+// image; own Red Alert files; a folder); the graphics and sounds choice; the
 // texture pack manager.
 //
 // The notice: a dismissible card on the start screen (dismissal is a synced
@@ -18,16 +20,18 @@
 import { GRAPHICS_SETTING } from './index.js';
 import { segmented, toggle } from '../ui/controls.js';
 import { packSummary, PackError } from './packs.js';
-import { MUSIC_SOURCE_HINT } from '../audio/catalog.js';
 import {
   downloadQuickInstall,
+  formatWait,
+  RelayLimitError,
   dismissNotice,
   DOWNLOAD_NOTICE,
+  KEPT_NOTICE,
   LEGAL_NOTICE,
   QUICKINSTALL_BYTES,
   QUICKINSTALL_MIRRORS,
 } from './download.js';
-import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, SCORES_BYTES } from './cdmusic.js';
+import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, SCORES_BYTES, SCORES_PARTIAL } from './cdmusic.js';
 
 export { QUICKINSTALL_MIRRORS };
 
@@ -79,11 +83,6 @@ export function canPickFolder(doc = globalThis.document) {
   }
 }
 
-/** Whether music is installed, and where it comes from when it is not (catalog.js MUSIC_SOURCE_HINT). */
-export function musicText(tracks) {
-  return tracks ? `Music: ${plural(tracks, 'track', 'tracks')}.` : `Music: none. ${MUSIC_SOURCE_HINT}`;
-}
-
 /** Movie names for the player ("landing.vqa", ...: "landing, prolog and 3 more"). */
 export function movieList(names, shown = 8) {
   const bare = names.map((n) => n.replace(/\.vqa$/i, ''));
@@ -91,36 +90,55 @@ export function movieList(names, shown = 8) {
   return `${bare.slice(0, shown).join(', ')} and ${bare.length - shown} more`;
 }
 
-/** Whether movies are installed, and where they come from when they are not. */
-export function moviesText(count, bytes = 0) {
-  return count
-    ? `Movies: ${plural(count, 'movie', 'movies')} (${formatBytes(bytes)}); missions play them full screen.`
-    : 'Movies: none; missions show a card instead (they come from movies1.mix and movies2.mix on the Allied and Soviet CDs, not in ra-quickinstall.zip).';
-}
+/**
+ * The parts of the one-click install, in the order they run: the package
+ * (ra-quickinstall.zip: graphics, sounds, unit voices, the announcer) and
+ * the music from the freeware CDs. Those are what WebRA's relays serve; the
+ * movies and the Counterstrike and Aftermath music come from a CD image or
+ * the player's own copy (Other ways to install).
+ */
+export const ONE_CLICK_PARTS = Object.freeze(['package', 'music']);
+export const PART_LABELS = Object.freeze({ package: 'Graphics, sounds, voices and announcer', music: 'Music from the freeware CDs' });
+const PART_BYTES = Object.freeze({ package: QUICKINSTALL_BYTES, music: SCORES_BYTES });
+/** What the one-click install downloads at most. */
+export const ONE_CLICK_BYTES = QUICKINSTALL_BYTES + SCORES_BYTES;
+const ENTRY_STATES = Object.freeze({ partial: 'partly installed', complete: 'installed' });
+const STATE_TITLES = Object.freeze({ none: 'Not installed', partial: 'Partly installed', complete: 'Original content installed' });
+const ONE_CLICK_SUMMARY = `One button installs the original graphics, sounds, unit voices, the announcer and the music (${formatBytes(ONE_CLICK_BYTES)} at most) and keeps them on this device. Movies and the Counterstrike and Aftermath music are not part of it: they come from a CD image or your own copy (Other ways to install).`;
 
-/** The installed summary as text (content/install.js contentSummary). */
-export function summaryText(s) {
-  if (!s.total) return `Nothing installed yet. WebRA uses its own art and synthesized sounds. ${musicText(0)}`;
+/**
+ * What is installed (content/install.js contentSummary) as the dialog shows
+ * it: `level` none, partial or complete (everything the one-click install
+ * covers is there), `installed` lines per category with counts, `missing`
+ * lines for what a complete install would add, and `parts`: which one-click
+ * parts (ONE_CLICK_PARTS) are needed.
+ */
+export function contentState(s) {
   const b = s.byCategory;
-  const parts = [];
-  const sounds = b.effects + b.voices + b.announcer;
-  if (sounds) {
-    parts.push(
-      `Sounds: ${plural(b.effects, 'effect', 'effects')}, ${plural(b.voices, 'unit voice', 'unit voices')}, ${plural(b.announcer, 'announcer line', 'announcer lines')} (${formatBytes(s.bytes.sounds)}).`,
-    );
-  } else {
-    parts.push('Sounds: none (they come from sounds.mix, allies.mix, russian.mix and speech.mix, all in ra-quickinstall.zip).');
+  const missing = [];
+  if (!b.graphics) missing.push('Graphics: units, structures, cameos and terrain (conquer.mix, hires.mix and the theater archives, in ra-quickinstall.zip)');
+  else {
+    if (s.palette === false) missing.push('The palette from temperat.mix (the graphics cannot be used without it)');
+    for (const t of ['TEMPERAT', 'SNOW']) if (!s.theaters.includes(t)) missing.push(`Terrain for ${THEATER_NAMES[t]} maps`);
   }
-  parts.push(musicText(b.music));
+  if (!b.effects) missing.push('Sound effects (sounds.mix, in ra-quickinstall.zip)');
+  if (!b.voices) missing.push('Unit voices (allies.mix and russian.mix, in ra-quickinstall.zip)');
+  if (!b.announcer) missing.push('Announcer (EVA) (speech.mix, in ra-quickinstall.zip)');
+  const packageNeeded = missing.length > 0;
+  if (!b.music) missing.push('Music (scores.mix: not in ra-quickinstall.zip; on the freeware CD images)');
+  const installed = [];
   if (b.graphics) {
-    const theaters = s.theaters.length ? s.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') : 'none';
-    parts.push(`Graphics: ${plural(b.graphics, 'file', 'files')} (${formatBytes(s.bytes.graphics)}); terrain for ${theaters}.`);
-    if (s.palette === false) parts.push('The graphics cannot be used yet: the palette from temperat.mix is missing. Install ra-quickinstall.zip or main.mix to complete them.');
-  } else {
-    parts.push('Graphics: none (they come from conquer.mix, hires.mix and the theater archives, all in ra-quickinstall.zip).');
+    const theaters = s.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') || 'no maps';
+    installed.push(`Graphics: ${plural(b.graphics, 'file', 'files')} (${formatBytes(s.bytes.graphics)}), terrain for ${theaters}`);
   }
-  parts.push(moviesText(b.movies ?? 0, s.bytes?.movies ?? 0));
-  return `Installed on this device. ${parts.join(' ')}`;
+  if (b.effects) installed.push(`Sound effects: ${b.effects}`);
+  if (b.voices) installed.push(`Unit voices: ${b.voices}`);
+  if (b.announcer) installed.push(`Announcer (EVA): ${plural(b.announcer, 'line', 'lines')}`);
+  if (b.music) installed.push(`Music: ${plural(b.music, 'track', 'tracks')}`);
+  // Not part of the one-click install: said, never counted as missing.
+  if (s.total) installed.push(b.movies ? `Movies: ${b.movies} (${formatBytes(s.bytes.movies ?? 0)})` : 'Movies: none (missions show a card; they come from the CD images)');
+  const level = !s.total ? 'none' : missing.length ? 'partial' : 'complete';
+  return { level, installed, missing, parts: { package: packageNeeded, music: !b.music } };
 }
 
 /** The outcome of one install as short lines for the result card (content/install.js report). */
@@ -139,6 +157,7 @@ export function installResultLines(r) {
     if (r.movies?.length) lines.push(`Movies: ${movieList(r.movies)}.`);
     if (r.switched) lines.push('The game now uses the original graphics. You can switch back below or under Use.');
   }
+  if (r.kept) lines.push('ra-quickinstall.zip is kept on this device: installing again or a WebRA update needs no new download.');
   if (r.errors?.length) lines.push(`Skipped: ${r.errors.slice(0, 3).join('; ')}${r.errors.length > 3 ? '; ...' : ''}`);
   return lines;
 }
@@ -197,8 +216,9 @@ function stepDownload() {
  * @param {HTMLElement} root
  * @param {import('./index.js').ContentSystem} content
  * @param {import('../audio/index.js').AudioSystem | null} audio
- * @param {{ actorNames?: Map<string, string>, autoInstall?: boolean, fetchImpl?: typeof fetch }} [opts]
- *   autoInstall: offer the one-click download (content/download.js canAutoInstall)
+ * @param {{ actorNames?: Map<string, string>, autoInstall?: boolean, fetchImpl?: typeof fetch, onState?(level: string): void }} [opts]
+ *   autoInstall: offer the one-click install (content/download.js canAutoInstall);
+ *   onState: the installed state (contentState level) after every refresh
  */
 export function mountContentSettings(root, content, audio, opts = {}) {
   root.classList.add('audio-settings', 'content-settings');
@@ -238,7 +258,6 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   const choiceRow = (text, group) => el('div', { class: 'ui-row ui-row-choice' }, el('span', { class: 'ui-label', text }), group.root);
 
   // ---- Install --------------------------------------------------------------------------
-  const status = el('p', { class: 'audio-status', role: 'status', 'aria-live': 'polite' });
   const files = el('input', { type: 'file', multiple: true, accept: ACCEPT_CONTENT, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
   const folder = el('input', { type: 'file', multiple: true, hidden: true, webkitdirectory: true, 'aria-hidden': 'true', tabindex: '-1' });
   const pickFiles = el('button', { type: 'button', text: 'Choose Red Alert files...' });
@@ -314,20 +333,48 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     result.hidden = false;
   };
 
-  // The one-click download, only for accounts allowed to use it.
-  const download = el('button', { type: 'button', class: 'primary', text: `Download and install (${formatBytes(QUICKINSTALL_BYTES)})` });
-  // The music is not in that package: it comes from the freeware CDs, by range (content/cdmusic.js).
-  const MUSIC_LABEL = `Music (from the freeware Red Alert CDs, ${formatBytes(SCORES_BYTES)})`;
-  const music = el('button', { type: 'button', text: MUSIC_LABEL });
-  const cancelMusic = el('button', { type: 'button', text: 'Cancel', hidden: true });
-  const autoBox = el(
+  // ---- State and the one-click install ----------------------------------------------------
+  // What is installed (contentState) with the one action that fits it. The
+  // one-click install (accounts allowed to use WebRA's relays) is a single
+  // button for every part the relays serve (ONE_CLICK_PARTS): one progress
+  // bar over all parts, a line per part (a failed part gets its own retry
+  // there), one Cancel. The package comes from the kept ZIP when there is
+  // one, the music goes on from its kept pieces. Nothing retries on its own.
+  let autoInstall = !!opts.autoInstall;
+  let current = null; // { state, kept, musicKept } of the last sync
+  const stateIcon = el('span', { class: 'content-state-icon', 'aria-hidden': 'true' });
+  const stateTitleText = el('span', { text: 'Original content' });
+  const stateTitle = el('h3', { id: 'content-state-title' }, stateIcon, stateTitleText);
+  const stateList = el('ul', { class: 'content-state-list' });
+  const missingTitle = el('p', { class: 'audio-note content-missing-title', text: 'Missing:', hidden: true });
+  const missingList = el('ul', { class: 'content-state-list content-missing', hidden: true });
+  const stateMeta = el('p', { class: 'audio-note content-state-meta' });
+  const installAll = el('button', { type: 'button', class: 'primary content-install-all', text: 'Install everything' });
+  const cancel = el('button', { type: 'button', text: 'Cancel', hidden: true });
+  const checkMissing = el('button', { type: 'button', text: 'Check for missing files', hidden: true });
+  const reinstall = el('button', { type: 'button', text: 'Reinstall...', hidden: true });
+  const confirmText = el('p', { class: 'audio-note', id: 'content-confirm-text' });
+  const confirmYes = el('button', { type: 'button', class: 'danger', text: 'Reinstall' });
+  const confirmNo = el('button', { type: 'button', text: 'Keep it' });
+  const confirmBox = el(
     'div',
-    { class: 'content-auto', hidden: !opts.autoInstall },
-    el('p', { class: 'audio-note', text: 'Your account may use the one-click install:' }),
-    el('div', { class: 'audio-buttons' }, download, music, cancelMusic),
-    el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
-    el('p', { class: 'audio-note', text: MUSIC_NOTICE }),
+    { class: 'content-confirm', role: 'group', 'aria-labelledby': 'content-confirm-text', hidden: true },
+    confirmText,
+    el('div', { class: 'audio-buttons' }, confirmYes, confirmNo),
   );
+  const stateBox = el(
+    'div',
+    { class: 'content-state', role: 'region', 'aria-labelledby': 'content-state-title', 'data-level': 'none' },
+    stateTitle,
+    stateList,
+    missingTitle,
+    missingList,
+    stateMeta,
+    el('div', { class: 'audio-buttons content-actions' }, installAll, cancel, checkMissing, reinstall, remove),
+    confirmBox,
+  );
+  // One line per part while (and after) the one-click install runs.
+  const partList = el('ul', { class: 'content-parts', 'aria-label': 'Parts of the install', hidden: true });
 
   // ---- Packs ----------------------------------------------------------------------------
   const packFile = el('input', { type: 'file', accept: ACCEPT_PACK, hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
@@ -337,11 +384,61 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   const preview = el('div', { class: 'content-preview', hidden: true });
   const packStatus = el('p', { class: 'audio-progress', 'aria-live': 'polite' });
 
+  // A relay budget that is used up (429) holds its part back until the server takes it again
+  // (partId -> unix ms); nothing retries on its own.
+  const limitedUntil = new Map();
+  const limited = (id) => (limitedUntil.get(id) ?? 0) > Date.now();
+  const retryButtons = new Set();
   const busy = (on) => {
     running = on;
-    for (const b of [pickFiles, pickFolder, remove, pickPack, download, music, dropzone]) b.disabled = on;
+    for (const b of [pickFiles, pickFolder, remove, pickPack, dropzone, checkMissing, reinstall, ...retryButtons]) b.disabled = on;
+    renderAction();
     root.setAttribute('aria-busy', String(on));
   };
+  const limit = (id, err) => {
+    if (!(err instanceof RelayLimitError) || !err.retryAt) return;
+    limitedUntil.set(id, err.retryAt);
+    // Timers longer than about 24.8 days fire at once; the server's windows are a day at most.
+    const timer = setTimeout(() => {
+      limitedUntil.delete(id);
+      renderAction();
+    }, Math.min(err.retryAt - Date.now(), 2 ** 31 - 1));
+    // Where timers can hold a process open (Node), this one does not.
+    timer?.unref?.();
+  };
+
+  /** The parts the one-click install would run now (needed, or all of them to reinstall), without held back ones. */
+  const neededParts = ({ all = false } = {}) => ONE_CLICK_PARTS.filter((id) => all || current?.state.parts[id]);
+  /** Bytes a run of `ids` downloads (the kept ZIP and kept music pieces need none). */
+  const downloadBytes = (ids) =>
+    ids.reduce((n, id) => n + (id === 'package' ? (current?.kept ? 0 : QUICKINSTALL_BYTES) : SCORES_BYTES - (current?.musicKept ?? 0)), 0);
+
+  /** The install button: what it would do now, or why it cannot. */
+  function renderAction() {
+    installAll.hidden = !autoInstall;
+    reinstall.hidden = !autoInstall || !current || current.state.level === 'none';
+    checkMissing.hidden = !current?.kept || current.state.level === 'none';
+    remove.hidden = !current || current.state.level === 'none';
+    const level = current?.state.level ?? 'none';
+    const ids = neededParts().filter((id) => !limited(id));
+    const held = neededParts().filter((id) => limited(id));
+    if (level === 'complete') {
+      installAll.textContent = 'Everything is installed';
+      installAll.disabled = true;
+      return;
+    }
+    if (!ids.length && held.length) {
+      const at = Math.min(...held.map((id) => limitedUntil.get(id)));
+      installAll.textContent = `Try again ${formatWait(Math.max(1, Math.ceil((at - Date.now()) / 1000)))}`;
+      installAll.disabled = true;
+      return;
+    }
+    const bytes = downloadBytes(ids);
+    const size = bytes ? formatBytes(bytes) : 'no download';
+    installAll.textContent = `${level === 'partial' ? 'Install missing parts' : resumable ? 'Resume the install' : 'Install everything'} (${size})`;
+    installAll.disabled = running;
+  }
+  let resumable = false;
 
   const sync = async () => {
     graphics.set(content.graphics);
@@ -361,14 +458,45 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       soundsNote.textContent = haveSounds
         ? 'Original sounds: effects, unit voices, announcer lines and music from your files. WebRA keeps its own sounds for anything missing.'
         : 'Original is off until the original content is installed: install it below to hear the original sounds.';
-      status.textContent = summaryText(s);
-      remove.hidden = s.total === 0;
-      if (content.storeError) status.textContent += ` (Browser storage is unavailable: ${content.storeError}. Installed content lasts until you leave this page.)`;
+      const state = contentState(s);
+      const kept = !!(await content.keptPackage?.().catch(() => null));
+      let musicKept = 0;
+      try {
+        const store = await content.store?.();
+        for (const b of (await store?.partials?.(SCORES_PARTIAL))?.values() ?? []) musicKept += b?.byteLength ?? 0;
+      } catch {
+        // No store: nothing kept.
+      }
+      current = { state, kept, musicKept };
+      stateBox.dataset.level = state.level;
+      stateTitleText.textContent = STATE_TITLES[state.level];
+      stateList.replaceChildren(...state.installed.map((t) => el('li', { text: t })));
+      missingTitle.hidden = missingList.hidden = state.level !== 'partial';
+      missingList.replaceChildren(...state.missing.map((t) => el('li', { text: t })));
+      stateMeta.textContent = await metaText(s);
+      if (content.storeError) stateMeta.textContent += ` Browser storage is unavailable (${content.storeError}): installed content lasts until you leave this page.`;
+      opts.onState?.(state.level);
     } catch (err) {
-      status.textContent = `Could not read installed content: ${err.message ?? err}`;
+      stateMeta.textContent = `Could not read installed content: ${err.message ?? err}`;
     }
+    renderAction();
     renderPacks();
   };
+
+  /** "Installed 9 October 2026. 31.2 MB in this browser; WebRA uses 48.0 MB of storage on this device." */
+  async function metaText(s) {
+    if (!s.total) return 'Nothing installed yet: WebRA uses its own art and synthesized sounds.';
+    const size = formatBytes(s.bytes.sounds + s.bytes.graphics + (s.bytes.movies ?? 0));
+    const when = s.installedAt ? `Installed ${new Date(s.installedAt).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}. ` : '';
+    let usage = '';
+    try {
+      const est = await globalThis.navigator?.storage?.estimate?.();
+      if (est?.usage) usage = `; WebRA uses ${formatBytes(est.usage)} of storage on this device`;
+    } catch {
+      // Not offered.
+    }
+    return `${when}${size} in this browser${usage}.`;
+  }
 
   const install = async (list) => {
     if (!list.length) return null;
@@ -397,76 +525,170 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     return report;
   };
 
-  const fetchAndInstall = async () => {
-    if (running) return null;
-    busy(true);
-    result.hidden = true;
-    showProgress('Starting the download...', 0);
-    let file;
-    try {
-      file = await downloadQuickInstall({
-        fetchImpl: opts.fetchImpl,
-        onProgress: (n, total) => showProgress(`Downloading: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total),
-      });
-    } catch (err) {
-      hideProgress();
-      showResult('Download failed', [`${err.message ?? err}.`, 'You can download the file from a mirror yourself (step 1) and drop it here.'], false);
-      busy(false);
-      return null;
+  // ---- The one-click install run ---------------------------------------------------------
+  let abort = null;
+  const partRows = new Map();
+  /** Set a part's line: `phase` (waiting, running, done, failed, cancelled), its text, and a retry for a failed part. */
+  const setPart = (id, phase, text, retry = false) => {
+    let row = partRows.get(id);
+    if (!row) {
+      const label = el('strong', { text: PART_LABELS[id] });
+      const status = el('span', { class: 'content-part-status' });
+      const again = el('button', { type: 'button', class: 'ui-mini', text: 'Retry', 'aria-label': `Retry: ${PART_LABELS[id]}` });
+      again.addEventListener('click', () => runParts([id]));
+      retryButtons.add(again);
+      row = { li: el('li', { class: 'content-part' }, label, status, again), status, again };
+      partRows.set(id, row);
+      partList.append(row.li);
     }
-    busy(false);
-    return install([file]);
+    row.li.dataset.phase = phase;
+    row.status.textContent = text;
+    row.again.hidden = !retry;
+    row.again.disabled = running || limited(id);
+    partList.hidden = false;
   };
-  download.addEventListener('click', fetchAndInstall);
 
-  // The music: pieces of scores.mix through the relay, kept as they arrive,
-  // so Cancel, a failure or a closed tab lose nothing; the same button goes on.
-  let musicAbort = null;
-  const fetchMusic = async () => {
-    if (running) return null;
+  /** One part: returns the install report; throws (CancelledError when cancelled). */
+  async function runPart(id, signal, onBytes) {
+    const cancelled = () => signal.aborted && new CancelledError();
+    if (id === 'package') {
+      const kept = await content.keptPackage?.().catch(() => null);
+      let file = kept?.file;
+      if (file) {
+        onBytes(QUICKINSTALL_BYTES);
+        setPart(id, 'running', 'installing from the kept ZIP (no download)');
+      } else {
+        setPart(id, 'running', 'downloading');
+        try {
+          file = await downloadQuickInstall({ fetchImpl: opts.fetchImpl, signal, onProgress: (n) => onBytes(n) });
+        } catch (err) {
+          throw cancelled() || err;
+        }
+        setPart(id, 'running', 'installing');
+      }
+      if (signal.aborted) throw new CancelledError();
+      return content.install([file], { onProgress: (t) => setPart(id, 'running', `${t.charAt(0).toLowerCase()}${t.slice(1)}`) });
+    }
+    const store = await content.store();
+    setPart(id, 'running', 'downloading');
+    const file = await downloadScores({ store, fetchImpl: opts.fetchImpl, signal, onProgress: (n) => onBytes(n) });
+    setPart(id, 'running', 'installing');
+    const report = await content.install([file]);
+    await forgetScoresDownload(store).catch(() => {});
+    return report;
+  }
+
+  /**
+   * Run the one-click install for the parts `ids` (by default what is
+   * missing): one progress over all of them, one Cancel, then a summary.
+   * Returns { reports, failed, cancelled } or null when something else runs.
+   */
+  async function runParts(ids = neededParts().filter((id) => !limited(id))) {
+    if (running || !ids.length) return null;
     busy(true);
     result.hidden = true;
-    musicAbort = new AbortController();
-    cancelMusic.hidden = false;
-    cancelMusic.disabled = false;
-    showProgress('Starting the music download...', 0);
-    let file;
-    let store;
+    confirmBox.hidden = true;
+    abort = new AbortController();
+    cancel.hidden = false;
+    cancel.disabled = false;
+    partList.replaceChildren();
+    partRows.clear();
+    for (const b of retryButtons) retryButtons.delete(b);
+    for (const id of ids) setPart(id, 'waiting', 'waiting');
+    const total = ids.reduce((n, id) => n + PART_BYTES[id], 0);
+    const got = new Map(ids.map((id) => [id, 0]));
+    const draw = () => {
+      const n = [...got.values()].reduce((a, b) => a + b, 0);
+      showProgress(`Installing the original content: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total);
+    };
+    draw();
+    const reports = [];
+    const failed = [];
+    let cancelled = false;
+    for (const id of ids) {
+      if (abort.signal.aborted) {
+        cancelled = true;
+        setPart(id, 'cancelled', 'cancelled', true);
+        continue;
+      }
+      try {
+        const report = await runPart(id, abort.signal, (n) => {
+          got.set(id, Math.min(n, PART_BYTES[id]));
+          draw();
+        });
+        got.set(id, PART_BYTES[id]);
+        draw();
+        reports.push(report);
+        setPart(id, 'done', report.added ? `done: ${report.added} files` : 'done: nothing new');
+      } catch (err) {
+        if (err instanceof CancelledError || abort.signal.aborted) {
+          cancelled = true;
+          setPart(id, 'cancelled', id === 'music' ? 'cancelled; the parts already downloaded are kept' : 'cancelled', true);
+          continue;
+        }
+        limit(id, err);
+        failed.push(id);
+        setPart(id, 'failed', `failed: ${err.message ?? err}`, true);
+      }
+    }
+    abort = null;
+    cancel.hidden = true;
+    if (reports.some((r) => r.added)) await audio?.reloadInstalled();
+    hideProgress();
+    busy(false);
+    resumable = cancelled;
+    await sync();
+    for (const [id, row] of partRows) row.again.disabled = limited(id);
+    const added = reports.reduce((n, r) => n + (r.added ?? 0), 0);
+    const lines = [];
+    if (added) lines.push(`Installed ${plural(added, 'file', 'files')}.`);
+    if (reports.some((r) => r.switched)) lines.push('The game now uses the original graphics. You can switch back under Use.');
+    if (reports.some((r) => r.kept)) lines.push('ra-quickinstall.zip is kept on this device: installing again or a WebRA update needs no new download.');
+    if (failed.length) lines.push(`Not installed: ${failed.map((id) => PART_LABELS[id].toLowerCase()).join(', ')}. Retry above, or install the files yourself (Other ways to install).`);
+    if (cancelled) lines.push('Cancelled. Install again to go on: the music goes on where it stopped.');
+    const title = cancelled ? 'Install cancelled' : failed.length ? 'Install incomplete' : current?.state.level === 'complete' ? 'Original content installed' : 'Installed';
+    showResult(title, lines.length ? lines : ['Nothing new was installed.'], added > 0);
+    return { reports, failed, cancelled };
+  }
+
+  installAll.addEventListener('click', () => runParts());
+  cancel.addEventListener('click', () => {
+    cancel.disabled = true;
+    abort?.abort();
+  });
+  reinstall.addEventListener('click', () => {
+    const bytes = downloadBytes(ONE_CLICK_PARTS);
+    confirmText.textContent = `Install every part again? ${bytes ? `This downloads ${formatBytes(bytes)}` : 'Nothing is downloaded'}${current?.kept ? '; the graphics and sounds come from the kept ZIP' : ''}. What is installed stays until the new files replace it.`;
+    confirmBox.hidden = false;
+    confirmNo.focus();
+  });
+  confirmNo.addEventListener('click', () => {
+    confirmBox.hidden = true;
+    reinstall.focus();
+  });
+  confirmYes.addEventListener('click', () => runParts(ONE_CLICK_PARTS.filter((id) => !limited(id))));
+  checkMissing.addEventListener('click', async () => {
+    if (running) return;
+    busy(true);
+    result.hidden = true;
+    showProgress('Looking for missing files in the kept ra-quickinstall.zip...');
     try {
-      store = await content.store();
-      file = await downloadScores({
-        store,
-        fetchImpl: opts.fetchImpl,
-        signal: musicAbort.signal,
-        onProgress: (n, total) => showProgress(`Downloading the music: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total),
-      });
+      const report = await content.updateFromKept({ force: true, onProgress: (t) => showProgress(`${t}...`) });
+      if (report?.added) await audio?.reloadInstalled();
+      hideProgress();
+      busy(false);
+      await sync();
+      const rest = current?.state.level === 'partial' ? ` Still missing: ${current.state.missing.join(', ')}.` : '';
+      showResult(
+        report?.added ? 'Missing files installed' : 'Nothing missing',
+        [report?.added ? `Installed ${plural(report.added, 'file', 'files')} from the kept ZIP.${rest}` : `The kept ZIP has nothing that is not installed.${rest}`],
+        !!report?.added,
+      );
     } catch (err) {
       hideProgress();
-      const cancelled = err instanceof CancelledError;
-      music.textContent = `Resume the music download (${formatBytes(SCORES_BYTES)})`;
-      showResult(cancelled ? 'Music download cancelled' : 'Music download failed', [
-        `${err.message ?? err}.`,
-        cancelled
-          ? 'Click the music button to go on where it stopped.'
-          : 'Click the music button to try again: the parts already downloaded are kept. Or download a freeware CD image yourself (Other ways) and drop it here.',
-      ], false);
-      return null;
-    } finally {
-      musicAbort = null;
-      cancelMusic.hidden = true;
       busy(false);
+      showResult('Check failed', [err.message ?? String(err)], false);
     }
-    const report = await install([file]);
-    if (report) {
-      music.textContent = MUSIC_LABEL;
-      await forgetScoresDownload(store).catch(() => {});
-    }
-    return report;
-  };
-  music.addEventListener('click', fetchMusic);
-  cancelMusic.addEventListener('click', () => {
-    cancelMusic.disabled = true;
-    musicAbort?.abort();
   });
 
   files.addEventListener('change', () => handleFiles([...files.files]));
@@ -477,6 +699,8 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     try {
       await content.removeOriginal();
       await audio?.reloadInstalled();
+      partList.hidden = true;
+      resumable = false;
       showResult('Removed', ['WebRA uses its own art and synthesized sounds again.'], false);
     } catch (err) {
       showResult('Could not remove', [err.message ?? String(err)], false);
@@ -616,8 +840,106 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     return true;
   }
 
-  root.replaceChildren(
+  // ---- Ways to install: tabs for accounts with the one-click install --------------------
+  // The one-click tab is short (what it does and does not cover); the manual
+  // steps, mirrors and the other ways live in their own tab. Accounts without
+  // the one-click install see only the manual way, without tabs.
+  const oneClickPanel = el(
+    'div',
+    { class: 'content-tabpanel', id: 'content-panel-oneclick', role: 'tabpanel', 'aria-labelledby': 'content-tab-oneclick' },
+    el('p', { class: 'audio-note', text: ONE_CLICK_SUMMARY }),
+    el(
+      'details',
+      { class: 'content-other' },
+      el('summary', { text: 'About the one-click install' }),
+      el('p', { class: 'audio-note', text: DOWNLOAD_NOTICE }),
+      el('p', { class: 'audio-note', text: MUSIC_NOTICE }),
+      el('p', { class: 'audio-note', text: KEPT_NOTICE }),
+    ),
+  );
+  const manualPanel = el(
+    'div',
+    { class: 'content-tabpanel', id: 'content-panel-manual', role: 'tabpanel', 'aria-labelledby': 'content-tab-manual' },
     el('p', { class: 'audio-local', text: LEGAL_NOTICE }),
+    el(
+      'ol',
+      { class: 'content-steps' },
+      stepDownload(),
+      el('li', {}, el('strong', { text: touch ? 'Choose the ZIP' : 'Drop the ZIP here' }), el('span', { text: touch ? ' from your downloads:' : ', or click to choose it:' }), dropzone),
+      el('li', {}, el('strong', { text: 'Done.' }), el('span', { text: ' The game switches to the original graphics and sounds at once, also in a running game. You can switch back under Use.' })),
+    ),
+    el(
+      'details',
+      { class: 'content-other' },
+      el('summary', { text: 'Music, movies, or your own copy of Red Alert' }),
+      el('p', {
+        class: 'audio-note',
+        text: 'With music and movies: download the Allied or the Soviet CD image of the freeware release from the Internet Archive and drop the .iso here (or choose it below). WebRA reads only the parts it needs straight from the file, never the whole image, and installs the music, sounds, graphics and campaign movies on the disc (the movies take a few hundred megabytes of browser storage).',
+      }),
+      cdList(),
+      el('p', {
+        class: 'audio-note',
+        text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix, movies1.mix, movies2.mix), or loose files (an OpenRA content folder with its movies folder works too). desert.mix from Tiberian Dawn adds desert terrain. Sounds, graphics and movies are installed in one go.',
+      }),
+      el('div', { class: 'audio-buttons' }, pickFiles, pickFolder),
+    ),
+  );
+  const TABS = [
+    ['oneclick', 'One-click install', oneClickPanel],
+    ['manual', 'Other ways to install', manualPanel],
+  ];
+  const tabButtons = new Map();
+  const tabList = el('div', { class: 'content-tabs', role: 'tablist', 'aria-label': 'Ways to install' });
+  let tab = autoInstall ? 'oneclick' : 'manual';
+  const showTab = (id, focus = false) => {
+    tab = id;
+    for (const [tid, , panel] of TABS) {
+      const b = tabButtons.get(tid);
+      const on = tid === id;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+      panel.hidden = !on;
+    }
+    if (focus) tabButtons.get(id).focus();
+  };
+  for (const [id, label] of TABS) {
+    const b = el('button', { type: 'button', class: 'content-tab', role: 'tab', id: `content-tab-${id}`, 'aria-controls': `content-panel-${id}` , text: label });
+    b.addEventListener('click', () => showTab(id));
+    // Arrow keys, Home and End move between the tabs (WAI-ARIA tabs).
+    b.addEventListener('keydown', (e) => {
+      const ids = TABS.map(([t]) => t);
+      const i = ids.indexOf(id);
+      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: ids.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      showTab(ids[(next + ids.length) % ids.length], true);
+    });
+    tabButtons.set(id, b);
+    tabList.append(b);
+  }
+  /** Tabs only with the one-click install; without it the manual way alone. */
+  const layoutTabs = () => {
+    tabList.hidden = !autoInstall;
+    if (!autoInstall) showTab('manual');
+    else showTab(tab);
+  };
+  layoutTabs();
+
+  root.replaceChildren(
+    el(
+      'section',
+      { class: 'audio-content', 'aria-labelledby': 'content-install-title' },
+      el('h2', { id: 'content-install-title', text: 'Install the original content' }),
+      stateBox,
+      progressBox,
+      partList,
+      result,
+      tabList,
+      oneClickPanel,
+      manualPanel,
+      files,
+      folder,
+    ),
     el(
       'section',
       { class: 'audio-content', 'aria-labelledby': 'content-use-title' },
@@ -626,40 +948,6 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       graphicsNote,
       choiceRow('Sounds', sounds),
       soundsNote,
-    ),
-    el(
-      'section',
-      { class: 'audio-content', 'aria-labelledby': 'content-install-title' },
-      el('h2', { id: 'content-install-title', text: 'Install the original content' }),
-      status,
-      autoBox,
-      el(
-        'ol',
-        { class: 'content-steps' },
-        stepDownload(),
-        el('li', {}, el('strong', { text: touch ? 'Choose the ZIP' : 'Drop the ZIP here' }), el('span', { text: touch ? ' from your downloads:' : ', or click to choose it:' }), dropzone),
-        el('li', {}, el('strong', { text: 'Done.' }), el('span', { text: ' The game switches to the original graphics and sounds at once, also in a running game. You can switch back under Use.' })),
-      ),
-      progressBox,
-      result,
-      el(
-        'details',
-        { class: 'content-other' },
-        el('summary', { text: 'Other ways: the freeware CDs, or your own copy of Red Alert' }),
-        el('p', {
-          class: 'audio-note',
-          text: 'With music and movies: download the Allied or the Soviet CD image of the freeware release from the Internet Archive and drop the .iso here (or choose it below). WebRA reads only the parts it needs straight from the file, never the whole image, and installs the music, sounds, graphics and campaign movies on the disc (the movies take a few hundred megabytes of browser storage).',
-        }),
-        cdList(),
-        el('p', {
-          class: 'audio-note',
-          text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix, movies1.mix, movies2.mix), or loose files (an OpenRA content folder with its movies folder works too). desert.mix from Tiberian Dawn adds desert terrain. Sounds, graphics and movies are installed in one go.',
-        }),
-        el('div', { class: 'audio-buttons' }, pickFiles, pickFolder),
-      ),
-      el('div', { class: 'audio-buttons' }, remove),
-      files,
-      folder,
     ),
     el(
       'section',
@@ -682,14 +970,26 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     install,
     handleFiles,
     inspectPackFile,
-    download: fetchAndInstall,
-    downloadMusic: fetchMusic,
+    /** The one-click install of what is missing (installAll's click): runParts' outcome, or null. */
+    download: () => runParts(),
+    /** Run the one-click install for some parts (ONE_CLICK_PARTS ids). */
+    installParts: (ids) => runParts(ids),
+    cancel: () => abort?.abort(),
     get busy() {
       return running;
     },
-    /** Offer the one-click download or not (the account's flags changed). */
+    /** none, partial or complete (contentState), after the last refresh. */
+    get level() {
+      return current?.state.level ?? 'none';
+    },
+    /** Offer the one-click install or not (the account's flags changed). */
     setAutoInstall(on) {
-      autoBox.hidden = !on;
+      const was = autoInstall;
+      autoInstall = !!on;
+      // Newly allowed: the one-click tab comes first.
+      if (autoInstall && !was) tab = 'oneclick';
+      layoutTabs();
+      renderAction();
     },
   };
 }
@@ -708,7 +1008,16 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
     body,
   );
   panel.replaceChildren(card);
-  const view = mountContentSettings(body, content, audio, opts);
+  // The entry point shows the installed state too: a mark and its accessible name.
+  let level = 'none';
+  const showLevel = (l) => {
+    level = l;
+    if (!button) return;
+    button.dataset.state = l;
+    if (l === 'none') button.removeAttribute('aria-label');
+    else button.setAttribute('aria-label', `Original content (${ENTRY_STATES[l]})`);
+  };
+  const view = mountContentSettings(body, content, audio, { ...opts, onState: showLevel });
   let opener = null;
   const open = (on) => {
     if (on === !panel.hidden) return;
@@ -737,7 +1046,11 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
   });
   return {
     open: () => open(true),
-    /** Open the dialog and run the one-click download. */
+    /** The menu entry's label: "Original content", with the installed state once there is one. */
+    get label() {
+      return level === 'none' ? 'Original content' : `Original content (${ENTRY_STATES[level]})`;
+    },
+    /** Open the dialog and run the one-click install. */
     download() {
       open(true);
       return view.download();
@@ -790,7 +1103,7 @@ export function mountContentNotice(host, { registry, onFiles, onOpen, onDownload
   const dismiss = el('button', { type: 'button', class: 'content-notice-close', 'aria-label': 'Dismiss the original content notice', title: 'Dismiss', text: 'Dismiss' });
   const more = el('button', { type: 'button', text: 'More options...' });
   more.addEventListener('click', () => onOpen());
-  const auto = el('button', { type: 'button', class: 'primary', text: `Download and install (${formatBytes(QUICKINSTALL_BYTES)})` });
+  const auto = el('button', { type: 'button', class: 'primary', text: `Install everything (${formatBytes(ONE_CLICK_BYTES)})` });
   auto.addEventListener('click', () => onDownload());
   const autoRow = el('div', { class: 'content-auto', hidden: !autoInstall }, el('p', { class: 'audio-note', text: 'Your account may use the one-click install:' }), el('div', { class: 'audio-buttons' }, auto));
   const card = el(

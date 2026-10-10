@@ -255,9 +255,10 @@ export async function contentFromZip(bytes, label = 'archive.zip') {
 
 /**
  * Replace picked ZIP files by the content inside them (see contentFromZip);
- * other files pass through. Problems are added to `errors`.
+ * other files pass through. Problems are added to `errors`, the names of
+ * the ZIPs that were content packages to `unpacked`.
  */
-export async function expandZips(files, errors = [], onProgress = () => {}) {
+export async function expandZips(files, errors = [], onProgress = () => {}, unpacked = []) {
   const out = [];
   for (const file of files) {
     const name = baseName(file.webkitRelativePath || file.name || '');
@@ -277,6 +278,7 @@ export async function expandZips(files, errors = [], onProgress = () => {}) {
     }
     try {
       out.push(...(await contentFromZip(bytes, name)));
+      unpacked.push(name);
     } catch (err) {
       if (!(err instanceof ZipError)) throw err;
       errors.push(`${name}: ${err.message}`);
@@ -321,7 +323,7 @@ export async function saveMovies(movies, store, { onProgress = () => {}, errors 
     // A record of its own: the stored buffer is exactly the movie, not a larger read it is a window of.
     const own = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
     try {
-      await store.putAll([{ name, bytes: own.buffer, size: own.length, from, kind: kindOf(name) }]);
+      await store.putAll([{ name, bytes: own.buffer, size: own.length, from, kind: kindOf(name), at: Date.now() }]);
     } catch (err) {
       errors.push(`Movies from ${name} on were not saved: ${storageProblem(err).message}`);
       break;
@@ -331,23 +333,33 @@ export async function saveMovies(movies, store, { onProgress = () => {}, errors 
   return saved;
 }
 
+/** Every file name the installer looks for: the sounds, graphics and movies WebRA can use. */
+export function wantedNames({ sounds = allOriginalNames(), graphics = GRAPHICS_FILES, movies = MOVIE_FILES } = {}) {
+  return new Set([...sounds, ...graphics, ...movies]);
+}
+
 /**
  * Import sounds, graphics and movies from files the player picked, in one pass.
+ * `only` limits the search to those names (files a newer WebRA wants from a
+ * kept package, content/index.js).
  * @returns {Promise<{ added: number, bytes: number, byCategory: Record<string, number>, theaters: string[], movies: string[],
- *   archives: string[], skipped: string[], errors: string[] }>}
+ *   archives: string[], zips: string[], skipped: string[], errors: string[] }>}
  */
 export async function installContent(
   files,
   store,
-  { onProgress = () => {}, publicKey, sounds = allOriginalNames(), graphics = GRAPHICS_FILES, movies = MOVIE_FILES } = {},
+  { onProgress = () => {}, publicKey, sounds = allOriginalNames(), graphics = GRAPHICS_FILES, movies = MOVIE_FILES, only = null } = {},
 ) {
-  const wanted = new Set([...sounds, ...graphics, ...movies]);
+  const wanted = wantedNames({ sounds, graphics, movies });
+  if (only) for (const name of wanted) if (!only.has(name)) wanted.delete(name);
   // ZIPs (OpenRA's ra-quickinstall.zip) are unpacked first; their MIX files install like picked ones.
   const zipErrors = [];
-  const expanded = await expandZips(files, zipErrors, onProgress);
+  const zips = [];
+  const expanded = await expandZips(files, zipErrors, onProgress, zips);
   const scan = await scanFiles(expanded, { wanted, onProgress, publicKey });
   scan.errors.unshift(...zipErrors);
-  const records = [...scan.found].map(([name, f]) => ({ name, bytes: f.bytes.buffer, size: f.bytes.length, from: f.from, kind: kindOf(name) }));
+  const at = Date.now();
+  const records = [...scan.found].map(([name, f]) => ({ name, bytes: f.bytes.buffer, size: f.bytes.length, from: f.from, kind: kindOf(name), at }));
   if (records.length) {
     onProgress(`Saving ${records.length} files in this browser`);
     await store.putAll(records);
@@ -366,6 +378,7 @@ export async function installContent(
     theaters: theatersIn(await store.names()),
     movies: movieRecords.map((r) => r.name).sort(),
     archives: scan.archives,
+    zips,
     skipped: scan.skipped,
     errors: scan.errors,
   };
@@ -373,8 +386,8 @@ export async function installContent(
 
 /**
  * What is installed: counts and bytes per category, the theaters graphics
- * cover, and whether the actor palette is there (without it the original
- * graphics cannot be used).
+ * cover, whether the actor palette is there (without it the original
+ * graphics cannot be used), and when the newest file was installed.
  */
 export async function contentSummary(store) {
   const meta = await store.meta();
@@ -386,5 +399,7 @@ export async function contentSummary(store) {
     bytes[kind === 'graphics' ? 'graphics' : kind === 'movie' ? 'movies' : 'sounds'] += m.size ?? 0;
   }
   const names = meta.map((m) => m.name);
-  return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), palette: names.includes(ACTOR_PALETTE) };
+  // When the newest file came in (null for files from installs that did not record it).
+  const installedAt = meta.reduce((t, m) => (Number.isFinite(m.at) && m.at > (t ?? 0) ? m.at : t), null);
+  return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), palette: names.includes(ACTOR_PALETTE), installedAt };
 }

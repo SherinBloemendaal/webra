@@ -20,7 +20,8 @@
 // packs the settings do not list keep their stored order and choice.
 
 import { openContentStore, storeError } from './store.js';
-import { installContent, contentSummary } from './install.js';
+import { installContent, contentSummary, baseName, wantedNames } from './install.js';
+import { QUICKINSTALL_BYTES } from './download.js';
 import { originalSlots, combineSlots, originalSlotInfo, TILESET_OF_BIOME } from './atlas.js';
 import { originalTerrain, packTerrain } from './terrain.js';
 import { cameoSource, originalCameoPixels } from './cameos.js';
@@ -32,6 +33,14 @@ import { defaultRegistry } from '../registry.js';
 
 /** Settings key of the graphics choice (js/settings.js). */
 export const GRAPHICS_SETTING = 'graphics';
+
+/**
+ * The store's name (store.js partials) of the kept ra-quickinstall.zip: the
+ * last one installed (downloaded through the relay or picked), kept with
+ * the names it was searched for, so the files a newer WebRA wants come out
+ * of it without a new download (ContentSystem.updateFromKept).
+ */
+export const KEPT_PACKAGE = 'ra-quickinstall';
 
 /**
  * Stored pack records in the player's order, each with whether it is on:
@@ -89,6 +98,8 @@ export class ContentSystem {
     this.loadError = null;
     /** The last reload in the queue: reloads run one after another, so the newest state always wins. */
     this.queue = Promise.resolve();
+    /** Installs and removals run one after another (an update from the kept package may start on its own). */
+    this.changes = Promise.resolve();
     settings.subscribe?.(GRAPHICS_SETTING, () => this.changed());
     // The pack order or choice changed on another device (account sync) or tab.
     registry.subscribe?.('content', (_values, changes, origin) => {
@@ -308,32 +319,110 @@ export class ContentSystem {
 
   // ---- Installing and managing ----------------------------------------------------------
 
+  /** Run `fn` after the installs and removals before it (never two at once). */
+  exclusive(fn) {
+    const run = this.changes.then(fn, fn);
+    this.changes = run.catch(() => {});
+    return run;
+  }
+
   /**
    * Install the original content from picked files (content/install.js).
    * The first install of original graphics also switches the graphics to
    * them (`switched` in the report): the player sees the result at once,
-   * and can switch back in the dialog.
+   * and can switch back in the dialog. A ra-quickinstall.zip among the
+   * files is kept (KEPT_PACKAGE; `kept` in the report).
    */
-  async install(files, opts) {
+  install(files, opts) {
+    return this.exclusive(() => this.installNow(files, opts));
+  }
+
+  async installNow(files, opts = {}) {
     const store = await this.store();
     const had = this.hasOriginalGraphics;
+    const wanted = wantedNames();
     const report = await installContent(files, store, opts);
+    const kept = await this.keepPackage(store, files, report, wanted);
     await this.reload();
     const switched = !had && this.hasOriginalGraphics && this.graphics !== 'original';
     if (switched) this.settings.set(GRAPHICS_SETTING, 'original');
-    if (report.added) requestPersistence();
-    return { ...report, switched };
+    if (report.added || kept) requestPersistence();
+    return { ...report, switched, kept };
+  }
+
+  /**
+   * Keep the ra-quickinstall.zip among `files` (the package's size, and it
+   * unpacked as content) with the names it was searched for. A browser
+   * without room for it installs all the same. Returns whether one was kept.
+   */
+  async keepPackage(store, files, report, wanted) {
+    const zip = [...files].find((f) => f.size === QUICKINSTALL_BYTES && report.zips?.includes(baseName(f.webkitRelativePath || f.name || '')));
+    if (!zip) return false;
+    try {
+      await store.putPartial(KEPT_PACKAGE, 0, await zip.arrayBuffer(), { checked: [...wanted].sort(), at: Date.now() });
+      return true;
+    } catch (err) {
+      console.warn('The downloaded package could not be kept:', err.message ?? err);
+      return false;
+    }
+  }
+
+  /**
+   * The kept ra-quickinstall.zip: { file, checked } (`checked`: the names it
+   * was searched for), or null when none is kept (or it is not whole).
+   */
+  async keptPackage() {
+    try {
+      const store = await this.store();
+      const record = (await store.partialRecords(KEPT_PACKAGE)).find((r) => r.index === 0);
+      if (!record || record.bytes?.byteLength !== QUICKINSTALL_BYTES) return null;
+      const checked = new Set(Array.isArray(record.info?.checked) ? record.info.checked : []);
+      return { file: new File([record.bytes], 'ra-quickinstall.zip', { type: 'application/zip' }), checked };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Bring the installed content up to this WebRA from the kept package: the
+   * names WebRA looks for now that the package was not searched for yet
+   * (a newer WebRA uses more of its files) and that are not installed come
+   * out of it, without any download. `force` searches it for every name
+   * that is not installed ("Check for missing files"). Returns the install
+   * report, or null when there was nothing to search for (no kept package,
+   * or no new name).
+   */
+  updateFromKept({ force = false, ...opts } = {}) {
+    return this.exclusive(async () => {
+      const kept = await this.keptPackage();
+      if (!kept) return null;
+      const wanted = wantedNames();
+      const fresh = [...wanted].filter((n) => force || !kept.checked.has(n));
+      if (!fresh.length) return null;
+      const store = await this.store();
+      const installed = new Set(await store.names());
+      const only = new Set(fresh.filter((n) => !installed.has(n)));
+      const report = only.size ? await installContent([kept.file], store, { ...opts, only }) : null;
+      // Searched now: the next start does not unpack it again for the same names.
+      await store.putPartial(KEPT_PACKAGE, 0, await kept.file.arrayBuffer(), { checked: [...wanted].sort(), at: Date.now() });
+      if (report?.added) await this.reload();
+      return report;
+    });
   }
 
   async summary() {
     return contentSummary(await this.store());
   }
 
-  /** Remove the installed original content (sounds, graphics and movies), back to WebRA art. Packs stay. */
-  async removeOriginal() {
-    await (await this.store()).clear();
-    await this.reload();
-    if (this.settings.get(GRAPHICS_SETTING) === 'original') this.settings.set(GRAPHICS_SETTING, 'webra');
+  /** Remove the installed original content (sounds, graphics, movies and the kept package), back to WebRA art. Packs stay. */
+  removeOriginal() {
+    return this.exclusive(async () => {
+      const store = await this.store();
+      await store.clear();
+      await store.clearPartials(KEPT_PACKAGE);
+      await this.reload();
+      if (this.settings.get(GRAPHICS_SETTING) === 'original') this.settings.set(GRAPHICS_SETTING, 'webra');
+    });
   }
 
   /** Read a pack file for the install preview (throws PackError). */

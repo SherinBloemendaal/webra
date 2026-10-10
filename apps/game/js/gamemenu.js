@@ -182,6 +182,7 @@ export class GameMenu {
    *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings and the Music page
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
+   *   contentLabel?(): string,  its button's label (with the installed state)
    *   onReleaseNotes?(): void,
    *   restart?: { replay?: boolean, online?: boolean, available?(): boolean, label?(): string, text?(): string, run(): void },
    *     Restart (asks first); online the rematch (js/online.js): shown while `available()`, with its own label and text
@@ -348,7 +349,7 @@ export class GameMenu {
       button('Settings', null, () => this.show('settings')),
       ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
       ...(this.opts.audio ? [button('Music', null, () => this.show('music'))] : []),
-      ...(this.opts.onContent ? [button('Original content', null, () => this.opts.onContent())] : []),
+      ...(this.opts.onContent ? [button(this.opts.contentLabel?.() ?? 'Original content', null, () => this.opts.onContent())] : []),
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),

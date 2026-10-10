@@ -11,6 +11,7 @@ import { IsoImage, IsoError, isoName, SECTOR } from '../js/content/iso.js';
 import { blobSource, bytesSource, MixArchive, mixHash } from '../js/audio/mix.js';
 import { installContent, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore } from '../js/content/store.js';
+import { RelayLimitError } from '../js/content/download.js';
 import { MUSIC } from '../js/audio/catalog.js';
 import {
   downloadScores,
@@ -249,8 +250,13 @@ test('music download: a dropped connection is retried; a refusal is not', async 
     [429, 'rate_limited', /downloaded the music too often/],
   ]) {
     const calls = [];
-    const refuse = relay(() => new Response(JSON.stringify({ error: { code, message: 'This account downloaded the music too often today. Try again tomorrow.' } }), { status }), calls);
-    await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: refuse, expected: FAKE_SHA }), re);
+    const refuse = relay(() => new Response(JSON.stringify({ error: { code, message: 'This account downloaded the music too often today.', retryAfter: 3600 } }), { status }), calls);
+    await assert.rejects(downloadScores({ store: new MemoryStore(), fetchImpl: refuse, expected: FAKE_SHA }), (e) => {
+      assert.match(e.message, re);
+      // A used up budget keeps its time to try again (the dialog holds the button until then).
+      assert.equal(e instanceof RelayLimitError, status === 429);
+      return true;
+    });
     assert.equal(calls.length, 1, `${status} is not retried`);
   }
   // Another part of the file than asked for is refused.

@@ -31,12 +31,45 @@ export const QUICKINSTALL_MIRRORS = Object.freeze([
 ]);
 
 /**
+ * A relay budget is used up (429): `retryAt` is when the server takes the
+ * download again (unix milliseconds, null when it did not say). The game
+ * never retries on its own; the player's next click may.
+ */
+export class RelayLimitError extends Error {
+  constructor(message, retryAt = null) {
+    super(message);
+    this.name = 'RelayLimitError';
+    this.retryAt = retryAt;
+  }
+}
+
+/** Seconds the server asks to wait: the body's retryAfter, else the Retry-After header (seconds), else null. */
+export function retryAfterOf(res, error = {}) {
+  const fromBody = Number(error.retryAfter);
+  if (Number.isFinite(fromBody) && fromBody > 0) return Math.ceil(fromBody);
+  const header = Number(res.headers?.get?.('Retry-After'));
+  return Number.isFinite(header) && header > 0 ? Math.ceil(header) : null;
+}
+
+/**
+ * "in 12 minutes (at 14:00)": a wait for the player, `seconds` from `now`.
+ * `clock` formats the time of day (the browser's locale by default).
+ */
+export function formatWait(seconds, now = Date.now(), clock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) {
+  const minutes = Math.ceil(seconds / 60);
+  const span = minutes <= 1 ? 'in a minute' : minutes < 120 ? `in ${minutes} minutes` : `in ${Math.ceil(minutes / 60)} hours`;
+  return `${span} (at ${clock(new Date(now + seconds * 1000))})`;
+}
+
+/**
  * The player-facing error for a refused relay answer (both relays, the
  * package and the music): the account gate (401 unauthenticated, 403
- * relay_forbidden and friends), the budgets (429) and upstream trouble.
+ * relay_forbidden and friends), the budgets (429, a RelayLimitError with
+ * the time to try again) and upstream trouble.
  * @param {Response} res
+ * @param {number} [now]
  */
-export async function relayProblem(res) {
+export async function relayProblem(res, now = Date.now()) {
   let error = {};
   try {
     error = (await res.json()).error ?? {};
@@ -45,7 +78,10 @@ export async function relayProblem(res) {
   }
   const code = error.code ?? '';
   if (res.status === 429) {
-    return new Error(code === 'rate_limited' && error.message ? `${error.message.replace(/\.$/, '')}; or install the files yourself` : 'too many downloads from this network; try again in an hour or install the files yourself');
+    const seconds = retryAfterOf(res, error);
+    const what = code === 'rate_limited' && error.message ? error.message.replace(/\.$/, '') : 'Too many one-click downloads';
+    const when = seconds ? `try again ${formatWait(seconds, now)}` : 'try again later';
+    return new RelayLimitError(`${what}: ${when}, or install the files yourself with the steps below`, seconds ? now + seconds * 1000 : null);
   }
   // The relay needs a signed-in account (401 unauthenticated) with the content_autoinstall flag or the admin role (403 relay_forbidden).
   if (res.status === 401) return new Error('sign in first: the one-click download is only for selected accounts; or install the files yourself with the steps below');
@@ -133,6 +169,10 @@ export function canAutoInstall(account) {
 /** The notice shown with every download button. */
 export const DOWNLOAD_NOTICE =
   "These are Electronic Arts' Red Alert files, which EA released as freeware in 2008. WebRA fetches OpenRA's ra-quickinstall.zip from OpenRA's community mirrors through webra.sherin.dev (passed through, never kept on the server) and stores it only on this device.";
+
+/** Why a second one-click install needs no download (content/index.js KEPT_PACKAGE). */
+export const KEPT_NOTICE =
+  'The ZIP stays on this device after the install, so installing again or an update of WebRA that uses more of its files needs no new download. Remove installed content deletes it too.';
 
 /** The notice for the manual steps: what the files are and where they stay. */
 export const LEGAL_NOTICE =

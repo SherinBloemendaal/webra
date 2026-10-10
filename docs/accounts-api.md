@@ -938,7 +938,17 @@ the game page, with the existing `X-WebRA-Content: 1` header).
 [contracts](contracts.md) section 4) has the same gate, in the same order,
 before its own checks. Its daily budget of 256 MiB is counted per account
 (the account id as a salted hash in the quota table), next to 64 requests
-per IP per hour; both answer `429 rate_limited` with `Retry-After`.
+per network per hour.
+
+Budgets of the package relay: 8 completed downloads per account per UTC
+day, 20 completed downloads per network per hour (an IPv4 address or an
+IPv6 /64), and 30 requests per network per hour whatever their outcome. A
+download (or a music piece) that does not complete is given back, so a
+retry of a failed one is charged once. Every budget answers `429
+rate_limited` with `Retry-After` (seconds) and the body
+`{ "error": { "code": "rate_limited", "message", "retryAfter", "scope": "account" | "network" } }`;
+clients show the time and never retry on their own. Admins see and reset
+them per account (8.10).
 
 ## 8. Admin API (`/api/admin/*`)
 
@@ -978,12 +988,13 @@ is left out.
   "passkeys": [{ "id", "name", "alg", "createdAt", "lastUsedAt", "counterError" }],
   "ips": [{ "ip": "203.0.113.7", "firstSeen", "lastSeen", "count" }],
   "bans": [{ "id", "reason", "createdAt", "createdBy", "expiresAt", "revokedAt", "revokedBy" }],
-  "settings": { "version", "updatedAt", "settings" }
+  "settings": { "version", "updatedAt", "settings" },
+  "relay": RelayBudgets
 }
 ```
 
 Moderators get `user`, `bans` and `passkeys` count only (`sessions`, `ips`,
-`settings` are left out).
+`settings`, `relay` are left out). `relay` is described in 8.10.
 
 `PATCH /api/admin/users/:id` (admin)
 `{ "username"?, "displayName"?, "email"?, "emailVerified"?, "avatarColor"?, "status"?, "role"?, "flags"? }`
@@ -1075,7 +1086,8 @@ Expired IP bans are deleted 90 days after they end.
   `actor` null is the system (scheduled purges). Actions: `user.update`,
   `user.approve`, `user.reject`, `user.ban`, `user.unban`, `user.logout`,
   `user.session_revoke`, `user.password_reset_link`, `user.delete`,
-  `user.restore`, `user.purge`, `user.settings_update`, `ipban.create`,
+  `user.restore`, `user.purge`, `user.settings_update`,
+  `user.relay_quota_reset`, `ipban.create`,
   `ipban.update`, `ipban.delete`, `site.update`. Entries are kept 365 days.
 - `GET /api/admin/stats` (moderator) ->
 
@@ -1092,6 +1104,38 @@ Expired IP bans are deleted 90 days after they end.
 
 `games` counts the public session directory (private lobbies are not listed
 anywhere).
+
+### 8.10 Relay budgets (admin)
+
+What the account has used of the one-click relays' budgets (7.3), and what
+the networks of its IP history seen in the last 24 hours have used (an IPv4
+address or an IPv6 /64; other people on those networks count there too):
+
+```json
+{
+  "account": {
+    "content": { "used": 2, "limit": 8, "unit": "downloads", "resetsAt": 0 },
+    "music": { "used": 40, "limit": 256, "unit": "MiB", "resetsAt": 0 }
+  },
+  "networks": [
+    {
+      "network": "203.0.113.7",
+      "lastSeen": 0,
+      "content": { "used": 3, "limit": 20, "unit": "downloads", "resetsAt": 0 },
+      "contentAttempts": { "used": 4, "limit": 30, "unit": "requests", "resetsAt": 0 },
+      "music": { "used": 0, "limit": 64, "unit": "requests", "resetsAt": 0 }
+    }
+  ]
+}
+```
+
+It is part of `GET /api/admin/users/:id` (`relay`). `resetsAt` is when the
+current window ends (unix milliseconds).
+
+- `DELETE /api/admin/users/:id/relay-quota` (admin) clears the account's
+  budgets and those of the networks listed -> `200 { "relay": RelayBudgets }`
+  (all zero). The audit entry `user.relay_quota_reset` stores what was used
+  before, without the addresses.
 
 ## 9. Rate limits
 
@@ -1116,6 +1160,8 @@ write.
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
 | Data export | 5 per hour per account |
+| One-click package relay | 8 completed downloads per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
+| One-click music relay | 256 MiB per account per UTC day; 64 requests per network per hour (7.3) |
 
 ## 10. Local development and bootstrap
 

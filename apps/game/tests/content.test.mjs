@@ -54,11 +54,11 @@ import {
 } from '../js/content/terrain.js';
 import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
-import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
+import { ContentSystem, orderPacks, mergePackPrefs, KEPT_PACKAGE } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
 import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
 import { originalCameoPixels } from '../js/content/cameos.js';
-import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall } from '../js/content/download.js';
+import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall, formatWait, RelayLimitError, retryAfterOf } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
 import { buildAtlas, FRAME_FLOATS } from '../js/sprites.js';
 import { SoundBank } from '../js/audio/bank.js';
@@ -977,7 +977,27 @@ test('one-click download: progress, exact size, server errors; the notice rememb
   assert.equal(seen.at(-1), QUICKINSTALL_BYTES);
   await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response(chunks(1000)) }), /stopped after 1000/);
   await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response(chunks(QUICKINSTALL_BYTES + 1)) }), /larger/);
-  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 429 }) }), /too many/);
+  await assert.rejects(downloadQuickInstall({ fetchImpl: async () => new Response('{}', { status: 429 }) }), /Too many one-click downloads: try again later/);
+  // A used up budget: the server's reason and when to try again, as a RelayLimitError (never retried).
+  let asked = 0;
+  const limited = async () => {
+    asked++;
+    return new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'Too many one-click downloads from this network in the last hour.', retryAfter: 600, scope: 'network' } }), { status: 429 });
+  };
+  await assert.rejects(downloadQuickInstall({ fetchImpl: limited }), (e) => {
+    assert.ok(e instanceof RelayLimitError);
+    assert.match(e.message, /^Too many one-click downloads from this network in the last hour: try again in 10 minutes \(at .+\), or install the files yourself/);
+    assert.ok(Math.abs(e.retryAt - (Date.now() + 600_000)) < 5000);
+    return true;
+  });
+  assert.equal(asked, 1);
+  assert.equal(retryAfterOf(new Response('', { headers: { 'Retry-After': '42' } })), 42, 'the header when the body has none');
+  assert.equal(retryAfterOf(new Response('')), null);
+  const clock = (d) => d.toISOString().slice(11, 16);
+  const t0 = Date.UTC(2026, 9, 9, 12, 0, 0);
+  assert.equal(formatWait(30, t0, clock), 'in a minute (at 12:00)');
+  assert.equal(formatWait(45 * 60, t0, clock), 'in 45 minutes (at 12:45)');
+  assert.equal(formatWait(5 * 3600 - 10, t0, clock), 'in 5 hours (at 16:59)');
   await assert.rejects(
     downloadQuickInstall({ fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'mirrors down' } }), { status: 502 }) }),
     /mirrors down/,
@@ -1257,6 +1277,50 @@ function quickinstallZip() {
   const { conquer, temperat, sounds } = contentMix();
   return new File([buildZip([{ name: 'conquer.mix', data: conquer }, { name: 'temperat.mix', data: temperat }, { name: 'sounds.mix', data: sounds }])], 'ra-quickinstall.zip');
 }
+
+/** quickinstallZip padded to the package's exact size (the kept package is the real package's size). */
+function fullSizeZip() {
+  const { conquer, temperat, sounds } = contentMix();
+  const entries = [{ name: 'conquer.mix', data: conquer }, { name: 'temperat.mix', data: temperat }, { name: 'sounds.mix', data: sounds }];
+  const base = buildZip([...entries, { name: 'pad.bin', data: new Uint8Array(0), method: 0 }]).length;
+  const zip = buildZip([...entries, { name: 'pad.bin', data: new Uint8Array(QUICKINSTALL_BYTES - base), method: 0 }]);
+  assert.equal(zip.length, QUICKINSTALL_BYTES);
+  return new File([zip], 'ra-quickinstall.zip');
+}
+
+test('content system: ra-quickinstall.zip is kept; files a newer WebRA wants come out of it without a download; Remove forgets it', async () => {
+  const { content, store } = contentSystem();
+  await content.load();
+  assert.equal(await content.keptPackage(), null);
+  // A ZIP of another size (not the package) is not kept.
+  assert.equal((await content.install([quickinstallZip()])).kept, false);
+  assert.equal(await content.keptPackage(), null);
+  const r = await content.install([fullSizeZip()]);
+  assert.equal(r.kept, true);
+  const kept = await content.keptPackage();
+  assert.equal(kept.file.size, QUICKINSTALL_BYTES);
+  assert.ok(kept.checked.has('cannon1.aud'), 'with the names it was searched for');
+  // Nothing new wanted: no work at all.
+  assert.equal(await content.updateFromKept(), null);
+  // An older WebRA searched it for fewer names (it did not want cannon1.aud), so that file is not installed.
+  const [record] = await store.partialRecords(KEPT_PACKAGE);
+  await store.putPartial(KEPT_PACKAGE, 0, record.bytes, { checked: [...kept.checked].filter((n) => n !== 'cannon1.aud') });
+  await store.clear((n) => n === 'cannon1.aud');
+  assert.equal((await store.names()).includes('cannon1.aud'), false);
+  const update = await content.updateFromKept();
+  assert.equal(update.added, 1);
+  assert.deepEqual(update.byCategory.effects, 1);
+  assert.ok((await store.names()).includes('cannon1.aud'), 'back without any download');
+  assert.ok((await content.keptPackage()).checked.has('cannon1.aud'), 'searched for it now');
+  assert.equal(await content.updateFromKept(), null, 'the next start does not unpack it again');
+  // "Check for missing files" searches it for everything not installed.
+  await store.clear((n) => n === 'cannon1.aud');
+  assert.equal((await content.updateFromKept({ force: true })).added, 1);
+  // Installed files carry when they came in.
+  assert.ok((await content.summary()).installedAt > 0);
+  await content.removeOriginal();
+  assert.equal(await content.keptPackage(), null, 'Remove deletes the kept package too');
+});
 
 test('content system: the first graphics install switches to them at once; removal switches back', async () => {
   const { content, settings } = contentSystem();
