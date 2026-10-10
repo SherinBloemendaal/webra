@@ -101,6 +101,44 @@ test('a sampled trace is a transaction event without headers, user agents, addre
   assertClean(fake.items);
 });
 
+test('the Worker\'s own requests get no tracing headers, and reports tell Sentry not to infer an address', async () => {
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init);
+    seen.push({ url: request.url, headers: Object.fromEntries(request.headers) });
+    return new Response('{}');
+  };
+  try {
+    const fake = fakeTransport();
+    const worker = withTelemetry(
+      {
+        async fetch() {
+          // Like the Discord token exchange and the content mirrors.
+          await fetch('https://discord.com/api/oauth2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+          await fetch(new Request('https://archive.org/download/x'));
+          throw new Error('after the requests');
+        },
+      },
+      { transport: fake.transport },
+    );
+    const ctx = execContext();
+    await assert.rejects(worker.fetch(new Request('https://webra.sherin.dev/api/x'), { SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '1' }, ctx));
+    await Promise.all(ctx.waits);
+    const outgoing = seen.filter((s) => !s.url.includes('sentry.invalid'));
+    assert.equal(outgoing.length, 2);
+    for (const s of outgoing) {
+      assert.equal(s.headers['sentry-trace'], undefined, s.url);
+      assert.equal(s.headers.baggage, undefined, s.url);
+    }
+    assert.ok(fake.items.some((x) => x.header.type === 'transaction'), 'the request was sampled');
+    assert.equal(fake.events()[0].sdk.settings.infer_ip, 'never');
+    assert.equal(fake.events()[0].sdk.name, 'sentry.javascript.cloudflare');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('a caught failure and a 5xx answer are reported; a 4xx is not', async () => {
   const fake = fakeTransport();
   const worker = withTelemetry(
@@ -207,6 +245,12 @@ test('the Durable Object: the plain class without a DSN, an instrumented instanc
 test('options: nothing collected by the SDK, release and environment from the variables, a bounded sample rate', () => {
   const o = sentryOptions({ SENTRY_DSN: DSN, SENTRY_RELEASE: 'webra@1.0.0+00000000', SENTRY_ENVIRONMENT: 'production', SENTRY_TRACES_SAMPLE_RATE: '0.2' });
   assert.equal(o.dsn, DSN);
+  assert.deepEqual(o.tracePropagationTargets, []);
+  assert.equal(o.traceLifecycle, 'static');
+  assert.deepEqual(o.beforeSendSpan({ description: 'GET https://discord.com/api/x?code=1', data: { 'http.request.header.authorization': 'x', 'url.full': 'https://discord.com/api/x?code=1' } }), {
+    description: 'GET https://discord.com/api/x?[Filtered]',
+    data: { 'url.full': 'https://discord.com/api/x?code=[Filtered]' },
+  });
   assert.equal(o.release, 'webra@1.0.0+00000000');
   assert.equal(o.tracesSampleRate, 0.2);
   assert.equal(o.dataCollection, DATA_COLLECTION);

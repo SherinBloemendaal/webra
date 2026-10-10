@@ -6,7 +6,10 @@
 // for @sentry/browser: nothing is ever sent. Run after `npm run build:wasm`.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { initSync, Game, take_panic, version } from '../pkg/webra_sim.js';
 import {
   CONSENT_KEY,
@@ -22,6 +25,7 @@ import {
   sdkOptions,
   setConsent,
   setTags,
+  TRACING_OPTIONS,
 } from '../js/telemetry/index.js';
 import { TELEMETRY_CONFIG } from '../js/telemetry/config.js';
 import { EngineError, engineError, reviveError, serializeError } from '../js/sim/engine-error.js';
@@ -32,6 +36,7 @@ import { MENU_HELP_KEYS, MENU_SETTINGS } from '../js/gamemenu.js';
 import { HELP } from '../js/help.js';
 import { SITE_HEADERS } from '../../server/src/static-headers.js';
 import { connectSources, DEFAULT_SENTRY_DSN, sentryBuildConfig } from '../../../tools/sentry-config.mjs';
+import { buildSentryBundle } from '../../../tools/vendor-sentry.mjs';
 import { WASM_PATH } from './sim-fixtures.mjs';
 
 initSync({ module: readFileSync(WASM_PATH) });
@@ -57,6 +62,9 @@ function fakeSdk() {
       Object.assign(sdk.tags, tags);
     },
     browserTracingIntegration: (o) => ({ name: 'BrowserTracing', o }),
+    withStaticSpan: (fn) => Object.assign(fn, { static: true }),
+    sent: [],
+    makeFetchTransport: () => ({ send: async (envelope) => (sdk.sent.push(envelope), { statusCode: 200 }), flush: async () => true }),
   };
   return sdk;
 }
@@ -164,6 +172,13 @@ test('the switch is in the settings registry, the account document, the game men
   assert.ok(MENU_HELP_KEYS.includes('errorReports'));
   assert.ok(HELP['settings.errorReports'].includes('sentry.vitrion.dev'));
   assert.equal(MENU_SETTINGS.includes('errorReports'), false, 'Defaults never switch reports back on');
+  // The switch covers this browser; the server's own reports hold no player data.
+  assert.match(HELP['settings.errorReports'], /covers this browser/);
+  assert.match(HELP['settings.errorReports'], /server reports its own errors either way/);
+  const privacy = readFileSync(new URL('../../website/privacy.html', import.meta.url), 'utf8');
+  assert.match(privacy, /The switch covers this browser/);
+  assert.match(privacy, /WebRA's server reports its own errors whatever the switch says/);
+  assert.match(privacy, /reports from your browser also tell Sentry not to take it\s+from the connection/);
 });
 
 // ---- What the SDK is told -----------------------------------------------------------------
@@ -184,8 +199,22 @@ test('SDK options: errors and sampled page loads only, nothing collected, no ses
     else if (typeof v === 'object') assert.ok(Object.values(v).every((x) => x === false), k);
     else assert.equal(v, false, k);
   }
-  const names = o.integrations([{ name: 'GlobalHandlers' }, { name: 'BrowserSession' }, { name: 'CultureContext' }, { name: 'Breadcrumbs' }]).map((i) => i.name);
-  assert.deepEqual(names, ['GlobalHandlers', 'Breadcrumbs', 'BrowserTracing']);
+  const integrations = o.integrations([{ name: 'GlobalHandlers' }, { name: 'BrowserSession' }, { name: 'CultureContext' }, { name: 'Breadcrumbs' }]);
+  assert.deepEqual(
+    integrations.map((i) => i.name),
+    ['GlobalHandlers', 'Breadcrumbs', 'BrowserTracing'],
+  );
+  // No INP (a span sent on its own, named after the element clicked), no long tasks, no request spans.
+  assert.deepEqual(integrations[2].o, { traceFetch: false, traceXHR: false, enableInp: false, enableLongTask: false, enableLongAnimationFrame: false });
+  assert.deepEqual(integrations[2].o, { ...TRACING_OPTIONS });
+  assert.equal(o.traceLifecycle, 'static');
+  // Every span is scrubbed, also one sent on its own.
+  assert.equal(o.beforeSendSpan.static, true);
+  noteUserText({ name: 'Remove Tanya' });
+  assert.deepEqual(o.beforeSendSpan({ description: 'ui.interaction.click: button[title="Remove Tanya"]', data: { 'browser.web_vital.inp.target': 'div > button.kick[aria-label="Remove Tanya"]', 'url.full': 'https://webra.sherin.dev/play/?join=x', 'user_agent.original': 'UA' } }), {
+    description: 'ui.interaction.click: button[title="[redacted]"]',
+    data: { 'browser.web_vital.inp.target': 'div > button.kick[aria-label="[redacted]"]', 'url.full': 'https://webra.sherin.dev/play/?join=[Filtered]' },
+  });
   assert.deepEqual(o.initialScope.tags, { surface: 'website', protocol: o.initialScope.tags.protocol, mode: 'menu' });
   assert.match(o.initialScope.tags.protocol, /^\d+$/);
   // No traces at all with a rate of 0.
@@ -197,6 +226,59 @@ test('SDK options: errors and sampled page loads only, nothing collected, no ses
   );
   setTags({ mode: 'online', renderer: 'webgpu', original_content: 'off' });
   assert.deepEqual(sdk.tags, { mode: 'online', renderer: 'webgpu', original_content: 'off' });
+});
+
+test('the transport sends nothing while reports are off, whatever produced the envelope', async () => {
+  const sdk = fakeSdk();
+  await initTelemetry({ surface: 'game', config: CONFIG, storage: memoryStorage(), win: fakeWindow(), loadSdk: async () => sdk });
+  const transport = sdk.options.transport({ url: 'https://sentry.invalid' });
+  await transport.send(['event']);
+  assert.equal(sdk.sent.length, 1);
+  setConsent(false);
+  // A span sent on its own (the SDK's standalone spans) passes no beforeSend hook: the transport drops it.
+  await transport.send([{}, [[{ type: 'span' }, { name: 'click' }]]]);
+  assert.equal(sdk.sent.length, 1);
+  setConsent(true);
+  await transport.send(['event']);
+  assert.equal(sdk.sent.length, 2);
+  assert.equal(await transport.flush(10), true);
+});
+
+test('the real bundled SDK: reports go through the consent transport, requests get no tracing headers', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'webra-sdk-'));
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers ?? undefined)) });
+    return new Response('{}');
+  };
+  try {
+    const file = join(dir, 'sentry.js');
+    await buildSentryBundle(file);
+    const real = await import(pathToFileURL(file).href);
+    const sent = [];
+    const sdk = { ...real, makeFetchTransport: () => ({ send: async (e) => (sent.push(e), { statusCode: 200 }), flush: async () => true }) };
+    const r = await initTelemetry({ surface: 'game', config: { ...CONFIG, tracesSampleRate: 1 }, storage: memoryStorage(), win: fakeWindow(), loadSdk: async () => sdk });
+    assert.equal(r.enabled, true);
+    await fetch('https://webra.sherin.dev/api/sessions');
+    await fetch('/api/maps');
+    for (const s of seen) {
+      assert.equal(s.headers['sentry-trace'], undefined, s.url);
+      assert.equal(s.headers.baggage, undefined, s.url);
+    }
+    reportError(new Error('sent'));
+    await new Promise((res) => setTimeout(res, 50));
+    const items = () => sent.flatMap((env) => env[1].map(([h, p]) => ({ type: h.type, p })));
+    assert.equal(items().filter((i) => i.type === 'event').length, 1);
+    assert.equal(items().find((i) => i.type === 'event').p.sdk.settings.infer_ip, 'never', 'Sentry takes no address from the connection');
+    setConsent(false);
+    real.captureMessage('dropped while off');
+    await new Promise((res) => setTimeout(res, 50));
+    assert.equal(items().filter((i) => i.type === 'event').length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('beforeSend scrubs chat, names, member keys, cookies, headers and URLs with tokens', async () => {

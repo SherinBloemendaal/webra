@@ -186,17 +186,24 @@
         <p>
           Reports never hold your username, display name, email address, account id, chat, player, lobby or map names,
           cookies, sign-in or rejoin keys, or anything you typed: the game removes such text from messages before a report
-          leaves your browser. Reports carry no network address and tell Sentry not to take it from the connection. A
-          small share of page loads (5%) also sends how long the page took to load, with the same limits. There are no
-          session recordings. Reports are kept for 90 days.
+          leaves your browser. Reports carry no network address; reports from your browser also tell Sentry not to take it
+          from the connection, and the Sentry server is set not to store addresses. A small share of page loads (5%) also
+          sends how long the page took to load, with the same limits. There are no session recordings. Reports are kept
+          for 90 days.
         </p>
         <div class="panel" id="error-reports-switch">
           <label><input type="checkbox" disabled /> Send error reports from this browser</label>
           <p data-state>Error reports follow the setting in the game (Settings, Privacy): on unless you switch them off.</p>
         </div>
         <p>
-          The same switch is in the game's Settings under Privacy. When you are signed in it is part of your synchronized
-          settings, so it follows you to other devices.
+          The switch covers this browser: what your browser sends. The same switch is in the game's Settings under
+          Privacy. When you are signed in it is part of your synchronized settings, so it follows you to other devices
+          once the game or your account page runs there.
+        </p>
+        <p>
+          WebRA's server reports its own errors whatever the switch says, including a request of yours that failed on the
+          server. Those reports hold the error, the address on WebRA's site that was asked for (without anything after
+          <code>?</code>) and the method, never your account, network address, cookies, headers or what you sent.
         </p>
 
         <h2>Original Red Alert files</h2>

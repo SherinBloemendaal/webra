@@ -403,10 +403,12 @@ sources), finalizes it and records a deploy for the environment. Without the
 token those steps print a notice and are skipped; with the token but without
 `SENTRY_ORG` or `SENTRY_PROJECT` the deploy fails with an error.
 
-Recommended settings of the Sentry project: Security & Privacy, "Prevent
-Storing of IP Addresses" on and the default data scrubbers on (reports carry
-no addresses and tell Sentry not to infer them; this is a second guard), and
-an event retention of 90 days (the privacy notice says so).
+Required settings of the Sentry project, before the first deploy that
+reports (the privacy notice relies on them): Security & Privacy, "Prevent
+Storing of IP Addresses" on, and an event retention of 90 days. Recommended:
+the default data scrubbers on. Reports carry no addresses and tell Sentry not
+to infer them (`infer_ip: never`, browser and Worker); the project setting is
+the guard on the server's side.
 
 ## Turning automatic deploys on
 

@@ -204,6 +204,20 @@ function scrubSpanData(data, redactor) {
 }
 
 /**
+ * A span fit to send (SDK `beforeSendSpan`, spans sent on their own or in a
+ * transaction): its description and data scrubbed like a transaction's.
+ */
+export function scrubSpan(span, redactor = null) {
+  if (!span || typeof span !== 'object') return span;
+  const out = { ...span };
+  if (typeof out.description === 'string') out.description = scrubDescription(out.description, redactor);
+  if (typeof out.name === 'string') out.name = scrubDescription(out.name, redactor);
+  if (out.data) out.data = scrubSpanData(out.data, redactor);
+  if (out.attributes) out.attributes = scrubSpanData(out.attributes, redactor);
+  return out;
+}
+
+/**
  * An event (error or transaction) fit to send. Drops the user, request
  * headers (but the User-Agent with `userAgent`), cookies, query strings and
  * bodies; scrubs exception messages, the message, breadcrumbs, contexts,

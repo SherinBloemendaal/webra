@@ -754,8 +754,9 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   Browser reports keep the User-Agent (browser and GPU stack bugs need it);
   the Worker's keep none.
 - **What is never sent.** Users (no id, name or email; no hashed id either:
-  errors are not tied to accounts), network addresses (the browser SDK tells
-  Sentry not to infer them, `infer_ip: never`), cookies, request headers and
+  errors are not tied to accounts), network addresses (both SDKs tell
+  Sentry not to infer them, `infer_ip: never`, and the project must have
+  "Prevent Storing of IP Addresses" on), cookies, request headers and
   bodies (Authorization, `X-WebRA-Member`, `X-WebRA-Auth`, passwords, map
   uploads), query strings and fragments (rejoin keys, invite links, OAuth
   codes), local variables, session replays and sessions. Both SDKs run with
@@ -771,7 +772,16 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   of their attributes; traces lose header, user agent, address, query and body
   attributes and the time zone. Traces are sent as transactions
   (`traceLifecycle: 'static'`), so they pass the same scrubber (the SDK's
-  default streams spans past `beforeSendTransaction`).
+  default streams spans past `beforeSendTransaction`). Spans that the SDK
+  sends on their own bypass every `beforeSend*` hook, so: the browser traces
+  only page loads and navigations (LCP and CLS ride on the page load
+  transaction); INP, which is such a span named after the element clicked
+  (whose title or label can hold a player's name), long tasks and request
+  spans are off; `beforeSendSpan` scrubs every span; and the browser's
+  transport sends nothing while reports are switched off, whatever produced
+  the envelope. Neither SDK adds `sentry-trace` or `baggage` headers to any
+  request (`tracePropagationTargets: []`): not to the API, not to Discord,
+  the content mirrors or archive.org.
 - **Players' text.** Chat, player, lobby and map names cannot be recognized
   by their shape, so the client remembers the text it receives and sends
   (`noteUserText`: WebSocket messages and API answers in `js/net.js`,
@@ -785,9 +795,11 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   registry's `privacy.errorReports`, synced with the account. It is read
   from localStorage before anything loads: switched off, the SDK is never
   loaded. Switching it off later (this tab, another tab, an account sync)
-  drops every event, transaction and breadcrumb from then on; switching it
-  on loads the SDK. The game menu's Defaults button never switches it back
-  on.
+  drops every event, transaction and breadcrumb from then on and the
+  transport sends nothing; switching it on loads the SDK. The game menu's
+  Defaults button never switches it back on. The switch covers what this
+  browser sends: the Worker reports its own errors whatever it says, also of
+  a player's request that failed, with none of the player's data (above).
 - **Loading and CSP.** The SDK is bundled by `tools/build-dist.mjs` into
   `/play/vendor/sentry.js` and `/lib/vendor/sentry.js` (only what WebRA uses:
   no replay or feedback code) and loaded from the site's own origin: the CSP
@@ -812,8 +824,9 @@ public client key, set at build time: docs/deploy.md, "Error reports").
   the project. That costs Sentry quota and noise, never data: the project
   holds nothing but these reports. Rate limits of the Sentry server apply.
 - **The Sentry server.** It sees each report's connection like any web
-  server. Recommended project settings (docs/deploy.md): "Prevent Storing of
-  IP Addresses", the default data scrubbers, 90 days of retention.
+  server. Required project settings (docs/deploy.md): "Prevent Storing of
+  IP Addresses" and 90 days of retention; recommended: the default data
+  scrubbers.
   `apps/website/privacy.html` says all of this to players.
 
 ## Inherent to lockstep

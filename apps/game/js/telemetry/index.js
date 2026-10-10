@@ -23,7 +23,7 @@
 
 import { TELEMETRY_CONFIG } from './config.js';
 import { PROTOCOL_VERSION } from '../../protocol/constants.js';
-import { Redactor, scrubBreadcrumb, scrubEvent } from '../../protocol/scrub.js';
+import { Redactor, scrubBreadcrumb, scrubEvent, scrubSpan } from '../../protocol/scrub.js';
 
 /** localStorage key and place of the setting (js/registry.js REGISTRY_KEY, group `privacy`). */
 export const CONSENT_KEY = 'webra.prefs.v1';
@@ -159,6 +159,30 @@ async function start() {
   }
 }
 
+/**
+ * What browserTracingIntegration measures: page loads and navigations with
+ * their web vitals (LCP and CLS ride on the page load transaction). Off:
+ * spans of requests (no tracing headers either), INP (sent as a span of its
+ * own, outside beforeSendTransaction, and named after the element clicked,
+ * whose title or label can hold a player's name) and long tasks.
+ */
+export const TRACING_OPTIONS = Object.freeze({ traceFetch: false, traceXHR: false, enableInp: false, enableLongTask: false, enableLongAnimationFrame: false });
+
+/**
+ * The SDK's transport behind the player's switch: while reports are off,
+ * nothing leaves the page, whatever produced it (an event, a transaction or
+ * a span sent on its own).
+ */
+function consentTransport(sdk) {
+  return (options) => {
+    const inner = sdk.makeFetchTransport(options);
+    return {
+      send: (envelope) => (state.consent ? inner.send(envelope) : Promise.resolve({})),
+      flush: (timeout) => inner.flush(timeout),
+    };
+  };
+}
+
 /** The SDK's options: errors only, a share of page load traces, everything scrubbed. */
 export function sdkOptions(sdk, config = state.config) {
   const rate = Number(config.tracesSampleRate) || 0;
@@ -172,7 +196,7 @@ export function sdkOptions(sdk, config = state.config) {
     integrations: (defaults) => [
       ...defaults.filter((i) => !DROPPED_INTEGRATIONS.has(i.name)),
       // No tracing headers on requests to the API or anywhere else.
-      ...(rate > 0 && sdk.browserTracingIntegration ? [sdk.browserTracingIntegration({ traceFetch: false, traceXHR: false })] : []),
+      ...(rate > 0 && sdk.browserTracingIntegration ? [sdk.browserTracingIntegration({ ...TRACING_OPTIONS })] : []),
     ],
     tracesSampleRate: rate,
     // Traces as transaction events, so they pass beforeSendTransaction (the
@@ -186,6 +210,9 @@ export function sdkOptions(sdk, config = state.config) {
     beforeSend: (event, hint) => (state.consent ? scrubEvent(withContext(event, hint), state.redactor, { userAgent: true }) : null),
     beforeSendTransaction: (event) => (state.consent ? scrubEvent(event, state.redactor, { userAgent: true }) : null),
     beforeBreadcrumb: (crumb) => (state.consent ? scrubBreadcrumb(crumb, state.redactor) : null),
+    // Every span, also one sent on its own, is scrubbed (a span cannot be dropped here: the transport does that).
+    ...(sdk.withStaticSpan ? { beforeSendSpan: sdk.withStaticSpan((span) => scrubSpan(span, state.redactor)) } : {}),
+    ...(sdk.makeFetchTransport ? { transport: consentTransport(sdk) } : {}),
   };
 }
 

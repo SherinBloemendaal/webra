@@ -12,7 +12,7 @@ import { build } from 'esbuild';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** What js/telemetry/index.js calls on the SDK. */
-export const SDK_EXPORTS = Object.freeze(['init', 'captureException', 'captureMessage', 'setTags', 'browserTracingIntegration']);
+export const SDK_EXPORTS = Object.freeze(['init', 'captureException', 'captureMessage', 'setTags', 'browserTracingIntegration', 'makeFetchTransport', 'withStaticSpan']);
 
 /** The installed @sentry/browser version (package-lock pins it). */
 export function sdkVersion() {

@@ -17,8 +17,8 @@
 // and every event, transaction and breadcrumb goes through the protocol
 // package's scrubber (packages/protocol/src/scrub.js) as well.
 
-import { captureException, instrumentDurableObjectWithSentry, withSentry } from '@sentry/cloudflare';
-import { scrubBreadcrumb, scrubEvent } from '@webra/protocol';
+import { captureException, instrumentDurableObjectWithSentry, withSentry, withStaticSpan } from '@sentry/cloudflare';
+import { scrubBreadcrumb, scrubEvent, scrubSpan } from '@webra/protocol';
 
 /** Every category of data the SDK could collect by itself is off (it replaced `sendDefaultPii`). */
 export const DATA_COLLECTION = Object.freeze({
@@ -61,12 +61,19 @@ export function sentryOptions(env, { transport = null } = {}) {
     // Traces as transaction events, so they pass beforeSendTransaction (the
     // default streams spans past it).
     traceLifecycle: 'static',
+    // No sentry-trace or baggage headers on the Worker's own requests
+    // (Discord, the content mirrors, archive.org).
+    tracePropagationTargets: [],
+    // Sentry must not take an address from the connection (it is
+    // Cloudflare's, but the setting says so for every report).
+    _metadata: { sdk: { settings: { infer_ip: 'never' } } },
     dataCollection: DATA_COLLECTION,
     sendClientReports: false,
     initialScope: { tags: { surface: 'worker' } },
     beforeSend: (event) => scrubEvent(event),
     beforeSendTransaction: (event) => scrubEvent(event),
     beforeBreadcrumb: (crumb) => scrubBreadcrumb(crumb),
+    beforeSendSpan: withStaticSpan((span) => scrubSpan(span)),
     // A test's fake transport: a client per invocation (the SDK otherwise keeps one per isolate).
     ...(transport ? { transport, cacheClient: false } : {}),
   };
