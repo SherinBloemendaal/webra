@@ -50,6 +50,17 @@ SRC = os.path.join(DATA, 'source', 'missions')
 OUT = os.path.join(ROOT, 'apps', 'game', 'missions')
 COOP_OUT = os.path.join(ROOT, 'packages', 'protocol', 'src', 'coop-missions.js')
 FORMAT = 1
+
+
+def map_format_version():
+    """The map format version the engine reads (engine/src/mapdata.rs FORMAT_VERSION, docs/contracts.md "Map versions")."""
+    with open(os.path.join(ROOT, 'engine', 'src', 'mapdata.rs'), encoding='utf-8') as f:
+        return int(re.search(r'pub const FORMAT_VERSION: u32 = (\d+);', f.read()).group(1))
+
+
+# Mission maps name their map format version like map files, left out at 1
+# like the canonical form, so every mission file from before versions stays.
+MAP_FORMAT_VERSION = map_format_version()
 OPENRA_COMMIT = 'b6fc03fcfaef1277592bbd4cbc7d44dd85219902'
 
 sys.path.insert(0, TOOLS)
@@ -637,7 +648,8 @@ def mission_file(mission, campaign, gen, base_actor_ids):
                                                     ('win', 'WinVideo'), ('loss', 'LossVideo')) if data.get(v)},
         'tileset': m['tileset'],
         'origin': m['origin'],
-        'map': {'format': 2 if 'gems' in m['map'] else 1, 'name': title[:64], 'author': (m['author'] or 'OpenRA')[:64], 'description': '',
+        'map': {**({'formatVersion': MAP_FORMAT_VERSION} if MAP_FORMAT_VERSION != 1 else {}),
+                'format': 2 if 'gems' in m['map'] else 1, 'name': title[:64], 'author': (m['author'] or 'OpenRA')[:64], 'description': '',
                 **m['map'], 'spawns': []},
         'players': players,
         'actors': [actor_info(a, next((p['name'] for p in players if p['owns_world']), 'Neutral')) for a in m['actors']],

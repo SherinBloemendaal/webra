@@ -91,7 +91,7 @@
 
 .field input[aria-invalid='true'],
 .field textarea[aria-invalid='true'] {
-  border-color: var(--red-hi);
+  border-color: var(--danger);
 }
 
 .form-help {
@@ -103,8 +103,8 @@
 .form-status {
   margin: 0;
   padding: 8px 12px;
-  border-left: 3px solid var(--accent);
-  background: rgba(74, 130, 196, 0.12);
+  border-left: 3px solid var(--info);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
 }
 
 .form-status[hidden] {
@@ -112,8 +112,8 @@
 }
 
 .form-status-error {
-  border-left-color: var(--red-hi);
-  background: rgba(255, 90, 60, 0.12);
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .form-status-ok {
@@ -266,7 +266,7 @@ ul.form-status {
 }
 
 .account-state-banned {
-  border-left-color: var(--red-hi);
+  border-left-color: var(--danger);
 }
 
 .account-state-pending_email,
@@ -431,7 +431,7 @@ ul.form-status {
 
 .data-table tbody tr:hover,
 .data-table tbody tr.selected {
-  background: rgba(74, 130, 196, 0.1);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .data-table .col-check {
@@ -489,7 +489,7 @@ th[aria-sort='descending'] .sort::after {
 }
 
 .badge-banned {
-  color: var(--red-hi);
+  color: var(--danger);
 }
 
 .badge-deleted {

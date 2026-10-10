@@ -16,6 +16,7 @@ import {
   formatFor,
   isModded,
   mapFileName,
+  mapFileText,
   mapHash,
   parseMap,
   reachableFrom,
@@ -383,9 +384,11 @@ const ours = (map) => validateMap(map, { catalog: ENGINE_CATALOG, rulesBase: RUL
 
 test('canonical JSON and hash match the engine for generated maps', async () => {
   for (const [seed, size, players] of [[1, 64, 2], [7, 96, 4], [42, 128, 8], [3, 32, 3]]) {
+    // The generator writes a map file (format version and release in front); its identity is the canonical form.
     const text = Game.generated_map(seed, size, players);
     const map = JSON.parse(text);
-    assert.equal(canonicalJson(map), text, `${seed}/${size}/${players}`);
+    assert.equal(mapFileText(map), text, `${seed}/${size}/${players}: the editor saves the same bytes`);
+    assert.equal(canonicalJson(map), Game.map_canonical(text), `${seed}/${size}/${players}`);
     assert.equal(await mapHash(map), Game.map_hash(text));
     const r = ours(map);
     assert.deepEqual(r.errors, [], `${seed}/${size}/${players}`);

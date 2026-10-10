@@ -8,6 +8,8 @@
 //   const { user } = await api.me();
 //   await api.login({ login: 'Tanya', password: '...' });
 
+import { noteUserText } from '../telemetry/index.js';
+
 /** Header every write (and every account and admin read) carries (1.1). */
 export const CSRF_HEADER = 'X-WebRA-CSRF';
 
@@ -68,6 +70,8 @@ export class AccountApi {
    * returns the Response (downloads). Returns `{ body, etag, status }`.
    */
   async send(method, path, { body, ifMatch, raw = false } = {}) {
+    // Names, emails and other players' text are cut out of error reports (js/telemetry).
+    if (body !== undefined) noteUserText(body);
     const headers = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (needsCsrf(method, path)) headers[CSRF_HEADER] = '1';
@@ -89,6 +93,7 @@ export class AccountApi {
     let data = null;
     try {
       data = text ? JSON.parse(text) : null;
+      noteUserText(data);
     } catch {
       data = undefined; // not JSON: a static server without the API, or a proxy error page
     }

@@ -22,6 +22,8 @@
 import { SharedFrames } from './framebuffer.js';
 import { chooseSimMode, MODE_LABELS, simEnvironment } from './modes.js';
 import { DirectGame, RemoteGame } from './proxy.js';
+import { reviveError } from './engine-error.js';
+import { reportError } from '../telemetry/index.js';
 
 /** How long a worker may take to load the engine before the main thread runs the game itself. */
 export const WORKER_START_TIMEOUT_MS = 15000;
@@ -55,10 +57,22 @@ class Events {
 /**
  * Start a simulation host in the best mode this page supports
  * (js/sim/modes.js), falling back to the main thread when the worker fails.
+ * `engine` (the wasm module's `version` and `take_panic`) names engine
+ * panics on the main thread (js/sim/engine-error.js); the worker has its own.
  * @param {{ Game: any, memory: () => WebAssembly.Memory, module?: WebAssembly.Module | null,
+ *   engine?: { version?: () => string, takePanic?: () => string | undefined } | null,
  *   env?: object, workerUrl?: URL | string, WorkerClass?: any, timeoutMs?: number }} o
  */
-export async function createSimHost({ Game, memory, module = null, env = simEnvironment(), workerUrl = null, WorkerClass = globalThis.Worker, timeoutMs = WORKER_START_TIMEOUT_MS }) {
+export async function createSimHost({
+  Game,
+  memory,
+  module = null,
+  engine = null,
+  env = simEnvironment(),
+  workerUrl = null,
+  WorkerClass = globalThis.Worker,
+  timeoutMs = WORKER_START_TIMEOUT_MS,
+}) {
   const choice = chooseSimMode(env);
   if (choice.mode !== 'direct') {
     try {
@@ -72,27 +86,27 @@ export async function createSimHost({ Game, memory, module = null, env = simEnvi
       });
     } catch (err) {
       console.warn('The simulation worker did not start; running on the main thread:', err?.message ?? err);
-      return DirectHost.create({ Game, memory, reason: `worker failed (${err?.message ?? err}): main thread` });
+      return DirectHost.create({ Game, memory, engine, reason: `worker failed (${err?.message ?? err}): main thread` });
     }
   }
-  return DirectHost.create({ Game, memory, reason: choice.reason });
+  return DirectHost.create({ Game, memory, engine, reason: choice.reason });
 }
 
 // ---- Main thread ---------------------------------------------------------------------
 
 export class DirectHost extends Events {
-  static async create({ Game, memory, reason = 'main thread' }) {
+  static async create({ Game, memory, engine = null, reason = 'main thread' }) {
     const { SimCore } = await import('./core.js');
-    return new DirectHost(SimCore, Game, memory, reason);
+    return new DirectHost(SimCore, Game, memory, reason, engine);
   }
 
-  constructor(SimCore, Game, memory, reason) {
+  constructor(SimCore, Game, memory, reason, engine = null) {
     super();
     this.mode = 'direct';
     this.label = MODE_LABELS.direct;
     this.reason = reason;
     this.memory = memory;
-    this.core = new SimCore({ Game, memory, emit: (type, payload) => this.emit(type, payload) });
+    this.core = new SimCore({ Game, memory, engine, onFailure: (err) => reportError(err), emit: (type, payload) => this.emit(type, payload) });
     this.game = null;
     this.frame = null;
     this.frames = 0;
@@ -191,6 +205,7 @@ export class WorkerHost extends Events {
       worker.onmessage = (e) => {
         if (e.data?.t === 'ready') finish(null, e.data);
         else if (e.data?.t === 'failed') finish(new Error(e.data.error));
+        else if (e.data?.t === 'error') reportError(reviveError(e.data.error), { source: 'sim-worker' });
       };
       worker.onerror = (e) => {
         e.preventDefault?.();
@@ -303,6 +318,10 @@ export class WorkerHost extends Events {
         return;
       case 'warn':
         console.warn('simulation:', msg.message);
+        return;
+      case 'error':
+        // An error in the worker, for the error report (js/telemetry).
+        reportError(reviveError(msg.error), { source: 'sim-worker' });
         return;
       case 'failed':
         this.fail(msg.error);

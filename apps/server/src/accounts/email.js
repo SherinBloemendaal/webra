@@ -5,6 +5,7 @@
 
 import { randomToken, sha256Hex } from '../crypto.js';
 import { services } from './site.js';
+import { logError } from '../telemetry.js';
 
 export const SENDER = 'noreply@webra.sherin.dev';
 export const ACCOUNT_PAGE = '/account/';
@@ -91,7 +92,7 @@ export async function sendEmail(env, to, message) {
     await env.EMAIL.send({ from: SENDER, to, subject: message.subject, html: message.html, text: message.text });
     return true;
   } catch (err) {
-    console.error('email send failed', err?.name, err?.message);
+    logError('email send failed', err);
     return false;
   }
 }

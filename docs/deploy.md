@@ -55,6 +55,11 @@ npm run build        # assembles dist/
 - `packages/protocol/src` to `dist/play/protocol/`
 - writes `dist/version.json`: `{ version, commit, builtAt }`, version from the
   root `package.json`, commit from `git rev-parse HEAD`
+- writes this build's error report settings into `js/telemetry/config.js`
+  under `dist/play/` and `dist/lib/` and keeps the privacy notice's section
+  that applies; with a DSN, bundles the error report SDK (`@sentry/browser`,
+  `tools/vendor-sentry.mjs`) into `dist/play/vendor/sentry.js` and
+  `dist/lib/vendor/sentry.js` with a source map (see Error reports below)
 
 It stops with an error when `apps/game/pkg/webra_sim_bg.wasm` is missing, so a
 deploy can never ship a game without its engine.
@@ -69,10 +74,16 @@ dispatch (Actions, Deploy, Run workflow):
 2. `deploy` (GitHub environment `production`): installs Rust with the
    `wasm32-unknown-unknown` target, wasm-pack and Node 22, then `npm ci`,
    `npm run build:wasm` (with `WEBRA_GIT_HASH` set to the commit),
-   `npm run build`, and from `apps/server`:
+   `npm run build` (with `WEBRA_ENV=production` and the error report
+   variables, see Error reports),
+   and from `apps/server`:
    - `npx wrangler d1 migrations apply webra --remote`, only when
      `apps/server/migrations` exists
-   - `npx wrangler deploy`
+   - with the secret `SENTRY_AUTH_TOKEN`: create the Sentry release and upload
+     the JavaScript sources and source maps (skipped without it)
+   - `npx wrangler deploy` with the Worker's `SENTRY_*` variables
+   - with `SENTRY_AUTH_TOKEN`: finalize the release and record the deploy in
+     Sentry (skipped without it)
 
 Deploys share the concurrency group `deploy-production` without cancelling:
 a newer push waits until the running deploy is done, so two deploys never
@@ -139,14 +150,14 @@ Node 22 installed:
 ```bash
 npm ci
 WEBRA_GIT_HASH=$(git rev-parse HEAD) npm run build:wasm
-npm run build
+WEBRA_ENV=production npm run build   # add SENTRY_DSN=<dsn> once error reports are turned on
 cd apps/server
 npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 # The d1 commands ignore account_id in wrangler.jsonc; with a login that sees
 # several accounts they need it in the environment.
 export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
 npx wrangler d1 migrations apply webra --remote   # only when apps/server/migrations exists
-npx wrangler deploy
+npx wrangler deploy $(WEBRA_ENV=production node ../../tools/sentry-config.mjs worker-vars)
 ```
 
 Then check <https://webra.sherin.dev/version.json> for the deployed commit and
@@ -233,6 +244,7 @@ settings.
 | `DISCORD_CLIENT_SECRET` | secret | Discord application secret |
 | `PASSWORD_PEPPER` | secret, optional | At least 16 characters; HMAC key applied to passwords before PBKDF2 |
 | `IP_HASH_SALT` | secret, **required** | At least 16 random characters; HMAC key for every stored address hash (sessions, rate limits). Without it the Worker answers `503 misconfigured` to anything that would store one (only plain HTTP to localhost uses a fixed development key) |
+| `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | variables in `wrangler.jsonc` (empty DSN: off), set by the deploy | Error reports of the Worker (see Error reports) |
 | `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
@@ -348,6 +360,87 @@ files, nothing is sent) unless `"remote": true` is added to it.
 The cron trigger runs `apps/server/src/accounts/cron.js` once a day. To run
 it locally: `npx wrangler dev --test-scheduled`, then
 `curl "http://localhost:8787/__scheduled?cron=17+3+*+*+*"`.
+
+## Error reports
+
+The game, the map editor, the website and the Worker can report errors to the
+self-hosted Sentry at <https://sentry.vitrion.dev> (what a report holds and
+what it never holds: docs/security.md, "Error reports", and the privacy
+notice). Reporting is **opt-in for the operator**: no DSN is built in, and
+until the repository variable `SENTRY_DSN` is set, deploys bundle no DSN, the
+browser never loads the SDK, the Worker's wrapper does nothing, and the
+privacy notice says "Error reporting is currently off". Once it is on,
+players switch reports off for their browser in the game's Settings
+(Privacy) or on the privacy page.
+
+### Turning error reports on
+
+In this order (the privacy notice describes the project settings of step 1
+as soon as step 2 is deployed):
+
+1. In Sentry (sentry.vitrion.dev), project settings of the WebRA project (id
+   121), Security & Privacy:
+   - turn **"Prevent Storing of IP Addresses"** on;
+   - set the **event retention to 90 days** (the privacy notice says so; on
+     self-hosted Sentry this is `SENTRY_EVENT_RETENTION_DAYS=90`);
+   - keep the default data scrubbers on (recommended).
+2. In GitHub (Settings, Secrets and variables, Actions, Variables): add the
+   repository variable `SENTRY_DSN` with the project's DSN:
+
+   ```
+   https://<public key>@sentry.vitrion.dev/121
+   ```
+
+   The next deploy builds the game and the website with it and passes it to
+   the Worker. Optional variables: `SENTRY_ENVIRONMENT` (default
+   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.05`).
+3. Optional, for releases, source files and deploy markers: see below.
+
+To turn reporting off again, delete the variable (or set it to `off`) and
+deploy.
+
+Configuration (`tools/sentry-config.mjs`), from the environment of `npm run
+build` and, for the Worker, passed by the deploy workflow as `--var`:
+
+| Name | Default | Purpose |
+|------|---------|---------|
+| `SENTRY_DSN` | none: nothing is reported | Where reports go (a public client key, not a secret). `off` is the same as unset. A DSN for another host needs that host in the CSP `connect-src` (`apps/website/_headers` and `apps/server/src/static-headers.js`), or the build stops |
+| `SENTRY_ENVIRONMENT` | `production` in production builds (`WEBRA_ENV=production`), else `dev` | The Sentry environment |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of page loads and Worker requests sent as performance traces (0 to 1) |
+
+Local builds, `wrangler dev` (`SENTRY_DSN` is empty in `wrangler.jsonc`)
+and the tests report nothing. To try reports locally, build with
+`SENTRY_DSN=<a DSN of a test project>` and start wrangler dev with
+`--var SENTRY_DSN:<that DSN>`.
+
+The release is `webra@<version>+<commit>`, the build id of
+`dist/version.json` (`node tools/sentry-config.mjs release`); the game, the
+website and the Worker report the same one.
+
+### Releases, source files and deploy markers
+
+Optional, after reports are on. They need an auth token, which the owner
+creates and stores; never paste it anywhere else:
+
+1. In Sentry (sentry.vitrion.dev): Settings, Developer Settings (or
+   Organization Tokens), create an **organization auth token** (scopes
+   `project:releases` and `org:read` suffice).
+2. In GitHub (Settings, Secrets and variables, Actions): add the secret
+   `SENTRY_AUTH_TOKEN` (repository or `production` environment) and the
+   variables `SENTRY_ORG` (the organization slug) and `SENTRY_PROJECT` (the
+   project slug of the DSN's project, id 121). `SENTRY_URL` is optional
+   (default `https://sentry.vitrion.dev`).
+
+With the token, each deploy creates the release, uploads every `.js` and
+`.map` under `dist/` by its URL path (`~/play/js/main.js`, the SDK with its
+source map; the game's own modules are not bundled, so they are their own
+sources), finalizes it and records a deploy for the environment. Without the
+token those steps print a notice and are skipped; with the token but without
+`SENTRY_ORG` or `SENTRY_PROJECT` the deploy fails with an error.
+
+Reports carry no addresses and tell Sentry not to infer them (`infer_ip:
+never`, browser and Worker); "Prevent Storing of IP Addresses" is the guard
+on the server's side.
 
 ## Turning automatic deploys on
 

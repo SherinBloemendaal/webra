@@ -31,6 +31,7 @@ import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
 import { closeOpenTip, labelWithHelp } from './infotip.js';
+import { configured as reportsConfigured } from './telemetry/index.js';
 
 /**
  * Settings of the Settings page with a "?" (tests check each one has help
@@ -48,10 +49,12 @@ export const MENU_HELP_KEYS = Object.freeze([
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
+  'targetLines',
   'playerStanceColors',
   'mouseCapture',
   'mouseCaptureSpeed',
   'mouseCaptureEscMenu',
+  'errorReports',
 ]);
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
@@ -135,6 +138,7 @@ export const MENU_SETTINGS = Object.freeze([
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
+  'targetLines',
   'healthBars',
   'playerStanceColors',
   'mouseCapture',
@@ -511,11 +515,13 @@ export class GameMenu {
     if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
 
     // ---- Scrolling and units ----
+    const targetLines = choice('targetLines', 'Target lines', SCHEMA.targetLines.labels);
     list.append(
       el('h2', null, 'Scrolling and units'),
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      withHelp(targetLines, 'targetLines', targetLines.querySelector('[role="radiogroup"]')),
       choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       check('playerStanceColors', 'Relationship colours'),
     );
@@ -544,6 +550,11 @@ export class GameMenu {
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
     }
+
+    // ---- Privacy (js/telemetry: error reports). Not reset by Defaults: switching reports back on is the player's call. ----
+    // The switch is kept even when this build reports nothing (it is synced and applies once reports are turned on).
+    list.append(el('h2', null, 'Privacy'), check('errorReports', 'Send error reports'));
+    if (!reportsConfigured()) list.append(el('p', 'hint', 'Error reporting is off on this site: nothing is sent, whatever this switch says.'));
 
     c.append(
       list,

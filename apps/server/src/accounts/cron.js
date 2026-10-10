@@ -2,7 +2,7 @@
 // accounts data (docs/accounts-api.md, sections 6 and 8; apps/website/privacy.html).
 
 import { pruneSessions } from '../directory.js';
-import { UNLISTED_RETENTION_MS } from '../maps.js';
+import { DAILY_UPGRADE_BATCH, UNLISTED_RETENTION_MS, upgradeStaleMaps } from '../maps.js';
 import { ONLINE_SAVE_RETENTION_MS } from '@webra/protocol';
 import { pruneQuotas } from '../quota.js';
 import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
@@ -42,8 +42,12 @@ export async function runRetention(env, now = Date.now()) {
     sharedMaps: await run('DELETE FROM maps WHERE listed = 0 AND COALESCE(used_at, created_at) < ?1', now - UNLISTED_RETENTION_MS),
     // Saved online games: their records go after 90 days (the files stay with the players).
     onlineSaves: await run('DELETE FROM online_saves WHERE created_at < ?1', now - ONLINE_SAVE_RETENTION_MS),
+    // Old hashes of upgraded maps (map versions) go with the map they point to.
+    mapAliases: await run('DELETE FROM map_aliases WHERE hash NOT IN (SELECT hash FROM maps)'),
     purged: 0,
   };
+  // Maps stored before a format version change: upgraded in batches (reads upgrade them too).
+  out.mapUpgrades = await upgradeStaleMaps(db, { now, limit: DAILY_UPGRADE_BATCH });
   const { results } = await db
     .prepare("SELECT id FROM users WHERE status = 'deleted' AND deleted_at IS NOT NULL AND deleted_at < ?1 LIMIT ?2")
     .bind(now - DELETED_RETENTION_MS, PURGE_BATCH)
@@ -60,11 +64,16 @@ export async function runRetention(env, now = Date.now()) {
   return out;
 }
 
-export async function scheduled(controller, env, ctx) {
-  ctx.waitUntil(
-    runRetention(env, controller?.scheduledTime ?? Date.now()).then(
-      (counts) => console.log('retention', JSON.stringify(counts)),
-      (err) => console.error('retention failed', err?.name, err?.message),
-    ),
-  );
+/**
+ * The cron handler. It waits for the job, so a failure fails the run (and is
+ * reported: src/telemetry.js wraps this handler).
+ */
+export async function scheduled(controller, env) {
+  try {
+    const counts = await runRetention(env, controller?.scheduledTime ?? Date.now());
+    console.log('retention', JSON.stringify(counts));
+  } catch (err) {
+    console.error('retention failed', err?.name, err?.message);
+    throw err;
+  }
 }

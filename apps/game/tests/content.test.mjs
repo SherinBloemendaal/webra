@@ -30,6 +30,7 @@ import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage } from
 import {
   originalTerrain,
   packTerrain,
+  PACK_CLASS_OF_TERRAIN,
   planTerrain,
   theaterPools,
   analyzeTile,
@@ -740,11 +741,11 @@ function terrainBytes(w, h) {
   return out;
 }
 
-/** Terrain bytes from rows of characters: . clear, ~ water, r rough, # rock, T tree, f ford. */
+/** Terrain bytes from rows of characters: . clear, ~ water, r rough, # rock, T tree, f ford, = road, b bridge, s beach, v river, l wall. */
 function terrainFrom(rows) {
   const h = rows.length;
   const w = rows[0].length;
-  const code = { '.': 0, r: 1, '#': 2, '~': 3, T: 4, f: 5 };
+  const code = { '.': 0, r: 1, '#': 2, '~': 3, T: 4, f: 5, '=': 6, b: 7, s: 8, v: 9, l: 10 };
   const out = new Uint8Array(w * h * 4);
   rows.forEach((row, y) => [...row].forEach((ch, x) => {
     out[(y * w + x) * 4] = code[ch];
@@ -857,6 +858,47 @@ test('terrain: the original theater atlas, cells, ore and gem overlays, rotating
   assert.equal(r.atlas.data[px], pal[index * 3], 'the pixel keeps its own colour too');
   // Not installed: null, the WebRA tiles stay.
   assert.equal(originalTerrain(() => null, 'TEMPERAT', terrainBytes(w, h), w, h), null);
+});
+
+test('terrain: fords are drawn as a crossing of rough ground, never as the open water around them', () => {
+  const files = syntheticTheater();
+  const pools = theaterPoolsOf(files);
+  // A river (rows 3 and 4) with a ford across it, a bridge deck and a road.
+  const { terrain, w, h } = terrainFrom([
+    '..........',
+    '..........',
+    '====......',
+    '~~~ff~~b~~',
+    '~~~ff~~b~~',
+    '..........',
+    '..........',
+  ]);
+  const { picks } = planTerrain(terrain, w, h, pools);
+  for (const y of [3, 4]) {
+    for (const x of [3, 4]) {
+      const p = picks[y * w + x];
+      assert.notEqual(p.role, 'water', `the ford at ${x},${y} is no water tile`);
+      assert.ok(p.info.regions[4] <= 0.5, `land in the middle of the ford at ${x},${y}`);
+    }
+    // The river beside the ford and under the bridge stays open water.
+    assert.equal(picks[y * w + 1].role, 'water');
+    assert.equal(picks[y * w + 7].role, 'water', 'the bridge actor draws the deck over the river');
+  }
+});
+
+test('terrain: pack tiles for roads, bridges, beaches, rivers and walls', () => {
+  const size = 24;
+  const strip = (n, v) => ({ width: size * n, height: size, rgba: new Uint8ClampedArray(size * n * size * 4).fill(v) });
+  const images = new Map([['c.png', strip(1, 10)], ['r.png', strip(1, 40)], ['k.png', strip(1, 50)], ['w.png', strip(1, 20)]]);
+  const t = { biomes: ['temperate'], tileSize: size, clear: 'c.png', rough: 'r.png', rock: 'k.png', water: 'w.png' };
+  const { terrain, w, h } = terrainFrom(['.=bsvlf~r#']);
+  const r = packTerrain(t, images, terrain, w, h);
+  const px = (x) => {
+    const tile = r.cells[x * 4];
+    return r.atlas.data[((Math.floor(tile / 16) * size + 3) * r.atlas.width + (tile % 16) * size + 3) * 4];
+  };
+  assert.deepEqual([...'.=bsvlf~r#'].map((_, x) => px(x)), [10, 10, 20, 40, 20, 50, 40, 20, 40, 50], 'clear, road, bridge, beach, river, wall, ford, water, rough, rock');
+  assert.deepEqual(PACK_CLASS_OF_TERRAIN.length, 11, 'a class for every engine terrain');
 });
 
 test('terrain: tile indexes skip the ore and gem tiles and go past 255 the way the shader reads them', () => {

@@ -96,8 +96,12 @@ body.touch #touch-place {
 }
 
 .touch-button.touch-primary {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
+}
+
+.touch-button.touch-primary:active {
+  background: var(--ui-primary-fill-active);
 }
 
 /* ---- Larger targets on touch screens (44 px) -------------------------------- */

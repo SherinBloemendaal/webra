@@ -5,6 +5,13 @@
 //! declaration order (`gems` left out when absent), keys inside `rules`
 //! sorted (serde_json's default map), and no whitespace. Its SHA-256 (hex) is
 //! the map's identity, shared with the game client, the editor and the server.
+//!
+//! Map format versions ("Map versions" in the contract): the engine reads
+//! exactly [`FORMAT_VERSION`]. Older maps are upgraded before they get here,
+//! by the one migration chain in packages/protocol (mapversions.js) that the
+//! game, the editor, the server and the tools share; anything else is refused
+//! when the JSON is read, whichever path reads it (map files and the maps
+//! inside mission files).
 
 use crate::map::{Map, Terrain, GEM_MAX_DENSITY, ORE_MAX_DENSITY};
 use crate::rules::Rules;
@@ -13,6 +20,10 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// The map format version this engine reads (packages/protocol mapversions.js
+/// MAP_FORMAT_VERSION; a protocol test keeps them equal). A file without
+/// `formatVersion` is version 1.
+pub const FORMAT_VERSION: u32 = 1;
 /// The format without gems; still read, and written when a map has no gems.
 pub const FORMAT_ORE_ONLY: u32 = 1;
 /// The current format: format 1 plus the `gems` layer.
@@ -25,6 +36,20 @@ pub const MAX_ACTORS: usize = 2000;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MapData {
+    /// Always [`FORMAT_VERSION`]: reading any other version fails. Left out
+    /// of the canonical form at version 1, so maps from before versions keep
+    /// their identity (a later version is part of it).
+    #[serde(
+        rename = "formatVersion",
+        default = "baseline_version",
+        deserialize_with = "current_version",
+        skip_serializing_if = "is_baseline_version"
+    )]
+    pub format_version: u32,
+    /// The release that wrote the file: provenance only, never part of the
+    /// canonical form or the hash.
+    #[serde(rename = "gameVersion", default, deserialize_with = "game_version", skip_serializing)]
+    pub game_version: Option<String>,
     pub format: u32,
     pub name: String,
     pub author: String,
@@ -74,6 +99,41 @@ pub struct Validation {
     pub hash: Option<String>,
 }
 
+fn baseline_version() -> u32 {
+    1
+}
+
+fn is_baseline_version(v: &u32) -> bool {
+    *v == 1
+}
+
+/// `formatVersion` must be the one this engine reads; the protocol package upgrades older maps first.
+fn current_version<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let v = u32::deserialize(d)?;
+    match v {
+        FORMAT_VERSION => Ok(v),
+        0 => Err(serde::de::Error::custom("formatVersion must be 1 or more")),
+        v if v > FORMAT_VERSION => Err(serde::de::Error::custom(format!(
+            "this map is in map format {v}, made by a newer version of WebRA; this engine reads format {FORMAT_VERSION}"
+        ))),
+        v => Err(serde::de::Error::custom(format!(
+            "this map is in map format {v}; it must be upgraded to format {FORMAT_VERSION} before the engine reads it"
+        ))),
+    }
+}
+
+/// `gameVersion`: 1 to 32 of `0-9 A-Z a-z . + -` (protocol GAME_VERSION_RE); null counts as absent.
+fn game_version<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let v = Option::<String>::deserialize(d)?;
+    if let Some(s) = &v {
+        let ok = (1..=32).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'+' || b == b'-');
+        if !ok {
+            return Err(serde::de::Error::custom("gameVersion must be a version such as 0.9.0"));
+        }
+    }
+    Ok(v)
+}
+
 fn b64() -> base64::engine::GeneralPurpose {
     base64::engine::general_purpose::STANDARD
 }
@@ -88,6 +148,18 @@ impl MapData {
 
     pub fn canonical_json(&self) -> String {
         serde_json::to_string(self).expect("map serializes")
+    }
+
+    /// The map as a file WebRA writes (the generator's output): the canonical
+    /// form with `formatVersion` and `gameVersion` (this release) in front.
+    /// The same bytes as packages/protocol `mapFileJson`; the same identity
+    /// as the canonical form.
+    pub fn file_json(&self) -> String {
+        let canonical = self.canonical_json();
+        let body = canonical.strip_prefix('{').expect("an object");
+        let body = body.strip_prefix(&format!("\"formatVersion\":{},", self.format_version)).unwrap_or(body);
+        let game = serde_json::to_string(crate::VERSION).expect("a string serializes");
+        format!("{{\"formatVersion\":{},\"gameVersion\":{game},{body}", self.format_version)
     }
 
     pub fn hash(&self) -> String {
@@ -298,6 +370,8 @@ impl MapData {
         let terrain: Vec<u8> = m.terrain.iter().map(|&t| t as u8).collect();
         let has_gems = m.gems.iter().any(|&g| g > 0);
         MapData {
+            format_version: FORMAT_VERSION,
+            game_version: None,
             format: if has_gems { FORMAT } else { FORMAT_ORE_ONLY },
             name: name.into(),
             author: author.into(),
@@ -349,6 +423,8 @@ mod tests {
         let mut ore = vec![0u8; n];
         ore[0] = 5;
         MapData {
+            format_version: FORMAT_VERSION,
+            game_version: None,
             format,
             name: "Small".into(),
             author: "x".into(),
@@ -558,5 +634,60 @@ mod tests {
         let b = MapData::parse(&a.canonical_json()).unwrap();
         assert_eq!(a.hash(), b.hash());
         assert!(a.canonical_json().contains(r#""rules":{"actors":{"1TNK":{"cost":1}},"weapons""#));
+    }
+
+    /// The format 1 baseline fixture of the protocol package (map versions):
+    /// the engine must give exactly the canonical form and hash the protocol
+    /// pinned, for the file as WebRA 0.9 wrote it and with the version header.
+    #[test]
+    fn baseline_fixture_has_the_pinned_identity_in_both_forms() {
+        let expected: serde_json::Value =
+            serde_json::from_str(include_str!("../../packages/protocol/test/fixtures/maps/format1-legacy.expected.json")).unwrap();
+        let legacy = MapData::parse(include_str!("../../packages/protocol/test/fixtures/maps/format1-legacy.webra-map.json")).unwrap();
+        let file = MapData::parse(include_str!("../../packages/protocol/test/fixtures/maps/format1-file.webra-map.json")).unwrap();
+        assert_eq!(legacy.canonical_json(), expected["canonical"].as_str().unwrap());
+        assert_eq!(legacy.hash(), expected["hash"].as_str().unwrap());
+        assert_eq!(file.canonical_json(), legacy.canonical_json(), "formatVersion 1 and gameVersion leave the identity alone");
+        assert_eq!(file.game_version.as_deref(), Some("0.9.0"));
+        assert_eq!(legacy.game_version, None);
+        assert!(legacy.validate().ok, "{:?}", legacy.validate().errors);
+    }
+
+    #[test]
+    fn only_the_current_format_version_is_read() {
+        let d = small(FORMAT_ORE_ONLY, None);
+        let file = d.file_json();
+        assert!(
+            file.starts_with(&format!(r#"{{"formatVersion":1,"gameVersion":"{}","format":1,"name":"Small""#, crate::VERSION)),
+            "{file}"
+        );
+        let back = MapData::parse(&file).unwrap();
+        assert_eq!(back.canonical_json(), d.canonical_json());
+        assert_eq!(back.hash(), d.hash());
+        let newer = file.replacen(r#""formatVersion":1"#, r#""formatVersion":2"#, 1);
+        let err = MapData::parse(&newer).unwrap_err();
+        assert!(err.contains("map format 2, made by a newer version of WebRA"), "{err}");
+        let canonical = d.canonical_json();
+        let older = format!(r#"{{"formatVersion":0,{}"#, &canonical[1..]);
+        assert!(MapData::parse(&older).unwrap_err().contains("formatVersion must be 1 or more"));
+        for bad in [r#""""#, r#""a b""#, &format!("\"{}\"", "1".repeat(33))] {
+            let text = format!(r#"{{"gameVersion":{bad},{}"#, &canonical[1..]);
+            assert!(MapData::parse(&text).unwrap_err().contains("gameVersion must be a version"), "{bad}");
+        }
+        assert!(MapData::parse(&format!(r#"{{"gameVersion":9,{}"#, &canonical[1..])).is_err(), "a version is text");
+        let nulled = format!(r#"{{"gameVersion":null,{}"#, &canonical[1..]);
+        assert_eq!(MapData::parse(&nulled).unwrap().hash(), d.hash());
+        let v: serde_json::Value = serde_json::from_str(&crate::Game::validate_map(&newer)).unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(v["errors"][0].as_str().unwrap().contains("newer version of WebRA"));
+    }
+
+    #[test]
+    fn generated_maps_are_files_of_the_current_format() {
+        let text = crate::Game::generated_map(7, 48, 2);
+        assert!(text.starts_with(&format!(r#"{{"formatVersion":{FORMAT_VERSION},"gameVersion":"{}","#, crate::VERSION)), "{}", &text[..80]);
+        let d = MapData::parse(&text).unwrap();
+        assert!(d.validate().ok);
+        assert_eq!(d.file_json(), text);
     }
 }

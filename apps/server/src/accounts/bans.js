@@ -2,6 +2,7 @@
 // players from running games through the session Durable Objects.
 
 import { ipRecord } from './ip.js';
+import { logError } from '../telemetry.js';
 
 /** Recently active presence and IP history rows considered when an IP ban drops players. */
 const EVICT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -82,7 +83,7 @@ export async function evictFromGames(env, { userIds = [], range = null }, now = 
       const stub = env.SESSION.get(env.SESSION.idFromString(sessionId));
       dropped += await stub.evict({ userIds: [...ids], range });
     } catch (err) {
-      console.error('evict failed', err?.name, err?.message);
+      logError('evict failed', err);
     }
   }
   return dropped;

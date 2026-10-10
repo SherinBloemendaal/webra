@@ -14,8 +14,8 @@
 // (createImageBitmap), and nothing in a pack is ever run or shown as HTML.
 
 import { openZip, ZipError } from '../oramap/zip.js';
-import { POSE_COUNT, MODE } from './sequences.js';
-import { poseTable } from './atlas.js';
+import { MODE } from './sequences.js';
+import { artProblem, poseTable } from './atlas.js';
 
 export class PackError extends Error {}
 
@@ -546,7 +546,10 @@ export function packSlots(manifest, images, actors) {
       continue;
     }
     const poses = poseTable(have);
-    if (poses && poses.length === POSE_COUNT) slots.set(slot, { images: all, poses, deaths: !!have.die1 });
+    const art = poses ? { images: all, poses, deaths: !!have.die1 } : null;
+    const problem = artProblem(art);
+    if (problem) problems.push(`slot ${slot}: ${problem}`);
+    else if (art) slots.set(slot, art);
   }
   return { slots, problems };
 }

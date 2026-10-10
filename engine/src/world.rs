@@ -638,9 +638,12 @@ pub enum Order {
         key: String,
         x: i32,
         y: i32,
-        #[serde(default)]
+        // Left out when there is none: the protocol (packages/protocol
+        // validOrder) and every client's LocalDriver check orders, and a
+        // plain click (the atom bomb, the Iron Curtain) has no direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         x2: Option<i32>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         y2: Option<i32>,
     },
     /// Minelayers mine the cell rectangle (x0, y0)-(x1, y1) (abilities.rs).

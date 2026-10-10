@@ -197,6 +197,9 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'Nuke Power!', x: 0, y: 0 }] }, /power key/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'x'.repeat(65), x: 0, y: 0 }] }, /power key/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'support_power', player: 0, key: 'GpsPower', x: 0, y: 0, x2: 0.5 }] });
+  // No direction may also come as null (serde's None): it is left out, not refused (the atom bomb's plain click).
+  const nuke = { o: 'support_power', player: 0, key: 'NukePower', x: 5, y: 6 };
+  assert.deepEqual(ok({ t: 'orders', tick: 3, orders: [{ ...nuke, x2: null, y2: null }] }).orders[0], nuke);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'lay_mines', player: 0, ids: [1], x0: 0, y0: 0, x1: 63, y1: 63 }] }, /minefield/);
   // Command bar orders (engine/src/commands.rs).

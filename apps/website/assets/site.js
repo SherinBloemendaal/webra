@@ -1,5 +1,8 @@
 // WebRA website behaviour. Plain ES module, no dependencies, no tracking.
 // Each page sets <body data-page="..."> and gets its own init below.
+// Errors are reported to WebRA's own Sentry unless the visitor switched that
+// off (the game's error reports, /lib/js/telemetry/index.js; docs/security.md,
+// "Error reports"); builds without a DSN load nothing for it.
 //
 // Unit and building art is not shipped as images: the gallery imports the
 // game's own procedural sprite code (/play/js/sprites.js) and draws every
@@ -10,6 +13,20 @@
 import { initPlayLinks } from './play-links.js';
 
 const SPRITES_URL = '/play/js/sprites.js';
+
+/** Error reports (null when the module could not load). Started before anything else. */
+const telemetry = import('/lib/js/telemetry/index.js').then(
+  (t) => {
+    t.initTelemetry({ surface: 'website' });
+    return t;
+  },
+  () => null,
+);
+
+/** Players' text this page shows (lobby and map names): cut out of error reports. */
+function noteUserText(value) {
+  telemetry.then((t) => t?.noteUserText(value));
+}
 
 // Same values as TEAM_COLORS in apps/game/js/renderer.js (player 1..8).
 const TEAM_COLORS = [
@@ -148,11 +165,14 @@ async function getJson(url, { timeoutMs = 8000 } = {}) {
   if (!res.ok) throw new ApiError(`The server answered with HTTP ${res.status}.`);
   const type = res.headers.get('content-type') ?? '';
   if (!type.includes('json')) throw new ApiError('The server did not answer with JSON (is the API running?).');
+  let data;
   try {
-    return await res.json();
+    data = await res.json();
   } catch {
     throw new ApiError('The server sent a response that is not valid JSON.');
   }
+  noteUserText(data);
+  return data;
 }
 
 // ---- Shared: navigation and build info -----------------------------------
@@ -914,6 +934,41 @@ async function initChangelog() {
   load();
 }
 
+// ---- Privacy: the "Send error reports" switch ---------------------------------
+
+/**
+ * The privacy notice's switch for error reports: the same setting as the
+ * game's (settings registry `privacy.errorReports`, synced with the account
+ * when the game or the account page runs signed in).
+ */
+async function initPrivacy() {
+  const box = document.getElementById('error-reports-switch');
+  if (!box) return;
+  let registry;
+  try {
+    registry = (await import('/lib/js/registry.js')).defaultRegistry();
+  } catch {
+    box.textContent = 'The setting could not be loaded here; it is also in the game\'s Settings, under Privacy.';
+    return;
+  }
+  const t = await telemetry;
+  const input = box.querySelector('input');
+  const state = box.querySelector('[data-state]');
+  const show = () => {
+    const on = registry.get('privacy', 'errorReports');
+    input.checked = on;
+    state.textContent = on ? 'Error reports are on in this browser.' : 'Error reports are off in this browser: nothing is sent.';
+  };
+  input.disabled = false;
+  input.addEventListener('change', () => {
+    registry.set('privacy', 'errorReports', input.checked);
+    t?.setConsent(input.checked);
+    show();
+  });
+  registry.subscribe('privacy', show);
+  show();
+}
+
 // ---- Boot -------------------------------------------------------------------
 
 const PAGES = {
@@ -921,6 +976,7 @@ const PAGES = {
   maps: initMaps,
   multiplayer: initLobbies,
   changelog: initChangelog,
+  privacy: initPrivacy,
 };
 
 initNav();

@@ -81,6 +81,14 @@ export const GROUPS = deepFreeze({
       edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3, step: 0.25, label: 'Edge scroll speed', help: '0 turns edge scrolling off.' },
       keyScrollSpeed: { type: 'number', default: 1, min: 0.25, max: 3, step: 0.25, label: 'Arrow key scroll speed' },
       showUnitPaths: { type: 'boolean', default: false, label: 'Show unit paths' },
+      // OpenRA TargetLines (Settings.Game.TargetLines, DrawLineToTarget): js/targetlines.js.
+      targetLines: {
+        type: 'choice',
+        default: 'automatic',
+        options: ['disabled', 'manual', 'automatic'],
+        labels: { disabled: 'Off', manual: 'With Shift', automatic: 'After orders' },
+        label: 'Target lines',
+      },
       pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3, step: 0.25, label: 'Highest pixel ratio', help: 'Lower is faster on phones.' },
       lowQuality: { type: 'boolean', default: false, label: 'Low quality rendering' },
       // Camera shake and the nuke's flash (js/battlefx.js): 'auto' follows prefers-reduced-motion.
@@ -228,6 +236,20 @@ export const GROUPS = deepFreeze({
     scope: 'game',
     settings: {
       lastSeenVersion: { type: 'string', default: null, nullable: true, maxLength: 64, version: true, label: 'Last seen version' },
+    },
+  },
+  privacy: {
+    label: 'Privacy',
+    description: 'Error reports to WebRA\'s own Sentry (the privacy notice says what they hold).',
+    scope: 'game',
+    settings: {
+      // js/telemetry/index.js reads it before the game loads and follows every change.
+      errorReports: {
+        type: 'boolean',
+        default: true,
+        label: 'Send error reports',
+        help: 'When the site has error reporting on and something breaks, the game and the website in this browser send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account. The server then reports its own errors either way, without player data.',
+      },
     },
   },
   extra: {

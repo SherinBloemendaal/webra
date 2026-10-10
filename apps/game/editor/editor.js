@@ -25,15 +25,23 @@ import {
   createMap,
   isModded,
   mapFileName,
+  mapFileText,
   parseMap,
   validateMap,
 } from './js/mapformat.js';
+import { applyFix, openMapFile } from './js/upgrade.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
 import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
 import { renderReport } from '../js/oramap/report.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
+/**
+ * The last opened file's format version story (js/upgrade.js openMapFile):
+ * `notice` (upgraded, or why it is not compatible) stays until the map is
+ * saved; `problems` with their quick fixes until fixed.
+ */
+let opened = { notice: null, problems: [] };
 /** Tool choices and the author name live in the settings registry (js/registry.js, "extra" group, editor* keys). */
 const PREF_KEYS = ['material', 'size', 'ore', 'gems', 'symmetry', 'grid'];
 const prefKey = (k) => `editor${k[0].toUpperCase()}${k.slice(1)}`;
@@ -158,8 +166,10 @@ async function boot() {
   bootEl.hidden = true;
   loadPrefs();
 
-  const { map, note } = await initialMap();
-  doc = new MapDoc(map);
+  const { map: raw, note } = await initialMap();
+  const first = openMapFile(raw);
+  doc = new MapDoc(first.map ?? newBlankMap());
+  opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
   view = new EditorView($('#view'), renderer, {
     down: (c, e) => ctl.down(c, e),
     move: (c, e) => ctl.move(c, e),
@@ -188,7 +198,7 @@ async function boot() {
   view.setMap(doc);
   requestAnimationFrame(() => view.fit());
   onDocChange({ cells: true, objects: true, meta: true, resized: true }, { initial: true });
-  if (note) toast(note);
+  if (note || first.notice) toast([note, first.notice].filter(Boolean).join(' '), first.status !== 'current' && first.status !== 'upgraded');
   window.webraEditor = { doc, view, ctl, catalog, rulesBase, state };
   requestAnimationFrame(frame);
 }
@@ -350,6 +360,9 @@ function runValidation() {
     ? `Valid map${js.warnings.length ? `, ${js.warnings.length} warning${js.warnings.length === 1 ? '' : 's'}` : ''}`
     : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before publishing`;
   const items = [];
+  // How the file was opened (map versions): first, until saved or fixed.
+  if (opened.notice) items.push(el('li', { class: 'notice' }, opened.notice));
+  for (const p of opened.problems) items.push(problemItem(p));
   for (const e of engine.errors) items.push(el('li', { class: 'error' }, e));
   // Located issues from the editor's checks: click to jump there.
   for (const i of js.issues) {
@@ -365,6 +378,47 @@ function runValidation() {
     `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
     `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
     (engine.hash ? `, hash ${engine.hash.slice(0, 12)}` : '');
+}
+
+/** A problem of a map opened best effort, with its quick fixes (js/upgrade.js). */
+function problemItem(p) {
+  const located = Number.isInteger(p.x) && Number.isInteger(p.y);
+  const fixes = p.fixed
+    ? [el('span', { class: 'muted' }, `Fixed: ${p.fixed} (undo with Ctrl+Z).`)]
+    : (p.fixes ?? []).map((f) =>
+        el(
+          'button',
+          {
+            type: 'button',
+            onclick: (e) => {
+              e.stopPropagation();
+              fixProblem(p, f);
+            },
+          },
+          f.label,
+        ),
+      );
+  return el(
+    'li',
+    {
+      class: `${p.fixed ? 'ok' : p.fixes?.length ? 'error' : 'warning'}${located ? ' jump' : ''}`,
+      title: located ? 'Show on the map' : '',
+      onclick: located ? () => view.centerOnCell(p.x, p.y) : undefined,
+    },
+    [p.message, fixes.length ? el('span', { class: 'fixes' }, fixes) : null],
+  );
+}
+
+function fixProblem(p, fix) {
+  let next;
+  try {
+    next = applyFix(doc.toMap(), fix);
+  } catch (err) {
+    toast(`This fix cannot be applied: ${err.message}`, true);
+    return;
+  }
+  p.fixed = fix.label;
+  doc.replace(next, fix.label);
 }
 
 function issueItem(i) {
@@ -735,8 +789,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    loadMap(map, `Open ${m.name}`);
-    toast(`Opened "${map.name}".`);
+    loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`);
   } catch (err) {
     toast(err.message, true);
   }
@@ -753,17 +806,31 @@ async function copy(text) {
 
 // ---- Commands ---------------------------------------------------------------------------------
 
-function loadMap(map, label) {
-  const res = validateMap(map, { catalog, rulesBase });
+/**
+ * Open a parsed map file (any format version, js/upgrade.js) as one undoable
+ * step. `done` is the toast on success; the upgrade notice or the reason a
+ * map is not compatible goes with it and stays in the Map tab until saved.
+ */
+function loadMap(raw, label, done) {
+  const next = openMapFile(raw);
+  if (!next.map) {
+    toast(`Cannot open this map: ${next.error}`, true);
+    return false;
+  }
+  const res = validateMap(next.map, { catalog, rulesBase });
   try {
-    doc.replace(map, label);
+    doc.replace(next.map, label);
   } catch (err) {
     toast(`Cannot open this map: ${err.message}`, true);
     return false;
   }
+  opened = { notice: next.notice ?? null, problems: next.problems };
+  runValidation();
   ctl.selection.clear();
   view.fit();
-  if (!res.ok) toast(`Opened with ${res.errors.length} validation error(s); see the Map tab.`, true);
+  if (next.notice) toast(`${done} ${next.notice}`, next.status !== 'upgraded');
+  else if (!res.ok) toast(`${done} It has ${res.errors.length} validation error(s); see the Map tab.`, true);
+  else toast(done);
   return true;
 }
 
@@ -785,7 +852,7 @@ function openFile(file) {
       toast(err.message, true);
       return;
     }
-    if (loadMap(map, `Open ${file.name}`)) toast(`Opened ${file.name}.`);
+    loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`);
   });
 }
 
@@ -819,7 +886,7 @@ function showImportReport(report, map, failure) {
   $('#import-report')?.remove();
   const open = (withRules) => {
     const m = withRules ? map : { ...map, rules: null };
-    if (loadMap(m, `Import ${report.title}`)) toast(`Imported "${report.title}".`);
+    loadMap(m, `Import ${report.title}`, `Imported "${report.title}".`);
   };
   const buttons = [];
   if (map) {
@@ -844,7 +911,11 @@ function showImportReport(report, map, failure) {
 
 function saveFile() {
   const map = doc.toMap();
-  download(new Blob([canonicalJson(map)], { type: 'application/json' }), mapFileName(map.name));
+  // A file of the current format, stamped with this release (docs/contracts.md "Map versions").
+  download(new Blob([mapFileText(map)], { type: 'application/json' }), mapFileName(map.name));
+  // Saved: the upgrade (or repair) is kept now.
+  opened = { notice: null, problems: opened.problems.filter((p) => !p.fixed) };
+  runValidation();
   toast('Map downloaded.');
 }
 

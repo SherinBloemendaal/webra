@@ -1,16 +1,26 @@
 // Map files (`.webra-map.json`, formats 1 and 2; docs/contracts.md, section 2).
-// Format 2 is format 1 plus a `gems` layer; format 1 maps have none.
+// Format 2 is format 1 plus a `gems` layer; format 1 maps have none. Apart
+// from that layer format, every file carries the map format version
+// (`formatVersion`) and the release that wrote it (`gameVersion`); older
+// versions are upgraded first (mapversions.js).
 //
 // The canonical form matches the engine (engine/src/mapdata.rs): fields in the
 // order of the contract, defaults filled in (description "", actors [],
 // facing 0, rules null), `gems` only in format 2, keys inside `rules` sorted,
-// no whitespace. Its SHA-256 (lowercase hex) is the map's identity.
+// no whitespace, `formatVersion` only when it is not 1 and never
+// `gameVersion`. Its SHA-256 (lowercase hex) is the map's identity.
 //
-// validateMap checks structure, sizes, layer encoding and value ranges. The
-// engine's Game.validate_map additionally checks gameplay rules (spawn ground,
-// connectivity, known actor types); clients run both before installing a map.
+// validateMap upgrades, then checks structure, sizes, layer encoding and value
+// ranges. The engine's Game.validate_map additionally checks gameplay rules
+// (spawn ground, connectivity, known actor types); clients run both before
+// installing a map.
 
+import { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, utf8Length } from './check.js';
+import { GAME_VERSION } from './version.js';
+import { MAP_UPGRADED_NOTICE, MAP_VERSIONS, incompatibleMapMessage, mapFormatVersionOf, reservedKeyIn, upgradeMap } from './mapversions.js';
+
+export { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 
 /** The current format (with gems). */
 export const MAP_FORMAT = 2;
@@ -33,50 +43,16 @@ export const GEM_MAX = 3;
 export const MODDED_WARNING =
   'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
 
-const MAP_KEYS = ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
+const MAP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
 const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
-const RULE_KEY_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+// Never a key JavaScript treats specially (`__proto__`, `constructor`, `prototype`): no built-in rule uses one.
+const RULE_KEY_RE = /^(?!(?:__proto__|constructor|prototype)$)[A-Za-z0-9_.-]{1,40}$/;
 const RULE_MAX_DEPTH = 6;
 /** Fields that identify an entry and can never change (see checkPatch). */
 const RULE_FIXED_FIELDS = ['kind', 'queue'];
 /** Marks "validated without the engine rules", as opposed to "no built-in value here". */
 const NO_BASE = Symbol('no base');
-const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
-const B64_CODES = (() => {
-  const t = new Int16Array(128).fill(-1);
-  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  for (let i = 0; i < abc.length; i++) t[abc.charCodeAt(i)] = i;
-  return t;
-})();
-
-/** Decode standard, padded base64 (as the engine requires). Throws on bad input. */
-export function decodeBase64(s, what) {
-  if (typeof s !== 'string' || s.length % 4 !== 0 || !B64_RE.test(s)) fail(`${what} is not valid base64`);
-  const pad = s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0;
-  const out = new Uint8Array((s.length / 4) * 3 - pad);
-  let o = 0;
-  for (let i = 0; i < s.length; i += 4) {
-    const a = B64_CODES[s.charCodeAt(i)];
-    const b = B64_CODES[s.charCodeAt(i + 1)];
-    const c = s[i + 2] === '=' ? 0 : B64_CODES[s.charCodeAt(i + 2)];
-    const d = s[i + 3] === '=' ? 0 : B64_CODES[s.charCodeAt(i + 3)];
-    const n = (a << 18) | (b << 12) | (c << 6) | d;
-    out[o++] = (n >> 16) & 255;
-    if (o < out.length) out[o++] = (n >> 8) & 255;
-    if (o < out.length) out[o++] = n & 255;
-  }
-  // Non-canonical encodings (stray bits in the last group) are rejected.
-  if (pad === 2 && (B64_CODES[s.charCodeAt(s.length - 3)] & 15) !== 0) fail(`${what} is not valid base64`);
-  if (pad === 1 && (B64_CODES[s.charCodeAt(s.length - 2)] & 3) !== 0) fail(`${what} is not valid base64`);
-  return out;
-}
-
-/** Expected base64 length for n bytes. */
-export function base64Length(n) {
-  return Math.ceil(n / 3) * 4;
-}
-
 /**
  * Validate a rules override object. Shape rules always apply; with `base`
  * (the parsed engine/rules.json) ids, fields and value types are checked
@@ -180,14 +156,55 @@ export function isModded(map) {
 }
 
 /**
- * Validate a parsed map object. Returns
- * `{ ok: true, map, modded, players }` with the normalized map (defaults
- * filled in, text normalized) or `{ ok: false, errors }`.
+ * Validate a parsed map file. It is upgraded to the current format first
+ * (upgradeMap), so an older file validates as the map it becomes. Returns
+ * `{ ok: true, map, canonical, modded, players, upgrade, writtenBy, errors: [] }`
+ * with the normalized current-format map (defaults filled in, text kept
+ * byte for byte) or `{ ok: false, errors, compat }`.
+ *
+ * `upgrade` is null, or `{ from, to, notes, message }` after an automatic
+ * upgrade (show `message`, MAP_UPGRADED_NOTICE). `compat` is set when the
+ * format version is the reason: `{ status: 'incompatible' | 'newer', from,
+ * message, problems }`, and `errors[0]` is its message. A map that was
+ * upgraded and then fails validation counts as incompatible too: it was
+ * valid for the release that made it. `writtenBy` is the file's
+ * `gameVersion` (not part of the identity).
  *
  * @param {unknown} input parsed JSON
- * @param {{ rules?: object }} [opts] `rules`: parsed engine/rules.json to check overrides against
+ * @param {{ rules?: object, versions?: object, upgrade?: boolean }} [opts]
+ *   `rules`: parsed engine/rules.json to check overrides against;
+ *   `versions`: the version registry (tests); `upgrade: false` refuses
+ *   anything but the current format (replays and saves keep the map as played)
  */
 export function validateMap(input, opts = {}) {
+  const versions = opts.versions ?? MAP_VERSIONS;
+  const up = upgradeMap(input, versions);
+  if (up.status === 'invalid') return { ok: false, errors: up.errors, compat: null };
+  if (up.status === 'newer') return { ok: false, errors: [up.message], compat: compatOf(up, up.problems) };
+  if (opts.upgrade === false && up.from !== versions.current) {
+    return { ok: false, errors: [`the map is in format ${up.from}; this version plays format ${versions.current} only`], compat: null };
+  }
+  if (up.status === 'incompatible') {
+    return { ok: false, errors: [up.message, ...up.problems.map((p) => p.message)], compat: compatOf(up, up.problems) };
+  }
+  const r = validateCurrentMap(up.map, opts, versions.current);
+  if (!r.ok) {
+    if (up.status !== 'upgraded') return { ...r, compat: null };
+    // Valid for the release that made it, but not after the upgrade: the format changed under it.
+    const message = incompatibleMapMessage(up.from, up.gameVersion, versions);
+    const problems = r.errors.map((e) => ({ version: versions.current, code: 'invalid-after-upgrade', message: e, fixes: [] }));
+    return { ok: false, errors: [message, ...r.errors], compat: compatOf({ ...up, status: 'incompatible', message }, problems) };
+  }
+  const upgrade = up.status === 'upgraded' ? { from: up.from, to: up.to, notes: up.notes, message: MAP_UPGRADED_NOTICE } : null;
+  return { ...r, upgrade, writtenBy: up.gameVersion };
+}
+
+function compatOf(up, problems) {
+  return { status: up.status, from: up.from, to: up.to, gameVersion: up.gameVersion, message: up.message, problems, map: up.map };
+}
+
+/** validateMap's checks of a map already in format `current`. */
+function validateCurrentMap(input, opts, current) {
   const errors = [];
   const step = (fn) => {
     try {
@@ -203,6 +220,10 @@ export function validateMap(input, opts = {}) {
   if (!okKeys) return { ok: false, errors };
 
   const m = {};
+  step(() => {
+    if (mapFormatVersionOf(input) !== current) fail(`formatVersion must be ${current}`);
+    m.formatVersion = current;
+  });
   // `"gems": null` counts as no gems layer, as in the engine.
   const hasGems = input.gems !== undefined && input.gems !== null;
   step(() => {
@@ -311,7 +332,114 @@ export function validateMap(input, opts = {}) {
   return { ok: true, map: m, canonical, modded: isModded(m), players: m.spawns.length, errors: [] };
 }
 
-/** Parse map text (size checked first), then validate. */
+/**
+ * Best effort for the map editor: a map it can open from a file that does
+ * not validate, typically one that is no longer compatible (upgradeMap
+ * `incompatible` or `newer`). Runs what upgrades it can, then repairs the
+ * structure only: unknown fields dropped, layers decoded or rebuilt to the
+ * map size, malformed spawns and actors left out, bad text replaced. Values
+ * the editor can show (terrain codes, resources, actor types) stay for its
+ * located checks. Returns `{ map, status, message, problems }` (problems:
+ * the upgrade's, with their quick fixes, then one per repair) or null when
+ * the input is not a map object at all.
+ */
+export function salvageMap(input, opts = {}) {
+  const versions = opts.versions ?? MAP_VERSIONS;
+  if (!isPlainObject(input)) return null;
+  const up = upgradeMap(input, versions);
+  const problems = [...up.problems];
+  const repair = (message, extra = {}) => problems.push({ version: versions.current, code: 'repaired', message, fixes: [], ...extra });
+  const src = up.map ?? JSON.parse(JSON.stringify(input));
+  if (up.status === 'invalid') repair(`${up.errors.join('; ')}; the map is opened as format ${versions.current}.`);
+  if (up.status === 'newer') repair(`${up.message} Fields this version does not know are left out.`);
+  const m = { formatVersion: versions.current };
+  for (const k of Object.keys(src)) {
+    if (!MAP_KEYS.includes(k)) repair(`Unknown field "${excerpt(k)}" was left out.`);
+  }
+  const textOr = (v, min, max, fallback, what, multiline = false) => {
+    try {
+      return rawText(v, min, max, what, multiline);
+    } catch (err) {
+      if (v !== undefined) repair(`${err.message}; replaced with "${fallback}".`);
+      return fallback;
+    }
+  };
+  m.name = textOr(src.name, 1, 64, 'Untitled', 'name');
+  m.author = textOr(src.author, 1, 64, 'Unknown', 'author');
+  m.description = textOr(src.description ?? '', 0, 500, '', 'description', true);
+  const size = (v, what) => {
+    if (Number.isSafeInteger(v) && v >= MAP_MIN_SIZE && v <= MAP_MAX_SIZE) return v;
+    const fixed = Number.isFinite(v) ? Math.min(MAP_MAX_SIZE, Math.max(MAP_MIN_SIZE, Math.round(v))) : 64;
+    repair(`${what} ${excerpt(v)} is not ${MAP_MIN_SIZE} to ${MAP_MAX_SIZE}; the map is ${fixed} cells ${what === 'width' ? 'wide' : 'high'} now.`);
+    return fixed;
+  };
+  m.width = size(src.width, 'width');
+  m.height = size(src.height, 'height');
+  const layer = (key, fill) => {
+    const cells = m.width * m.height;
+    let bytes = null;
+    if (src[key] !== undefined && src[key] !== null) {
+      try {
+        bytes = decodeBase64(src[key], key);
+      } catch {
+        repair(`The ${key} layer could not be read; it was rebuilt empty.`);
+      }
+    }
+    if (bytes && bytes.length === cells) return src[key];
+    const out = new Uint8Array(cells).fill(fill);
+    // Rows that match the old width keep their cells; the rest is empty.
+    if (bytes) {
+      const oldWidth = Number.isSafeInteger(src.width) && src.width > 0 ? src.width : m.width;
+      for (let y = 0; y < m.height; y++) {
+        for (let x = 0; x < m.width && x < oldWidth; x++) {
+          const i = y * oldWidth + x;
+          if (i < bytes.length) out[y * m.width + x] = bytes[i];
+        }
+      }
+      repair(`The ${key} layer had ${bytes.length} cells for a ${m.width} x ${m.height} map; it was cut or filled to fit.`);
+    } else if (src[key] === undefined && key !== 'gems') {
+      repair(`The map had no ${key} layer; it was added empty.`);
+    }
+    return encodeBase64(out);
+  };
+  m.terrain = layer('terrain', 0);
+  m.ore = layer('ore', 0);
+  const hasGems = src.gems !== undefined && src.gems !== null;
+  m.format = hasGems ? MAP_FORMAT : MAP_FORMAT_ORE_ONLY;
+  if (hasGems) m.gems = layer('gems', 0);
+  const inside = (x, y) => Number.isSafeInteger(x) && Number.isSafeInteger(y) && x >= 0 && y >= 0 && x < m.width && y < m.height;
+  m.spawns = (Array.isArray(src.spawns) ? src.spawns : []).filter((p, i) => {
+    const ok = Array.isArray(p) && p.length === 2 && inside(p[0], p[1]);
+    if (!ok) repair(`Spawn ${i + 1} is not a cell of the map; it was left out.`);
+    return ok;
+  }).slice(0, MAP_MAX_SPAWNS);
+  m.actors = [];
+  (Array.isArray(src.actors) ? src.actors : []).forEach((a, i) => {
+    if (!isPlainObject(a) || typeof a.type !== 'string' || !/^[A-Za-z0-9.]{1,16}$/.test(a.type) || !inside(a.x, a.y)) {
+      repair(`Actor ${i + 1} is malformed or off the map; it was left out.`, isPlainObject(a) && inside(a.x, a.y) ? { x: a.x, y: a.y } : {});
+      return;
+    }
+    const owner = Number.isSafeInteger(a.owner) && a.owner >= -1 && a.owner < Math.max(m.spawns.length, 1) ? a.owner : -1;
+    if (owner !== a.owner) repair(`Actor ${i + 1} (${a.type}) had owner ${excerpt(a.owner)}; it is neutral now.`, { x: a.x, y: a.y });
+    const facing = Number.isSafeInteger(a.facing) && a.facing >= 0 && a.facing <= 1023 ? a.facing : 0;
+    m.actors.push({ type: a.type, owner, x: a.x, y: a.y, facing });
+  });
+  if (isPlainObject(src.rules) && reservedKeyIn(src.rules) !== null) {
+    m.rules = null;
+    repair(`rules use the reserved key ${reservedKeyIn(src.rules)}; the overrides were left out.`);
+  } else if (src.rules === undefined || src.rules === null || isPlainObject(src.rules)) m.rules = src.rules ?? null;
+  else {
+    m.rules = null;
+    repair('rules is not an object; the overrides were left out.');
+  }
+  if (src.biome !== undefined && src.biome !== 'temperate') {
+    if (MAP_BIOMES.includes(src.biome)) m.biome = src.biome;
+    else repair(`biome ${excerpt(src.biome)} is unknown; the map is temperate now.`);
+  }
+  return { map: m, status: up.status, message: up.message, problems };
+}
+
+/** Parse map text (size checked first), then validate (and upgrade, see validateMap). */
 export function parseMap(textJson, opts) {
   if (typeof textJson !== 'string') return { ok: false, errors: ['map must be JSON text'] };
   if (utf8Length(textJson) > MAP_MAX_BYTES) return { ok: false, errors: ['map is larger than 1 MiB'] };
@@ -336,14 +464,19 @@ function sortKeysDeep(v) {
 }
 
 /**
- * Canonical JSON text of an already validated map (see validateMap). `gems`
+ * The canonical form of a map object (see validateMap for validated maps;
+ * any map-shaped object works, the map editor uses it for drafts). `gems`
  * only when present; `biome` last and only when not temperate, so maps from
- * before biomes keep their identity.
+ * before biomes keep their identity; `formatVersion` first and only when it
+ * is not 1, so every map from before map versions keeps its identity, and
+ * never `gameVersion` (who wrote a file does not change the map).
  */
-export function canonicalMapJson(m) {
+export function canonicalMapObject(m) {
+  const formatVersion = m.formatVersion === undefined || m.formatVersion === 1 ? {} : { formatVersion: m.formatVersion };
   const gems = m.gems === undefined || m.gems === null ? {} : { gems: m.gems };
   const biome = m.biome === undefined || m.biome === 'temperate' ? {} : { biome: m.biome };
-  return JSON.stringify({
+  return {
+    ...formatVersion,
     format: m.format,
     name: m.name,
     author: m.author,
@@ -353,11 +486,28 @@ export function canonicalMapJson(m) {
     terrain: m.terrain,
     ore: m.ore,
     ...gems,
-    spawns: m.spawns.map(([x, y]) => [x, y]),
+    spawns: (m.spawns ?? []).map((s) => [s[0], s[1]]),
     actors: (m.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
     rules: m.rules === undefined || m.rules === null ? null : sortKeysDeep(m.rules),
     ...biome,
-  });
+  };
+}
+
+/** Canonical JSON text of a map (canonicalMapObject, no whitespace): what the hash covers. */
+export function canonicalMapJson(m) {
+  return JSON.stringify(canonicalMapObject(m));
+}
+
+/**
+ * The text of a map file as WebRA writes it (map editor, generator, importer,
+ * tools/map-upgrade.mjs): the canonical form with `formatVersion` (always,
+ * default the current version) and `gameVersion` (default this release) in
+ * front. Same identity as the canonical form. The engine's
+ * `MapData::file_json` writes the same bytes.
+ */
+export function mapFileJson(m, { formatVersion = m.formatVersion ?? MAP_VERSIONS.current, gameVersion = GAME_VERSION } = {}) {
+  const { formatVersion: _omitted, ...body } = canonicalMapObject(m);
+  return JSON.stringify({ formatVersion, gameVersion, ...body });
 }
 
 /** Lowercase hex SHA-256 of a string (WebCrypto: browsers, Workers, Node 22). */

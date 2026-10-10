@@ -26,6 +26,8 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 
 ```jsonc
 {
+  "formatVersion": 1,               // the map format version, see "Map versions" below (absent: 1)
+  "gameVersion": "0.9.0",           // the WebRA release that wrote the file (optional, never part of the identity)
   "format": 2,                      // 1 (ore only) or 2 (ore and gems), see below
   "name": "Twin Rivers",            // 1..64 chars
   "author": "Commander",            // 1..64 chars
@@ -47,7 +49,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
   so a ground route over a river never cuts the water network. Structures
   never stand on a ford (naval yards need open water), and fords hold no ore
-  or gems. Generated maps put fords where ground routes cross water.
+  or gems. Generated maps put fords where ground routes cross water. A ford
+  is drawn as a crossing (WebRA's shallow ford tiles; with the original
+  graphics rough ground with beach tiles, like Red Alert's ford templates),
+  never as open water, since ground units walk on it.
 - Terrain types 6 to 10 are OpenRA's (`data/source/rules/world.yaml`,
   `defaults.yaml`; speeds per locomotor in `engine/rules.json`): road (6)
   is clear ground with OpenRA's road speed, buildable and able to hold
@@ -124,10 +129,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   layer`, `unsupported map format N`, `invalid gem density N`, `gems can only
   lie on clear or rough ground or roads`, `a cell cannot hold both ore and gems`,
   `the gems layer must have N bytes`, `gems is not valid base64`.
-- Identity: `sha256` (hex) of the canonical JSON: top-level keys in the order
-  above (`description`, `actors` and `rules` always present, `gems` only in
-  format 2, right after `ore`, `biome` last and only when it is not
-  temperate; `actors` entries
+- Identity: `sha256` (hex) of the canonical JSON of the map *after its
+  upgrade to the current format version* (see "Map versions"): top-level keys
+  in the order above (`formatVersion` first and only when it is not 1,
+  `gameVersion` never, `description`, `actors` and `rules` always present,
+  `gems` only in format 2, right after `ore`, `biome` last and only when it
+  is not temperate; `actors` entries
   as `type, owner, x, y, facing`), keys inside `rules` sorted alphabetically at
   every level, integers only, no whitespace. `Game.map_canonical(json)` returns
   exactly that string; JavaScript implementations must match it byte for byte
@@ -149,9 +156,11 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   from a map (players fill spawns in slot order, extra spawns stay empty,
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
   `Game.map_canonical(mapJson)`, `Game.validate_map(mapJson)` returns
-  `{ ok, errors: [], modded, hash }`; `Game.generated_map(seed, size, players)`
+  `{ ok, errors: [], modded, hash }` (all of them read the current map format
+  version only); `Game.generated_map(seed, size, players)`
   exports a generated temperate map file in the seed's style (format 2:
-  generated maps have gems) and `Game.generated_map_styled(seed, size,
+  generated maps have gems; a map file with `formatVersion` and this
+  release's `gameVersion` in front, `MapData::file_json`) and `Game.generated_map_styled(seed, size,
   players, style, biome)` any style and biome (names as in section 3,
   `random` resolved from the seed); previews: `Game.map_file_preview(mapJson)`,
   `Game.map_preview_players(seed, size, players)` and
@@ -160,11 +169,151 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
 
+### Map versions (`formatVersion`, `gameVersion`)
+
+Maps made for one release keep working when a later release renames or
+rewrites things: every map file names its **map format version**, and older
+files are upgraded automatically by one chain of migrations that every
+reader shares (`packages/protocol/src/mapversions.js`).
+
+- `formatVersion`: a whole number, 1 to 65535. A file without it is format 1,
+  forever: format 1 is the baseline, every map made before map versions
+  existed (pinned by `packages/protocol/test/fixtures/maps/format1-*`). The
+  current format is `MAP_FORMAT_VERSION` (protocol) and `FORMAT_VERSION`
+  (`engine/src/mapdata.rs`), now 1. It is a different thing from `format`
+  (1 or 2), which only says whether the gems layer is there and stays part
+  of every map for its identity.
+- `gameVersion`: the release that wrote the file (1 to 32 of `0-9 A-Z a-z . +
+  -`, null counts as absent). Provenance only: messages name it, nothing else
+  reads it, and it is never part of the canonical form or the hash.
+- Writers write the **file form**: `formatVersion` (always) and `gameVersion`
+  (this release, `packages/protocol/src/version.js` `GAME_VERSION`, kept in
+  step by release-please) in front, then the canonical body, compact JSON:
+  the map editor's Save (`mapFileJson`, through `mapFileText`), the generator
+  (`Game.generated_map*`, `MapData::file_json`: the same bytes), the
+  `.oramap` importer and `tools/map-upgrade.mjs`. Mission maps inside mission
+  files (section 9) name `formatVersion` only when it is not 1
+  (`tools/gen_missions.py`), so mission files do not change with every
+  release; the engine reads them like map files.
+- Readers upgrade first: `validateMap` and `parseMap` run `upgradeMap`, and
+  everything that loads a map goes through them (skirmish lobby
+  `inspectMapFile`, the online lobby, the map library, the map editor, the
+  server, the tools); what they validate, hash, store and hand to the engine
+  is the upgraded map. The engine parses the current format only and refuses
+  anything else when it reads the JSON, map files and mission maps alike:
+  `this map is in map format N, made by a newer version of WebRA; this engine
+  reads format 1`, `this map is in map format N; it must be upgraded to format
+  1 before the engine reads it`.
+- Outcomes of `upgradeMap(map)` (`{ status, map, notes, problems, message }`):
+  `current`; `upgraded` (non-blocking notice "This map was upgraded from an
+  older version; save it in the editor to keep the upgrade."); `incompatible`,
+  when a migration meets a removed feature or an ambiguous change ("This map
+  was made for WebRA x.y (format N) and is no longer compatible with this
+  version. Open it in the map editor and save it again.", x.y from
+  `gameVersion`, else the last release of that format,
+  `MAP_FORMAT_HISTORY[].lastGame`); `newer` ("This map was made with a newer
+  version of WebRA (x.y, format N; this version reads format M). Update the
+  game to play it."); `invalid` (a malformed `formatVersion` or
+  `gameVersion`). A map that upgrades but then fails the protocol or engine
+  checks counts as incompatible too: it was valid for the release that made
+  it. A current map that fails them is just an invalid map.
+- Where players see it: the skirmish lobby (the notice under the installed
+  map, the messages as map errors), the online lobby (the host's notice under
+  a shared file, the messages in the banner; a downloaded lobby map is checked
+  the same way), the map editor (a toast and, until the map is saved, the
+  first lines of the Map tab's validation list), the server (422 with the
+  message) and the tool's report.
+- The map editor opens what others refuse, best effort
+  (`apps/game/editor/js/upgrade.js` `openMapFile`, protocol `salvageMap`):
+  the upgrades it can run, then structural repairs only (unknown fields left
+  out, layers read or rebuilt to the map size, malformed spawns and actors
+  left out). Every problem is listed with its location (click to jump) and
+  quick fixes (`applyMapFix` actions: `removeActors`, `setActorType`,
+  `setTerrain`, `setField`, `moveField`, `accept`; actors are named by type
+  and cell, fields by key path, so fixes stay right after other fixes), each
+  one undoable. Saving writes the current format.
+- Identity and multiplayer: the hash covers the upgraded canonical form.
+  `formatVersion` is part of it only above 1, so every map from before map
+  versions kept its hash, and a canonical text always says its version
+  (absent: 1). The engine plays the upgraded map, lockstep needs every client
+  on the same bytes, and two files that upgrade to the same map are the same
+  map. So upgrading happens before hashing everywhere: the host's client, the
+  server (which stores the upgraded canonical text, `upgradedFrom` in the
+  upload answer) and every member (who downloads that text and checks the
+  hash) end up with the identical map; the lobby announcement needs no
+  version. Online sessions only ever pair identical builds, so they share one
+  migration chain.
+- Stored maps (D1, migration `0006_map_versions.sql`): `maps.format_version`,
+  `maps.upgrade_error`, `maps.upgrade_tried`, `map_aliases(old_hash, old_id,
+  hash)`. A row of an older format is upgraded the first time it is read (the
+  community list, 25 rows per request, newest first like the list, leaving
+  out the rest until then; `GET /api/maps/:id`; a host picking it; a session
+  download) and by the daily job (200 a day, oldest first):
+  validated like an upload, then json, hash and summary are rewritten in
+  place (same id) and the old hash goes to `map_aliases`, so links, lobbies
+  and old hashes still find the map (aliases of an alias follow it). When
+  the upgraded map is already stored, the two rows merge (listed if either
+  was, downloads added up, the listed row's uploader kept) and the old id
+  becomes an alias too. A row that cannot be upgraded keeps its text and gets
+  `upgrade_error` and `upgrade_tried` (`<format>/<release>`; a later format or
+  release tries again): it leaves the list, a lobby refuses it with the
+  message, and `GET /api/maps/:id` still serves it as stored, so clients
+  explain why and the map editor can repair it. Any other failure (the
+  engine, the database) leaves the row as it was for a later try: the list
+  leaves it out, a lobby refuses it for now, downloads serve it as stored.
+  Upgrades write only rows that are still stale, so concurrent requests never
+  count anything twice. Aliases go with their map (daily job).
+- Online saves and replays keep the map as played (validated with
+  `upgrade: false`): they are pinned to the engine build that made them
+  anyway. The local map library (`apps/game/js/maplibrary.js`) upgrades its
+  entries on first use (new hash, the old entry goes; an entry that cannot be
+  upgraded is removed, its file opens in the map editor).
+- `node tools/map-upgrade.mjs [--check] [--out <dir>] [--no-engine] <files>`
+  upgrades map files in bulk with the same checks (the engine's too when
+  `apps/game/pkg` is built), writes the file form (files from before map
+  versions gain their version; current files stay untouched) and lists every
+  file that needs an author, with each problem, its location and the editor's
+  quick fixes. Exit 1 when a file failed (or `--check` found work).
+
+**Migration policy.** A change that alters what an existing map means needs
+a new format version: a renamed or removed actor id, a terrain code that
+changes or goes, a field that moves, a new required field, a rules field or
+an option value that is renamed or dropped. A purely additive change does
+not: a new actor type, or a new optional field whose default is left out of
+the canonical form (as `biome` and `gems` were added). To add version N + 1:
+
+1. Bump `MAP_FORMAT_VERSION` (`packages/protocol/src/mapversions.js`) and
+   `FORMAT_VERSION` (`engine/src/mapdata.rs`) together; the engine keeps
+   reading only the current version.
+2. Add the migration `{ from: N, to: N + 1, summary, migrate(map, ctx) }` to
+   `MAP_MIGRATIONS`, built from the helpers: `renameActors` (the alias table:
+   `{ OLD: 'NEW' }`, `{ OLD: null }` removed, `{ OLD: ['A', 'B'] }` split;
+   pre-placed actors and `rules.actors`), `remapTerrain` (`{ old: new }`, or
+   `{ old: { fallback, choices, reason } }` when no single code fits),
+   `moveField`, `addField` (a new required field with its default),
+   `renameRuleFields` and `renameValues` (key paths never use `__proto__`,
+  `constructor` or `prototype`). Anything they cannot decide is a
+   `ctx.problem` with a location and quick fixes, never a guess. A migration
+   is pure and deterministic (no clock, randomness or engine) and is never
+   changed after a release has shipped it.
+3. Add version N + 1 to `MAP_FORMAT_HISTORY` and set `lastGame` of version N
+   to the last release that wrote it.
+4. Add fixtures: at least one `format<N>-<name>.webra-map.json` written by
+   the old release with its `.expected.json` (`status: "upgraded"`, the
+   canonical text and hash after the upgrade), and move the current-format
+   fixtures along. `packages/protocol/test/mapversions.test.mjs` fails a
+   bump without the migration, the history entry, the fixtures and equal
+   engine and protocol versions (CI).
+5. Regenerate generated files that hold maps (`tools/gen_missions.py`), run
+   `tools/map-upgrade.mjs` on maps kept in the repository, and update this
+   section. Stored maps upgrade themselves (above).
+
 ### Importing OpenRA maps (`.oramap`)
 
 The lobby ("Load map file") and the map editor ("Open", or drop a file)
 import OpenRA Red Alert maps in the browser (`apps/game/js/oramap/`). The
-result is an ordinary map file of this section: it is validated by
+result is an ordinary map file of this section, in the current format version
+with this release as `gameVersion`: it is validated by
 `packages/protocol` and the engine before it is installed or opened, the
 modded warning applies when it carries `rules`, and the server validates it
 on upload like any other map (it never unpacks `.oramap` files itself).
@@ -452,12 +601,12 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded } \| { name, modded, shared: true }, version, state }]` (public, open lobbies only; a map shared with the session shows only its name) |
 | `POST` | `/api/sessions` | `{ name, password?, public, maxPlayers, version }` -> `{ id, hostKey }` |
 | `GET` | `/api/sessions/:id/ws` | WebSocket upgrade into the session's Durable Object |
-| `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash }`; shares a map file with this session only (see "Lobby maps") |
+| `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash, upgradedFrom? }`; shares a map file with this session only (see "Lobby maps") |
 | `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
 | `POST` | `/api/sessions/:id/resume` | host only, `X-WebRA-Member`: an online save file -> `{ id }`; the lobby resumes that saved game (see "Online saves") |
-| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps only) |
-| `GET` | `/api/maps/:id` | the map JSON (published maps only) |
-| `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited); publishes it to the community list |
+| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps of the current format version only, section 2 "Map versions") |
+| `GET` | `/api/maps/:id` | the map JSON (published maps only; upgraded to the current format version, or as stored when it cannot be) |
+| `POST` | `/api/maps` | map JSON -> `{ id, hash, upgradedFrom? }` (upgraded, validated, size limited, rate limited); publishes it to the community list. `upgradedFrom`: the file's older format version (what is stored is the upgraded map). A map that is not compatible or from a newer format: 422 with the message of section 2 |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | `GET` | `/api/content/ra-movies/allied`, `/api/content/ra-movies/soviet` | A byte range of `movies1.mix` or `movies2.mix` (the mission movies) from the same CD images, see below |
@@ -656,7 +805,9 @@ from an earlier lobby; the game keeps them in its map library,
 JSON and the header `X-WebRA-Member: <client>.<rejoin key>` (the key from
 `welcome.key`). The Worker checks the account gate (as for the WebSocket),
 the upload quota (10 per hour per network, shared with `POST /api/maps`), the
-size (1 MiB) and the map (protocol package and engine, as for uploads); the
+size (1 MiB) and the map (upgraded to the current format version, then the
+protocol package and engine, as for uploads; the lobby hash is the upgraded
+map's, so every member gets the same map); the
 session object checks the member key (constant time, bound to the account it
 was issued to, wrong keys count toward the per-IP lockout) and that the
 member is the host, stores the map **unlisted** (deduplicated by hash) and
@@ -1241,7 +1392,8 @@ Support powers (engine/src/powers.rs, API documented at the top of that
 file): one timer per player per power key (the OpenRA trait name, e.g.
 `AirstrikePower@spyplane`), however many structures provide it. Order
 `{"o": "support_power", player, key, x, y, x2?, y2?}` (world units; the
-optional second point gives aircraft powers their flight direction), wasm
+optional second point gives aircraft powers their flight direction; the
+engine leaves it out when there is none, and `null` counts as left out), wasm
 `Game.activate_power(player, key, x, y, x2?, y2?)` (world pixels), and
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
@@ -1477,7 +1629,7 @@ about options added since; files of the running build are validated in full:
   "createdAt": 1760000000000,
   "title": "England vs 1 opponent", // 1..64 chars
   "options": { ... },               // engine game options (section 3), closed slots left out
-  "map": null,                      // or the canonical map JSON text (section 2)
+  "map": null,                      // or the canonical map JSON text (section 2), as played: never upgraded
   "mapHash": null,                  // sha256 of `map`, checked on load
   "player": 0,                      // the recording player, null for a spectator
   "ticks": 1200,                    // ticks recorded
@@ -1559,12 +1711,26 @@ Main thread to worker:
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
-| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
+| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
-`warn`, and `failed` (the worker cannot go on; the page says so).
+`warn`, `failed` (the worker cannot go on; the page says so), and `error {
+error: { name, message, stack, context } }`: an error for the error report
+(docs/security.md, "Error reports"). The worker has no reporting of its own;
+the main thread reports it when reports are on (`js/telemetry`).
+
+Engine panics: the wasm32 engine aborts on a Rust panic, which JavaScript sees
+as `RuntimeError: unreachable`. The engine's panic hook
+(`engine/src/panic_report.rs`, installed at module start) keeps the message,
+source location and tick, and the free function `take_panic()` returns them
+once as JSON `{ message, location, tick }`. `SimCore` (`js/sim/core.js`)
+turns every trap of a call into the engine into an `EnginePanic` (with the
+panic's message and location) or `EngineTrap` error carrying
+`webraContext { engine, mode, tick, hashes, panicTick }`
+(`js/sim/engine-error.js`); after one, the game is stopped and every later
+call throws the same error.
 
 Start specs: `skirmish { options, map, player, recorder }`, `mission {
 mission, options, recorder }` (the mission file's text and its start
@@ -1845,7 +2011,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | Methods | Used by | Across the boundary |
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
-| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |

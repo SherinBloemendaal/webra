@@ -51,12 +51,21 @@
 }
 
 .account-row button.account-signin {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
 }
 
 .account-row button:hover:not(:disabled) {
   filter: brightness(1.18);
+}
+
+.account-row button.account-signin:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+  filter: none;
+}
+
+.account-row button.account-signin:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
 }
 
 .account-row button:focus-visible,
@@ -111,7 +120,7 @@
 }
 
 .account-motd {
-  border-left-color: var(--ui-accent);
+  border-left-color: var(--ui-info);
 }
 
 .account-sync {
@@ -177,6 +186,10 @@
 
 .account-dialog a {
   color: var(--ui-accent-hi);
+}
+
+.account-dialog a:hover {
+  color: var(--ui-accent-hover);
 }
 
 .menu-card button.account-discord {

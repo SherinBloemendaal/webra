@@ -526,7 +526,8 @@ export async function mountAdmin(root, deps = {}) {
     const displayName = field('Display name', el('input', { type: 'text', value: u.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX) }));
     const email = field('Email', el('input', { type: 'email', value: u.email ?? '', maxlength: String(EMAIL_MAX) }), { help: 'Empty removes it.' });
     const verified = switchRow('Email verified', { checked: u.emailVerified });
-    const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#4a82c4' }));
+    // Without a colour of its own the game draws the avatar in the accent red (--ui-accent).
+    const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#e0301f' }));
     const statusSel = el('select', {}, ...SETTABLE_STATUSES.map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
     statusSel.value = SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active';
     statusSel.disabled = u.storedStatus === 'deleted';
