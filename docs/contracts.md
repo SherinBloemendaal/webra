@@ -47,7 +47,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
   so a ground route over a river never cuts the water network. Structures
   never stand on a ford (naval yards need open water), and fords hold no ore
-  or gems. Generated maps put fords where ground routes cross water.
+  or gems. Generated maps put fords where ground routes cross water. A ford
+  is drawn as a crossing (WebRA's shallow ford tiles; with the original
+  graphics rough ground with beach tiles, like Red Alert's ford templates),
+  never as open water, since ground units walk on it.
 - Terrain types 6 to 10 are OpenRA's (`data/source/rules/world.yaml`,
   `defaults.yaml`; speeds per locomotor in `engine/rules.json`): road (6)
   is clear ground with OpenRA's road speed, buildable and able to hold
