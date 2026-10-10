@@ -72,6 +72,14 @@ export {
 } from './replay.js';
 export { assignSpawns } from './spawns.js';
 export {
+  MISSION_ID_RE,
+  MISSION_OPTION_KEYS,
+  MISSION_OPTION_RE,
+  MISSION_OPTIONS_MAX,
+  validateMissionOptions,
+  validMissionRef,
+} from './mission.js';
+export {
   ADDED_PRESET_KEYS,
   BUILTIN_MODES,
   PRESET_KEYS,

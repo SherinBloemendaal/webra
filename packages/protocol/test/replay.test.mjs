@@ -201,3 +201,38 @@ test('the frames digest chains frame by frame; files are bounded by bytes and by
   assert.deepEqual([r.ok, r.code], [false, 'too_large']);
   assert.ok((await parseReplay(text, { maxFrameBytes: 10_000 })).ok);
 });
+
+// ---- Campaign missions (src/mission.js) --------------------------------------------------
+
+const missionReplay = () => ({
+  ...base(),
+  mode: 'mission',
+  title: '01: In the Thick of It',
+  options: { seed: 7, gameSpeed: 'normal', options: { difficulty: 'hard' } },
+  mission: { id: 'allies-01', hash: 'a'.repeat(64) },
+});
+
+test('mission replays and saves name their mission file and options', async () => {
+  const r = await check(missionReplay());
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.replay, missionReplay());
+  const save = { ...missionReplay(), kind: 'save', hashes: [[250, 'aa'], [600, 'bb']] };
+  assert.ok((await check(save)).ok);
+});
+
+test('mission records are checked strictly', async () => {
+  const bad = [
+    { ...missionReplay(), mission: undefined },
+    { ...missionReplay(), mission: { id: 'Allies 01', hash: 'a'.repeat(64) } },
+    { ...missionReplay(), mission: { id: 'allies-01', hash: 'xyz' } },
+    { ...missionReplay(), mission: { id: 'allies-01', hash: 'a'.repeat(64), extra: 1 } },
+    { ...missionReplay(), player: 1 },
+    { ...missionReplay(), options: OPTIONS },
+    { ...missionReplay(), options: { seed: 7, gameSpeed: 'warp', options: {} } },
+    { ...missionReplay(), options: { seed: 7, gameSpeed: 'normal', options: { difficulty: 'very hard' } } },
+    { ...missionReplay(), options: { seed: 7, gameSpeed: 'normal', options: Object.fromEntries([...Array(9)].map((_, i) => [`k${i}`, 'v'])) } },
+    { ...missionReplay(), frames: [[12, [[1, [{ o: 'stop', player: 1, ids: [3] }]]]]] },
+    { ...base(), mission: { id: 'allies-01', hash: 'a'.repeat(64) } },
+  ];
+  for (const r of bad) assert.equal((await check(r)).ok, false, JSON.stringify(r).slice(0, 200));
+});

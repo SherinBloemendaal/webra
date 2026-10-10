@@ -15,6 +15,7 @@ import { fail, int, isPlainObject, object, oneOf, ProtocolError, text, utf8Lengt
 import { validFrameOrders } from './messages.js';
 import { parseMap, sha256Hex } from './map.js';
 import { validateGameOptions } from './options.js';
+import { validateMissionOptions, validMissionRef } from './mission.js';
 
 export const REPLAY_FORMAT = 'webra-replay';
 export const REPLAY_VERSION = 1;
@@ -25,12 +26,12 @@ export const REPLAY_MAX_TICKS = TICKS_PER_SECOND * 60 * 60 * 8;
 /** Recorders store the state hash every this many ticks (playback checks them). */
 export const REPLAY_HASH_INTERVAL = 250;
 export const REPLAY_KINDS = ['replay', 'save'];
-export const REPLAY_MODES = ['skirmish', 'online'];
+export const REPLAY_MODES = ['skirmish', 'online', 'mission'];
 export const REPLAY_TITLE_MAX = 64;
 /** Saves in the browser (IndexedDB) and their names. */
 export const SAVE_SLOTS_MAX = 50;
 
-const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online'];
+const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online', 'mission'];
 
 /**
  * Validate everything except the map hash (which needs async SHA-256).
@@ -40,18 +41,22 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
   object(v, KEYS, 'replay');
   if (v.format !== REPLAY_FORMAT) fail('not a WebRA replay or save file');
   if (v.version !== REPLAY_VERSION) fail(`unsupported replay format version ${int(v.version, 0, 0xffff, 'version')}`);
+  const mode = oneOf(v.mode, REPLAY_MODES, 'mode');
+  // A campaign mission (mission.js): the mission file by id and hash, its
+  // start options, one player (the person playing is player 0), no map file.
+  const mission = mode === 'mission';
   const out = {
     format: REPLAY_FORMAT,
     version: REPLAY_VERSION,
     kind: oneOf(v.kind, REPLAY_KINDS, 'kind'),
-    mode: oneOf(v.mode, REPLAY_MODES, 'mode'),
+    mode,
     engine: (() => {
       if (typeof v.engine !== 'string' || !VERSION_RE.test(v.engine)) fail('engine version is malformed');
       return v.engine;
     })(),
     createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, 'createdAt'),
     title: text(v.title, 1, REPLAY_TITLE_MAX, 'title'),
-    options: validateGameOptions(v.options, 'options'),
+    options: mission ? validateMissionOptions(v.options, 'options') : validateGameOptions(v.options, 'options'),
     map: null,
     mapHash: null,
     player: null,
@@ -59,10 +64,18 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
     frames: [],
     hashes: [],
   };
-  const players = out.options.players.length;
+  // Mission frames only carry the orders of player 0.
+  const players = mission ? 1 : out.options.players.length;
   if (v.player !== null) out.player = int(v.player, 0, players - 1, 'player');
-  if (out.kind === 'save' && (out.player === null || out.options.players[out.player].type !== 'human')) {
+  if (out.kind === 'save' && (out.player === null || (!mission && out.options.players[out.player].type !== 'human'))) {
     fail('a save must name the human player it belongs to');
+  }
+  if (mission) {
+    if (out.player !== 0) fail('a mission is played by player 0');
+    if (v.map !== null) fail('a mission has no map file');
+    out.mission = validMissionRef(v.mission, 'mission');
+  } else if (v.mission !== undefined) {
+    fail('only missions carry a mission record');
   }
   // An online save names the server's record of it (docs/contracts.md section 4, "Online saves");
   // it can only be resumed online, after a hash tick, by the players who saved it.
