@@ -96,6 +96,13 @@ pub struct Actor {
     pub opportunity: u32,
     pub forced: bool,
     pub chase_cell: u32,
+    /// The move's goal is a stand-in for `dest`, the nearest cell that could
+    /// be reached when the way was cut (a husk in a gap, a fallen bridge);
+    /// the move goes back to `dest` when a later passability change opens
+    /// the way again (units.rs `keep_goal_reachable`, `restore_dest`).
+    pub retargeted: bool,
+    /// Passability version the stand-in goal was last checked against.
+    pub goal_version: u32,
     pub reload: [i32; MAX_WEAPONS],
     pub burst_shot: [i32; MAX_WEAPONS],
     pub scan_cooldown: i32,
@@ -244,6 +251,8 @@ impl Actor {
             opportunity: NONE,
             forced: false,
             chase_cell: NONE,
+            retargeted: false,
+            goal_version: 0,
             reload: [0; MAX_WEAPONS],
             burst_shot: [0; MAX_WEAPONS],
             scan_cooldown: 0,
@@ -1999,6 +2008,7 @@ impl World {
             a.target = NONE;
             a.forced = false;
             a.hold = false;
+            a.retargeted = false;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
             a.air.new_order();

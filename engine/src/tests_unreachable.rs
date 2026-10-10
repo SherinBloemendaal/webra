@@ -565,6 +565,38 @@ fn a_crossing_cut_mid_route_stops_the_group_with_one_search() {
     assert!(crossed * 10 >= near.len() * 9, "{crossed} of {} crossed after the repair", near.len());
 }
 
+/// A wreck in the only gap stops a group short of its destination; when
+/// the wreck is gone the units still on their way go on to where they were
+/// sent, instead of stopping for good where the blocker made them stop.
+#[test]
+fn a_move_cut_by_a_wreck_goes_on_once_the_wreck_is_gone() {
+    let mut w = arena(96, 64);
+    river(&mut w, 48, &[32]);
+    let units = block(&mut w, "1TNK", 0, 4, 22, 10, 60);
+    let (gx, gy) = (cell_center(90), cell_center(32));
+    w.order_move(&units, gx, gy, false);
+    // A tank dies in the ford: its husk blocks the gap.
+    let victim = w.spawn_unit(ty(&w, "2TNK"), 1, cell_center(48), cell_center(32), 0);
+    run(&mut w, 25 * 2, |_, _| {});
+    w.kill(victim);
+    w.step();
+    let husk = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].kind == Kind::Husk).expect("a husk");
+    assert!(w.pass.blocked[w.map.idx(48, 32)], "the husk blocks the ford");
+    run(&mut w, 25 * 12, |_, _| {});
+    assert!(units.iter().all(|&i| w.actors[i].x < 48 * CELL), "nobody crossed");
+    let retargeted = units.iter().filter(|&&i| w.actors[i].retargeted).count();
+    assert!(retargeted > 0, "the group settled for the near bank");
+    // The wreck is cleared while the group is still driving.
+    w.kill(husk);
+    w.step();
+    assert!(!w.pass.blocked[w.map.idx(48, 32)]);
+    run(&mut w, 25 * 100, |_, _| {});
+    let crossed = units.iter().filter(|&&i| w.actors[i].x > 48 * CELL).count();
+    assert!(crossed * 10 >= units.len() * 9, "{crossed} of {} crossed once the wreck was gone", units.len());
+    assert!(all_idle(&w, &units), "{:?}", activities(&w, &units));
+    assert!(units.iter().all(|&i| !w.actors[i].retargeted));
+}
+
 /// Structures going up away from the routes do not recompute the fields of
 /// forty groups on the move: a field is only refreshed where a unit runs
 /// into a change.

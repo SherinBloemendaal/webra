@@ -185,6 +185,7 @@ impl World {
             self.actors[i].opportunity = NONE;
             return;
         }
+        self.restore_dest(i);
         let goal = self.actors[i].goal;
         if goal == NONE {
             self.actors[i].activity = Activity::Idle;
@@ -193,9 +194,11 @@ impl World {
         }
         let r = self.arrive_radius(i);
         if self.goal_reached(i, goal, r, true) {
-            self.actors[i].activity = Activity::Idle;
-            self.actors[i].attack_move = false;
-            self.actors[i].opportunity = NONE;
+            let a = &mut self.actors[i];
+            a.activity = Activity::Idle;
+            a.attack_move = false;
+            a.opportunity = NONE;
+            a.retargeted = false;
             return;
         }
         self.move_toward(i, goal);
@@ -276,16 +279,75 @@ impl World {
                 new
             }
         };
+        let version = self.pass_of(i).version;
         let a = &mut self.actors[i];
         if new == NONE || new == goal {
             a.activity = Activity::Idle;
             a.goal = NONE;
+            a.retargeted = false;
             return false;
+        }
+        // A plain move remembers that it settled for less (`restore_dest`).
+        if a.activity == Activity::Move && a.chase_cell == NONE {
+            a.retargeted = true;
+            a.goal_version = version;
         }
         a.goal = new;
         a.best_dist = i32::MAX;
         a.stuck_ticks = 0;
         true
+    }
+
+    /// A move that settled for the nearest reachable cell looks again at
+    /// its destination whenever passability changed since (a husk burnt
+    /// out, a bridge was repaired): if the way is open again, or a nearer
+    /// cell is, the move goes on there. A standing blocker thus never
+    /// changes where a group ends up for good (OpenRA issues 9010, 17526).
+    /// The search is shared per tick by the group (`retarget_memo`).
+    fn restore_dest(&mut self, i: usize) {
+        let a = &self.actors[i];
+        if !a.retargeted || a.goal == NONE {
+            return;
+        }
+        let version = self.pass_of(i).version;
+        if a.goal_version == version {
+            return;
+        }
+        let (dx, dy) = a.dest;
+        let (gx, gy) = self.cell_toward(dx, dy, a.x, a.y);
+        let want = self.map.idx(gx, gy) as u32;
+        let ci = self.cell_index(a.x, a.y);
+        let pass = self.pass_of(i);
+        if pass.blocked[ci] {
+            return;
+        }
+        let mask = if self.domain_of(i) == crate::rules::Domain::Ground { self.crush_mask(i) } else { 0 };
+        let kind = if self.lands(i) {
+            2
+        } else if self.domain_of(i) == crate::rules::Domain::Water {
+            1
+        } else {
+            0
+        };
+        let key = (want, pass.components_for(mask)[ci], kind, mask);
+        let new = match self.retarget_memo.iter().find(|m| (m.0, m.1, m.2, m.3) == key) {
+            Some(m) => m.4,
+            None => {
+                let new = self.nearest_reachable(i, (gx, gy), (gx, gy)).unwrap_or(NONE);
+                self.retarget_scans += 1;
+                self.retarget_memo.push((key.0, key.1, key.2, key.3, new));
+                new
+            }
+        };
+        let a = &mut self.actors[i];
+        a.goal_version = version;
+        if new == NONE || new == a.goal {
+            return;
+        }
+        a.goal = new;
+        a.best_dist = i32::MAX;
+        a.stuck_ticks = 0;
+        a.retargeted = new != want;
     }
 
     /// Arrival test. Distances count along the path, so a unit on the far
