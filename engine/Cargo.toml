@@ -14,3 +14,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
 base64 = "0.23"
+# Pure Rust math (a musl port): the same results on every platform, for mission scripts.
+libm = "0.2"

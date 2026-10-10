@@ -454,6 +454,7 @@ name = "webra-sim"
 version = "0.8.0"
 dependencies = [
  "base64",
+ "libm",
  "serde",
  "serde_json",
  "sha2",

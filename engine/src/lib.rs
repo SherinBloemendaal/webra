@@ -30,6 +30,7 @@ pub mod infantry;
 mod infantry_combat;
 mod infantry_render;
 pub mod instances;
+pub mod lua;
 pub mod map;
 pub mod mapdata;
 pub mod mapgen;
