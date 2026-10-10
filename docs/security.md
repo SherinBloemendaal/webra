@@ -262,7 +262,8 @@ cross-origin isolated page, so the headers changed:
   streams with a 502, the transfer breaks off, the player cancels) gives
   its bytes back to the account's daily budget (`refundQuota`, never below
   zero; the network request and the account's request still count: at
-  most 96 requests per account per UTC day), so the game's retry of that
+  most 96 requests of at most 8 MiB per account per UTC day, so an account
+  can pull at most 768 MiB of music upstream a day whatever it cancels), so the game's retry of that
   piece is charged once, and a piece counts as whole once every byte went
   out; the game retries a 502 at most once per click and
   never retries a 429. The answer must be `206` with `Content-Range` of
@@ -299,7 +300,8 @@ cross-origin isolated page, so the headers changed:
   refunds. Their budgets are their own, sized for archives of hundreds of
   megabytes: 1,500 MiB (both archives twice) and 288 requests (three per
   piece of both) per account per UTC day, and 192 requests per network per
-  hour; the requests are never given back. The game offers them as an
+  hour; the requests are never given back, so an account can pull at most
+  288 x 8 MiB = 2,304 MiB of movies upstream a day whatever it cancels. The game offers them as an
   optional button with the size (about 748 MB) and never as part of
   "Install everything". It checks every 8 MiB piece against its pinned
   SHA-256 before it keeps it (`apps/game/js/content/cdmovies.js`; a whole

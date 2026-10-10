@@ -49,7 +49,7 @@
 import { HttpError } from './http.js';
 import { ipSalt } from './ipkey.js';
 import { networkOf } from './accounts/ip.js';
-import { refundQuota, takeQuota } from './quota.js';
+import { peekQuota, refundQuota, takeQuota } from './quota.js';
 import { CONTENT_HEADER, exactly } from './content.js';
 
 /** scores.mix as found in MAIN.MIX on both freeware discs (the same bytes on each). */
@@ -243,12 +243,16 @@ async function relayFileRange(request, env, ip, account, file, { fetchImpl, now,
   const { start, end } = parseFileRange(request.headers.get('Range'), file.total, file.name);
   const length = end - start + 1;
   const key = salt ?? ipSalt(env, request);
+  // Requests of the account, never given back: refunds of unfinished pieces cannot buy unbounded traffic.
+  // An account that has used its day is refused by a read alone, before the network's counter (as content.js).
+  const [triesPurpose, triesLimit, triesWindow] = file.budgets.tries;
+  if ((await peekQuota(env.DB, key, triesPurpose, account.id, triesWindow, now)) >= triesLimit) {
+    throw overBudget(file.messages.account, 'account', triesWindow, now);
+  }
   const [netPurpose, netLimit, netWindow] = file.budgets.network;
   if (!(await takeQuota(env.DB, key, netPurpose, networkOf(ip), netLimit, netWindow, now))) {
     throw overBudget(file.messages.network, 'network', netWindow, now);
   }
-  // Requests of the account, never given back: refunds of unfinished pieces cannot buy unbounded traffic.
-  const [triesPurpose, triesLimit, triesWindow] = file.budgets.tries;
   if (!(await takeQuota(env.DB, key, triesPurpose, account.id, triesLimit, triesWindow, now))) {
     throw overBudget(file.messages.account, 'account', triesWindow, now);
   }

@@ -236,6 +236,13 @@ export class IdbStore {
     return ids.map((id) => Number(String(id).slice(key.length + 1))).filter(Number.isInteger);
   }
 
+  /** Forget every kept download (all keys). */
+  async clearAllPartials() {
+    const tx = this.db.transaction(PARTIALS, 'readwrite');
+    tx.objectStore(PARTIALS).clear();
+    await finished(tx);
+  }
+
   /** Forget the pieces of `key`. */
   async clearPartials(key) {
     const tx = this.db.transaction(PARTIALS, 'readwrite');
@@ -299,6 +306,9 @@ export class MemoryStore {
       .map(([, r]) => r)
       .filter((r) => r.key === key)
       .map((r) => ({ index: r.index, bytes: r.bytes, info: r.info ?? null }));
+  }
+  async clearAllPartials() {
+    this.partialMap.clear();
   }
   async clearPartials(key) {
     for (const [id, r] of [...this.partialMap]) if (r.key === key) this.partialMap.delete(id);

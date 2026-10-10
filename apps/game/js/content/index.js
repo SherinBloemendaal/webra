@@ -455,12 +455,16 @@ export class ContentSystem {
     return contentSummary(await this.store());
   }
 
-  /** Remove the installed original content (sounds, graphics, movies and the kept package), back to WebRA art. Packs stay. */
+  /**
+   * Remove the installed original content (sounds, graphics, movies) and
+   * every kept download (the package, unfinished music and movie pieces),
+   * back to WebRA art. Packs stay.
+   */
   removeOriginal() {
     return this.exclusive(async () => {
       const store = await this.store();
       await store.clear();
-      await this.forgetPackage(store);
+      await store.clearAllPartials();
       await this.reload();
       if (this.settings.get(GRAPHICS_SETTING) === 'original') this.settings.set(GRAPHICS_SETTING, 'webra');
     });

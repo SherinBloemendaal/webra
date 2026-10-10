@@ -509,7 +509,11 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       const store = await content.store?.().catch(() => null);
       const movieArchives = [];
       for (const archive of MOVIE_ARCHIVES) {
-        if (archive.movies.every((m) => content.hasMovie?.(m))) continue;
+        if (archive.movies.every((m) => content.hasMovie?.(m))) {
+          // Installed another way (a CD image): pieces of an unfinished download of it are not needed.
+          if (store && (await store.partialIndexes?.(archive.partial).catch(() => []))?.length) await forgetMovieDownload(store, archive).catch(() => {});
+          continue;
+        }
         movieArchives.push({ archive, kept: store ? await keptMovieBytes(store, archive).catch(() => 0) : 0 });
       }
       current = { state, kept, musicKept, movieArchives };

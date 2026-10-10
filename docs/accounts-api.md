@@ -944,11 +944,14 @@ Budgets of the package relay: 8 completed downloads per account per UTC
 day, 20 completed downloads per network per hour (an IPv4 address or an
 IPv6 /64), and requests whatever their outcome (never given back): 24 per
 account per UTC day and 30 per network per hour. The music relay also
-counts 96 requests per account per UTC day. A transfer is completed once
+counts 96 requests per account per UTC day. Because these request counts
+are never given back, they bound what one account can pull upstream a day
+whatever it cancels: 24 packages (about 324 MB), 96 x 8 MiB = 768 MiB of
+music. A transfer is completed once
 every byte went out. `GET /api/content/ra-movies/allied` and `/soviet`
 (the mission movies) have the same gate and their own budgets: 1,500 MiB
 and 288 requests per account per UTC day, 192 requests per network per
-hour. A
+hour; at most 288 x 8 MiB = 2,304 MiB of movies upstream per account a day. A
 download (or a music piece) that does not complete is given back, so a
 retry of a failed one is charged once. Every budget answers `429
 rate_limited` with `Retry-After` (seconds) and the body

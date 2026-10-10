@@ -364,6 +364,18 @@ test(`${SCORES_ACCOUNT_ATTEMPTS} music requests per account per day, never given
   assert.equal(calls.length, 0);
 });
 
+test('an account over its request ceiling is refused before the network counter is charged', async () => {
+  const { peekQuota, takeQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 7, 0, 0);
+  const salt = 'cdmusic-test-salt-0123456789';
+  for (let i = 0; i < SCORES_ACCOUNT_ATTEMPTS; i++) await takeQuota(env.DB, salt, 'scores-account-tries', ACCOUNT.id, SCORES_ACCOUNT_ATTEMPTS, 24 * 3600 * 1000, now);
+  const writes = env.DB.writes;
+  await assert.rejects(scoresRange(ask('bytes=0-0'), env, '203.0.113.9', ACCOUNT, { fetchImpl: archive(), now }), (e) => e.status === 429 && e.extra.scope === 'account');
+  assert.equal(env.DB.writes, writes, 'no write at all');
+  assert.equal(await peekQuota(env.DB, salt, 'scores-ip', '203.0.113.9', 3600 * 1000, now), 0, 'the network keeps its budget');
+});
+
 test('no timer outlives a cancelled or cut off transfer', async () => {
   const realSet = globalThis.setTimeout;
   const realClear = globalThis.clearTimeout;

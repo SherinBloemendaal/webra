@@ -1335,6 +1335,11 @@ test('content system: ra-quickinstall.zip is kept; files a newer WebRA wants com
   await content.install([fullSizeZip()]);
   await content.removeOriginal();
   assert.equal(await content.keptPackage(), null, 'Remove deletes the kept package too');
+  // And every other kept download (unfinished music and movie pieces).
+  await store.putPartial('ra-scores', 0, new ArrayBuffer(4));
+  await store.putPartial('ra-movies1', 3, new ArrayBuffer(4));
+  await content.removeOriginal();
+  assert.deepEqual([...(await store.partialIndexes('ra-scores')), ...(await store.partialIndexes('ra-movies1'))], []);
   assert.deepEqual(await store.partialIndexes(KEPT_PACKAGE), []);
 });
 

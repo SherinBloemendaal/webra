@@ -252,6 +252,20 @@ test('mission movies: optional, with a button of their own that says the size; n
   assert.equal(movies.disabled, true);
 });
 
+test('mission movies: pieces of an archive whose movies all came in another way are forgotten', async () => {
+  const content = fakeContent();
+  content.installed = true;
+  const store = await content.store();
+  await store.putPartial('ra-movies1', 0, new ArrayBuffer(4));
+  await store.putPartial('ra-movies2', 0, new ArrayBuffer(4));
+  const allied = new Set((await import('../js/content/movies.js')).ALLIED_MOVIES);
+  content.hasMovie = (m) => allied.has(m);
+  mount(content, fakeAudio(), { autoInstall: true });
+  await settle(10);
+  assert.deepEqual(await store.partialIndexes('ra-movies1'), [], 'the Allied movies are installed: its pieces go');
+  assert.deepEqual(await store.partialIndexes('ra-movies2'), [0], 'the Soviet download is still needed');
+});
+
 test('installed state: the lobby button and the menu label say it', async () => {
   const button = doc.createElement('button');
   const panel = doc.createElement('div');
