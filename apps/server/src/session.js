@@ -50,6 +50,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
   C2S,
+  coopMission,
   DROP_AFTER_MS,
   encodeServer,
   ERRORS,
@@ -82,7 +83,7 @@ import { HEARTBEAT_MS, removeSession, upsertSession } from './directory.js';
 import { Lockstep, LockstepError } from './lockstep.js';
 import { lookupMap, mapTextByHash, storeMap } from './maps.js';
 import { gunzip, gzip, OrderLog } from './orderlog.js';
-import { recordSave } from './onlinesaves.js';
+import { missionDigest, recordSave } from './onlinesaves.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
 import { cheatsAllowed, ordersFitRules } from './validate.js';
@@ -727,6 +728,13 @@ export class Session extends DurableObject {
         await this.syncDirectory();
         return;
       }
+      case C2S.MISSION:
+        // Validated by the protocol against the co-op missions of this version.
+        room.setMission(client, msg.mission);
+        await this.saveRoom();
+        this.broadcastLobby();
+        await this.syncDirectory();
+        return;
       case C2S.READY:
         room.setReady(client, msg.ready, msg.mapHash);
         await this.saveRoom();
@@ -816,7 +824,7 @@ export class Session extends DurableObject {
    * engine, ticks, hash, options, seats: [account | null] per player },
    * `frames`: the saved orders, `prepared`: the map (prepareMap) or null.
    */
-  async loadSave({ member, account = null, ip = 'unknown', resume, frames, prepared = null }) {
+  async loadSave({ member, account = null, ip = 'unknown', resume, frames, prepared = null, mission = null }) {
     if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
     const client = await this.checkMember(member, account, ip);
     if (typeof client !== 'number') return client;
@@ -831,7 +839,7 @@ export class Session extends DurableObject {
     if (problem()) return problem();
     const map = prepared ? (({ created: _c, ...summary }) => summary)(await storeMap(this.env.DB, prepared, { listed: false, uploaderId: account.id })) : null;
     if (problem()) return problem();
-    if ((map?.hash ?? null) !== (resume.mapHash ?? null)) return rpcError(422, ERRORS.INVALID, 'The saved map does not match.');
+    if (!mission && (map?.hash ?? null) !== (resume.mapHash ?? null)) return rpcError(422, ERRORS.INVALID, 'The saved map does not match.');
     // The saved orders wait in storage (the object may sleep while the lobby fills).
     const old = this.room.resume?.chunks ?? 0;
     const chunks = [];
@@ -850,6 +858,7 @@ export class Session extends DurableObject {
     if (chunk.length) chunks.push(chunk);
     try {
       this.room.setMap(client, map, { resume: true });
+      this.room.setMission(client, mission, { resume: true });
       this.room.loadResume(client, { id: resume.id, title: resume.title, createdAt: resume.createdAt, ticks: resume.ticks, hash: resume.hash, options: resume.options, seats: resume.seats, chunks: chunks.length });
     } catch (err) {
       if (err instanceof RoomError) return rpcError(409, err.code, err.message);
@@ -1011,7 +1020,8 @@ export class Session extends DurableObject {
         stateHash: hash,
         framesDigest: digest.value(),
         optionsDigest: await optionsDigest(start.options),
-        mapHash: start.map ? start.map.hash : null,
+        // A co-op mission is pinned by its record (file hash and options) instead of a map.
+        mapHash: start.mission ? await missionDigest(start.mission) : start.map ? start.map.hash : null,
         members,
       },
       now,
@@ -1063,7 +1073,7 @@ export class Session extends DurableObject {
     }
     switch (msg.t) {
       case C2S.ORDERS: {
-        if (!ordersFitRules(msg.orders, ENGINE_RULES.actors.length)) {
+        if (!ordersFitRules(msg.orders, this.actorCount())) {
           this.reject(ws, 'bad_message', 'Order names an unknown actor type.', true);
           await this.disconnect(ws, 'removed');
           return;
@@ -1557,7 +1567,8 @@ export class Session extends DurableObject {
       locked: this.meta.password !== null,
       players: this.room.humans().length,
       maxPlayers: this.meta.maxPlayers,
-      map: this.room.map,
+      // A co-op mission is listed under its title (directory.js directoryMap).
+      map: this.room.mission ? { mission: this.room.mission.id, name: coopMission(this.room.mission.id).title } : this.room.map,
       version: this.meta.version,
       state: this.room.phase === 'lobby' ? 'lobby' : 'game',
     };
@@ -1572,6 +1583,12 @@ export class Session extends DurableObject {
   }
 
   // ---- Helpers ---------------------------------------------------------------------------------------
+
+  /** Actor types of the running game's rules: a co-op mission's, or the engine's. */
+  actorCount() {
+    const mission = this.room?.startMsg?.mission;
+    return mission ? coopMission(mission.id).actors : ENGINE_RULES.actors.length;
+  }
 
   attachment(ws) {
     return ws.deserializeAttachment() ?? { client: null, ip: 'unknown', since: 0 };

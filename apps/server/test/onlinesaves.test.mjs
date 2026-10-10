@@ -376,3 +376,14 @@ test('a player too slow for a resumed start is dropped for now, not for good: th
   valid(host);
   valid(back);
 });
+
+test('a co-op mission save is pinned by its mission record', async () => {
+  const { COOP_MISSIONS } = await import('@webra/protocol');
+  const { missionDigest } = await import('../src/onlinesaves.js');
+  const m = COOP_MISSIONS[0];
+  const a = await missionDigest({ id: m.id, hash: m.hash, options: { difficulty: 'easy' } });
+  assert.match(a, /^[0-9a-f]{64}$/);
+  assert.equal(a, await missionDigest({ id: m.id, hash: m.hash, options: { difficulty: 'easy' } }));
+  assert.notEqual(a, await missionDigest({ id: m.id, hash: m.hash, options: { difficulty: 'normal' } }), 'another difficulty is another game');
+  await assert.rejects(() => missionDigest({ id: m.id, hash: 'f'.repeat(64), options: {} }));
+});

@@ -24,7 +24,7 @@ import { checkJsonType, getMap, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPL
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
-import { loadSaveRecord } from './onlinesaves.js';
+import { loadSaveRecord, missionDigest } from './onlinesaves.js';
 import { scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
@@ -180,7 +180,7 @@ async function sessionResume(ctx, id) {
     record.ticks === save.ticks &&
     record.stateHash === save.hashes.at(-1)[1] &&
     record.engine === save.engine &&
-    record.mapHash === save.mapHash &&
+    record.mapHash === (save.mission ? await missionDigest(save.mission) : save.mapHash) &&
     record.framesDigest === (await framesDigest(save.frames)) &&
     record.optionsDigest === (await optionsDigest(save.options));
   if (!same) throw new HttpError(409, 'invalid', 'This file does not match the saved game on the server.');
@@ -196,6 +196,7 @@ async function sessionResume(ctx, id) {
       resume: { id: record.id, title: record.title, createdAt: record.createdAt, engine: save.engine, ticks: save.ticks, hash: record.stateHash, options: save.options, seats, mapHash: save.mapHash },
       frames: save.frames,
       prepared,
+      mission: save.mission ?? null,
     }),
   );
   return json({ id: record.id, ok: r.ok });

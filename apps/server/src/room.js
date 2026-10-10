@@ -55,6 +55,12 @@
 // cannot change. Everyone ready (accepting) and the map installed, the host
 // starts: every client fast-forwards through the saved orders and the game
 // goes on after the save point once every player caught up.
+//
+// Co-op missions (`mission`, protocol mission.js COOP_MISSIONS): the host
+// picks one instead of a skirmish (no map file then). The first slots are
+// the mission's playable players in order (Allies1, Allies2, ...) and only
+// people take them (OpenRA AllowBots: False); the other slots are closed.
+// The game starts when every one of those slots holds a ready person.
 
 import {
   COLOR_COUNT,
@@ -72,6 +78,7 @@ import {
   SAVE_COOLDOWN_MS,
   SAVE_HASH_MS,
   SAVE_VOTE_MS,
+  coopMission,
 } from '@webra/protocol';
 
 export class RoomError extends Error {
@@ -95,6 +102,8 @@ export class Room {
     r.slots = Array.from({ length: maxPlayers }, () => ({ type: 'open' }));
     r.options = { ...DEFAULT_OPTIONS, seed };
     r.map = null;
+    /** The co-op mission played instead of a skirmish: { id, hash, options } or null. */
+    r.mission = null;
     r.hostId = null;
     r.nextClient = 1;
     /** Game player index -> client id (humans) after start. */
@@ -155,6 +164,7 @@ export class Room {
     r.saveCooldown ??= 0;
     r.resume ??= null;
     r.resumeStart ??= null;
+    r.mission ??= null;
     return r;
   }
 
@@ -164,6 +174,7 @@ export class Room {
       slots: this.slots,
       options: this.options,
       map: this.map,
+      mission: this.mission,
       hostId: this.hostId,
       nextClient: this.nextClient,
       seats: this.seats,
@@ -406,6 +417,10 @@ export class Room {
     if (msg.type !== undefined) {
       if (!host) fail('Only the host can change slot types.', 'not_host');
       if (target === mine) fail('You cannot change your own slot type.');
+      if (this.mission) {
+        if (msg.type === 'ai') fail('People play a co-op mission: no AI players.');
+        if (target >= this.missionPlaces()) fail(`This mission has ${this.missionPlaces()} places.`);
+      }
       const kicked = cur.type === 'human' ? cur.client : null;
       if (msg.type === 'ai') {
         const color = msg.color ?? (cur.type === 'ai' ? cur.color : this.freeColor(target));
@@ -441,7 +456,7 @@ export class Room {
       return { kicked: null };
     }
 
-    if (cur.type === 'open' && mine >= 0) {
+    if (cur.type === 'open' && mine >= 0 && !(this.mission && target >= this.missionPlaces())) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
       // Move to the open slot, keeping name and settings.
       this.slots[target] = this.slots[mine];
@@ -489,6 +504,47 @@ export class Room {
     this.map = map ? { ...map } : null;
     // Map states belong to one map; the host has the one it picked.
     this.mapStates = map ? { [client]: 'installed' } : {};
+    // A map (or a generated one) means a skirmish: no mission.
+    if (!resume) this.mission = null;
+    this.resetReady();
+  }
+
+  /** How many places the lobby's co-op mission has (its playable players). */
+  missionPlaces() {
+    return this.mission ? coopMission(this.mission.id).players.length : 0;
+  }
+
+  /**
+   * Host: play co-op mission `mission` ({ id, hash, options }, validated by
+   * the protocol against COOP_MISSIONS) or go back to a skirmish (null).
+   * The first slots become the mission's places: AI players there leave,
+   * people in later slots move into free places; the later slots close.
+   */
+  setMission(client, mission, { resume = false } = {}) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!resume) this.refuseInResume();
+    if (!this.isHost(client)) fail('Only the host can choose a mission.', 'not_host');
+    if (mission === null) {
+      this.mission = null;
+      this.resetReady();
+      return;
+    }
+    const places = coopMission(mission.id)?.players.length ?? 0;
+    if (places === 0) fail('Unknown mission.', 'not_found');
+    if (places > this.slots.length) fail(`This mission needs ${places} places: create a session with at least as many.`);
+    const people = this.humans();
+    if (people.length > places) fail(`This mission has ${places} places for ${people.length} players: some must watch first.`);
+    const slots = Array.from({ length: this.slots.length }, (_, i) => (i < places ? { type: 'open' } : { type: 'closed' }));
+    // People keep their place when it is a mission place, else take the first free one.
+    for (const [i, s] of this.slots.entries()) if (s.type === 'human' && i < places) slots[i] = s;
+    for (const [i, s] of this.slots.entries()) {
+      if (s.type !== 'human' || i < places) continue;
+      slots[slots.findIndex((x, k) => k < places && x.type === 'open')] = s;
+    }
+    this.slots = slots;
+    this.mission = { id: mission.id, hash: mission.hash, options: { ...mission.options } };
+    this.map = null;
+    this.mapStates = {};
     this.resetReady();
   }
 
@@ -545,6 +601,16 @@ export class Room {
     if (this.phase !== 'lobby') return 'The game has already started.';
     if (!this.isHost(client)) return 'Only the host can start the game.';
     const players = this.participants();
+    if (this.mission) {
+      const places = this.missionPlaces();
+      if (this.slots.slice(0, places).some((s) => s.type !== 'human')) return `This mission needs a player in each of its ${places} places.`;
+      if (this.resume) {
+        const waiting = this.resumeView().waiting;
+        if (waiting.length) return `Waiting for ${waiting.join(', ')} to come back.`;
+      }
+      if (this.slots.some((s) => s.type === 'human' && s.client !== this.hostId && !s.ready)) return 'Not everyone is ready.';
+      return null;
+    }
     if (players.length < MIN_PLAYERS) return 'At least two players are needed.';
     if (this.map && players.length > this.map.players) return `This map has room for ${this.map.players} players.`;
     if (this.resume) {
@@ -599,11 +665,13 @@ export class Room {
     this.seatStates = seats.map((c) => (c === null ? null : { state: 'active', until: 0, record: null }));
     this.startMsg = {
       seed: this.options.seed,
-      options: { ...this.options, players },
+      // A co-op mission has no debug menu (the engine refuses cheats there too).
+      options: { ...this.options, ...(this.mission ? { cheats: false } : {}), players },
       map: this.map,
       players: startPlayers,
       delay: ORDER_DELAY,
     };
+    if (this.mission) this.startMsg.mission = structuredClone(this.mission);
     return structuredClone(this.startMsg);
   }
 
@@ -761,6 +829,7 @@ export class Room {
       delay: ORDER_DELAY,
       resume: { ticks: r.ticks, hash: r.hash },
     };
+    if (this.mission) this.startMsg.mission = structuredClone(this.mission);
     this.resumeStart = { ticks: r.ticks, hash: r.hash };
     this.resume = null;
     return structuredClone(this.startMsg);
@@ -1014,6 +1083,7 @@ export class Room {
       maxSpectators: this.maxSpectators,
     };
     if (this.resume) view.resume = this.resumeView();
+    if (this.mission) view.mission = structuredClone(this.mission);
     return view;
   }
 

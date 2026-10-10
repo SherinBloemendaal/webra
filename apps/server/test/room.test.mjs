@@ -350,3 +350,57 @@ test('a syncing seat that loses its connection keeps only its original grace', (
   room.rejoins[guest] = 10;
   assert.match(room.rejoinProblem(guest).message, /too often/);
 });
+
+// ---- Co-op missions -----------------------------------------------------------------------
+
+test('a co-op mission: its places, people only, every place filled, the start names it', async () => {
+  const { COOP_MISSIONS } = await import('@webra/protocol');
+  const evac = COOP_MISSIONS.find((m) => m.id === 'evacuation');
+  const mission = { id: evac.id, hash: evac.hash, options: { difficulty: 'easy' } };
+  const { room, host, guest } = lobby(4);
+  room.setSlot(host, { slot: 2, type: 'ai' });
+  // Validated on the wire like any client message.
+  assert.deepEqual(parseClientMessage(JSON.stringify({ t: 'mission', mission })).msg.mission, mission);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'mission', mission: { ...mission, hash: 'a'.repeat(64) } })).ok, false);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'mission', mission: { ...mission, id: 'allies-01' } })).ok, false);
+  throwsRoom(() => room.setMission(guest, mission), 'not_host');
+  room.setMission(host, mission);
+  assert.deepEqual(
+    room.slots.map((s) => s.type),
+    ['human', 'human', 'closed', 'closed'],
+    'the AI left; the places past the mission close',
+  );
+  throwsRoom(() => room.setSlot(host, { slot: 1, type: 'ai' }));
+  throwsRoom(() => room.setSlot(host, { slot: 2, type: 'open' }));
+  assert.deepEqual(room.lobbyView().mission, mission);
+  assert.deepEqual(parseServerMessage(encodeServer({ t: 'lobby', ...room.lobbyView() })).msg.mission, mission);
+  // Every place needs a ready person.
+  assert.match(room.startProblem(host), /Not everyone is ready/);
+  room.setReady(guest, true, null);
+  assert.equal(room.startProblem(host), null);
+  const start = room.start(host, first);
+  assert.deepEqual(start.mission, mission);
+  assert.equal(start.options.cheats, false);
+  assert.equal(start.options.players.length, 2);
+  assert.deepEqual(parseServerMessage(encodeServer({ t: 'start', ...start })).msg.mission, mission, 'the start message validates');
+  // Storage round trip keeps the mission.
+  assert.deepEqual(Room.fromJSON(JSON.parse(JSON.stringify(room))).mission, mission);
+});
+
+test('a co-op mission waits for its places; picking a map goes back to a skirmish', async () => {
+  const { COOP_MISSIONS } = await import('@webra/protocol');
+  const m = COOP_MISSIONS[0];
+  const room = Room.create({ maxPlayers: 4, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  room.setMission(host, { id: m.id, hash: m.hash, options: {} });
+  assert.match(room.startProblem(host), /needs a player in each/);
+  // Too many people for the places: some must watch first.
+  const big = Room.create({ maxPlayers: 4, seed: 7 });
+  const h = big.join('H', { host: true }).client;
+  big.join('A');
+  big.join('B');
+  throwsRoom(() => big.setMission(h, { id: m.id, hash: m.hash, options: {} }));
+  room.setMap(host, null);
+  assert.equal(room.mission, null);
+  assert.equal(room.lobbyView().mission, undefined);
+});

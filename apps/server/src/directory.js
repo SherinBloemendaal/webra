@@ -39,6 +39,8 @@ export async function upsertSession(db, s, now = Date.now()) {
  * (its id, hash and author stay with the members, docs/security.md).
  */
 export function directoryMap(map) {
+  // A co-op mission lobby: the mission's id and title.
+  if (map.mission) return { mission: map.mission, name: map.name };
   if (map.shared) return { name: map.name, modded: map.modded, shared: true };
   return { id: map.id, name: map.name, hash: map.hash, modded: map.modded };
 }
@@ -51,6 +53,7 @@ function parseMapJson(text) {
   if (!text) return null;
   try {
     const m = JSON.parse(text);
+    if (typeof m.mission === 'string') return { mission: m.mission, name: String(m.name), modded: false };
     if (m.shared === true) return { name: String(m.name), modded: m.modded === true, shared: true };
     return { id: String(m.id), name: String(m.name), hash: String(m.hash), modded: m.modded === true };
   } catch {

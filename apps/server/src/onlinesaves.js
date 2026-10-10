@@ -1,11 +1,21 @@
 // Saved online games in D1 (docs/security.md "Online saves"). Only what a
 // resume is checked against is kept: the save point, the agreed state hash,
-// digests of the order frames and the options, the map hash, the session
-// name and which account played which seat. The files (options, map, orders)
-// stay in the players' browsers.
+// digests of the order frames and the options, the map hash (for a co-op
+// mission: the digest of its mission record), the session name and which
+// account played which seat. The files (options, map, orders) stay in the
+// players' browsers.
 
-import { ONLINE_SAVES_PER_ACCOUNT, SAVE_ID_RE } from '@webra/protocol';
+import { ONLINE_SAVES_PER_ACCOUNT, SAVE_ID_RE, sha256Hex, validCoopMission } from '@webra/protocol';
 import { randomHex } from './crypto.js';
+
+/**
+ * What pins a co-op mission in a save record (its `map_hash`): the SHA-256 of
+ * its validated record `{ id, hash, options }`, so a resume needs the same
+ * mission file and the same difficulty.
+ */
+export async function missionDigest(mission) {
+  return sha256Hex(JSON.stringify(validCoopMission(mission)));
+}
 
 /**
  * Store a save record: `{ engine, title, ticks, stateHash, framesDigest,

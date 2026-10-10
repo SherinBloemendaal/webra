@@ -380,3 +380,26 @@ test('chat has its own rate limit and a flood closes the connection', async () =
   assert.ok(w.closed, 'flooding closes the connection');
   void host;
 });
+
+test('a co-op mission online: the lobby, the start and orders for its own actor types', async () => {
+  const { COOP_MISSIONS } = await import('@webra/protocol');
+  const m = COOP_MISSIONS.find((x) => x.id === 'exodus');
+  const mission = { id: m.id, hash: m.hash, options: { difficulty: 'hard' } };
+  const { s, host, guest, hw, gw } = await started({ start: false });
+  await s.send(guest, { t: 'mission', mission });
+  assert.equal(guest.take('error')[0]?.code, 'not_host');
+  await s.send(host, { t: 'mission', mission });
+  assert.deepEqual(host.last('lobby').mission, mission);
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  const st = host.last('start');
+  assert.deepEqual(st.mission, mission);
+  assert.equal(st.options.players.length, 2);
+  const seat = (you) => st.players.find((p) => p.client === you).player;
+  // A mission actor type (past the engine's own rules) is a valid order; past the mission's it is not.
+  await s.send(host, { t: 'orders', tick: 3, orders: [{ o: 'start_production', player: seat(hw.you), ty: m.actors - 1, count: 1 }] });
+  assert.deepEqual(host.take('error'), []);
+  await s.send(guest, { t: 'orders', tick: 3, orders: [{ o: 'start_production', player: seat(gw.you), ty: m.actors, count: 1 }] });
+  assert.ok(guest.take('error').length > 0 || guest.closed, 'an actor type past the mission rules is refused');
+  assertValid(host);
+});
