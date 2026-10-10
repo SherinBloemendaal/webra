@@ -827,11 +827,17 @@ impl World {
             }
             if self.can_add_resource(resource, x, y) {
                 let ci = self.map.idx(x, y);
+                let bare = !self.map.has_resource(ci);
                 match resource {
                     Resource::Ore => self.map.ore[ci] += 1,
                     Resource::Gems => self.map.gems[ci] += 1,
                 }
                 self.terrain_dirty = true;
+                // Ore on bare ground slows units: routes over it cost more (flowfield.rs).
+                if bare {
+                    self.pass.note_cost_change(ci);
+                    self.pass.refresh(&self.map);
+                }
             }
             return;
         }
@@ -1173,13 +1179,20 @@ impl World {
     /// The flow field toward `goal` for unit `i`'s locomotor (crushers drive
     /// through walls they may crush), or None for aircraft, which fly straight.
     pub(crate) fn unit_flow_field(&mut self, i: usize, goal: u32) -> Option<&crate::flowfield::FlowField> {
+        // The field as far as the unit's cell (flowfield.rs: partial fields).
+        let cell = self.cell_index(self.actors[i].x, self.actors[i].y);
+        self.unit_flow_field_from(i, goal, cell)
+    }
+
+    /// `unit_flow_field` as far as `cell` (a neighbour the unit may step to).
+    pub(crate) fn unit_flow_field_from(&mut self, i: usize, goal: u32, cell: usize) -> Option<&crate::flowfield::FlowField> {
         let loco = self.rules.actors[self.actors[i].ty as usize].unit.as_ref()?.locomotor;
         let crusher = self.flow_crusher(i);
         if crusher > 0 {
             let mask = self.crush_mask(i);
             let k = self.crush_blocked(crusher - 1, mask);
             let crush = crate::flowfield::Crush { player: crusher - 1, blocked: &self.neutral.crush_blocked[k].blocked };
-            return Some(self.flow.field_crushing(&self.map, &self.pass, &self.rules.locomotors, goal, loco as u8, crush));
+            return Some(self.flow.field_at(&self.map, &self.pass, &self.rules.locomotors, goal, loco as u8, Some(crush), cell));
         }
         if self.rules.locomotors[loco].domain == crate::rules::Domain::Air {
             return None;
@@ -1191,7 +1204,7 @@ impl World {
         } else {
             &self.pass
         };
-        Some(self.flow.field(&self.map, pass, &self.rules.locomotors, goal, loco as u8))
+        Some(self.flow.field_at(&self.map, pass, &self.rules.locomotors, goal, loco as u8, None, cell))
     }
 
     /// Nearest cell to `goal` that unit `i` can reach from where it stands

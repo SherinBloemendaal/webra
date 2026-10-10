@@ -9,6 +9,28 @@
 //! cell. Units use it to tell real progress from standing in a queue: a
 //! detour around a wall moves a unit away from its goal in a straight line
 //! but always brings it closer along the path.
+//!
+//! Two things keep the work per tick bounded, whatever the map or the
+//! number of goals (OpenRA bounds its searches the same way, with a
+//! hierarchical path finder that stops at the unit and a domain index for
+//! the unreachable):
+//!
+//! - A field is computed only as far as the units that use it (`FlowField::
+//!   complete`, `bound`): the search from the goal stops a margin beyond
+//!   the asking unit's cell. A unit on a cell the field does not cover yet
+//!   extends it (to twice the bound at least), so a group far away costs a
+//!   few extensions, and a chase of a target a few cells away costs a few
+//!   hundred cells per step of the target instead of the whole map.
+//! - A passability change (a structure goes up, a wall falls, a bridge
+//!   breaks) only recomputes the fields it can alter: those covering a
+//!   changed cell or one next to it (`Passability::changes_since`). Every
+//!   other field is exactly what a fresh search would give.
+//!
+//! Both keep the fields a pure function of the map, so the cache never
+//! decides a game: a client that starts from an empty cache (a replay
+//! snapshot, a rejoin) computes the same directions. Ore slows units and
+//! so costs more on a route (OpenRA's Ore terrain type), so a cell gaining
+//! or losing its ore counts as a change too (`Passability::note_cost_change`).
 
 use crate::map::Map;
 use crate::rules::Locomotor;
@@ -32,6 +54,9 @@ const CACHE_CELL_BUDGET: usize = 24 << 20;
 const MIN_CACHED: usize = 32;
 /// `FlowField::dist` of a cell that cannot reach the goal.
 pub const DIST_NONE: u16 = u16::MAX;
+/// Path cost beyond the asking unit's cell a partial field covers, so that
+/// crowd pushes and the units just behind it stay on covered cells.
+const BOUND_MARGIN: u32 = 8 * COST_STRAIGHT;
 
 #[derive(Clone)]
 pub struct FlowField {
@@ -47,6 +72,26 @@ pub struct FlowField {
     /// per step wherever the locomotor is not faster than on clear terrain.
     pub dist: Vec<u16>,
     pub last_used: u64,
+    /// The search ran to the end: every `DIR_NONE` cell cannot reach the
+    /// goal. A partial field only covers cells up to path cost `bound`.
+    pub complete: bool,
+    /// Path cost (COST_STRAIGHT per clear cell) the field covers when it is
+    /// not complete.
+    pub bound: u32,
+}
+
+impl FlowField {
+    /// Whether a passability change at cell `c` can alter this field: `c`
+    /// or a neighbour of it is covered (a blocked cell on a route, a freed
+    /// cell that opens a shortcut or a corner). Elsewhere the change is
+    /// beyond the field's reach or in an area it cannot reach.
+    fn touched_by(&self, map: &Map, c: usize) -> bool {
+        if self.dist[c] != DIST_NONE {
+            return true;
+        }
+        let (x, y) = ((c as i32) % map.width, (c as i32) / map.width);
+        DIRS.iter().any(|&(dx, dy)| map.contains(x + dx, y + dy) && self.dist[map.idx(x + dx, y + dy)] != DIST_NONE)
+    }
 }
 
 /// Passability shared by all ground locomotors, plus per-cell connectivity labels.
@@ -64,7 +109,22 @@ pub struct Passability {
     crush_components: Vec<(u8, Vec<u32>)>,
     /// Crush classes of all walls on the map, as of the last `refresh`.
     pub crush_present: u8,
+    /// Cells whose passability changed, with the version the change took
+    /// effect in (the `refresh` after it) and whether the cell is blocked
+    /// now. `CHANGE_ALL` stands for a change fields cannot locate (a wall
+    /// changing hands). Fields older than a change ask `changes_since`.
+    changes: Vec<(u32, u32, bool)>,
+    /// Version of the oldest change still in `changes`.
+    changes_from: u32,
+    /// Only path costs changed (ore came or went): the next `refresh` is a
+    /// new version without new connectivity labels.
+    cost_dirty: bool,
 }
+
+/// `Passability::changes` cell for a change that may affect any cell.
+const CHANGE_ALL: u32 = u32::MAX;
+/// Changes kept; fields older than the oldest kept recompute.
+const CHANGES_KEPT: usize = 4096;
 
 /// Crush class bits of walls (OpenRA Crushable CrushClasses `wall`, `heavywall`).
 pub const CRUSH_WALL: u8 = 1;
@@ -117,9 +177,46 @@ impl Passability {
             crush: vec![0; n],
             crush_components: Vec::new(),
             crush_present: 0,
+            changes: Vec::new(),
+            changes_from: 1,
+            cost_dirty: false,
         };
         p.refresh(map);
         p
+    }
+
+    /// Note a change for the fields; it takes effect in the next version.
+    fn log(&mut self, cell: u32, blocked: bool) {
+        self.changes.push((self.version + 1, cell, blocked));
+        if self.changes.len() > CHANGES_KEPT {
+            let drop = self.changes.len() - CHANGES_KEPT;
+            self.changes.drain(..drop);
+            self.changes_from = self.changes[0].0;
+        }
+    }
+
+    /// The changes since passability version `since` as (cell, blocked
+    /// now), or None when they are too many to tell (or cannot be located).
+    pub fn changes_since(&self, since: u32) -> Option<&[(u32, u32, bool)]> {
+        if since >= self.version {
+            return Some(&[]);
+        }
+        if since + 1 < self.changes_from {
+            return None;
+        }
+        let start = self.changes.partition_point(|c| c.0 <= since);
+        let list = &self.changes[start..];
+        if list.iter().any(|c| c.1 == CHANGE_ALL) {
+            return None;
+        }
+        Some(list)
+    }
+
+    /// The path cost of cell `i` changed (its ore ran out or grew): fields
+    /// covering it recompute after the next `refresh`.
+    pub fn note_cost_change(&mut self, i: usize) {
+        self.cost_dirty = true;
+        self.log(i as u32, self.blocked[i]);
     }
 
     /// Set the crush classes of the wall on cell `i` (0: none).
@@ -127,6 +224,7 @@ impl Passability {
         if self.crush[i] != bits {
             self.crush[i] = bits;
             self.dirty = true;
+            self.log(i as u32, self.blocked[i]);
         }
     }
 
@@ -146,21 +244,29 @@ impl Passability {
     /// may crush a wall): fields recompute on the next lookup.
     pub fn touch(&mut self) {
         self.dirty = true;
+        self.log(CHANGE_ALL, false);
     }
 
     pub fn set_blocked(&mut self, i: usize, b: bool) {
         if self.blocked[i] != b {
             self.blocked[i] = b;
             self.dirty = true;
+            self.log(i as u32, b);
         }
     }
 
     /// Recompute connectivity labels after passability changed. Returns true if anything changed.
     pub fn refresh(&mut self, map: &Map) -> bool {
         if !self.dirty {
+            if self.cost_dirty {
+                self.cost_dirty = false;
+                self.version += 1;
+                return true;
+            }
             return false;
         }
         self.dirty = false;
+        self.cost_dirty = false;
         self.version += 1;
         label(map, &self.blocked, &mut self.component);
         // Walls the crushers of a class mask drive through (OpenRA: tanks
@@ -234,40 +340,58 @@ pub struct FlowCache {
     /// field one after another, so this skips most index lookups.
     last: usize,
     clock: u64,
+    /// Fields computed (or recomputed, or extended) so far. A counter for
+    /// the performance panel and tests, never part of the state hash.
     pub computed: u64,
+    /// Cells expanded by the searches so far (the work done), as `computed`.
+    pub expanded: u64,
 }
 
 impl FlowCache {
     pub fn new() -> Self {
-        FlowCache { fields: Vec::new(), index: BTreeMap::new(), last: usize::MAX, clock: 0, computed: 0 }
+        FlowCache { fields: Vec::new(), index: BTreeMap::new(), last: usize::MAX, clock: 0, computed: 0, expanded: 0 }
     }
 
-    /// Direction byte for `cell` in the field toward `goal`, computing the field if needed.
+    /// Direction byte for `cell` in the complete field toward `goal`,
+    /// computing the field if needed (tests and tools; units use `field_at`).
     pub fn dir(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, cell: usize) -> u8 {
-        let f = self.get(map, pass, locos, goal, loco, None);
+        let f = self.get(map, pass, locos, goal, loco, None, None);
         self.fields[f].dirs[cell]
     }
 
-    /// The field toward `goal` for locomotor `loco`, computing it if needed.
+    /// The complete, current field toward `goal` for locomotor `loco`,
+    /// computing it if needed (tests and tools; units use `field_at`).
     pub fn field(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> &FlowField {
-        let f = self.get(map, pass, locos, goal, loco, None);
+        let f = self.get(map, pass, locos, goal, loco, None, None);
         &self.fields[f]
     }
 
-    /// `field` for units that crush walls (`Crush`): fields are per player then.
-    pub fn field_crushing(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, crush: Crush) -> &FlowField {
-        let f = self.get(map, pass, locos, goal, loco, Some(crush));
+    /// The field toward `goal` for locomotor `loco` as a unit on `cell`
+    /// follows it: it covers `cell` (or `cell` cannot reach the goal), and
+    /// is refreshed when passability changed under the unit's next step.
+    /// With `crush` the unit crushes walls (`Crush`): fields are per player then.
+    pub fn field_at(
+        &mut self,
+        map: &Map,
+        pass: &Passability,
+        locos: &[Locomotor],
+        goal: u32,
+        loco: u8,
+        crush: Option<Crush>,
+        cell: usize,
+    ) -> &FlowField {
+        let f = self.get(map, pass, locos, goal, loco, crush, Some(cell));
         &self.fields[f]
     }
 
     /// The cached field toward `goal` for locomotor `loco` (and `crusher`:
-    /// 0, or 1 + the crushing player), if it exists and is current for
-    /// passability `version`. Read only (debug views): never computes,
-    /// evicts or touches the use clock.
-    pub fn peek(&self, goal: u32, loco: u8, crusher: u8, version: u32) -> Option<&[u8]> {
+    /// 0, or 1 + the crushing player), if there is one: the field the units
+    /// follow, which may be older than the passability (see the module
+    /// doc). Read only (debug views): never computes, evicts or touches the
+    /// use clock.
+    pub fn peek(&self, goal: u32, loco: u8, crusher: u8) -> Option<&[u8]> {
         let &i = self.index.get(&(goal, loco, crusher))?;
-        let f = &self.fields[i];
-        (f.version == version).then_some(f.dirs.as_slice())
+        Some(self.fields[i].dirs.as_slice())
     }
 
     /// Number of cached fields.
@@ -279,7 +403,18 @@ impl FlowCache {
         self.fields.is_empty()
     }
 
-    fn get(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, crush: Option<Crush>) -> usize {
+    /// Slot of the field for (`goal`, `loco`, `crush`), computed, extended
+    /// or refreshed as `cell` needs (None: complete and current).
+    fn get(
+        &mut self,
+        map: &Map,
+        pass: &Passability,
+        locos: &[Locomotor],
+        goal: u32,
+        loco: u8,
+        crush: Option<Crush>,
+        cell: Option<usize>,
+    ) -> usize {
         self.clock += 1;
         let crusher = crush.as_ref().map_or(0, |c| c.player + 1);
         let blocked: &[bool] = crush.as_ref().map_or(&pass.blocked, |c| c.blocked);
@@ -291,10 +426,31 @@ impl FlowCache {
             self.last = i;
             let f = &mut self.fields[i];
             f.last_used = self.clock;
-            if f.version != pass.version {
-                compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
+            let mut current = f.version == pass.version;
+            if !current {
+                // Changes the field cannot have noticed leave it as it is.
+                let untouched =
+                    pass.changes_since(f.version).is_some_and(|list| !list.iter().any(|&(_, c, _)| f.touched_by(map, c as usize)));
+                if untouched {
+                    f.version = pass.version;
+                    current = true;
+                }
+            }
+            let (recompute, extend) = match cell {
+                None => (!current || !f.complete, false),
+                Some(c) if f.dirs[c] != DIR_NONE => (!current, false),
+                // Not covered: extend a partial field.
+                Some(_) => (!current || !f.complete, current && !f.complete),
+            };
+            if recompute {
+                let min_bound = if extend { f.bound.saturating_mul(2) } else { 0 };
+                let target = cell.map(|c| (c, min_bound));
+                let (complete, bound, expanded) = compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist, target);
+                f.complete = complete;
+                f.bound = bound;
                 f.version = pass.version;
                 self.computed += 1;
+                self.expanded += expanded;
             }
             return i;
         }
@@ -309,6 +465,8 @@ impl FlowCache {
                 dirs: vec![DIR_NONE; n],
                 dist: vec![DIST_NONE; n],
                 last_used: 0,
+                complete: false,
+                bound: 0,
             });
             self.fields.len() - 1
         } else {
@@ -323,9 +481,13 @@ impl FlowCache {
         f.loco = loco;
         f.crusher = crusher;
         f.last_used = self.clock;
-        compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist);
+        let (complete, bound, expanded) =
+            compute(map, blocked, &locos[loco as usize], goal, &mut f.dirs, &mut f.dist, cell.map(|c| (c, 0)));
+        f.complete = complete;
+        f.bound = bound;
         f.version = pass.version;
         self.computed += 1;
+        self.expanded += expanded;
         self.index.insert((goal, loco, crusher), slot);
         self.last = slot;
         slot
@@ -340,14 +502,27 @@ impl Default for FlowCache {
 
 /// Dijkstra from the goal outward. Moving into a cell costs more on slow
 /// terrain for this locomotor (OpenRA TerrainSpeeds).
-fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut [u8], dist: &mut [u16]) {
+///
+/// With a `target` (cell, least bound) the search stops once the target
+/// cell is settled and the cost is `BOUND_MARGIN` past it (and past the
+/// least bound): a partial field. Returns whether the field is complete,
+/// the cost it covers, and the cells expanded.
+fn compute(
+    map: &Map,
+    blocked: &[bool],
+    loco: &Locomotor,
+    goal: u32,
+    dirs: &mut [u8],
+    dist: &mut [u16],
+    target: Option<(usize, u32)>,
+) -> (bool, u32, u64) {
     let n = map.cells();
     dirs.iter_mut().for_each(|d| *d = DIR_NONE);
     dist.iter_mut().for_each(|d| *d = DIST_NONE);
     let mut cost = vec![u32::MAX; n];
     let g = goal as usize;
     if g >= n || blocked[g] {
-        return;
+        return (true, u32::MAX, 0);
     }
     let ship = loco.domain == crate::rules::Domain::Water;
     let cell_cost = |i: usize| -> u32 {
@@ -359,11 +534,29 @@ fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut 
     dist[g] = 0;
     let mut heap = BinaryHeap::new();
     heap.push(Reverse((0u32, g as u32)));
+    // Every cell with a final cost up to `limit` is expanded before a pop
+    // beyond it; a partial field settles those cells and no others.
+    let (target_cell, mut limit) = match target {
+        Some((c, min_bound)) => (Some(c), min_bound),
+        None => (None, u32::MAX),
+    };
+    let mut target_settled = target_cell.is_none();
+    let mut complete = true;
+    let mut expanded = 0u64;
     while let Some(Reverse((c, i))) = heap.pop() {
         let i = i as usize;
         if c > cost[i] {
             continue;
         }
+        if c > limit && target_settled {
+            complete = false;
+            break;
+        }
+        if Some(i) == target_cell {
+            target_settled = true;
+            limit = limit.max(c.saturating_add(BOUND_MARGIN));
+        }
+        expanded += 1;
         let (x, y) = ((i as i32) % map.width, (i as i32) / map.width);
         let enter = cell_cost(i);
         for d in 0..8 {
@@ -379,6 +572,7 @@ fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut 
             }
         }
     }
+    let limit = if complete { u32::MAX } else { limit };
     // Pick each cell's direction after the costs are final. Among equally cheap
     // steps the choice must not depend on the scan order (north first, low cell
     // index first), or units would move differently on the two halves of a
@@ -387,7 +581,7 @@ fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut 
     // and rotations a fair map uses.
     let (gx, gy) = ((g as i32) % map.width, (g as i32) / map.width);
     for j in 0..n {
-        if cost[j] == u32::MAX || j == g {
+        if cost[j] == u32::MAX || cost[j] > limit || j == g {
             continue;
         }
         // A step costs at least COST_STRAIGHT unless the terrain is faster
@@ -397,7 +591,7 @@ fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut 
         let mut best: Option<(i32, i32, u8)> = None;
         for (d, &(dx, dy)) in DIRS.iter().enumerate() {
             let Some(i) = step(map, blocked, x, y, d) else { continue };
-            if cost[i] == u32::MAX {
+            if cost[i] == u32::MAX || cost[i] > limit {
                 continue;
             }
             let base = if d % 2 == 0 { COST_STRAIGHT } else { COST_DIAGONAL };
@@ -414,6 +608,7 @@ fn compute(map: &Map, blocked: &[bool], loco: &Locomotor, goal: u32, dirs: &mut 
             dirs[j] = d;
         }
     }
+    (complete, limit, expanded)
 }
 
 /// Squared distance of a cell to the map centre, in half cells. Used to break

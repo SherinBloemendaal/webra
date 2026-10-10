@@ -255,8 +255,27 @@ impl World {
             return true;
         }
         let g = (goal as i32 % self.map.width, goal as i32 / self.map.width);
-        // Ties go toward the old goal itself, so the whole group agrees.
-        let new = self.nearest_reachable(i, g, g).unwrap_or(NONE);
+        // The same answer for every unit of a cut-off group (same goal,
+        // same area, same walls it may crush): search once per tick.
+        let mask = if self.domain_of(i) == crate::rules::Domain::Ground { self.crush_mask(i) } else { 0 };
+        let kind = if self.lands(i) {
+            2
+        } else if self.domain_of(i) == crate::rules::Domain::Water {
+            1
+        } else {
+            0
+        };
+        let key = (goal, pass.components_for(mask)[ci], kind, mask);
+        let new = match self.retarget_memo.iter().find(|m| (m.0, m.1, m.2, m.3) == key) {
+            Some(m) => m.4,
+            None => {
+                // Ties go toward the old goal itself, so the whole group agrees.
+                let new = self.nearest_reachable(i, g, g).unwrap_or(NONE);
+                self.retarget_scans += 1;
+                self.retarget_memo.push((key.0, key.1, key.2, key.3, new));
+                new
+            }
+        };
         let a = &mut self.actors[i];
         if new == NONE || new == goal {
             a.activity = Activity::Idle;
@@ -369,14 +388,24 @@ impl World {
             return;
         }
         let (cx, cy) = self.cell_of(x, y);
-        // The neighbours' remaining path lengths, for stepping off a blocked cell.
-        let neighbours: Vec<Option<usize>> =
-            DIRS.iter().map(|&(dx, dy)| self.map.contains(cx + dx, cy + dy).then(|| self.map.idx(cx + dx, cy + dy))).collect();
-        let (dir, field_dist) = {
-            // Crushers drive through walls they may crush (neutral.rs).
-            let Some(field) = self.unit_flow_field(i, goal) else { return };
-            let dists: Vec<u16> = neighbours.iter().map(|n| n.map_or(crate::flowfield::DIST_NONE, |j| field.dist[j])).collect();
-            (field.dirs[ci], dists)
+        // Crushers drive through walls they may crush (neutral.rs).
+        let Some(field) = self.unit_flow_field(i, goal) else { return };
+        let dir = field.dirs[ci];
+        // Standing on a blocked cell: the neighbours' remaining path lengths,
+        // each from a field that covers it (a field only covers what units
+        // asked for, flowfield.rs).
+        let field_dist: Vec<u16> = if dir == DIR_NONE && self.pass_of(i).blocked[ci] {
+            DIRS.iter()
+                .map(|&(dx, dy)| {
+                    if !self.map.contains(cx + dx, cy + dy) {
+                        return crate::flowfield::DIST_NONE;
+                    }
+                    let j = self.map.idx(cx + dx, cy + dy);
+                    self.unit_flow_field_from(i, goal, j).map_or(crate::flowfield::DIST_NONE, |f| f.dist[j])
+                })
+                .collect()
+        } else {
+            Vec::new()
         };
         let pass = self.pass_of(i);
         let (wx, wy) = if dir == DIR_GOAL {
@@ -618,7 +647,11 @@ impl World {
                         a.best_dist = i32::MAX;
                         a.stuck_ticks = 0;
                     }
-                    None if a.bales > 0 => a.harv = HarvState::ToDock,
+                    None if a.bales > 0 => {
+                        a.harv = HarvState::ToDock;
+                        a.best_dist = i32::MAX;
+                        a.stuck_ticks = 0;
+                    }
                     None => {
                         a.harv = HarvState::Wait;
                         a.harv_timer = 50;
@@ -658,6 +691,11 @@ impl World {
                 // One bale of whatever the cell holds; the truck counts gems apart.
                 if let Some(r) = self.map.take_bale(c) {
                     self.terrain_dirty = true;
+                    // A cell mined out is clear ground again: routes over it cost less (flowfield.rs).
+                    if !self.map.has_resource(c) {
+                        self.pass.note_cost_change(c);
+                        self.pass.refresh(&self.map);
+                    }
                     let a = &mut self.actors[i];
                     a.bales += 1;
                     a.gem_bales += (r == Resource::Gems) as i32;
@@ -672,6 +710,8 @@ impl World {
                 }
             }
             HarvState::ToDock => {
+                // No refinery a path leads to: wait, like OpenRA's harvester
+                // without a refinery (FindAndDeliverResources), and look again.
                 let Some(r) = self.pick_refinery(i) else {
                     let a = &mut self.actors[i];
                     a.harv = HarvState::Wait;
@@ -695,6 +735,16 @@ impl World {
                 // Wait outside while another harvester unloads.
                 let (dx, dy) = (cell_center(dock as i32 % self.map.width), cell_center(dock as i32 / self.map.width));
                 if busy && dist(self.actors[i].x, self.actors[i].y, dx, dy) < 3 * CELL {
+                    return;
+                }
+                // The dock became unreachable on the way (a wall, a fallen
+                // bridge), or the truck is blocked for good: let go of this
+                // refinery and pick again after a pause.
+                if self.goal_reached(i, dock, 0, false) {
+                    let a = &mut self.actors[i];
+                    a.refinery = NONE;
+                    a.harv = HarvState::Wait;
+                    a.harv_timer = 50;
                     return;
                 }
                 self.move_toward(i, dock);
@@ -737,9 +787,13 @@ impl World {
         dist(a.x, a.y, cx, cy) <= 96
     }
 
+    /// The truck's refinery, or the nearest own refinery whose dock it can
+    /// drive to (OpenRA Harvester.ClosestProc searches paths to the
+    /// refineries, so one across a river is never chosen). None when no
+    /// dock is reachable.
     fn pick_refinery(&mut self, i: usize) -> Option<usize> {
         if let Some(r) = self.resolve(self.actors[i].refinery) {
-            if self.actors[r].owner == self.actors[i].owner {
+            if self.actors[r].owner == self.actors[i].owner && self.dock_reachable(i, r) {
                 return Some(r);
             }
         }
@@ -749,7 +803,7 @@ impl World {
             if !b.alive || b.owner != owner || b.kind != Kind::Building {
                 continue;
             }
-            if self.rules.actors[b.ty as usize].building.as_ref().unwrap().refinery.is_none() {
+            if self.rules.actors[b.ty as usize].building.as_ref().unwrap().refinery.is_none() || !self.dock_reachable(i, j) {
                 continue;
             }
             let d = dist_sq(x, y, b.x, b.y);
@@ -760,6 +814,28 @@ impl World {
         let r = best.map(|(_, j)| j)?;
         self.actors[i].refinery = self.make_ref(r);
         Some(r)
+    }
+
+    /// Whether truck `i` can drive to the dock of refinery `r` from where it
+    /// stands (same connected area; a truck on a structure's cell counts
+    /// from the cells around it).
+    fn dock_reachable(&self, i: usize, r: usize) -> bool {
+        let dock = self.dock_cell(r) as usize;
+        let pass = self.pass_of(i);
+        if pass.blocked[dock] {
+            return false;
+        }
+        let (cx, cy) = self.cell_of(self.actors[i].x, self.actors[i].y);
+        let ci = self.map.idx(cx, cy);
+        if !pass.blocked[ci] {
+            return pass.component[ci] == pass.component[dock];
+        }
+        DIRS.iter().any(|&(dx, dy)| {
+            self.map.contains(cx + dx, cy + dy) && {
+                let n = self.map.idx(cx + dx, cy + dy);
+                !pass.blocked[n] && pass.component[n] == pass.component[dock]
+            }
+        })
     }
 
     pub fn dock_cell(&self, r: usize) -> u32 {

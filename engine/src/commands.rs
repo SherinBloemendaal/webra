@@ -167,7 +167,7 @@ impl World {
             self.aim_and_fire_at(i, crate::combat::FireTarget::Ground(tx, ty));
         } else if d < min_range {
             self.back_away_from(i, tx, ty);
-        } else if !self.approach(i, tx, ty) {
+        } else if !self.approach(i, tx, ty, Some(range)) {
             self.actors[i].activity = Activity::Idle;
         }
     }
@@ -230,7 +230,7 @@ impl World {
             return;
         }
         // Too far (or the path is cut off for now): follow, or wait for it.
-        self.approach(i, gx, gy);
+        self.approach(i, gx, gy, None);
     }
 
     pub(crate) fn end_guard(&mut self, i: usize) {
@@ -260,24 +260,64 @@ impl World {
 
     // ---- Moving toward a point ----------------------------------------------------------
 
+    /// Whether a chase of a target now in cell `tcell` plans its route
+    /// again: the unit has no route yet, or the target moved by at least an
+    /// eighth of the distance to it (every cell counts within eight cells).
+    /// A far target that stepped one cell on does not change the route, and
+    /// planning again on each such step would cost a crowd of chasers a new
+    /// flow field per unit per tick.
+    pub(crate) fn chase_replan(&self, i: usize, tcell: u32) -> bool {
+        let a = &self.actors[i];
+        if a.goal == NONE || a.chase_cell == NONE {
+            return true;
+        }
+        if a.chase_cell == tcell {
+            return false;
+        }
+        let w = self.map.width;
+        let cell = |c: u32| (c as i32 % w, c as i32 / w);
+        let far = |p: (i32, i32), q: (i32, i32)| (p.0 - q.0).abs().max((p.1 - q.1).abs());
+        let moved = far(cell(tcell), cell(a.chase_cell));
+        let left = far(self.cell_of(a.x, a.y), cell(tcell));
+        moved * 8 >= left
+    }
+
     /// One step toward the cell of (x, y), or the nearest reachable cell
-    /// (re-planned when that cell changes). False when nothing is reachable.
-    pub(crate) fn approach(&mut self, i: usize, x: i32, y: i32) -> bool {
+    /// (planned again as the target moves, `chase_replan`). False when the
+    /// unit cannot get there and gets no closer, so the caller gives up,
+    /// like OpenRA's MoveWithinRange ending short of its target (chasers
+    /// across a river would otherwise push against the bank for good):
+    /// nothing is reachable; with `reach`, the nearest reachable cell is
+    /// farther than that from the point (OpenRA finds no path to the cells
+    /// within range at once); or the unit stands on the nearest reachable
+    /// cell, or is blocked for good.
+    pub(crate) fn approach(&mut self, i: usize, x: i32, y: i32, reach: Option<i32>) -> bool {
         let (ux, uy) = (self.actors[i].x, self.actors[i].y);
         let (tcx, tcy) = self.cell_toward(x, y, ux, uy);
         let tcell = self.map.idx(tcx, tcy) as u32;
-        if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
+        if self.chase_replan(i, tcell) {
             let goal = self.path_goal(i, tcx, tcy);
             let a = &mut self.actors[i];
             a.chase_cell = tcell;
             a.goal = goal;
+            a.best_dist = i32::MAX;
+            a.stuck_ticks = 0;
+            if goal == NONE {
+                return false;
+            }
+            // The nearest reachable cell is out of reach of the point (a
+            // cell may be a cell's width nearer than its centre).
+            let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
+            if reach.is_some_and(|r| dist(gx, gy, x, y) > r + CELL) {
+                return false;
+            }
         }
         // The goal may have become unreachable since (a structure went up on it).
         if !self.keep_goal_reachable(i) {
             return false;
         }
         let goal = self.actors[i].goal;
-        if goal == NONE {
+        if goal == NONE || self.goal_reached(i, goal, 0, false) {
             return false;
         }
         self.move_toward(i, goal);

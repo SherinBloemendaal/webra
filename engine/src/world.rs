@@ -939,6 +939,14 @@ pub struct World {
     /// crowd separation, so it waits in a queue rather than being blocked for
     /// good (units.rs).
     pub(crate) jammed: Vec<bool>,
+    /// This tick's answers of `keep_goal_reachable` (units.rs): goal cell,
+    /// connectivity label, passability (0 ground, 1 water, 2 landing
+    /// craft), crush mask, and the cell found. A cut-off group asks the
+    /// same question once per unit; the answer only depends on these.
+    pub(crate) retarget_memo: Vec<(u32, u32, u8, u8, u32)>,
+    /// Nearest-cell searches run by `keep_goal_reachable` (a counter for
+    /// tests, never part of the state hash).
+    pub retarget_scans: u64,
     pub tokens_dirty: bool,
     next_group: u32,
     pub ai: Vec<crate::ai::AiState>,
@@ -1173,6 +1181,8 @@ impl World {
             hash_items: Vec::new(),
             terrain_dirty: true,
             jammed: Vec::new(),
+            retarget_memo: Vec::new(),
+            retarget_scans: 0,
             tokens_dirty: true,
             next_group: 1,
             ai: Vec::new(),
@@ -2245,6 +2255,7 @@ impl World {
             a.pturret = a.turret;
         }
         self.rebuild_hash();
+        self.retarget_memo.clear();
         self.apply_orders();
         if self.tokens_dirty {
             self.refresh_tokens();

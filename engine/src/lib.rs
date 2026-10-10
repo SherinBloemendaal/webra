@@ -133,6 +133,8 @@ mod tests_sound_eva;
 #[cfg(test)]
 mod tests_stats;
 #[cfg(test)]
+mod tests_unreachable;
+#[cfg(test)]
 mod tests_veterancy;
 #[cfg(test)]
 mod tests_weather;

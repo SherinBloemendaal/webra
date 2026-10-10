@@ -150,7 +150,7 @@ impl World {
         // Path toward the transport's cell (or the nearest reachable cell, e.g. the shore).
         let (tcx, tcy) = self.cell_of(tx, ty);
         let tcell = self.map.idx(tcx, tcy) as u32;
-        if self.actors[i].chase_cell != tcell || self.actors[i].goal == NONE {
+        if self.chase_replan(i, tcell) {
             let goal = self.path_goal(i, tcx, tcy);
             let a = &mut self.actors[i];
             a.chase_cell = tcell;

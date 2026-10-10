@@ -160,7 +160,11 @@ fn allies_01_can_be_won_with_orders() {
     let m = w.mission().unwrap();
     assert_eq!(m.error, None);
     assert_eq!(m.result, MissionResult::Won, "objectives {:?} after {t} ticks", harness::objectives(&w));
-    assert!(m.players[0].objectives.iter().all(|o| o.state == crate::mission::ObjectiveState::Completed));
+    assert!(
+        m.players[0].objectives.iter().all(|o| o.state == crate::mission::ObjectiveState::Completed),
+        "objectives {:?}",
+        harness::objectives(&w)
+    );
     assert_eq!(w.winner, Some(0));
 }
 

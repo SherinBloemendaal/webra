@@ -68,9 +68,8 @@ impl World {
                 route.to(goal_pt, lines);
                 continue;
             }
-            let pass = self.pass_of(i);
             // Only fields the unit already follows; none means nothing to show yet.
-            let Some(dirs) = self.flow.peek(goal, unit.locomotor as u8, self.flow_crusher(i), pass.version) else { continue };
+            let Some(dirs) = self.flow.peek(goal, unit.locomotor as u8, self.flow_crusher(i)) else { continue };
             let (mut cx, mut cy) = self.cell_of(a.x, a.y);
             let mut last = DIR_NONE;
             // A field never loops, so a route visits each cell at most once.
@@ -80,6 +79,8 @@ impl World {
                     route.to(goal_pt, lines);
                     break;
                 }
+                // No direction (or none yet: fields only cover the cells
+                // units asked for): the route ends here.
                 if d == DIR_NONE {
                     break;
                 }

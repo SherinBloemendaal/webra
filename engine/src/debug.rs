@@ -258,8 +258,9 @@ impl World {
 
     /// Flow field an own moving unit follows: `(goal cell, x0, y0, width, height,
     /// direction per cell)` for the clamped rectangle, directions as in
-    /// [`crate::flowfield::DIRS`] (8: goal, 255: no route or unexplored).
-    /// None when the unit is not moving along a cached, current field.
+    /// [`crate::flowfield::DIRS`] (8: goal, 255: no route, not computed yet
+    /// or unexplored; fields only cover the cells units asked for).
+    /// None when the unit is not moving along a cached field.
     pub fn debug_flow(&self, player: u8, id: u32, cx0: i32, cy0: i32, cx1: i32, cy1: i32) -> Option<(u32, i32, i32, i32, i32, Vec<u8>)> {
         let i = self.resolve(id)?;
         let a = &self.actors[i];
@@ -271,8 +272,7 @@ impl World {
         if domain == Domain::Air {
             return None;
         }
-        let pass = self.pass_of(i);
-        let dirs = self.flow.peek(a.goal, unit.locomotor as u8, self.flow_crusher(i), pass.version)?;
+        let dirs = self.flow.peek(a.goal, unit.locomotor as u8, self.flow_crusher(i))?;
         let (x0, y0) = (cx0.max(0), cy0.max(0));
         let (x1, y1) = (cx1.min(self.map.width - 1), cy1.min(self.map.height - 1));
         if x1 < x0 || y1 < y0 {
@@ -308,6 +308,7 @@ impl World {
             "projectiles": self.projectiles.len(),
             "effects": self.effects.len(),
             "flowComputed": self.flow.computed,
+            "flowExpanded": self.flow.expanded,
             "flowCached": self.flow.len(),
             "passVersion": self.pass.version,
         })

@@ -334,24 +334,7 @@ impl World {
             if self.chase_last_seen(i) {
                 return;
             }
-            self.actors[i].target = NONE;
-            self.actors[i].target_seen = None;
-            if self.resume_guard(i) {
-                return;
-            }
-            if self.actors[i].attack_move {
-                // Resume the attack-move toward the original destination.
-                let (dx, dy) = self.actors[i].dest;
-                let (gx, gy) = self.cell_toward(dx, dy, self.actors[i].x, self.actors[i].y);
-                let goal = self.path_goal(i, gx, gy);
-                let a = &mut self.actors[i];
-                a.goal = goal;
-                a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
-                a.best_dist = i32::MAX;
-                a.stuck_ticks = 0;
-            } else {
-                self.actors[i].activity = Activity::Idle;
-            }
+            self.attack_over(i);
             return;
         };
         self.actors[i].target_seen = Some(self.tick_start_pos(t));
@@ -394,8 +377,46 @@ impl World {
         if !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
             return;
         }
-        // Chase: path toward the target's cell (or the nearest reachable one).
-        if !self.approach(i, tx, ty) {
+        // Chase: path toward the target's cell (or the nearest reachable
+        // one). A target the unit cannot get in range of (across a river,
+        // on an island) is let go, as OpenRA's Attack ends when its move
+        // within range falls short.
+        let reach = range + self.target_extent(t);
+        if !self.approach(i, tx, ty, Some(reach)) {
+            self.attack_over(i);
+        }
+    }
+
+    /// How far the hit shape of `t` reaches from its position at most
+    /// (`target_distance` measures to the shape): half its footprint for a
+    /// structure, else nothing a chase needs to allow for.
+    fn target_extent(&self, t: usize) -> i32 {
+        let a = &self.actors[t];
+        match self.rules.actors[a.ty as usize].building.as_ref() {
+            Some(b) if a.kind == Kind::Building => b.width.max(b.height) * CELL / 2,
+            _ => 0,
+        }
+    }
+
+    /// The attack of `i` is over (its target died, vanished or cannot be
+    /// reached): back to guarding, on with the attack-move, or idle.
+    fn attack_over(&mut self, i: usize) {
+        self.actors[i].target = NONE;
+        self.actors[i].target_seen = None;
+        if self.resume_guard(i) {
+            return;
+        }
+        if self.actors[i].attack_move {
+            // Resume the attack-move toward the original destination.
+            let (dx, dy) = self.actors[i].dest;
+            let (gx, gy) = self.cell_toward(dx, dy, self.actors[i].x, self.actors[i].y);
+            let goal = self.path_goal(i, gx, gy);
+            let a = &mut self.actors[i];
+            a.goal = goal;
+            a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
+            a.best_dist = i32::MAX;
+            a.stuck_ticks = 0;
+        } else {
             self.actors[i].activity = Activity::Idle;
         }
     }
@@ -432,7 +453,7 @@ impl World {
         if !forced && self.actors[i].attack_move && self.try_auto_target(i) {
             return true;
         }
-        self.approach(i, lx, ly)
+        self.approach(i, lx, ly, Some(range))
     }
 
     // ---- Opportunity fire (OpenRA AttackTurreted) -------------------------------
