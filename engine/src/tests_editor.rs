@@ -83,7 +83,7 @@ fn rules_overrides_that_do_not_load_fall_back_to_the_base_rules() {
 #[test]
 fn the_game_api_renders_the_preview_for_the_observer_view() {
     let d = data(&[(4, 4), (40, 40)], vec![actor("POWR", 0, 10, 10), actor("1TNK", 1, 20, 20)], |_| {});
-    let mut g = Game::editor_preview(&d.canonical_json()).ok().expect("preview game");
+    let Ok(mut g) = Game::editor_preview(&d.canonical_json()) else { panic!("preview game") };
     let n = g.build_render(OBSERVER, 1.0, 0.0, 0.0, 48.0 * 24.0, 48.0 * 24.0);
     assert!(n >= 2, "both actors are drawn, got {n} sprites");
     let powr = g.world.rules.actor_index("POWR").unwrap() as f32 * 2.0;
@@ -93,4 +93,62 @@ fn the_game_api_renders_the_preview_for_the_observer_view() {
     // Terrain bytes of the preview: one RGBA pixel per cell.
     let _ = g.terrain_ptr();
     assert_eq!(g.terrain_len(), 48 * 48 * 4);
+}
+
+// ---- Fairness checks (editor.rs) --------------------------------------------------------
+
+use crate::editor::{CELL_BUILDABLE, CELL_PASSABLE, CELL_REACHABLE, CELL_RUSH, NO_ZONE};
+
+#[test]
+fn cells_mark_passable_buildable_reachable_rush_and_zones() {
+    // A wall of rock splits the map at x = 24 except for a gap at y = 40..43.
+    let d = data(&[(4, 4), (40, 4)], vec![actor("POWR", 0, 10, 20)], |m| {
+        for y in 0..48 {
+            if !(40..44).contains(&y) {
+                let i = m.idx(24, y);
+                m.terrain[i] = Terrain::Rock;
+            }
+        }
+    });
+    let w = World::editor_preview(&d).expect("preview");
+    let cells = w.editor_cells();
+    let at = |x: i32, y: i32| cells[w.map.idx(x, y)];
+    assert_eq!(at(24, 10) & CELL_PASSABLE, 0, "rock blocks");
+    assert_eq!(at(10, 20) & (CELL_PASSABLE | CELL_BUILDABLE), 0, "the power plant blocks and takes the ground");
+    assert_ne!(at(2, 2) & CELL_BUILDABLE, 0);
+    assert_ne!(at(40, 10) & CELL_REACHABLE, 0, "spawn 2 is reachable through the gap");
+    assert!((40..44).any(|y| at(24, y) & CELL_RUSH != 0), "the rush path goes through the gap");
+    assert_eq!(at(2, 2) >> 8, 0, "the left side is spawn 1's zone");
+    assert_eq!(at(45, 2) >> 8, 1);
+    assert_eq!(at(24, 10) >> 8, NO_ZONE);
+    let r = w.editor_report();
+    let rush = r["bases"][0]["rush"].as_u64().expect("a rush distance");
+    assert!(rush > 70, "the way round through the gap, got {rush}");
+    assert_eq!(r["bases"][0]["rush"], r["bases"][1]["rush"]);
+    assert_eq!(r["unreachableSpawns"], serde_json::json!([]));
+}
+
+#[test]
+fn the_report_counts_ore_per_base_and_names_cut_off_spawns() {
+    let d = data(&[(4, 4), (40, 40)], vec![], |m| {
+        for x in 8..12 {
+            let i = m.idx(x, 12);
+            m.ore[i] = 6;
+        }
+        let i = m.idx(9, 13);
+        m.gems[i] = 2;
+        // Water all the way across: spawn 2 is cut off.
+        for x in 0..48 {
+            let i = m.idx(x, 30);
+            m.terrain[i] = Terrain::Water;
+        }
+    });
+    let w = World::editor_preview(&d).expect("preview");
+    let r = w.editor_report();
+    assert_eq!(r["bases"][0]["oreCells"], 4);
+    assert_eq!(r["bases"][0]["ore"], 24);
+    assert_eq!(r["bases"][0]["gemCells"], 1);
+    assert_eq!(r["bases"][1]["oreCells"], 0);
+    assert_eq!(r["bases"][0]["rush"], serde_json::Value::Null, "no way by ground");
+    assert_eq!(r["unreachableSpawns"], serde_json::json!([1]));
 }

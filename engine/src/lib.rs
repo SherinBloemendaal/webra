@@ -31,6 +31,7 @@ pub mod crates;
 pub mod debug;
 mod dog;
 pub mod doors;
+pub mod editor;
 pub mod flowfield;
 pub mod fx;
 mod game_mission;
@@ -239,6 +240,18 @@ impl Game {
     pub fn editor_preview(map_json: &str) -> Result<Game, JsError> {
         let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(World::editor_preview(&data).map_err(|e| JsError::new(&e))?))
+    }
+
+    /// The map editor's overlay of an editor preview (editor.rs
+    /// `editor_cells`): per cell, flags (passable, buildable, reachable from
+    /// spawn 1, on a rush path) and the nearest spawn by ground in the high byte.
+    pub fn editor_cells(&self) -> Vec<u16> {
+        self.world.editor_cells()
+    }
+
+    /// The map editor's fairness report of an editor preview (editor.rs `editor_report`), JSON.
+    pub fn editor_report(&self) -> String {
+        self.world.editor_report().to_string()
     }
 
     /// SHA-256 (hex) identity of a map file's canonical form.
