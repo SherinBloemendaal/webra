@@ -29,7 +29,8 @@ impl Ctx<'_> {
     pub(crate) fn is_dead(&self, h: u32) -> bool {
         match self.m.handle(h).map(|hd| &hd.state) {
             Some(HState::Live(r)) => self.w.resolve(*r).is_none(),
-            Some(HState::Gone { .. }) | None => true,
+            Some(HState::Gone { died, at, .. }) => *died || *at != self.w.tick,
+            None => true,
             Some(HState::Prop { alive, .. }) => !alive,
             Some(HState::Limbo(_) | HState::Marker { .. } | HState::PlayerActor) => false,
         }
@@ -446,7 +447,7 @@ impl Ctx<'_> {
                     let ty = self.w.rules.actor_index(&hd.ty).unwrap_or(0) as u16;
                     let HState::Limbo(l) = &hd.state else { unreachable!() };
                     let snap = Snapshot { ty, owner: hd.owner, x: l.x, y: l.y, altitude: l.altitude.unwrap_or(0), facing: l.facing };
-                    self.m.handles[h as usize].state = HState::Gone { snap, died: false };
+                    self.m.handles[h as usize].state = HState::Gone { snap, died: false, at: self.w.tick };
                     return none;
                 }
                 self.queue(h, Act::Destroy);
@@ -983,6 +984,9 @@ impl Ctx<'_> {
                 self.w.place_crate(t, hd.owner, cx, cy, 0)
             }
             _ => {
+                // A ground unit made inside a structure (Einstein at the lab's
+                // door) steps out to the nearest open cell, as OpenRA's Nudge does.
+                let (x, y) = if kind == Kind::Aircraft { (x, y) } else { self.open_spot(t, x, y) };
                 let u = self.w.spawn_unit(t as u16, hd.owner, x, y, l.facing);
                 if let Some(alt) = l.altitude {
                     if kind == Kind::Aircraft {
@@ -1006,6 +1010,37 @@ impl Ctx<'_> {
         self.m.handles[h as usize].state = HState::Live(r);
         self.m.handle_of.insert(r, h);
         Ok(i)
+    }
+
+    /// (x, y), or the center of the nearest cell a unit of type `t` can stand on.
+    fn open_spot(&self, t: usize, x: i32, y: i32) -> (i32, i32) {
+        let Some(u) = self.w.rules.actors[t].unit.as_ref() else { return (x, y) };
+        let pass = self.w.pass_for(self.w.rules.locomotors[u.locomotor].domain);
+        let (cx, cy) = (x.div_euclid(CELL), y.div_euclid(CELL));
+        if !self.w.map.contains(cx, cy) || !pass.blocked[self.w.map.idx(cx, cy)] {
+            return (x, y);
+        }
+        for r in 1..8i32 {
+            let mut best: Option<(i32, (i32, i32))> = None;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx.abs() != r && dy.abs() != r {
+                        continue;
+                    }
+                    let (nx, ny) = (cx + dx, cy + dy);
+                    if self.w.map.contains(nx, ny) && !pass.blocked[self.w.map.idx(nx, ny)] {
+                        let d = dx * dx + dy * dy;
+                        if best.is_none_or(|(bd, _)| d < bd) {
+                            best = Some((d, (nx, ny)));
+                        }
+                    }
+                }
+            }
+            if let Some((_, (nx, ny))) = best {
+                return (cell_center(nx), cell_center(ny));
+            }
+        }
+        (x, y)
     }
 
     // ---- Reinforcements (OpenRA ReinforcementsGlobal) ----------------------------------------
@@ -1262,6 +1297,12 @@ impl Ctx<'_> {
                 self.engine_idle(i)
             }
             Act::Destroy => {
+                // RemoveSelf disposes the passengers with the transport (OpenRA Cargo
+                // on disposing), where selling lets them out.
+                for p in self.w.passengers(i) {
+                    self.w.remove(p);
+                }
+                self.w.actors[i].cargo.clear();
                 self.w.remove(i);
                 true
             }

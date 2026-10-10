@@ -132,14 +132,19 @@ impl Ctx<'_> {
             // Not known to the scripts yet: a handle now, so it can still be named as an attacker.
             None => {
                 let ty = self.w.rules.actors[snap.ty as usize].id.clone();
-                self.m.handles.push(Handle { ty, owner: snap.owner, state: HState::Gone { snap, died }, tags: Vec::new() });
+                self.m.handles.push(Handle {
+                    ty,
+                    owner: snap.owner,
+                    state: HState::Gone { snap, died, at: self.w.tick },
+                    tags: Vec::new(),
+                });
                 let h = self.m.handles.len() as u32 - 1;
                 self.m.gone_of.insert(r, (h, self.w.tick));
                 return None;
             }
         };
         self.m.gone_of.insert(r, (h, self.w.tick));
-        self.m.handles[h as usize].state = HState::Gone { snap, died };
+        self.m.handles[h as usize].state = HState::Gone { snap, died, at: self.w.tick };
         self.m.handles[h as usize].owner = snap.owner;
         self.m.queues.remove(&h);
         Some(h)

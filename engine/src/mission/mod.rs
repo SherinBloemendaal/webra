@@ -143,7 +143,9 @@ pub(crate) enum HState {
     /// An engine actor: its reference.
     Live(u32),
     /// Gone: killed (`died`) or removed.
-    Gone { snap: Snapshot, died: bool },
+    /// `at`: the tick it left. An actor removed without dying (RemoveSelf, sold)
+    /// is not dead yet during that tick, like OpenRA's until the frame ends.
+    Gone { snap: Snapshot, died: bool, at: u32 },
     /// A waypoint (engine world position).
     Marker { x: i32, y: i32 },
     /// The actor of a player (OpenRA PlayerActor: `player.GetActorsByType("player")`),
@@ -335,6 +337,20 @@ impl Mission {
             self.handle_of.insert(r, h);
         }
         h
+    }
+
+    /// Whether the script has activities queued for engine actor `i`.
+    pub fn scripted(&self, w: &World, i: usize) -> bool {
+        self.handle_of.get(&w.make_ref(i)).is_some_and(|h| self.queues.get(h).is_some_and(|q| !q.is_empty()))
+    }
+
+    /// The engine actor of a living named map actor.
+    pub fn named_actor(&self, w: &World, name: &str) -> Option<usize> {
+        let &(_, h) = self.named.iter().find(|(n, _)| n == name)?;
+        match self.handles[h as usize].state {
+            HState::Live(r) => w.resolve(r),
+            _ => None,
+        }
     }
 
     pub(crate) fn next_seq(&mut self) -> u32 {
