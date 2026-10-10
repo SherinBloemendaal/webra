@@ -550,6 +550,48 @@ see a note instead of the art. The game is GPL software in a public
 repository: the gate controls who gets this site's running copy, not the
 source code.
 
+## Map versions (2026-10-10)
+
+Map files carry a format version and the release that wrote them, and older
+files are upgraded automatically (docs/contracts.md section 2, "Map
+versions"). What changed for validation:
+
+- **Upgrades run before every check, never instead of one.** `validateMap`
+  (protocol) upgrades a file and then validates the *result* in full; the
+  server then runs the engine's own validation on the upgraded canonical
+  text, exactly as for any upload. An upgrade cannot carry anything past the
+  checks: what is stored, hashed, shared and played is always a fully
+  validated current-format map. The engine refuses any other format version
+  when it reads the JSON (map files and mission maps), so a map that skipped
+  the upgrade cannot reach a game either.
+- **Strict version fields.** `formatVersion` must be a whole number from 1 to
+  65535 and `gameVersion` 1 to 32 of `0-9 A-Z a-z . + -` (null counts as
+  absent), in the protocol package and the engine alike; anything else is an
+  invalid map. Unknown fields stay refused (`deny_unknown_fields`); a newer
+  format is refused with an "update the game" message before anything else
+  of it is read.
+- **Bounded, pure migrations.** Migrations are data transforms over the
+  parsed file (at most 1 MiB, parsed after the size check): one pass per
+  version step, no clock, randomness, network or engine, so the same file
+  gives the same map on every client and on the server. A gap in the chain
+  is a programming error the tests refuse, never a file's fault.
+- **Messages carry no raw input.** The compatibility messages name only the
+  format version and the release (`gameVersion`, already restricted to
+  version characters); problem lists name actor ids and rule keys only when
+  they matched the alias tables, other text through the protocol's excerpts,
+  and the map editor shows all of it as text nodes.
+- **Stored maps.** Rows stored before a format change are rewritten only
+  through the same `prepareMap` an upload uses. Aliases (`map_aliases`) map
+  an old hash or id to the row that holds the map now; they never widen who
+  can read a map: `GET /api/maps/:id` and picking by id still need a listed
+  row, unlisted maps are still served only through their sessions. A row
+  that cannot be upgraded keeps its text, leaves the community list and is
+  refused by lobbies; `GET /api/maps/:id` serves it as stored (clients run
+  the same upgrade and show why, the map editor opens it for repair).
+- **Saves and replays** keep their map as played and are validated without
+  upgrades (`upgrade: false`), so a saved game cannot be resumed on a
+  different map than the one its hashes were recorded with.
+
 ## Map sharing and rematches (2026-10-09)
 
 Protocol 6 lets a host share its own map files (map editor maps, `.oramap`

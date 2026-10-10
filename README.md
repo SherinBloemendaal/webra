@@ -39,6 +39,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Save and load** for skirmish: save to the browser or to a file from the game menu, continue later with Load game; loading re-simulates the game and checks its state hash
 - [x] **Online saves**: any player asks to save an online game, everyone accepts, and each player keeps the save; later the host resumes it from Play online, the same players come back by their accounts, every client re-simulates to the save point and checks the agreed state hash, and the game goes on in lockstep
 - [x] **Map editor** at [/play/editor/](https://webra.sherin.dev/play/editor/): paint terrain and ore, place spawns and actors, symmetry tools, undo/redo, validation, test play, publish to the community map list
+- [x] **Map versions**: every map file carries its format version and the WebRA release that wrote it. Maps made for an older release are upgraded automatically wherever they are loaded (skirmish lobby, online lobbies, the map editor, the server's map list) with a notice to save the upgrade; a map that cannot be upgraded automatically, or one from a newer release, says exactly that and what to do, and the map editor still opens it with every problem located and quick fixes. `node tools/map-upgrade.mjs <files>` upgrades map files in bulk ([contracts](docs/contracts.md), section 2, "Map versions")
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
 - [x] **OpenRA maps**: import `.oramap` files in the lobby and the map editor; the browser unpacks the package (with zip bomb limits), converts terrain from the Red Alert tilesets (roads, beaches, rivers, bridges), ore and gems, spawns and actors, including civilians, civilian and tech buildings, bridges, trees, barrels and ore mines, maps rules values onto WebRA's modded rules, and shows an import report of what was converted, skipped or not supported (Lua is never run)
 - [x] Lobby options like OpenRA: starting cash and units (MCV only, or OpenRA's light or heavy support per side: riflemen, rocket soldiers and a Ranger, light tank, APC or flak truck, plus medium or heavy tanks; or a construction yard), tech level, game speed, crates, short game, fog of war, explored map, build radius (also near allies), separate team spawns, redeployable MCVs, reusable engineers, kill bounties, ore regrowth, time limit and a handicap per player; plus map style, biome, tech buildings and weather. Game modes bundle them (Classic, Competitive, Rush, Turtle and more)
@@ -232,7 +233,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog and campaign missions from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, map-upgrade.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, accounts API, security, deploy, README assets
 ```
 
@@ -272,6 +273,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Regenerate `engine/rules.json` | `python3 tools/gen_rules.py` |
 | Regenerate the `.oramap` import tables | `python3 tools/gen_oramap_tables.py` |
 | Regenerate the campaign missions (`apps/game/missions`; needs Node) | `python3 tools/gen_missions.py` |
+| Upgrade map files to the current map format version and list the ones that need an author (`--check` changes nothing) | `node tools/map-upgrade.mjs <files>` |
 | Run every mission headless for longer (ticks; one mission with `WEBRA_MISSION=allies-01`) | `WEBRA_MISSION_TICKS=9000 cargo test -p webra-sim --release every_mission` |
 | Validate the WGSL shaders | `cargo run -p shader-check` |
 | Check the Lua interpreter's stack use in the wasm32 build | `npm run test:luastack` |
