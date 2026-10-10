@@ -195,6 +195,10 @@ impl Ctx<'_> {
             "Type" => return Ok(text(&hd.ty.to_ascii_lowercase())),
             "Location" => {
                 let (x, y, _) = pos.unwrap_or((0, 0, 0));
+                // A structure's location is its top-left cell (OpenRA Building TopLeft).
+                if let Some(b) = self.info(h).and_then(|i| i.building.as_ref()) {
+                    return Ok(self.cpos_of(x - b.width * HALF_CELL, y - b.height * HALF_CELL));
+                }
                 return Ok(self.cpos_of(x, y));
             }
             "CenterPosition" => {

@@ -517,3 +517,25 @@ pub(crate) type PlayerBits = u32;
 
 /// Sorted, deduplicated set of handles (deterministic groups).
 pub(crate) type HandleSet = BTreeSet<u32>;
+
+#[cfg(test)]
+impl World {
+    /// Tests: run a chunk of Lua in the mission's interpreter, with the API.
+    pub(crate) fn mission_exec(&mut self, src: &str) -> Result<Vec<Value>, String> {
+        let mut m = self.mission.take().expect("a mission");
+        let mut lua = m.lua.take().expect("mission interpreter");
+        lua.set_budget(TICK_BUDGET);
+        let r = {
+            let mut ctx = api::Ctx { w: self, m: &mut m };
+            lua.exec(&mut ctx, "test.lua", src).map_err(|e| e.report())
+        };
+        m.lua = Some(lua);
+        self.mission = Some(m);
+        r
+    }
+
+    /// Tests: a global of the mission's scripts as text.
+    pub(crate) fn mission_global(&self, name: &str) -> Option<String> {
+        self.mission.as_ref()?.lua.as_ref()?.global(name).to_text()
+    }
+}

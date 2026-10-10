@@ -211,3 +211,130 @@ fn soviet_01_can_be_won_with_orders() {
     assert_eq!(m.error, None);
     assert_eq!(m.result, MissionResult::Won, "objectives {:?} after {t} ticks; left {left:?}", harness::objectives(&w));
 }
+
+// ---- The scripting API ------------------------------------------------------------
+
+/// Run `src` in allies-01's script context and return its first result as text.
+fn lua_in(w: &mut World, src: &str) -> String {
+    let r = w.mission_exec(src).unwrap_or_else(|e| panic!("{e}"));
+    match r.into_iter().next() {
+        Some(v) => v.to_text().unwrap_or_else(|| format!("{}", v.type_name())),
+        None => "nil".into(),
+    }
+}
+
+#[test]
+fn coordinates_and_utils_behave_like_openra() {
+    let mut w = start("allies-01", None);
+    assert_eq!(lua_in(&mut w, "return tostring(CPos.New(3, 4) + CVec.New(1, -1))"), "4,3");
+    assert_eq!(lua_in(&mut w, "local v = CPos.New(5, 5) - CPos.New(2, 1) return v.X * 10 + v.Y"), "34");
+    assert_eq!(lua_in(&mut w, "return tostring(WPos.New(1024, 2048, 0) - WPos.New(0, 0, 0))"), "1024,2048,0");
+    assert_eq!(lua_in(&mut w, "return WDist.FromCells(3).Length"), "3072");
+    assert_eq!(lua_in(&mut w, "return tostring(WDist.New(1536))"), "1c512");
+    assert_eq!(lua_in(&mut w, "return tostring(WDist.FromCells(1) < WDist.FromCells(2))"), "true");
+    assert_eq!(lua_in(&mut w, "return (CVec.New(2, 3) * 2).Y"), "6");
+    assert_eq!(lua_in(&mut w, "return tostring(CPos.New(1, 2) == CPos.New(1, 2))"), "true");
+    assert_eq!(lua_in(&mut w, "return Angle.East.Angle"), "768");
+    assert_eq!(lua_in(&mut w, "return WVec.New(1024, 0, 0).Facing.Angle"), "768");
+    assert_eq!(lua_in(&mut w, "return DateTime.Seconds(3) + DateTime.Minutes(1)"), "1575");
+    assert_eq!(lua_in(&mut w, "return Utils.FormatTime(DateTime.Seconds(90))"), "01:30");
+    assert_eq!(lua_in(&mut w, "return #Utils.Where({1, 2, 3, 4}, function(x) return x % 2 == 0 end)"), "2");
+    assert_eq!(lua_in(&mut w, "return tostring(Utils.Any({1, 2}, function(x) return x > 1 end))"), "true");
+    assert_eq!(lua_in(&mut w, "return tostring(Utils.All({1, 2}, function(x) return x > 1 end))"), "false");
+    assert_eq!(lua_in(&mut w, "return #Utils.Concat({1}, {2, 3})"), "3");
+    assert_eq!(lua_in(&mut w, "return #Utils.Take(2, {1, 2, 3})"), "2");
+    assert_eq!(lua_in(&mut w, "return #Utils.ExpandFootprint({CPos.New(5, 5)}, true)"), "9");
+    assert_eq!(lua_in(&mut w, "local n = Utils.RandomInteger(3, 4) return n"), "3");
+    // allies-01 has no difficulty dropdown (OpenRA: nil); allies-02 has one.
+    assert_eq!(lua_in(&mut w, "return tostring(Map.LobbyOption('difficulty'))"), "nil");
+    let mut w2 = start("allies-02", Some("hard"));
+    assert_eq!(lua_in(&mut w2, "return Map.LobbyOption('difficulty')"), "hard");
+    assert_eq!(lua_in(&mut w2, "return Difficulty"), "hard");
+    assert_eq!(lua_in(&mut w, "return Map.LobbyOptionOrDefault('nope', 'fallback')"), "fallback");
+    assert_eq!(lua_in(&mut w, "return UserInterface.GetFluentMessage('find-einstein')"), "Find Einstein.");
+    assert_eq!(lua_in(&mut w, "return UserInterface.GetFluentMessage('unknown-key')"), "unknown-key");
+    assert_eq!(lua_in(&mut w, "return Player.GetPlayer('USSR').Faction"), "soviet");
+    assert_eq!(lua_in(&mut w, "return tostring(Player.GetPlayer('Greece').IsLocalPlayer)"), "true");
+    assert_eq!(lua_in(&mut w, "return tostring(Player.GetPlayer('Nobody'))"), "nil");
+    assert_eq!(lua_in(&mut w, "return tostring(Player.GetPlayer('Greece').IsAlliedWith(Player.GetPlayer('England')))"), "true");
+    assert_eq!(lua_in(&mut w, "return tostring(Map.NamedActor('Lab').Type)"), "stek");
+    assert_eq!(lua_in(&mut w, "return Lab.Location.X .. ',' .. Lab.Location.Y"), "61,60");
+    assert_eq!(lua_in(&mut w, "return tostring(Lab.HasProperty('Move'))"), "false");
+    assert_eq!(lua_in(&mut w, "return tostring(LabGuard1.HasProperty('Hunt'))"), "true");
+    // Errors name what went wrong.
+    let e = w.mission_exec("Lab.Move(CPos.New(1, 1))").unwrap_err();
+    assert!(e.contains("'Move' is not supported by actor stek"), "{e}");
+}
+
+#[test]
+fn script_activities_run_in_order_and_triggers_fire() {
+    let mut w = start("allies-01", None);
+    lua_in(
+        &mut w,
+        r#"
+        Log = ''
+        local greece = Player.GetPlayer('Greece')
+        local jeep = Actor.Create('jeep', true, { Owner = greece, Location = CPos.New(63, 50) })
+        jeep.Move(CPos.New(66, 50))
+        jeep.CallFunc(function() Log = Log .. 'arrived@' .. jeep.Location.X .. ' ' end)
+        jeep.Wait(10)
+        jeep.CallFunc(function() Log = Log .. 'waited ' end)
+        Trigger.AfterDelay(5, function() Log = Log .. 'delay5 ' end)
+        Trigger.AfterDelay(2, function() Log = Log .. 'delay2 ' end)
+        Trigger.OnIdle(jeep, function() IdleSeen = true end)
+        Trigger.OnKilled(jeep, function(self, killer) Log = Log .. 'killed ' .. tostring(self.IsDead) .. ' ' end)
+        Jeep = jeep
+        Footprint = Trigger.OnEnteredFootprint({ CPos.New(65, 50) }, function(a, id)
+            Log = Log .. 'footprint ' .. a.Type .. ' '
+            Trigger.RemoveFootprintTrigger(id)
+        end)
+        "#,
+    );
+    for _ in 0..400 {
+        w.step();
+    }
+    let log = w.mission_global("Log").unwrap();
+    assert!(log.starts_with("delay2 delay5 "), "{log}");
+    let order: Vec<&str> = log.split(' ').collect();
+    let pos = |s: &str| order.iter().position(|x| x.starts_with(s)).unwrap_or_else(|| panic!("{s} missing in {log}"));
+    // The engine's move ends on the goal cell or right next to it.
+    assert!(pos("footprint") < pos("arrived@6") && pos("arrived@6") < pos("waited"), "{log}");
+    assert_eq!(lua_in(&mut w, "return tostring(IdleSeen)"), "true");
+    lua_in(&mut w, "Jeep.Kill()");
+    w.step();
+    let log = w.mission_global("Log").unwrap();
+    assert!(log.ends_with("killed true "), "{log}");
+    assert!(lua_in(&mut w, "return tostring(Jeep.IsDead) .. ' ' .. Jeep.Type").starts_with("true jeep"));
+}
+
+#[test]
+fn missions_are_deterministic() {
+    for id in ["allies-02", "soviet-03", "allies-05a"] {
+        let run = |n: u32| {
+            let mut w = start(id, Some("normal"));
+            let mut hashes = Vec::new();
+            for t in 0..n {
+                w.step();
+                if t % 100 == 0 {
+                    hashes.push(w.state_hash());
+                }
+            }
+            (w, hashes)
+        };
+        let (a, ha) = run(1200);
+        let (_, hb) = run(1200);
+        assert_eq!(ha, hb, "{id}: two runs of the same mission differ");
+        // A copy of the world mid-game (lockstep peers, saves) goes on identically.
+        let mut c1 = a.clone();
+        let mut c2 = a;
+        for _ in 0..300 {
+            c1.step();
+            c2.step();
+        }
+        assert_eq!(c1.state_hash(), c2.state_hash(), "{id}: a cloned world went its own way");
+        // The script state is part of the hash.
+        let before = c1.state_hash();
+        c1.mission_exec("SomeNewGlobal = 42").unwrap();
+        assert_ne!(before, c1.state_hash());
+    }
+}
