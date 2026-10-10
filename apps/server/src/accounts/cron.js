@@ -60,11 +60,16 @@ export async function runRetention(env, now = Date.now()) {
   return out;
 }
 
-export async function scheduled(controller, env, ctx) {
-  ctx.waitUntil(
-    runRetention(env, controller?.scheduledTime ?? Date.now()).then(
-      (counts) => console.log('retention', JSON.stringify(counts)),
-      (err) => console.error('retention failed', err?.name, err?.message),
-    ),
-  );
+/**
+ * The cron handler. It waits for the job, so a failure fails the run (and is
+ * reported: src/telemetry.js wraps this handler).
+ */
+export async function scheduled(controller, env) {
+  try {
+    const counts = await runRetention(env, controller?.scheduledTime ?? Date.now());
+    console.log('retention', JSON.stringify(counts));
+  } catch (err) {
+    console.error('retention failed', err?.name, err?.message);
+    throw err;
+  }
 }

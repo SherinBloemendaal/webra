@@ -7,6 +7,9 @@
   "account_id": "6a1cde1074a1925835edfca0f807efb5",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
+  // AsyncLocalStorage (node:async_hooks) for the error report SDK
+  // (@sentry/cloudflare, src/telemetry.js): it keeps each request's scope.
+  "compatibility_flags": ["nodejs_als"],
   "routes": [{ "pattern": "webra.sherin.dev", "custom_domain": true }],
   "assets": {
     "directory": "../../dist",
@@ -36,7 +39,17 @@
   // Worker secret set by the owner; without both, Discord sign-in is
   // unavailable. Email sending (send_email) needs the Workers Paid plan and is
   // added later, see docs/deploy.md.
-  "vars": { "DISCORD_CLIENT_ID": "" },
+  // Error reports (src/telemetry.js, docs/security.md "Error reports"): off
+  // here and so under wrangler dev; the deploy workflow sets the SENTRY_*
+  // variables with `--var` from tools/sentry-config.mjs (the DSN is a
+  // public client key, not a secret).
+  "vars": {
+    "DISCORD_CLIENT_ID": "",
+    "SENTRY_DSN": "",
+    "SENTRY_ENVIRONMENT": "dev",
+    "SENTRY_RELEASE": "",
+    "SENTRY_TRACES_SAMPLE_RATE": "0.05"
+  },
   // Per-IP burst limits for the sign-in endpoints without D1 writes
   // (src/accounts/context.js `burst`): 20 requests per minute per purpose and
   // address. The Worker falls back to D1 counters when the binding is absent.

@@ -90,6 +90,7 @@ import { cheatsAllowed, ordersFitRules } from './validate.js';
 import { inRange, ipRecord } from './accounts/ip.js';
 import { AUTH_HEADER } from './accounts/play.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
+import { logError } from './telemetry.js';
 
 /** Unused sessions (nobody ever joined) are deleted after this long. */
 const UNUSED_TTL_MS = 5 * 60 * 1000;
@@ -365,7 +366,7 @@ export class Session extends DurableObject {
         this.reject(ws, err.code, err.message, false);
         return;
       }
-      console.error('session message failed', err?.name, err?.message);
+      logError('session message failed', err);
       this.reject(ws, ERRORS.INTERNAL, 'Internal error.', false);
     }
   }
@@ -668,7 +669,7 @@ export class Session extends DurableObject {
         flush();
       }
     } catch (err) {
-      console.error('order log read failed', err?.message);
+      logError('order log read failed', err);
       this.syncing.delete(ws);
       await this.disconnect(ws, 'disconnected');
       return this.reject(ws, ERRORS.INTERNAL, 'Could not load the game. Try again.', true);
@@ -985,7 +986,7 @@ export class Session extends DurableObject {
     }
     const sv = this.room.saving;
     const reason = await this.recordSavePoint(sv.tick, hash, sv.voters, now).catch((err) => {
-      console.error('online save failed', err?.name, err?.message);
+      logError('online save failed', err);
       return 'failed';
     });
     if (!this.room) return;
@@ -1322,7 +1323,7 @@ export class Session extends DurableObject {
     try {
       await log?.clear();
     } catch (err) {
-      console.error('order log clear failed', err?.message);
+      logError('order log clear failed', err);
     }
     for (const c of before) if (!back.has(c)) await this.forgetPresence(c);
     this.broadcast({ t: S2C.REMATCH, state: 'lobby', by, accepted, waiting: [] });
@@ -1466,7 +1467,7 @@ export class Session extends DurableObject {
         await removeSession(this.env.DB, id);
         await this.env.DB.prepare('DELETE FROM game_presence WHERE session_id = ?1').bind(id).run();
       } catch (err) {
-        console.error('directory delete failed', err?.message);
+        logError('directory delete failed', err);
       }
     }
     await this.ctx.storage.deleteAlarm();
@@ -1481,7 +1482,7 @@ export class Session extends DurableObject {
     try {
       return (await this.env.DB.prepare('SELECT 1 AS taken FROM users WHERE username_key = ?1').bind(usernameKey(name)).first()) !== null;
     } catch (err) {
-      console.error('username check failed', err?.message);
+      logError('username check failed', err);
       return true;
     }
   }
@@ -1498,7 +1499,7 @@ export class Session extends DurableObject {
         .bind(this.meta.id, client, att.account?.id ?? null, rec?.v ?? null, rec?.hex ?? null, Date.now())
         .run();
     } catch (err) {
-      console.error('presence update failed', err?.message);
+      logError('presence update failed', err);
     }
   }
 
@@ -1507,7 +1508,7 @@ export class Session extends DurableObject {
     try {
       await this.env.DB.prepare('DELETE FROM game_presence WHERE session_id = ?1 AND client = ?2').bind(this.meta.id, client).run();
     } catch (err) {
-      console.error('presence delete failed', err?.message);
+      logError('presence delete failed', err);
     }
   }
 
@@ -1578,7 +1579,7 @@ export class Session extends DurableObject {
       await upsertSession(this.env.DB, snapshot);
       this.lastDirectory = key;
     } catch (err) {
-      console.error('directory update failed', err?.message);
+      logError('directory update failed', err);
     }
   }
 
