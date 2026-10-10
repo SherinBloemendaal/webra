@@ -518,6 +518,8 @@ impl Game {
                 let b = a.building.as_ref();
                 json!({
                     "id": a.id,
+                    // A mission's own actor is drawn and voiced like this one (apps/game/js/missionart.js).
+                    "art": self.world.mission().and_then(|m| m.art_key(&a.id)),
                     "name": a.name,
                     "description": a.description,
                     "kind": match a.kind {

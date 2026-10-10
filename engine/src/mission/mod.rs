@@ -366,6 +366,12 @@ impl Mission {
         self.handle_of.get(&w.make_ref(i)).is_some_and(|h| self.queues.get(h).is_some_and(|q| !q.is_empty()))
     }
 
+    /// The art key a mission actor is drawn with (tools/gen_missions.py `art`):
+    /// a built-in actor or a campaign character of the game's art tables.
+    pub fn art_key(&self, id: &str) -> Option<&str> {
+        self.data.art.get(id)?.get("art")?.as_str()
+    }
+
     /// The engine actor of a living named map actor.
     pub fn named_actor(&self, w: &World, name: &str) -> Option<usize> {
         let &(_, h) = self.named.iter().find(|(n, _)| n == name)?;

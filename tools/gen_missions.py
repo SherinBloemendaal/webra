@@ -402,13 +402,28 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
         assert names_out[:len(base_rules[section])] == [e['name'] for e in base_rules[section]], (mission, section)
     order = [a['id'] for a in mission_rules['actors'] if a['id'] not in set(base_actor_ids)]
 
+    # How the game draws the mission's own actors (`art`, a key of the game's
+    # art tables, apps/game/js/sprites.js and content/tables.js): like the
+    # built-in actor they inherit from, else the built-in actor with the same
+    # OpenRA image, else the image itself (the campaign's characters and
+    # creatures: tools/gen_content_tables.py MISSION_ART). Power proxies have no body.
+    def image_of(name):
+        rs = parse.to_json(rules[name]).get('RenderSprites')
+        return ((rs.get('Image') if isinstance(rs, dict) else None) or name).lower()
+    by_image = {}
+    for b in base_actor_ids:
+        if b in rules:
+            img = image_of(b)
+            if img not in by_image or b.lower() == img:
+                by_image[img] = b
+    kinds = {a['id']: a['kind'] for a in mission_rules['actors']}
     art = {}
     for aid in order:
-        node = rules[aid]
-        t = parse.to_json(node)
-        image = t.get('RenderSprites', {}).get('Image') if isinstance(t.get('RenderSprites'), dict) else None
+        if kinds[aid] == 'proxy':
+            continue
+        image = image_of(aid)
         like = next((ids_lower_base[p.lower()] for p in inherits_chain(defs, aid) if p.lower() in ids_lower_base), None)
-        art[aid] = {'image': (image or aid).lower(), 'like': like}
+        art[aid] = {'image': image, 'art': like or by_image.get(image) or image.upper()}
     conditions = {}
     if any('GrantCondition' in open(os.path.join(folder, f), encoding='utf-8').read() for f in os.listdir(folder) if f.endswith('.lua')):
         mentioned = {names[t] for t in map_actor_types(map_text) | {x.lower() for x in lua_strings(folder)} if t in names}
