@@ -21,7 +21,7 @@
 import { BRIDGES, PICK_ANY, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
 import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, MAP_FORMAT_VERSION, TERRAIN } from '../../editor/js/mapformat.js';
-import { GAME_VERSION } from '../protocol.js';
+import { ACTOR_CARGO_MAX, GAME_VERSION, PREVIEW_TEAM } from '../protocol.js';
 
 export class OramapError extends Error {
   constructor(message, report = null) {
@@ -306,6 +306,7 @@ export function convertOramap(input, opts) {
   const rawSpawns = [];
   const placed = [];
   const actorStates = new Map();
+  const cargoDropped = new Map();
   const skippedTypes = new Map();
   const outside = new Map();
   const engineOnly = new Map();
@@ -352,6 +353,14 @@ export function convertOramap(input, opts) {
     if (health !== null && health >= 1 && health < 100 && info.kind !== 'crate') state.health = health;
     const stance = OPENRA_STANCES[String(childValue(node.nodes, 'Stance', '')).toLowerCase()];
     if (stance && Array.isArray(info.stance) && info.weapons?.length) state.stance = stance;
+    // OpenRA CargoInit (`Cargo: e1, e1, e3`): the passengers a transport starts with, checked like the
+    // map editor's passenger list (known types that fit its cargo types and weight, at most 16).
+    const cargoText = childValue(node.nodes, 'Cargo', null);
+    if (cargoText !== null && cargoText !== undefined) {
+      const cargo = passengersOf(String(cargoText), info, knownActors);
+      if (cargo.ok.length) state.cargo = cargo.ok;
+      if (cargo.dropped.length) bump(cargoDropped, `${info.id} (${cargo.dropped.join(', ')})`);
+    }
     if (Object.keys(state).length) bump(actorStates, info.id);
     placed.push({ info, owner: childValue(node.nodes, 'Owner', 'Neutral'), x: ax - bx, y: ay - by, facing, line: node.line, state });
   }
@@ -517,7 +526,8 @@ export function convertOramap(input, opts) {
   if (skippedTypes.size) report.skipped.push(`Actors WebRA does not have: ${countList(skippedTypes)}.`);
   if (outside.size) report.skipped.push(`Actors outside the playable area: ${countList(outside)}.`);
   if (bridgesOutside.size) report.skipped.push(`Bridges outside the playable area: ${countList(bridgesOutside)}.`);
-  if (actorStates.size) report.converted.push(`Health and stances of pre-placed actors: ${countList(actorStates)}.`);
+  if (actorStates.size) report.converted.push(`Health, stances and passengers of pre-placed actors: ${countList(actorStates)}.`);
+  if (cargoDropped.size) report.skipped.push(`Passengers that do not fit their transport or are unknown: ${countList(cargoDropped)}.`);
   if (overlapping.size) report.skipped.push(`Structures that overlap a start position, another structure or the map edge: ${countList(overlapping)}.`);
   if (engineOnly.size) report.skipped.push(`OpenRA script and editor markers: ${countList(engineOnly)}.`);
   if (badActors) report.warnings.push(`${badActors} actor entries without a type or location were ignored.`);
@@ -573,9 +583,8 @@ const OPENRA_FACTIONS = Object.freeze({
 /**
  * The map's player slots from OpenRA's playable PlayerReferences Multi0 to
  * Multi<n> (`refs[k]`: its nodes): faction and team with their locks
- * (LockFaction, LockTeam). Colours are OpenRA HSL values and are left to
- * the lobby. Slots past the map's spawns, and trailing slots that set
- * nothing, are left out.
+ * (LockFaction, LockTeam) and colour (LockColor, nearestColor). Slots past
+ * the map's spawns, and trailing slots that set nothing, are left out.
  */
 function slotSetup(refs, spawns, report) {
   const out = [];
@@ -586,6 +595,11 @@ function slotSetup(refs, spawns, report) {
       const faction = OPENRA_FACTIONS[String(childValue(nodes, 'Faction', 'Random')).toLowerCase()];
       if (faction) slot.faction = faction;
       if (/^true$/i.test(childValue(nodes, 'LockFaction', 'False')) && faction) slot.lock.push('faction');
+      const color = nearestColor(childValue(nodes, 'Color', null), out.map((x) => x.color));
+      if (color !== null) {
+        slot.color = color;
+        if (/^true$/i.test(childValue(nodes, 'LockColor', 'False'))) slot.lock.push('color');
+      }
       const team = parseInteger(childValue(nodes, 'Team'));
       if (team !== null && team >= 0 && team <= 4) {
         slot.team = team;
@@ -594,9 +608,58 @@ function slotSetup(refs, spawns, report) {
     }
     out.push(slot);
   }
-  while (out.length && out.at(-1).faction === 'random' && out.at(-1).team === 0 && !out.at(-1).lock.length) out.pop();
+  while (out.length && out.at(-1).faction === 'random' && out.at(-1).team === 0 && out.at(-1).color < 0 && !out.at(-1).lock.length) out.pop();
   if (out.length) report.converted.push(`Player slots (factions and teams of OpenRA's lobby slots): ${out.length}.`);
   return out;
+}
+
+/**
+ * The WebRA lobby colour (0..7, protocol PREVIEW_TEAM: blue, red, gold,
+ * green, purple, orange, teal, white) nearest to an OpenRA player colour
+ * (`Color: RRGGBB` or `RRGGBBAA` hex, or `r,g,b[,a]`), by squared distance
+ * in RGB; colours `taken` by earlier slots are skipped, so every slot keeps
+ * its own (the next nearest). Null without a readable colour ("Any").
+ */
+export function nearestColor(text, taken = []) {
+  if (typeof text !== 'string') return null;
+  const t = text.trim();
+  let rgb = null;
+  const hex = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(t);
+  if (hex) rgb = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+  const list = /^(\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})(?:,\s*\d{1,3})?$/.exec(t);
+  if (list) rgb = [list[1], list[2], list[3]].map(Number);
+  if (!rgb || rgb.some((v) => v > 255)) return null;
+  let best = null;
+  PREVIEW_TEAM.forEach((c, i) => {
+    if (taken.includes(i)) return;
+    const d = (c[0] - rgb[0]) ** 2 + (c[1] - rgb[1]) ** 2 + (c[2] - rgb[2]) ** 2;
+    if (!best || d < best.d) best = { i, d };
+  });
+  return best ? best.i : null;
+}
+
+/**
+ * OpenRA CargoInit passengers (`e1, e1, e3`) of a transport `info` (base
+ * rules actor), checked like the map editor's passenger list: known actor
+ * types whose Passenger type the transport's (non-garrison) Cargo takes,
+ * within its weight, at most ACTOR_CARGO_MAX. Returns { ok: ids, dropped: ids }.
+ */
+function passengersOf(text, info, knownActors) {
+  const cargo = info.abilities?.cargo;
+  const ok = [];
+  const dropped = [];
+  let weight = 0;
+  for (const raw of text.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const p = knownActors.get(raw.toLowerCase());
+    const kind = p?.unit?.passenger;
+    const w = p?.unit?.passenger_weight ?? 1;
+    const fits = cargo && !cargo.garrison && kind && cargo.types.includes(kind) && weight + w <= cargo.max && ok.length < ACTOR_CARGO_MAX && ACTOR_TYPE_RE.test(p.id);
+    if (fits) {
+      ok.push(p.id);
+      weight += w;
+    } else dropped.push(raw.slice(0, 16));
+  }
+  return { ok, dropped };
 }
 
 /** OpenRA UnitStance names (StanceInit) to WebRA's (engine rules.rs Stance). */

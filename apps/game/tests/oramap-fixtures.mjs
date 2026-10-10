@@ -153,6 +153,7 @@ export function mapYaml({
     if (a.facing !== undefined) lines.push(`\t\tFacing: ${a.facing}`);
     if (a.health !== undefined) lines.push(`\t\tHealth: ${a.health}`);
     if (a.stance !== undefined) lines.push(`\t\tStance: ${a.stance}`);
+    if (a.cargo !== undefined) lines.push(`\t\tCargo: ${a.cargo}`);
   });
   if (extra) lines.push('', extra);
   return `${lines.join('\n')}\n`;

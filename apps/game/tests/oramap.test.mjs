@@ -9,11 +9,12 @@ import { buildMapBin, buildZip, mapYaml, sampleOramap, T } from './oramap-fixtur
 import { crc32, openZip, ZipError, ZIP_LIMITS } from '../js/oramap/zip.js';
 import { MiniYamlError, parseMiniYaml, parseWDist } from '../js/oramap/miniyaml.js';
 import { MapBinError, readMapBin } from '../js/oramap/mapbin.js';
-import { cleanText, convertOramap, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES } from '../js/oramap/convert.js';
+import { cleanText, convertOramap, nearestColor, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES } from '../js/oramap/convert.js';
 import { importOramap, isOramapFile } from '../js/oramap/index.js';
 import { BRIDGES, ORA_TERRAIN_LETTERS, PICK_ANY, TILESETS } from '../js/oramap/tables.js';
 import { decodeLayers, TERRAIN } from '../editor/js/mapformat.js';
-import { parseMap as protocolParseMap } from '../js/protocol.js';
+import { mapFileJson, parseMap as protocolParseMap, PREVIEW_TEAM } from '../js/protocol.js';
+import { TEAM_PALETTE } from '../js/renderer.js';
 
 const BASE_RULES = JSON.parse(readFileSync(new URL('../../../engine/rules.json', import.meta.url), 'utf8'));
 const enc = new TextEncoder();
@@ -294,7 +295,7 @@ test('convert: OpenRA Health and Stance inits become the actors\' state where th
   assert.equal(byType.PBOX.health, undefined, 'full health is the default');
   assert.equal(byType.PBOX.stance, 'defend');
   assert.deepEqual([byType.V01.health, byType.V01.stance], [25, undefined], 'a civilian building has no stance');
-  assert.ok(report.converted.some((l) => l.startsWith('Health and stances of pre-placed actors')));
+  assert.ok(report.converted.some((l) => l.startsWith('Health, stances and passengers of pre-placed actors')));
 });
 
 test('convert: OpenRA lobby slots become the map\'s player slots with their faction and team locks', async () => {
@@ -311,6 +312,55 @@ test('convert: OpenRA lobby slots become the map\'s player slots with their fact
   assert.ok(report.converted.some((l) => l.startsWith('Player slots')));
   const plain = await parse(sampleOramap());
   assert.deepEqual(plain.map.players, [], 'slots that set nothing are left out');
+});
+
+test('convert: OpenRA player colours become the nearest free lobby colour, LockColor its lock', async () => {
+  const multi = [
+    ['\t\tColor: FF1400', '\t\tLockColor: True'],
+    ['\t\tColor: E81E0A'],
+    ['\t\tColor: 0,140,255'],
+    ['\t\tColor: nonsense'],
+  ];
+  const spawns = [8, 18, 28, 38].map((x) => ({ type: 'mpspawn', x, y: 8 }));
+  const { map } = await parse(sampleOramap({ multi, actors: spawns }));
+  assert.deepEqual(
+    map.players.map((p) => [p.color, p.lock]),
+    [
+      [1, ['color']],
+      [5, []],
+      [0, []],
+    ],
+    'red, then the next nearest free colour (orange), blue; an unreadable colour stays Any and the empty slot is left out',
+  );
+  assert.equal(nearestColor('E2E6F6'), 7, 'near white');
+  assert.equal(nearestColor('#FFD840'), 2, 'gold');
+  assert.equal(nearestColor('FF1400', [1, 5]), 2, 'taken colours are skipped');
+  assert.equal(nearestColor('12345'), null);
+  assert.equal(nearestColor('300,0,0'), null);
+  // The palette is the lobby's (js/renderer.js TEAM_PALETTE in 0..255).
+  assert.deepEqual(PREVIEW_TEAM, TEAM_PALETTE.map((c) => c.map((v) => Math.round(v * 255))));
+});
+
+test('convert: OpenRA Cargo inits become the passengers of transports, checked like the editor checks them', async () => {
+  const actors = [
+    { type: 'mpspawn', x: 8, y: 8 },
+    { type: 'mpspawn', x: 38, y: 38 },
+    { type: 'apc', owner: 'Multi0', x: 12, y: 12, cargo: 'e1, E3,medi' },
+    { type: 'jeep', owner: 'Multi0', x: 14, y: 12, cargo: 'e1,e1' },
+    { type: 'apc', owner: 'Multi0', x: 16, y: 12, cargo: '1tnk,nope' },
+    { type: '1tnk', owner: 'Multi0', x: 18, y: 12, cargo: 'e1' },
+  ];
+  const { map, report } = await parse(sampleOramap({ actors }));
+  const at = (x) => map.actors.find((a) => a.x === x - 2);
+  assert.deepEqual(at(12).cargo, ['E1', 'E3', 'MEDI']);
+  assert.deepEqual(at(14).cargo, ['E1'], 'a jeep carries one');
+  assert.equal(at(16).cargo, undefined, 'vehicles and unknown types do not ride in an APC');
+  assert.equal(at(18).cargo, undefined, 'a tank carries nobody');
+  const skipped = report.skipped.find((l) => l.startsWith('Passengers that do not fit'));
+  for (const part of ['JEEP (e1)', 'APC (1tnk, nope)', '1TNK (e1)']) assert.ok(skipped.includes(part), `${part} in ${skipped}`);
+  // The engine accepts what the import keeps.
+  const v = JSON.parse(Game.validate_map(mapFileJson(map)));
+  assert.ok(v.ok, v.errors.join('; '));
 });
 
 test('convert: bridge templates become bridge actors over their terrain, roads and rivers keep their types', async () => {

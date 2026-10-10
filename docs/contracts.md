@@ -387,8 +387,17 @@ always in the canonical form (defaults filled in, `options` keys sorted).
   editor shows the same picture. Publishing sends the map data only.
 - The map editor edits all of it (Setup tab, tags in the Map tab, actor
   state in the selection) and test play starts from the map's slots. The
-  `.oramap` importer takes OpenRA's Multi0.. slots (faction, team and their
-  locks) and the Health and Stance inits of actors.
+  `.oramap` importer takes OpenRA's Multi0.. slots (faction, team, colour and
+  their locks) and the Health, Stance and Cargo inits of actors. A slot's
+  OpenRA `Color` (`RRGGBB`, `RRGGBBAA` or `r,g,b[,a]`) becomes the nearest
+  lobby colour by squared RGB distance to the lobby palette (0 blue
+  77,140,242; 1 red 230,64,51; 2 gold 242,204,64; 3 green 89,204,102; 4
+  purple 204,115,242; 5 orange 242,140,51; 6 teal 102,217,217; 7 white
+  217,217,217), skipping colours earlier slots took; a slot without a
+  readable colour stays "Any" (-1). `Cargo: e1, e1, e3` (OpenRA CargoInit)
+  becomes `cargo` with the editor's checks: known types whose passenger type
+  the transport's (non-garrison) cargo takes, within its weight, at most 16;
+  the rest is listed as skipped in the import report.
 
 ### Importing OpenRA maps (`.oramap`)
 
