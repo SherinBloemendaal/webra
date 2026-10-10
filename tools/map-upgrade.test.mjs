@@ -61,18 +61,25 @@ test('map-upgrade: upgrades old files, stamps files from before versions, leaves
   }
 });
 
-test('map-upgrade: with the real format and engine, a file from before versions gets its version and keeps its identity', async () => {
+test('map-upgrade: with the real format and engine, format 1 files are upgraded to format 2; current files stay', async () => {
   const judgeReal = await loadJudge();
   assert.ok(judgeReal, 'the engine is built (npm run build:wasm)');
   const legacy = fixture('format1-legacy.webra-map.json');
   const r = upgradeFile(legacy, { judge: judgeReal });
   assert.equal(r.status, 'written');
-  assert.deepEqual(r.lines, [`format ${MAP_FORMAT_VERSION}: version written into the file`]);
-  assert.equal(parseMap(r.text).canonical, JSON.parse(fixture('format1-legacy.expected.json')).canonical, 'same map, same hash');
+  assert.deepEqual(r.lines, [
+    `upgraded from format 1 to ${MAP_FORMAT_VERSION}`,
+    '- Added players ([]).',
+    '- Added options ({}).',
+    '- Added lockedOptions ([]).',
+    '- Added tags ([]).',
+  ]);
+  assert.equal(parseMap(r.text).canonical, JSON.parse(fixture('format1-legacy.expected.json')).canonical, 'the map the protocol pinned');
   assert.ok(r.text.startsWith(`{"formatVersion":${MAP_FORMAT_VERSION},"gameVersion":"${GAME_VERSION}",`));
-  assert.equal(upgradeFile(fixture('format1-file.webra-map.json'), { judge: judgeReal }).status, 'current');
+  assert.equal(upgradeFile(fixture('format1-file.webra-map.json'), { judge: judgeReal }).status, 'written');
+  assert.equal(upgradeFile(fixture('format2-setup.webra-map.json'), { judge: judgeReal }).status, 'current');
   // The engine's checks run: a map it refuses is reported with its reasons.
-  const bad = JSON.parse(legacy);
+  const bad = JSON.parse(fixture('format2-setup.webra-map.json'));
   bad.actors.push({ type: 'NOPE', owner: -1, x: 1, y: 1, facing: 0 });
   assert.deepEqual(upgradeFile(JSON.stringify(bad), { judge: judgeReal }), { status: 'invalid', lines: ['unknown actor type NOPE'] });
 });

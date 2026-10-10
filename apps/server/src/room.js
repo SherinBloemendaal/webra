@@ -63,6 +63,11 @@
 // The game starts when every one of those slots holds a ready person.
 
 import {
+  lockedOptionProblem,
+  lockedSlotProblem,
+  lockedSlotProblems,
+  mapSlot,
+  mapSlotSettings,
   COLOR_COUNT,
   DEFAULT_MAX_SPECTATORS,
   DEFAULT_OPTIONS,
@@ -271,7 +276,7 @@ export class Room {
     this.names[client] = name;
     if (account !== null) this.accounts[client] = account;
     if (spectate) this.spectators.push({ client, name });
-    else this.slots[slot] = this.resume ? this.savedSlot(slot, client, name) : { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, handicap: 0, ready: false };
+    else this.slots[slot] = this.resume ? this.savedSlot(slot, client, name) : this.newPerson(slot, client, name);
     this.pruneNames();
     if (this.phase === 'lobby' && (host || this.hostId === null)) this.hostId = client;
     return { client, slot, role: spectate ? 'spectator' : 'player' };
@@ -337,7 +342,53 @@ export class Room {
     if (open < 0) fail(this.resume ? 'This lobby continues a saved game: only its players can play.' : 'No player slot is open.', this.resume ? 'forbidden' : 'full');
     const name = this.names[client] ?? this.spectators.find((s) => s.client === client).name;
     this.spectators = this.spectators.filter((s) => s.client !== client);
-    this.slots[open] = this.resume ? this.savedSlot(open, client, name) : { type: 'human', client, name, faction: 'random', color: this.freeColor(), team: 0, handicap: 0, ready: false };
+    this.slots[open] = this.resume ? this.savedSlot(open, client, name) : this.newPerson(open, client, name);
+  }
+
+  /**
+   * Slot `k` for a person coming into the lobby (joining or leaving the
+   * spectators): the lobby's defaults with the map's settings for the slot
+   * (map format version 2, takeMapSlot).
+   */
+  newPerson(k, client, name) {
+    this.slots[k] = { type: 'human', client, name, faction: 'random', color: this.freeColorFor(k), team: 0, handicap: 0, ready: false };
+    this.takeMapSlot(k);
+    return this.slots[k];
+  }
+
+  /**
+   * Whoever came into slot `k` (a person joining or moving there, or a new
+   * AI) takes the map's faction, team and colour for it (map format version
+   * 2, protocol mapSlotSettings). A colour another slot holds is swapped:
+   * that slot gets the one slot `k` had.
+   */
+  takeMapSlot(k) {
+    const setup = this.map?.setup;
+    if (!setup || this.resume) return;
+    const s = this.slots[k];
+    const m = mapSlotSettings(setup, k);
+    if (m.faction !== undefined) s.faction = m.faction;
+    if (m.team !== undefined) s.team = m.team;
+    if (m.color !== undefined && s.color !== m.color) {
+      const other = this.slots.findIndex((x, i) => i !== k && 'color' in x && x.color === m.color);
+      if (other >= 0) this.slots[other].color = s.color;
+      s.color = m.color;
+    }
+  }
+
+  /**
+   * A free colour for slot `k`: preferably none the lobby map sets for
+   * another slot (whoever comes into that slot later takes it), else any
+   * free one (freeColor).
+   */
+  freeColorFor(k) {
+    const setup = this.map?.setup;
+    const used = new Set(this.slots.filter((s, i) => i !== k && 'color' in s).map((s) => s.color));
+    const kept = new Set(
+      setup && !this.resume ? (setup.players ?? []).flatMap((_, i) => (i !== k ? [mapSlot(setup, i).color] : [])).filter((c) => c >= 0) : [],
+    );
+    for (let c = 0; c < COLOR_COUNT; c++) if (!used.has(c) && !kept.has(c)) return c;
+    return this.freeColor(k);
   }
 
   // ---- Resuming an online save --------------------------------------------------------
@@ -410,6 +461,45 @@ export class Room {
    * Apply a validated `slot` message. Returns { kicked: clientId | null }.
    */
   setSlot(client, msg) {
+    // A refused change changes nothing.
+    const before = structuredClone(this.slots);
+    let result;
+    try {
+      result = this.applySlot(client, msg);
+    } catch (err) {
+      this.slots = before;
+      throw err;
+    }
+    // The map's locked slot parts (map format version 2): a change may not
+    // break one that held. A lock that was already broken (a lobby from
+    // before the map, or another way in) does not block changes, so the
+    // lobby can always be put right; the start refuses it (startProblem).
+    const setup = this.map?.setup;
+    if (setup && !this.resume) {
+      for (const [k, slot] of this.slots.entries()) {
+        const was = new Set(lockedSlotProblems(before[k], setup, k));
+        const added = lockedSlotProblems(slot, setup, k).find((p) => !was.has(p));
+        if (added) {
+          this.slots = before;
+          fail(added, 'forbidden');
+        }
+      }
+    }
+    return result;
+  }
+
+  /** Why the slots break the lobby map's locks (map format version 2), or null. */
+  lockedProblem() {
+    const setup = this.map?.setup;
+    if (!setup || this.resume) return null;
+    for (const [k, slot] of this.slots.entries()) {
+      const p = lockedSlotProblem(slot, setup, k);
+      if (p) return p;
+    }
+    return lockedOptionProblem(this.options, setup);
+  }
+
+  applySlot(client, msg) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     this.refuseInResume();
     const mine = this.slotOf(client);
@@ -429,17 +519,16 @@ export class Room {
       }
       const kicked = cur.type === 'human' ? cur.client : null;
       if (msg.type === 'ai') {
-        const color = msg.color ?? (cur.type === 'ai' ? cur.color : this.freeColor(target));
-        if (this.colorTaken(color, target)) fail('That colour is taken.');
-        this.slots[target] = {
-          type: 'ai',
-          difficulty: msg.difficulty ?? (cur.type === 'ai' ? cur.difficulty : 'normal'),
-          bot: msg.bot ?? (cur.type === 'ai' ? (cur.bot ?? 'normal') : 'normal'),
-          faction: msg.faction ?? (cur.type === 'ai' ? cur.faction : 'random'),
-          color,
-          team: msg.team ?? (cur.type === 'ai' ? cur.team : 0),
-          handicap: msg.handicap ?? (cur.type === 'ai' ? (cur.handicap ?? 0) : 0),
-        };
+        // An AI keeps its settings; a new one starts from the map's for the slot.
+        const m = this.map?.setup && !this.resume && target < (this.map.setup.players ?? []).length ? mapSlot(this.map.setup, target) : null;
+        this.slots[target] =
+          cur.type === 'ai'
+            ? { ...cur, bot: cur.bot ?? 'normal', handicap: cur.handicap ?? 0 }
+            : { type: 'ai', difficulty: m?.difficulty ?? 'normal', bot: m?.bot ?? 'normal', faction: 'random', color: this.freeColorFor(target), team: 0, handicap: 0 };
+        if (cur.type !== 'ai') this.takeMapSlot(target);
+        if (msg.difficulty !== undefined) this.slots[target].difficulty = msg.difficulty;
+        if (msg.bot !== undefined) this.slots[target].bot = msg.bot;
+        this.applySettings(target, msg);
       } else {
         if (
           msg.faction !== undefined ||
@@ -471,6 +560,7 @@ export class Room {
       // Move to the open slot, keeping name and settings.
       this.slots[target] = this.slots[mine];
       this.slots[mine] = { type: 'open' };
+      this.takeMapSlot(target);
       this.applySettings(target, msg);
       this.slots[target].ready = false;
       return { kicked: null };
@@ -503,6 +593,8 @@ export class Room {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can change options.', 'not_host');
+    const problem = this.resume ? null : lockedOptionProblem(options, this.map?.setup);
+    if (problem) fail(problem, 'forbidden');
     this.options = { ...options };
     this.resetReady();
   }
@@ -512,12 +604,67 @@ export class Room {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     if (!resume) this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can change the map.', 'not_host');
+    // A map that brings its game setup (map format version 2): its slots and options apply now.
+    if (map?.setup && !resume) this.applyMapSetup(map.setup);
     this.map = map ? { ...map } : null;
     // Map states belong to one map; the host has the one it picked.
     this.mapStates = map ? { [client]: 'installed' } : {};
     // A map (or a generated one) means a skirmish: no mission.
     if (!resume) this.mission = null;
     this.resetReady();
+  }
+
+  /**
+   * Apply a map's game setup (map format version 2, protocol mapsetup.js)
+   * to the lobby: its options, and for each slot it lists: closed or an AI
+   * (a person in such a slot moves to a free slot the map leaves open; the
+   * map is refused when there is none), its faction, team and colour. Slots
+   * it does not list keep what they had. Fails without changing anything.
+   */
+  applyMapSetup(setup) {
+    const slots = structuredClone(this.slots);
+    const listed = Math.min(setup.players.length, slots.length);
+    const moving = [];
+    for (let k = 0; k < listed; k++) {
+      const m = mapSlot(setup, k);
+      const cur = slots[k];
+      if (m.type === 'closed' || m.type === 'ai') {
+        if (cur.type === 'human') moving.push(cur);
+        slots[k] =
+          m.type === 'closed' ? { type: 'closed' } : { type: 'ai', difficulty: m.difficulty, bot: m.bot, faction: m.faction, color: -1, team: m.team, handicap: 0 };
+      } else if (cur.type === 'closed' && m.lock.includes('type')) {
+        slots[k] = { type: 'open' };
+      }
+    }
+    // People from slots the map closes or gives to an AI take open slots the map leaves to players.
+    for (const person of moving) {
+      let free = slots.findIndex((x, i) => x.type === 'open' && !(i < listed && mapSlot(setup, i).type !== 'open'));
+      // Else a slot the map gives to an AI or closes without locking it.
+      if (free < 0) free = slots.findIndex((x, i) => x.type !== 'human' && !(i < listed && mapSlot(setup, i).lock.includes('type')));
+      if (free < 0) fail(`This map leaves no free slot for ${person.name}.`);
+      slots[free] = person;
+    }
+    for (let k = 0; k < listed; k++) {
+      const m = mapSlot(setup, k);
+      const cur = slots[k];
+      if (cur.type !== 'human' && cur.type !== 'ai') continue;
+      if (m.faction !== 'random' || m.lock.includes('faction')) cur.faction = m.faction;
+      cur.team = m.team;
+      if (m.color >= 0) {
+        // The map's colour: whoever had it takes this slot's.
+        const other = slots.findIndex((x, i) => i !== k && x.color === m.color);
+        if (other >= 0) slots[other].color = cur.color;
+        cur.color = m.color;
+      }
+    }
+    // AI slots the map made get the first free colours.
+    for (const [k, x] of slots.entries()) {
+      if (x.color !== -1) continue;
+      const used = new Set(slots.filter((y, i) => i !== k && 'color' in y).map((y) => y.color));
+      x.color = [...Array(COLOR_COUNT).keys()].find((c) => !used.has(c)) ?? 0;
+    }
+    this.slots = slots;
+    this.options = { ...this.options, ...setup.options };
   }
 
   /** How many places the lobby's co-op mission has (its playable players). */
@@ -624,6 +771,8 @@ export class Room {
     }
     if (players.length < MIN_PLAYERS) return 'At least two players are needed.';
     if (this.map && players.length > this.map.players) return `This map has room for ${this.map.players} players.`;
+    const locked = this.lockedProblem();
+    if (locked) return locked;
     if (this.resume) {
       const waiting = this.resumeView().waiting;
       if (waiting.length) return `Waiting for ${waiting.join(', ')} to come back.`;

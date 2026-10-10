@@ -26,7 +26,6 @@
 
 import init, { Game, base_rules_json, take_panic, version } from '../pkg/webra_sim.js';
 import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
-import { buildAtlas } from './sprites.js';
 import { AnimClock } from './anim.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
@@ -35,7 +34,7 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
-import { aiName } from './lobby-state.js';
+import { aiName, COLOR_NAMES } from './lobby-state.js';
 import { AudioSystem } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
@@ -59,7 +58,8 @@ import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { attachHudTooltips } from './hudtips.js';
 import { hideTooltip } from './ui/tooltip.js';
 import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
-import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
+import { buildTerrainAtlas, cellTiles, terrainSeed } from './art/terrain.js';
+import { applyGameArt, artActors as gameArtActors, buildGameAtlas } from './gameart.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
@@ -89,7 +89,6 @@ const PLAYER = 0;
 
 // OpenRA game speeds: milliseconds per simulation tick.
 const SPEEDS = { slowest: 80, slower: 50, normal: 40, fast: 35, faster: 30, fastest: 20 };
-const COLOR_NAMES = ['Blue', 'Red', 'Gold', 'Green', 'Purple', 'Orange', 'Teal', 'White'];
 const RANDOM_POOLS = {
   random: ['england', 'france', 'germany', 'russia', 'ukraine'],
   randomallies: ['england', 'france', 'germany'],
@@ -429,6 +428,16 @@ async function dropContent(files) {
   }
 }
 
+/** Where the map editor's test play starts the camera (world pixels), or null. */
+let testCamera = null;
+
+/** The test play camera, once: a restarted game starts at the player's base. */
+function takeTestCamera() {
+  const c = testCamera;
+  testCamera = null;
+  return c;
+}
+
 /**
  * A map handed over by the URL (`?editorTest=1` from the map editor, or
  * `?map=<id>` from the website's map list) goes through the lobby's normal map
@@ -438,9 +447,12 @@ async function offerLinkedMap(lobby) {
   const params = new URLSearchParams(location.search);
   if (params.get('editorTest') !== '1' && !params.get('map')) return;
   try {
-    const { loadPendingMap } = await playAccess.load(() => import('./maploader.js'));
+    const { loadPendingMap, loadTestSetup } = await playAccess.load(() => import('./maploader.js'));
     const map = await loadPendingMap(params);
-    if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link');
+    // Test play from the editor: its slots and bots, and where the camera starts.
+    const setup = loadTestSetup(params);
+    testCamera = setup?.camera ?? null;
+    if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link', setup);
   } catch (err) {
     lobby.reportMapProblem(loadErrorText(err));
   }
@@ -955,7 +967,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const rules = JSON.parse(game.rules_json());
   // A mission's own actors are drawn and voiced like the actor their art key
   // names (engine rules_json `art`, tools/gen_missions.py).
-  const artActors = rules.actors.map((a) => (a.art ? { ...a, id: a.art } : a));
+  const artActors = gameArtActors(rules.actors);
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
   // A mission's alliances are its own (map.yaml Players: Allies), as the engine has them.
@@ -997,29 +1009,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const biome = sky.biome;
   // Sprites: WebRA's own art, or the original graphics and texture packs the
   // player installed (js/content, presentation only). Rebuilt when they change.
+  // The map editor builds its art the same way (js/gameart.js).
   const applyArt = () => {
-    const art = content?.art(artActors, biome) ?? null;
-    let atlas = null;
-    let original = null;
-    if (art?.slots.size) {
-      try {
-        atlas = buildAtlas(artActors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
-        original = art.original;
-      } catch (err) {
-        console.warn('Installed graphics do not fit; using WebRA art:', err);
-      }
-      if (art.report.problems.length) console.info('Installed graphics:', art.report);
-    }
-    atlas ??= buildAtlas(artActors, { biome });
+    const { atlas, original } = buildGameAtlas(content, artActors, biome, renderer.maxTextureSize);
     renderer.setAtlas(atlas);
-    // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
-    game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
-    // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
-    game.set_building_overlays(atlas.overlays);
-    // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
-    game.set_sprite_poses(atlas.filter === 'nearest');
-    // Dying soldiers play the death sequences of art that has them (engine infantry_render.rs).
-    game.set_death_art(Uint32Array.from(atlas.deaths), Uint32Array.from(atlas.deathTicks));
+    // Original slots drawn the OpenRA way, animated layers, poses and death sequences.
+    applyGameArt(game, atlas, original);
   };
   applyArt();
   const animClock = new AnimClock();
@@ -1334,8 +1329,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
   window.addEventListener('resize', applyGameScale);
   watchPixelRatio(window, applyGameScale);
-  // A mission starts where its script put the camera (else at the player's first actor).
-  const [sx, sy] = game.info.mission?.camera ?? game.start_position(player);
+  // A mission starts where its script put the camera; editor test play where
+  // the editor's view was (once); else at the player's first actor.
+  const [sx, sy] = game.info.mission?.camera ?? takeTestCamera() ?? game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
@@ -1966,13 +1962,6 @@ function selectionInfo(game, ids, allied) {
 
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** Seed for terrain decals: a hash of the map's terrain types (same map, same decals). */
-function terrainSeed(terrain) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < terrain.length; i += 4) h = Math.imul(h ^ terrain[i], 0x01000193);
-  return h >>> 0;
 }
 
 /** The biome and weather badge: name of the sky, and what it does to the battle. */

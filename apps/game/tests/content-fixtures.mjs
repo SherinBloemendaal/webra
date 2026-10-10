@@ -4,6 +4,7 @@
 // (or anything made from one) is in the repository.
 import { deflateSync } from 'node:zlib';
 import { crc32 } from '../js/oramap/zip.js';
+import { ACTOR_PALETTE, RESOURCES, TERRAIN } from '../js/content/tables.js';
 
 /** A deterministic random generator (0..1). */
 export function rng(seed = 1) {
@@ -499,3 +500,69 @@ export function buildVqa({
   out.set(rest, 12);
   return out;
 }
+
+// ---- Synthetic original graphics and theater (no EA bytes) -----------------------------
+
+/** Synthetic installed graphics for a few actors: palette, 1tnk.shp, e1.shp, powr.shp, powrmake.shp, sbag.shp. */
+export function syntheticGraphics() {
+  const files = new Map();
+  files.set(ACTOR_PALETTE, buildPal());
+  const shp = (count, w, h, seed) => buildShp(w, h, Array.from({ length: count }, (_, i) => testFrame(w, h, seed + i)));
+  files.set('1tnk.shp', shp(64, 24, 24, 10));
+  files.set('e1.shp', shp(256, 12, 16, 500));
+  files.set('powr.shp', shp(4, 48, 48, 900));
+  files.set('powrmake.shp', shp(13, 48, 48, 950));
+  files.set('sbag.shp', shp(32, 24, 24, 990));
+  files.set('1tnkicon.shp', shp(1, 64, 48, 77));
+  return files;
+}
+
+// Synthetic temperate theater. Indices: ground 20..27, sand 50..53, open
+// water 96..102 (the rotating range), stones 60. Every template the table
+// names exists; the beach templates are sand except sh04, which is drawn
+// like a real beach: grass to sand in its top row, sand to water in the
+// middle row, water in the bottom row.
+export const GROUND = (x, y) => 20 + ((x * 3 + y * 5) % 8);
+export const SAND = (x, y) => 50 + ((x + y) % 4);
+export const WATERPX = (x, y) => 96 + ((x + 2 * y) % 7);
+export const tilePx = (fn) => {
+  const t = new Uint8Array(24 * 24);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) t[y * 24 + x] = fn(x, y);
+  return t;
+};
+/** sh04 tile k (3 x 3): wetness by the pixel's distance from the template's water row. */
+export function beachTile(k) {
+  const row = Math.floor(k / 3);
+  return tilePx((x, y) => {
+    const fromTop = row * 24 + y; // 0 .. 71; water from 48
+    if (fromTop >= 48) return WATERPX(x, y);
+    if (fromTop >= 40) return WATERPX(x, y);
+    if (fromTop >= 14) return SAND(x, y);
+    return GROUND(x, y);
+  });
+}
+
+export function syntheticTheater() {
+  const files = new Map();
+  const info = TERRAIN.TEMPERAT;
+  files.set(info.palette, buildPal());
+  for (const [img, width, height, role, cells] of info.templates) {
+    const name = info.images[img];
+    if (files.has(name)) continue;
+    const count = Math.max(...cells) + 1;
+    const tiles = Array.from({ length: count }, (_, k) => {
+      if (!cells.includes(k)) return null;
+      if (role === 'water') return tilePx(WATERPX);
+      if (role === 'clear') return tilePx((x, y) => GROUND(x + k, y));
+      if (role === 'rough' || role === 'rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : GROUND(x, y)));
+      if (role === 'water-rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : WATERPX(x, y)));
+      if (name === 'sh04.tem') return beachTile(k);
+      return tilePx(SAND);
+    });
+    files.set(name, buildTmpRa(24, 24, tiles));
+  }
+  for (const def of [...RESOURCES.ore, ...RESOURCES.gems]) files.set(def.file, buildShp(24, 24, Array.from({ length: 12 }, (_, i) => testFrame(24, 24, 300 + i, { remap: false }))));
+  files.set('t01.tem', buildShp(48, 48, [testFrame(48, 48, 5, { remap: false })]));
+  return files;
+}
+

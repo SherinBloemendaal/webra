@@ -106,7 +106,7 @@ test('canonical JSON sorts rules keys recursively', () => {
   const map = makeMap();
   map.rules = { weapons: { '25mm': { reload: 10, range: 6000 } }, actors: { E1: { unit: { speed: 70 }, cost: 50 } } };
   const text = canonicalJson(map);
-  assert.ok(text.endsWith('"rules":{"actors":{"E1":{"cost":50,"unit":{"speed":70}}},"weapons":{"25mm":{"range":6000,"reload":10}}}}'));
+  assert.ok(text.endsWith('"rules":{"actors":{"E1":{"cost":50,"unit":{"speed":70}}},"weapons":{"25mm":{"range":6000,"reload":10}}},"players":[],"options":{},"lockedOptions":[],"tags":[]}'));
 });
 
 test('sha256 matches the standard test vector', async () => {
@@ -200,7 +200,7 @@ test('biome: optional, kept by the document, last in the canonical form when not
   assert.equal(await mapHash({ ...plain, biome: 'temperate' }), await mapHash(plain));
   const snow = { ...plain, biome: 'snow' };
   assert.deepEqual(validateMap(snow).errors, []);
-  assert.ok(canonicalJson(snow).endsWith(',"rules":null,"biome":"snow"}'));
+  assert.ok(canonicalJson(snow).endsWith(',"rules":null,"biome":"snow","players":[],"options":{},"lockedOptions":[],"tags":[]}'));
   assert.notEqual(await mapHash(snow), await mapHash(plain));
   assert.equal(new MapDoc(snow).toMap().biome, 'snow');
   assert.ok(validateMap({ ...plain, biome: 'jungle' }).errors.some((e) => e.includes('biome must be one of')));
@@ -220,7 +220,7 @@ test('the gems layer: density 0..3, passable ground, never with ore on one cell'
   assert.ok(validateMap({ ...ok, gems: 5 }).errors.some((e) => e.includes('gems must be base64 text')));
   // Canonical form: gems right after ore, only when present.
   const keys = Object.keys(JSON.parse(canonicalJson(ok)));
-  assert.deepEqual(keys, ['format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules']);
+  assert.deepEqual(keys, ['formatVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'players', 'options', 'lockedOptions', 'tags']);
   assert.ok(!canonicalJson({ ...makeMap(), gems: null }).includes('gems'));
   assert.equal(formatFor(new Uint8Array(4)), 1);
 });

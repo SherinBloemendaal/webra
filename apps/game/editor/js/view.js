@@ -1,10 +1,12 @@
 // Editor viewport: camera (pan and zoom like the game), pointer input in cells,
 // and drawing through the game's WebGPU renderer. Terrain goes to the renderer
-// in the same RGBA layout the engine produces (R type, G ore and B gems scaled
-// to 255 at their maximum density, A 255);
-// the fog layer is uploaded fully visible.
+// as the engine's preview of the map has it (js/world.js: tree terrain is
+// clear ground under tree actors there, as in a game), or, without one, in
+// the same RGBA layout from the document (R type, G ore and B gems scaled to
+// 255 at their maximum density, A 255). Tiles are WebRA's for the biome or
+// installed ones (js/art.js). The fog layer is uploaded fully visible.
 
-import { buildTerrainAtlas, cellTiles } from '../../js/art/terrain.js';
+import { buildTerrainAtlas, cellTiles, terrainSeed } from '../../js/art/terrain.js';
 
 const CELL = 24; // world pixels per cell (render.rs PX_PER_CELL)
 const PAN_SPEED = 900; // CSS px per second at zoom 1
@@ -12,13 +14,14 @@ const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 4;
 const ORE_MAX = 12;
 const GEM_MAX = 3;
-const NEUTRAL_TEAM = 7;
+/** Team slot of neutral actors (engine world.rs EDITOR_SLOTS, js/world.js PREVIEW_NEUTRAL). */
+const NEUTRAL_TEAM = 8;
 
 export class EditorView {
   /**
    * @param canvas the WebGPU canvas
    * @param renderer Renderer from ../js/renderer.js
-   * @param handlers { down(cell, e), move(cell, e), up(cell, e), hover(cell), leave() }
+   * @param handlers { down(cell, e), move(cell, e), up(cell, e), hover(cell), leave(), cancel() }
    */
   constructor(canvas, renderer, handlers) {
     this.canvas = canvas;
@@ -27,6 +30,8 @@ export class EditorView {
     this.camera = { x: 0, y: 0, zoom: 1 };
     this.keys = new Set();
     this.pan = null;
+    /** Two fingers on a touch screen: pan and pinch zoom. */
+    this.pinch = null;
     this.spaceDown = false;
     this.mapW = 0;
     this.mapH = 0;
@@ -50,14 +55,22 @@ export class EditorView {
     this.setBiome(doc.meta?.biome ?? 'temperate');
   }
 
+  /** The fog layer: `bytes` (one per cell, 0 shroud, 255 visible) or everything visible for null. */
+  uploadFog(bytes) {
+    this.renderer.uploadFog(bytes && bytes.length === this.mapW * this.mapH ? bytes : new Uint8Array(this.mapW * this.mapH).fill(255));
+  }
+
   /** Terrain art of the map's biome (the same tiles as in the game). */
   setBiome(biome) {
     if (biome === this.biome) return;
     this.biome = biome;
+    this.tiled = false;
     this.renderer.setTerrainAtlas(buildTerrainAtlas(biome));
+    this.terrainDirty = true;
   }
 
-  updateTerrain(doc) {
+  /** The document's terrain in the engine's RGBA layout (without a preview). */
+  docTerrain(doc) {
     const b = this.terrainBytes;
     for (let i = 0, n = doc.width * doc.height; i < n; i++) {
       b[i * 4] = doc.terrain[i];
@@ -65,9 +78,28 @@ export class EditorView {
       b[i * 4 + 2] = Math.min(255, Math.floor((doc.gems[i] * 255) / GEM_MAX));
       b[i * 4 + 3] = 255;
     }
+    return b;
+  }
+
+  /**
+   * Upload the terrain: `bytes` from the engine preview (or the document's
+   * own when null) and the tile layer, from `tilesFor(bytes)` (installed
+   * tiles: { atlas, cells } or null) or WebRA's tiles with the game's decal
+   * seed, so the map looks as it will in a game.
+   */
+  updateTerrain(doc, bytes = null, tilesFor = () => null) {
+    const b = bytes && bytes.length === doc.width * doc.height * 4 ? bytes : this.docTerrain(doc);
     this.renderer.uploadTerrain(b);
-    // Tiles, shorelines and decals follow the terrain being edited.
-    this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, 0));
+    const tiles = tilesFor(b);
+    if (tiles) {
+      this.renderer.setTerrainAtlas(tiles.atlas);
+      this.renderer.uploadCells(tiles.cells);
+      this.tiled = true;
+    } else {
+      if (this.tiled) this.renderer.setTerrainAtlas(buildTerrainAtlas(this.biome ?? 'temperate'));
+      this.tiled = false;
+      this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, terrainSeed(b)));
+    }
     this.terrainDirty = false;
   }
 
@@ -121,6 +153,17 @@ export class EditorView {
     this.camera.y = clampAxis(this.camera.y, vh, mh);
   }
 
+  /** Zoom by `factor` around the centre of the view. */
+  zoomBy(factor) {
+    this.zoomAt(this.canvas.clientWidth / 2, this.canvas.clientHeight / 2, factor);
+  }
+
+  /** Zoom by `factor` keeping world point (wx, wy) in the middle of the view. */
+  zoomAround(factor, wx, wy) {
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
+    this.centerOn(wx, wy);
+  }
+
   zoomAt(sx, sy, factor) {
     const before = this.screenToWorld(sx, sy);
     this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
@@ -138,8 +181,46 @@ export class EditorView {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Touch: one finger uses the tool; a second finger cancels it and pans and
+    // pinch-zooms the map with both until they lift.
+    const touches = new Map();
+    const pinchState = () => {
+      const [a, b] = [...touches.values()];
+      return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+    };
+    c.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      touches.set(e.pointerId, local(e));
+      if (touches.size === 2) {
+        this.handlers.cancel?.();
+        const st = pinchState();
+        this.pinch = { ...st, zoom: this.camera.zoom, world: this.screenToWorld(st.mx, st.my) };
+      }
+    });
+    c.addEventListener(
+      'pointermove',
+      (e) => {
+        if (!touches.has(e.pointerId)) return;
+        touches.set(e.pointerId, local(e));
+        if (!this.pinch || touches.size < 2) return;
+        e.stopImmediatePropagation();
+        const st = pinchState();
+        this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (this.pinch.zoom * st.d) / this.pinch.d));
+        this.camera.x = this.pinch.world.x - st.mx / this.camera.zoom;
+        this.camera.y = this.pinch.world.y - st.my / this.camera.zoom;
+        this.clamp();
+      },
+      { capture: true },
+    );
+    const lift = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) this.pinch = null;
+    };
+    c.addEventListener('pointerup', lift, { capture: true });
+    c.addEventListener('pointercancel', lift, { capture: true });
     c.addEventListener('pointerdown', (e) => {
       c.focus({ preventScroll: true });
+      if (this.pinch) return;
       const p = local(e);
       if (e.button === 1 || (e.button === 0 && this.spaceDown)) {
         e.preventDefault();
@@ -154,6 +235,7 @@ export class EditorView {
       }
     });
     c.addEventListener('pointermove', (e) => {
+      if (this.pinch) return;
       const p = local(e);
       if (this.pan) {
         this.camera.x = this.pan.cx - (p.x - this.pan.x) / this.camera.zoom;
@@ -232,13 +314,18 @@ export class EditorView {
   // ---- Drawing --------------------------------------------------------------------
 
   /**
-   * Draw a frame.
+   * Draw a frame: the preview's sprites (`actors`, js/world.js) under the
+   * editor's own (`scene.sprites`: spawns, placement ghosts) and rects.
+   * @param anim the render clock (js/anim.js AnimClock uniform)
+   * @param actors Float32Array of sprite instances (8 floats each)
    * @param scene { sprites: number[] (8 floats each), rects: number[] (8 floats each) }
    */
-  draw(time, scene) {
-    const sprites = new Float32Array(scene.sprites);
+  draw(anim, actors, scene) {
+    const sprites = new Float32Array(actors.length + scene.sprites.length);
+    sprites.set(actors, 0);
+    sprites.set(scene.sprites, actors.length);
     const rects = new Float32Array(scene.rects);
-    this.renderer.draw(this.camera, time, sprites, sprites.length / 8, rects, rects.length / 8);
+    this.renderer.draw(this.camera, anim.time, sprites, sprites.length / 8, rects, rects.length / 8, anim);
   }
 }
 

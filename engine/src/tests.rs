@@ -768,8 +768,8 @@ fn map_file_with_actors_and_modded_rules_builds_a_world() {
     let m = crate::map::Map::generate_for(64, 64, 4, 12, 2);
     let mut d = MapData::from_map(&m, "Custom", "Me", "");
     let (x, y) = (d.spawns[0][0] + 6, d.spawns[0][1]);
-    d.actors.push(MapActor { ty: "SBAG".into(), owner: -1, x, y, facing: 0 });
-    d.actors.push(MapActor { ty: "1TNK".into(), owner: 1, x: d.spawns[1][0] + 4, y: d.spawns[1][1] + 6, facing: 512 });
+    d.actors.push(MapActor::new("SBAG", -1, x, y, 0));
+    d.actors.push(MapActor::new("1TNK", 1, d.spawns[1][0] + 4, d.spawns[1][1] + 6, 512));
     d.rules = Some(serde_json::json!({ "actors": { "1TNK": { "cost": 1 } } }));
     let v = d.validate();
     assert!(v.ok && v.modded, "{:?}", v.errors);
@@ -1122,7 +1122,7 @@ fn ai_leaves_neutral_actors_alone() {
     let m = crate::map::Map::generate_for(64, 64, 6, 12, 2);
     let mut d = MapData::from_map(&m, "Neutral", "Me", "");
     let (x, y) = (d.spawns[0][0] + 5, d.spawns[0][1] + 6);
-    d.actors.push(MapActor { ty: "1TNK".into(), owner: -1, x, y, facing: 0 });
+    d.actors.push(MapActor::new("1TNK", -1, x, y, 0));
     let mut w = World::from_map(&d, 1, &setups(&[("england", true, 0), ("russia", true, 0)]), opts()).unwrap();
     let neutral = w.players.len() as u8 - 1;
     let tank = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == neutral).unwrap();

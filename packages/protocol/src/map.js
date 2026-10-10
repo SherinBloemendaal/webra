@@ -6,9 +6,11 @@
 //
 // The canonical form matches the engine (engine/src/mapdata.rs): fields in the
 // order of the contract, defaults filled in (description "", actors [],
-// facing 0, rules null), `gems` only in format 2, keys inside `rules` sorted,
-// no whitespace, `formatVersion` only when it is not 1 and never
-// `gameVersion`. Its SHA-256 (lowercase hex) is the map's identity.
+// facing 0, rules null, and from format version 2 the game setup:
+// mapsetup.js), `gems` only in format 2, keys inside `rules` and `options`
+// sorted, actor state only when not its default, no whitespace,
+// `formatVersion` only when it is not 1 and never `gameVersion`. Its
+// SHA-256 (lowercase hex) is the map's identity.
 //
 // validateMap upgrades, then checks structure, sizes, layer encoding and value
 // ranges. The engine's Game.validate_map additionally checks gameplay rules
@@ -19,6 +21,7 @@ import { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, utf8Length } from './check.js';
 import { GAME_VERSION } from './version.js';
 import { MAP_UPGRADED_NOTICE, MAP_VERSIONS, incompatibleMapMessage, mapFormatVersionOf, reservedKeyIn, upgradeMap } from './mapversions.js';
+import { canonicalActorState, canonicalSlot, validateActorState, validateLockedOptions, validateMapOptions, validateMapPlayers, validateTags } from './mapsetup.js';
 
 export { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 
@@ -43,8 +46,29 @@ export const GEM_MAX = 3;
 export const MODDED_WARNING =
   'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
 
-const MAP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
-const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
+const MAP_KEYS = [
+  'formatVersion',
+  'gameVersion',
+  'format',
+  'name',
+  'author',
+  'description',
+  'width',
+  'height',
+  'terrain',
+  'ore',
+  'gems',
+  'spawns',
+  'actors',
+  'rules',
+  'biome',
+  // Format version 2: the map's game setup (mapsetup.js).
+  'players',
+  'options',
+  'lockedOptions',
+  'tags',
+];
+const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing', 'health', 'stance', 'veterancy', 'cargo'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
 // Never a key JavaScript treats specially (`__proto__`, `constructor`, `prototype`): no built-in rule uses one.
 const RULE_KEY_RE = /^(?!(?:__proto__|constructor|prototype)$)[A-Za-z0-9_.-]{1,40}$/;
@@ -308,6 +332,7 @@ function validateCurrentMap(input, opts, current) {
         x: int(x.x, 0, (m.width ?? MAP_MAX_SIZE) - 1, `${w} x`),
         y: int(x.y, 0, (m.height ?? MAP_MAX_SIZE) - 1, `${w} y`),
         facing: int(x.facing ?? 0, 0, 1023, `${w} facing`),
+        ...validateActorState(x, w),
       };
     });
   });
@@ -325,6 +350,16 @@ function validateCurrentMap(input, opts, current) {
     if (!MAP_BIOMES.includes(b)) fail(`biome must be one of ${MAP_BIOMES.join(', ')}`);
     return b;
   });
+
+  // The game setup (format version 2, mapsetup.js); absent fields take their defaults, null is refused (as by the engine).
+  const setupField = (k, d) => {
+    if (input[k] === null) fail(`${k} must not be null`);
+    return input[k] === undefined ? d : input[k];
+  };
+  m.players = step(() => validateMapPlayers(setupField('players', []), Array.isArray(m.spawns) ? m.spawns.length : MAP_MAX_SPAWNS));
+  m.options = step(() => validateMapOptions(setupField('options', {})));
+  m.lockedOptions = step(() => validateLockedOptions(setupField('lockedOptions', []), m.options));
+  m.tags = step(() => validateTags(setupField('tags', [])));
 
   if (errors.length) return { ok: false, errors };
   const canonical = canonicalMapJson(m);
@@ -422,7 +457,13 @@ export function salvageMap(input, opts = {}) {
     const owner = Number.isSafeInteger(a.owner) && a.owner >= -1 && a.owner < Math.max(m.spawns.length, 1) ? a.owner : -1;
     if (owner !== a.owner) repair(`Actor ${i + 1} (${a.type}) had owner ${excerpt(a.owner)}; it is neutral now.`, { x: a.x, y: a.y });
     const facing = Number.isSafeInteger(a.facing) && a.facing >= 0 && a.facing <= 1023 ? a.facing : 0;
-    m.actors.push({ type: a.type, owner, x: a.x, y: a.y, facing });
+    let state = {};
+    try {
+      state = validateActorState(a, `actor ${i + 1}`);
+    } catch (err) {
+      repair(`${err.message}; its health, stance, veterancy and passengers were reset.`, { x: a.x, y: a.y });
+    }
+    m.actors.push({ type: a.type, owner, x: a.x, y: a.y, facing, ...state });
   });
   if (isPlainObject(src.rules) && reservedKeyIn(src.rules) !== null) {
     m.rules = null;
@@ -436,6 +477,20 @@ export function salvageMap(input, opts = {}) {
     if (MAP_BIOMES.includes(src.biome)) m.biome = src.biome;
     else repair(`biome ${excerpt(src.biome)} is unknown; the map is temperate now.`);
   }
+  // The game setup: kept when it checks out, else its default.
+  const keep = (key, check, fallback, what) => {
+    if (src[key] === undefined) return fallback;
+    try {
+      return check(src[key]);
+    } catch (err) {
+      repair(`${err.message}; ${what}`);
+      return fallback;
+    }
+  };
+  m.players = keep('players', (v) => validateMapPlayers(v, Math.max(m.spawns.length, 2)).slice(0, m.spawns.length), [], 'the slots were reset to open.');
+  m.options = keep('options', validateMapOptions, {}, 'the map sets no options now.');
+  m.lockedOptions = keep('lockedOptions', (v) => validateLockedOptions(v, m.options), [], 'no options are locked now.');
+  m.tags = keep('tags', validateTags, [], 'the tags were left out.');
   return { map: m, status: up.status, message: up.message, problems };
 }
 
@@ -487,9 +542,25 @@ export function canonicalMapObject(m) {
     ore: m.ore,
     ...gems,
     spawns: (m.spawns ?? []).map((s) => [s[0], s[1]]),
-    actors: (m.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 })),
+    actors: (m.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0, ...canonicalActorState(a) })),
     rules: m.rules === undefined || m.rules === null ? null : sortKeysDeep(m.rules),
     ...biome,
+    ...canonicalSetup(m),
+  };
+}
+
+/**
+ * The game setup of the canonical form: from format version 2 on, every
+ * field with its defaults filled in (`options` keys sorted, the lists in
+ * the order the map gives); nothing before version 2.
+ */
+function canonicalSetup(m) {
+  if (m.formatVersion === undefined || m.formatVersion < 2) return {};
+  return {
+    players: (m.players ?? []).map(canonicalSlot),
+    options: sortKeysDeep(isPlainObject(m.options) ? m.options : {}),
+    lockedOptions: [...(m.lockedOptions ?? [])],
+    tags: [...(m.tags ?? [])],
   };
 }
 
@@ -527,5 +598,5 @@ export async function mapHash(m) {
 
 /** Summary fields a lobby or the map list shows. */
 export function mapSummary(m, id, hash) {
-  return { id, name: m.name, hash, modded: isModded(m), players: m.spawns.length, width: m.width, height: m.height };
+  return { id, name: m.name, hash, modded: isModded(m), players: m.spawns.length, width: m.width, height: m.height, tags: [...(m.tags ?? [])] };
 }

@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { MAP_FORMAT_VERSION } from '../js/protocol.js';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { barState, commandClick, COMMAND_CURSORS, COMMAND_HOTKEYS, COMMANDS, ICONS, nextStance, pendingStances, STANCES } from '../js/commandbar.js';
@@ -19,6 +20,7 @@ const px = (cell) => (cell + 0.5) * 24;
 /** An open, clear map with pre-placed actors; player 1 is an enemy. */
 function game(actors) {
   const map = {
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Open',
     author: 'Tests',

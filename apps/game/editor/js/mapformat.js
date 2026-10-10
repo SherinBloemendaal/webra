@@ -5,7 +5,19 @@
 // the file form come from the protocol package, like the format version
 // (`formatVersion`, upgrades in packages/protocol/src/mapversions.js).
 
-import { canonicalMapObject, MAP_FORMAT_VERSION, mapFileJson } from '../../js/protocol.js';
+import {
+  BIOME_PREVIEW_COLORS,
+  PREVIEW_GEMS,
+  PREVIEW_ORE,
+  canonicalMapObject,
+  MAP_FORMAT_VERSION,
+  mapFileJson,
+  validateActorState,
+  validateLockedOptions,
+  validateMapOptions,
+  validateMapPlayers,
+  validateTags,
+} from '../../js/protocol.js';
 import { validateOverrides } from './overrides.js';
 
 export { MAP_FORMAT_VERSION };
@@ -39,50 +51,9 @@ export const LIMITS = Object.freeze({
 });
 
 /** Map preview colours per biome, the same as the engine's previews (engine/src/weather.rs preview_color). */
-export const BIOME_PREVIEW_COLORS = {
-  temperate: [
-    [62, 88, 44],
-    [96, 92, 58],
-    [128, 118, 102],
-    [36, 70, 102],
-    [28, 54, 24],
-    [74, 112, 118],
-    [118, 104, 82],
-    [140, 116, 80],
-    [176, 160, 112],
-    [44, 82, 112],
-    [96, 96, 92],
-  ],
-  snow: [
-    [206, 214, 222],
-    [158, 196, 222],
-    [112, 114, 124],
-    [34, 62, 96],
-    [40, 66, 58],
-    [110, 150, 182],
-    [150, 150, 150],
-    [132, 112, 86],
-    [176, 180, 176],
-    [46, 78, 110],
-    [92, 94, 102],
-  ],
-  desert: [
-    [200, 168, 110],
-    [218, 188, 124],
-    [150, 94, 60],
-    [38, 116, 138],
-    [92, 122, 58],
-    [112, 168, 158],
-    [170, 136, 92],
-    [124, 96, 64],
-    [226, 204, 150],
-    [52, 124, 140],
-    [128, 100, 76],
-  ],
-};
+// Preview colours (minimap, PNG export): the protocol's, shared with the map list's thumbnails.
+export { BIOME_PREVIEW_COLORS, PREVIEW_GEMS, PREVIEW_ORE };
 export const PREVIEW_COLORS = BIOME_PREVIEW_COLORS.temperate;
-export const PREVIEW_ORE = [200, 160, 50];
-export const PREVIEW_GEMS = [190, 70, 150];
 
 /** Cells ground units can cross (engine/src/map.rs Terrain::passable): fords, roads, bridges and beaches too. */
 export const isPassable = (t) =>
@@ -194,6 +165,11 @@ export function createMap({ width = 96, height = 96, base = TERRAIN.CLEAR, name 
     ],
     actors: [],
     rules: null,
+    // The game setup (map format version 2): open slots, the lobby's options, no tags.
+    players: [],
+    options: {},
+    lockedOptions: [],
+    tags: [],
   };
 }
 
@@ -276,7 +252,8 @@ export function catalogEntry(catalog, type) {
 // ---- Validation -------------------------------------------------------------------
 
 const isInt = (v) => Number.isInteger(v);
-const TOP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
+const TOP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome', 'players', 'options', 'lockedOptions', 'tags'];
+const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing', 'health', 'stance', 'veterancy', 'cargo'];
 
 /**
  * Validate a map against contract section 2.
@@ -447,7 +424,13 @@ export function validateMap(map, opts = {}) {
       return;
     }
     for (const k of Object.keys(a)) {
-      if (!['type', 'owner', 'x', 'y', 'facing'].includes(k)) error(`${label}: unknown field "${k}".`);
+      if (!ACTOR_KEYS.includes(k)) error(`${label}: unknown field "${k}".`);
+    }
+    // Health, stance, veterancy, passengers (map format version 2; the engine checks them against the rules).
+    try {
+      validateActorState(a, label);
+    } catch (err) {
+      error(`${err.message}.`, a.x, a.y);
     }
     if (typeof a.type !== 'string' || !a.type) error(`${label}: type must be an actor id.`);
     const info = opts.catalog && typeof a.type === 'string' ? catalogEntry(opts.catalog, a.type) : undefined;
@@ -493,6 +476,18 @@ export function validateMap(map, opts = {}) {
       }
     }
   }
+
+  // The game setup (map format version 2, packages/protocol mapsetup.js).
+  const setup = (fn) => {
+    try {
+      fn();
+    } catch (err) {
+      error(`${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`);
+    }
+  };
+  setup(() => validateMapPlayers(map.players ?? [], spawnCount));
+  setup(() => validateLockedOptions(map.lockedOptions ?? [], validateMapOptions(map.options ?? {})));
+  setup(() => validateTags(map.tags ?? []));
 
   // Size limit (only meaningful for an otherwise well-formed map)
   try {

@@ -436,3 +436,163 @@ test('a co-op mission waits for its places; picking a map goes back to a skirmis
   assert.equal(room.mission, null);
   assert.equal(room.lobbyView().mission, undefined);
 });
+
+// ---- The map's game setup (map format version 2) ------------------------------------------
+
+import { canonicalSlot } from '@webra/protocol';
+
+/** A lobby map with a game setup (as maps.js summaryOf gives it). */
+function setupMap(players, options = {}, lockedOptions = []) {
+  return { id: '0123456789abcdef', hash: 'b'.repeat(64), name: 'Setup', modded: false, players: 4, setup: { players: players.map(canonicalSlot), options, lockedOptions } };
+}
+
+test('map setup: picking the map applies its slots and options; people move out of slots it closes or gives to an AI', () => {
+  const { room, host, guest } = lobby(4);
+  room.setSlot(guest, { slot: 1, faction: 'france' });
+  const map = setupMap(
+    [
+      { faction: 'england', team: 1, lock: ['faction'] },
+      { type: 'ai', difficulty: 'hard', bot: 'naval', faction: 'russia', team: 2, color: 5, lock: ['type', 'color'] },
+      { type: 'closed', lock: ['type'] },
+    ],
+    { startingCash: 10000, crates: false },
+    ['startingCash'],
+  );
+  room.setMap(host, map);
+  assert.deepEqual(room.slots.map((s) => s.type), ['human', 'ai', 'closed', 'human']);
+  assert.equal(room.slots[3].client, guest, 'the guest moved to the slot the map leaves open');
+  assert.equal(room.slots[3].faction, 'france', 'with its settings');
+  assert.deepEqual([room.slots[1].difficulty, room.slots[1].bot, room.slots[1].faction, room.slots[1].team, room.slots[1].color], ['hard', 'naval', 'russia', 2, 5]);
+  assert.deepEqual([room.slots[0].faction, room.slots[0].team], ['england', 1]);
+  assert.equal(new Set(room.slots.filter((s) => 'color' in s).map((s) => s.color)).size, 3, 'colours stay unique');
+  assert.deepEqual([room.options.startingCash, room.options.crates], [10000, false]);
+});
+
+test('map setup: the server refuses changes to locked slot parts and options', () => {
+  const { room, host, guest } = lobby(4);
+  room.setMap(host, setupMap([{ faction: 'england', lock: ['faction'] }, { team: 2, lock: ['team'] }, { type: 'ai', lock: ['type'] }], { techLevel: 'low' }, ['techLevel']));
+  throwsRoom(() => room.setSlot(host, { slot: 0, faction: 'russia' }), 'forbidden');
+  assert.equal(room.slots[0].faction, 'england', 'nothing changed');
+  room.setSlot(host, { slot: 0, team: 3 });
+  throwsRoom(() => room.setSlot(guest, { slot: 1, team: 0 }), 'forbidden');
+  room.setSlot(guest, { slot: 1, faction: 'ukraine' });
+  throwsRoom(() => room.setSlot(host, { slot: 2, type: 'open' }), 'forbidden');
+  throwsRoom(() => room.setOptions(host, { ...room.options, techLevel: 'high' }), 'forbidden');
+  room.setOptions(host, { ...room.options, startingCash: 20000 });
+  assert.equal(room.options.startingCash, 20000, 'what the map does not lock stays free');
+  // Another map (here a generated one) clears the locks.
+  room.setMap(host, null);
+  room.setOptions(host, { ...room.options, techLevel: 'high' });
+});
+
+test('map setup: a map that leaves no place for the people in the lobby is refused, the lobby unchanged', () => {
+  const { room, host, guest } = lobby(2);
+  const before = structuredClone(room.slots);
+  throwsRoom(() => room.setMap(host, setupMap([{}, { type: 'closed', lock: ['type'] }])));
+  assert.deepEqual(room.slots, before);
+  assert.equal(room.map, null);
+  void guest;
+});
+
+test('map setup: people who join or leave the spectators after the map was picked take its slot settings', () => {
+  const room = Room.create({ maxPlayers: 4, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  const map = setupMap(
+    [
+      { faction: 'england', lock: ['faction'] },
+      { faction: 'russia', team: 2, color: 4, lock: ['faction', 'team', 'color'] },
+      { faction: 'randomsoviet', team: 1, lock: ['team'] },
+      { color: 6 },
+    ],
+    {},
+    [],
+  );
+  room.setMap(host, map);
+  const b = room.join('B').client;
+  const eye = room.join('Eye', { spectate: true }).client;
+  room.spectate(eye, false);
+  const d = room.join('D').client;
+  assert.deepEqual(
+    room.slots.map((s) => [s.client, s.faction, s.team, s.color]),
+    [
+      [host, 'england', 0, 0],
+      [b, 'russia', 2, 4],
+      [eye, 'randomsoviet', 1, 1],
+      [d, 'random', 0, 6],
+    ],
+  );
+  assert.equal(room.lockedProblem(), null, 'nobody breaks a lock by joining');
+  // What the map does not lock stays theirs.
+  room.setSlot(eye, { slot: 2, faction: 'ukraine' });
+  room.setSlot(d, { slot: 3, team: 1, color: 2 });
+  throwsRoom(() => room.setSlot(b, { slot: 1, team: 1 }), 'forbidden');
+  for (const c of [b, eye, d]) room.setReady(c, true, map.hash);
+  assert.equal(room.startProblem(host), null);
+});
+
+test('map setup: a joiner never takes a colour the map sets for another slot, and a colour the map sets is swapped in', () => {
+  const room = Room.create({ maxPlayers: 3, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  room.setMap(host, setupMap([{}, {}, { color: 1, lock: ['color'] }]));
+  const b = room.join('B').client;
+  assert.notEqual(room.slots[1].color, 1, 'colour 1 is kept for slot 3');
+  // The host holds the colour slot 3 sets: whoever takes slot 3 gets it, the host gets theirs.
+  room.setSlot(host, { slot: 0, color: 1 });
+  const c = room.join('C').client;
+  assert.equal(room.slots[2].client, c);
+  assert.equal(room.slots[2].color, 1);
+  assert.notEqual(room.slots[0].color, 1);
+  assert.equal(new Set(room.slots.map((s) => s.color)).size, 3);
+  assert.equal(room.lockedProblem(), null);
+  void b;
+});
+
+test('map setup: moving to another slot or adding an AI takes the map settings of that slot', () => {
+  const room = Room.create({ maxPlayers: 3, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  room.setMap(host, setupMap([{}, { faction: 'russia', team: 2, lock: ['faction'] }, { faction: 'france', team: 3, lock: ['faction', 'team'] }]));
+  room.setSlot(host, { slot: 1 });
+  assert.deepEqual([room.slots[1].client, room.slots[1].faction, room.slots[1].team], [host, 'russia', 2]);
+  // A move that comes with settings the map locks otherwise is refused.
+  throwsRoom(() => room.setSlot(host, { slot: 2, faction: 'germany' }), 'forbidden');
+  assert.equal(room.slots[1].client, host, 'and changes nothing');
+  room.setSlot(host, { slot: 2, type: 'ai' });
+  assert.deepEqual([room.slots[2].type, room.slots[2].faction, room.slots[2].team], ['ai', 'france', 3]);
+  throwsRoom(() => room.setSlot(host, { slot: 2, type: 'ai', faction: 'germany' }), 'forbidden');
+  assert.equal(room.slots[2].faction, 'france', 'a refused change changes nothing');
+  assert.equal(room.lockedProblem(), null);
+});
+
+test('map setup: a lobby that already breaks a lock can be put right; only new breaks are refused', () => {
+  const { room, host, guest } = lobby(3);
+  room.setMap(host, setupMap([{}, { faction: 'england', team: 1, lock: ['faction', 'team'] }]));
+  // As a lobby from before could hold it (the map's locks broken in slot 2).
+  Object.assign(room.slots[1], { faction: 'russia', team: 0 });
+  assert.match(room.lockedProblem(), /faction of slot 2/);
+  room.setSlot(guest, { slot: 1, color: 5 });
+  room.setSlot(host, { slot: 0, faction: 'germany' });
+  room.setSlot(guest, { slot: 1, faction: 'england' });
+  assert.match(room.lockedProblem(), /slot 2 to team 1/, 'one lock put right, the other still broken');
+  throwsRoom(() => room.setSlot(guest, { slot: 1, faction: 'france' }), 'forbidden');
+  room.setSlot(guest, { slot: 1, team: 1 });
+  assert.equal(room.lockedProblem(), null);
+});
+
+test('map setup: after a rematch, people who join take the map slot settings', () => {
+  const room = Room.create({ maxPlayers: 3, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  const map = setupMap([{}, { faction: 'russia', team: 2, lock: ['faction', 'team'] }, { faction: 'france', lock: ['faction'] }]);
+  room.setMap(host, map);
+  const guest = room.join('Guest').client;
+  const third = room.join('Third').client;
+  for (const c of [guest, third]) room.setReady(c, true, map.hash);
+  room.start(host, () => 0);
+  room.proposeRematch(host, 1000);
+  room.answerRematch(guest, true, 1000);
+  room.answerRematch(third, true, 1000);
+  room.backToLobby([host, guest], 2000);
+  assert.equal(room.slots[2].type, 'open', 'the player who did not come back left a place');
+  const late = room.join('Late').client;
+  assert.deepEqual([room.slots[2].client, room.slots[2].faction], [late, 'france']);
+  assert.equal(room.lockedProblem(), null);
+});

@@ -196,6 +196,51 @@ async function pathVariants() {
   console.log(`  path variants: ${VARIANTS.length} spellings x 4 methods x 3 header sets, statuses ${JSON.stringify(counts)}`);
 }
 
+/**
+ * The map editor as a browser loads it: every spelling of its URL ends on
+ * /play/editor/ (Static Assets redirects the others there), and the page,
+ * every file it names (resolved against its <base>), every module its
+ * scripts import (followed over HTTP) and the renderer's shaders come
+ * through the gate with the account's cookies, with the right types.
+ */
+async function editorPage(get, cookie, NAV, SUB, securityHeaders) {
+  const TYPES = { html: /text\/html/, js: /javascript/, css: /text\/css/, wgsl: /text\/plain|wgsl|octet-stream/, wasm: /application\/wasm/ };
+  let checked = 0;
+  for (const spelling of ['/play/editor', '/play/editor/', '/play/editor/index.html', '/play/editor?map=abc', '/play/editor/?map=abc', '/play//editor/']) {
+    let url = new URL(spelling, BASE);
+    let r = await get(url.pathname + url.search, NAV, cookie);
+    for (let hops = 0; r.status >= 300 && r.status < 400 && hops < 3; hops++) {
+      await r.arrayBuffer();
+      url = new URL(r.headers.get('location'), url);
+      r = await get(url.pathname + url.search, NAV, cookie);
+    }
+    assert.equal(r.status, 200, `${spelling} -> ${url.pathname}`);
+    assert.equal(url.pathname, '/play/editor/', `${spelling} ends on the canonical URL`);
+    securityHeaders(r, `editor ${spelling}`);
+    const html = await r.text();
+    const base = new URL(html.match(/<base href="([^"]+)"/)[1], url);
+    const queue = [...html.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => new URL(m[1], base).pathname).filter((p) => p !== '/play/');
+    for (const s of ['common', 'terrain', 'sprite', 'fog', 'rect', 'line', 'weather', 'sky', 'heat']) queue.push(`/play/shaders/${s}.wgsl`);
+    queue.push('/play/pkg/webra_sim_bg.wasm');
+    const seen = new Set();
+    while (queue.length) {
+      const path = queue.shift();
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const a = await get(path, SUB, cookie);
+      assert.equal(a.status, 200, `${spelling}: ${path}`);
+      const type = TYPES[path.split('.').pop()];
+      if (type) assert.match(a.headers.get('content-type') ?? '', type, `${path} content type`);
+      const body = await a.text();
+      if (path.endsWith('.js')) {
+        for (const m of body.matchAll(/(?:^|\n)\s*(?:import|export)[^'"]*?from\s+'(\.[^']+)'/g)) queue.push(new URL(m[1], new URL(path, BASE)).pathname);
+      }
+    }
+    checked = seen.size;
+  }
+  console.log(`  map editor: 6 URL spellings, ${checked} files each through the gate`);
+}
+
 /** The play gate (src/playgate.js): who gets /play, the pass, sign-out. */
 async function playGate(ADMIN, HOST) {
   const site = await api('/api/site');
@@ -290,6 +335,7 @@ async function playGate(ADMIN, HOST) {
   await worker.arrayBuffer();
   // The admin passes too.
   assert.equal((await get(WASM, SUB, cookies.get(ADMIN))).status, 200);
+  await editorPage(get, `${host}; ${pass}`, NAV, SUB, securityHeaders);
 
   // Signing out clears the pass; the old pass alone opens nothing.
   // (The pending account from above, approved: signups are rate limited per address.)
@@ -407,7 +453,18 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   const { id: mapId, bytes, ...details } = announced.map;
   assert.equal(mapId, shared.body.id);
   assert.ok(bytes > 0 && bytes < 64 * 1024, `file bytes ${bytes}`);
-  assert.deepEqual(details, { hash: shared.body.hash, name: custom.name, modded: false, players: 2, author: custom.author, width: w, height: w, shared: true });
+  assert.deepEqual(details, {
+    hash: shared.body.hash,
+    name: custom.name,
+    modded: false,
+    players: 2,
+    author: custom.author,
+    width: w,
+    height: w,
+    shared: true,
+    // Upgraded to format 2: the game setup's defaults.
+    setup: { players: [], options: {}, lockedOptions: [] },
+  });
   assert.deepEqual(announced.slots.map((x) => x.mapState), ['installed', 'missing', undefined]);
   // Not public: not listed, not served by id, the session list shows its name only.
   assert.equal((await api('/api/maps')).body.some((m) => m.hash === shared.body.hash), false);
@@ -416,6 +473,46 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   assert.deepEqual(listing.map, { name: custom.name, modded: false, shared: true });
   host.send({ t: 'map', map: { id: shared.body.id, hash: shared.body.hash, name: 'x', modded: false } });
   assert.equal((await host.type('error')).code, 'not_found', 'a shared map cannot be picked by id');
+
+  // Map format version 2: a map's game setup applies to the lobby and its locks hold on the server.
+  const setupMap = {
+    ...versioned,
+    name: `Locked ${RUN}`,
+    spawns: [...custom.spawns, [3, 44]],
+    players: [{ faction: 'england', lock: ['faction'] }, { type: 'open', team: 0 }, { faction: 'russia', team: 2, color: 5, lock: ['faction', 'team'] }],
+    options: { startingCash: 10000, crates: false },
+    lockedOptions: ['startingCash'],
+    tags: ['e2e'],
+  };
+  const lockedShare = await api(path, { method: 'POST', body: JSON.stringify(setupMap), headers: member(hw) }, HOST);
+  assert.equal(lockedShare.status, 201, JSON.stringify(lockedShare.body));
+  const lockedLobby = await guest.type('lobby', (m) => m.map?.hash === lockedShare.body.hash);
+  assert.deepEqual(lockedLobby.map.setup.lockedOptions, ['startingCash']);
+  assert.equal(lockedLobby.options.startingCash, 10000, 'the map sets the lobby options');
+  assert.equal(lockedLobby.options.crates, false);
+  assert.equal(lockedLobby.slots[0].faction, 'england', 'and the slots');
+  host.send({ t: 'options', options: { ...lockedLobby.options, startingCash: 5000 } });
+  assert.equal((await host.type('error')).code, 'forbidden', 'a locked option cannot change');
+  host.send({ t: 'slot', slot: 0, faction: 'russia' });
+  assert.equal((await host.type('error')).code, 'forbidden', 'a locked faction cannot change');
+  // Someone joining after the map was picked takes its slot's settings, and
+  // can still change what the map leaves free (the lobby stays startable).
+  const late = new Client('map-late', WATCHER);
+  await late.open(id);
+  late.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  await late.type('welcome');
+  const joined = await host.type('lobby', (m) => m.slots[2].type === 'human');
+  assert.deepEqual([joined.slots[2].faction, joined.slots[2].team, joined.slots[2].color], ['russia', 2, 5], 'the joiner takes the map slot');
+  late.send({ t: 'slot', slot: 2, color: 6 });
+  await host.type('lobby', (m) => m.slots[2].color === 6);
+  late.send({ t: 'slot', slot: 2, team: 1 });
+  assert.equal((await late.type('error')).code, 'forbidden', 'a locked team cannot change');
+  late.ws.close();
+  await host.type('lobby', (m) => m.slots[2].type === 'open');
+  // Back to the custom map (shared again: the same map, the lobby's again).
+  const reshared = await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(hw) }, HOST);
+  assert.equal(reshared.body.hash, shared.body.hash);
+  await guest.type('lobby', (m) => m.map?.hash === shared.body.hash);
 
   // The guest cannot be ready or let the game start without the map.
   guest.send({ t: 'ready', ready: true, mapHash: shared.body.hash });
@@ -436,7 +533,7 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   const parsed = parseMap(text);
   assert.ok(parsed.ok, parsed.errors?.join('; '));
   assert.equal(parsed.upgrade, null, 'the lobby serves the current format');
-  assert.ok(!text.includes('formatVersion') && !text.includes('gameVersion'), 'canonical: format 1 names no version');
+  assert.ok(text.startsWith(`{"formatVersion":${MAP_FORMAT_VERSION},`) && !text.includes('gameVersion'), 'canonical: the format version, never who wrote it');
   assert.equal(await mapHash(parsed.map), shared.body.hash);
   assert.equal(await sha256Hex(text), shared.body.hash, 'the canonical text');
   guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'installed' });

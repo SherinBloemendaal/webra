@@ -252,6 +252,14 @@ impl MissionData {
         if m.format != FORMAT {
             return Err(format!("unsupported mission format {}", m.format));
         }
+        // Its map is a map file of the current map format version (a map without `formatVersion` is format 1).
+        if m.map.format_version != crate::mapdata::FORMAT_VERSION {
+            return Err(format!(
+                "the mission's map is in map format {}; this engine reads format {}",
+                m.map.format_version,
+                crate::mapdata::FORMAT_VERSION
+            ));
+        }
         if !m.players.iter().any(|p| p.playable) {
             return Err("the mission has no playable player".into());
         }

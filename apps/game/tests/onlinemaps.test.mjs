@@ -39,7 +39,9 @@ test('map library: maps are parsed, hashed and stored canonical; bad maps and wr
   assert.equal(await lib.has(hash), true);
   assert.deepEqual((await lib.list()).map((e) => e.hash), [hash]);
   assert.equal('json' in (await lib.list())[0], false, 'lists carry no map text');
-  await assert.rejects(lib.add('{"format":1}'), /Invalid map/);
+  await assert.rejects(lib.add(`{"formatVersion":${MAP_FORMAT_VERSION},"format":1}`), /Invalid map/);
+  // Without formatVersion a file is format 1: it upgrades, then fails, so it was made for an older release.
+  await assert.rejects(lib.add('{"format":1}'), /no longer compatible/);
   await assert.rejects(lib.add(JSON.stringify(mapObj('Other')), { expectHash: hash }), /expected hash/);
   await assert.rejects(lib.add(canonical, { source: 'somewhere' }), /unknown map source/);
   // Adding it again keeps its source and first time, and marks it used.

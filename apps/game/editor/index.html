@@ -2,34 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Resolve URLs against /play/ so the game's renderer finds its shaders. -->
-    <base href="../" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Resolve URLs against /play/ (the game's files: shaders, sheets, the
+         engine), whichever spelling of the editor's URL loaded the page. -->
+    <base href="/play/" />
     <title>WebRA Map Editor</title>
+    <!-- The game's theme tokens, base sheet and themed controls, then the editor's own. -->
     <link rel="stylesheet" href="css/theme.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/controls.css" />
+    <link rel="stylesheet" href="css/tooltip.css" />
     <link rel="stylesheet" href="editor/editor.css" />
   </head>
   <body class="editor">
     <header id="topbar">
       <a class="brand" href="./" title="Back to the game">Web<span>RA</span> <small>Map Editor</small></a>
-      <nav class="group" aria-label="File">
-        <button type="button" data-cmd="new" title="New map (Ctrl+Alt+N)">New</button>
-        <button type="button" data-cmd="open" title="Open a .webra-map.json file or import an OpenRA .oramap map (Ctrl+O)">Open</button>
-        <button type="button" data-cmd="save" title="Download as .webra-map.json (Ctrl+S)">Save</button>
-        <button type="button" data-cmd="png" title="Export a PNG preview">PNG</button>
-      </nav>
-      <nav class="group" aria-label="Edit">
-        <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)">Undo</button>
-        <button type="button" data-cmd="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
-      </nav>
-      <nav class="group" aria-label="Play">
-        <button type="button" data-cmd="test" class="primary" title="Test play this map in the game (Ctrl+Enter)">Test play</button>
-        <button type="button" data-cmd="publish" title="Publish to the map server">Publish</button>
-      </nav>
+      <nav id="commands" aria-label="Map"></nav>
+      <span class="spacer"></span>
       <span id="modded-badge" class="badge modded" hidden title="This map has rules overrides">MODDED</span>
-      <span id="save-state" class="muted"></span>
-      <button type="button" data-cmd="help" class="help-button" title="Keyboard shortcuts (?)">?</button>
+      <span id="save-state" class="muted" role="status"></span>
+      <nav id="actions" aria-label="Play and publish"></nav>
     </header>
 
     <div id="workspace">
@@ -38,22 +30,15 @@
       <main id="stage">
         <canvas id="view" tabindex="0" aria-label="Map"></canvas>
         <div id="labels" aria-hidden="true"></div>
-        <div id="status"></div>
+        <div id="viewbar" aria-label="View"></div>
+        <div id="status" role="status"></div>
         <div id="boot" class="boot">Loading the engine...</div>
       </main>
 
-      <aside id="props">
-        <canvas id="minimap" aria-label="Minimap (click to move the view)"></canvas>
-        <div class="tabs" role="tablist">
-          <button type="button" role="tab" data-tab="map" class="active">Map</button>
-          <button type="button" role="tab" data-tab="actors">Actors</button>
-          <button type="button" role="tab" data-tab="rules">Rules <span id="rules-count" class="dot" hidden></span></button>
-          <button type="button" role="tab" data-tab="online">Online</button>
-        </div>
-        <section class="pane" data-pane="map"></section>
-        <section class="pane" data-pane="actors" hidden></section>
-        <section class="pane" data-pane="rules" hidden></section>
-        <section class="pane" data-pane="online" hidden></section>
+      <aside id="side" aria-label="Map panels">
+        <canvas id="minimap" aria-label="Minimap (click or drag to move the view, wheel to zoom)"></canvas>
+        <div class="tabs" role="tablist" aria-label="Panels"></div>
+        <div id="panes"></div>
       </aside>
     </div>
 

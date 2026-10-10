@@ -1,34 +1,66 @@
-/* Map editor layout: top bar, tools left, map centre, properties right.
-   Builds on css/style.css (colours, menu cards). */
+/* Map editor: the game's gunmetal chrome (css/theme.css tokens, the themed
+   controls of css/controls.css) around the map. Top bar with the commands,
+   tools on the left, the map in the middle, the minimap and the panels on
+   the right. On narrow screens the tools become a strip under the map and
+   the panels slide over it. No colours of its own: everything comes from
+   the theme's tokens, so the editor follows the game's accent. */
 
 body.editor {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
+  background: var(--ui-bg);
+  font-size: var(--ui-fs-m);
+  --ed-tools: 13.5rem;
+  --ed-side: 21rem;
+  --ed-bar: 2.75rem;
 }
+
+/* ---- Buttons and fields ------------------------------------------------- */
 
 .editor button,
 .editor select,
 .editor input,
 .editor textarea {
   font: inherit;
-  color: var(--text);
+  color: var(--ui-text);
 }
 
 .editor button {
-  padding: 4px 10px;
-  background: #2b3226;
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  min-height: 2rem;
+  padding: 0.25em 0.8em;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font-weight: 700;
+  font-size: var(--ui-fs-s);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
   cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .editor button:hover:not(:disabled) {
-  filter: brightness(1.25);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.editor button:active:not(:disabled) {
+  box-shadow: var(--ui-bevel-in);
+}
+
+.editor button:focus-visible,
+.editor .palette-item:focus-visible,
+.editor .tool:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
 }
 
 .editor button:disabled {
@@ -38,193 +70,330 @@ body.editor {
 
 .editor button.primary {
   background: var(--ui-primary-fill);
-  border-color: var(--ui-edge);
   color: #fff;
 }
 
 .editor button.primary:hover:not(:disabled) {
   background: var(--ui-primary-fill-hover);
-  filter: none;
 }
 
 .editor button.primary:active:not(:disabled) {
   background: var(--ui-primary-fill-active);
 }
 
-.editor button.active,
-.editor .seg.active {
-  background: var(--ui-accent-lo);
+.editor button.danger {
+  color: var(--ui-bad);
+}
+
+.editor button.active {
+  background: linear-gradient(180deg, var(--ui-accent-lo), var(--ui-metal-2));
   border-color: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-accent-hi);
+  box-shadow:
+    var(--ui-bevel-in),
+    0 0 0 1px var(--ui-accent-glow);
 }
 
 .editor button.link,
 .editor button.danger-link {
+  min-height: 0;
+  padding: 0 0.3em;
   background: none;
   border: none;
-  padding: 0 4px;
-  color: var(--accent);
+  box-shadow: none;
+  color: var(--ui-accent-hi);
   text-decoration: underline;
+  text-transform: none;
+  letter-spacing: 0;
   font-weight: 400;
+  text-shadow: none;
 }
 
 .editor button.danger-link {
-  color: var(--danger);
+  color: var(--ui-bad);
 }
 
-.editor select,
-.editor input[type='text'],
-.editor input[type='number'],
-.editor input[type='search'],
-.editor input:not([type]),
-.editor textarea {
-  padding: 4px 6px;
-  background: #11140f;
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  min-width: 0;
+.editor .ed-icon,
+.editor .ui-icon {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+  fill: currentColor;
 }
 
-.editor input:focus-visible,
-.editor textarea:focus-visible,
-.editor select:focus-visible,
-.editor button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.editor .icon-only {
+  min-width: 2rem;
+  padding: 0.25em 0.45em;
 }
 
-.editor textarea {
+/* Fields outside the cards look like the cards' (css/controls.css .ui-input). */
+.editor .ui-input,
+.editor #side select,
+.editor #tools select {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.3em 0.55em;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+  color: var(--ui-text);
+}
+
+.editor textarea.ui-input {
   resize: vertical;
-  user-select: text;
+  min-height: 5em;
 }
 
-.editor input {
-  user-select: text;
+.editor .ui-input:focus-visible,
+.editor #side select:focus-visible,
+.editor #tools select:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 0;
+}
+
+.editor select option {
+  background: var(--ui-metal-1);
+  color: var(--ui-text);
 }
 
 .editor h2 {
-  margin: 14px 0 6px;
-  font-size: 11px;
-  letter-spacing: 1.5px;
+  margin: 1.1em 0 0.45em;
+  font: 700 var(--ui-fs-s) / 1.3 var(--ui-font);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--ui-accent-hi);
 }
 
-.editor h2:first-child {
-  margin-top: 4px;
+.editor .hint {
+  margin: 0.35em 0 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+  line-height: 1.45;
 }
 
-.muted {
-  color: var(--muted);
+.editor .muted {
+  color: var(--ui-muted);
 }
 
-.hint {
-  font-size: 12px;
+.editor .ok {
+  color: var(--ui-ok);
 }
 
-.ok {
-  color: #7fd47f;
-}
-
-.row {
+.editor .row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
-  margin: 6px 0;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
 }
 
-.badge {
+.editor .row.wrap {
+  flex-wrap: wrap;
+}
+
+.editor .row.end {
+  justify-content: flex-end;
+}
+
+.editor .row.tight {
+  margin: 0;
+}
+
+.editor .field {
+  display: grid;
+  gap: 0.3em;
+  margin: 0.55em 0;
+}
+
+.editor .field > .label {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.editor .badge.modded {
+  padding: 0.15em 0.5em;
+  border: 1px solid var(--ui-bad);
+  border-radius: var(--ui-radius);
+  color: var(--ui-bad);
+  font: 700 var(--ui-fs-xs) / 1.4 var(--ui-font);
+  letter-spacing: 0.1em;
+}
+
+.editor .dot {
   display: inline-block;
-  padding: 1px 6px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 2px;
-  font: 700 10px/1.6 system-ui, sans-serif;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
-
-.badge.on {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.badge.modded {
+  min-width: 1.3em;
+  margin-left: 0.3em;
+  padding: 0 0.3em;
+  border-radius: 1em;
+  background: var(--ui-accent);
   color: #fff;
-  background: var(--danger);
-  border-color: var(--danger);
+  font-size: var(--ui-fs-xs);
+  line-height: 1.5;
 }
 
-/* ---- Top bar ---------------------------------------------------------------- */
+/* ---- Top bar --------------------------------------------------------------- */
 
 #topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 6px 10px;
-  background: var(--panel);
-  border-bottom: 2px solid var(--accent);
+  gap: 0.6rem;
+  min-height: var(--ed-bar);
+  padding: 0.3rem 0.6rem;
+  padding-left: max(0.6rem, env(safe-area-inset-left));
+  padding-right: max(0.6rem, env(safe-area-inset-right));
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border-bottom: 2px solid var(--ui-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 5;
 }
 
 #topbar .brand {
-  font: 900 20px/1 Impact, 'Arial Black', sans-serif;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--text);
+  color: var(--ui-text);
   text-decoration: none;
+  font: 900 1.15rem/1 var(--ui-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 #000;
 }
 
 #topbar .brand span {
-  color: var(--danger);
+  color: var(--ui-accent-hi);
 }
 
 #topbar .brand small {
-  font-size: 12px;
-  letter-spacing: 2px;
-  color: var(--accent);
+  margin-left: 0.3em;
+  color: var(--ui-muted);
+  font: 700 var(--ui-fs-xs) / 1 var(--ui-font);
+  letter-spacing: 0.14em;
 }
 
+#topbar nav,
 #topbar .group {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+#topbar #commands {
+  gap: 0.75rem;
+}
+
+#topbar .spacer {
+  flex: 1;
 }
 
 #save-state {
-  font-size: 12px;
-  margin-left: auto;
+  font-size: var(--ui-fs-s);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
 }
 
-.help-button {
-  width: 28px;
+.panels-toggle {
+  display: none !important;
 }
 
-/* ---- Workspace ----------------------------------------------------------------- */
+/* ---- Workspace --------------------------------------------------------------- */
 
 #workspace {
   flex: 1;
-  min-height: 0;
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) 340px;
+  grid-template-columns: var(--ed-tools) minmax(0, 1fr) var(--ed-side);
+  min-height: 0;
 }
 
 #tools,
-#props {
+#side {
+  min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
-  padding: 8px 10px 16px;
+  overscroll-behavior: contain;
+  background:
+    var(--ui-brushed),
+    linear-gradient(180deg, var(--ui-metal-1), var(--ui-bg));
+  scrollbar-color: var(--ui-metal-4) transparent;
 }
 
 #tools {
-  border-right: 1px solid var(--panel-edge);
+  padding: 0.6rem;
+  border-right: 1px solid var(--ui-edge);
+  box-shadow: inset -1px 0 0 var(--ui-line);
 }
 
-#props {
-  border-left: 1px solid var(--panel-edge);
+#side {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  border-left: 1px solid var(--ui-edge);
+  box-shadow: inset 1px 0 0 var(--ui-line);
 }
+
+/* ---- Tools ------------------------------------------------------------------------ */
+
+.tool-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.editor .tool {
+  justify-content: flex-start;
+  min-height: 2.25rem;
+  padding: 0.25em 0.5em;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: var(--ui-fs-m);
+}
+
+.editor .tool .ed-icon {
+  width: 1.25em;
+  height: 1.25em;
+}
+
+.tool-options .opt[hidden] {
+  display: none;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.editor .swatch {
+  justify-content: flex-start;
+  min-height: 1.9rem;
+  padding: 0.2em 0.4em;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: var(--ui-fs-s);
+}
+
+.swatch i {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  border: 1px solid var(--ui-edge);
+  border-radius: 2px;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+  /* The terrain's colour in the map preview, set by editor.js (MATERIALS). */
+  background: var(--swatch, var(--ui-metal-3));
+}
+
+#tools .ui-segmented {
+  width: 100%;
+}
+
+#tools .ui-row {
+  --ctl-size: var(--ui-fs-m);
+}
+
+/* ---- Stage ------------------------------------------------------------------------- */
 
 #stage {
   position: relative;
@@ -247,8 +416,14 @@ body.editor {
   cursor: default;
 }
 
-#view[data-tool='spawn'] {
+#view[data-tool='spawn'],
+#view[data-tool='eyedropper'] {
   cursor: cell;
+}
+
+#view[data-tool='paste'],
+#view[data-tool='region'] {
+  cursor: copy;
 }
 
 #view.can-pan {
@@ -262,34 +437,57 @@ body.editor {
 #labels {
   position: absolute;
   inset: 0;
-  pointer-events: none;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .spawn-label {
   position: absolute;
   left: 0;
   top: 0;
-  font: 900 24px/1 Impact, 'Arial Black', sans-serif;
+  color: var(--team, var(--ui-text));
+  font: 900 1rem/1 var(--ui-font-display);
   text-shadow:
-    0 0 3px #000,
-    1px 1px 0 #000,
-    -1px -1px 0 #000;
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000,
+    2px 2px 0 #000;
 }
 
 .spawn-label.selected {
   text-decoration: underline;
 }
 
+#viewbar {
+  position: absolute;
+  right: 0.6rem;
+  top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+#viewbar button {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+}
+
 #status {
   position: absolute;
-  left: 8px;
-  bottom: 6px;
-  padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 3px;
-  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
-  color: #cfd8c4;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  max-width: calc(100% - 1.2rem);
+  padding: 0.2em 0.6em;
+  background: rgba(6, 8, 11, 0.78);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-muted);
+  font: var(--ui-fs-s) / 1.6 var(--ui-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }
 
@@ -298,555 +496,558 @@ body.editor {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 2rem;
+  background: var(--ui-bg);
+  color: var(--ui-muted);
+  font: 700 var(--ui-fs-l) var(--ui-font);
   text-align: center;
-  color: var(--muted);
 }
 
 .boot.error {
-  color: var(--danger);
+  color: var(--ui-bad);
 }
 
-/* ---- Tools ---------------------------------------------------------------------- */
-
-.tool-list {
-  display: grid;
-  gap: 3px;
-}
-
-.tool {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  text-align: left;
-}
-
-kbd {
-  display: inline-block;
-  min-width: 18px;
-  padding: 0 3px;
-  border: 1px solid #55604a;
-  border-radius: 2px;
-  background: #11140f;
-  font: 600 11px/16px ui-monospace, Menlo, monospace;
-  text-align: center;
-  color: var(--accent);
-}
-
-.swatches {
-  display: grid;
-  gap: 3px;
-}
-
-.swatch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-}
-
-.swatch i {
-  width: 16px;
-  height: 16px;
-  border: 1px solid #000;
-}
-
-.segs {
-  display: flex;
-  gap: 3px;
-}
-
-.segs .seg {
-  flex: 1;
-  padding: 4px 0;
-}
-
-#tools input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-#tools select {
-  width: 100%;
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0;
-  cursor: pointer;
-}
-
-/* ---- Properties -------------------------------------------------------------------- */
+/* ---- Side panels ------------------------------------------------------------------ */
 
 #minimap {
-  width: 100%;
+  display: block;
+  width: calc(100% - 1.2rem);
   aspect-ratio: 1;
-  max-height: 260px;
-  background: #000;
-  border: 1px solid var(--panel-edge);
+  max-height: 16rem;
+  margin: 0.6rem auto 0;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel-in);
   cursor: pointer;
-  flex: none;
+  touch-action: none;
 }
 
-.tabs {
+#side .tabs {
   display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--panel-edge);
-  flex: none;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding: 0.6rem 0.6rem 0;
+  border-bottom: 1px solid var(--ui-line);
 }
 
-.tabs button {
-  flex: 1;
-  border-radius: 3px 3px 0 0;
+#side .tabs button {
+  min-height: 1.9rem;
+  padding: 0.2em 0.6em;
   border-bottom: none;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 1px;
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  font-size: var(--ui-fs-xs);
 }
 
-.dot {
-  display: inline-block;
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 10px;
-  line-height: 16px;
+#side .tabs button.active {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  color: var(--ui-text);
+  border-color: var(--ui-edge);
+  box-shadow: inset 0 2px 0 var(--ui-accent);
 }
 
-.pane {
-  min-height: 0;
+#side .tabs button.bad {
+  color: var(--ui-bad);
 }
 
-.field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px;
-  gap: 2px 8px;
-  align-items: center;
-  margin: 5px 0;
+#panes {
+  flex: 1;
+  padding: 0 0.75rem 1rem;
 }
 
-.field.stacked {
-  grid-template-columns: 1fr;
+.pane[hidden] {
+  display: none;
 }
 
-.field .label {
-  font-size: 12px;
-}
-
-.field .default {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: -2px;
-}
-
-.field.changed .label {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.field input,
-.field select,
-.field textarea {
-  width: 100%;
-}
+/* ---- Validation, fairness, history, stamps ------------------------------------------ */
 
 .verdict {
-  padding: 6px 8px;
-  border-left: 3px solid var(--muted);
-  background: #141812;
+  padding: 0.4em 0.6em;
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  background: var(--ui-metal-0);
   font-weight: 700;
 }
 
 .verdict.ok {
-  border-color: #5cbf5c;
-  color: #9fe09f;
+  color: var(--ui-ok);
 }
 
 .verdict.bad {
-  border-color: var(--danger);
-  color: #ff9c8c;
+  color: var(--ui-bad);
 }
 
 .issues {
-  list-style: none;
-  margin: 6px 0;
+  margin: 0.4rem 0 0;
   padding: 0;
-  font-size: 12px;
+  list-style: none;
 }
 
 .issues li {
-  padding: 3px 6px 3px 18px;
-  position: relative;
-}
-
-.issues li::before {
-  position: absolute;
-  left: 4px;
-  font-weight: 900;
+  display: grid;
+  gap: 0.2em;
+  padding: 0.35em 0 0.35em 0.6em;
+  border-left: 3px solid var(--ui-line);
+  margin-bottom: 0.25rem;
 }
 
 .issues li.error {
-  color: #ff9c8c;
-}
-
-.issues li.error::before {
-  content: '!';
+  border-left-color: var(--ui-bad);
 }
 
 .issues li.warning {
-  color: #e6cf85;
+  border-left-color: var(--ui-warn);
 }
 
-.issues li.warning::before {
-  content: '?';
-}
-
-.issues li.ok::before {
-  content: '+';
-}
-
-.issues li.jump {
-  cursor: pointer;
-}
-
-.issues li.jump:hover {
-  background: #232a1f;
-}
-
-/* Map versions: the upgrade notice and quick fixes of a map opened best effort. */
-.issues li.notice {
-  color: color-mix(in srgb, var(--ui-info) 55%, white);
-}
-
-.issues li.notice::before {
-  content: 'i';
-}
-
-.issues li .fixes {
+.issue-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 3px;
+  gap: 0.3rem;
 }
 
-.issues li .fixes button {
-  font-size: 11px;
-  padding: 1px 6px;
+.editor button.fix {
+  min-height: 1.6rem;
+  font-size: var(--ui-fs-xs);
 }
 
-/* ---- Palette ---------------------------------------------------------------------- */
+.fair-table,
+.editor table.keys,
+.editor table.slots {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-s);
+}
+
+.fair-table th,
+.fair-table td {
+  padding: 0.25em 0.3em;
+  border-bottom: 1px solid var(--ui-line);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fair-table th:first-child {
+  text-align: left;
+}
+
+.fair-table td.unfair {
+  color: var(--ui-warn);
+  font-weight: 700;
+}
+
+.swatch-dot {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  border: 1px solid var(--ui-edge);
+  border-radius: 50%;
+  background: var(--dot, var(--ui-muted));
+}
+
+.history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.editor .history-go {
+  width: 100%;
+  justify-content: space-between;
+  min-height: 1.8rem;
+  margin-bottom: 0.15rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.history-step.future .history-go {
+  opacity: 0.55;
+}
+
+.history-step.current .history-go {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+  opacity: 1;
+}
+
+.history-time {
+  color: var(--ui-muted);
+  font: var(--ui-fs-xs) var(--ui-font-mono);
+}
+
+.stamps,
+.recovery,
+.map-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stamps li,
+.recovery li,
+.map-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4em 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.editor .stamp-use {
+  flex: 1;
+  justify-content: flex-start;
+  text-transform: none;
+}
+
+.map-list .title {
+  width: 100%;
+  font-weight: 700;
+}
+
+/* ---- Palette ------------------------------------------------------------------------ */
+
+.palette-group {
+  margin-top: 0.5rem;
+}
 
 .palette-group summary {
-  margin: 10px 0 4px;
+  padding: 0.3em 0;
+  color: var(--ui-text);
+  font-weight: 700;
   cursor: pointer;
-  font-size: 11px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 
 .palette {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+  gap: 0.3rem;
 }
 
-.palette-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 4px 2px !important;
-  font-size: 10px !important;
-  font-weight: 400 !important;
-  line-height: 1.15;
-  min-height: 70px;
-}
-
-/* Actors of another biome (editor.js filterPaletteByBiome). */
 .palette-item[hidden] {
   display: none;
 }
 
-.palette-item canvas {
-  width: 48px;
-  height: 40px;
+.editor .palette-item {
+  flex-direction: column;
+  gap: 0.15rem;
+  min-height: 0;
+  padding: 0.25rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: var(--ui-fs-xs);
+  white-space: normal;
 }
 
-#owner {
+.palette-item canvas {
   width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--ui-edge);
+  background: var(--ui-metal-0);
+  image-rendering: pixelated;
+}
+
+.palette-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #selection-box:not(:empty) {
-  padding: 4px 8px 8px;
-  margin-bottom: 8px;
-  border: 1px solid var(--accent);
-  background: #1f241a;
+  margin-top: 0.6rem;
+  padding: 0.2rem 0.6rem 0.6rem;
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  background: var(--ui-metal-1);
 }
 
-/* ---- Rules ------------------------------------------------------------------------- */
+/* ---- Dialogs ---------------------------------------------------------------------------- */
 
-.modded-banner {
-  padding: 8px;
-  border: 1px solid var(--danger);
-  background: #3a1612;
-  font-size: 12px;
+.editor dialog.menu-card {
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  color: var(--ui-text);
 }
 
-.rules-bar .badge {
-  margin-left: auto;
+.editor dialog.menu-card.wide {
+  width: min(48rem, calc(100vw - 2rem));
 }
 
-.rules-structured {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: 8px;
+.editor dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
 }
 
-.rules-left input {
-  width: 100%;
-  margin-bottom: 4px;
+.editor .menu-card h1 {
+  font-size: 1.6rem;
 }
 
-.rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 460px;
-  overflow-y: auto;
-}
-
-.rules-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 2px 6px !important;
-  text-align: left;
-  background: transparent !important;
-  border-color: transparent !important;
-  font-weight: 400 !important;
-}
-
-.rules-item .id {
-  font: 600 11px ui-monospace, Menlo, monospace;
-}
-
-.rules-item .name {
-  font-size: 10px;
-  color: var(--muted);
-}
-
-.rules-item.active {
-  background: var(--ui-accent-lo) !important;
-}
-
-.rules-item.changed .id {
-  color: var(--accent);
-}
-
-.rules-item.changed .id::after {
-  content: ' *';
-}
-
-.rules-form h3 {
-  margin: 0 0 6px;
-  font: 700 13px ui-monospace, Menlo, monospace;
-}
-
-.rules-raw {
-  width: 100%;
-  font: 12px/1.4 ui-monospace, Menlo, monospace;
-}
-
-/* ---- Online ------------------------------------------------------------------------- */
-
-.wide {
-  width: 100%;
-  padding: 8px !important;
-}
-
-#publish-result input {
-  flex: 1;
-}
-
-.map-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.map-list li {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--panel-edge);
-}
-
-.map-list .title {
-  font-weight: 700;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.map-list .muted {
-  font-size: 11px;
-}
-
-/* ---- Dialogs and toast ------------------------------------------------------------------ */
-
-dialog.dialog {
-  color: var(--text);
-  padding: 20px 24px;
-}
-
-dialog.dialog::backdrop {
-  background: rgba(0, 0, 0, 0.6);
-}
-
-dialog.dialog.wide {
-  width: min(640px, 100% - 32px);
-}
-
-dialog.dialog h1 {
-  font-size: 30px;
-  margin-bottom: 12px;
-}
-
-dialog.dialog label {
-  margin: 6px 0;
-}
-
-dialog.dialog .indent {
-  padding-left: 22px;
-}
-
-dialog.dialog .indent input,
-dialog.dialog .indent select {
-  width: 140px;
-}
-
-dialog.dialog .row button {
-  flex: 1;
+.editor .menu-card button {
   width: auto;
+  margin-top: 0;
 }
 
-dialog.dialog .oramap-report {
-  max-height: 50vh;
-  overflow-y: auto;
-  margin-bottom: 12px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
+.editor .menu-card .row.end {
+  margin-top: 1rem;
 }
 
-dialog.dialog .oramap-report h3 {
-  margin: 10px 0 2px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+.editor .menu-card label.field {
+  display: grid;
+  justify-content: stretch;
+  margin: 0.4em 0;
 }
 
-dialog.dialog .oramap-report ul {
-  margin: 0;
-  padding-left: 18px;
+.editor .menu-card label.check {
+  justify-content: flex-start;
 }
 
-dialog.dialog .oramap-report-errors h3,
-dialog.dialog .oramap-report-rules h3 {
-  color: #f08a76;
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 0.8rem;
 }
 
-dialog.dialog .oramap-report-warnings h3 {
-  color: #e8c25a;
+.grid2[hidden] {
+  display: none;
 }
 
-.keys {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
+.anchors {
+  display: grid;
+  grid-template-columns: repeat(3, 2rem);
+  gap: 0.2rem;
 }
 
-.keys th {
+.editor .anchors button.anchor {
+  width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+
+.editor table.slots th,
+.editor table.slots td,
+.editor table.keys th,
+.editor table.keys td {
+  padding: 0.25em 0.3em;
   text-align: left;
-  padding: 3px 12px 3px 0;
-  font: 600 12px ui-monospace, Menlo, monospace;
-  color: var(--accent);
-  white-space: nowrap;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-.keys td {
-  padding: 3px 0;
+.editor table.keys th {
+  font-weight: 400;
+  width: 55%;
 }
 
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  max-width: min(560px, 100% - 32px);
-  padding: 8px 14px;
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-left: 3px solid var(--accent);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
-  z-index: 80;
-  font-size: 13px;
+.editor table.slots select {
+  width: 100%;
+}
+
+.editor .key-bind {
+  min-width: 7rem;
+  text-transform: none;
+  font-family: var(--ui-font-mono);
+}
+
+.editor .key-bind.listening {
+  border-color: var(--ui-focus);
+  color: var(--ui-focus);
 }
 
 #toast.error {
-  border-left-color: var(--danger);
+  border-top-color: var(--ui-bad);
+  color: #ffd3cc;
 }
 
-/* ---- Small screens: stack the panels and let the page scroll ---------------------------- */
+/* ---- Narrow screens: tools under the map, panels over it ------------------------------ */
 
 @media (max-width: 1100px) {
-  #workspace {
-    grid-template-columns: 160px minmax(0, 1fr) 290px;
+  body.editor {
+    --ed-tools: 11.5rem;
+    --ed-side: 18rem;
+  }
+
+  .editor .tool .tool-label {
+    display: none;
+  }
+
+  .tool-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .editor .tool {
+    justify-content: center;
   }
 }
 
-@media (max-width: 820px) {
-  html,
-  body.editor {
-    overflow: auto;
-    height: auto;
+@media (max-width: 760px) {
+  #topbar {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  #topbar .brand small,
+  #save-state,
+  #topbar .cmd:not(.icon-only):not(.primary) span {
+    display: none;
+  }
+
+  #topbar #commands {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .panels-toggle {
+    display: inline-flex !important;
   }
 
   #workspace {
-    display: flex;
-    flex-direction: column;
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   #stage {
-    order: -1;
-    height: 60vh;
-    flex: none;
+    grid-row: 1;
   }
 
-  #tools,
-  #props {
-    border: none;
-    border-top: 1px solid var(--panel-edge);
-    overflow: visible;
+  #tools {
+    grid-row: 2;
+    max-height: 40dvh;
+    padding: 0.4rem;
+    border-right: none;
+    border-top: 1px solid var(--ui-edge);
   }
 
-  .tool-list,
-  .swatches {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  .tool-list {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  #minimap {
-    max-width: 260px;
+  .editor .tool {
+    min-height: 2.75rem;
   }
 
-  #save-state {
-    margin-left: 0;
+  #side {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(22rem, 92vw);
+    transform: translateX(105%);
+    transition: transform 0.2s ease;
+    z-index: 6;
+    box-shadow: var(--ui-shadow);
   }
+
+  body.panels-open #side {
+    transform: none;
+  }
+
+  .editor button {
+    min-height: 2.75rem;
+  }
+
+  #viewbar button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #side {
+    transition: none;
+  }
+}
+
+/* Map versions: the upgrade notice of a map opened best effort (js/upgrade.js). */
+.issues li.notice {
+  border-left-color: var(--ui-info);
+  color: color-mix(in srgb, var(--ui-info) 55%, white);
+}
+
+.issues li.ok {
+  border-left-color: var(--ui-ok);
+}
+
+/* The map list's thumbnail (Map tab, published maps): one pixel per cell, scaled up crisp. */
+.editor .map-thumb {
+  display: block;
+  width: 100%;
+  max-width: 16rem;
+  height: auto;
+  border: 1px solid var(--ui-edge);
+  background: var(--ui-metal-0);
+  image-rendering: pixelated;
+}
+
+/* Setup tab: player slots and game options. */
+.slot-row {
+  margin: 0.6rem 0;
+  padding: 0.4rem 0.6rem 0.6rem;
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-line);
+  background: var(--ui-metal-1);
+}
+
+.slot-row h3,
+.editor .cargo h3 {
+  margin: 0.2rem 0;
+  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+}
+
+.slot-row .grid2 {
+  gap: 0 0.5rem;
+}
+
+.slot-row .field[hidden] {
+  display: none;
+}
+
+.locks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.6rem;
+}
+
+.locks > .label {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.locks .ui-row {
+  min-height: 0;
+}
+
+.options-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-s);
+}
+
+.options-table th {
+  padding: 0.25em 0.3em;
+  font-weight: 400;
+  text-align: left;
+}
+
+.options-table td {
+  padding: 0.2em 0.3em;
+}
+
+.options-table .ui-row {
+  min-height: 0;
+}
+
+.cargo-list {
+  margin: 0.2rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cargo-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }

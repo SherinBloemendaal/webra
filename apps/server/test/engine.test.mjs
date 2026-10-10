@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { MAP_FORMAT_VERSION } from '@webra/protocol';
 import { readFileSync } from 'node:fs';
 import { Engine, EngineTrap, engine } from '../src/engine.js';
 import { HttpError } from '../src/http.js';
@@ -9,6 +10,7 @@ const wasmModule = new WebAssembly.Module(readFileSync(new URL('../../game/pkg/w
 
 function blankMap(w = 32) {
   return {
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Test',
     author: 'Me',

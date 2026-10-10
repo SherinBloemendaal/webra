@@ -8,6 +8,7 @@
 import { assignSpawns } from '../protocol/spawns.js';
 import { validateMap } from '../protocol/map.js';
 import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
+import { canonicalSlot, lockedOptionProblem, lockedSlotProblem, mapSlot } from '../protocol/mapsetup.js';
 import { noteUserText } from './telemetry/index.js';
 
 /** The installed map file lives in its own key (it can be large). */
@@ -73,6 +74,9 @@ export const TECH_BUILDINGS = [
   { value: 'oilonly', label: 'Oil only' },
   { value: 'oilrush', label: 'Oil rush' },
 ];
+
+/** Names of the lobby colours (js/renderer.js TEAM_PALETTE), in order. */
+export const COLOR_NAMES = Object.freeze(['Blue', 'Red', 'Gold', 'Green', 'Purple', 'Orange', 'Teal', 'White']);
 
 export const STARTING_CASH = [2500, 5000, 7500, 10000, 20000];
 
@@ -198,6 +202,37 @@ export const DEFAULTS = {
 const DEFAULT_PLAYERS = [
   { type: 'human', name: DEFAULT_NAME, faction: 'germany', color: 0, team: 0, handicap: 0 },
   { type: 'ai', difficulty: 'normal', bot: 'normal', faction: 'randomsoviet', color: 1, team: 0, handicap: 0 },
+];
+
+/**
+ * Game option rows of the lobby (and the map editor's map options): the key
+ * in options (also its help text in js/help.js), its label and choices.
+ */
+export const LOBBY_SELECT_OPTIONS = [
+  {
+    key: 'startingCash',
+    label: 'Starting cash',
+    choices: STARTING_CASH.map((v) => ({ value: v, label: `$${v.toLocaleString('en-US')}` })),
+  },
+  { key: 'startingUnits', label: 'Starting units', choices: STARTING_UNITS },
+  { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
+  { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
+  { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
+];
+
+export const LOBBY_TOGGLE_OPTIONS = [
+  { key: 'crates', label: 'Crates' },
+  { key: 'shortGame', label: 'Short game' },
+  { key: 'fog', label: 'Fog of war' },
+  { key: 'explored', label: 'Explored map' },
+  { key: 'allyBuildRadius', label: 'Ally build radius' },
+  { key: 'buildRadius', label: 'Build radius' },
+  { key: 'separateTeamSpawns', label: 'Separate team spawns' },
+  { key: 'redeployableMcv', label: 'Redeployable MCVs' },
+  { key: 'bounty', label: 'Kill bounties' },
+  { key: 'oreRegrowth', label: 'Ore regrowth' },
+  { key: 'reusableEngineers', label: 'Reusable engineers' },
+  { key: 'cheats', label: 'Debug menu' },
 ];
 
 // ---- Small parsers ------------------------------------------------------------
@@ -486,10 +521,91 @@ export function startProblem(state, mapFile) {
     if (active.length > mapFile.spawns) {
       return `This map has ${mapFile.spawns} start positions; close or remove ${active.length - mapFile.spawns} slot(s).`;
     }
+    const locked = mapSetupProblem(state, mapFile.setup);
+    if (locked) return locked;
   }
   const teams = new Set(active.map(({ p }) => p.team));
   if (teams.size === 1 && !teams.has(0)) return 'Everyone is on the same team: nobody to fight.';
   return null;
+}
+
+// ---- The map's game setup (map format version 2) -----------------------------------------
+
+/** Why the lobby breaks the installed map's locks (protocol mapsetup.js), or null. */
+export function mapSetupProblem(state, setup) {
+  if (!setup) return null;
+  for (const [k, p] of state.players.entries()) {
+    const problem = lockedSlotProblem(p, setup, k);
+    if (problem) return problem;
+  }
+  return lockedOptionProblem(state, setup);
+}
+
+/** Whether part `lock` of slot `k` is locked by the lobby's map file. */
+export function slotLockedBy(state, setup, k, lock) {
+  return state.mapSource === 'file' && !!setup && mapSlot(setup, k).lock.includes(lock);
+}
+
+/** Whether option `key` is locked by the lobby's map file. */
+export function optionLockedBy(state, setup, key) {
+  return state.mapSource === 'file' && !!setup && setup.lockedOptions.includes(key);
+}
+
+/** The options the map locks put back over `state` (after a game mode changed them). */
+export function keepLockedOptions(state, setup) {
+  for (const k of setup?.lockedOptions ?? []) state[k] = setup.options[k];
+}
+
+/**
+ * Apply a map's game setup to the lobby state when the map is installed:
+ * its options (a starting point; locked ones stay), and for each slot it
+ * lists its type (closed, or an AI with its difficulty and bot; you move to
+ * a slot the map leaves to players), faction, team and colour. Slots it does
+ * not list keep what they had. Slots are added up to the slots it lists.
+ * Changes `state` in place.
+ */
+export function applyMapSetup(state, setup, colorCount, spawns) {
+  if (!setup) return;
+  Object.assign(state, setup.options);
+  const listed = Math.min(setup.players.length, spawns, MAX_SLOTS);
+  while (state.players.length < listed) {
+    state.players.push({ type: 'ai', name: DEFAULT_NAME, difficulty: 'normal', bot: 'normal', faction: 'random', color: -1, team: 0, handicap: 0 });
+  }
+  let human = null;
+  for (let k = 0; k < listed; k++) {
+    const m = mapSlot(setup, k);
+    const cur = state.players[k];
+    if (m.type === 'closed' || m.type === 'ai') {
+      if (cur.type === 'human') human = cur;
+      state.players[k] =
+        m.type === 'closed'
+          ? { ...cur, type: 'closed' }
+          : { type: 'ai', name: DEFAULT_NAME, difficulty: m.difficulty, bot: m.bot, faction: m.faction, color: cur.color, team: m.team, handicap: 0 };
+    } else if (cur.type === 'closed' && m.lock.includes('type')) {
+      state.players[k] = { ...cur, type: 'ai', difficulty: 'normal', bot: 'normal' };
+    }
+  }
+  // You take the first slot the map leaves to players (an AI or closed one there gives way).
+  if (human) {
+    let free = state.players.findIndex((p, i) => p.type !== 'human' && (i >= listed || mapSlot(setup, i).type === 'open'));
+    // Else a slot the map gives to an AI or closes without locking it (a valid map always leaves one).
+    if (free < 0) free = state.players.findIndex((p, i) => p.type !== 'human' && (i >= listed || !mapSlot(setup, i).lock.includes('type')));
+    if (free >= 0) state.players[free] = { ...human, type: 'human', color: state.players[free].color };
+    else if (state.players.length < spawns) state.players.push({ ...human });
+  }
+  for (let k = 0; k < listed; k++) {
+    const m = mapSlot(setup, k);
+    const p = state.players[k];
+    if (p.type === 'closed') continue;
+    if (m.faction !== 'random' || m.lock.includes('faction')) p.faction = m.faction;
+    p.team = m.team;
+    if (m.color >= 0 && m.color < colorCount) {
+      const other = state.players.findIndex((q, i) => i !== k && q.color === m.color);
+      if (other >= 0) state.players[other].color = p.color;
+      p.color = m.color;
+    }
+  }
+  uniqueColors(state.players, colorCount);
 }
 
 /**
@@ -597,6 +713,13 @@ export function inspectMapFile(text, validate, versions = undefined) {
     spawnCells: data.spawns.map(([x, y]) => [x, y]),
     // Optional in the format: absent means temperate (engine/src/mapdata.rs).
     biome: typeof data.biome === 'string' ? data.biome : 'temperate',
+    // The game setup the map brings (map format version 2, protocol mapsetup.js).
+    setup: {
+      players: (Array.isArray(data.players) ? data.players : []).map(canonicalSlot),
+      options: data.options && typeof data.options === 'object' ? { ...data.options } : {},
+      lockedOptions: Array.isArray(data.lockedOptions) ? [...data.lockedOptions] : [],
+      tags: Array.isArray(data.tags) ? [...data.tags] : [],
+    },
     json,
     upgrade: up.status === 'upgraded' ? { from: up.from, message: up.message } : null,
   };

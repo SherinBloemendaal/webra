@@ -26,7 +26,7 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 
 ```jsonc
 {
-  "formatVersion": 1,               // the map format version, see "Map versions" below (absent: 1)
+  "formatVersion": 2,               // the map format version, see "Map versions" below (absent: 1)
   "gameVersion": "0.9.0",           // the WebRA release that wrote the file (optional, never part of the identity)
   "format": 2,                      // 1 (ore only) or 2 (ore and gems), see below
   "name": "Twin Rivers",            // 1..64 chars
@@ -38,10 +38,17 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   "gems": "<base64>",               // format 2 only: width*height bytes, 0..3 gem density
   "spawns": [[8, 8], [85, 84]],     // 2..8 top-left cells of the starting construction yard / MCV
   "actors": [                       // optional pre-placed actors
-    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 }  // owner: spawn index, or -1 for neutral; type: 1..16 of A-Z a-z 0-9 . (V19.Husk)
+    { "type": "SBAG", "owner": -1, "x": 40, "y": 40, "facing": 0 },  // owner: spawn index, or -1 for neutral; type: 1..16 of A-Z a-z 0-9 . (V19.Husk)
+    { "type": "APC", "owner": 1, "x": 50, "y": 60, "facing": 256, "health": 60, "stance": "defend", "veterancy": 1, "cargo": ["E1", "E3"] }  // state: see "Map setup"
   ],
   "rules": null,                    // optional rules overrides, see below
-  "biome": "snow"                   // optional: temperate (default, left out), snow or desert
+  "biome": "snow",                  // optional: temperate (default, left out), snow or desert
+  "players": [                      // format version 2: the player slots, see "Map setup"
+    { "faction": "randomsoviet", "team": 1, "color": -1, "type": "open", "difficulty": "normal", "bot": "normal", "lock": ["faction"] }
+  ],
+  "options": { "startingCash": 10000, "techLevel": "medium" },  // lobby options the map starts with
+  "lockedOptions": ["techLevel"],   // options the lobbies keep at the map's value
+  "tags": ["2 players", "naval"]    // up to 8
 }
 ```
 
@@ -168,6 +175,25 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   cell in the biome's colours, spawns in player colours);
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
+- Map editor (presentation only, never ticked): `Game.editor_preview(mapJson)`
+  builds the world a game on a map file starts with (its actors, the trees of
+  tree terrain, bridges) without validating it and without starting units, for
+  `build_render` and `terrain_ptr` with the spectator view (player 255); spawn
+  k's actors are player k, neutral ones player 8. On such a preview,
+  `editor_cells()` gives per cell the flags 1 passable, 2 buildable, 4
+  reachable by ground from spawn 1, 8 on a shortest ground path between starts,
+  and in the high byte the spawn that reaches the cell first (255 none);
+  `editor_report()` is JSON with per spawn `rush` (ground steps to the nearest
+  other start, or null), `ore`, `oreCells`, `gems`, `gemCells`, `buildable`
+  (within `reach` cells), `zone`, `harbourCells`, `navalYardSite`, and the
+  totals and `unreachableSpawns`. `editor_fog(k)` is the fog the player of
+  spawn k starts a game with (default starting units), one byte per cell.
+- Editor test play: the editor writes the map to sessionStorage
+  `webra.editor.testMap` and a setup to `webra.editor.testSetup`
+  (`{ players: [{ type, faction, difficulty, bot, team }], camera: [x, y] |
+  null, autostart }`) and opens `/play/?editorTest=1`; the lobby checks the
+  slots like stored settings, the camera starts at `camera` (world pixels) and
+  `autostart` starts the game at once.
 
 ### Map versions (`formatVersion`, `gameVersion`)
 
@@ -180,7 +206,7 @@ reader shares (`packages/protocol/src/mapversions.js`).
   forever: format 1 is the baseline, every map made before map versions
   existed (pinned by `packages/protocol/test/fixtures/maps/format1-*`). The
   current format is `MAP_FORMAT_VERSION` (protocol) and `FORMAT_VERSION`
-  (`engine/src/mapdata.rs`), now 1. It is a different thing from `format`
+  (`engine/src/mapdata.rs`), now 2. It is a different thing from `format`
   (1 or 2), which only says whether the gems layer is there and stays part
   of every map for its identity.
 - `gameVersion`: the release that wrote the file (1 to 32 of `0-9 A-Z a-z . +
@@ -202,8 +228,8 @@ reader shares (`packages/protocol/src/mapversions.js`).
   is the upgraded map. The engine parses the current format only and refuses
   anything else when it reads the JSON, map files and mission maps alike:
   `this map is in map format N, made by a newer version of WebRA; this engine
-  reads format 1`, `this map is in map format N; it must be upgraded to format
-  1 before the engine reads it`.
+  reads format 2`, `this map is in map format N; it must be upgraded to format
+  2 before the engine reads it` (a file without `formatVersion` is format 1).
 - Outcomes of `upgradeMap(map)` (`{ status, map, notes, problems, message }`):
   `current`; `upgraded` (non-blocking notice "This map was upgraded from an
   older version; save it in the editor to keep the upgrade."); `incompatible`,
@@ -229,9 +255,9 @@ reader shares (`packages/protocol/src/mapversions.js`).
   out, layers read or rebuilt to the map size, malformed spawns and actors
   left out). Every problem is listed with its location (click to jump) and
   quick fixes (`applyMapFix` actions: `removeActors`, `setActorType`,
-  `setTerrain`, `setField`, `moveField`, `accept`; actors are named by type
-  and cell, fields by key path, so fixes stay right after other fixes), each
-  one undoable. Saving writes the current format.
+  `setTerrain`, `setField`, `moveField`, `dropActorFields`, `accept`;
+  actors are named by type and cell, fields by key path, so fixes stay
+  right after other fixes), each one undoable. Saving writes the current format.
 - Identity and multiplayer: the hash covers the upgraded canonical form.
   `formatVersion` is part of it only above 1, so every map from before map
   versions kept its hash, and a canonical text always says its version
@@ -307,6 +333,84 @@ the canonical form (as `biome` and `gems` were added). To add version N + 1:
 5. Regenerate generated files that hold maps (`tools/gen_missions.py`), run
    `tools/map-upgrade.mjs` on maps kept in the repository, and update this
    section. Stored maps upgrade themselves (above).
+
+### Map setup (format version 2)
+
+Format version 2 (the first real format change, migration 1 to 2 in
+`packages/protocol/src/mapversions.js`) lets a map carry its game setup,
+checked by `packages/protocol/src/mapsetup.js` and the engine
+(`engine/src/mapdata.rs`). The migration adds the four new fields with
+their defaults, which change nothing a game does: `players: []`,
+`options: {}`, `lockedOptions: []`, `tags: []`. From version 2 on they are
+always in the canonical form (defaults filled in, `options` keys sorted).
+A format 1 file that already has any of them (or actors with `health`,
+`stance`, `veterancy` or `cargo`) is not upgraded silently: each is a
+problem (`field-from-later-format`) the author settles in the map editor,
+keeping them (the map is read as format 2) or dropping them (fix actions
+`accept`, `setField`, `dropActorFields`). A field written as `null` is
+refused (protocol and engine alike); leave it out for its default.
+
+- `players`: the player slots, at most one per spawn (OpenRA MapPlayers).
+  Lobby slot k is slot k; a spawn without an entry is an open slot with
+  nothing set. Each: `faction` (`random`, `randomallies`, `randomsoviet`
+  or a country), `team` (0 none, 1..4), `color` (-1 any, 0..7 the lobby
+  colours, unique), `type` (`open`: a player or an AI as the lobby likes,
+  `ai`: an AI with `difficulty` and `bot`, `closed`), and `lock`: the parts
+  players cannot change (`faction`, `team`, `color`, `type`; a locked
+  colour needs a colour; a locked random faction allows the countries it
+  picks from). A map must be able to start a game: at least two slots
+  stay playable (not locked closed), at least one can take a person (not
+  locked to an AI or closed), and the playable slots are not all locked to
+  the same team (`mapSlotsProblem`, the engine's `validate_setup`).
+- `options`: lobby options the map starts with, from `weather`,
+  `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`
+  and the boolean options (section 3), with their section 3 values; not
+  the generator options (seed, size, style, biome, tech buildings).
+  `lockedOptions`: options the lobbies keep at the map's value (each one
+  the map sets, once).
+- `tags`: up to 8, each 1 to 24 of `a-z 0-9`, spaces and hyphens, no
+  repeats; the community list shows and searches them.
+- Pre-placed actor state, each left out of the canonical form at its
+  default: `health` 1..100 (percent of its hit points; 100), `stance`
+  (`hold_fire`, `return_fire`, `defend`, `attack_anything`, only for
+  actors with a fire stance; its own), `veterancy` 0..4 (at most the
+  actor's levels; 0), `cargo` (up to 16 passenger types that fit the
+  transport's cargo types and weight; garrisons excluded; none). A game
+  starts them so (quietly: no level-up sound), passengers inside their
+  transport and owned by its owner.
+- Lobbies: installing the map (skirmish lobby) or picking it (online
+  lobby, the server applies it: `applyMapSetup` in `apps/server/src/room.js`)
+  sets the listed slots (a person in a slot the map closes or gives to an
+  AI moves to a slot the map leaves open; a map without one is refused
+  online) and merges the map's options into the lobby's. Whoever comes into
+  a slot later (joining, leaving the spectators, moving to another slot, an
+  AI the host adds) takes that slot's faction, team and colour from the map
+  (`mapSlotSettings`; a colour another slot holds is swapped). Locked parts
+  and options are disabled in both lobbies; the server refuses a slot change
+  only when it adds a broken lock (`lockedSlotProblems`), so a lobby that
+  breaks one can always be repaired, and every start refuses any
+  (`lockedSlotProblem`, `lockedOptionProblem`). `Game.from_map` refuses options that break the
+  locked options. Lobby map descriptions (`validMapRef` full) carry
+  `setup: { players, options, lockedOptions }` from the stored map.
+- Thumbnail: `mapThumbnail(map)` (protocol `mapthumb.js`) draws the map
+  from its data alone, one pixel per cell (terrain in the biome's preview
+  colours, ore and gems, actors at their cell, spawns in their slot's
+  colour), never from art, so no original Red Alert graphics can end up in
+  it; the server serves it as a PNG for the community list and the map
+  editor shows the same picture. Publishing sends the map data only.
+- The map editor edits all of it (Setup tab, tags in the Map tab, actor
+  state in the selection) and test play starts from the map's slots. The
+  `.oramap` importer takes OpenRA's Multi0.. slots (faction, team, colour and
+  their locks) and the Health, Stance and Cargo inits of actors. A slot's
+  OpenRA `Color` (`RRGGBB`, `RRGGBBAA` or `r,g,b[,a]`) becomes the nearest
+  lobby colour by squared RGB distance to the lobby palette (0 blue
+  77,140,242; 1 red 230,64,51; 2 gold 242,204,64; 3 green 89,204,102; 4
+  purple 204,115,242; 5 orange 242,140,51; 6 teal 102,217,217; 7 white
+  217,217,217), skipping colours earlier slots took; a slot without a
+  readable colour stays "Any" (-1). `Cargo: e1, e1, e3` (OpenRA CargoInit)
+  becomes `cargo` with the editor's checks: known types whose passenger type
+  the transport's (non-garrison) cargo takes, within its weight, at most 16;
+  the rest is listed as skipped in the import report.
 
 ### Importing OpenRA maps (`.oramap`)
 
@@ -604,7 +708,8 @@ travel over the network. The server never runs the simulation.
 | `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash, upgradedFrom? }`; shares a map file with this session only (see "Lobby maps") |
 | `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
 | `POST` | `/api/sessions/:id/resume` | host only, `X-WebRA-Member`: an online save file -> `{ id }`; the lobby resumes that saved game (see "Online saves") |
-| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps of the current format version only, section 2 "Map versions") |
+| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt, tags, thumbnail }]` (published maps of the current format version only, section 2 "Map versions"; `thumbnail` the URL of the map's thumbnail) |
+| `GET` | `/api/maps/:id/thumbnail.png` | the published map's thumbnail: a PNG, one pixel per cell, drawn from the map data (section 2 "Map setup"), cached publicly (the list's URL names the map's hash). Drawn once per map version: kept in the edge cache by id and stored hash (the query is ignored); `ETag` is the hash (`If-None-Match` gets 304); drawing counts against 600 per hour per IP (429 with `Retry-After`; cached and 304 answers do not count); a map that cannot be drawn is logged and answered 404 |
 | `GET` | `/api/maps/:id` | the map JSON (published maps only; upgraded to the current format version, or as stored when it cannot be) |
 | `POST` | `/api/maps` | map JSON -> `{ id, hash, upgradedFrom? }` (upgraded, validated, size limited, rate limited); publishes it to the community list. `upgradedFrom`: the file's older format version (what is stored is the upgraded map). A map that is not compatible or from a newer format: 422 with the message of section 2 |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |

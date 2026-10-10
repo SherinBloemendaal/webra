@@ -31,6 +31,7 @@ pub mod crates;
 pub mod debug;
 mod dog;
 pub mod doors;
+pub mod editor;
 pub mod flowfield;
 pub mod fx;
 mod game_mission;
@@ -91,6 +92,8 @@ mod tests_debug;
 #[cfg(test)]
 mod tests_doors;
 #[cfg(test)]
+mod tests_editor;
+#[cfg(test)]
 mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
@@ -102,6 +105,8 @@ mod tests_infantry;
 mod tests_instances;
 #[cfg(test)]
 mod tests_leftovers;
+#[cfg(test)]
+mod tests_mapsetup;
 #[cfg(test)]
 mod tests_minimap;
 #[cfg(test)]
@@ -241,9 +246,44 @@ impl Game {
     /// Rules overrides of modded maps apply; the caller must have shown the warning.
     pub fn from_map(map_json: &str, options_json: &str) -> Result<Game, JsError> {
         let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
+        // The options the map locks (map format version 2): the lobbies keep
+        // them; a game that does not is refused rather than played otherwise.
+        let raw: serde_json::Value = serde_json::from_str(options_json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
+        if let Some(problem) = data.locked_option_problem(&raw) {
+            return Err(JsError::new(&problem));
+        }
         let o = parse_options(options_json).map_err(|e| JsError::new(&e))?;
         let world = World::from_map(&data, o.seed, &o.players, o.options).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))
+    }
+
+    /// The map editor's view of a map file (apps/game/editor): the map's
+    /// actors, the trees of its tree terrain and its bridges as a game on it
+    /// starts them, for `build_render` and `terrain_ptr` with
+    /// `observer_player()`. Not validated and never ticked: no player
+    /// starts there (World::editor_preview). Spawn k's actors are drawn as
+    /// player k, neutral ones as player `world::EDITOR_SLOTS`.
+    pub fn editor_preview(map_json: &str) -> Result<Game, JsError> {
+        let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
+        Ok(Game::wrap(World::editor_preview(&data).map_err(|e| JsError::new(&e))?))
+    }
+
+    /// The map editor's overlay of an editor preview (editor.rs
+    /// `editor_cells`): per cell, flags (passable, buildable, reachable from
+    /// spawn 1, on a rush path) and the nearest spawn by ground in the high byte.
+    pub fn editor_cells(&self) -> Vec<u16> {
+        self.world.editor_cells()
+    }
+
+    /// What the player of spawn `k` sees at the start of a game on an editor
+    /// preview (editor.rs `editor_fog`): one byte per cell, 0 shroud, 255 visible.
+    pub fn editor_fog(&self, k: u32) -> Vec<u8> {
+        self.world.editor_fog(k as usize)
+    }
+
+    /// The map editor's fairness report of an editor preview (editor.rs `editor_report`), JSON.
+    pub fn editor_report(&self) -> String {
+        self.world.editor_report().to_string()
     }
 
     /// SHA-256 (hex) identity of a map file's canonical form.
@@ -587,6 +627,12 @@ impl Game {
                     "repairable": b.is_some_and(|b| b.repairable.is_some()),
                     "powerDown": b.is_some_and(|b| b.power_down),
                     "weapons": a.weapons.iter().map(|&w| &r.weapons[w].name).collect::<Vec<_>>(),
+                    // What a map may set for a pre-placed actor (mapdata.rs, map format
+                    // version 2): a fire stance, veterancy levels, passengers.
+                    "stance": a.stance.is_some() && !a.weapons.is_empty(),
+                    "levels": a.experience.as_ref().map_or(0, |x| x.thresholds.len()),
+                    "cargo": a.abilities.cargo.as_ref().filter(|c| !c.garrison).map(|c| json!({"types": c.types, "max": c.max})),
+                    "passenger": a.unit.as_ref().and_then(|u| u.passenger.as_ref().map(|p| json!({"type": p, "weight": u.passenger_weight}))),
                     // The neutral world (neutral.rs): editor category, biomes, bridge templates.
                     "world": neutral::world_json(a),
                     // PrimaryBuilding (primary.rs): the deploy command makes it primary.

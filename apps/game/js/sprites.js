@@ -530,6 +530,48 @@ function buildingAnim(key) {
 }
 
 /**
+ * The two sprite slots of an actor (see spriteList): `body` and `second`,
+ * each [w, h, draw] or null, and `turret`, whether the second slot is drawn
+ * on the body (a turret or an animated layer) rather than instead of it (an
+ * infantry's prone pose, a crate's water image). Throws for an actor without
+ * art.
+ */
+export function actorSprites(a) {
+  const key = spriteKey(a.id);
+  if (a.kind === 'proxy') {
+    // Proxies (engine/src/infantry.rs) have no body.
+    return { body: null, second: null, turret: false };
+  }
+  if (a.kind === 'building') {
+    // The neutral world (trees, houses, tech buildings, bridges) has its own art module.
+    const draw = BUILDING_DRAW[key] ?? worldDraw(a);
+    if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
+    const anim = buildingAnim(key);
+    const turret = BUILDING_TURRET[key] ?? null;
+    const second = turret ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null);
+    return { body: [a.width * 24, a.height * 24, draw], second, turret: !!turret };
+  }
+  if (a.kind === 'crate') {
+    // Crates (art/leftovers.js): the land image, then the water image.
+    const d = CRATE_DRAW[key] ?? CRATE_DRAW.CRATE;
+    return { body: d.body, second: d.turret, turret: false };
+  }
+  if (a.kind === 'husk') {
+    // Husks: the vehicle's hull, charred (art/leftovers.js); no turret.
+    const base = UNIT_DRAW[spriteKey(huskBase(a.id))] ?? fallbackUnit({ ...a, kind: 'vehicle' });
+    if (!base) throw new Error(`no sprite for husk ${a.id} (looked up as ${huskBase(a.id)})`);
+    return { body: huskOf(base.body), second: null, turret: false };
+  }
+  const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(a);
+  if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
+  if (a.kind === 'infantry') {
+    // Infantry: the prone pose, or for civilians the panic pose (engine neutral.rs draws_panic).
+    return { body: d.body, second: PRONE[key] ?? CIVILIAN_DRAW[key]?.panic ?? d.body, turret: false };
+  }
+  return { body: d.body, second: d.turret ?? null, turret: !!d.turret };
+}
+
+/**
  * Sprite definitions in atlas order: [w, h, draw] or null (empty). Every actor
  * has two slots: body and turret. Infantry have no turret; their second slot is
  * the prone pose (engine/src/veterancy.rs), the standing body when there is no
@@ -539,33 +581,8 @@ function buildingAnim(key) {
 export function spriteList(actors) {
   const list = [];
   for (const a of actors) {
-    const key = spriteKey(a.id);
-    if (a.kind === 'proxy') {
-      // Proxies (engine/src/infantry.rs) have no body.
-      list.push(null, null);
-    } else if (a.kind === 'building') {
-      // The neutral world (trees, houses, tech buildings, bridges) has its own art module.
-      const draw = BUILDING_DRAW[key] ?? worldDraw(a);
-      if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
-      list.push([a.width * 24, a.height * 24, draw]);
-      const anim = buildingAnim(key);
-      list.push(BUILDING_TURRET[key] ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null));
-    } else if (a.kind === 'crate') {
-      // Crates (art/leftovers.js): the land image, then the water image.
-      const d = CRATE_DRAW[key] ?? CRATE_DRAW.CRATE;
-      list.push(d.body, d.turret);
-    } else if (a.kind === 'husk') {
-      // Husks: the vehicle's hull, charred (art/leftovers.js); no turret.
-      const base = UNIT_DRAW[spriteKey(huskBase(a.id))] ?? fallbackUnit({ ...a, kind: 'vehicle' });
-      if (!base) throw new Error(`no sprite for husk ${a.id} (looked up as ${huskBase(a.id)})`);
-      list.push(huskOf(base.body), null);
-    } else {
-      const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(a);
-      if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
-      list.push(d.body);
-      // Infantry: the prone pose, or for civilians the panic pose (engine neutral.rs draws_panic).
-      list.push(a.kind === 'infantry' ? (PRONE[key] ?? CIVILIAN_DRAW[key]?.panic ?? d.body) : (d.turret ?? null));
-    }
+    const { body, second } = actorSprites(a);
+    list.push(body, second);
   }
   const muzzles = new Set(MUZZLE_ACTORS);
   return list.concat(
@@ -903,29 +920,28 @@ function iconPalette(teamRgb) {
   };
 }
 
-/** Sidebar icon: body + turret composited in a team colour. */
+/**
+ * Sidebar and palette icon: the body, with its turret or animated layer
+ * centred on it, in a team colour. Every actor with art has one (the same
+ * art as its atlas slots, actorSprites); a proxy has none and stays blank.
+ */
 export function drawIcon(canvas, actor, teamRgb) {
   const ctx = canvas.getContext('2d');
   const P = iconPalette(teamRgb);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Each part is [draw, dx, dy]: turrets are drawn centred on the body.
-  const parts = [];
-  const key = spriteKey(actor.art ?? actor.id);
-  let w;
-  let h;
-  if (actor.kind === 'building') {
-    w = actor.width * 24;
-    h = actor.height * 24;
-    parts.push([BUILDING_DRAW[key] ?? worldDraw(actor), 0, 0]);
-    const t = BUILDING_TURRET[key];
-    if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
-    const anim = buildingAnim(key);
-    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
-  } else {
-    const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(actor);
-    [w, h] = d.body;
-    parts.push([d.body[2], 0, 0]);
-    if (d.turret) parts.push([d.turret[2], (w - d.turret[0]) / 2, (h - d.turret[1]) / 2]);
+  // A mission's own actor uses the art of its art key (engine rules_json `art`).
+  const sprites = actorSprites(actor.art ? { ...actor, id: actor.art } : actor);
+  if (!sprites.body) return;
+  const [w, h, body] = sprites.body;
+  // Each part is [draw, dx, dy]: turrets are drawn centred on the body,
+  // animated building layers (their first frame) where they belong.
+  const parts = [[body, 0, 0]];
+  const anim = actor.kind === 'building' ? buildingAnim(spriteKey(actor.art ?? actor.id)) : null;
+  if (sprites.turret) {
+    const [tw, th, draw] = sprites.second;
+    parts.push([draw, (w - tw) / 2, (h - th) / 2]);
+  } else if (anim) {
+    parts.push([(c, p) => anim.draw(c, p, 0), 0, 0]);
   }
   const scale = Math.min(canvas.width / w, canvas.height / h) * (actor.kind === 'building' ? 0.92 : 0.8);
   ctx.save();

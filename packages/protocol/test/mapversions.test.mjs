@@ -110,25 +110,91 @@ test('fixtures: every old file upgrades to exactly its expected map, every curre
   }
 });
 
-test('format 1 baseline: unversioned files keep their identity, and writing the version does not change it', async () => {
+test('format 1 baseline: unversioned and version 1 files upgrade to the same format 2 map; the old identity is still computable', async () => {
   const legacy = JSON.parse(read('./fixtures/maps/format1-legacy.webra-map.json'));
   const file = read('./fixtures/maps/format1-file.webra-map.json').trim();
   assert.equal(legacy.formatVersion, undefined, 'the legacy fixture is a map from before versions');
   const a = validateMap(legacy, { rules: ENGINE_RULES });
   const b = parseMap(file, { rules: ENGINE_RULES });
   assert.ok(a.ok && b.ok);
-  assert.equal(a.canonical, b.canonical);
-  assert.equal(a.upgrade, null, 'format 1 is the current format: no upgrade, no notice');
+  assert.equal(a.canonical, b.canonical, 'the same map, whoever wrote it');
+  assert.deepEqual(a.upgrade.notes, ['Added players ([]).', 'Added options ({}).', 'Added lockedOptions ([]).', 'Added tags ([]).']);
+  assert.equal(a.upgrade.message, MAP_UPGRADED_NOTICE);
   assert.equal(a.writtenBy, null);
   assert.equal(b.writtenBy, '0.9.0');
-  assert.ok(!a.canonical.includes('formatVersion') && !a.canonical.includes('gameVersion'), 'format 1 canonical form names neither');
+  assert.ok(a.canonical.startsWith('{"formatVersion":2,"format":2,'));
+  assert.ok(a.canonical.endsWith(',"players":[],"options":{},"lockedOptions":[],"tags":[]}'));
+  // The format 1 identity (stored rows, links, map aliases) is the canonical form of the file as it was.
+  const old = canonicalMapJson(legacy);
+  assert.ok(!old.includes('formatVersion') && !old.includes('players'), 'format 1 canonical form names neither');
+  assert.equal(sha(old), '25b442ef6c3c6fd41b193c2e0385ed99ed0daf77d61f92b492d2432ce0d10ed5', 'the hash maps of 0.9 had');
+  assert.notEqual(sha(a.canonical), sha(old));
   // The file form: version header first, then exactly the canonical body.
-  assert.equal(mapFileJson(a.map, { gameVersion: '0.9.0' }), file);
-  assert.ok(mapFileJson(a.map).startsWith(`{"formatVersion":1,"gameVersion":"${GAME_VERSION}","format":2,`));
+  assert.ok(mapFileJson(a.map).startsWith(`{"formatVersion":2,"gameVersion":"${GAME_VERSION}","format":2,`));
   assert.equal(JSON.stringify(JSON.parse(file)), file, 'compact JSON');
-  // Another release writing the same map: same identity.
+  // Another release writing the same map: same identity, no second upgrade.
   const other = parseMap(mapFileJson(a.map, { gameVersion: '7.1.0-beta.2' }));
+  assert.equal(other.upgrade, null);
   assert.equal(await mapHash(other.map), await mapHash(a.map));
+});
+
+test('format 2 game setup: what a file sets is kept, what it leaves out takes its default, nonsense is refused', () => {
+  const setup = parseMap(read('./fixtures/maps/format2-setup.webra-map.json'), { rules: ENGINE_RULES });
+  assert.ok(setup.ok, setup.errors.join('; '));
+  assert.equal(setup.upgrade, null);
+  assert.deepEqual(setup.map.lockedOptions, ['techLevel']);
+  assert.deepEqual(setup.map.players[1], { faction: 'russia', team: 2, color: 1, type: 'ai', difficulty: 'hard', bot: 'turtle', lock: ['type', 'color'] });
+  assert.ok(setup.canonical.includes('"options":{"crates":false,"startingCash":10000,"techLevel":"medium"}'), 'option keys sorted');
+  assert.ok(setup.canonical.includes('{"type":"E1","owner":0,"x":6,"y":6,"facing":256,"health":60,"stance":"defend","veterancy":2}'));
+  const base = JSON.parse(mapFileJson(setup.map));
+  // Left out: the defaults, the same map.
+  const short = { ...base, players: [{ faction: 'russia' }] };
+  const filled = validateMap(short);
+  assert.deepEqual(filled.map.players, [{ faction: 'russia', team: 0, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: [] }]);
+  const bare = { ...base };
+  for (const k of ['players', 'options', 'lockedOptions', 'tags']) delete bare[k];
+  assert.ok(validateMap(bare).canonical.endsWith(',"players":[],"options":{},"lockedOptions":[],"tags":[]}'));
+  const bad = (patch, re) => {
+    const r = validateMap({ ...base, ...patch });
+    assert.equal(r.ok, false, JSON.stringify(patch));
+    assert.match(r.errors.join('; '), re);
+  };
+  bad({ players: [{}, {}, {}] }, /players lists 3 slots; the map has 2 spawns/);
+  bad({ players: [{ faction: 'martians' }] }, /players\[0\]\.faction/);
+  bad({ players: [{ color: 3 }, { color: 3 }] }, /same colour/);
+  bad({ players: [{ lock: ['color'] }] }, /locked colour needs a colour/);
+  bad({ players: [{ type: 'closed', lock: ['type'] }] }, /at least two slots/);
+  // A map that can never start a game: nobody may play it, or nobody to fight.
+  bad({ players: [{ type: 'ai', lock: ['type'] }, { type: 'ai', lock: ['type'] }] }, /at least one slot a person can take/);
+  bad({ players: [{ team: 1, lock: ['team'] }, { type: 'ai', team: 1, lock: ['team'] }] }, /every slot that can play is locked to team 1: nobody to fight/);
+  for (const players of [
+    [{ type: 'ai' }, { type: 'ai', lock: ['type'] }],
+    [{ team: 0, lock: ['team'] }, { team: 0, lock: ['team'] }],
+    [{ team: 1, lock: ['team'] }, { team: 1 }],
+    [{ team: 1, lock: ['team'] }, { type: 'ai', team: 2, lock: ['team', 'type'] }],
+    [{ type: 'ai', team: 3, lock: ['type', 'team'] }],
+  ]) {
+    assert.ok(validateMap({ ...base, players }).ok, JSON.stringify(players));
+  }
+  // null is refused (as by the engine); leave a field out for its default.
+  for (const k of ['faction', 'team', 'color', 'type', 'difficulty', 'bot', 'lock']) bad({ players: [{ [k]: null }] }, new RegExp(`players\\[0\\]\\.${k} must not be null`));
+  for (const k of ['players', 'options', 'lockedOptions', 'tags']) bad({ [k]: null }, new RegExp(`${k} must not be null`));
+  bad({ actors: [{ type: 'E1', owner: 0, x: 6, y: 6, stance: null }] }, /stance/);
+  bad({ players: [{ lock: ['team', 'team'] }] }, /lists team twice/);
+  bad({ players: [{ extra: 1 }] }, /extra/);
+  bad({ options: { seed: 4 } }, /not an option a map can set/);
+  bad({ options: { startingCash: 1234 } }, /options.startingCash must be one of/);
+  bad({ options: { fog: 'no' } }, /options.fog must be one of/);
+  bad({ lockedOptions: ['fog'] }, /lockedOptions\[0\] must name an option the map sets/);
+  bad({ tags: ['Naval'] }, /tags\[0\]/);
+  bad({ tags: Array.from({ length: 9 }, (_, i) => `t${i}`) }, /at most 8/);
+  bad({ actors: [{ type: 'E1', owner: 0, x: 6, y: 6, health: 0 }] }, /health/);
+  bad({ actors: [{ type: 'E1', owner: 0, x: 6, y: 6, stance: 'berserk' }] }, /stance/);
+  bad({ actors: [{ type: 'E1', owner: 0, x: 6, y: 6, veterancy: 5 }] }, /veterancy/);
+  bad({ actors: [{ type: 'APC', owner: 0, x: 6, y: 6, cargo: ['E1 '] }] }, /cargo\[0\]/);
+  // Default actor state is left out of the canonical form.
+  const plain = validateMap({ ...base, actors: [{ type: 'E1', owner: 0, x: 6, y: 6, health: 100, veterancy: 0, cargo: [] }] });
+  assert.ok(plain.canonical.includes('{"type":"E1","owner":0,"x":6,"y":6,"facing":0}]'));
 });
 
 test('format version and game version are checked strictly', () => {
@@ -435,4 +501,37 @@ test('ids from the file are cut short and stripped of control characters in mess
     assert.doesNotMatch(p.message, /[\x00-\x1f]/);
   }
   assert.match(ctx.problems[0].message, /^rules\.actors\.XY{39}: XY{39} was removed in format 2/);
+});
+
+test('a format 1 file with format 2 fields is not upgraded silently: the author keeps or drops them', () => {
+  const legacy = JSON.parse(read('./fixtures/maps/format1-legacy.webra-map.json'));
+  const odd = { ...legacy, formatVersion: 1, players: [{ faction: 'england', lock: ['faction'] }], tags: ['naval'] };
+  odd.actors = [...(legacy.actors ?? []), { type: 'E1', owner: 0, x: 6, y: 6, health: 50 }];
+  const up = upgradeMap(odd);
+  assert.equal(up.status, 'incompatible');
+  assert.deepEqual(
+    up.problems.map((p) => [p.code, p.path]),
+    [
+      ['field-from-later-format', ['players']],
+      ['field-from-later-format', ['tags']],
+      ['field-from-later-format', ['actors']],
+    ],
+  );
+  assert.match(up.problems[0].message, /players belongs to map format 2, but the map says it is format 1/);
+  assert.match(up.problems[2].message, /1 actor carry health/);
+  assert.equal(parseMap(JSON.stringify(odd)).ok, false, 'lobbies and the server refuse it');
+  // Keeping: the map as format 2 with what it carries.
+  const kept = up.problems.reduce((m, p) => applyMapFix(m, p.fixes[0].action), up.map);
+  const keptOk = validateMap(kept);
+  assert.ok(keptOk.ok, keptOk.errors.join('; '));
+  assert.deepEqual(keptOk.map.tags, ['naval']);
+  assert.equal(keptOk.map.actors.at(-1).health, 50);
+  // Dropping: the plain upgrade of the format 1 map.
+  const dropped = up.problems.reduce((m, p) => applyMapFix(m, p.fixes[1].action), up.map);
+  const plain = { ...legacy };
+  assert.equal(validateMap(dropped).canonical, validateMap({ ...plain, actors: [...(legacy.actors ?? []), { type: 'E1', owner: 0, x: 6, y: 6 }] }).canonical);
+  assert.throws(() => applyMapFix(up.map, { kind: 'dropActorFields', fields: ['type'] }), /invalid map fix/);
+  // The map editor opens it and lists the same problems.
+  const salvaged = salvageMap(odd);
+  assert.ok(salvaged.problems.some((p) => p.code === 'field-from-later-format'));
 });

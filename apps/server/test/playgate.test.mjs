@@ -495,3 +495,90 @@ test('wrangler.jsonc runs the Worker first for /play and /play/*', () => {
   assert.deepEqual(config.assets.run_worker_first, ['/api/*', '/play', '/play/*']);
   assert.equal(config.assets.binding, 'ASSETS');
 });
+
+// ---- The map editor through the gate -------------------------------------------------------
+
+const GAME_DIR = new URL('../../game/', import.meta.url);
+const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', wgsl: 'text/plain; charset=utf-8', wasm: 'application/wasm', json: 'application/json' };
+
+/**
+ * Workers Static Assets over apps/game as dist/play/ has it: an index.html is
+ * served at its directory's URL with a trailing slash, the other spellings of
+ * it are redirected there (307, html_handling auto-trailing-slash), files by
+ * their path, anything else is a 404.
+ */
+function gameAssets(env) {
+  env.assetRequests = [];
+  env.ASSETS = {
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      env.assetRequests.push(path);
+      const rel = path.replace(/^\/play\/?/, '');
+      const file = (r) => {
+        try {
+          return readFileSync(new URL(r, GAME_DIR));
+        } catch {
+          return null;
+        }
+      };
+      if (rel === '' || rel.endsWith('/')) {
+        const body = file(`${rel}index.html`);
+        return body ? new Response(body, { headers: { 'content-type': TYPES.html } }) : new Response('not found', { status: 404 });
+      }
+      if (rel.endsWith('/index.html') || rel === 'index.html' || file(`${rel}/index.html`)) {
+        const dir = rel.endsWith('index.html') ? rel.slice(0, -'index.html'.length) : `${rel}/`;
+        return new Response(null, { status: 307, headers: { location: `/play/${dir}` } });
+      }
+      const body = file(rel);
+      if (!body) return new Response('not found', { status: 404 });
+      return new Response(body, { headers: { 'content-type': TYPES[rel.split('.').pop()] ?? 'application/octet-stream' } });
+    },
+  };
+  return env;
+}
+
+test('the map editor: every spelling of its URL ends on /play/editor/, and it and every file it loads come through the gate', async () => {
+  const env = gameAssets(makeEnv({ email: false }));
+  const b = await activeUser(env, 'Map Maker');
+  // The modules, shaders and engine the page loads: its static imports, followed from editor.js.
+  const graph = new Set();
+  const visit = (rel) => {
+    if (graph.has(rel)) return;
+    graph.add(rel);
+    if (!rel.endsWith('.js')) return;
+    const src = readFileSync(new URL(rel, GAME_DIR), 'utf8');
+    for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)[^'"]*?from\s+'(\.[^']+)'/g)) visit(new URL(m[1], new URL(rel, 'https://x/play/')).pathname.slice('/play/'.length));
+  };
+  visit('editor/editor.js');
+  for (const s of ['common', 'terrain', 'sprite', 'fog', 'rect', 'line', 'weather', 'sky', 'heat']) graph.add(`shaders/${s}.wgsl`);
+  for (const spelling of ['/play/editor', '/play/editor/', '/play/editor/index.html', '/play/editor?map=abc', '/play/editor/?map=abc']) {
+    let path = spelling;
+    let r = await b.get(path, NAV);
+    for (let hops = 0; r.status === 307 && hops < 2; hops++) {
+      assertSecurityHeaders(r.res);
+      path = r.res.headers.get('location') + (spelling.includes('?') && !r.res.headers.get('location').includes('?') ? spelling.slice(spelling.indexOf('?')) : '');
+      r = await b.get(path, NAV);
+    }
+    assert.equal(r.status, 200, `${spelling} -> ${path}`);
+    assert.equal(new URL(path, ORIGIN).pathname, '/play/editor/', `${spelling} ends on the canonical URL`);
+    assertSecurityHeaders(r.res);
+    const html = r.body;
+    assert.match(html, /<title>WebRA Map Editor<\/title>/);
+    // Everything the page names, resolved the way the browser does (its <base>), comes through the gate.
+    const base = new URL(html.match(/<base href="([^"]+)"/)[1], new URL(path, ORIGIN));
+    const refs = [...html.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => new URL(m[1], base).pathname).filter((p) => p !== base.pathname);
+    for (const p of new Set([...refs, ...[...graph].map((g) => `/play/${g}`)])) {
+      if (p === '/play/') continue; // the game itself (the brand link)
+      const asset = await b.get(p, SUB);
+      assert.equal(asset.status, 200, `${spelling}: ${p} ${asset.status}`);
+      assert.equal(asset.res.headers.get('content-type'), TYPES[p.split('.').pop()], p);
+      assert.equal(asset.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+      assertSecurityHeaders(asset.res);
+      if (!p.endsWith('.wasm')) assert.equal(asset.body, readFileSync(new URL(p.slice('/play/'.length), GAME_DIR), 'utf8'), p);
+    }
+  }
+  // Signed out: the page goes to sign in and back, its files are refused.
+  const anon = new Browser(env);
+  await expectRedirect(anon, '/play/editor/');
+  for (const p of ['/play/editor/editor.js', '/play/editor/editor.css', '/play/css/theme.css', '/play/js/gameart.js']) await expectRefused(anon, p, 401, 'unauthenticated');
+});

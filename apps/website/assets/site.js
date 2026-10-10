@@ -601,7 +601,11 @@ async function initMaps() {
     if (!maps) return;
     const q = search.value.trim().toLowerCase();
     const shown = maps.filter(
-      (m) => !q || m.name.toLowerCase().includes(q) || String(m.author ?? '').toLowerCase().includes(q),
+      (m) =>
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        String(m.author ?? '').toLowerCase().includes(q) ||
+        (Array.isArray(m.tags) && m.tags.some((t) => String(t).includes(q))),
     );
     const key = sort.value;
     shown.sort((a, b) => {
@@ -663,9 +667,16 @@ function mapCard(m) {
   if (Number.isFinite(m.players)) facts.append(fact('Players', String(m.players)));
   if (Number.isFinite(m.downloads)) facts.append(fact('Downloads', numberFormat.format(m.downloads)));
   if (added) facts.append(fact('Added', added));
+  // The thumbnail is drawn by the server from the map data (never from art); only same-site API paths.
+  const thumb =
+    typeof m.thumbnail === 'string' && m.thumbnail.startsWith('/api/maps/')
+      ? el('img', { class: 'map-thumb', src: m.thumbnail, alt: `Overview of ${m.name}`, loading: 'lazy', decoding: 'async', width: m.width, height: m.height })
+      : null;
+  const tags = Array.isArray(m.tags) && m.tags.length ? el('ul', { class: 'tags', 'aria-label': 'Tags' }, ...m.tags.filter((t) => typeof t === 'string').map((t) => el('li', { text: t }))) : null;
   return el(
     'li',
     { class: 'card panel', 'aria-labelledby': headingId },
+    thumb,
     el(
       'div',
       { class: 'card-head' },
@@ -678,6 +689,7 @@ function mapCard(m) {
       m.modded ? el('div', { class: 'badges' }, moddedBadge()) : null,
     ),
     facts,
+    tags,
     el(
       'div',
       { class: 'card-actions' },

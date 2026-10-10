@@ -75,8 +75,9 @@ export class Minimap {
   /**
    * @param canvas minimap canvas element
    * @param onJump (worldX, worldY) => void, centres the main view
+   * @param onZoom (factor, worldX, worldY) => void, zooms the main view (mouse wheel over the minimap)
    */
-  constructor(canvas, onJump) {
+  constructor(canvas, onJump, onZoom = null) {
     this.canvas = canvas;
     this.onJump = onJump;
     this.base = document.createElement('canvas');
@@ -95,6 +96,16 @@ export class Minimap {
     });
     canvas.addEventListener('pointermove', (e) => dragging && jump(e));
     canvas.addEventListener('pointerup', () => (dragging = false));
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (!onZoom) return;
+        e.preventDefault();
+        const p = this.toWorld(e);
+        if (p) onZoom(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), p.x, p.y);
+      },
+      { passive: false },
+    );
   }
 
   /** Map rectangle inside the canvas (letterboxed, centred). */

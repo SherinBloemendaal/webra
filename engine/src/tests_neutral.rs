@@ -25,7 +25,7 @@ fn run(w: &mut World, ticks: u32) {
 }
 
 fn actor(t: &str, x: i32, y: i32) -> MapActor {
-    MapActor { ty: t.into(), owner: -1, x, y, facing: 0 }
+    MapActor::new(t, -1, x, y, 0)
 }
 
 /// Write terrain letter rows (bridge templates) with their top-left at (x, y).

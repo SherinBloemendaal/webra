@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { MAP_FORMAT_VERSION } from '../js/protocol.js';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 
@@ -18,6 +19,7 @@ function coastMap(actors) {
   const terrain = new Uint8Array(SIZE * SIZE);
   for (let y = 0; y < SIZE; y++) for (let x = SHORE; x < SIZE; x++) terrain[y * SIZE + x] = 3;
   return JSON.stringify({
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Coast',
     author: 'Tests',
