@@ -577,11 +577,23 @@ versions"). What changed for validation:
   is a programming error the tests refuse, never a file's fault.
 - **Messages carry no raw input.** The compatibility messages name only the
   format version and the release (`gameVersion`, already restricted to
-  version characters); problem lists name actor ids and rule keys only when
-  they matched the alias tables, other text through the protocol's excerpts,
-  and the map editor shows all of it as text nodes.
+  version characters). Problem lists and notes name actor ids, rule ids,
+  field names and values from the file only through the protocol's
+  `excerpt` (at most 40 characters, control and non-ASCII characters
+  replaced), and the map editor shows all of it as text nodes.
+- **No prototype pollution.** `__proto__`, `constructor` and `prototype`
+  are refused anywhere in a map file before any migration runs, as rule ids
+  and field names by the validator, and as segments of every key path the
+  migrations and quick fixes use; paths only descend own properties and
+  values are set as own properties. Quick-fix actions are checked like input
+  (kind, paths, actor matches, cells, values) before they apply.
 - **Stored maps.** Rows stored before a format change are rewritten only
-  through the same `prepareMap` an upload uses. Aliases (`map_aliases`) map
+  through the same `prepareMap` an upload uses. One row can never take the
+  map list or the daily job down: a failure other than "not compatible" is
+  logged and the row stays as it was for a later try, and the list serves
+  the current rows even when the upgrade pass fails. Writes apply only to a
+  row that is still stale (no double counting under concurrent upgrades;
+  a hash clash is retried once). Aliases (`map_aliases`) map
   an old hash or id to the row that holds the map now; they never widen who
   can read a map: `GET /api/maps/:id` and picking by id still need a listed
   row, unlisted maps are still served only through their sessions. A row

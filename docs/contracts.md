@@ -241,19 +241,25 @@ reader shares (`packages/protocol/src/mapversions.js`).
   version. Online sessions only ever pair identical builds, so they share one
   migration chain.
 - Stored maps (D1, migration `0006_map_versions.sql`): `maps.format_version`,
-  `maps.upgrade_error`, `map_aliases(old_hash, old_id, hash)`. A row of an
-  older format is upgraded the first time it is read (the community list, by
-  25 rows per request, leaving out the rest until then; `GET /api/maps/:id`;
-  a host picking it; a session download) and by the daily job (200 a day):
+  `maps.upgrade_error`, `maps.upgrade_tried`, `map_aliases(old_hash, old_id,
+  hash)`. A row of an older format is upgraded the first time it is read (the
+  community list, 25 rows per request, newest first like the list, leaving
+  out the rest until then; `GET /api/maps/:id`; a host picking it; a session
+  download) and by the daily job (200 a day, oldest first):
   validated like an upload, then json, hash and summary are rewritten in
   place (same id) and the old hash goes to `map_aliases`, so links, lobbies
   and old hashes still find the map (aliases of an alias follow it). When
   the upgraded map is already stored, the two rows merge (listed if either
-  was, downloads added up) and the old id becomes an alias too. A row that
-  cannot be upgraded keeps its text and gets `upgrade_error`: it leaves the
-  list, a lobby refuses it with the message, and `GET /api/maps/:id` still
-  serves it as stored, so clients explain why and the map editor can repair
-  it. Aliases go with their map (daily job).
+  was, downloads added up, the listed row's uploader kept) and the old id
+  becomes an alias too. A row that cannot be upgraded keeps its text and gets
+  `upgrade_error` and `upgrade_tried` (`<format>/<release>`; a later format or
+  release tries again): it leaves the list, a lobby refuses it with the
+  message, and `GET /api/maps/:id` still serves it as stored, so clients
+  explain why and the map editor can repair it. Any other failure (the
+  engine, the database) leaves the row as it was for a later try: the list
+  leaves it out, a lobby refuses it for now, downloads serve it as stored.
+  Upgrades write only rows that are still stale, so concurrent requests never
+  count anything twice. Aliases go with their map (daily job).
 - Online saves and replays keep the map as played (validated with
   `upgrade: false`): they are pinned to the engine build that made them
   anyway. The local map library (`apps/game/js/maplibrary.js`) upgrades its
@@ -282,7 +288,8 @@ the canonical form (as `biome` and `gems` were added). To add version N + 1:
    pre-placed actors and `rules.actors`), `remapTerrain` (`{ old: new }`, or
    `{ old: { fallback, choices, reason } }` when no single code fits),
    `moveField`, `addField` (a new required field with its default),
-   `renameRuleFields` and `renameValues`. Anything they cannot decide is a
+   `renameRuleFields` and `renameValues` (key paths never use `__proto__`,
+  `constructor` or `prototype`). Anything they cannot decide is a
    `ctx.problem` with a location and quick fixes, never a guess. A migration
    is pure and deterministic (no clock, randomness or engine) and is never
    changed after a release has shipped it.
