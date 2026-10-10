@@ -92,10 +92,6 @@ pub(crate) mod harness {
     pub fn objectives(w: &World) -> Vec<(String, crate::mission::ObjectiveState)> {
         w.mission().unwrap().players[0].objectives.iter().map(|o| (o.description.clone(), o.state)).collect()
     }
-
-    pub fn named(w: &World, name: &str) -> Option<usize> {
-        w.mission().unwrap().named_actor(w, name)
-    }
 }
 
 /// allies-01 with scripted orders: Tanya and the jeeps clear the Soviet
@@ -151,7 +147,6 @@ fn allies_01_can_be_won_with_orders() {
 #[test]
 fn soviet_01_can_be_won_with_orders() {
     use crate::world::Order;
-    use harness::*;
     let mut w = start("soviet-01", Some("normal"));
     let m = w.mission().unwrap();
     let foes = [m.player_slot("France").unwrap(), m.player_slot("Germany").unwrap()];

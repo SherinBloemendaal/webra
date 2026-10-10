@@ -317,7 +317,6 @@ pub struct Mission {
     pub(crate) low_power_quiet: BTreeSet<u8>,
     /// Granted actor conditions: handle to (token, condition, end tick or 0).
     pub(crate) conditions: BTreeMap<u32, Vec<(i32, String, u32)>>,
-    pub(crate) budget: i64,
 }
 
 impl Mission {
@@ -337,6 +336,29 @@ impl Mission {
             self.handle_of.insert(r, h);
         }
         h
+    }
+
+    pub fn title(&self) -> &str {
+        &self.data.title
+    }
+
+    /// The mission text (OpenRA's MISSION_TEXT label) and its colour.
+    pub fn mission_text(&self) -> Option<(&str, &str)> {
+        self.mission_text.as_ref().map(|(t, c)| (t.as_str(), c.as_str()))
+    }
+
+    pub fn low_power_quiet(&self, p: u8) -> bool {
+        self.low_power_quiet.contains(&p)
+    }
+
+    /// The script camera (engine world position), if a script set it.
+    pub fn camera(&self) -> Option<(i32, i32)> {
+        self.camera
+    }
+
+    /// Drain the presentation events.
+    pub fn take_ui(&mut self) -> Vec<UiEvent> {
+        std::mem::take(&mut self.ui)
     }
 
     /// Whether the script has activities queued for engine actor `i`.
@@ -511,12 +533,6 @@ pub(crate) fn parse_color(s: &str) -> Option<u32> {
 pub(crate) fn error_text(e: &LuaError) -> String {
     e.report()
 }
-
-/// Players the mission marks discovered (bits), for `OnDiscovered`.
-pub(crate) type PlayerBits = u32;
-
-/// Sorted, deduplicated set of handles (deterministic groups).
-pub(crate) type HandleSet = BTreeSet<u32>;
 
 #[cfg(test)]
 impl World {

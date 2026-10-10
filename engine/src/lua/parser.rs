@@ -366,7 +366,7 @@ impl Parser {
                 if self.fs().loops == 0 {
                     return Err(self.err_near("no loop to break"));
                 }
-                Ok(Stat::Break(line))
+                Ok(Stat::Break)
             }
             _ => self.expr_stat(line),
         }
@@ -789,7 +789,7 @@ fn fix_stat(s: &mut Stat, cap: &[bool]) {
         }
         Stat::LocalFunction(l, _, _) => fix_local(l, cap),
         Stat::Return(exprs, _) => exprs.iter_mut().for_each(|e| fix_expr(e, cap)),
-        Stat::Break(_) => {}
+        Stat::Break => {}
     }
 }
 
@@ -812,7 +812,7 @@ fn fix_expr(e: &mut Expr, cap: &[bool]) {
     match e {
         Expr::Local(slot, id) => {
             if cap[*id as usize] {
-                *e = Expr::Cell(*slot, *id);
+                *e = Expr::Cell(*slot);
             }
         }
         Expr::Index(o, k, _) => {

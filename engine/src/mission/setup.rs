@@ -4,7 +4,7 @@
 
 use super::data::MissionData;
 use super::{api, HState, Limbo, Mission, MissionPlayer, MissionResult, WinState, LOAD_BUDGET};
-use crate::lua::{Lua, Value};
+use crate::lua::Lua;
 use crate::math::{CELL, HALF_CELL};
 use crate::rules::{Kind, Rules, Stance, TECH_LEVELS};
 use crate::world::{AiDifficulty, GameOptions, World};
@@ -167,7 +167,6 @@ impl World {
             low_power_quiet: Default::default(),
             player_actors: BTreeMap::new(),
             conditions: BTreeMap::new(),
-            budget: LOAD_BUDGET,
         };
         for id in data.options.keys() {
             if let Some(v) = data.option_value(id, &chosen.options) {
@@ -328,9 +327,4 @@ impl World {
     pub(crate) fn mission_subcell_offset(s: i32) -> (i32, i32) {
         SUBCELL_OFFSETS.get(s as usize).copied().unwrap_or((0, 0))
     }
-}
-
-/// An actor's handle as a script value (setup and api).
-pub(crate) fn handle_value(h: u32) -> Value {
-    api::actor_value(h)
 }

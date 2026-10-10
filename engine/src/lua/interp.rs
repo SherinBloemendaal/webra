@@ -318,7 +318,7 @@ impl Lua {
                 };
                 return Ok(Flow::Return(vals));
             }
-            Stat::Break(_) => return Ok(Flow::Break),
+            Stat::Break => return Ok(Flow::Break),
         }
         Ok(Flow::Normal)
     }
@@ -427,7 +427,7 @@ impl Lua {
             Expr::Vararg => frame.varargs.first().cloned().unwrap_or(Value::Nil),
             Expr::Func(proto) => self.closure(frame, proto)?,
             Expr::Local(slot, _) => frame.slots[*slot as usize].clone(),
-            Expr::Cell(slot, _) => match frame.slots[*slot as usize] {
+            Expr::Cell(slot) => match frame.slots[*slot as usize] {
                 Value::Cell(c) => self.heap.cells.get(c).clone(),
                 _ => unreachable!("captured local without a cell"),
             },

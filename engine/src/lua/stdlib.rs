@@ -167,13 +167,6 @@ impl Args<'_> {
         self.v.get(i).and_then(Value::to_num).ok_or_else(|| self.expected(i, "number"))
     }
 
-    pub fn opt_num(&self, i: usize, default: f64) -> Result<f64, LuaError> {
-        match self.v.get(i) {
-            None | Some(Value::Nil) => Ok(default),
-            Some(_) => self.num(i),
-        }
-    }
-
     /// An integer argument (truncated toward zero, as lua_tointeger does).
     pub fn int(&self, i: usize) -> Result<i64, LuaError> {
         let n = self.num(i)?;

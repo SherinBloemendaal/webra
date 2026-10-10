@@ -24,6 +24,7 @@ mod dog;
 pub mod doors;
 pub mod flowfield;
 pub mod fx;
+mod game_mission;
 pub mod gamerules;
 mod helicopter;
 pub mod husks;
@@ -1747,7 +1748,7 @@ fn parse_biome_text(s: &str) -> Result<Option<weather::Biome>, String> {
     weather::Biome::from_name(s).map(Some).ok_or_else(|| "biome must be random, temperate, snow or desert".to_string())
 }
 
-fn preview_rgba(m: &map::Map, biome: weather::Biome) -> Vec<u8> {
+pub(crate) fn preview_rgba(m: &map::Map, biome: weather::Biome) -> Vec<u8> {
     let mut out = Vec::with_capacity(m.cells() * 4);
     for i in 0..m.cells() {
         let rgb = if m.gems[i] > 0 {

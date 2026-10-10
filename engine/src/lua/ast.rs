@@ -53,7 +53,7 @@ pub enum Stat {
     GenFor { vars: Vec<Local>, exprs: Vec<Expr>, body: Block, line: u32 },
     LocalFunction(Local, Arc<FuncProto>, u32),
     Return(Vec<Expr>, u32),
-    Break(u32),
+    Break,
 }
 
 #[derive(Debug)]
@@ -102,7 +102,7 @@ pub enum Expr {
     /// A plain local in its frame slot.
     Local(u16, u32),
     /// A captured local: the frame slot holds its cell.
-    Cell(u16, u32),
+    Cell(u16),
     Upval(u16, LStr),
     Global(LStr),
     Index(Box<Expr>, Box<Expr>, u32),
