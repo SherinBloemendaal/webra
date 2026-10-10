@@ -33,6 +33,16 @@ const ART_GEMS: u32 = 4u;
 // clock like OpenRA's RotationPaletteEffect (0.25 steps a tick, 25 ticks a
 // second).
 const ART_WATER_ROTATION: u32 = 8u;
+// Smudges (engine/src/smudges.rs): the terrain texture's alpha is 255 or
+// crater << 6 | variant << 3 | depth. Tile terrain with the original smudge
+// tiles (bit 16, js/content/terrain.js) draws tile SMUDGE_TILE_BASE +
+// (crater * SMUDGE_VARIANTS + variant) * SMUDGE_DEPTHS + depth; otherwise
+// they are drawn here, scorch marks and craters in WebRA's style.
+const ART_SMUDGES: u32 = 16u;
+const SMUDGE_TILE_BASE: u32 = 960u;
+const SMUDGE_VARIANTS: u32 = 6u;
+const SMUDGE_DEPTHS: u32 = 5u;
+const NO_SMUDGE: u32 = 255u;
 const WATER_ALPHA: u32 = 248u;
 const WATER_COLORS: u32 = 7u;
 const WATER_STEPS_PER_SECOND: f32 = 6.25;
@@ -89,6 +99,34 @@ fn water_color(k: u32) -> vec3f {
     return textureLoad(atlas, vec2i(i32(index), dims.y - 1), 0).rgb;
 }
 
+/// The smudge byte of cell `c` (NO_SMUDGE when it has none).
+fn smudge_of(c: vec2i) -> u32 {
+    return u32(textureLoad(terrain_tex, c, 0).a * 255.0 + 0.5);
+}
+
+/// WebRA's smudges: a soot blotch (scorch) or a dark pit with a pale rim
+/// (crater), bigger and darker with every hit; the variant shifts the shape.
+fn smudge_color(col: vec3f, s: u32, c: vec2i, local: vec2f) -> vec3f {
+    let crater = ((s >> 6u) & 1u) == 1u;
+    let variant = f32((s >> 3u) & 7u);
+    let depth = f32(s & 7u);
+    let centre = vec2f(0.5) + (vec2f(hash2(vec2f(c) + variant), hash2(vec2f(c) + variant + 7.3)) - 0.5) * 0.18;
+    let wobble = (vnoise((local + vec2f(c)) * 6.0 + variant * 3.1) - 0.5) * 0.12;
+    let d = length(local - centre) + wobble;
+    let r = 0.2 + 0.035 * depth;
+    if (crater) {
+        if (d < r) {
+            return mix(col, vec3f(0.12, 0.10, 0.08), 0.55 + 0.05 * depth);
+        }
+        if (d < r + 0.07) {
+            return mix(col, vec3f(0.55, 0.5, 0.42), 0.35);
+        }
+        return col;
+    }
+    let soot = (1.0 - smoothstep(r * 0.6, r + 0.12, d)) * (0.6 + 0.05 * depth);
+    return mix(col, vec3f(0.08, 0.07, 0.06), soot);
+}
+
 /// Tile terrain (original graphics, texture packs): the tiles as they are,
 /// water rotation (original) or shimmer (packs), and ore and gems from their
 /// overlay tiles.
@@ -120,6 +158,18 @@ fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
             col = mix(col, o.rgb, o.a);
         } else {
             col = gem_color(col, c, local, res.b);
+        }
+    }
+    let s = smudge_of(c);
+    if (s != NO_SMUDGE) {
+        if ((flags & ART_SMUDGES) != 0u) {
+            let kind = (s >> 6u) & 1u;
+            let variant = min((s >> 3u) & 7u, SMUDGE_VARIANTS - 1u);
+            let depth = min(s & 7u, SMUDGE_DEPTHS - 1u);
+            let o = tile_px(SMUDGE_TILE_BASE + (kind * SMUDGE_VARIANTS + variant) * SMUDGE_DEPTHS + depth, local);
+            col = mix(col, o.rgb, o.a);
+        } else {
+            col = smudge_color(col, s, c, local);
         }
     }
     return vec4f(col, 1.0);
@@ -279,6 +329,11 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
     }
     if (res.b > 0.0) {
         col = gem_color(col, c, local, res.b);
+    }
+    // Scorch marks and craters (engine/src/smudges.rs).
+    let smudge = smudge_of(c);
+    if (smudge != NO_SMUDGE) {
+        col = smudge_color(col, smudge, c, local);
     }
     // Rain and thunderstorms wet the ground: darker, a little more saturated.
     let weather = u32(g.env.y + 0.5);

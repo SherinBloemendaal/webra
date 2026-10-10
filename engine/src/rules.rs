@@ -13,6 +13,8 @@ struct RawRules {
     actors: Vec<RawActor>,
     weapons: Vec<RawWeapon>,
     locomotors: Vec<RawLocomotor>,
+    /// World actor rules of the lobby options (rules_options.rs).
+    world: crate::rules_options::RawWorldRules,
 }
 
 #[derive(Deserialize, Clone)]
@@ -40,6 +42,9 @@ struct RawActor {
     cost: i32,
     build_ticks: i32,
     palette_order: i32,
+    /// OpenRA Buildable.BuildLimit (0: no limit).
+    #[serde(default)]
+    build_limit: i32,
     prerequisites: Vec<String>,
     build_at: String,
     hp: i32,
@@ -60,7 +65,6 @@ struct RawActor {
     experience: Option<ExperienceInfo>,
     gives_experience: Option<GivesExperienceInfo>,
     take_cover: Option<RawTakeCover>,
-    build_limit: i32,
     producible_level: Option<ProducibleLevel>,
     fire_delays: Vec<i32>,
     targets_allies: bool,
@@ -69,6 +73,9 @@ struct RawActor {
     disguisable: bool,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
+    /// Lobby options and leftovers (rules_options.rs).
+    #[serde(flatten)]
+    options: crate::rules_options::RawActorOptions,
 }
 
 /// OpenRA `ProducibleWithLevel`: produced with `levels` veterancy levels while
@@ -148,6 +155,8 @@ pub struct GivesExperienceInfo {
     pub experience: i32,
     /// ActorExperienceModifier: percentage of the value the killing actor gains.
     pub actor_modifier: i32,
+    /// PlayerExperienceModifier: percentage of the value the killing player gains (gamerules.rs).
+    pub player_modifier: i32,
 }
 
 #[derive(Deserialize)]
@@ -185,6 +194,8 @@ pub struct TakeCoverInfo {
 pub struct Abilities {
     pub cargo: Option<CargoInfo>,
     pub minelayer: Option<MinelayerInfo>,
+    /// OpenRA `EjectOnDeath` (aircraft): a pilot may bail out when it is destroyed.
+    pub eject_on_death: Option<EjectOnDeathInfo>,
     pub jams_missiles: Option<RangeInfo>,
     pub creates_shroud: Option<RangeInfo>,
     pub cloak: Option<CloakInfo>,
@@ -268,17 +279,6 @@ pub struct CapturableInfo {
     pub types: Vec<String>,
     /// CancelActivity: the captured actor stops what it was doing.
     pub cancel_activity: bool,
-    /// TransformOnCapture (husks): what it turns into for its captor.
-    #[serde(default)]
-    pub transform: Option<TransformInto>,
-}
-
-/// OpenRA TransformOnCapture and InfiltrateForTransform: the actor id it
-/// turns into, and ForceHealthPercentage (0: the new actor's full health).
-#[derive(Deserialize, Clone, Debug)]
-pub struct TransformInto {
-    pub into: String,
-    pub health: i32,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -374,6 +374,19 @@ pub struct CargoInfo {
     pub after_unload_delay: i32,
     pub eject_on_sell: bool,
     pub eject_on_death: bool,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct EjectOnDeathInfo {
+    /// Actor id of the pilot (PilotActor, an infantry type).
+    pub pilot: String,
+    /// Percent chance per death (SuccessRate).
+    pub success_rate: i32,
+    /// Ejects while the actor is in the air (EjectInAir) / at ground level (EjectOnGround).
+    pub in_air: bool,
+    pub on_ground: bool,
+    /// The pilot also comes out over cells it cannot stand on (AllowUnsuitableCell).
+    pub allow_unsuitable_cell: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -567,6 +580,8 @@ pub struct RepairableInfo {
     pub interval: i32,
     pub step: i32,
     pub bonuses: Vec<i32>,
+    /// PlayerExperience an allied repairer gains when the repair completes (gamerules.rs).
+    pub player_experience: i32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -647,6 +662,7 @@ struct RawWeapon {
     valid: u32,
     invalid: u32,
     warheads: Vec<RawWarhead>,
+    effects: Vec<crate::rules_options::RawWarheadEffect>,
 }
 
 #[derive(Deserialize)]
@@ -692,10 +708,12 @@ pub const TARGET_SUBMARINE: u32 = 128;
 /// Bare land (OpenRA target type `Ground`): force-fire on the ground. No actor
 /// carries it; a water cell is a `TARGET_WATER` ground target.
 pub const TARGET_GROUND: u32 = 256;
+/// Husks (OpenRA target type `Husk`, plus GroundActor; see `class_accepts`).
+pub const TARGET_HUSK: u32 = 512;
 /// Damaged infantry (OpenRA Targetable@HEAL): the Medic's Heal weapon.
-pub const TARGET_HEAL: u32 = 512;
+pub const TARGET_HEAL: u32 = 2048;
 /// Damaged vehicles, ships and landed aircraft (Targetable@REPAIR): the Mechanic's Repair weapon.
-pub const TARGET_REPAIR: u32 = 1024;
+pub const TARGET_REPAIR: u32 = 4096;
 
 /// OpenRA PlayerRelationship bits (gen_rules.py RELATIONSHIPS).
 pub const RELATION_ALLY: u32 = 1;
@@ -739,6 +757,11 @@ pub enum Kind {
     Aircraft,
     /// Mines laid by a Minelayer: immobile, cloaked, not units.
     Mine,
+    /// A vehicle's wreck (husks.rs): blocks its cell and burns down; only
+    /// force-fire targets it. Not a unit.
+    Husk,
+    /// A crate (crates.rs): picked up by driving over it. Not a unit, never a target.
+    Crate,
     /// Player-level proxies (OpenRA InfiltrateForSupportPower.Proxy): never on
     /// the map, kept per player (`Player::proxies`, infantry.rs).
     Proxy,
@@ -753,6 +776,8 @@ impl Kind {
             Kind::Ship => TARGET_WATER,
             Kind::Aircraft => TARGET_AIR,
             Kind::Mine => TARGET_MINE,
+            Kind::Husk => TARGET_HUSK,
+            Kind::Crate => 0,
             Kind::Proxy => 0,
         }
     }
@@ -762,7 +787,12 @@ impl Kind {
 /// Mines carry the OpenRA target types `GroundActor, Mine`; the generator
 /// folds GroundActor into infantry|vehicle|structure, so a mask with all three
 /// accepts mines.
-fn class_accepts(valid: u32, invalid: u32, c: u32) -> bool {
+pub(crate) fn class_accepts(valid: u32, invalid: u32, c: u32) -> bool {
+    // Husks are `GroundActor, Husk` in OpenRA (no Vehicle): the same rule.
+    if c & TARGET_HUSK != 0 {
+        let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
+        return (valid & TARGET_HUSK != 0 || valid & ground == ground) && invalid & TARGET_HUSK == 0;
+    }
     if c & TARGET_MINE != 0 {
         let ground = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE;
         return (valid & TARGET_MINE != 0 || valid & ground == ground) && invalid & TARGET_MINE == 0;
@@ -896,6 +926,8 @@ pub struct ActorInfo {
     pub cost: i32,
     pub build_ticks: i32,
     pub palette_order: i32,
+    /// OpenRA Buildable.BuildLimit: at most this many owned and queued (0: no limit).
+    pub build_limit: i32,
     pub prerequisites: Vec<Prereq>,
     pub build_at: String,
     pub hp: i32,
@@ -926,8 +958,6 @@ pub struct ActorInfo {
     pub gives_experience: Option<GivesExperienceInfo>,
     /// Prone infantry (veterancy.rs): TakeCover.
     pub take_cover: Option<TakeCoverInfo>,
-    /// Buildable.BuildLimit: most owned plus queued at once, 0 for no limit.
-    pub build_limit: i32,
     /// ProducibleWithLevel (infantry.rs).
     pub producible_level: Option<ProducibleLevel>,
     /// Armament.FireDelay per weapon slot (ticks from firing to the shot).
@@ -944,6 +974,8 @@ pub struct ActorInfo {
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
     pub transforms_into: Option<usize>,
+    /// Lobby options and leftovers (rules_options.rs).
+    pub options: crate::rules_options::ActorOptions,
 }
 
 impl ActorInfo {
@@ -1054,6 +1086,8 @@ pub struct WeaponInfo {
     pub valid: u32,
     pub invalid: u32,
     pub warheads: Vec<Warhead>,
+    /// Warheads that change no health (smudges.rs), in YAML order.
+    pub effects: Vec<crate::rules_options::WarheadEffect>,
 }
 
 impl WeaponInfo {
@@ -1096,6 +1130,10 @@ pub struct Rules {
     pub locomotors: Vec<Locomotor>,
     /// Per locomotor: `Crushes: mine` (sets off mines it drives over).
     pub locomotor_crushes_mines: Vec<bool>,
+    /// Per locomotor: `Crushes: crate` (picks up crates, crates.rs).
+    pub locomotor_crushes_crates: Vec<bool>,
+    /// World actor rules of the lobby options (rules_options.rs).
+    pub world: crate::rules_options::WorldRules,
     pub tokens: Vec<String>,
     /// Damage type names that some actor's TakeCover or death animation refers
     /// to; bit `k` of a warhead's, TakeCover's or DeathInfo's damage type mask
@@ -1104,6 +1142,9 @@ pub struct Rules {
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
     pub obtainable: Vec<Vec<bool>>,
+    /// Presentation facts (fx.rs, engine/render.json): explosions, muzzle
+    /// flashes, damage smoke, working animations. Never read by the simulation.
+    pub render: crate::fx::RenderData,
 }
 
 pub const TOKEN_DISABLED: &str = "disabled";
@@ -1129,16 +1170,6 @@ impl Rules {
         Ok(rules)
     }
 
-    /// Rules from a whole rules.json document (tests that add actors the
-    /// built-in rules do not have yet).
-    #[cfg(test)]
-    pub(crate) fn from_json(v: serde_json::Value) -> Result<Rules, String> {
-        let raw: RawRules = serde_json::from_value(v).map_err(|e| e.to_string())?;
-        let rules = Rules::from_raw(raw)?;
-        rules.validate()?;
-        Ok(rules)
-    }
-
     /// Semantic checks that keep the simulation panic-free and bounded, whatever
     /// a modded map sets: value ranges, table lengths and cross references.
     /// Every field an override can reach is covered: indices into the weapon
@@ -1156,6 +1187,7 @@ impl Rules {
         for a in &self.actors {
             self.validate_actor(a)?;
         }
+        self.validate_options()?;
         for w in &self.weapons {
             let n = |f: &str| format!("weapons.{}.{f}", w.name);
             within(&n("range"), w.range, 0, 64 * CELLS)?;
@@ -1195,8 +1227,9 @@ impl Rules {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
-        // Proxies have no body (infantry.rs).
-        within(&n("hp"), a.hp, if a.kind == Kind::Proxy { 0 } else { 1 }, 100_000_000)?;
+        within(&n("build_limit"), a.build_limit, 0, 1000)?;
+        // Crates and proxies have no health (OpenRA ^Crate has no Health trait; proxies no body).
+        within(&n("hp"), a.hp, if matches!(a.kind, Kind::Crate | Kind::Proxy) { 0 } else { 1 }, 100_000_000)?;
         within(&n("sight"), a.sight, 0, MAX_VISION)?;
         count(&n("prerequisites"), a.prerequisites.len(), 32)?;
         if let Some(t) = a.turret_turn_speed {
@@ -1410,6 +1443,10 @@ impl Rules {
                 self.actor_id_ref(&n("cargo.initial"), id, &units)?;
             }
         }
+        if let Some(e) = &ab.eject_on_death {
+            self.actor_id_ref(&n("eject_on_death.pilot"), &e.pilot, &[Kind::Infantry])?;
+            within(&n("eject_on_death.success_rate"), e.success_rate, 0, 100)?;
+        }
         if let Some(m) = &ab.minelayer {
             self.actor_id_ref(&n("minelayer.mine"), &m.mine, &[Kind::Mine])?;
             within(&n("minelayer.ammo"), m.ammo, 0, 100)?;
@@ -1485,7 +1522,6 @@ impl Rules {
     fn validate_infantry_abilities(&self, a: &ActorInfo) -> Result<(), String> {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         let ab = &a.abilities;
-        within(&n("build_limit"), a.build_limit, 0, 1000)?;
         if let Some(p) = &a.producible_level {
             count(&n("producible_level.prerequisites"), p.prerequisites.len(), 16)?;
             within(&n("producible_level.levels"), p.levels, 0, MAX_LEVELS as i32)?;
@@ -1508,14 +1544,6 @@ impl Rules {
         }
         if let Some(c) = &ab.capturable {
             count(&n("abilities.capturable.types"), c.types.len(), 8)?;
-            if let Some(t) = &c.transform {
-                self.actor_id_ref(
-                    &n("abilities.capturable.transform.into"),
-                    &t.into,
-                    &[Kind::Infantry, Kind::Vehicle, Kind::Ship, Kind::Aircraft],
-                )?;
-                within(&n("abilities.capturable.transform.health"), t.health, 0, 100)?;
-            }
         }
         if let Some(i) = &ab.infiltrates {
             count(&n("abilities.infiltrates.types"), i.types.len(), 8)?;
@@ -1658,7 +1686,7 @@ impl Rules {
     /// Resolve the raw JSON shapes (footprint rows, offsets, actor ids) into
     /// lookup structures. Overrides can reshape any array, so every shape is
     /// checked here and reported as an error, never assumed.
-    fn from_raw(raw: RawRules) -> Result<Rules, String> {
+    fn from_raw(mut raw: RawRules) -> Result<Rules, String> {
         let mut tokens: Vec<String> = vec![TOKEN_DISABLED.to_string()];
         for t in TECH_LEVELS {
             tokens.push(format!("techlevel.{t}"));
@@ -1725,6 +1753,8 @@ impl Rules {
                 "ship" => Kind::Ship,
                 "aircraft" => Kind::Aircraft,
                 "mine" => Kind::Mine,
+                "husk" => Kind::Husk,
+                "crate" => Kind::Crate,
                 "proxy" => Kind::Proxy,
                 _ => return Err(n("kind: unknown kind")),
             };
@@ -1824,6 +1854,7 @@ impl Rules {
                 triggers: tc.damage_triggers.iter().fold(0, |m, t| m | type_bit(t)),
                 modifiers: tc.damage_modifiers.iter().map(|m| (type_bit(&m.ty), m.percent)).collect(),
             });
+            let options = crate::rules_options::resolve_actor(&a.id, a.options, &ids, &raw.factions, &mut intern)?;
             actors.push(ActorInfo {
                 id: a.id,
                 name: a.name,
@@ -1833,6 +1864,7 @@ impl Rules {
                 cost: a.cost,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
+                build_limit: a.build_limit,
                 prerequisites,
                 build_at: a.build_at,
                 hp: a.hp,
@@ -1853,7 +1885,6 @@ impl Rules {
                 experience: a.experience,
                 gives_experience: a.gives_experience,
                 take_cover,
-                build_limit: a.build_limit,
                 producible_level: a.producible_level,
                 fire_delays: a.fire_delays,
                 targets_allies: a.targets_allies,
@@ -1863,6 +1894,7 @@ impl Rules {
                 building,
                 unit: a.unit,
                 transforms_into,
+                options,
             });
         }
         for w in &raw.weapons {
@@ -1870,10 +1902,15 @@ impl Rules {
                 return Err(format!("weapons.{}.warheads.damage_types may have at most {MAX_DAMAGE_TYPES} entries", truncate(&w.name)));
             }
         }
+        let mut weapon_effects = Vec::new();
+        for w in raw.weapons.iter_mut() {
+            weapon_effects.push(crate::rules_options::resolve_effects(&w.name, std::mem::take(&mut w.effects))?);
+        }
         let weapons = raw
             .weapons
             .into_iter()
-            .map(|w| WeaponInfo {
+            .zip(weapon_effects)
+            .map(|(w, effects)| WeaponInfo {
                 name: w.name,
                 range: w.range,
                 min_range: w.min_range,
@@ -1912,9 +1949,12 @@ impl Rules {
                         relationships: h.relationships,
                     })
                     .collect(),
+                effects,
             })
             .collect();
         let locomotor_crushes_mines = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "mine")).collect();
+        let locomotor_crushes_crates = raw.locomotors.iter().map(|l| l.crushes.iter().any(|c| c == "crate")).collect();
+        let world = crate::rules_options::resolve_world(raw.world, &ids, &raw.factions)?;
         let locomotors = raw
             .locomotors
             .into_iter()
@@ -1936,11 +1976,15 @@ impl Rules {
             weapons,
             locomotors,
             locomotor_crushes_mines,
+            locomotor_crushes_crates,
+            world,
             tokens,
             damage_types,
             obtainable: Vec::new(),
+            render: Default::default(),
         };
         rules.obtainable = (0..rules.factions.len()).map(|f| rules.solve_obtainable(f)).collect();
+        rules.render = crate::fx::RenderData::load(&rules);
         Ok(rules)
     }
 

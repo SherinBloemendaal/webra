@@ -23,7 +23,7 @@ export const HELP = Object.freeze({
   mapFile:
     'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first.',
   onlineMap:
-    'A generated map, or a map file from the server or uploaded by the host. Players without the file download it before they can get ready.',
+    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it.',
   seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
 
   // ---- World -----------------------------------------------------------------------
@@ -37,7 +37,7 @@ export const HELP = Object.freeze({
   // ---- Rules -----------------------------------------------------------------------
   startingCash: 'Credits every player starts with. A bale of ore pays 25 credits, a bale of gems 50.',
   startingUnits:
-    'MCV only: one Mobile Construction Vehicle. Light support: an MCV, 3 riflemen and a tank. Heavy support: an MCV, 5 riflemen and 3 tanks. Construction Yard: the yard already deployed, no units.',
+    "MCV only: one Mobile Construction Vehicle. Light support (OpenRA's sets): the MCV with 3 riflemen and 2 rocket soldiers around it, plus a Ranger and a light tank (Allies) or an APC and a Mobile Flak (Soviets). Heavy support: the same plus 3 medium tanks (Allies) or 2 heavy tanks (Soviets). Construction Yard: the yard already deployed, no units.",
   techLevel:
     'What can be built. Infantry only: power, refineries, barracks and basic infantry. Low: adds war factories, naval yards, light tanks, APCs, gunboats and submarines. Medium: adds radar, aircraft, medium and heavy tanks, artillery and defences such as turrets and Tesla Coils. No superweapons: everything but the Chronosphere, Iron Curtain and Missile Silo. Unrestricted: everything.',
   gameSpeed: 'How fast game time runs, compared with Normal: Slowest 50 %, Slower 80 %, Fast 114 %, Faster 133 %, Fastest 200 %.',
@@ -45,6 +45,15 @@ export const HELP = Object.freeze({
   explored: 'The black shroud is lifted at the start, so the whole map is known. With fog of war on, enemies still hide outside your sight.',
   buildRadius: 'Structures must be placed within range of one of your Construction Yards, as well as next to your other structures. Off: next to your structures is enough.',
   redeployableMcv: 'A Construction Yard can pack up into an MCV again and drive to a new spot.',
+  crates:
+    'A Badger drops a crate by parachute now and then (one to three on the map). Drive any ground unit or ship onto it: cash, a promotion, units, a new MCV if your base is gone, healing, invulnerability, copies of the unit, the map revealed, or bad luck (an explosion, napalm, the map hidden again).',
+  shortGame: 'A player loses when its last structure (and MCV) is gone, not its last unit. Defences, walls and fake structures do not count.',
+  allyBuildRadius: "Allied structures count too: you may build next to your allies' structures and within range of their Construction Yards.",
+  separateTeamSpawns:
+    'In a team game the team mates start next to each other, as far as possible from their enemies. Off, or without teams: every slot starts at the start position with its number.',
+  bounty: 'Destroying an enemy unit or structure pays 10 percent of its value to the player who did it.',
+  timeLimit:
+    'The game ends after this many minutes of game time; the announcer counts the last minutes down. Then the side with the most experience (kills, repairs for allies) wins; players without a team count as one side, of which only the best player wins.',
   oreRegrowth: 'Harvested ore grows back and spreads onto free clear ground. Gems never grow back.',
   reusableEngineers:
     'Engineers capture a structure from next to it after a longer wait (15 s instead of 8 s) and stay on the battlefield, instead of going in and being used up.',
@@ -59,6 +68,8 @@ export const HELP = Object.freeze({
   faction:
     'Allies and Soviets build different armies, and every country adds its own units (named under the choice). Random picks are made when the game starts.',
   team: 'Players on the same team share vision, never target each other and win together. None: everyone for themselves.',
+  handicap:
+    'Makes a player weaker on purpose, to even out a match: a 25 percent handicap means 75 percent firepower, a third more damage taken and 25 percent longer to build.',
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators.',
 
@@ -73,6 +84,8 @@ export const HELP = Object.freeze({
     'Highest number of pixels the battlefield is drawn with per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer. Sharpness and speed only: sizes are UI scale and game scale.',
   'settings.lowQuality':
     'Draws the battlefield below screen resolution (0.75 pixels per screen pixel) and with fewer weather particles: faster on phones and old computers, a little softer, the same size.',
+  'settings.reduceMotion':
+    'Big explosions shake the camera and an atom bomb flashes the screen white, like OpenRA. On: no shaking and only a dim flash. Like the browser: on when the system asks for reduced motion.',
   'settings.fullscreen': 'Fills the screen with the game. Esc and the number keys then go to the game in browsers that allow it.',
   'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
@@ -95,7 +108,9 @@ export const HELP = Object.freeze({
   'audio.original':
     "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Off: WebRA's sounds even when the originals are installed.",
   'audio.cashTicks': 'Plays a tick while the credits counter in the sidebar counts up or down, like Red Alert.',
+  'audio.clickSounds': 'Plays a click on buttons, tabs and switches, like Red Alert. Production and support power buttons keep their own sounds.',
   'audio.musicOn': 'Plays music during games. Music needs installed original content or a texture pack with music.',
+  'audio.menuMusic': "Plays Red Alert's intro track behind the main menu when the music is installed. After a game the score track (won) or the map track (lost) plays until you pick another track.",
   'audio.musicShuffle': 'Plays the tracks in a random order. Off: in playlist order.',
   'audio.musicRepeat': 'All: the playlist starts again after the last track. One: the current track repeats. Off: music stops after the last track.',
 });

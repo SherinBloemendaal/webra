@@ -9,9 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from '../js/art/infantry.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
-import { ACTION, ACTION_CURSORS, CURSORS, OPENRA_CURSOR_NAMES } from '../js/cursors.js';
+import { ACTION, ACTION_CURSORS, CURSORS, CURSOR_NAMES } from '../js/cursors.js';
+import { CURSOR_ART } from '../js/content/tables.js';
 import { deathSound, orderVoice, producedVoice, killVoice, voiceLine, voiceSetFor, allOriginalNames } from '../js/audio/catalog.js';
-import { Director, EV, INFANTRY_EV } from '../js/audio/director.js';
+import { Director, EV } from '../js/audio/director.js';
 import { validateLobbyOptions } from '../../../packages/protocol/src/options.js';
 import { DEFAULT_OPTIONS } from '../../../packages/protocol/src/constants.js';
 import { poseTable } from '../js/content/atlas.js';
@@ -65,15 +66,16 @@ test('every new soldier has standing art, and those that take cover prone art, w
   assert.ok(INFANTRY_SPECIALS.length <= SPECIAL_SLOTS);
 });
 
-test('the sprite list draws every infantry type, no proxies, and ends with the infantry specials', () => {
+test('the sprite list draws every infantry type, no proxies, and has the infantry specials', () => {
   const actors = rules.actors.map((a) => ({ ...a, width: a.building?.width, height: a.building?.height }));
   const list = spriteList(actors);
   actors.forEach((a, k) => {
     if (a.kind === 'infantry') assert.ok(list[2 * k], `${a.id} has a body`);
     if (a.kind === 'proxy') assert.deepEqual([list[2 * k], list[2 * k + 1]], [null, null], `${a.id} has no body`);
   });
-  // engine/src/render.rs SpriteIds::infantry_base: 12 built-in specials, then the seventh module.
-  const base = actors.length * 2 + 12 + 6 * SPECIAL_SLOTS;
+  // engine/src/render.rs SpriteIds::infantry_base: 12 built-in specials, then the ninth module
+  // (after decorations, effects and leftovers).
+  const base = actors.length * 2 + 12 + 8 * SPECIAL_SLOTS;
   INFANTRY_SPECIALS.forEach((s, k) => assert.equal(list[base + k], s));
 });
 
@@ -91,7 +93,11 @@ test('pose tables give soldiers stand variants, idle animations and deaths that 
 });
 
 test('infantry order cursors come through Game.cursor_action', () => {
-  for (const [key, name] of Object.entries(OPENRA_CURSOR_NAMES)) assert.ok(CURSORS[key] && name, key);
+  // Each infantry cursor has WebRA art and Red Alert art under its OpenRA name (mods/ra/cursors.yaml).
+  for (const key of ['enter', 'enterBlocked', 'c4', 'heal', 'goldwrench', 'goldwrenchBlocked', 'ability']) {
+    assert.ok(CURSORS[key], key);
+    assert.ok(CURSOR_ART[CURSOR_NAMES[key]], `${key}: ${CURSOR_NAMES[key]}`);
+  }
   const game = Game.from_options(JSON.stringify({ ...DEFAULT_OPTIONS, seed: 3, mapSize: 64, startingUnits: 'base', players: [{ type: 'human', faction: 'england' }, { type: 'human', faction: 'russia' }] }));
   // The engine's codes and the cursor table agree.
   assert.equal(ACTION_CURSORS[ACTION.CAPTURE], CURSORS.enter);
@@ -151,10 +157,11 @@ test('the director plays order lines, death screams and infantry notifications',
   const view = { x0: -1000, y0: -1000, x1: 1000, y1: 1000 };
   d.onEvents([EV.DEATH, ty('E1'), 0, 0, 1, 1 | (5 << 8)], view);
   assert.ok(effects.some((s) => s.originals.includes('dedman10.aud')), 'burned scream');
-  d.onEvents([EV.INFANTRY, INFANTRY_EV.CREDITS_STOLEN, 0, 0, 0, 500], view);
+  // A thief of player 1 in our refinery (sound_events.rs infiltrator_code).
+  d.onEvents([EV.INFILTRATED, ty('PROC'), 0, 0, 0, (ty('THF') << 8) | 1], view);
   assert.ok(announced.includes('creditsStolen'));
   t += 1;
-  d.onEvents([EV.INFANTRY, INFANTRY_EV.KILL, 0, 0, 0, ty('E7')], view);
+  d.onEvents([EV.KILL_ANNOUNCED, ty('E7'), 0, 0, 0, 0], view);
   assert.ok(voices.pop().originals.includes('gotit1.aud'), 'AnnounceOnKill');
 });
 

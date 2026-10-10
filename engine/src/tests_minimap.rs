@@ -327,6 +327,7 @@ fn check_no_leaks(w: &World, player: u8) {
 fn ai_games_never_leak_hidden_or_jammed_enemies() {
     // Hard AIs build radar domes, radar jammers, gap generators and cloaked units.
     let hard = |f: &str| crate::world::PlayerSetup::new(f, Some(crate::world::AiDifficulty::Hard));
+    // Seed 5: an AI fields a jammer within the twelve minutes.
     let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], crate::world::GameOptions::default());
     let mut online = [false; 3];
     let mut had_dome = [false; 3];

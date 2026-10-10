@@ -18,7 +18,7 @@ import { defaultRegistry } from '../registry.js';
 
 /** Fog byte of a cell the local player sees now (engine render.rs `fog_bytes`). */
 export const FOG_VISIBLE = 255;
-import { EVA, CASH_TICK_SOUNDS, CASH_TICK_GAIN } from './catalog.js';
+import { EVA, notificationSound, PLAYER_LINES, BACKGROUND_MUSIC } from './catalog.js';
 import { actorInfo } from '../sim/methods.js';
 
 /** Game methods that give a unit order: the units reply. Their second argument is the unit ids. */
@@ -37,6 +37,9 @@ export const ORDER_METHODS = new Set([
   'order_lay_mines',
   'deploy',
 ]);
+
+/** What counts as a button for the interface click sound (installClicks). */
+export const CLICKABLE = 'button, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [role="option"], summary, select, input[type="checkbox"], input[type="radio"]';
 
 const now = () => performance.now() / 1000;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000));
@@ -63,6 +66,10 @@ export class AudioSystem {
     this.director = null;
     this.game = null;
     this.inGame = false;
+    /** Sound notifications playing now, by name (InterruptType, `notify`). */
+    this.notifications = new Map();
+    /** The game's background track after it ended (OpenRA MusicPlaylist VictoryMusic or DefeatMusic), or null. */
+    this.gameOverTrack = null;
     /** The music player started music: it plays outside a game too (js/audio/musicplayer.js). */
     this.listening = false;
     /** A track the music player picked before music could play (audio still locked): played once it can. */
@@ -87,7 +94,27 @@ export class AudioSystem {
       this.syncMusic();
     });
     this.installUnlock(doc);
+    this.installClicks(doc);
     this.reloadInstalled();
+  }
+
+  /**
+   * OpenRA's ClickSound on every button, checkbox, tab and dropdown of the
+   * interface (ButtonWidget, ProductionTabsWidget, ...). Controls whose
+   * sound depends on what the click did (production cameos, support powers)
+   * say so with data-click-sound="own" and play it themselves.
+   */
+  installClicks(doc) {
+    if (!doc) return;
+    doc.addEventListener(
+      'click',
+      (e) => {
+        const el = e.target?.closest?.(CLICKABLE);
+        if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true' || el.closest('[data-click-sound="own"]')) return;
+        this.click();
+      },
+      true,
+    );
   }
 
   /** Browsers only allow audio after a user gesture: unlock on the first one. */
@@ -185,7 +212,7 @@ export class AudioSystem {
    * @param {object} o
    * @param {object} o.game wasm Game
    * @param {object} o.rules parsed Game.rules_json()
-   * @param {number} o.player local player
+   * @param {number} o.player local player, or NO_PLAYER (spectators and replays: nothing is their own)
    * @param {number} o.worldUnitsPerCell Game.world_units_per_cell()
    */
   attachGame({ game, rules, player, worldUnitsPerCell, allied }) {
@@ -217,8 +244,9 @@ export class AudioSystem {
   }
 
   /**
-   * Wrap a game so local unit orders and production clicks made through it
-   * get their replies and announcements. Everything else passes through.
+   * Wrap a game so local unit orders made through it get their replies.
+   * Everything else passes through. (Production clicks speak through
+   * `productionClick`: the sidebar knows what the click did.)
    */
   watch(game) {
     const cache = new Map();
@@ -233,18 +261,6 @@ export class AudioSystem {
             fn = (...args) => {
               const r = value.apply(target, args);
               audio.director?.onOrder(Array.from(args[1] ?? []), prop);
-              return r;
-            };
-          } else if (prop === 'start_production') {
-            fn = (...args) => {
-              const r = value.apply(target, args);
-              audio.director?.onProductionStarted(args[1]);
-              return r;
-            };
-          } else if (prop === 'cancel_production') {
-            fn = (...args) => {
-              const r = value.apply(target, args);
-              audio.director?.onProductionCancelled();
               return r;
             };
           }
@@ -291,8 +307,12 @@ export class AudioSystem {
     this.director?.onSelection(ids, info);
   }
 
-  selectTarget() {
-    this.director?.onSelectTarget();
+  /**
+   * A production cameo was clicked (js/sidebar.js, OpenRA ProductionPaletteWidget):
+   * the click sound and the queue's speech for `outcome` (Director.onProductionClick).
+   */
+  productionClick(actorId, outcome) {
+    this.director?.onProductionClick(actorId, outcome);
   }
 
   /** The next smart order (right click) does `action` (Game.cursor_action): its reply. */
@@ -300,8 +320,71 @@ export class AudioSystem {
     this.director?.noteSmartAction(action);
   }
 
+  /** A ready support power was picked for targeting (`power`: player_json power or its key). */
+  selectTarget(power) {
+    this.director?.onSelectTarget(power);
+  }
+
+  /** A support power without a powered provider was clicked (OpenRA InsufficientPower). */
+  insufficientPower(power) {
+    this.director?.onInsufficientPower(power);
+  }
+
+  /** The game ended for the local player: the Win or Lose line, then OpenRA's MusicPlaylist VictoryMusic or DefeatMusic. */
   gameOver(won) {
     this.director?.onGameOver(won);
+    this.setBackgroundMusic(won ? BACKGROUND_MUSIC.victory : BACKGROUND_MUSIC.defeat);
+  }
+
+  // ---- Notifications outside the engine (OpenRA's widgets and world traits) ----------
+
+  /** An interface button, tab or cameo was clicked (OpenRA ClickSound; ClickDisabledSound is silent in RA). */
+  click() {
+    if (this.prefs.get().clickSounds) this.notify('ClickSound');
+  }
+
+  /** The radar came online or went offline (OpenRA IngameRadarDisplayLogic: RadarUp, RadarDown). */
+  radar(online) {
+    this.notify(online ? 'RadarUp' : 'RadarDown');
+  }
+
+  /** The game started, not from a save (OpenRA StartGameNotification: StartGame). */
+  startGame() {
+    this.announce(PLAYER_LINES.startGame);
+  }
+
+  /** A saved game finished loading (GameLoaded). */
+  gameLoaded() {
+    this.announce(PLAYER_LINES.gameLoaded);
+  }
+
+  /** The game was saved (GameSaved). */
+  gameSaved() {
+    this.announce(PLAYER_LINES.gameSaved);
+  }
+
+  /**
+   * The player leaves the game (OpenRA IngameMenuLogic.OnQuit: Leave, "Battle
+   * control terminated"). Resolves when the line has been spoken, after at
+   * most `maxSeconds`, so the page can unload after it.
+   */
+  async leave(maxSeconds = 2.5) {
+    const key = PLAYER_LINES.leave;
+    this.announce(key);
+    if (!key || !this.prefs.get().enabled || !this.mixer.ready) return;
+    const deadline = now() + maxSeconds;
+    while (now() < deadline && (this.announcer.current === key || this.announcer.queue.some((q) => q.key === key))) await wait(0.05);
+  }
+
+  /** A chat or system line in a game or a lobby (OpenRA ChatLine). */
+  chatLine() {
+    this.notify('ChatLine');
+  }
+
+  /** Lobby changes (OpenRA LobbyLogic): 'joined' (PlayerJoined), 'left' (PlayerLeft), 'option' (LobbyOptionChanged). */
+  lobby(event) {
+    const name = { joined: 'PlayerJoined', left: 'PlayerLeft', option: 'LobbyOptionChanged' }[event];
+    if (name) this.notify(name);
   }
 
   // ---- Sink (director.js) --------------------------------------------------------
@@ -322,9 +405,37 @@ export class AudioSystem {
    * OpenRA plays these as UI notifications (not in the world) when Cash ticks is on.
    */
   cashTick(direction) {
-    const sound = CASH_TICK_SOUNDS[direction];
-    if (!sound || !this.prefs.get().cashTicks) return;
-    this.effect(sound, { gain: CASH_TICK_GAIN, pan: 0 });
+    const name = { up: 'CashTickUp', down: 'CashTickDown' }[direction];
+    if (name && this.prefs.get().cashTicks) this.notify(name);
+  }
+
+  /**
+   * Play a sound notification (notifications.yaml Sounds) as OpenRA's
+   * PlayNotification does: InterruptType DoNotPlay skips it while the same
+   * one plays, Interrupt stops that one first, Overlap just plays;
+   * VolumeModifier scales it. Returns whether it started.
+   * @param {string} name
+   * @param {{ gain?: number }} [opts]
+   */
+  notify(name, { gain = 1 } = {}) {
+    const sound = notificationSound(name);
+    if (!sound || !this.prefs.get().enabled) return false;
+    const playing = this.notifications.get(name);
+    if (playing?.length && sound.interrupt === 'DoNotPlay') return false;
+    if (playing?.length && sound.interrupt === 'Interrupt') for (const h of playing) h.stop();
+    const handles = [];
+    for (const r of this.bank.resolveAll(sound)) {
+      const h = this.mixer.play(r.buffer, { bus: 'effects', gain: gain * sound.volume, pan: 0, rate: r.rate });
+      if (h) handles.push(h);
+    }
+    if (!handles.length) return false;
+    if (sound.interrupt !== 'Overlap') {
+      this.notifications.set(name, handles);
+      Promise.all(handles.map((h) => h.ended)).then(() => {
+        if (this.notifications.get(name) === handles) this.notifications.delete(name);
+      });
+    }
+    return true;
   }
 
   /** A unit reply: original voice, or radio blip with an optional spoken line. */
@@ -354,7 +465,7 @@ export class AudioSystem {
         console.warn('announce listener failed:', err);
       }
     }
-    if (this.prefs.get().enabled) this.announcer.push(key);
+    if (this.prefs.get().enabled && EVA[key] && !EVA[key].textOnly) this.announcer.push(key);
   }
 
   playSynth(id, bus, gain = 1) {
@@ -390,13 +501,34 @@ export class AudioSystem {
     return (this.inGame || this.listening) && p.enabled && p.musicOn && p.music > 0 && this.jukebox.available && this.mixer.ready;
   }
 
+  /**
+   * The background track that should play now, or null (OpenRA
+   * MusicPlaylist): the score or map track once the game is over, the intro
+   * behind the main menu (the shellmap's BackgroundMusic, unless "Main menu
+   * music" is off), while the player has not picked a track.
+   */
+  backgroundTrack() {
+    const p = this.prefs.get();
+    if (!p.enabled || !p.musicOn || p.music <= 0 || !this.mixer.ready || this.jukebox.stoppedByUser || this.jukebox.paused) return null;
+    const track = this.inGame ? this.gameOverTrack : !this.listening && p.menuMusic ? BACKGROUND_MUSIC.menu : null;
+    return track && this.jukebox.has(track) ? track : null;
+  }
+
   syncMusic() {
     if (this.pendingTrack !== null && this.musicWanted()) {
       const index = this.pendingTrack;
       this.pendingTrack = null;
+      this.gameOverTrack = null;
       this.jukebox.playIndex(index);
       return;
     }
+    const bg = this.backgroundTrack();
+    if (bg) {
+      if (this.jukebox.background !== bg) this.jukebox.playBackground(bg);
+      return;
+    }
+    // The background ended its turn (a game started, the menu music was switched off).
+    if (this.jukebox.background) this.jukebox.stop();
     // The music hotkeys may have stopped or paused it: it stays so until the player starts it again.
     const want = this.musicWanted() && !this.jukebox.stoppedByUser && !this.jukebox.paused;
     // A playlist that ended (repeat off) stays quiet until the player asks for the next track.
@@ -404,9 +536,18 @@ export class AudioSystem {
     else if (!want && this.jukebox.handle) this.jukebox.stop();
   }
 
+  /** Background music for the rest of the game (OpenRA MusicPlaylist.GameOver), when it is installed. */
+  setBackgroundMusic(track) {
+    if (!track || !this.jukebox.has(track)) return;
+    this.gameOverTrack = track;
+    this.syncMusic();
+  }
+
   /** "Next track" (Settings, Sound): skips the playing track, or starts a finished playlist again. */
   nextTrack() {
-    if (this.musicWanted()) this.jukebox.next();
+    if (!this.musicWanted()) return;
+    this.gameOverTrack = null;
+    this.jukebox.next();
   }
 
   // ---- Music player (js/audio/musicplayer.js) ------------------------------------------
@@ -457,6 +598,7 @@ export class AudioSystem {
   /** The previous (-1) or next (+1) track. */
   skipTrack(direction) {
     const j = this.jukebox;
+    this.gameOverTrack = null;
     if (!j.available) return;
     if (this.wantMusic()) {
       if (direction < 0) j.prev();
@@ -486,8 +628,12 @@ export class AudioSystem {
     if (command === 'stop') j.userStop();
     else if (!this.musicWanted()) return;
     else if (command === 'pause') j.togglePause();
-    else if (command === 'prev') j.prev();
-    else if (command === 'next') j.next();
+    else if (command === 'prev' || command === 'next') {
+      // Picking a track ends the background track (OpenRA MusicPlaylist.Play).
+      this.gameOverTrack = null;
+      if (command === 'prev') j.prev();
+      else j.next();
+    }
     this.changed();
   }
 

@@ -287,9 +287,10 @@ export class Input {
    */
   decideClick(hit, deploy, action, units) {
     const hitInfo = this.info(hit);
-    // Clicking a selected MCV (or Construction Yard) deploys it, like the original.
+    // Clicking a selected MCV (or Construction Yard) deploys it, like the original;
+    // a selected production structure becomes the primary one (3, OpenRA PrimaryBuilding).
     if (hit !== NONE && this.selection.includes(hit)) {
-      if (deploy === 1) return { kind: 'deploy', id: hit };
+      if (deploy === 1 || deploy === 3) return { kind: 'deploy', id: hit };
       if (deploy === 2) return { kind: 'blocked' };
     }
     if (units.length) {

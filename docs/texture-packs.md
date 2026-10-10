@@ -113,7 +113,7 @@ Each entry replaces one part and pose of an actor, or a special effect:
 | Key | What |
 |-----|------|
 | `actor` | WebRA actor id (`1TNK`, `E1`, `POWR`, ...; the ids of `engine/rules.json`) |
-| `special` | instead of `actor`: `bullet`, `small_explosion`, `large_explosion`, `piff`, `rally`, `at_mine`, `ap_mine`, `tesla_bolt`, `missile`, `shell`, `chrono`, `nuke` |
+| `special` | instead of `actor`: `bullet`, `small_explosion`, `large_explosion`, `piff`, `rally`, `at_mine`, `ap_mine`, `tesla_bolt`, `missile`, `shell`, `chrono`, `nuke` (`at_mine` and `ap_mine` replace the bodies of the mine actors MINV and MINP: the game draws mines as actors) |
 | `part` | `body` (default) or `second`: the turret, or for infantry the prone (lying) pose |
 | `pose` | `idle` (default), `move`, `attack`, `damaged` (below half health), `make` (just placed, played once), `harvest`, `dock`; infantry also `stand2` (the second way of standing), `idle1` and `idle2` (idle animations, played once), `die1` to `die6` (deaths by bullets, bullets, small blasts, blasts, fire, electricity) and `crushed` (played once, then gone) |
 | `image` | PNG sprite sheet |

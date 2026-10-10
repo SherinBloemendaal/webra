@@ -43,6 +43,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'scaleAuto',
   'pixelRatioCap',
   'lowQuality',
+  'reduceMotion',
   'fullscreen',
   'edgeScrollSpeed',
   'keyScrollSpeed',
@@ -130,6 +131,7 @@ export const MENU_SETTINGS = Object.freeze([
   'gameScale',
   'pixelRatioCap',
   'lowQuality',
+  'reduceMotion',
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
@@ -181,7 +183,8 @@ export class GameMenu {
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   onReleaseNotes?(): void,
-   *   restart?: { replay?: boolean, run(): void },  Restart (asks first); none online
+   *   restart?: { replay?: boolean, online?: boolean, available?(): boolean, label?(): string, text?(): string, run(): void },
+   *     Restart (asks first); online the rematch (js/online.js): shown while `available()`, with its own label and text
    *   onStats?(): void,  the statistics screen (js/stats.js)
    *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
    *   onLeave(): void,
@@ -349,7 +352,7 @@ export class GameMenu {
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
-      ...(this.opts.restart ? [button(this.opts.restart.replay ? 'Restart replay' : 'Restart', null, () => this.show('restart'))] : []),
+      ...(this.restartShown() ? [button(this.restartLabel(), null, () => this.show('restart'))] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
     );
@@ -392,8 +395,32 @@ export class GameMenu {
     );
   }
 
-  /** Restart: progress is lost, so it asks first. */
+  /** Whether the menu offers Restart (or the rematch) now. */
+  restartShown() {
+    const r = this.opts.restart;
+    return !!r && (r.available?.() ?? true);
+  }
+
+  restartLabel() {
+    const r = this.opts.restart;
+    return r.label?.() ?? (r.replay ? 'Restart replay' : 'Restart');
+  }
+
+  /** Restart: progress is lost, so it asks first. Online: the rematch, explained. */
   renderRestart(c) {
+    if (this.opts.restart?.online) {
+      const label = this.restartLabel();
+      c.append(
+        el('h1', null, 'Rematch'),
+        el('p', 'tagline', this.opts.restart.text?.() ?? ''),
+        button(label, 'primary', () => {
+          this.close();
+          this.opts.restart.run();
+        }),
+        button('Back', null, () => this.show('main')),
+      );
+      return;
+    }
     const replay = !!this.opts.restart?.replay;
     c.append(
       el('h1', null, 'Restart'),
@@ -470,6 +497,9 @@ export class GameMenu {
     list.append(el('h2', null, 'Display'), el('p', 'hint game-menu-explain', DISPLAY_HELP));
     list.append(this.uiScaleRow(), this.gameScaleRow());
     list.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
+    // Camera shake and the nuke's flash (js/battlefx.js).
+    const motion = choice('reduceMotion', 'Reduce motion', SCHEMA.reduceMotion.labels);
+    list.append(withHelp(motion, 'reduceMotion', motion.querySelector('[role="radiogroup"]')));
     const fs = this.opts.fullscreen;
     const fsRow = el('div', 'game-menu-row');
     const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());

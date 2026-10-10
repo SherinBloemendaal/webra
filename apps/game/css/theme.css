@@ -175,6 +175,58 @@
    Centered text at the bottom of the battlefield, like the announcer's
    "Unit ready." lines; repeats count up, old lines fade out. */
 
+/* Floating cash, the nuke flash and the time limit clock (js/battlefx.js). */
+#battle-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#battle-fx .battle-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+}
+
+#battle-fx .battle-floats {
+  position: absolute;
+  inset: 0;
+}
+
+#battle-fx .battle-float {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 700 var(--ui-fs-m) / 1 var(--ui-font-mono);
+  white-space: nowrap;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  will-change: transform, opacity;
+}
+
+.battle-time-limit {
+  position: absolute;
+  top: calc(8 * var(--ui-px));
+  left: 50%;
+  z-index: 25;
+  padding: 1px calc(8 * var(--ui-px));
+  transform: translateX(-50%);
+  color: #f2f4f6;
+  font: 600 var(--ui-fs-m) / 1.35 var(--ui-font-mono);
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  pointer-events: none;
+}
+
 #notices {
   position: absolute;
   left: 50%;

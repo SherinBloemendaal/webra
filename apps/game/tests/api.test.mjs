@@ -25,6 +25,13 @@ const OPTIONS = {
   buildRadius: true,
   redeployableMcv: true,
   oreRegrowth: true,
+  // OpenRA's other lobby options (protocol 6).
+  crates: true,
+  shortGame: true,
+  bounty: false,
+  separateTeamSpawns: true,
+  allyBuildRadius: true,
+  timeLimit: 0,
   reusableEngineers: false,
 };
 
@@ -51,8 +58,8 @@ test('rules list every buildable actor with metadata', () => {
   for (const id of ['FACT', 'MCV', '4TNK', 'TTNK', 'CTNK', 'DTRK', 'TSLA', 'GAP', 'IRON', 'PDOX', 'MSLO', 'SYRD']) {
     assert.ok(ids.includes(id), id);
   }
-  // Proxies (engine/src/infantry.rs) have no body.
-  assert.ok(rules.actors.every((a) => a.name && a.cost >= 0 && (a.hp > 0 || a.kind === 'proxy')));
+  // Crates have no health (OpenRA ^Crate), proxies (engine/src/infantry.rs) no body.
+  assert.ok(rules.actors.every((a) => a.name && a.cost >= 0 && (a.hp > 0 || a.kind === 'crate' || a.kind === 'proxy')));
 });
 
 test('bad options are rejected with a message', () => {

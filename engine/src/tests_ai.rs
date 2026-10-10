@@ -452,8 +452,11 @@ fn ai_never_bombs_or_attacks_allies() {
 
 fn play(seed: u64, size: i32, teams: &[u8], diff: AiDifficulty, limit_minutes: u32) -> (Option<u8>, World) {
     let factions = ["england", "russia", "germany", "ukraine", "france", "soviet", "allies", "russia"];
-    let players: Vec<PlayerSetup> =
-        teams.iter().enumerate().map(|(k, &team)| PlayerSetup { faction: factions[k % 8].into(), ai: Some(diff), team }).collect();
+    let players: Vec<PlayerSetup> = teams
+        .iter()
+        .enumerate()
+        .map(|(k, &team)| PlayerSetup { faction: factions[k % 8].into(), ai: Some(diff), team, handicap: 0 })
+        .collect();
     let mut w = World::with_options(seed, size, &players, GameOptions::default());
     for _ in 0..25 * 60 * limit_minutes {
         w.step();
@@ -496,7 +499,7 @@ fn generated_maps_are_fair_for_four_players() {
                     s.spawn(move || {
                         let players: Vec<PlayerSetup> = teams
                             .iter()
-                            .map(|&team| PlayerSetup { faction: "allies".into(), ai: Some(AiDifficulty::Normal), team })
+                            .map(|&team| PlayerSetup { faction: "allies".into(), ai: Some(AiDifficulty::Normal), team, handicap: 0 })
                             .collect();
                         let mut w = World::with_options(seed, 96, &players, GameOptions::default());
                         for _ in 0..25 * 60 * 40 {
@@ -564,8 +567,12 @@ fn a_broke_ai_without_income_sells_its_surplus_for_an_army() {
     for keep in ["FACT", "TENT", "WEAP", "PBOX"] {
         assert!(left.iter().any(|id| id == keep), "kept {keep}: {left:?}");
     }
-    // Refineries without ore go first; it stops once it has its army.
-    assert!(!left.iter().any(|id| id == "PROC"), "useless refineries go first: {left:?}");
+    // Refineries without ore go first; it stops once it has its army (the
+    // crew of a sold structure counts, sell.rs).
+    assert!(left.iter().filter(|id| *id == "PROC").count() < 2, "useless refineries go first: {left:?}");
+    for keep in ["APWR", "FIX", "DOME", "ATEK"] {
+        assert!(left.iter().any(|id| id == keep), "only refineries sold: {left:?}");
+    }
     let p = &w.players[0];
     assert!(p.power_gen >= p.power_use, "still enough power: {} / {}", p.power_use, p.power_gen);
     let army = w
@@ -635,8 +642,9 @@ fn waiting_ore_trucks_find_ore_they_have_not_seen() {
 #[test]
 fn weakest_player_on_a_ring_is_attacked_by_at_most_one_neighbour() {
     for seed in [1706698519, 11, 22] {
-        let players: Vec<PlayerSetup> =
-            (0..8).map(|k| PlayerSetup { faction: "allies".into(), ai: (k != 0).then_some(AiDifficulty::Normal), team: 0 }).collect();
+        let players: Vec<PlayerSetup> = (0..8)
+            .map(|k| PlayerSetup { faction: "allies".into(), ai: (k != 0).then_some(AiDifficulty::Normal), team: 0, handicap: 0 })
+            .collect();
         let mut w = World::with_options(seed, 96, &players, GameOptions::default());
         for p in 1..8u8 {
             let (sx, sy) = w.players[p as usize].start;

@@ -332,9 +332,10 @@ fn every_actor_is_reachable_for_the_right_factions() {
     for (i, a) in r.actors.iter().enumerate() {
         let any = (0..r.factions.len()).any(|f| r.obtainable[f][i]);
         // FACT comes from deploying an MCV; support power actors (paratroopers,
-        // spy plane, Badgers) and mines are never built.
-        // Proxies come from infiltrations (infantry.rs).
-        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str()) || matches!(a.kind, Kind::Mine | Kind::Proxy);
+        // spy plane, Badgers), mines, husks and crates are never built;
+        // proxies come from infiltrations (infantry.rs).
+        let support = ["E1R1", "E3R1", "U2", "BADR", "BADR.Bomber"].contains(&a.id.as_str())
+            || matches!(a.kind, Kind::Mine | Kind::Husk | Kind::Crate | Kind::Proxy);
         assert!(any || support || a.id == "FACT", "{} is buildable by some faction", a.id);
     }
     // Helicopters (gen_rules.py OVERRIDES): both sides build the helipad and the
@@ -739,7 +740,7 @@ fn ai_starting_from_an_mcv_builds_a_base_at_every_difficulty() {
 
 fn setups(list: &[(&str, bool, u8)]) -> Vec<crate::world::PlayerSetup> {
     use crate::world::{AiDifficulty, PlayerSetup};
-    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team }).collect()
+    list.iter().map(|&(f, ai, team)| PlayerSetup { faction: f.into(), ai: ai.then_some(AiDifficulty::Normal), team, handicap: 0 }).collect()
 }
 
 #[test]

@@ -355,12 +355,22 @@ async function exportData(ctx) {
       expiresAt: t.expires_at,
     })),
     pendingEmail: await pendingEmailOf(db, user.id, ctx.now),
-    maps: (await all('SELECT id, name, hash, created_at FROM maps WHERE uploader_id = ?1 ORDER BY created_at')).map((m) => ({
+    maps: (await all('SELECT id, name, hash, created_at, listed, used_at FROM maps WHERE uploader_id = ?1 ORDER BY created_at')).map((m) => ({
       id: m.id,
       name: m.name,
       hash: m.hash,
       createdAt: m.created_at,
+      // Published to the community list, or shared with online sessions only (and when last used).
+      published: m.listed === 1,
+      usedAt: m.used_at,
     })),
+    // Saved online games this account played in (the server's records; the files are in the players' browsers).
+    onlineSaves: (
+      await all(
+        `SELECT s.id, s.created_at, s.title, s.ticks, s.engine, m.seat FROM online_saves s
+         JOIN online_save_members m ON m.save_id = s.id WHERE m.user_id = ?1 ORDER BY s.created_at`,
+      )
+    ).map((r) => ({ id: r.id, createdAt: r.created_at, title: r.title, ticks: r.ticks, engine: r.engine, seat: r.seat })),
     gamePresence: (await all('SELECT session_id, client, updated_at FROM game_presence WHERE user_id = ?1')).map((p) => ({
       session: p.session_id,
       client: p.client,

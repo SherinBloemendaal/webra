@@ -16,6 +16,7 @@ export {
   isCheatOrder,
   validFrameOrders,
   validLobbySlot,
+  validResumeInfo,
   validMapRef,
   validName,
   ORDER_KINDS,
@@ -51,6 +52,10 @@ export {
 } from './map.js';
 export {
   encodeReplay,
+  FramesDigest,
+  framesDigest,
+  logEntryBytes,
+  optionsDigest,
   parseReplay,
   replayHeader,
   REPLAY_FORMAT,
@@ -65,7 +70,9 @@ export {
   SAVE_SLOTS_MAX,
   validateReplay,
 } from './replay.js';
+export { assignSpawns } from './spawns.js';
 export {
+  ADDED_PRESET_KEYS,
   BUILTIN_MODES,
   PRESET_KEYS,
   PRESET_NAME_MAX,

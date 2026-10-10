@@ -188,9 +188,11 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
-human|ai|closed, name, faction, color, team, difficulty}], startingCash,
-startingUnits, techLevel, gameSpeed, fog, explored, buildRadius,
-redeployableMcv, oreRegrowth, reusableEngineers, cheats, mapStyle, biome, weather, map`.
+human|ai|closed, name, faction, color, team, difficulty, handicap?}],
+startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
+explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
+reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
+weather, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -208,14 +210,58 @@ Game modes saved before it existed get it off. `team` 0 means no team (free for 
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
-that is not closed, and it takes spawn N. `map` is the map file JSON string
+that is not closed, and it takes spawn N (unless separate team spawns
+moves it, below). `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
 
+OpenRA's other lobby options (rules in `data/source/rules/world.yaml`,
+`player.yaml`, `misc.yaml`; protocol version 6 requires the keys, the
+engine treats a missing one as its OpenRA default):
+
+- `crates` (default on, OpenRA CrateSpawner): crates appear on land and water
+  or are dropped by a neutral Badger (`engine/src/crates.rs`), with OpenRA's
+  minimum and maximum counts, spawn interval, lifetime and action weights;
+  ground units and ships pick them up. A neutral player owns crates and the
+  wrecks of defeated players.
+- `shortGame` (default on, OpenRA MapOptions ShortGame): a player has lost
+  when it has no structures and no MCV left (MustBeDestroyed); off, every
+  unit counts too.
+- `allyBuildRadius` (default on): structures may also be placed near allied
+  structures.
+- `separateTeamSpawns` (default on, OpenRA MapStartingLocations): in a team
+  game the players without a team keep their slot's spawn and team members
+  take the free spawns. On a generated map the teams take them team by team
+  (in the order of each team's first slot, members in slot order) in the
+  order the map lists its spawns, which is by column, top first, so the
+  halves of the list are mirrored sides; on a map file the members, in slot
+  order, take the free spawn farthest from the enemies placed so far (sum of
+  squared distances), then nearest to team mates, then the lowest.
+  `engine/src/gamerules.rs` `assign_spawns` and `packages/protocol`
+  `assignSpawns` (lobby markers) share the cases of
+  `packages/protocol/test/fixtures/spawn-cases.json`.
+- `bounty` (default off, OpenRA GivesBounty): a kill pays the killer the
+  victim's GivesBounty percentage (10 % by default) of its value; allies pay
+  nothing.
+- `timeLimit` (minutes: 0 = none, 10, 20, 30, 40, 60, 90; OpenRA
+  TimeLimitManager): the countdown counts game time in real seconds of the
+  chosen speed, warns at OpenRA's notification marks and when it runs out
+  the player or team with the most player experience wins, everyone else
+  loses; a tie is a draw.
+- `handicap` per player (0 to 95 in steps of 5, default 0, OpenRA
+  HandicapFirepowerMultiplier and friends): firepower and armour drop and
+  build time grows by the percentage. AI slots take 0. The engine refuses
+  other values.
+
+Starting units (`startingUnits`) come from `world.yaml` StartingUnits per
+faction and class (`none`, `light`, `heavy`) through `tools/gen_rules.py`;
+`base` keeps WebRA's construction yard start. Support units stand on a ring
+around the MCV (inner and outer radius from the rules) with a random facing.
+
 Game modes (`packages/protocol/src/presets.js`, `apps/game/js/modes.js`)
 are named bundles of every lobby option except `seed` and `mapSize`:
-Classic, Weather war, Winter, Desert storm, Islands naval, Rush, Turtle and
-Sandbox (skirmish only), plus the player's saved modes (settings
+Classic, Competitive, Weather war, Winter, Desert storm, Islands naval, Rush,
+Turtle and Sandbox (skirmish only), plus the player's saved modes (settings
 `lobby.presets`, docs/accounts-api.md section 5.8). Picking one sets those
 options; changing any of them reads as Custom. They are a lobby
 convenience only: online the host sends plain `options` (protocol
@@ -343,12 +389,15 @@ travel over the network. The server never runs the simulation.
 | Method | Path | Body / result |
 |--------|------|---------------|
 | `GET` | `/api/version` | `{ version, protocol }` |
-| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded }, version, state }]` (public, open lobbies only) |
+| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded } \| { name, modded, shared: true }, version, state }]` (public, open lobbies only; a map shared with the session shows only its name) |
 | `POST` | `/api/sessions` | `{ name, password?, public, maxPlayers, version }` -> `{ id, hostKey }` |
 | `GET` | `/api/sessions/:id/ws` | WebSocket upgrade into the session's Durable Object |
-| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` |
-| `GET` | `/api/maps/:id` | the map JSON |
-| `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited) |
+| `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash }`; shares a map file with this session only (see "Lobby maps") |
+| `GET` | `/api/sessions/:id/map?hash=` | members only, `X-WebRA-Member`: the lobby's (or running game's) map JSON with that hash (see "Lobby maps") |
+| `POST` | `/api/sessions/:id/resume` | host only, `X-WebRA-Member`: an online save file -> `{ id }`; the lobby resumes that saved game (see "Online saves") |
+| `GET` | `/api/maps` | `[{ id, name, author, players, width, height, hash, modded, downloads, createdAt }]` (published maps only) |
+| `GET` | `/api/maps/:id` | the map JSON (published maps only) |
+| `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited); publishes it to the community list |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
@@ -415,8 +464,12 @@ Client to server:
 | `resume` | | rejoining player, after catching up |
 | `synced` | | spectator joining a running game, after catching up |
 | `options` | `options` (host only) | lobby |
-| `map` | `{ id, hash, name, modded }` (host only) | lobby |
-| `ready` | `ready: bool, mapHash` | lobby (must have the map installed) |
+| `map` | `{ id, hash, name, modded }` (host only; a published map, or `null` for a generated one; a map shared with the session goes through `POST /api/sessions/:id/map`) | lobby |
+| `mapstate` | `hash, state: installed \| declined` (for the lobby map with that hash) | lobby |
+| `kick` | `client` (host only: remove a spectator; players are removed through `slot`) | lobby |
+| `ready` | `ready: bool, mapHash` | lobby (must have the map installed; ready with the hash counts as installed) |
+| `rematch` | `accept: bool` (host: propose, then withdraw with `false`; players: accept or decline) | in game |
+| `save` | `accept: bool` (any player: propose, accept, decline; the proposer withdraws with `false`) | in game |
 | `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
 | `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
@@ -425,9 +478,14 @@ Client to server:
 | `leave` | | any time |
 
 Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {slots,
-options, map, hostId, spectators: [{client, name, account?}], maxSpectators}`
+options, map, hostId, spectators: [{client, name, account?, mapState?}], maxSpectators}`
 (human slots and spectators carry `account: true` when the name comes from a
-signed-in account), `chat
+signed-in account, and `mapState` while the lobby has a map; `map` is null or
+`{ id, hash, name, modded, players, author, width, height, bytes, shared }`,
+looked up by the server, also in `start`; `resume?` while the lobby resumes
+a save: `{ id, title, createdAt, ticks, waiting: [names] }`), `rematch {state, by, accepted,
+waiting, msLeft?, reason?}` (see "Rematch"), `save {state, ...}` and
+`start.resume?: { ticks, hash }` (see "Online saves"), `chat
 {from, text, team?}` (with `team: true` the line went to the sender's team
 only: the players of its non-zero team, the sender alone without a team, the
 spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
@@ -435,13 +493,18 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 5
+{player, client, name, tick}`, `error {code, message}`. Protocol version 6
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello`. Version 5 added accounts: the optional hello `name`, the welcome
-`name`, the `account` marks, one place per account and session, rejoin keys
-bound to their account, and the error codes `account_required`,
-`account_inactive`, `banned` and `ip_banned` (sent in answer to `hello`, or
-when a ban drops a connected member with left reason `removed`).
+at `hello`. Version 6 added lobby maps (the map details, `mapState`,
+`mapstate`, `kick`), the rematch (`rematch` both ways, rejoining the lobby),
+online saves (`save` both ways, `start.resume`, `lobby.resume`, online save
+files) and OpenRA's other lobby options (section 3: the option keys and the
+slots' optional `handicap`, kept by rematches and in saved games). Version 5
+added accounts: the optional hello `name`, the welcome `name`, the `account`
+marks, one place per account and session, rejoin keys bound to their
+account, and the error codes `account_required`, `account_inactive`, `banned`
+and `ip_banned` (sent in answer to `hello`, or when a ban drops a connected
+member with left reason `removed`).
 
 Rules: the server stamps the sender's player index on every order (clients
 cannot send orders for others), validates every message against
@@ -502,6 +565,140 @@ keeps `{ id, client, key, name }` per tab in sessionStorage (`webra.rejoin.v1`).
   minute). Refused ones get `rate_limited` and retry.
 - Chat: one line a second per connection, bursts of five; flooding closes
   the connection.
+
+### Lobby maps
+
+The host plays a generated map (`map: null`), a published map from the
+community list (`map` with its id and hash; the server looks up its details
+in D1) or a map file of its own (the map editor, an `.oramap` import, a map
+from an earlier lobby; the game keeps them in its map library,
+`apps/game/js/maplibrary.js`, IndexedDB keyed by hash). Its own map is
+**shared with this session only**: `POST /api/sessions/:id/map` with the map
+JSON and the header `X-WebRA-Member: <client>.<rejoin key>` (the key from
+`welcome.key`). The Worker checks the account gate (as for the WebSocket),
+the upload quota (10 per hour per network, shared with `POST /api/maps`), the
+size (1 MiB) and the map (protocol package and engine, as for uploads); the
+session object checks the member key (constant time, bound to the account it
+was issued to, wrong keys count toward the per-IP lockout) and that the
+member is the host, stores the map **unlisted** (deduplicated by hash) and
+makes it the lobby map. Unlisted maps are not in `GET /api/maps`, not served
+by `GET /api/maps/:id` and cannot be picked by id with `map`; publishing the
+same map with `POST /api/maps` lists it. See security.md "Map sharing".
+
+Every lobby message with a map gives each member a `mapState`: `installed`,
+`missing` (the default) or `declined`. A player without the map sees
+"Custom map: <name> by <author>. Install?" (map details: players, size,
+file bytes, modded) with Install and Decline. Install downloads it with
+`GET /api/sessions/:id/map?hash=<sha256>` and the member header (members of
+the lobby or the running game only; 409 when the session's map has another
+hash; `Cache-Control: private, no-store`; 120 per hour per network), checks
+it like any map (protocol package and engine, the hash must match), shows the
+modded warning when it carries rules, keeps it in the map library and sends
+`mapstate installed`. Decline sends `mapstate declined`: the player cannot be
+ready, and the host sees who lacks the map (and may remove a spectator with
+`kick`). `ready` with the map's hash counts as installed. The game starts
+only when every player and every spectator has the exact map installed; the
+host has it. A map already in the library is installed at once (checked by
+the engine again). Members joining a running game (a reload, a late
+spectator) get the game's map the same way. Names and authors are shown as
+text only.
+
+### Rematch
+
+Like OpenRA's way back to the lobby with everyone: in a running game the
+host sends `rematch { accept: true }`. Everyone gets `rematch { state: 'open',
+by, accepted, waiting, msLeft }`; `waiting` lists the players still in the
+game (seats that are not gone, also one whose connection is away) that have
+not accepted. Players answer with `rematch { accept }` (from the in-game
+overlay, the end of game dialog, the statistics screen or the game menu);
+spectators do not vote. One decline, the host withdrawing (`accept: false`)
+or leaving, or 2 minutes without everyone (`REMATCH_VOTE_MS`) end it:
+`rematch { state: 'cancelled', reason: declined | withdrawn | left | expired }`,
+and the host can propose again after 10 s. When every player accepted, the
+session goes back to its lobby with the same slots (factions, colours,
+teams), options (seed included: the same map) and map, ready flags cleared,
+and sends `rematch { state: 'lobby' }`. The relay and the order log are
+dropped. The players who accepted and the spectators keep their places and
+must come back within `REMATCH_RETURN_MS` (60 s): the client reloads the page
+(a finished game is not torn down in place) and sends `hello` with `rejoin`
+and its key, answered with `welcome` and `lobby`. Until that deadline a lost
+connection (closing the old page, a second reload) does not give up the
+place, and a newer connection replaces an older one; `leave` does give it up.
+At the deadline connected members stay and the others lose their places.
+Other places open at once. A client that missed `rematch { state: 'lobby' }`
+(its connection was away) reconnects into the lobby and reloads the same way.
+The host starts the next game as usual.
+
+### Online saves
+
+Any player still in the game proposes saving it with `save { accept: true }`;
+everyone gets `save { state: 'open', by, accepted, waiting, msLeft }`. Every
+player still in the game (also a defeated one) must accept within 60 s
+(`SAVE_VOTE_MS`) and be connected; every human seat must still be in the game
+and signed in with an account (players are matched by account when the save
+is resumed). One decline, the proposer withdrawing or leaving, or the time
+running out ends it: `save { state: 'cancelled', reason }` (`declined`,
+`withdrawn`, `left`, `expired`, `desync`, `accounts`, `too_long`, `failed`),
+then 10 s before the next proposal. Spectators do not take part.
+
+Agreed: the server picks the save point, the first multiple of 25 at or
+after its next frame plus the order delay (no client ran it yet), and sends
+`save { state: 'agreed', tick }`. The game goes on; it does not pause (the
+save point is a tick in the past for everyone by the time the save is
+written, so nothing has to stand still). Every player reports its state hash
+at that tick anyway (`hash`). When all of them match, the server stores a
+record in D1 (`online_saves`, `online_save_members`): the save point
+(`ticks = tick + 1`), the agreed state hash, a digest of the order frames
+before the save point (`framesDigest`: starting from the SHA-256 of the empty
+string, each frame in its validated form is chained as `h = SHA-256(h +
+JSON([tick, orders]))`, so the server computes it from its order log chunk
+by chunk), the SHA-256 of the game options (`optionsDigest`), the map
+hash, the game version, the session name and the account of every seat. It
+answers `save { state: 'saved', id, ticks, hash }`, and every player's client
+writes the save file (section 7, `online.id` = the record) from its own
+recording into the browser's saves. Different hashes: `cancelled` with
+`desync`; no hash within 60 s (`SAVE_HASH_MS`): `expired`. The server keeps no
+orders, options or map of a save. Records are deleted after 90 days, beyond
+20 per account (the oldest go first) and when an account that played in
+them is purged.
+
+Resume: in the online browser, "Resume a saved game" lists the browser's
+online saves; the player creates a session as host (private by default, at
+least as many places as the save has players; the other players join with
+the invite link) and the client sends the file with
+`POST /api/sessions/:id/resume` and its member header. The Worker needs a
+signed-in account and 10 resumes per hour per network; before reading the
+body it checks that the requester is the host (the session's `checkHost`)
+and that Content-Length is at most the order log limit plus a map plus 256 KiB
+(413). It validates the file (`parseReplay`, the orders counted against the
+order log limit while validating with the order log's own accounting,
+`logEntryBytes`: 413), finds the record by `online.id` (404 when
+the server no longer keeps it), and requires the same save point, final state
+hash, game version, map hash, options digest and frames digest (409
+otherwise) and the requester's account among the save's players (403). The map, when there is one, is
+checked like an upload and shared with the session (it stays unlisted). The
+session object checks the member key and the host role and that the session
+runs the save's game version, keeps the orders in its storage and turns the
+lobby into the saved game: the slots are the saved players with their
+resolved factions, colours and teams; each human slot is reserved for the
+account that played it, and only that account can take it (others may watch);
+the options and the map stay as saved. Lobby messages carry `resume` with the
+names the lobby still waits for; the host can start once every saved player
+is back, ready (which means agreeing to continue) and has the map.
+
+The start message carries the saved options exactly and `resume: { ticks,
+hash }`. Every member gets it with the saved orders as `log` messages and
+`sync { tick: ticks, check: { tick: ticks - 1, hash } }`: clients fast-forward
+like a rejoin and compare their state hash at the save point. A player whose
+hash differs does not continue; the others send `resume`. When every player
+caught up (or the catch-up time ran out for some: 60 s plus 1 ms per saved
+tick, at most 3 minutes; such a player gets `error dropped`, everyone gets
+`left` with reason `dropped`, and its seat waits `RECONNECT_GRACE_MS` for a
+rejoin like after a lost connection), the relay starts at `ticks`: `back` with that tick for
+every player, then the empty frames `ticks .. ticks + delay - 1`, and the game
+goes on in lockstep. Orders and hashes before that are refused with
+`bad_state`. The resumed game records itself completely (it replays from tick
+0), so it can be saved again.
 
 ### Spectators
 
@@ -571,8 +768,8 @@ serialized).
 
 ### Production queues (`engine/src/production.rs`)
 
-Orders `start_production {ty, count}` and `cancel_production {ty}` serve every
-queue, structures included (no extra order types):
+Orders `start_production {ty, count}`, `cancel_production {ty}` and
+`pause_production {ty, paused}` serve every queue, structures included:
 
 - Structures queue like units (OpenRA): left click queues one, shift queues
   five. Only the first item of a queue is built. A finished structure waits
@@ -581,6 +778,22 @@ queue, structures included (no extra order types):
   the finished head of the queue.
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
+- `pause_production` (OpenRA PauseProduction) puts the first queued item of
+  that type on hold or resumes it. An item on hold at the head of its queue
+  holds up the queue (no progress, nothing paid); finished items are never
+  on hold. It is in the state hash. The sidebar follows OpenRA's
+  ProductionPaletteWidget: right click holds the item being built and
+  cancels one that is on hold, finished or not started (nothing paid yet),
+  middle click cancels at once, left click on a held item resumes it.
+  `player_json().queues[][]` items have `paused` and `started` (something
+  paid).
+- Buildable.BuildLimit (`build_limit` in rules.json, 0 none: the
+  superweapons, Tanya): owned plus queued of that type stay within it;
+  `start_production` queues only what fits, the "all tech" cheat lifts it.
+  `player_json().buildable[].limitLeft` is how many more fit (null: no
+  limit); with the queue length (at most 30) the sidebar knows what OpenRA's
+  CanQueue would say (Building or Training, Unable to build more, Building
+  in progress).
 - OpenRA `CancelUnbuildableItems`: every tick, before production advances,
   each queued item that can no longer be produced is cancelled and refunded,
   wherever it is in the queue. That is an item whose prerequisites were lost
@@ -603,8 +816,8 @@ fields on water cells, naval yards are their docks) and `air` (free flight,
 no pathfinding). Queue types: Building, Defense, Infantry, Vehicle, Aircraft,
 Ship. Target classes: infantry 1, vehicle 2, structure 4, air 8, water 16,
 mine 32, underwater 64 (submerged submarines), submarine 128 (any
-submarine; depth charge warheads), heal 512 (damaged infantry: the Medic),
-repair 1024 (damaged vehicles, ships and landed aircraft: the Mechanic).
+submarine; depth charge warheads), husk 512 (husks), heal 2048 (damaged infantry: the Medic),
+repair 4096 (damaged vehicles, ships and landed aircraft: the Mechanic).
 Naval yards are structure and water. Warheads carry `relationships`
 (OpenRA ValidRelationships: 1 ally, 2 neutral, 4 enemy).
 
@@ -615,6 +828,33 @@ it can unload now and 2 when no free cell is next to it. `Game.actor_json`
 reports `passengers` (ids), `cargoWeight`, `cargoMax`, `carrier` (the
 transport a passenger is in, or 0xFFFFFFFF) and `submerged`. Passengers are
 out of the world: not pickable, not box-selectable, dropped from the selection.
+
+Primary buildings: on a production structure with PrimaryBuilding
+`Game.deploy_state` is 3: `Game.deploy` (or clicking the
+selected structure) toggles it as the primary producer of its queue
+(`engine/src/primary.rs`), which new units leave from first; sound event 32
+PrimaryBuildingSelected announces it.
+
+Leftovers (`engine/src/husks.rs`, `crates.rs`, `smudges.rs`): crates and
+husks are actors of kind `crate` and `husk`. They are not units: not selectable or targetable (husks take damage
+from warheads and burn down by ChangesHealth), each holds its cell for
+placement and movement, and a right click on one is a move. Husks follow
+OpenRA's Husk rules (drag to the death position, crush what the locomotor
+crushes, Capturable / InfiltrateForTransform data in `rules_json` for the
+capture orders). Selling spawns crew (SpawnActorsOnSell). LeaveSmudge
+warheads mark a cell (one mark per cell: a newer one replaces it) in the
+alpha byte of `terrain_ptr`: 255 none, else bit 6 crater (else scorch), bits
+3 to 5 the variant (0 to 5, OpenRA cr1..cr6 and sc1..sc6), bits 0 to 2 the
+depth (`engine/src/smudges.rs` `encode`); the terrain shader draws them and a
+new mark only shows once its cell is in the view player's sight. DestroyResource
+and CreateResource change ore deterministically. Effects of these are sound
+events (`[kind, a, x, y, owner, b]`): 36 CrateCollected (a =
+`crate_action_code` of the action's class, b = crate type), 35
+TimeLimitWarning (a = minutes left, owner = `ALL_PLAYERS`), 38 Bounty (a =
+amount shown, owner = killer), 39 TimeLimitExpired (owner = `ALL_PLAYERS`),
+40 PlayerLost, 41 ScreenShake (a = ticks, b = intensity, owner = `mx + 16 *
+my`) and 42 Flash (a = ticks, b = 1 nuke); they are presentation only (`apps/game/js/battlefx.js`, the audio director), and the
+Reduce motion setting turns the shake off and the flash down.
 
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
@@ -708,43 +948,61 @@ apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
 
 Every Red Alert soldier of OpenRA's infantry.yaml: E1 to E4, E6 (engineer),
 E7 (Tanya), DOG, MEDI, MECH, SPY and SPY.England, THF and SHOK. rules.json
-carries per actor `build_limit`, `producible_level` (ProducibleWithLevel),
-`fire_delays` (Armament.FireDelay per weapon slot), `targets_allies`
-(healers), `death` (WithDeathAnimation: death sequence per damage type),
-`infiltrate_types` and `disguisable`, and abilities `captures`,
-`capturable`, `instantly_repairs`, `instantly_repairable`,
-`repairs_bridges`, `infiltrates`, `infiltrated` (InfiltrateFor* effects:
-cash, exploration, power_outage, support_power, power_reset, decoration),
-`disguise`, `ignores_disguise`, `demolition`, `demolishable`,
-`attack_leap`, `announce_on_kill` and, on proxy actors (kind `proxy`, never
-on a map), `proxy`. Proxies are granted per player (`Player::proxies`) for
-their prerequisites and support powers (the Sonar Pulse, a
-`SpawnActorPower`).
+carries per actor `producible_level` (ProducibleWithLevel), `fire_delays`
+(Armament.FireDelay per weapon slot), `targets_allies` (healers), `death`
+(WithDeathAnimation: death sequence per damage type), `infiltrate_types`
+and `disguisable`, and abilities `captures`, `capturable`,
+`instantly_repairs`, `instantly_repairable`, `repairs_bridges`,
+`infiltrates`, `infiltrated` (InfiltrateFor* effects: cash, exploration,
+power_outage, support_power, power_reset, decoration, transform),
+`disguise`, `ignores_disguise`, `demolition`, `demolishable`, `attack_leap`,
+`announce_on_kill` and, on proxy actors (kind `proxy`, never on a map),
+`proxy`. Proxies are granted per player (`Player::proxies`) for their
+prerequisites and support powers (the Sonar Pulse, a `SpawnActorPower`).
+Buildable.BuildLimit (Tanya) is the shared `build_limit` (production.rs
+`build_limit_left`). Heal and repair warheads target the bits 2048 (`Heal`)
+and 4096 (`Repair`).
 
 Right clicks (`Game.cursor_action`, world.rs `SmartAction`): 8 capture, 9
 infiltrate, 10 C4, 11 engineer repair (structures and bridge huts), 12 heal,
 13 mechanic repair, 14 disguise, 15 blocked enter, 16 blocked engineer
-repair (undamaged), 17 capture from outside (reusable engineers). They go
-through the `Smart` order: no new order kinds. A forced attack of Tanya on a
-structure plants C4. `Game.actor_json` adds `disguise` (`{type, owner}` or
-null; only the owner and allies should be shown the spy behind it),
-`beingCaptured`, `demolished` and `powerOutage` (ticks left).
+repair (undamaged), 17 capture from outside (reusable engineers, the lobby
+option `reusableEngineers`: OpenRA's Captures@REUSABLE). They go through the
+`Smart` order: no new order kinds. A forced attack of Tanya on a structure
+plants C4. `Game.actor_json` adds `disguise` (`{type, owner}` or null; only
+the owner and allies should be shown the spy behind it), `beingCaptured`,
+`demolished` and `powerOutage` (ticks left).
 
 For the world objects: anything with `abilities.capturable` can be captured
-(`World::can_capture`, `World::capture(target, new_owner, captor)`); bridge
-huts register with `World::register_bridge_hut`, report their bridge with
+(`World::can_capture`, `World::capture(target, new_owner, captor)`); a
+captured husk becomes its vehicle again for the captor (husks.rs
+`restore_husk`, TransformOnCapture), and the mechanic's infiltration repairs
+an allied husk (InfiltrateForTransform). Bridge huts register with
+`World::register_bridge_hut`, report their bridge with
 `World::set_bridge_hut_state(hut, damaged, repairing)` and collect the huts
 engineers entered with `World::take_bridge_repairs`.
 
 Audio: the `Death` event's `b` is the kind code with the death sequence
-(1..6 die1..die6, 7 crushed) in the bits above 8; event 40 (`Infantry`)
-carries an `InfantryEvent` in `a` (1 structure captured, 2 structure lost,
-3 unit stolen, 4 unit lost, 5 building infiltrated, 6 credits stolen with
-`b` the amount, 7 credits gained, 8 C4 planted, 9 disguised, 10 engineer
-repair, 11 a kill to announce with `b` the killer's type, 12 sonar pulse).
+(1..6 die1..die6, 7 crushed) in the bits above 8. Captures and stolen
+vehicles send `Captured` (33), infiltrations `Infiltrated` (34), and a kill
+Tanya announces `KillAnnounced` (43, `a` the killer's type, to its owner).
 Sprites: `SpriteIds::infantry_base` + 0..4 built-in dying soldiers (shot,
 blown up, burned, electrocuted, crushed), 5 spy tag, 6 fake tag, 7 sonar
 ring (apps/game/js/art/infantry.js).
+
+### Pilots (`engine/src/plane.rs` `eject_pilot`)
+
+OpenRA EjectOnDeath (rules `abilities.eject_on_death {pilot, success_rate,
+in_air, on_ground, allow_unsuitable_cell}`, every RA plane and helicopter
+but the Badger): when such an actor dies, unless its owner is defeated or it
+is off the map, `rng.range(0, 100) < success_rate` (the shared simulation
+random numbers, so it is in the state hash through the pilot) decides
+whether its pilot (E1) comes out at its position. In the air the pilot falls
+by parachute from the aircraft's height and dies where it cannot stand
+(water, structures); at ground level only with `on_ground` (false in RA).
+Without `allow_unsuitable_cell` (true in RA) no pilot comes out over a cell
+infantry cannot enter. A plane that starts to fall decides when it is hit,
+not again where it crashes.
 
 ### Helicopters (`engine/src/helicopter.rs`)
 
@@ -907,6 +1165,55 @@ player, b: the structure's owner; the "Repairing" announcement), 12
 unit hit by another player after a quiet spell; a radar ping like OpenRA's
 DamageNotifier@Unit).
 
+### Audio events and notifications (`engine/src/sound_events.rs`, `apps/game/js/audio`)
+
+The engine logs what happened as audio events (`EVENT_STRIDE` i32s each:
+`[kind, a, x, y, owner, b]`, world units); the client drains them per frame
+(`take_audio_events`) and decides what to play (js/audio/director.js). The
+log is presentation only: never read by the simulation, off by default
+(servers, tests), not in the state hash; presentation-only bookkeeping
+(power instances' `notified_charging` / `notified_ready`, aircraft
+`air.power` / `air.launched`) is not hashed either. Kinds and their fields:
+1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
+attacking player; only another player's fire counts, as in OpenRA's
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold, 8
+InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
+ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
+Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
+provider type, b: its power index; OpenRA SupportPowerInstance's
+notifiedCharging and notifiedReady), 19 ReinforcementsArrived (the first
+paratrooper plane of a drop in the drop zone), 20 ProductionCancelled
+(CancelUnbuildableItems), 21 ProductionBlocked (a finished unit cannot
+leave, once per item), 22 UnitRepairStarted and 23 UnitRepaired (b: the
+repairing structure's type), 24 LevelUp, 25 Crushed (at the crusher; b: its
+owner), 26 DamageHeavy (fell below half health: SoundOnDamageTransition), 27
+CloakChanged (b: 1 cloaked; not when an actor starts cloaked), 28 ParaDrop
+(the dropping aircraft's ChuteSound), 29 ParachuteImpact (b: 1 on water), 30
+Rearmed (one magazine; the owner only), 31 NewOptions (10 ticks after a
+placement that added buildable items), 32 PrimaryBuildingSelected, 33
+Captured (owner: new owner, b: old owner), 34 Infiltrated (owner: the
+target's owner, b: `infiltrator_code(type, owner)`), 35 TimeLimitWarning (a:
+minutes left, owner `ALL_PLAYERS`; `SoundEvents::push_time_limit`), 36
+CrateCollected (a: `crate_action_code`, b: the crate's type), 37
+PilotEjected (a: the aircraft's type; its EjectOnDeath ChuteSound), 43
+KillAnnounced (a: the killer's type; its AnnounceOnKill voice line, to its
+owner). Kinds 32 to 36
+are the API for features other code emits (`self.sound.push(...)`); the
+client already plays them. `rules_json` actors list their support power keys
+(`powers`) so `power_ref` names a power.
+
+The client follows OpenRA's notifications (data/source/audio/notifications.yaml
+and the rules, through `tools/gen-audio-catalog.mjs` into
+js/audio/catalog-data.js): speech goes to the player it is for (spectators
+and replays hear none of it, but the time limit warnings), with OpenRA's
+intervals (low power every 10 s while low, silos needed every 20 s above 80
+percent of the storage, base under attack and insufficient funds at most
+every 30 s); sound notifications (RadarUp, LevelUp, ChatLine, ClickSound,
+...) honour their InterruptType and VolumeModifier; world sounds are heard
+near the camera where the player can see (WebRA's fog rule; OpenRA plays
+them regardless of the shroud). Lines that only exist as text in OpenRA
+(Unit promoted., Our ally is under attack.) are shown without sound.
+
 Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
 (`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
 data/source/hotkeys; CI checks it is up to date), each action naming its
@@ -971,7 +1278,7 @@ about options added since; files of the running build are validated in full:
 ```jsonc
 {
   "format": "webra-replay", "version": 1,
-  "kind": "replay",                 // or "save" (skirmish only)
+  "kind": "replay",                 // or "save" (skirmish, or online with `online`)
   "mode": "skirmish",               // or "online"
   "engine": "0.3.0+abcdef12",       // Game version(): files only load in the same build
   "createdAt": 1760000000000,
@@ -982,7 +1289,8 @@ about options added since; files of the running build are validated in full:
   "player": 0,                      // the recording player, null for a spectator
   "ticks": 1200,                    // ticks recorded
   "frames": [[12, [[0, [{ "o": "move", ... }]]]]],  // non-empty frames, tick < ticks, increasing
-  "hashes": [[250, "0123456789abcdef"]]            // state hash after N ticks, every 250 ticks
+  "hashes": [[250, "0123456789abcdef"]],           // state hash after N ticks, every 250 ticks
+  "online": { "id": "0123456789abcdef" }           // online saves only: the server's record (section 4)
 }
 ```
 
@@ -999,12 +1307,16 @@ about options added since; files of the running build are validated in full:
 - Restart (`js/restart.js`): single player games and loaded saves restart
   from tick 0 with the same options and map through a page reload (the
   settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
-  viewer restarts playback in place. Online games have no restart.
+  viewer restarts playback in place. Online games have a rematch instead
+  (section 4).
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
   goes on from the save. Saves go to the browser (IndexedDB database
   `webra`, store `saves`, at most 50) or to a file.
+- An online save (mode `online`, with `online.id`) ends right after a hash
+  tick (`ticks - 1` is a multiple of 25) and is never loaded alone: it is
+  resumed online with its players (section 4, "Online saves").
 
 ## 8. Simulation worker (`apps/game/js/sim`)
 
@@ -1037,7 +1349,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick` |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
@@ -1162,18 +1474,30 @@ carry a pose in the sprite id:
     id = slot + 4096 * (pose + 32 * age)
 
 `slot` is the sprite slot as before (actor `t`: body `2t`, second part
-`2t + 1`; specials after them), always below 4096. Poses
+`2t + 1`; specials after them, the leftover specials of
+`apps/game/js/art/leftovers.js` at `2 * actors + 68`: fire, smoke, the
+PRIMARY tag and the crate pickup signs), always below 4096. Poses
 (`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
 1 move (the actor moved this tick), 2 attack (attacking and standing), 3
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
 (structure placed during the game, `age` = ticks since then, up to 127), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
-remembered structure under fog), 8 damaged and still, 9 the second stand
-sequence and 10, 11 the idle animations of a standing soldier (`age` = ticks
-into the animation), 12 to 17 death sequences die1 to die6 and 18 a crushed
-body (`age` = ticks since the death). Dying soldiers are drawn with their
-death sequences only for actor types `Game.set_death_art(types)` names (the
-atlas's `deaths`); others show the built-in bodies. Walls report idle or
+remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
+aux move (a second overlay in the same slot: the Chinook's rear rotor on the
+ground and in the air), 11 and 12 active and damaged active (working:
+resupplying, the Tesla charge, a launch, placing, turret recoil, the
+landing craft's doors open, the V2 launcher reloading), 13 parachute (a
+paratrooper falling), 14 active end (the landing craft closing, the
+harvester leaving the refinery played backwards), 15 the second stand
+sequence and 16, 17 the idle animations of a standing soldier (`age` = ticks
+into the animation), 18 to 23 death sequences die1 to die6 and 24 a crushed
+body (`age` = ticks since the death), 25 a soldier's second attack sequence
+(AttackSequences: picked per shot, Tanya's shoot-right). Dying soldiers are drawn with their
+death sequences only for actor types `Game.set_death_art(types, ticks)`
+names (the atlas's `deaths`; `ticks`, the atlas's `deathTicks`, has eight
+lengths per type: die1..die6, crushed and the longest idle animation, so a
+body stays until its sequence ended and an idle animation plays to its end);
+others show the built-in bodies. Walls report idle or
 damaged with `age` = their connection mask (OpenRA WithWallSpriteBody: 1
 north, 2 east, 4 south, 8 west, same type only). Building turrets report
 damaged too. Poses are read from the world and never written: the state
@@ -1186,9 +1510,12 @@ Frame table (`js/sprites.js` `FRAME_FLOATS` = 16, `Frame` in the shader):
 A slot whose `seq.y` (pose count) is non-zero is a pose table: entry
 `seq.x + pose` (clamped to the count) is a descriptor with `anim` = (first
 frame, frames per facing, frames per second, mode) and `seq` = (facings,
-flags: 1 classic facings, 2 free rotation; interpolated facings). Modes: 0
-loop on the render clock, 1 once from `age` (then the idle descriptor), 2
-first frame, 3 frame `age`, 4 once from `age` and then nothing (deaths). The facing comes from the instance angle:
+flags: 1 classic facings, 2 free rotation; interpolated facings; lead-in
+frames). Modes: 0 loop on the render clock, 1 once from `age` (then the idle
+descriptor), 2 first frame, 3 frame `age`, 4 lead: the first lead-in frames
+once from `age`, then the rest looping on the render clock (the harvester's
+dock, the landing craft's ramp, an opening parachute), 5 once from `age` and
+then nothing (deaths). The facing comes from the instance angle:
 `a = (1024 - round(angle * 1024 / 2pi)) mod 1024` (OpenRA turns
 counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
 sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
@@ -1219,6 +1546,76 @@ that unit is on its exit cell and not yet idle there, then one frame per
 tick back to 0. Under fog the value itself (the layer's still pose) is
 drawn.
 
+Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
+render setting; `js/content/atlas.js` `originalSlotInfo`) are drawn the way
+OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
+slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
+10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
+ships and spinners on units with OpenRA's classic perspective
+(`BodyOrientation.LocalToWorld`: the north-south part of an offset along
+the body times sin 40 degrees, `render.rs` `classic_offset`); heights of
+turrets and overlays are drawn into their frames. Explosions and splashes
+with original art play once (pose 4, `age` = ticks since the effect
+started, the idle pose is empty) at their own size, without WebRA's
+growth and fade, and WebRA's dust cloud is left out; original missiles
+and torpedoes pick their facing frame instead of being turned; WebRA's
+submerged ripple is not drawn over an original hull. `info` holds
+records `[kind, actor type, a, b]`: kind 0 an overlay over a unit without
+a turret (the Radar Jammer's and Mobile Gap Generator's dishes; a forward,
+b side offset in world units, drawn from slot `2t + 1` with the idle
+pose), kind 1 a structure whose body shows the storage level (OpenRA
+WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
+capacity of its owner, mode 3), kind 2 the original damage smoke
+(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
+same either way.
+
+Sprite slots after the specials: the effects module (`fx_base`: 0 damage
+smoke, 1 and 2 the original Tesla zap's bright and dim frames), one muzzle
+flash per actor type (`muzzle_base + t`) and one explosion per name of
+`engine/render.json` (`explosion_base + k`). Specials 5 and 6 (`at_mine`,
+`ap_mine`) are reserved: mines are drawn as their actors, and a texture
+pack's sprites of those names replace the mine actors' bodies.
+
+`engine/render.json` (generated by `tools/gen_content_tables.py` from
+OpenRA's rules and weapons) holds what the engine's effects need
+(`engine/src/fx.rs`, presentation only, never in the state hash): the
+CreateEffect warheads of every weapon (explosion names, where they show:
+ground, open water, ship, air; delay), the muzzle flashes of every actor
+(Armament MuzzleSequence, LocalOffset, turret), its damage smoke
+(WithDamageOverlay) and its working animations. Impacts and deaths show
+their weapon's explosions (one per valid warhead, picked out of its list by
+a hash of the impact instead of OpenRA's random); WebRA draws its own
+picture of each explosion, grown and faded, or with the original graphics
+OpenRA's sequence once from the make pose. Muzzle flashes follow every shot
+at OpenRA's barrel offset, one per barrel (barrels take turns as OpenRA's
+Armament cycles them, and every barrel that fired lately shows its own flash
+at once, also across armaments); the damage smoke starts when a unit is hit
+below its damage state: OpenRA's start sequence, then the loop LoopCount
+times (`Next(1, 3)`: once or twice, picked by a hash of the actor and the
+tick instead of OpenRA's shared random). With the original graphics the
+client gives the smoke's frame time and its start and loop frame counts
+(`info` kind 2) and the engine names the frame (mode 3). With the original graphics the Tesla zap is OpenRA's
+TeslaZapRenderable: two dim and one bright wandering bolt in 8 pixel steps
+showing litning.shp's direction frames, for TeslaZap.Duration (2 ticks).
+
+Mouse cursors: every cursor kind has an OpenRA cursor name
+(`js/cursors.js` `CURSOR_NAMES`, `COMMAND_CURSOR_NAMES`); with the original
+graphics `setCursorArt` shows Red Alert's mouse.shp cursors (a Dune 2
+layout SHP, `js/content/shp.js` `decodeShpD2`) cut by OpenRA's
+mods/ra/cursors.yaml (`data/source/cursors.yaml`, `CURSOR_ART`): PNG data
+URLs with OpenRA's hotspots, animated at 12.5 frames per second like
+OpenRA's CursorManager. Mouse capture draws them as its virtual cursor.
+
+The original art audit (`js/content/audit.js`, run on a player's own files
+with `node tools/art-audit.mjs <files or directories>`) lists for every
+actor and special sprite each sequence OpenRA's render traits draw
+(`js/content/render-facts.js`, generated with `tables.js`) and whether
+WebRA shows it (ok), falls back to its own art, maps a wrong one, has no
+way to show it yet (gap, with what is missing) or Red Alert has no art for
+it (webra-only). `apps/game/tests/art-audit.test.mjs` runs it on synthetic
+files whose frames spell their own file and frame number, so a missing
+mapping or a frame out of OpenRA's order fails CI.
+
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.
@@ -1234,8 +1631,8 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky) | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |

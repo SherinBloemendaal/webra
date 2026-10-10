@@ -16,7 +16,7 @@ import { AudioSystem } from '../js/audio/index.js';
 import { mountAudioPanel } from '../js/audio/panel.js';
 import { mountMusicPlayer, mountMusicPanel, formatTime, playerStatus } from '../js/audio/musicplayer.js';
 import { audDuration } from '../js/audio/aud.js';
-import { MUSIC, MUSIC_SOURCE_HINT } from '../js/audio/catalog.js';
+import { MUSIC, PLAYLIST, MUSIC_SOURCE_HINT } from '../js/audio/catalog.js';
 import { MemoryStore } from '../js/content/store.js';
 
 let doc;
@@ -51,7 +51,7 @@ async function audioWith({ tracks = 3, store = new MemoryStore(), registry = cre
     played.push(handle);
     return handle;
   };
-  audio.bank.pack = new Map(MUSIC.slice(0, tracks).map((t, i) => [t.file, { file: t.file, duration: 60 * (i + 1) + 5 }]));
+  audio.bank.pack = new Map(PLAYLIST.slice(0, tracks).map((t, i) => [t.file, { file: t.file, duration: 60 * (i + 1) + 5 }]));
   await settle();
   await audio.jukebox.refresh();
   audio.changed();
@@ -72,7 +72,13 @@ test('the track list follows OpenRA music.yaml: titles in its order, without the
   assert.equal(MUSIC[0].file, 'await_r.aud');
   assert.ok(MUSIC.some((m) => m.file === 'hell226m.aud' && m.title === 'Hell March'));
   assert.ok(MUSIC.some((m) => m.file === 'credits.aud' && m.title === 'Reload Fire (Credits)'));
-  for (const hidden of ['intro.aud', 'map.aud', 'score.aud']) assert.equal(MUSIC.some((m) => m.file === hidden), false, hidden);
+  for (const hidden of ['intro.aud', 'map.aud', 'score.aud']) {
+    assert.equal(PLAYLIST.some((m) => m.file === hidden), false, hidden);
+    assert.ok(MUSIC.find((m) => m.file === hidden).hidden, `${hidden} plays only as background music`);
+  }
+  // The Counterstrike and Aftermath tracks follow the base game's, as in music.yaml.
+  assert.equal(PLAYLIST.at(-1).file, 'wastelnd.aud');
+  assert.ok(PLAYLIST.some((m) => m.file === 'araziod.aud' && m.title === 'Arazoid' && m.group === 'Counterstrike'));
   assert.equal(new Set(MUSIC.map((m) => m.file)).size, MUSIC.length);
 });
 

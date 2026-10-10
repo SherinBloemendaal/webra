@@ -59,6 +59,13 @@ export const SPECIALS = Object.freeze([
   'nuke',
 ]);
 
+/**
+ * Special names that are actors: the engine draws mines with the bodies of
+ * the mine actors, so a pack's "at_mine" and "ap_mine" sprites replace those
+ * (their special slots stay reserved and empty, engine/src/render.rs SpriteIds).
+ */
+export const SPECIAL_ACTORS = Object.freeze({ at_mine: 'MINV', ap_mine: 'MINP' });
+
 export const POSE_NAMES = Object.freeze([
   'idle',
   'move',
@@ -67,7 +74,7 @@ export const POSE_NAMES = Object.freeze([
   'make',
   'harvest',
   'dock',
-  // Infantry (engine/src/infantry_render.rs): stand variant, idle animations, deaths.
+  // Infantry (engine/src/infantry_render.rs): stand variant, idle animations, deaths, second attack.
   'stand2',
   'idle1',
   'idle2',
@@ -78,6 +85,7 @@ export const POSE_NAMES = Object.freeze([
   'die5',
   'die6',
   'crushed',
+  'attack2',
 ]);
 export const TERRAIN_CLASSES = Object.freeze(['clear', 'rough', 'rock', 'water', 'tree', 'ford']);
 export const PACK_BIOMES = Object.freeze(['temperate', 'snow', 'desert']);
@@ -494,6 +502,11 @@ export function packSlots(manifest, images, actors) {
       const t = index.get(s.actor);
       if (t === undefined) continue;
       slot = 2 * t + (s.part === 'second' ? 1 : 0);
+    } else if (SPECIAL_ACTORS[s.special]) {
+      // The mines are actors (MINV, MINP): their special names address the actor's body.
+      const t = index.get(SPECIAL_ACTORS[s.special]);
+      if (t === undefined) continue;
+      slot = 2 * t;
     } else {
       slot = actors.length * 2 + SPECIALS.indexOf(s.special);
     }

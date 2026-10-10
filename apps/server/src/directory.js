@@ -25,12 +25,22 @@ export async function upsertSession(db, s, now = Date.now()) {
       s.locked ? 1 : 0,
       s.players,
       s.maxPlayers,
-      s.map ? JSON.stringify({ id: s.map.id, name: s.map.name, hash: s.map.hash, modded: s.map.modded }) : null,
+      s.map ? JSON.stringify(directoryMap(s.map)) : null,
       s.version,
       s.state,
       now,
     )
     .run();
+}
+
+/**
+ * What the public session list says about a lobby's map: a community map
+ * by id and hash; a map the host shared with the session only by its name
+ * (its id, hash and author stay with the members, docs/security.md).
+ */
+export function directoryMap(map) {
+  if (map.shared) return { name: map.name, modded: map.modded, shared: true };
+  return { id: map.id, name: map.name, hash: map.hash, modded: map.modded };
 }
 
 export async function removeSession(db, id) {
@@ -41,6 +51,7 @@ function parseMapJson(text) {
   if (!text) return null;
   try {
     const m = JSON.parse(text);
+    if (m.shared === true) return { name: String(m.name), modded: m.modded === true, shared: true };
     return { id: String(m.id), name: String(m.name), hash: String(m.hash), modded: m.modded === true };
   } catch {
     return null;

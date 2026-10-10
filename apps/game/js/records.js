@@ -124,14 +124,21 @@ async function loadDialog(store, ctx) {
         const info = el('div', 'records-info');
         info.append(el('strong', null, s.title), el('span', 'records-muted', `${formatTicks(s.ticks)} played, saved ${new Date(s.createdAt).toLocaleString()}`));
         if (s.engine !== ctx.version) info.append(el('span', 'records-warning', `Made with WebRA ${s.engine}`));
+        // Online saves continue online with their players (Play online, Resume a saved game).
+        if (s.mode === 'online') info.append(el('span', 'records-muted', 'Online game: resume it from Play online.'));
         const load = button('Load', 'records-primary', async () => {
           const r = await store.load(s.id, ctx.version);
           if (!r.ok) {
             status.textContent = `This save cannot be loaded: ${r.error}.`;
             return;
           }
+          if (r.replay.mode === 'online') {
+            status.textContent = 'This is a saved online game: resume it with its players from Play online.';
+            return;
+          }
           close(r.replay);
         });
+        load.disabled = s.mode === 'online';
         const del = button('Delete', null, async () => {
           await store.remove(s.id);
           render();
@@ -148,6 +155,7 @@ async function loadDialog(store, ctx) {
         const r = await openRecordFile(file, ctx.version);
         if (!r.ok) status.textContent = r.error;
         else if (r.replay.kind !== 'save') status.textContent = 'That is a replay. Open it with the Replays button.';
+        else if (r.replay.mode === 'online') status.textContent = 'This is a saved online game: resume it with its players from Play online.';
         else close(r.replay);
       }),
       button('Cancel', null, () => close(null)),
@@ -163,9 +171,10 @@ async function loadDialog(store, ctx) {
  * file) and download the replay. Each `run()` resolves with the message to show.
  * `recorder` is the handle on the recorder that runs with the simulation
  * (js/sim/proxy.js RecorderHandle): `start`, `full`, and `encode(kind)`
- * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads.
+ * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads;
+ * `onSaved()` runs after every save (OpenRA's GameSaved notification).
  */
-export function recordActions({ recorder, ready = () => true, stress = false, store = null }) {
+export function recordActions({ recorder, ready = () => true, stress = false, store = null, onSaved = () => {} }) {
   if (stress || !recorder) return [];
   const saves = store ?? SaveStore.browser();
   const fail = (err) => err?.message ?? String(err);
@@ -180,6 +189,7 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
         try {
           const { text, ticks } = await recorder.encode('save');
           await saves.add(text);
+          onSaved();
           return `Saved at ${formatTicks(ticks)}. Load it from the lobby (Load game).`;
         } catch (err) {
           return `Could not save: ${fail(err)}`;
@@ -195,6 +205,7 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
         try {
           const { text } = await recorder.encode('save');
           downloadText(recordFileName({ ...recorder.start }, 'save'), text);
+          onSaved();
           return 'Save file downloaded.';
         } catch (err) {
           return `Could not save: ${fail(err)}`;

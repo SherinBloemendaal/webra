@@ -190,6 +190,8 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+    /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
+    pub fx: crate::fx::ActorFx,
 
     // Repair and power down buttons (repair.rs)
     /// Players repairing this building (OpenRA RepairableBuilding.Repairers), in the order they started.
@@ -206,6 +208,10 @@ pub struct Actor {
     pub faction: u8,
     /// Infantry abilities: entering, disguise, leaps, C4 (infantry.rs, dog.rs).
     pub inf: crate::infantry::InfantryState,
+    /// Husks and crates (husks.rs, crates.rs): burn timer, slide, age on the ground.
+    pub leftover: crate::husks::Leftover,
+    /// The owner's primary production structure (primary.rs, OpenRA PrimaryBuilding).
+    pub primary: bool,
 }
 
 impl Actor {
@@ -282,17 +288,20 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
             repair_active: false,
             powered_off: false,
             faction: 0,
             inf: Default::default(),
+            leftover: Default::default(),
+            primary: false,
         }
     }
 
     pub fn is_unit(&self) -> bool {
-        !matches!(self.kind, Kind::Building | Kind::Mine)
+        !matches!(self.kind, Kind::Building | Kind::Mine | Kind::Husk | Kind::Crate)
     }
 
     /// False for passengers inside a transport (out of the world: not ticked,
@@ -310,6 +319,8 @@ pub struct QueueItem {
     pub paid: i32,
     pub slow: i32,
     pub done: bool,
+    /// On hold (OpenRA ProductionItem.Paused): a paused first item holds up its queue.
+    pub paused: bool,
 }
 
 #[derive(Clone, Default)]
@@ -351,6 +362,11 @@ pub struct Player {
     pub dev: crate::debug::DevFlags,
     /// Proxy actor types infiltrations granted (OpenRA InfiltrateForSupportPower; infantry.rs), sorted.
     pub proxies: Vec<u16>,
+    /// Handicap in percent (gamerules.rs).
+    pub handicap: i32,
+    /// OpenRA PlayerExperience: kills, repairs for allies and captures; the
+    /// time limit's winner has the most (gamerules.rs).
+    pub experience: i64,
 }
 
 impl Player {
@@ -389,6 +405,11 @@ pub enum EffectKind {
     Dust,
     /// Naval special effect (index into NAVAL_SPECIALS, see naval.rs).
     Naval(u8),
+    /// Smudge smoke, flames and crate pickup animations (husks.rs `LEFTOVER_*`).
+    Leftover(u8),
+    /// An explosion of a CreateEffect warhead (fx.rs): its index in
+    /// `Rules::render.explosions` and the ticks before it shows.
+    Explosion(u16, u8),
 }
 
 #[derive(Clone)]
@@ -411,6 +432,8 @@ pub struct PendingImpact {
     pub warhead: u8,
     pub x: i32,
     pub y: i32,
+    /// Height it burst at (smudges.rs: no smudges from bursts in the air).
+    pub altitude: i32,
     pub owner: u8,
     /// Who fired it, and with what firepower (veterancy.rs).
     pub shot: crate::veterancy::Shot,
@@ -440,6 +463,22 @@ pub struct GameOptions {
     /// Lobby option "Reusable engineers" (OpenRA `reusable-engineers`): engineers
     /// capture from outside and stay (Captures@REUSABLE; infantry.rs).
     pub reusable_engineers: bool,
+    /// OpenRA `crates`: the crate spawner drops crates (crates.rs).
+    pub crates: bool,
+    /// OpenRA `shortgame`: a player loses with its last structure (and MCV),
+    /// not its last unit (gamerules.rs).
+    pub short_game: bool,
+    /// OpenRA `timelimit` in minutes, 0 for none (gamerules.rs).
+    pub time_limit: i32,
+    /// Milliseconds per tick of the game speed: the time limit counts real
+    /// minutes, like OpenRA (`1000 / Timestep` ticks a second).
+    pub tick_ms: i32,
+    /// OpenRA `bounty`: killers get a share of the victim's value (gamerules.rs).
+    pub bounty: bool,
+    /// OpenRA `separateteamspawns`: team mates start next to each other, apart from their enemies.
+    pub separate_team_spawns: bool,
+    /// OpenRA `allybuild`: allied structures extend the build area too (production.rs).
+    pub ally_build_radius: bool,
 }
 
 impl Default for GameOptions {
@@ -457,6 +496,18 @@ impl Default for GameOptions {
             biome: Some(crate::weather::Biome::Temperate),
             weather: crate::weather::WeatherMode::Full,
             cheats: false,
+            // Tests and tools: no crates, the classic "everything must go"
+            // victory and every slot at its own spawn, so scenarios stay as
+            // they are set up. The lobby defaults (OpenRA's: crates, short
+            // game and separate team spawns on) come from packages/protocol
+            // and `parse_options`.
+            crates: false,
+            short_game: false,
+            time_limit: 0,
+            tick_ms: 40,
+            bounty: false,
+            separate_team_spawns: false,
+            ally_build_radius: true,
             reusable_engineers: false,
         }
     }
@@ -486,11 +537,14 @@ pub struct PlayerSetup {
     pub ai: Option<AiDifficulty>,
     /// 0: no team (free for all); equal non-zero teams are allies.
     pub team: u8,
+    /// OpenRA handicap in percent (0..95, steps of 5): less firepower and
+    /// armour, slower production (gamerules.rs).
+    pub handicap: u8,
 }
 
 impl PlayerSetup {
     pub fn new(faction: &str, ai: Option<AiDifficulty>) -> PlayerSetup {
-        PlayerSetup { faction: faction.to_string(), ai, team: 0 }
+        PlayerSetup { faction: faction.to_string(), ai, team: 0, handicap: 0 }
     }
 }
 
@@ -527,6 +581,12 @@ pub enum Order {
     CancelProduction {
         player: u8,
         ty: u16,
+    },
+    /// Put the first queued item of `ty` on hold or resume it (OpenRA PauseProduction).
+    PauseProduction {
+        player: u8,
+        ty: u16,
+        paused: bool,
     },
     Place {
         player: u8,
@@ -679,6 +739,7 @@ impl Order {
             | Order::Stop { player, .. }
             | Order::StartProduction { player, .. }
             | Order::CancelProduction { player, .. }
+            | Order::PauseProduction { player, .. }
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
@@ -712,6 +773,7 @@ impl Order {
             | Order::Stop { player, .. }
             | Order::StartProduction { player, .. }
             | Order::CancelProduction { player, .. }
+            | Order::PauseProduction { player, .. }
             | Order::Place { player, .. }
             | Order::Rally { player, .. }
             | Order::Sell { player, .. }
@@ -786,6 +848,7 @@ impl Order {
             | Order::SetStance { .. }
             | Order::StartProduction { .. }
             | Order::CancelProduction { .. }
+            | Order::PauseProduction { .. }
             | Order::Place { .. }
             | Order::Rally { .. }
             | Order::Sell { .. }
@@ -904,6 +967,27 @@ pub struct World {
     pub render_combined: bool,
     /// Map beacons players placed for their allies (beacons.rs).
     pub beacons: crate::beacons::Beacons,
+    /// Crate spawner and crate delivery flights (crates.rs).
+    pub crates: crate::crates::CrateState,
+    /// Scorch marks and craters (smudges.rs): presentation only, never read
+    /// by the simulation and not part of `state_hash`.
+    pub smudges: crate::smudges::Smudges,
+    /// The husk and the crate of every cell (husks.rs, crates.rs).
+    pub leftover_at: crate::husks::LeftoverCells,
+    /// The game ended (a winner was decided, or every remaining player lost
+    /// at once: the time limit can end a game without a winner; gamerules.rs).
+    pub game_over: bool,
+}
+
+/// Where a world's map came from (`World::setup`).
+enum MapSource<'a> {
+    /// Generated: its spawns are listed by column, top first, for fair team
+    /// splits (gamerules.rs `assign_spawns`).
+    Generated,
+    /// A prepared map without actors (`World::on_map`).
+    Prepared,
+    /// A map file with its pre-placed actors.
+    File(&'a [crate::mapdata::MapActor]),
 }
 
 impl World {
@@ -917,7 +1001,7 @@ impl World {
         let rules = Rules::load();
         let map = Map::generate_styled(map_size, map_size, seed, rules.player.ore_max_density, players.len(), options.map_style);
         let biome = options.biome.unwrap_or_else(|| crate::weather::Biome::random(seed));
-        World::setup(rules, map, seed, players, options, &[], biome)
+        World::setup(rules, map, seed, players, options, MapSource::Generated, biome)
     }
 
     /// World on a prepared map with the default rules: players start at the
@@ -926,7 +1010,7 @@ impl World {
     /// temperate, so no snow or heat waves change a scenario.
     pub fn on_map(seed: u64, map: Map, players: &[PlayerSetup], options: GameOptions) -> World {
         let biome = options.biome.unwrap_or(crate::weather::Biome::Temperate);
-        World::setup(Rules::load(), map, seed, players, options, &[], biome)
+        World::setup(Rules::load(), map, seed, players, options, MapSource::Prepared, biome)
     }
 
     /// World from a map file; rules overrides (modded maps) apply.
@@ -940,7 +1024,7 @@ impl World {
         }
         let rules = Rules::load_with(data.rules())?;
         let map = data.to_map()?;
-        Ok(World::setup(rules, map, seed, players, options, &data.actors, data.biome))
+        Ok(World::setup(rules, map, seed, players, options, MapSource::File(&data.actors), data.biome))
     }
 
     fn setup(
@@ -949,18 +1033,26 @@ impl World {
         seed: u64,
         players: &[PlayerSetup],
         options: GameOptions,
-        actors: &[crate::mapdata::MapActor],
+        source: MapSource,
         biome: crate::weather::Biome,
     ) -> World {
+        let (actors, generated) = match source {
+            MapSource::Generated => (&[][..], true),
+            MapSource::Prepared => (&[][..], false),
+            MapSource::File(actors) => (actors, false),
+        };
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();
         w.env = crate::weather::Environment::new(biome, options.weather, seed);
         let spawns = w.map.spawns.clone();
+        // OpenRA MapStartingLocations: which spawn each player starts at (gamerules.rs).
+        let order = crate::gamerules::assign_spawns(&spawns, players, options.separate_team_spawns, generated);
         for (slot, p) in players.iter().enumerate() {
             let fi = w.rules.faction_index(&p.faction).unwrap_or_else(|| panic!("unknown faction {}", p.faction));
-            w.add_player(fi, p.ai.is_some(), spawns[slot]);
+            w.add_player(fi, p.ai.is_some(), spawns[order[slot]]);
             w.players[slot].cash = options.starting_cash;
             w.players[slot].team = p.team;
+            w.players[slot].handicap = i32::from(p.handicap.min(crate::gamerules::MAX_HANDICAP));
             if options.explored {
                 w.players[slot].explored.iter_mut().for_each(|e| *e = 1);
             }
@@ -977,8 +1069,9 @@ impl World {
             w.spawn_start(slot as u8);
         }
         // Pre-placed map actors. Those of empty spawns are skipped; neutral
-        // ones belong to an extra, passive player.
-        if actors.iter().any(|a| a.owner < 0) {
+        // ones belong to an extra, passive player. Crates and their delivery
+        // planes belong to that player too (OpenRA's world owner, crates.rs).
+        if actors.iter().any(|a| a.owner < 0) || options.crates {
             let fi = w.rules.faction_index("allies").unwrap();
             w.add_player(fi, false, (0, 0));
             let n = w.players.len() - 1;
@@ -987,54 +1080,37 @@ impl World {
             w.ai.push(crate::ai::AiState::new(n as u32, AiDifficulty::Easy));
         }
         let neutral = w.players.len() as u8 - 1;
+        w.crates = crate::crates::CrateState::new(&w.rules, options.crates);
         for a in actors {
             let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
             if a.owner >= players.len() as i32 {
                 continue;
             }
             let Some(ty) = w.rules.actor_index(&a.ty) else { continue };
-            if w.rules.actors[ty].kind == Kind::Proxy {
-                continue;
-            }
-            if w.rules.actors[ty].kind == Kind::Building {
-                w.spawn_building(ty as u16, owner, a.x, a.y);
-            } else {
-                w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+            match w.rules.actors[ty].kind {
+                // Proxies (infantry.rs) have no body to place.
+                Kind::Proxy => {}
+                Kind::Building => {
+                    w.spawn_building(ty as u16, owner, a.x, a.y);
+                }
+                // Crates and husks keep their cell (crates.rs, husks.rs).
+                Kind::Crate => {
+                    if w.crate_at(w.map.idx(a.x, a.y)).is_none() {
+                        w.place_crate(ty, owner, a.x, a.y, 0);
+                    }
+                }
+                Kind::Husk => {
+                    w.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0);
+                }
+                _ => {
+                    w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+                }
             }
         }
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
         w
-    }
-
-    /// Starting units per the lobby option. Escorts depend on the side, like OpenRA's.
-    fn spawn_start(&mut self, player: u8) {
-        let (sx, sy) = self.players[player as usize].start;
-        let side = self.players[player as usize].side;
-        let id = |w: &World, s: &str| w.rules.actor_index(s).unwrap() as u16;
-        match self.options.starting_units {
-            StartingUnits::Base => {
-                let fact = id(self, "FACT");
-                self.spawn_building(fact, player, sx, sy);
-                return;
-            }
-            _ => {
-                let mcv = id(self, "MCV");
-                self.spawn_unit(mcv, player, cell_center(sx + 1), cell_center(sy + 1), 512);
-            }
-        }
-        let tank = if side == 0 { "1TNK" } else { "3TNK" };
-        let escort: Vec<&str> = match self.options.starting_units {
-            StartingUnits::Light => vec!["E1", "E1", "E1", tank],
-            StartingUnits::Heavy => vec!["E1", "E1", "E1", "E1", "E1", tank, tank, if side == 0 { "2TNK" } else { "3TNK" }],
-            _ => vec![],
-        };
-        for (k, u) in escort.iter().enumerate() {
-            let ty = id(self, u);
-            let (dx, dy) = ((k as i32 % 4) - 1, 3 + k as i32 / 4);
-            self.spawn_unit(ty, player, cell_center(sx + 1 + dx), cell_center(sy + 1 + dy), 512);
-        }
     }
 
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {
@@ -1081,6 +1157,10 @@ impl World {
             render_all: false,
             render_combined: false,
             beacons: Default::default(),
+            crates: Default::default(),
+            smudges: crate::smudges::Smudges::new(cells),
+            game_over: false,
+            leftover_at: crate::husks::LeftoverCells::new(cells),
             map,
         }
     }
@@ -1109,6 +1189,8 @@ impl World {
             neutral: false,
             dev: Default::default(),
             proxies: Vec::new(),
+            handicap: 0,
+            experience: 0,
         });
     }
 
@@ -1261,6 +1343,8 @@ impl World {
         if !self.actors[i].alive {
             return;
         }
+        // OpenRA EjectOnDeath: the pilot may bail out (plane.rs).
+        self.eject_pilot(i);
         // Airborne planes fall first and die where they hit the ground (plane.rs).
         if self.begin_crash(i) {
             // Remember who shot it down; the kill counts at impact (observer.rs).
@@ -1268,6 +1352,15 @@ impl World {
             return;
         }
         let (x, y, kind) = (self.actors[i].x, self.actors[i].y, self.actors[i].kind);
+        // A husk burns out or is shot to pieces (husks.rs): it just goes.
+        if kind == Kind::Husk {
+            self.actors[i].alive = false;
+            self.actors[i].hp = 0;
+            self.dying.push(i as u32);
+            return;
+        }
+        // Kill bounty for the player that dealt the blow (gamerules.rs).
+        self.give_bounty(i);
         self.actors[i].alive = false;
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
@@ -1279,6 +1372,10 @@ impl World {
         self.sound.push(SoundEventKind::Death, ty, x, y, owner, kind_code(kind) | death);
         // A dying soldier for the renderer (infantry_combat.rs).
         self.infantry_died(i);
+        // Structures shake the screen as they go (OpenRA ShakeOnDeath, presentation).
+        if let Some((duration, intensity)) = self.rules.actors[ty as usize].options.shake_on_death {
+            self.sound.push(SoundEventKind::ScreenShake, duration, x, y, 1 + 16, intensity);
+        }
         // Helicopters shot down in flight fall and explode on impact (helicopter.rs).
         if self.begin_heli_crash(i) {
             // Passengers go down with it (cargo.rs).
@@ -1286,12 +1383,18 @@ impl World {
             return;
         }
         let effect = if kind == Kind::Infantry { EffectKind::Piff } else { EffectKind::LargeExplosion };
-        let ttl = if kind == Kind::Building { 30 } else { 18 };
-        self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        // Long enough for OpenRA's self_destruct explosion (art-exp1.shp, 22 frames at one per tick).
+        let ttl = if kind == Kind::Building { 30 } else { 22 };
+        // A death weapon with explosions shows those instead (death_explosion, fx.rs).
+        if kind == Kind::Infantry || !self.has_death_explosions(i) {
+            self.effects.push(Effect { x, y, tx: x, ty: y, kind: effect, ttl, max: ttl });
+        }
         if kind == Kind::Ship {
             self.ship_death_effect(i);
         }
         self.death_explosion(i);
+        // Ground vehicles leave a husk (husks.rs, OpenRA SpawnActorOnDeath).
+        self.spawn_husk(i);
         // Passengers die with their transport, or get out (Cargo.EjectOnDeath).
         self.cargo_on_death(i);
     }
@@ -1327,6 +1430,14 @@ impl World {
                     }
                 }
                 self.tokens_dirty = true;
+            }
+            // A husk no longer blocks its cell (husks.rs).
+            if a.kind == Kind::Husk {
+                self.husk_cell_freed(i);
+            }
+            // A crate leaves its cell (crates.rs).
+            if a.kind == Kind::Crate {
+                self.crate_removed(i);
             }
             // Release a refinery dock this harvester held.
             if let Some(r) = self.resolve(a.refinery) {
@@ -1402,8 +1513,11 @@ impl World {
     /// Distance from a point to the actor's hit shape.
     pub fn hit_distance(&self, i: usize, x: i32, y: i32) -> i32 {
         let a = &self.actors[i];
-        if a.kind == Kind::Mine {
+        if matches!(a.kind, Kind::Mine | Kind::Crate) {
             return dist(x, y, a.x, a.y);
+        }
+        if a.kind == Kind::Husk {
+            return self.husk_hit_distance(i, x, y);
         }
         if a.kind == Kind::Building {
             let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
@@ -1428,7 +1542,9 @@ impl World {
         if self.render_all {
             return a.in_world();
         }
-        if a.owner == player {
+        // Husks hide under the fog even from their owner (HiddenUnderFog
+        // AlwaysVisibleRelationships: None); crates belong to nobody.
+        if a.owner == player && !matches!(a.kind, Kind::Husk | Kind::Crate) {
             return true;
         }
         let vis = &self.players[player as usize].visible;
@@ -1454,8 +1570,9 @@ impl World {
         let mut counts = vec![0u32; cells + 1];
         let mut cell_of = Vec::with_capacity(self.actors.len());
         for a in &self.actors {
-            // Mines are tracked per cell by abilities.rs, not in the unit hash.
-            if a.alive && a.kind != Kind::Building && a.kind != Kind::Mine && a.in_world() {
+            // Mines are tracked per cell by abilities.rs, husks and crates by
+            // `leftover_at` (husks.rs, crates.rs): not in the unit hash.
+            if a.alive && a.is_unit() && a.in_world() {
                 let ci = self.cell_index(a.x, a.y);
                 counts[ci] += 1;
                 cell_of.push(ci as u32);
@@ -1582,6 +1699,7 @@ impl World {
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
                 Order::CancelProduction { player, ty } => self.cancel_production(player, ty),
+                Order::PauseProduction { player, ty, paused } => self.pause_production(player, ty, paused),
                 Order::Place { player, ty, cx, cy } => {
                     self.place_building(player, ty, cx, cy);
                 }
@@ -1608,6 +1726,8 @@ impl World {
                             self.order_unload(i);
                         } else if self.actors[i].kind == Kind::Aircraft && self.is_helicopter(i) {
                             self.heli_deploy(i);
+                        } else if self.toggle_primary(i) {
+                            // A production structure became primary, or not any more (primary.rs).
                         } else if !self.ability_deploy(i) {
                             self.deploy(i);
                         }
@@ -1820,7 +1940,9 @@ impl World {
                 return Some(m);
             }
         }
-        None
+        // Husks (force-fire targets) and crates (husks.rs, crates.rs).
+        let ci = self.map.idx(cx, cy);
+        self.husk_at(ci).or_else(|| self.crate_at(ci)).filter(|&l| self.is_visible_to(l, player))
     }
 
     pub fn smart_action(&self, player: u8, units: &[usize], x: i32, y: i32) -> SmartAction {
@@ -1849,6 +1971,10 @@ impl World {
                 return SmartAction::DeliverCash;
             }
             if ta.kind == Kind::Mine && self.are_allies(player, ta.owner) {
+                return SmartAction::Move;
+            }
+            // Husks need force-fire, crates are driven onto (husks.rs, crates.rs).
+            if matches!(ta.kind, Kind::Husk | Kind::Crate) {
                 return SmartAction::Move;
             }
             if self.are_enemies(player, ta.owner) {
@@ -1991,6 +2117,8 @@ impl World {
         // before this tick's production, like OpenRA's door animation runs
         // the tick after UnitProduced.
         self.tick_doors();
+        // Landing craft doors (fx.rs, presentation only).
+        self.tick_fx();
         for p in 0..self.players.len() {
             if self.players[p].is_ai && !self.players[p].defeated {
                 crate::ai::think(self, p as u8);
@@ -2006,6 +2134,10 @@ impl World {
         self.tick_repairs();
         self.tick_beacons();
         self.tick_abilities_world();
+        // Crate spawner, delivery flights and parachuting crates (crates.rs),
+        // and burning husks (husks.rs).
+        self.tick_crates();
+        self.tick_husks();
         // Delayed shots, C4, outages, sonar pulses, captures (infantry.rs).
         self.tick_infantry_world();
         self.tick_units();
@@ -2031,38 +2163,10 @@ impl World {
         if self.tick.is_multiple_of(TICKS_PER_SECOND) {
             self.check_victory();
         }
+        // The time limit counts every tick (gamerules.rs).
+        self.tick_time_limit();
         // Statistics history (observer.rs): reads the world, never changes it.
         self.sample_stats();
-    }
-
-    fn check_victory(&mut self) {
-        if self.stress || self.winner.is_some() {
-            return;
-        }
-        let mut alive_count = vec![0u32; self.players.len()];
-        for (i, a) in self.actors.iter().enumerate() {
-            // OpenRA MustBeDestroyed: mines, walls (^Wall has none) and
-            // submarines (^Submarine: -MustBeDestroyed) alone do not keep a
-            // player in the game; a fleet of submarines hiding in a harbour
-            // would otherwise hold up the end forever.
-            if a.alive && a.kind != Kind::Mine && !self.rules.actors[a.ty as usize].is_wall() && !self.is_submarine(i) {
-                alive_count[a.owner as usize] += 1;
-            }
-        }
-        for (p, &n) in alive_count.iter().enumerate() {
-            if n == 0 && !self.players[p].neutral {
-                self.players[p].defeated = true;
-                self.note_defeated(p as u8);
-            }
-        }
-        // The game ends when every remaining player is on the same side.
-        let remaining: Vec<u8> =
-            (0..self.players.len() as u8).filter(|&p| !self.players[p as usize].defeated && !self.players[p as usize].neutral).collect();
-        let playing = self.players.iter().filter(|p| !p.neutral).count();
-        if playing > 1 && !remaining.is_empty() && remaining.iter().all(|&p| self.are_allies(p, remaining[0])) {
-            self.winner = Some(remaining[0]);
-            self.note_game_end();
-        }
     }
 
     /// Whether `player` is on the winning side (game over).
@@ -2107,15 +2211,29 @@ impl World {
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
+                // Burning husks and crate timers (husks.rs, crates.rs), primary structures (primary.rs).
+                mix(a.leftover.ticks as i64);
+                mix(a.leftover.drag_ticks as i64);
+                mix(a.altitude as i64);
+                mix(a.primary as i64);
                 // Infantry abilities (infantry.rs).
                 self.hash_infantry_actor(a, &mut mix);
             }
         }
         self.hash_infantry_world(&mut mix);
+        // Lobby options (gamerules.rs, crates.rs): experience, losses and the spawner.
+        for p in &self.players {
+            mix(p.experience);
+            mix(p.defeated as i64);
+        }
+        mix(self.game_over as i64);
+        mix(self.crates.hash());
         mix(self.env.weather as i64);
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);
+            // Production on hold (production.rs).
+            mix(p.queues.iter().flat_map(|q| &q.items).filter(|it| it.paused).count() as i64);
             // Cheat flags are simulation state; they can only be set with the cheats option.
             if self.options.cheats {
                 mix(p.dev.bits() as i64);
@@ -2141,6 +2259,6 @@ pub fn cell_center(c: i32) -> i32 {
 }
 
 #[inline]
-fn idx_ref(idx: usize, gen: u32) -> u32 {
+pub(crate) fn idx_ref(idx: usize, gen: u32) -> u32 {
     idx as u32 | ((gen & GEN_MASK) << IDX_BITS)
 }

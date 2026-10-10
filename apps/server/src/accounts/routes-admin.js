@@ -1,6 +1,7 @@
 // Admin and moderator API: /api/admin/* (docs/accounts-api.md, section 8).
 // Every check is made here on the server; every change is audit logged.
 
+import { purgeOnlineSavesStatement } from '../onlinesaves.js';
 import {
   ACCOUNT_FLAGS,
   ACCOUNT_ROLES,
@@ -346,10 +347,21 @@ async function restore(ctx, { id }) {
 }
 
 /** Statements that remove an account and every record about it (audit details scrubbed). */
-export function purgeStatements(db, userId) {
+/** A shared map used this recently is in use by a session (see purgeStatements). */
+export const SHARED_MAP_IN_USE_MS = 24 * 60 * 60 * 1000;
+
+export function purgeStatements(db, userId, now = Date.now()) {
   return [
     db.prepare(`UPDATE audit_log SET before_json = '{"purged":true}', after_json = '{"purged":true}', target_label = NULL, reason = NULL WHERE target_type = 'user' AND target_id = ?1`).bind(userId),
     db.prepare('DELETE FROM game_presence WHERE user_id = ?1').bind(userId),
+    // Saved online games it played in go too (none can be resumed without it).
+    purgeOnlineSavesStatement(db, userId),
+    // Maps the account shared with online sessions only go too (published maps stay, without the
+    // uploader). A shared map is stored once per content, under its first signed-in sharer: one a
+    // session used within SHARED_MAP_IN_USE_MS was shared by someone else too (this account's own
+    // sessions ended long before a purge), so it stays without the uploader and expires with the
+    // other unlisted maps (30 days unused).
+    db.prepare('DELETE FROM maps WHERE uploader_id = ?1 AND listed = 0 AND COALESCE(used_at, created_at) < ?2').bind(userId, now - SHARED_MAP_IN_USE_MS),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(userId),
   ];
 }
@@ -361,7 +373,7 @@ async function purge(ctx, { id }) {
   if (row.status !== 'deleted') throw new HttpError(409, 'conflict', 'Only deleted accounts can be purged.');
   if (body.confirm !== row.username) throw invalid('confirm', 'Type the username to confirm.');
   await ctx.db.batch([
-    ...purgeStatements(ctx.db, row.id),
+    ...purgeStatements(ctx.db, row.id, ctx.now),
     auditStatement(ctx.db, { actor, action: 'user.purge', targetType: 'user', targetId: row.id, before: { purged: true }, after: { purged: true } }, ctx.now),
   ]);
   return noContent();

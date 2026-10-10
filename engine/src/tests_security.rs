@@ -181,7 +181,10 @@ fn random_valid_rules_overrides_simulate_safely() {
     let base: serde_json::Value = serde_json::from_str(crate::rules::RULES_JSON).unwrap();
     let mut r = Rng::new(0x5eed);
     let mut played = 0;
-    for _ in 0..400 {
+    // Most picks are rejected (out of range or a bad index), more so with
+    // every bounded field the rules gain (build limits, bounties), so try
+    // enough sets for the 40 played games below.
+    for _ in 0..500 {
         let mut over = serde_json::Map::new();
         let mut actors = serde_json::Map::new();
         let mut weapons = serde_json::Map::new();

@@ -12,12 +12,32 @@ import {
   placementLost,
   SHIFT_COUNT,
   summarizeQueues,
+  rightClickAction,
+  queueOutcome,
+  QUEUE_MAX,
 } from '../js/production.js';
 
 const BUILDINGS = 0;
 const DEFENSE = 1;
 const INFANTRY = 2;
 const item = (id, progress = 0, done = false) => ({ id, progress, done });
+
+test('right clicks hold the item that is being built and cancel the rest, as in OpenRA', () => {
+  assert.equal(rightClickAction(undefined), null, 'nothing queued');
+  assert.equal(rightClickAction({ count: 1, done: false, paused: false, started: true }), 'pause');
+  assert.equal(rightClickAction({ count: 1, done: false, paused: true, started: true }), 'cancel', 'a held item is cancelled');
+  assert.equal(rightClickAction({ count: 1, done: false, paused: false, started: false }), 'cancel', 'nothing paid yet');
+  assert.equal(rightClickAction({ count: 1, done: true, paused: false, started: true }), 'cancel', 'a finished item');
+  const [held] = summarizeQueues([[{ id: 'E1', progress: 0.3, done: false, paused: true, started: true }, item('E1')], [], [], [], [], []]).perId.values();
+  assert.deepEqual(held, { count: 2, progress: 0.3, done: false, paused: true, started: true }, 'the first queued one counts');
+});
+
+test('a click says Building, Unable to build more or Building in progress (OpenRA CanQueue)', () => {
+  assert.equal(queueOutcome({ queueLength: 0 }), 'queued');
+  assert.equal(queueOutcome({ queueLength: 2, limitLeft: null }), 'queued');
+  assert.equal(queueOutcome({ queueLength: 0, limitLeft: 0 }), 'blocked', 'BuildLimit reached');
+  assert.equal(queueOutcome({ queueLength: QUEUE_MAX, limitLeft: 3 }), 'limited', 'the queue is full');
+});
 
 test('only the Buildings and Defense queues hold structures', () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5].map(isStructureQueue), [true, true, false, false, false, false]);
@@ -26,9 +46,9 @@ test('only the Buildings and Defense queues hold structures', () => {
 test('queue summary counts every queued item and reports the first one', () => {
   const queues = [[item('POWR', 1, true), item('POWR'), item('PROC')], [item('PBOX', 0.5)], [], [], [], []];
   const { perId, activity, ready } = summarizeQueues(queues);
-  assert.deepEqual(perId.get('POWR'), { count: 2, progress: 1, done: true });
-  assert.deepEqual(perId.get('PROC'), { count: 1, progress: 0, done: false });
-  assert.deepEqual(perId.get('PBOX'), { count: 1, progress: 0.5, done: false });
+  assert.deepEqual(perId.get('POWR'), { count: 2, progress: 1, done: true, paused: false, started: false });
+  assert.deepEqual(perId.get('PROC'), { count: 1, progress: 0, done: false, paused: false, started: false });
+  assert.deepEqual(perId.get('PBOX'), { count: 1, progress: 0.5, done: false, paused: false, started: false });
   assert.deepEqual(activity, [3, 1, 0, 0, 0, 0]);
   assert.deepEqual(ready, [true, false, false, false, false, false]);
 });

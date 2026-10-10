@@ -181,10 +181,13 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   s.players[3].difficulty = 'hard';
   const o = buildOptions(s, '{"format":1}');
   assert.equal(o.map, null, 'random map: no map file even if one is installed');
-  assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, name: 'Commander' });
+  assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, handicap: 0, name: 'Commander' });
   assert.deepEqual(o.players[2], { slot: 2, type: 'closed' });
-  assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, difficulty: 'hard' });
-  for (const key of ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'reusableEngineers', 'cheats']) {
+  assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, handicap: 0, difficulty: 'hard' });
+  const keys = ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
+  // OpenRA's other lobby options.
+  keys.push('timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers');
+  for (const key of keys) {
     assert.ok(key in o, key);
   }
   s.mapSource = 'file';
@@ -316,4 +319,52 @@ test('map style, biome and weather: defaults, stored settings and what the engin
   // A map file brings its own biome.
   const info = inspectMapFile(Game.generated_map_styled(3, 48, 2, 'lakes', 'desert'), (t) => JSON.parse(Game.validate_map(t)));
   assert.equal(info.biome, 'desert');
+});
+
+test("OpenRA's other options and handicaps: defaults, stored values and the engine", () => {
+  const s = fresh();
+  assert.deepEqual(
+    [s.crates, s.shortGame, s.bounty, s.separateTeamSpawns, s.allyBuildRadius, s.timeLimit],
+    [true, true, false, true, true, 0],
+    "OpenRA's defaults",
+  );
+  assert.equal(s.players[0].handicap, 0);
+  // Bad stored values fall back; good ones survive.
+  const back = sanitizeState({ ...storedSettings(s), timeLimit: 15, crates: 'yes', bounty: true, players: [{ ...s.players[0], handicap: 33 }, { ...s.players[1], handicap: 40 }] }, COLORS, () => 0);
+  assert.deepEqual([back.timeLimit, back.crates, back.bounty], [0, true, true]);
+  assert.deepEqual(back.players.map((p) => p.handicap), [0, 40]);
+  s.timeLimit = 30;
+  s.bounty = true;
+  s.players[1].handicap = 50;
+  s.players[1].faction = 'russia';
+  const o = buildOptions(s);
+  assert.deepEqual([o.timeLimit, o.bounty, o.players[1].handicap], [30, true, 50]);
+  const game = Game.from_options(JSON.stringify(o));
+  const rules = JSON.parse(game.rules_json());
+  assert.equal(rules.players[1].handicap, 50, 'the engine got the handicap');
+  assert.ok(JSON.parse(game.player_json(0)).timeLimit, 'and the time limit');
+});
+
+test('spawn markers follow separate team spawns', () => {
+  const s = fresh();
+  addSlot(s, COLORS);
+  addSlot(s, COLORS);
+  // Slots 0 and 1 team up: by slot they would be in opposite corners.
+  s.players[0].team = 1;
+  s.players[1].team = 1;
+  s.players[2].team = 2;
+  s.players[3].team = 2;
+  const cells = [[4, 4], [40, 40], [40, 4], [4, 40]];
+  const numbers = (state) => spawnMarkers(cells, 48, 48, state).map((m) => m.number);
+  s.separateTeamSpawns = false;
+  assert.deepEqual(numbers(s), [1, 2, 3, 4]);
+  s.separateTeamSpawns = true;
+  s.mapSource = 'file';
+  assert.deepEqual(numbers(s), [1, 3, 2, 4], 'map file: team mates side by side, as the engine places them');
+  // Generated maps list spawns by column, top first: the halves are the sides.
+  s.mapSource = 'random';
+  s.players[1].team = 2;
+  s.players[2].team = 1;
+  const columns = [[4, 4], [4, 40], [40, 4], [40, 40]];
+  assert.deepEqual(spawnMarkers(columns, 48, 48, s).map((m) => m.number), [1, 3, 2, 4], 'generated: team 1 left, team 2 right');
 });

@@ -45,20 +45,32 @@ export const POSE = Object.freeze({
   DOCK: 6,
   STILL: 7,
   DAMAGED_STILL: 8,
+  /** A second overlay of the slot (the Chinook's rear rotor): on the ground, and in the air. */
+  AUX_IDLE: 9,
+  AUX_MOVE: 10,
+  /** Working (engine/src/fx.rs): resupplying, charging, launching, placing, recoiling, unloading, reloading. */
+  ACTIVE: 11,
+  DAMAGED_ACTIVE: 12,
+  /** A paratrooper falling under its parachute. */
+  PARACHUTE: 13,
+  /** Done working: the landing craft closing, the harvester leaving the refinery. */
+  ACTIVE_END: 14,
   // Standing infantry: the second stand sequence and the idle animations.
-  STAND2: 9,
-  IDLE1: 10,
-  IDLE2: 11,
+  STAND2: 15,
+  IDLE1: 16,
+  IDLE2: 17,
   // Dying infantry: die1..die6 and the crushed body (WithDeathAnimation).
-  DIE1: 12,
-  DIE2: 13,
-  DIE3: 14,
-  DIE4: 15,
-  DIE5: 16,
-  DIE6: 17,
-  CRUSHED: 18,
+  DIE1: 18,
+  DIE2: 19,
+  DIE3: 20,
+  DIE4: 21,
+  DIE5: 22,
+  DIE6: 23,
+  CRUSHED: 24,
+  // A soldier's second attack sequence (AttackSequences: OpenRA picks one per shot).
+  ATTACK2: 25,
 });
-export const POSE_COUNT = 19;
+export const POSE_COUNT = 26;
 /** Sprite ids carry the pose: id = slot + POSE_STRIDE * (pose + POSE_CODES * age). */
 export const POSE_STRIDE = 4096;
 export const POSE_CODES = 32;
@@ -66,6 +78,15 @@ export const POSE_CODES = 32;
 export const MAX_AGE = 127;
 /** Simulation ticks per second (engine TICKS_PER_SECOND): ages are in ticks. */
 export const TICKS_PER_SECOND = 25;
+
+/** Ticks a pose descriptor takes to play once (a death, an idle animation). */
+export const onceTicks = (desc) => (desc && desc.fps > 0 ? Math.ceil((desc.length * TICKS_PER_SECOND) / desc.fps) : 0);
+
+/**
+ * The poses whose lengths Game.set_death_art takes per actor type, in its
+ * order: die1..die6, the crushed body, then the longer idle animation.
+ */
+export const INFANTRY_TIMED_POSES = Object.freeze(['DIE1', 'DIE2', 'DIE3', 'DIE4', 'DIE5', 'DIE6', 'CRUSHED', 'IDLE1', 'IDLE2']);
 
 /** How a pose's frames advance. */
 export const MODE = Object.freeze({
@@ -77,8 +98,10 @@ export const MODE = Object.freeze({
   STILL: 2,
   /** The frame the engine names in the age field (wall connections). */
   INDEX: 3,
+  /** The first `lead` frames once from the age, then the others looping on the render clock. */
+  LEAD: 4,
   /** Play once from the age, then show nothing (death animations). */
-  VANISH: 4,
+  VANISH: 5,
 });
 
 /** Split a sprite id into slot, pose and age (the shader does the same with u32 math). */
@@ -179,6 +202,15 @@ export function loopFrame(time, enabled, fps, count, phase) {
 /** Frame of a ONCE pose at an age in ticks; `count` or more means it has finished. */
 export function onceFrame(age, fps) {
   return Math.floor((age * fps) / TICKS_PER_SECOND);
+}
+
+/** Frame of a LEAD pose (shaders/sprite.wgsl MODE_LEAD): the lead-in by age, then the loop on the render clock. */
+export function leadFrame(age, time, enabled, fps, count, lead, phase) {
+  const l = Math.min(lead, count);
+  const f = onceFrame(age, fps);
+  if (f < l) return f;
+  if (count > l) return l + loopFrame(time, enabled, fps, count - l, phase);
+  return count - 1;
 }
 
 // ---- Sequences -------------------------------------------------------------------

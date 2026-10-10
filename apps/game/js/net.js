@@ -24,6 +24,7 @@ import {
   C2S,
   encodeClient,
   HASH_INTERVAL,
+  MEMBER_HEADER,
   MAX_MESSAGE_BYTES,
   MAX_ORDERS_PER_TICK,
   parseServerMessage,
@@ -71,23 +72,35 @@ async function request(path, init = {}) {
 /** Every write to the API carries this header (docs/accounts-api.md 1.1: CSRF). */
 export const CSRF_HEADER = Object.freeze({ 'X-WebRA-CSRF': '1' });
 
-const postJson = (path, value, raw = false) =>
+const postJson = (path, value, raw = false, headers = {}) =>
   request(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...CSRF_HEADER },
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADER, ...headers },
     body: raw ? value : JSON.stringify(value),
   });
+
+/** A session member's credential for the map endpoints (docs/contracts.md section 4). */
+const memberHeader = (member) => ({ [MEMBER_HEADER]: `${member.client}.${member.key}` });
+const sessionMapPath = (sessionId) => `/api/sessions/${encodeURIComponent(sessionId)}/map`;
 
 export const api = {
   version: async () => (await request('/api/version')).body,
   sessions: async () => (await request('/api/sessions')).body,
   /** @returns {Promise<{id: string, hostKey: string}>} */
   createSession: async (input) => (await postJson('/api/sessions', input)).body,
+  /** The community map list (published maps). */
   maps: async () => (await request('/api/maps')).body,
-  /** The raw map text (hash checked by the caller). */
-  mapText: async (id) => (await request(`/api/maps/${encodeURIComponent(id)}`)).text,
-  /** @returns {Promise<{id: string, hash: string}>} */
-  uploadMap: async (json) => (await postJson('/api/maps', json, true)).body,
+  /**
+   * The lobby's (or running game's) map of a session, as one of its members:
+   * raw text, pinned to `hash` by the server (the caller checks it again).
+   */
+  sessionMap: async (sessionId, member, hash) =>
+    (await request(`${sessionMapPath(sessionId)}?hash=${encodeURIComponent(hash)}`, { headers: memberHeader(member), cache: 'no-store' })).text,
+  /** Host: continue a saved online game in this session (the save file's text). */
+  resumeSession: async (sessionId, member, saveText) =>
+    (await postJson(`/api/sessions/${encodeURIComponent(sessionId)}/resume`, saveText, true, memberHeader(member))).body,
+  /** Host: share a map file with this session only. @returns {Promise<{id: string, hash: string}>} */
+  shareSessionMap: async (sessionId, member, json) => (await postJson(sessionMapPath(sessionId), json, true, memberHeader(member))).body,
 };
 
 // ---- WebSocket ------------------------------------------------------------------

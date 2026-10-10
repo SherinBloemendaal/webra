@@ -25,7 +25,8 @@ pub const SPRITE_SONAR: f32 = 7.0;
 /// OpenRA WithInfantryBody MinIdleDelay and MaxIdleDelay: ticks between idle animations.
 const MIN_IDLE_DELAY: u32 = 30;
 const MAX_IDLE_DELAY: u32 = 110;
-/// Ticks an idle animation may run (idle1 and idle2: 16 frames at 120 ms).
+/// Ticks an idle animation runs at least (idle1 and idle2: 16 frames at 120 ms);
+/// original art with a longer one gets its own length (`RenderOptions::infantry_ticks`).
 const IDLE_ANIMATION_TICKS: u32 = 48;
 
 /// The built-in sprite of a death sequence (die1/die2 fall, die3/die4 blast,
@@ -62,11 +63,30 @@ impl World {
         let h = idle_hash(i, a.gen);
         let stand = if h & 1 == 0 { Pose::Idle } else { Pose::Stand2 };
         let delay = MIN_IDLE_DELAY + (h >> 8) % (MAX_IDLE_DELAY - MIN_IDLE_DELAY + 1);
-        let phase = (self.tick.wrapping_add(h >> 3)) % (delay + IDLE_ANIMATION_TICKS);
+        // The whole idle animation of the art (set_death_art), at least the built-in window.
+        let art = &self.render_opts;
+        let anim = if art.death_art.get(a.ty as usize).copied().unwrap_or(false) {
+            art.infantry_ticks.get(a.ty as usize).map_or(0, |t| t[7]).max(IDLE_ANIMATION_TICKS)
+        } else {
+            IDLE_ANIMATION_TICKS
+        };
+        let phase = (self.tick.wrapping_add(h >> 3)) % (delay + anim);
         if phase < delay {
             return (stand, 0);
         }
         (if (h >> 4) & 1 == 0 { Pose::Idle1 } else { Pose::Idle2 }, phase - delay)
+    }
+
+    /// The attack sequence of a firing soldier: `attack` or `attack2`, picked
+    /// per shot (OpenRA WithInfantryBody takes a random one of the armament's
+    /// AttackSequences each time it attacks). Art with one attack sequence
+    /// shows it for both.
+    pub(crate) fn infantry_attack_pose(&self, i: usize) -> Pose {
+        if idle_hash(i, self.actors[i].fx.fired) & 1 == 0 {
+            Pose::Attack
+        } else {
+            Pose::Attack2
+        }
     }
 
     /// Dying soldiers `player` can see: the death sequence of their art when

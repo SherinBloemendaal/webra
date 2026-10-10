@@ -219,36 +219,6 @@ pub struct InfantryWorld {
     pub captures: Vec<(u32, u8, i32, i32)>,
 }
 
-/// Notification events of this module (`SoundEventKind::Infantry`, `a`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(i32)]
-pub enum InfantryEvent {
-    /// `owner` captured a structure (CaptureNotification); b = actor type.
-    StructureCaptured = 1,
-    /// `owner` lost a structure to a capture; b = actor type.
-    StructureLost = 2,
-    /// `owner` stole a unit (CaptureNotification UnitStolen); b = actor type.
-    UnitStolen = 3,
-    /// `owner` lost a unit to a thief (LoseNotification UnitLost); b = actor type.
-    UnitLost = 4,
-    /// `owner`'s spy or thief got in (Infiltrates.Notification BuildingInfiltrated).
-    BuildingInfiltrated = 5,
-    /// `owner` was robbed (InfiltratedNotification CreditsStolen); b = credits taken.
-    CreditsStolen = 6,
-    /// `owner` got credits from a theft; b = credits.
-    CreditsGained = 7,
-    /// C4 planted by `owner`'s unit; b = actor type of the saboteur (Demolish voice).
-    Demolish = 8,
-    /// A unit of `owner` disguised itself; b = its actor type.
-    Disguised = 9,
-    /// `owner`'s structure was repaired by an engineer; b = actor type.
-    InstantRepair = 10,
-    /// A unit of `owner` killed an enemy (AnnounceOnKill); b = its actor type.
-    Kill = 11,
-    /// The Sonar Pulse fired by `owner`.
-    SonarPulse = 12,
-}
-
 impl World {
     // ---- Relationships -----------------------------------------------------------
 
@@ -261,10 +231,6 @@ impl World {
         } else {
             RELATION_NEUTRAL
         }
-    }
-
-    fn infantry_event(&mut self, ev: InfantryEvent, x: i32, y: i32, owner: u8, b: i32) {
-        self.sound.push(SoundEventKind::Infantry, ev as i32, x, y, owner, b);
     }
 
     // ---- Lifecycle -------------------------------------------------------------------
@@ -302,7 +268,18 @@ impl World {
             }
         }
         self.inf.pulses.retain(|p| p.until >= tick);
-        self.inf.corpses.retain(|c| tick < c.tick + if c.sequence == DEATH_CRUSHED { CRUSHED_TICKS } else { DEATH_TICKS });
+        // Bodies are presentation (not hashed): the built-in ones fade over
+        // their own time, original death sequences stay until they ended.
+        let opts = &self.render_opts;
+        self.inf.corpses.retain(|c| {
+            let built_in = if c.sequence == DEATH_CRUSHED { CRUSHED_TICKS } else { DEATH_TICKS };
+            let art = if opts.poses && opts.death_art.get(c.ty as usize).copied().unwrap_or(false) {
+                opts.infantry_ticks.get(c.ty as usize).map_or(0, |t| t[(c.sequence.clamp(1, DEATH_CRUSHED) - 1) as usize])
+            } else {
+                0
+            };
+            tick < c.tick + built_in.max(art)
+        });
         for f in self.inf.fx.iter_mut() {
             f.ttl -= 1;
         }
@@ -330,7 +307,7 @@ impl World {
         }
         let (x, y, owner, ty) = (a.x, a.y, a.owner, a.ty);
         self.actors[k].inf.announced = self.tick;
-        self.infantry_event(InfantryEvent::Kill, x, y, owner, ty as i32);
+        self.sound.push(SoundEventKind::KillAnnounced, ty as i32, x, y, owner, 0);
     }
 
     // ---- Proxies (InfiltrateForSupportPower) -------------------------------------------
@@ -355,19 +332,6 @@ impl World {
             }
         }
         out
-    }
-
-    // ---- Build limit (Buildable.BuildLimit) -----------------------------------------------
-
-    /// Whether `player` owns and queues `BuildLimit` of `ty` already (Tanya: one).
-    pub fn at_build_limit(&self, player: u8, ty: u16) -> bool {
-        let limit = self.rules.actors[ty as usize].build_limit;
-        if limit <= 0 {
-            return false;
-        }
-        let owned = self.actors.iter().filter(|a| a.alive && a.owner == player && a.ty == ty).count();
-        let queued: usize = self.players[player as usize].queues.iter().map(|q| q.items.iter().filter(|it| it.ty == ty).count()).sum();
-        owned + queued >= limit as usize
     }
 
     // ---- Power outage (InfiltrateForPowerOutage) -------------------------------------
@@ -466,27 +430,22 @@ impl World {
     /// `captor` is the unit that did it, if any. The world objects (tech
     /// structures, bridges) use it for anything with `abilities.capturable`.
     pub fn capture(&mut self, t: usize, new_owner: u8, captor: Option<usize>) {
-        let (old, ty, x, y, kind) = (self.actors[t].owner, self.actors[t].ty, self.actors[t].x, self.actors[t].y, self.actors[t].kind);
+        let (old, ty, x, y) = (self.actors[t].owner, self.actors[t].ty, self.actors[t].x, self.actors[t].y);
         if old == new_owner || !self.actors[t].alive {
             return;
         }
-        let cancel = self.rules.actors[ty as usize].abilities.capturable.as_ref().is_some_and(|c| c.cancel_activity);
         let experience =
             captor.and_then(|c| self.capture_with(c, t).map(|ci| ci.experience)).filter(|_| self.are_enemies(new_owner, old)).unwrap_or(0);
-        self.change_owner(t, new_owner, cancel);
         self.note_player_experience(new_owner, experience);
-        // TransformOnCapture: a husk becomes its vehicle again for the captor.
-        if let Some(tr) = self.rules.actors[ty as usize].abilities.capturable.as_ref().and_then(|c| c.transform.clone()) {
-            self.transform_actor(t, &tr.into, tr.health);
+        // A husk becomes its vehicle again for the captor (TransformOnCapture, husks.rs).
+        if self.actors[t].kind == Kind::Husk {
+            self.restore_husk(t, new_owner, false);
+            return;
         }
-        let building = kind == Kind::Building;
-        let (won, lost) = if building {
-            (InfantryEvent::StructureCaptured, InfantryEvent::StructureLost)
-        } else {
-            (InfantryEvent::UnitStolen, InfantryEvent::UnitLost)
-        };
-        self.infantry_event(won, x, y, new_owner, ty as i32);
-        self.infantry_event(lost, x, y, old, ty as i32);
+        let cancel = self.rules.actors[ty as usize].abilities.capturable.as_ref().is_some_and(|c| c.cancel_activity);
+        self.change_owner(t, new_owner, cancel);
+        // CaptureNotification for both sides (sound_events.rs Captured).
+        self.sound.push(SoundEventKind::Captured, ty as i32, x, y, new_owner, old as i32);
     }
 
     /// Give actor `i` to `owner` (OpenRA Actor.ChangeOwner): what it was
@@ -564,8 +523,6 @@ impl World {
                     self.players[owner as usize].cash += give;
                     self.note_earned(owner, give);
                     self.note_player_experience(owner, e.experience + take * e.experience_percentage / 100);
-                    self.infantry_event(InfantryEvent::CreditsStolen, x, y, victim, take);
-                    self.infantry_event(InfantryEvent::CreditsGained, x, y, owner, give);
                 }
                 "exploration" => {
                     // InfiltrateForExploration: the infiltrator learns what the victim
@@ -605,9 +562,11 @@ impl World {
                     }
                 }
                 "transform" => {
-                    // InfiltrateForTransform: an allied husk is repaired into its vehicle, for its owner.
+                    // InfiltrateForTransform: an allied husk is repaired into its vehicle, for its owner (husks.rs).
                     self.note_player_experience(owner, e.experience);
-                    self.transform_actor(t, &e.into, e.health);
+                    if self.actors[t].kind == Kind::Husk {
+                        self.restore_husk(t, victim, true);
+                    }
                 }
                 "decoration" => {
                     self.note_player_experience(owner, e.experience);
@@ -618,26 +577,9 @@ impl World {
                 _ => {}
             }
         }
-        self.infantry_event(InfantryEvent::BuildingInfiltrated, x, y, owner, tty as i32);
-    }
-
-    /// OpenRA Transform (TransformOnCapture, InfiltrateForTransform): actor
-    /// `i` is replaced by a unit of type `into` for the same owner, where it
-    /// stands and facing the same way, with `health` percent of its health
-    /// (ForceHealthPercentage; 0 keeps the new actor's full health).
-    pub fn transform_actor(&mut self, i: usize, into: &str, health: i32) -> Option<usize> {
-        let ty = self.rules.actor_index(into)?;
-        if self.rules.actors[ty].unit.is_none() || !self.actors[i].alive {
-            return None;
-        }
-        let (x, y, facing, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].facing, self.actors[i].owner);
-        self.remove(i);
-        let n = self.spawn_unit(ty as u16, owner, x, y, facing);
-        if health > 0 {
-            let max = self.rules.actors[ty].hp;
-            self.actors[n].hp = (max as i64 * health.min(100) as i64 / 100).max(1) as i32;
-        }
-        Some(n)
+        // Infiltrates.Notification and the target's InfiltrateFor* notifications (sound_events.rs Infiltrated).
+        let ity = self.actors[i].ty;
+        self.sound.push(SoundEventKind::Infiltrated, tty as i32, x, y, victim, crate::sound_events::infiltrator_code(ity, owner));
     }
 
     // ---- Instant repair, C4, bridges ----------------------------------------------------
@@ -743,8 +685,6 @@ impl World {
         };
         let me = &self.actors[i];
         self.actors[i].inf.disguise = if ty == me.ty && owner == me.owner { None } else { Some(Disguise { ty, owner }) };
-        let (x, y, o, mty) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner, self.actors[i].ty);
-        self.infantry_event(InfantryEvent::Disguised, x, y, o, mty as i32);
     }
 
     /// Whether spy `i` may take the looks of `t` (Disguise targets: any
@@ -839,7 +779,17 @@ impl World {
     /// Whether unit `i` stands next to actor `t` (an adjacent cell).
     pub(crate) fn next_to(&self, i: usize, t: usize) -> bool {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
-        self.hit_distance(t, x, y) <= ENTER_REACH
+        if self.hit_distance(t, x, y) <= ENTER_REACH {
+            return true;
+        }
+        // OpenRA Mobile.CanEnterTargetNow: standing on a cell next to the
+        // cell of a unit or husk (a husk blocks its whole cell).
+        let target = &self.actors[t];
+        if target.kind == Kind::Building {
+            return false;
+        }
+        let ((cx, cy), (tx, ty)) = (self.cell_of(x, y), self.cell_of(target.x, target.y));
+        (cx - tx).abs() <= 1 && (cy - ty).abs() <= 1
     }
 
     /// One tick of `Activity::Enter`.
@@ -963,7 +913,6 @@ impl World {
     /// Unit `i` got into `t`.
     fn enter_complete(&mut self, i: usize, t: usize, kind: EnterKind) {
         let owner = self.actors[i].owner;
-        let (x, y) = (self.actors[t].x, self.actors[t].y);
         match kind {
             EnterKind::Capture => {
                 self.capture(t, owner, Some(i));
@@ -977,9 +926,6 @@ impl World {
                 // InstantRepair: full health, the engineer is used up.
                 let max = self.rules.actors[self.actors[t].ty as usize].hp;
                 self.actors[t].hp = max;
-                let tty = self.actors[t].ty;
-                let to = self.actors[t].owner;
-                self.infantry_event(InfantryEvent::InstantRepair, x, y, to, tty as i32);
                 self.remove(i);
             }
             EnterKind::Demolish => {
@@ -992,8 +938,6 @@ impl World {
                 self.actors[t].flash = (d.flash_delay + d.flashes * d.flash_interval).max(1);
                 self.actors[i].inf.disguise = None;
                 self.uncloak_on(i, "Demolish");
-                let ty = self.actors[i].ty;
-                self.infantry_event(InfantryEvent::Demolish, x, y, owner, ty as i32);
                 self.actors[i].inf.enter.as_mut().unwrap().phase = EnterPhase::Exiting;
             }
             EnterKind::RepairBridge => {
@@ -1123,7 +1067,6 @@ impl World {
         });
         self.inf.fx.push(InfantryFx { x, y, kind: InfantryFxKind::Sonar, owner: player, ttl: 25, max: 25 });
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Naval(0), ttl: 12, max: 12 });
-        self.infantry_event(InfantryEvent::SonarPulse, x, y, player, 0);
         true
     }
 
@@ -1211,12 +1154,10 @@ impl World {
 
     // ---- Player experience --------------------------------------------------------------
 
-    /// OpenRA PlayerExperience: points for captures and infiltrations, kept
-    /// with the units' experience in the observer stats (observer.rs counts
-    /// 100 per point, like GainsExperience).
+    /// OpenRA PlayerExperience: points for captures and infiltrations (gamerules.rs).
     fn note_player_experience(&mut self, player: u8, points: i32) {
         if points > 0 {
-            self.note_points(player, points as i64 * 100);
+            self.give_player_experience(player, points as i64);
         }
     }
 }

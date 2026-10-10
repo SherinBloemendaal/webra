@@ -23,7 +23,7 @@ import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
 const MAX_TICKS_PER_FRAME = 8;
 
 /** Calls the main thread may make besides orders and UI state. */
-const SETTINGS = new Set(['set_audio_events', 'set_health_bars', 'set_building_overlays', 'set_sprite_poses', 'set_death_art']);
+const SETTINGS = new Set(["set_audio_events", "set_health_bars", "set_building_overlays", "set_sprite_poses", "set_original_slots", "set_death_art"]);
 
 export class SimCore {
   /**
@@ -241,6 +241,13 @@ export class SimCore {
         const ticks = this.game.tick_count();
         const text = kind === 'save' ? this.recorder.encode('save', ticks, this.game.state_hash()) : this.recorder.encode('replay', ticks);
         return { text, ticks, full: this.recorder.full };
+      }
+      // An online save at the agreed save point (`save` message `saved`).
+      case 'encodeOnlineSave': {
+        const [ticks, hash, id] = args;
+        if (!this.recorder) throw new Error('This game is not recorded.');
+        if (this.game.tick_count() < ticks) throw new Error('The game has not reached the save point yet.');
+        return this.recorder.encodeOnlineSave(ticks, hash, id);
       }
       // Debug menu: one tick while paused (local games only).
       case 'debugStep':

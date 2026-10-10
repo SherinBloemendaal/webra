@@ -237,7 +237,7 @@ fn snapshots_continue_like_the_original_and_restore_rewinds() {
 fn stats_world() -> World {
     let players: Vec<PlayerSetup> = [("allies", 1u8), ("soviet", 2), ("england", 1)]
         .iter()
-        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t })
+        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, team: t, handicap: 0 })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
     for i in 0..w.map.cells() {
@@ -345,7 +345,15 @@ fn observer_stats_count_kills_losses_and_income() {
     assert_eq!(p0["funds"], w.players[0].funds());
     let tank_cost = i64::from(w.rules.actors[ty(&w, "2TNK") as usize].cost);
     let alive_tanks = tanks.iter().filter(|&&t| w.actors[t].alive).count() as i64;
-    assert_eq!(p0["armyValue"], alive_tanks * tank_cost, "tanks only: no structures, no used-up truck");
+    // The sold power plant's crew walked out (sell.rs): riflemen.
+    let crew: i64 = w
+        .actors
+        .iter()
+        .filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Infantry)
+        .map(|a| i64::from(w.rules.actors[a.ty as usize].cost))
+        .sum();
+    assert!(crew > 0, "a crew left the sold plant");
+    assert_eq!(p0["armyValue"], alive_tanks * tank_cost + crew, "tanks and the crew: no structures, no used-up truck");
     for key in ["powerGenerated", "powerUsed", "defeated", "won"] {
         assert!(p0.get(key).is_some(), "{key} present");
     }
@@ -438,4 +446,96 @@ fn observer_view_shows_the_whole_map() {
     }
     assert_eq!(plain.state_hash(), g.world.state_hash());
     assert_ne!(plain.state_hash(), hash, "the game went on");
+}
+
+// ---- Presentation never changes the game ------------------------------------------------
+
+/// Everything a client does besides applying its frames is presentation:
+/// the selection, the hovered actor, control groups, health bars, sprite
+/// poses (original art), building overlays, sound events, and building the
+/// frame for any view (its own, another player's, all players' together, the
+/// observer's). Two lockstep peers with different screens, settings and
+/// installed art must stay in step: none of it may change the state hash.
+#[test]
+fn presentation_state_never_changes_the_simulation() {
+    use crate::combined::COMBINED;
+    use crate::world::NONE;
+    let (frames, hashes) = record();
+    let mut plain = Game::wrap(replay_world());
+    let mut busy = Game::wrap(replay_world());
+    busy.set_audio_events(true);
+    busy.set_health_bars(2);
+    busy.set_sprite_poses(true);
+    let types = busy.world.rules.actors.len();
+    busy.set_building_overlays(vec![1; types]);
+    let size = 80.0 * crate::render::PX_PER_CELL;
+    let mut events = 0;
+    while plain.world.tick < SNAPSHOT_TICK {
+        let t = plain.world.tick;
+        if let Some((_, frame)) = frames.iter().find(|(ft, _)| *ft == t) {
+            let json = serde_json::to_string(frame).unwrap();
+            plain.apply_frame(&json).unwrap();
+            busy.apply_frame(&json).unwrap();
+        }
+        // The busy peer looks around between ticks like a player's screen does.
+        let units = own_units(&busy.world, (t % 2) as u8);
+        busy.set_selection(units.clone());
+        busy.set_hover(units.first().copied().unwrap_or(NONE));
+        busy.set_control_groups(units.clone(), units.iter().map(|_| (t % 10) as u8).collect());
+        if t.is_multiple_of(7) {
+            busy.set_health_bars((t % 3) as u8);
+            busy.set_sprite_poses(t.is_multiple_of(2));
+        }
+        for view in [0u8, 1, COMBINED, OBSERVER] {
+            busy.build_render(view, 0.5, 0.0, 0.0, size, size);
+            busy.build_render_records(view);
+            busy.fog_ptr(view);
+            busy.build_lines(view, 0.5, true);
+            busy.build_heat_fx(view, 0.0, 0.0, size, size);
+        }
+        events += busy.take_audio_events().len();
+        let _ = busy.player_json(0);
+        let _ = busy.observer_stats();
+        plain.tick();
+        busy.tick();
+        let tick = plain.world.tick;
+        assert_eq!(busy.world.state_hash(), plain.world.state_hash(), "presentation changed the game at tick {tick}");
+        assert_eq!(plain.world.state_hash(), hashes[tick as usize], "the plain peer follows the recording at tick {tick}");
+    }
+    assert!(events > 0, "the busy peer did take sound events");
+}
+
+// ---- Online saves ----------------------------------------------------------------------
+
+/// An online save is the frames before its save point (the tick after a hash
+/// tick) and the state hash every player agreed on there. A peer rebuilt
+/// from it (as every client of a resumed game is) reaches that hash and
+/// then plays on in step with a peer that never stopped, frame for frame.
+#[test]
+fn online_save_resumes_in_step_with_the_original() {
+    let (frames, hashes) = record();
+    // Saved after frame 500, a multiple of the protocol's hash interval (25).
+    let save_ticks: u32 = 501;
+    let saved: Vec<Frame> = frames.iter().filter(|(t, _)| *t < save_ticks).cloned().collect();
+    assert!(saved.len() < frames.len(), "orders came after the save point too");
+    let mut original = Game::wrap(replay_world());
+    replay_until(&mut original, &frames, &hashes, save_ticks);
+    let mut resumed = Game::wrap(replay_world());
+    replay_until(&mut resumed, &saved, &hashes, save_ticks);
+    assert_eq!(resumed.world.state_hash(), original.world.state_hash(), "the resumed peer has the saved state");
+    assert_eq!(resumed.state_hash(), format!("{:016x}", hashes[save_ticks as usize]), "the hash players compare at the save point");
+    // After the save point both run the same frames and stay identical.
+    while original.world.tick < REPLAY_TICKS {
+        let t = original.world.tick;
+        if let Some((_, frame)) = frames.iter().find(|(ft, _)| *ft == t) {
+            let json = serde_json::to_string(frame).unwrap();
+            original.apply_frame(&json).unwrap();
+            resumed.apply_frame(&json).unwrap();
+        }
+        original.tick();
+        resumed.tick();
+        let tick = original.world.tick;
+        assert_eq!(resumed.world.state_hash(), original.world.state_hash(), "the resumed game left the original at tick {tick}");
+        assert_eq!(original.world.state_hash(), hashes[tick as usize]);
+    }
 }

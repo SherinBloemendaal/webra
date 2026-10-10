@@ -627,6 +627,10 @@ impl World {
             let air = self.heli_air(i);
             (air.ammo, air.reload_delay.max(1), air.reload_count.max(1), air.take_off_on_resupply)
         };
+        if self.actors[i].heli.ammo_used > 0 && max > 0 {
+            // The helipad's rearm animation (fx.rs, presentation only).
+            self.note_service(pad);
+        }
         let h = &mut self.actors[i].heli;
         if h.ammo_used > 0 && max > 0 {
             // AmmoPool reload: ReloadCount rounds every ReloadDelay ticks.
@@ -970,16 +974,24 @@ impl World {
                 continue;
             }
             let c = self.crashes.remove(k);
-            self.effects.push(Effect { x: c.x, y: c.y, tx: c.x, ty: c.y, kind: EffectKind::LargeExplosion, ttl: 18, max: 18 });
+            // The death weapon's explosions where it hits the ground (fx.rs), else a generic one.
+            let shown = self.rules.actors[c.ty as usize].death_weapon.is_some_and(|w| {
+                let class = self.impact_class(c.x, c.y);
+                self.spawn_weapon_effects(w, c.x, c.y, class)
+            });
+            if !shown {
+                self.effects.push(Effect { x: c.x, y: c.y, tx: c.x, ty: c.y, kind: EffectKind::LargeExplosion, ttl: 22, max: 22 });
+            }
             if let Some(w) = self.rules.actors[c.ty as usize].death_weapon {
-                for h in 0..self.rules.weapons[w].warheads.len() {
-                    let delay = self.rules.weapons[w].warheads[h].delay.max(1);
+                for h in 0..self.warhead_count(w) {
+                    let delay = self.warhead_delay(w, h).max(1);
                     self.pending.push(PendingImpact {
                         tick: self.tick + delay as u32,
                         weapon: w as u16,
                         warhead: h as u8,
                         x: c.x,
                         y: c.y,
+                        altitude: 0,
                         owner: c.owner,
                         shot: crate::veterancy::Shot::NONE,
                     });
@@ -992,7 +1004,12 @@ impl World {
 
     /// Rotors of a helicopter drawn at (x, y): crisp blades on the ground, a
     /// blurred disc with faint blades in the air. Rotor wash on the ground
-    /// while taking off or landing.
+    /// while taking off or landing. With the original graphics (the rotor
+    /// slot is original: RenderOptions::is_original) the rotors are OpenRA's
+    /// WithIdleOverlay@ROTOR*: the slow-rotor sequence on the ground and the
+    /// rotor sequence in the air, each rotor at its offset (the second one,
+    /// the Chinook's rear rotor, with the aux poses), and nothing of WebRA's
+    /// drawing (no disc, no wash).
     pub(crate) fn push_heli_rotors(
         &self,
         i: usize,
@@ -1002,6 +1019,7 @@ impl World {
         ground: &mut Vec<f32>,
         out: &mut Vec<f32>,
     ) {
+        use crate::render::{classic_offset, posed, Pose};
         if !self.is_heli(i) {
             return;
         }
@@ -1009,19 +1027,36 @@ impl World {
         let ids = crate::render::SpriteIds::new(self.rules.actors.len());
         let air = self.heli_air(i);
         let team = a.owner as f32;
+        let slot = a.ty as u32 * 2 + 1;
+        let turn = angle_diff(a.pfacing, a.facing);
+        let flying = a.altitude > 0;
+        if self.render_opts.is_original(slot) {
+            let body = at.facing(a.pfacing, turn);
+            for (k, &off) in air.rotors.iter().enumerate() {
+                let pose = match (k, flying) {
+                    (0, false) => Pose::Idle,
+                    (0, true) => Pose::Move,
+                    (_, false) => Pose::AuxIdle,
+                    (_, true) => Pose::AuxMove,
+                };
+                // OpenRA's placement on the pre-rendered body (classic perspective).
+                let (o0, o1) = (classic_offset(off, 0, a.pfacing), classic_offset(off, 0, a.facing));
+                let r = body.look(posed(slot, pose, 0), team, 1.0, 1.0, 0.0);
+                sink.sprite(out, r.offset_moving([o0[0], o0[1] - lift], [o1[0], o1[1] - lift]));
+            }
+            return;
+        }
         // The rotor spins with the turret angle; arms point along the body facing.
         let rotor = at.facing(a.pturret, angle_diff(a.pturret, a.turret));
-        let turn = angle_diff(a.pfacing, a.facing);
         let radius = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
         let disc_scale = radius as f32 / ROTOR_DISC_RADIUS as f32;
-        let flying = a.altitude > 0;
         for &off in &air.rotors {
             let arm = |r: crate::instances::SpriteRec| r.offset(0.0, -lift).arm(px(off), 0.0, a.pfacing, turn);
             if flying {
                 sink.sprite(out, arm(rotor.look(ids.helis_base + SPECIAL_ROTOR_DISC, team, disc_scale, 0.55, 0.0)));
-                sink.sprite(out, arm(rotor.look((a.ty * 2 + 1) as f32, team, 1.0, 0.3, 0.0)));
+                sink.sprite(out, arm(rotor.look(slot as f32, team, 1.0, 0.3, 0.0)));
             } else {
-                sink.sprite(out, arm(rotor.look((a.ty * 2 + 1) as f32, team, 1.0, 1.0, 0.0)));
+                sink.sprite(out, arm(rotor.look(slot as f32, team, 1.0, 1.0, 0.0)));
             }
         }
         let cruise = air.cruise_altitude.max(1);

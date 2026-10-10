@@ -49,6 +49,12 @@ pub(crate) fn infantry_to_build(w: &World, player: u8) -> Option<u16> {
         if w.rules.actors[ty as usize].queue != QueueType::Infantry || !w.can_start(player, ty) {
             continue;
         }
+        // Only what the AI can pay for now, like its tanks: a broke AI
+        // trains its cheapest soldier (ai.rs) instead of running a deficit
+        // on dear ones that keeps every tank from starting.
+        if w.rules.actors[ty as usize].cost > w.players[player as usize].funds() {
+            continue;
+        }
         let have = units.iter().filter(|&&t| t == ty).count();
         if have * 100 >= share * units.len().max(1) || (limit > 0 && have >= limit) {
             continue;

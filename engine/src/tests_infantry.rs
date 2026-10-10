@@ -577,6 +577,37 @@ fn dying_soldiers_are_drawn_with_their_death_and_original_art_gets_the_pose() {
 }
 
 #[test]
+fn original_deaths_and_idle_animations_play_to_their_end() {
+    // A crushed body of the original art lasts as long as its sequence
+    // (die-crushed: frames at 1600 ms), longer than the built-in fade.
+    let mut w = flat_world();
+    let e1 = ty(&w, "E1");
+    let n = w.rules.actors.len();
+    w.render_opts.set_death_art(n, &[e1 as u32], &[10, 10, 10, 10, 10, 10, 240, 90]);
+    w.render_opts.poses = true;
+    assert_eq!(w.render_opts.infantry_ticks[e1 as usize], [10, 10, 10, 10, 10, 10, 240, 90]);
+    let i = passive(&mut w, "E1", 1, 30, 30);
+    let (x, y) = (w.actors[i].x, w.actors[i].y);
+    w.inf.corpses.push(crate::infantry::Corpse { x, y, facing: 0, ty: e1, owner: 1, sequence: DEATH_CRUSHED, tick: w.tick });
+    w.inf.corpses.push(crate::infantry::Corpse { x, y, facing: 0, ty: e1, owner: 1, sequence: 1, tick: w.tick });
+    run(&mut w, crate::infantry::CRUSHED_TICKS + 10);
+    assert_eq!(w.inf.corpses.len(), 1, "die1 went with the built-in time, the crushed body stays");
+    run(&mut w, 240 - crate::infantry::CRUSHED_TICKS);
+    assert!(w.inf.corpses.is_empty());
+    // An idle animation of 90 ticks is played to its end.
+    let longest = (0..3000)
+        .map(|_| {
+            w.tick += 1;
+            w.infantry_stand_pose(i)
+        })
+        .filter(|(p, _)| matches!(p, crate::render::Pose::Idle1 | crate::render::Pose::Idle2))
+        .map(|(_, age)| age)
+        .max()
+        .unwrap();
+    assert_eq!(longest, 89);
+}
+
+#[test]
 fn standing_soldiers_use_both_stand_sequences_and_idle_now_and_then() {
     let mut w = flat_world();
     let soldiers: Vec<usize> = (0..12).map(|k| passive(&mut w, "E1", 0, 10 + k, 20)).collect();
@@ -592,50 +623,16 @@ fn standing_soldiers_use_both_stand_sequences_and_idle_now_and_then() {
     }
 }
 
-// ---- Husks (the world objects add them; tested with a stand-in) -----------------------
-
-/// Rules with a stand-in husk of the Medium Tank, as OpenRA's ^Husk has it:
-/// Capturable husk with TransformOnCapture, Targetable Husk with InfiltrateForTransform.
-fn rules_with_husk() -> crate::rules::Rules {
-    let mut v: serde_json::Value = serde_json::from_str(crate::rules::RULES_JSON).unwrap();
-    let actors = v["actors"].as_array_mut().unwrap();
-    let mut husk = actors.iter().find(|a| a["id"] == "2TNK").unwrap().clone();
-    husk["id"] = "2TNK.Husk".into();
-    husk["weapons"] = serde_json::json!([]);
-    husk["fire_delays"] = serde_json::json!([]);
-    husk["stance"] = serde_json::Value::Null;
-    husk["infiltrate_types"] = serde_json::json!(["Husk"]);
-    husk["abilities"] = serde_json::json!({
-        "capturable": { "types": ["husk"], "cancel_activity": false, "transform": { "into": "2TNK", "health": 15 } },
-        "infiltrated": [{ "kind": "transform", "types": ["Husk"], "experience": 0, "into": "2TNK", "health": 15 }],
-    });
-    actors.push(husk);
-    crate::rules::Rules::from_json(v).unwrap()
-}
-
-fn husk_world() -> World {
-    let mut w = flat_world();
-    let fresh = World::empty(rules_with_husk(), w.map.clone(), 7);
-    let players = std::mem::take(&mut w.players);
-    let mut w2 = fresh;
-    w2.pass = w.pass.clone();
-    w2.pass_water = w.pass_water.clone();
-    for p in &players {
-        w2.add_player(p.faction, false, p.start);
-        let k = w2.players.len() - 1;
-        w2.players[k].explored.iter_mut().for_each(|e| *e = 1);
-    }
-    w2.refresh_tokens();
-    w2
-}
+// ---- Husks (husks.rs: OpenRA ^Husk, Capturable husk with TransformOnCapture,
+// Targetable Husk with InfiltrateForTransform) ------------------------------------------
 
 #[test]
 fn mechanics_capture_enemy_husks_and_repair_allied_ones_into_tanks() {
-    let mut w = husk_world();
+    let mut w = flat_world();
     let husk_ty = ty(&w, "2TNK.Husk");
     let tank_ty = ty(&w, "2TNK");
-    let enemy_husk = w.spawn_unit(husk_ty, 1, cell_center(30), cell_center(30), 256);
-    let own_husk = w.spawn_unit(husk_ty, 0, cell_center(20), cell_center(30), 0);
+    let enemy_husk = w.place_husk(husk_ty as usize, 1, cell_center(30), cell_center(30), 256, 0);
+    let own_husk = w.place_husk(husk_ty as usize, 0, cell_center(20), cell_center(30), 0, 0);
     let m1 = unit(&mut w, "MECH", 0, 30, 34);
     let m2 = unit(&mut w, "MECH", 0, 20, 34);
     assert!(w.can_capture(m1, enemy_husk), "Captures husk");

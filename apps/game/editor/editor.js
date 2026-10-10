@@ -55,6 +55,9 @@ const PALETTE_GROUPS = [
   { name: 'Fakes', test: (a) => a.kind === 'building' && a.name.startsWith('Fake') },
   { name: 'Infantry', test: (a) => a.kind === 'infantry' },
   { name: 'Vehicles', test: (a) => a.kind === 'vehicle' },
+  // OpenRA's crates and husks (engine/src/crates.rs, husks.rs), as in its editor.
+  { name: 'Crates', test: (a) => a.kind === 'crate' },
+  { name: 'Husks', test: (a) => a.kind === 'husk' },
 ];
 
 const SHORTCUTS = [

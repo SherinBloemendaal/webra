@@ -17,6 +17,7 @@ import {
   STARTING_CASH,
   STARTING_UNITS,
   TECH_LEVELS,
+  TIME_LIMITS,
   WEATHER_MODES,
 } from './constants.js';
 import { bool, fail, isPlainObject, object, oneOf, ProtocolError, text } from './check.js';
@@ -30,11 +31,17 @@ export const PRESET_KEYS = Object.freeze([
   'startingUnits',
   'techLevel',
   'gameSpeed',
+  'timeLimit',
   ...BOOLEAN_OPTIONS,
 ]);
 
-/** Options added after modes could be saved, with the value older saved modes get. */
-const ADDED_LATER = Object.freeze({ reusableEngineers: DEFAULT_OPTIONS.reusableEngineers });
+/**
+ * Keys added to the modes after players could save them (protocol 6:
+ * OpenRA's crates, short game, kill bounties, separate team spawns, ally
+ * build radius and time limit; reusable engineers). A saved mode without them takes the
+ * defaults, so older settings documents stay valid.
+ */
+export const ADDED_PRESET_KEYS = Object.freeze(['timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers']);
 
 /** Most saved modes per account. */
 export const PRESETS_MAX = 16;
@@ -77,16 +84,24 @@ export const BUILTIN_MODES = Object.freeze([
     mapStyle: 'islands',
     startingCash: 10000,
   }),
-  mode('rush', 'Rush', 'Little cash, light support, no superweapons and a fast clock: strike early.', {
+  mode('rush', 'Rush', 'Little cash, light support, no superweapons, a fast clock and kill bounties: strike early.', {
     startingCash: 2500,
     startingUnits: 'light',
     techLevel: 'high',
     gameSpeed: 'fast',
+    bounty: true,
   }),
-  mode('turtle', 'Turtle', 'Lots of cash and a slower clock: build up a fortress before the fighting starts.', {
+  mode('turtle', 'Turtle', 'Lots of cash and a slower clock: build up a fortress before the fighting starts. Every last unit must go.', {
     startingCash: 20000,
     gameSpeed: 'slower',
+    shortGame: false,
   }),
+  mode(
+    'competitive',
+    'Competitive',
+    'Fair and quick: no crates, no weather, short game and a 60 minute limit (the most experienced side wins).',
+    { mapStyle: 'land', biome: 'temperate', weather: 'off', crates: false, shortGame: true, timeLimit: 60 },
+  ),
   mode(
     'sandbox',
     'Sandbox',
@@ -96,11 +111,15 @@ export const BUILTIN_MODES = Object.freeze([
   ),
 ]);
 
-/** Strictly validate a mode bundle: exactly PRESET_KEYS, every value from its value set. */
-export function validatePresetOptions(v, what = 'options') {
-  // Modes saved before an option existed lack its key: they keep its default.
-  if (isPlainObject(v)) v = { ...ADDED_LATER, ...v };
-  object(v, PRESET_KEYS, what);
+/**
+ * Strictly validate a mode bundle: exactly PRESET_KEYS, every value from its
+ * value set. ADDED_PRESET_KEYS left out (modes saved before they existed)
+ * take their defaults.
+ */
+export function validatePresetOptions(raw, what = 'options') {
+  object(raw, PRESET_KEYS, what);
+  const v = { ...raw };
+  for (const k of ADDED_PRESET_KEYS) if (!(k in v)) v[k] = DEFAULT_OPTIONS[k];
   const out = {
     mapStyle: oneOf(v.mapStyle, MAP_STYLES, `${what}.mapStyle`),
     biome: oneOf(v.biome, BIOMES, `${what}.biome`),
@@ -109,6 +128,7 @@ export function validatePresetOptions(v, what = 'options') {
     startingUnits: oneOf(v.startingUnits, STARTING_UNITS, `${what}.startingUnits`),
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
+    timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
   };
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;

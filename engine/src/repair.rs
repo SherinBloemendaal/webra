@@ -112,7 +112,7 @@ impl World {
         let hp = (r.step).min(max_hp - a.hp).max(0);
         // The cost is the same however many players repair.
         let cost = ((hp as i64 * r.percent as i64 * b.value as i64) / (max_hp as i64 * 100)).max(1) as i32;
-        let (interval, bonuses, ty) = (r.interval, r.bonuses.clone(), a.ty);
+        let (interval, bonuses, ty, player_xp) = (r.interval, r.bonuses.clone(), a.ty, r.player_experience);
         let tick = self.tick;
         let mut paying = 0usize;
         for k in 0..self.actors[i].repairers.len() {
@@ -137,8 +137,13 @@ impl World {
         let a = &mut self.actors[i];
         a.hp = (a.hp + heal).min(max_hp);
         if a.hp >= max_hp {
-            // Undamaged: repairing ends (OpenRA also gives allied repairers
-            // PlayerExperience, which WebRA has no counterpart for).
+            // Undamaged: repairing ends, and allied repairers gain
+            // PlayerExperience (gamerules.rs).
+            let allies: Vec<u8> = a.repairers.iter().copied().filter(|&p| p != owner).collect();
+            for p in allies {
+                self.give_player_experience(p, player_xp as i64);
+            }
+            let a = &mut self.actors[i];
             a.repairers.clear();
             a.repair_active = false;
             a.repair_ticks = 0;

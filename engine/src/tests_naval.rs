@@ -132,6 +132,11 @@ fn ships_move_on_water_only() {
 #[test]
 fn submarines_hide_until_they_fire() {
     let mut w = coast();
+    // Structures keep both players in the game (submarines alone do not).
+    for p in 0..2u8 {
+        let start = w.players[p as usize].start;
+        w.spawn_building(ty(&w, "POWR"), p, start.0, start.1);
+    }
     let ss = unit(&mut w, "SS", 0, 30, 20);
     // An enemy cruiser in sight, but cruisers cannot detect subs.
     let ca = unit(&mut w, "CA", 1, 36, 20);

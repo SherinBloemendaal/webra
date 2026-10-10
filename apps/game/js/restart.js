@@ -7,7 +7,8 @@
 // settings go to sessionStorage (this tab only) first, and the next boot
 // takes them (once) and starts the game again, so every part of the screen
 // starts fresh. The replay viewer restarts in place (playback from 0).
-// Online games have no restart (every peer would have to agree).
+// Online games have a rematch instead: every player must agree, so the host
+// proposes it and the session goes back to its lobby (js/online.js).
 
 export const RESTART_KEY = 'webra.restart.v1';
 

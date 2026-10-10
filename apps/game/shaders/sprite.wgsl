@@ -17,7 +17,8 @@ struct Frame {
     // Pose descriptor: first frame, frames per facing, frames per second, mode.
     anim: vec4f,
     // Head of a sequence slot: first pose descriptor, pose count (> 0 marks the slot).
-    // Pose descriptor: facings, flags (1 classic facings, 2 free rotation), interpolated facings.
+    // Pose descriptor: facings, flags (1 classic facings, 2 free rotation), interpolated facings,
+    // lead-in frames (MODE_LEAD).
     seq: vec4f,
 };
 
@@ -41,7 +42,10 @@ const MODE_LOOP: u32 = 0u;
 const MODE_ONCE: u32 = 1u;
 const MODE_STILL: u32 = 2u;
 const MODE_INDEX: u32 = 3u;
-const MODE_VANISH: u32 = 4u;
+// The first seq.w frames once from the age, then the rest looping on the render clock.
+const MODE_LEAD: u32 = 4u;
+// Play once from the age, then nothing (infantry death animations).
+const MODE_VANISH: u32 = 5u;
 const FLAG_CLASSIC: u32 = 1u;
 const FLAG_ROTATE: u32 = 2u;
 // Simulation ticks per second: ages are in ticks (engine TICKS_PER_SECOND).
@@ -147,6 +151,16 @@ fn vs(@builtin(vertex_index) vi: u32,
             k = min(age, len - 1u);
         } else if (mode == MODE_STILL) {
             k = 0u;
+        } else if (mode == MODE_LEAD) {
+            let lead = min(u32(d.seq.w), len);
+            let f = u32(floor(f32(age) * d.anim.z / TICKS_PER_SECOND));
+            if (f < lead) {
+                k = f;
+            } else if (len > lead) {
+                k = lead + anim_frame(g.anim.x, g.anim.y, d.anim.z, len - lead, phase);
+            } else {
+                k = len - 1u;
+            }
         }
         let facings = max(u32(d.seq.x), 1u);
         let flags = u32(d.seq.y);

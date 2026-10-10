@@ -35,10 +35,13 @@ import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
+import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
+import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
+import { EXPLOSIONS, MUZZLE_ACTORS } from './content/tables.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
-import { POSE, POSE_STRIDE, packSprite } from './content/sequences.js';
+import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -427,20 +430,10 @@ const SPECIALS = [
     poly(ctx, P.team(0.9), [3.5, 1.5, 11, 4, 3.5, 7]);
     circle(ctx, P.c('rgba(0,0,0,0.3)'), 3, 15, 2);
   }],
-  // anti-tank mine
-  [8, 8, (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 4.5, 4.5, 3.6);
-    circle(ctx, P.c('#3a3a2a'), 4, 4, 3.6);
-    circle(ctx, P.c('#5e5e42'), 4, 4, 2.8);
-    circle(ctx, P.c('#77775a'), 3.3, 3.3, 1);
-    circle(ctx, P.c('#2a2a20'), 4, 4, 0.9);
-  }],
-  // anti-personnel mine
-  [6, 6, (ctx, P) => {
-    circle(ctx, P.c('#3a3a2a'), 3, 3, 2.6);
-    circle(ctx, P.c('#6a6a48'), 3, 3, 1.8);
-    circle(ctx, P.c('#c03020'), 3, 3, 0.7);
-  }],
+  // anti-tank and anti-personnel mines: reserved, the mines are actors
+  // (MINV, MINP in art/abilities.js; packs address them by these names too)
+  null,
+  null,
   // tesla bolt segment (stretched along x)
   [16, 4, (ctx, P) => {
     const pts = [0, 2, 3, 0.8, 6, 3.2, 9, 0.8, 12, 3, 14, 1.4, 16, 2];
@@ -498,7 +491,7 @@ function burst(ctx, P, cx, cy, r, spikes) {
 
 /**
  * Every art module owns SPECIAL_SLOTS special sprites at a fixed position after
- * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations), padded with
+ * the built-in specials (naval, planes, helicopters, abilities, veterancy, decorations, effects, leftovers), padded with
  * empty slots, so ids in engine/src/render.rs never depend on another module.
  */
 export const SPECIAL_SLOTS = 8;
@@ -552,6 +545,15 @@ export function spriteList(actors) {
       list.push([a.width * 24, a.height * 24, draw]);
       const anim = buildingAnim(key);
       list.push(BUILDING_TURRET[key] ?? (anim ? layerSprite(anim, 0) : null));
+    } else if (a.kind === 'crate') {
+      // Crates (art/leftovers.js): the land image, then the water image.
+      const d = CRATE_DRAW[key] ?? CRATE_DRAW.CRATE;
+      list.push(d.body, d.turret);
+    } else if (a.kind === 'husk') {
+      // Husks: the vehicle's hull, charred (art/leftovers.js); no turret.
+      const base = UNIT_DRAW[spriteKey(huskBase(a.id))] ?? fallbackUnit({ ...a, kind: 'vehicle' });
+      if (!base) throw new Error(`no sprite for husk ${a.id} (looked up as ${huskBase(a.id)})`);
+      list.push(huskOf(base.body), null);
     } else {
       const d = UNIT_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
@@ -559,6 +561,7 @@ export function spriteList(actors) {
       list.push(a.kind === 'infantry' ? (PRONE[key] ?? d.body) : (d.turret ?? null));
     }
   }
+  const muzzles = new Set(MUZZLE_ACTORS);
   return list.concat(
     SPECIALS,
     slots(NAVAL_SPECIALS),
@@ -567,7 +570,13 @@ export function spriteList(actors) {
     slots(ABILITY_SPECIALS),
     slots(VETERANCY_SPECIALS),
     slots(DECORATION_SPECIALS),
+    slots(EFFECT_SPECIALS),
+    slots(LEFTOVER_SPECIALS),
     slots(INFANTRY_SPECIALS),
+    // Muzzle flashes, one slot per actor (engine/src/render.rs SpriteIds muzzle_base).
+    actors.map((a) => (muzzles.has(a.id) ? MUZZLE_FLASH : null)),
+    // Explosions per name (engine/render.json, SpriteIds explosion_base).
+    EXPLOSIONS.map(explosionArt),
   );
 }
 
@@ -645,7 +654,7 @@ function shelfPack(boxes, width, startY = 0) {
  * `{ images, poses }` becomes the head of a pose table (the last vec4 of the
  * entry: first descriptor, pose count), followed by one descriptor per pose
  * ([0 x 8, first frame, frames per facing, fps, mode, facings, flags,
- * interpolated facings, 0]) and the frames of each pose, facing by facing.
+ * interpolated facings, lead-in frames]) and the frames of each pose, facing by facing.
  * `images` are `{ width, height, color (RGBA), mask (one byte per pixel, 255
  * team colour) | null, offset: [x, y], scale }` with offset and scale in world
  * pixels; each is placed in the atlas once. A building whose second slot is
@@ -715,7 +724,7 @@ export function buildAtlas(actors, opts = {}) {
       const k = seen.get(pose);
       const d = descs[k];
       const flags = (d.classic ? 1 : 0) | (d.rotate ? 2 : 0);
-      return { desc: [blocks[k], d.length, d.fps, d.mode, d.facings, flags, d.interpolatedFacings ?? 0] };
+      return { desc: [blocks[k], d.length, d.fps, d.mode, d.facings, flags, d.interpolatedFacings ?? 0, d.lead ?? 0] };
     });
     for (let k = 0; k < descs.length; k++) for (const img of descs[k].frames) entries.push({ image: base + img });
     extra.push([slot, descBase, art.poses.length, entries]);
@@ -806,8 +815,8 @@ export function buildAtlas(actors, opts = {}) {
     entries.forEach((e, k) => {
       const at = (descBase + k) * FRAME_FLOATS;
       if (e.desc) {
-        const [first, length, fps, mode, facings, flags, interp] = e.desc;
-        frames.set([0, 0, 0, 0, 0, 0, 0, 0, first, length, fps, mode, facings, flags, interp, 0], at);
+        const [first, length, fps, mode, facings, flags, interp, lead] = e.desc;
+        frames.set([0, 0, 0, 0, 0, 0, 0, 0, first, length, fps, mode, facings, flags, interp, lead], at);
         return;
       }
       const b = imageBoxes[e.image];
@@ -829,10 +838,21 @@ export function buildAtlas(actors, opts = {}) {
       );
     });
   }
-  // Actor types whose body art has death sequences (Game.set_death_art).
+  // Actor types whose body art has death sequences, and how many ticks each
+  // death and the longer idle animation play (Game.set_death_art).
   const deaths = [];
-  for (const [slot, art] of slots) if (art?.deaths && slot % 2 === 0 && slot < actors.length * 2) deaths.push(slot / 2);
-  return { color, mask, frames, overlays, deaths, filter: opts.filter ?? 'linear', width, height };
+  const deathTicks = [];
+  for (const [slot, art] of slots) {
+    if (!art?.deaths || slot % 2 !== 0 || slot >= actors.length * 2) continue;
+    deaths.push(slot / 2);
+    // Idle animations count when the art has them (played once); deaths always.
+    const t = INFANTRY_TIMED_POSES.map((p) => {
+      const desc = art.poses[POSE[p]];
+      return p.startsWith('IDLE') && desc?.mode !== MODE.ONCE ? 0 : onceTicks(desc);
+    });
+    deathTicks.push(...t.slice(0, 7), Math.max(t[7], t[8]));
+  }
+  return { color, mask, frames, overlays, deaths, deathTicks, filter: opts.filter ?? 'linear', width, height };
 }
 
 /**

@@ -95,7 +95,8 @@ impl World {
 
     /// Firepower of actor `i`, percent (FirepowerMultiplier of its rank).
     pub fn firepower_modifier(&self, i: usize) -> i32 {
-        self.rank_modifier(i, |x| &x.firepower)
+        // Rank, then the owner's handicap (gamerules.rs, HandicapFirepowerMultiplier).
+        apply_percent(self.rank_modifier(i, |x| &x.firepower) as i64, self.handicap_firepower(i)) as i32
     }
 
     /// The shot actor `i` fires now: itself as the source, its current firepower.
@@ -123,6 +124,8 @@ impl World {
     /// its rank's DamageMultiplier, then TakeCover's modifiers while prone.
     pub(crate) fn modified_damage(&self, u: usize, dmg: i32, types: u32) -> i32 {
         let mut v = apply_percent(dmg as i64, self.rank_modifier(u, |x| &x.damage));
+        // The owner's handicap (gamerules.rs, HandicapDamageMultiplier).
+        v = apply_percent(v, self.handicap_damage(u));
         if self.is_prone(u) {
             if let Some(tc) = &self.rules.actors[self.actors[u].ty as usize].take_cover {
                 for &(bit, percent) in &tc.modifiers {
@@ -164,9 +167,18 @@ impl World {
         self.actors[i].xp = xp;
         while (self.actors[i].rank as usize) < levels && xp >= self.level_experience(i, self.actors[i].rank as usize + 1) {
             self.actors[i].rank += 1;
+            // GainsExperience LevelUpNotification, per level, to the owner.
+            let a = &self.actors[i];
+            let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
+            self.sound.push(crate::sound_events::SoundEventKind::LevelUp, ty, x, y, owner, 0);
         }
         // Observer stats (observer.rs).
         let ranks = u32::from(self.actors[i].rank.saturating_sub(before.1));
+        // GainsExperience LevelUpImage crate-effects: the level up animation (presentation, husks.rs).
+        if ranks > 0 {
+            let (x, y) = (self.actors[i].x, self.actors[i].y);
+            self.effects.push(crate::husks::leftover_effect(crate::husks::LEFTOVER_LEVELUP, x, y));
+        }
         self.note_experience(i, xp - before.0, ranks);
     }
 
@@ -187,13 +199,20 @@ impl World {
         // Tanya's AnnounceOnKill (infantry.rs).
         self.announce_kill(source, victim);
         let Some(killer) = self.resolve(source) else { return };
-        if killer == victim || !self.actors[killer].in_world() || self.are_allies(self.actors[killer].owner, self.actors[victim].owner) {
+        if killer == victim || self.are_allies(self.actors[killer].owner, self.actors[victim].owner) {
             return;
         }
         let info = &self.rules.actors[self.actors[victim].ty as usize];
         let Some(g) = &info.gives_experience else { return };
         let value = if g.experience >= 0 { g.experience } else { info.cost };
         let amount = value as i64 * g.actor_modifier as i64 / 100;
+        // The killing player's PlayerExperience (gamerules.rs, the time limit's tie breaker).
+        let player_amount = value as i64 * g.player_modifier as i64 / 100;
+        let killer_owner = self.actors[killer].owner;
+        self.give_player_experience(killer_owner, player_amount);
+        if !self.actors[killer].in_world() {
+            return;
+        }
         self.give_experience(killer, amount);
     }
 

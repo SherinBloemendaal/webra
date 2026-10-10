@@ -2,6 +2,8 @@
 // accounts data (docs/accounts-api.md, sections 6 and 8; apps/website/privacy.html).
 
 import { pruneSessions } from '../directory.js';
+import { UNLISTED_RETENTION_MS } from '../maps.js';
+import { ONLINE_SAVE_RETENTION_MS } from '@webra/protocol';
 import { pruneQuotas } from '../quota.js';
 import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
 import { purgeStatements } from './routes-admin.js';
@@ -36,6 +38,10 @@ export async function runRetention(env, now = Date.now()) {
       'UPDATE users SET email = NULL, email_set_at = NULL WHERE email IS NOT NULL AND email_verified = 0 AND (email_set_at IS NULL OR email_set_at < ?1)',
       now - UNVERIFIED_EMAIL_MS,
     ),
+    // Maps shared with an online session only (unlisted): kept while sessions use them.
+    sharedMaps: await run('DELETE FROM maps WHERE listed = 0 AND COALESCE(used_at, created_at) < ?1', now - UNLISTED_RETENTION_MS),
+    // Saved online games: their records go after 90 days (the files stay with the players).
+    onlineSaves: await run('DELETE FROM online_saves WHERE created_at < ?1', now - ONLINE_SAVE_RETENTION_MS),
     purged: 0,
   };
   const { results } = await db
@@ -44,7 +50,7 @@ export async function runRetention(env, now = Date.now()) {
     .all();
   for (const { id } of results) {
     await db.batch([
-      ...purgeStatements(db, id),
+      ...purgeStatements(db, id, now),
       auditStatement(db, { actor: null, action: 'user.purge', targetType: 'user', targetId: id, before: { purged: true }, after: { purged: true }, reason: 'Deleted more than 30 days ago' }, now),
     ]);
     out.purged++;
