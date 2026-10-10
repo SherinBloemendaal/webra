@@ -923,6 +923,55 @@ fn bots_on_separate_landmasses_stay_bounded() {
     assert!(both_alive);
 }
 
+/// A squad member left on an island does not hold the squad back: the
+/// leader would wait for it for good. It leaves the squad and the rest
+/// attack.
+#[test]
+fn a_squad_drops_a_member_it_cannot_reach_and_attacks_on() {
+    let mut map = open_map(64, 64);
+    // An island of 4 x 4 cells at (28..32, 44..48), the rest of the map joined.
+    for y in 42..50 {
+        for x in 26..34 {
+            let island = (28..32).contains(&x) && (44..48).contains(&y);
+            if !island {
+                let i = map.idx(x, y);
+                map.terrain[i] = Terrain::Water;
+            }
+        }
+    }
+    map.spawns = vec![(4, 4), (52, 52)];
+    let players =
+        [PlayerSetup { bot: BotType::Rush, ..PlayerSetup::new("russia", Some(AiDifficulty::Normal)) }, PlayerSetup::new("england", None)];
+    let mut w = World::on_map(4, map, &players, GameOptions::default());
+    let tnk = ty(&w, "3TNK");
+    for k in 0..24 {
+        w.spawn_unit(tnk, 0, cell_center(10 + k % 8), cell_center(14 + k / 8), 512);
+    }
+    let stranded = w.spawn_unit(tnk, 0, cell_center(29), cell_center(45), 512);
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+    let enemy = crate::ai::base_point(&w, 1);
+    let mut arrived = false;
+    for _ in 0..25 * 60 * 3 {
+        w.step();
+        let near =
+            w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == tnk && dist(a.x, a.y, enemy.0, enemy.1) < 16 * CELL).count();
+        if near >= 12 {
+            arrived = true;
+            break;
+        }
+    }
+    assert!(arrived, "the squad drove to the enemy base without its stranded member");
+    let in_squad = crate::ai_squads::squad_units(&w, 0, crate::ai_squads::SquadType::Assault)
+        .into_iter()
+        .chain(crate::ai_squads::squad_units(&w, 0, crate::ai_squads::SquadType::Rush))
+        .any(|i| i == stranded);
+    assert!(!in_squad, "the stranded tank left the squad");
+    assert_eq!(
+        w.cell_of(w.actors[stranded].x, w.actors[stranded].y).0.clamp(28, 31),
+        w.cell_of(w.actors[stranded].x, w.actors[stranded].y).0
+    );
+}
+
 /// A bot whose only ore lies across the water does not send its trucks at
 /// the bank again and again: they wait, and the bot keeps building.
 #[test]

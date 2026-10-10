@@ -773,6 +773,11 @@ fn ground_attack_move(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
         change_state(w, player, k, State::GroundIdle);
         return;
     }
+    // WebRA: a member that cannot reach the leader at all (left on an
+    // island, cut off by a fallen bridge) leaves the squad, else the leader
+    // would stop and wait for it for good (OpenRA #21054). It is free for
+    // the next squad formed where it stands.
+    drop_cut_off(w, player, k, l);
     let units = units_k(w, player, k);
     // Stragglers catch up with the leader first.
     let r = units.len() as i64 * CELL as i64 / 3;
@@ -792,6 +797,31 @@ fn ground_attack_move(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
     if ground_should_flee(w, player, cfg, k) {
         change_state(w, player, k, State::GroundFlee);
     }
+}
+
+/// Members of squad `k` that cannot reach leader `l` by ground (or water,
+/// for a naval squad) leave the squad and its roles; aircraft always can.
+fn drop_cut_off(w: &mut World, player: u8, k: usize, l: usize) {
+    let reach = |w: &World, i: usize| -> Option<u32> {
+        if w.domain_of(i) == crate::rules::Domain::Air {
+            return None;
+        }
+        let pass = w.pass_of(i);
+        let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
+        (!pass.blocked[ci]).then(|| pass.component[ci])
+    };
+    let Some(home) = reach(w, l) else { return };
+    let cut: Vec<u32> = units_k(w, player, k)
+        .into_iter()
+        .filter(|&i| i != l && w.domain_of(i) == w.domain_of(l) && reach(w, i).is_some_and(|c| c != home))
+        .map(|i| w.make_ref(i))
+        .collect();
+    if cut.is_empty() {
+        return;
+    }
+    let st = sq(w, player);
+    st.squads[k].units.retain(|r| !cut.contains(r));
+    st.active.retain(|r| !cut.contains(r));
 }
 
 fn ground_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
