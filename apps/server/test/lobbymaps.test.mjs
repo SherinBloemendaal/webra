@@ -307,6 +307,12 @@ test('the public session list names a shared map without its id, hash or author'
   await upsertSession(env.DB, { id: 'e'.repeat(64), name: 'Lobby', host: 'H', public: true, locked: false, players: 1, maxPlayers: 2, map: MAP, version: '1', state: 'lobby' }, Date.now());
   const [row] = await listSessions(env.DB, Date.now());
   assert.deepEqual(row.map, { name: 'Twin', modded: false, shared: true });
+  // A co-op mission is listed under its own title; a stored row naming no known mission lists no map.
+  await upsertSession(env.DB, { id: 'f'.repeat(64), name: 'Coop', host: 'H', public: true, locked: false, players: 1, maxPlayers: 2, map: { mission: 'exodus', name: '<b>x</b>' }, version: '1', state: 'lobby' }, Date.now());
+  await upsertSession(env.DB, { id: 'd'.repeat(64), name: 'Odd', host: 'H', public: true, locked: false, players: 1, maxPlayers: 2, map: { mission: 'allies-01', name: 'x' }, version: '1', state: 'lobby' }, Date.now());
+  const rows = await listSessions(env.DB, Date.now());
+  assert.deepEqual(rows.find((x) => x.name === 'Coop').map, { mission: 'exodus', name: 'Exodus', modded: false });
+  assert.equal(rows.find((x) => x.name === 'Odd').map, null);
 });
 
 test('retention: unlisted maps unused for 30 days go; purged accounts take their shared maps along', async () => {

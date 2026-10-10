@@ -2,6 +2,8 @@
 // session's Durable Object. Listing shows public lobbies that are still in
 // the lobby phase and were updated in the last two minutes.
 
+import { coopMission } from '@webra/protocol';
+
 export const LISTING_TTL_MS = 2 * 60 * 1000;
 export const HEARTBEAT_MS = 60 * 1000;
 const LIST_LIMIT = 100;
@@ -53,7 +55,11 @@ function parseMapJson(text) {
   if (!text) return null;
   try {
     const m = JSON.parse(text);
-    if (typeof m.mission === 'string') return { mission: m.mission, name: String(m.name), modded: false };
+    // A co-op mission: only one this version knows, under its own title (never the stored text).
+    if (m.mission !== undefined) {
+      const c = coopMission(m.mission);
+      return c ? { mission: c.id, name: c.title, modded: false } : null;
+    }
     if (m.shared === true) return { name: String(m.name), modded: m.modded === true, shared: true };
     return { id: String(m.id), name: String(m.name), hash: String(m.hash), modded: m.modded === true };
   } catch {
