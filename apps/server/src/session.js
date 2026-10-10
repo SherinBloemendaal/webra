@@ -721,7 +721,7 @@ export class Session extends DurableObject {
           // Upgraded to the current map format first: the lobby names the map every client plays.
           map = await lookupMap(this.env.DB, msg.map.id, msg.map.hash);
           if (!map) throw new RoomError('Unknown map.', ERRORS.NOT_FOUND);
-          if (map.incompatible) throw new RoomError(map.incompatible, ERRORS.INVALID);
+          if (map.refused) throw new RoomError(map.refused, ERRORS.INVALID);
         }
         // Re-validated inside setMap (host and phase may have changed during the lookup).
         room.setMap(client, map);

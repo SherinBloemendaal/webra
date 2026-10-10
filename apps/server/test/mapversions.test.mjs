@@ -8,11 +8,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { canonicalMapJson, MAP_FORMAT_VERSION, MAP_VERSIONS, parseMap, upgradeMap } from '@webra/protocol';
+import { canonicalMapJson, MAP_FORMAT_VERSION, MAP_VERSIONS, parseMap, renameActors, upgradeMap } from '@webra/protocol';
 import { testVersions, v1Map } from '../../../packages/protocol/test/fixtures/map-test-versions.mjs';
 import { FakeD1 } from './fake-d1.mjs';
 import { HttpError } from '../src/http.js';
-import { getMap, listMaps, LIST_UPGRADE_BATCH, lookupMap, mapTextByHash, prepareMap, storeMap, upgradeStaleMaps, upgradeStoredMap } from '../src/maps.js';
+import { getMap, listMaps, LIST_UPGRADE_BATCH, lookupMap, MAP_UPGRADE_UNAVAILABLE, mapTextByHash, prepareMap, storeMap, upgradeAttempt, upgradeStaleMaps, upgradeStoredMap } from '../src/maps.js';
 import { runRetention } from '../src/accounts/cron.js';
 
 const fixture = (name) => readFileSync(new URL(`../../../packages/protocol/test/fixtures/maps/${name}`, import.meta.url), 'utf8');
@@ -134,7 +134,8 @@ test('the community list upgrades stale rows first and leaves out what is not up
   for (let i = 0; i < LIST_UPGRADE_BATCH + 2; i++) rows.push(await storeV1(db, { name: `Map ${i}`, rules: null }, { listed: true, now: 1000 + i }));
   const broken = await storeV1(db, { name: 'Broken', actors: [{ type: 'GONE', owner: -1, x: 3, y: 9 }] }, { listed: true, now: 5000 });
   const list = await (await listMaps({ DB: db }, { judge, versions })).json();
-  assert.equal(list.length, LIST_UPGRADE_BATCH, 'one batch per request; the rest waits');
+  // Newest first: the broken map takes one place of the batch (and is marked), the oldest two wait.
+  assert.equal(list.length, LIST_UPGRADE_BATCH - 1, 'one batch per request; the rest waits');
   for (const m of list) assert.equal(m.hash, db.rows('SELECT hash FROM maps WHERE id = ?', m.id)[0].hash);
   assert.ok(list.every((m) => db.rows('SELECT format_version FROM maps WHERE id = ?', m.id)[0].format_version === 3));
   const again = await (await listMaps({ DB: db }, { judge, versions })).json();
@@ -146,10 +147,10 @@ test('the community list upgrades stale rows first and leaves out what is not up
   // Its file is still served as stored (clients say why it does not load; the editor repairs it) ...
   assert.equal(await (await getMap({ DB: db }, exec, broken.row.id, { judge, versions })).text(), mark.json);
   // ... but a lobby refuses it with the message.
-  assert.deepEqual(await lookupMap(db, broken.row.id, broken.p.hash, { judge, versions }), { incompatible: mark.upgrade_error });
+  assert.deepEqual(await lookupMap(db, broken.row.id, broken.p.hash, { judge, versions }), { refused: mark.upgrade_error });
   // Not tried again.
   const calls = judge.calls;
-  assert.deepEqual(await upgradeStaleMaps(db, { judge, versions, limit: 10 }), { upgraded: 0, failed: 0 });
+  assert.deepEqual(await upgradeStaleMaps(db, { judge, versions, limit: 10 }), { upgraded: 0, failed: 0, skipped: 0 });
   assert.equal(judge.calls, calls);
 });
 
@@ -199,6 +200,149 @@ test('two format changes in a row: every old hash points at the map as it is now
   db.sqlite.prepare("INSERT INTO map_aliases (old_hash, old_id, hash, created_at) VALUES (?, 'dead', ?, 1)").run('d'.repeat(64), 'f'.repeat(64));
   const out = await runRetention({ DB: db }, Date.now());
   assert.equal(out.mapAliases, 1);
-  assert.deepEqual(out.mapUpgrades, { upgraded: 0, failed: 0 }, `no stale rows at format ${MAP_VERSIONS.current}`);
+  assert.deepEqual(out.mapUpgrades, { upgraded: 0, failed: 0, skipped: 0 }, `no stale rows at format ${MAP_VERSIONS.current}`);
   assert.equal(db.rows('SELECT COUNT(*) AS n FROM map_aliases')[0].n, 2);
+});
+
+// ---- Failures, order, races and retries ---------------------------------------------------------
+
+/** Run `fn` with console.error collected (the upgrade logs what it skips). */
+async function quietly(fn) {
+  const error = console.error;
+  const logged = [];
+  console.error = (...a) => logged.push(a.join(' '));
+  try {
+    return { value: await fn(), logged };
+  } finally {
+    console.error = error;
+  }
+}
+
+test('one row that fails for another reason never breaks the list, the daily batch or a download', async () => {
+  const versions = testVersions();
+  const db = new FakeD1();
+  const good = await storeV1(db, { name: 'Good', rules: null }, { now: 1 });
+  const bad = await storeV1(db, { name: 'Trap', rules: null }, { now: 2 });
+  // The engine trips over one map (an identity mismatch answers 500), every time.
+  const flaky = {
+    validateMap(canonical) {
+      const v = judge.validateMap(canonical);
+      return canonical.includes('"Trap"') ? { ...v, hash: 'f'.repeat(64) } : v;
+    },
+  };
+  const { value: list, logged } = await quietly(async () => (await listMaps({ DB: db }, { judge: flaky, versions })).json());
+  assert.deepEqual(list.map((m) => m.name), ['Good'], 'the rest is listed');
+  assert.match(logged.join('\n'), /map upgrade failed/);
+  const [row] = db.rows('SELECT format_version, upgrade_error FROM maps WHERE id = ?', bad.row.id);
+  assert.deepEqual(row, { format_version: 1, upgrade_error: null }, 'not marked: it may work next time');
+  const { value: batch } = await quietly(() => upgradeStaleMaps(db, { judge: flaky, versions, limit: 10 }));
+  assert.deepEqual(batch, { upgraded: 0, failed: 0, skipped: 1 });
+  // A download serves the stored text; a lobby refuses it for now.
+  const { value: res } = await quietly(() => getMap({ DB: db }, exec, bad.row.id, { judge: flaky, versions }));
+  assert.equal(await res.text(), bad.p.canonical);
+  const { value: refused } = await quietly(() => lookupMap(db, bad.row.id, bad.p.hash, { judge: flaky, versions }));
+  assert.deepEqual(refused, { refused: MAP_UPGRADE_UNAVAILABLE });
+  // A database that fails once mid-upgrade: the list still answers, the next request upgrades.
+  const shaky = Object.create(db);
+  let fail = true;
+  shaky.batch = async (steps) => {
+    if (fail) {
+      fail = false;
+      throw new Error('D1_ERROR: network connection lost');
+    }
+    return db.batch(steps);
+  };
+  const { value: first } = await quietly(async () => (await listMaps({ DB: shaky }, { judge, versions })).json());
+  assert.ok(first.length >= 1);
+  const second = await (await listMaps({ DB: shaky }, { judge, versions })).json();
+  assert.deepEqual(second.map((m) => m.name).sort(), ['Good', 'Trap']);
+  assert.ok(good.row.id);
+  // Even a failing query in the upgrade pass leaves the list working.
+  const broken = Object.create(db);
+  broken.prepare = (sql) => (/format_version < \?1/.test(sql) ? { bind: () => ({ all: async () => Promise.reject(new Error('D1_ERROR')) }) } : db.prepare(sql));
+  const { value: third } = await quietly(async () => (await listMaps({ DB: broken }, { judge, versions })).json());
+  assert.equal(third.length, 2);
+});
+
+test('the list upgrades the rows it shows first: the newest', async () => {
+  const versions = testVersions();
+  const db = new FakeD1();
+  for (let i = 0; i < LIST_UPGRADE_BATCH + 3; i++) await storeV1(db, { name: `Map ${i}`, rules: null }, { now: 1000 + i });
+  const list = await (await listMaps({ DB: db }, { judge, versions })).json();
+  assert.deepEqual(
+    list.map((m) => m.name),
+    Array.from({ length: LIST_UPGRADE_BATCH }, (_, i) => `Map ${LIST_UPGRADE_BATCH + 2 - i}`),
+  );
+});
+
+test('concurrent upgrades: nothing counts twice, a hash clash merges, the listed row keeps its uploader', async () => {
+  const versions = testVersions();
+  const db = new FakeD1();
+  db.sqlite.exec(
+    `INSERT INTO users (id, username, username_key, display_name, avatar_color, status, user_handle, created_at)
+     VALUES ('u-listed', 'Listed', 'listed', 'Listed', '#fff', 'active', 'h1', 1), ('u-shared', 'Shared', 'shared', 'Shared', '#fff', 'active', 'h2', 1)`,
+  );
+  // Two stale rows that upgrade to the same map (format 3 moves `notes` to `description`).
+  const a = await storeV1(db, { name: 'Same', notes: 'one' }, { listed: false });
+  const b = await storeV1(db, { name: 'Same', notes: undefined, description: 'one' }, { listed: true });
+  db.sqlite.prepare("UPDATE maps SET downloads = 3, uploader_id = 'u-shared' WHERE id = ?").run(a.row.id);
+  db.sqlite.prepare("UPDATE maps SET downloads = 5, uploader_id = 'u-listed' WHERE id = ?").run(b.row.id);
+  const rowA = db.rows('SELECT * FROM maps WHERE id = ?', a.row.id)[0];
+  const rowB = db.rows('SELECT * FROM maps WHERE id = ?', b.row.id)[0];
+  assert.notEqual(rowA.hash, rowB.hash);
+  // Both in flight at once: neither writes before both looked for an existing row with the new
+  // hash, so one rewrites in place and the other meets UNIQUE(hash), retries and merges.
+  const racing = Object.create(db);
+  let looked = 0;
+  let bothLooked;
+  const barrier = new Promise((resolve) => (bothLooked = resolve));
+  racing.prepare = (sql) => {
+    const st = db.prepare(sql);
+    if (!sql.startsWith('SELECT id FROM maps WHERE hash')) return st;
+    return { bind: (...a) => ({ first: async () => {
+      const r = await st.bind(...a).first();
+      if (++looked === 2) bothLooked();
+      return r;
+    } }) };
+  };
+  let batches = 0;
+  racing.batch = async (steps) => {
+    if (batches++ < 2) await barrier;
+    return db.batch(steps);
+  };
+  const [ra, rb] = await Promise.all([upgradeStoredMap(racing, rowA, { judge, versions }), upgradeStoredMap(racing, rowB, { judge, versions })]);
+  assert.equal(batches, 3, 'the second writer clashed and retried');
+  assert.equal(ra.id, rb.id);
+  const rows = db.rows('SELECT id, listed, downloads, uploader_id, format_version FROM maps');
+  assert.equal(rows.length, 1);
+  assert.deepEqual({ ...rows[0], id: undefined }, { id: undefined, listed: 1, downloads: 8, uploader_id: 'u-listed', format_version: 3 });
+  assert.equal(db.rows('SELECT COUNT(*) AS n FROM map_aliases')[0].n, 2);
+  // A stale snapshot upgraded again (a second request with the old row): no change, nothing doubled.
+  await upgradeStoredMap(db, rowA, { judge, versions });
+  await upgradeStoredMap(db, rowB, { judge, versions });
+  assert.deepEqual(db.rows('SELECT downloads FROM maps'), [{ downloads: 8 }]);
+});
+
+test('a map that could not be upgraded is tried again by a later format or release, not by the same one', async () => {
+  const versions = testVersions();
+  const db = new FakeD1();
+  const gone = await storeV1(db, { name: 'Gone', actors: [{ type: 'GONE', owner: -1, x: 3, y: 9 }] });
+  await upgradeStaleMaps(db, { judge, versions, limit: 5 });
+  assert.equal(db.rows('SELECT upgrade_tried FROM maps')[0].upgrade_tried, upgradeAttempt(versions));
+  assert.deepEqual(await upgradeStaleMaps(db, { judge, versions, limit: 5 }), { upgraded: 0, failed: 0, skipped: 0 });
+  // A later release learned to migrate it (GONE became A1).
+  const later = testVersions();
+  later.migrations = later.migrations.map((m) =>
+    m.from === 1
+      ? { ...m, migrate(map, ctx) {
+          renameActors(map, { GONE: 'A1' }, ctx);
+          return m.migrate(map, ctx);
+        } }
+      : m,
+  );
+  db.sqlite.prepare("UPDATE maps SET upgrade_tried = '3/0.0.1' WHERE id = ?").run(gone.row.id);
+  assert.deepEqual(await upgradeStaleMaps(db, { judge, versions: later, limit: 5 }), { upgraded: 1, failed: 0, skipped: 0 });
+  assert.deepEqual(db.rows('SELECT format_version, upgrade_error, upgrade_tried FROM maps'), [{ format_version: 3, upgrade_error: null, upgrade_tried: null }]);
+  const list = await (await listMaps({ DB: db }, { judge, versions: later })).json();
+  assert.deepEqual(list.map((m) => m.name), ['Gone'], 'back in the list');
 });

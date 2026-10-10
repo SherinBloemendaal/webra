@@ -17,7 +17,7 @@
 // the session serves them to its own members only (session.js). Publishing a
 // map that was shared before lists it.
 
-import { incompatibleMapMessage, MAP_ID_RE, MAP_MAX_BYTES, MAP_VERSIONS, parseMap, SHA256_RE, sha256Hex } from '@webra/protocol';
+import { GAME_VERSION, incompatibleMapMessage, MAP_ID_RE, MAP_MAX_BYTES, MAP_VERSIONS, parseMap, SHA256_RE, sha256Hex } from '@webra/protocol';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { randomHex } from './crypto.js';
 import { engine, EngineTrap } from './engine.js';
@@ -123,7 +123,12 @@ export function checkJsonType(request) {
  * and rows that cannot be upgraded are left out.
  */
 export async function listMaps(env, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
-  await upgradeStaleMaps(env.DB, { judge, versions, now, limit: LIST_UPGRADE_BATCH, listedOnly: true });
+  // The current rows are listed whatever happens to the upgrade pass (rows that fail stay out).
+  try {
+    await upgradeStaleMaps(env.DB, { judge, versions, now, limit: LIST_UPGRADE_BATCH, listedOnly: true });
+  } catch (err) {
+    console.error('map upgrade pass failed', err?.name, err?.message);
+  }
   const { results } = await env.DB.prepare(
     `SELECT id, name, author, players, width, height, hash, modded, downloads, created_at
      FROM maps WHERE listed = 1 AND format_version = ?1 AND upgrade_error IS NULL ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`,
@@ -167,7 +172,7 @@ export async function getMap(env, ctx, id, { judge, versions = MAP_VERSIONS, now
 
 const SUMMARY_COLUMNS = 'id, name, author, hash, modded, players, width, height, listed, LENGTH(CAST(json AS BLOB)) AS bytes';
 /** What upgradeStoredMap needs besides the summary. */
-const ROW_COLUMNS = `${SUMMARY_COLUMNS}, json, format_version, upgrade_error, downloads, uploader_id, used_at`;
+const ROW_COLUMNS = `${SUMMARY_COLUMNS}, json, format_version, upgrade_error, upgrade_tried, downloads, uploader_id, used_at`;
 
 /** The lobby's description of a stored map (validMapRef `full`), from its row. */
 function summaryOf(row) {
@@ -199,45 +204,96 @@ async function rowByHash(db, hash) {
   return db.prepare(`SELECT ${ROW_COLUMNS} FROM maps WHERE hash = (SELECT hash FROM map_aliases WHERE old_hash = ?1)`).bind(hash).first();
 }
 
+/** What a failed upgrade was tried with: a later format or release tries again. */
+export function upgradeAttempt(versions = MAP_VERSIONS) {
+  return `${versions.current}/${GAME_VERSION}`;
+}
+
+/** The temporary refusal when a stored map could not be upgraded just now. */
+export const MAP_UPGRADE_UNAVAILABLE = 'This map cannot be prepared for this version right now. Try again later.';
+
+/** Whether the row still needs an upgrade this release should try. */
+function needsUpgrade(row, versions) {
+  return row.format_version < versions.current && (row.upgrade_error === null || row.upgrade_tried !== upgradeAttempt(versions));
+}
+
+const isConstraint = (err) => /constraint|UNIQUE/i.test(String(err?.message));
+
 /**
  * Bring a stored row to the current format version (docs/contracts.md
  * "Map versions"): prepareMap upgrades and validates its text exactly like
  * an upload, then json, hash and summary are rewritten in place (same id),
  * and the old hash goes to map_aliases (aliases of the old hash follow). When
  * another row already holds the upgraded map, the two merge into that one
- * (listed if either was, downloads added up) and the old id becomes an alias
- * too. A row that cannot be upgraded keeps its text and gets `upgrade_error`
- * (the compatibility message). Returns the row as it is now (ROW_COLUMNS), or
- * null when it is gone. Rows already current come back untouched.
+ * (listed if either was, downloads added up, the listed row's uploader kept)
+ * and the old id becomes an alias too. A row that cannot be upgraded keeps
+ * its text and gets `upgrade_error` (the compatibility message) and
+ * `upgrade_tried` (format and release): it is tried again by a later one.
+ *
+ * Never throws for one row: any other failure (the engine, a transient
+ * database error) is logged and the row comes back as it was, still stale,
+ * to be tried on a later read. The writes only apply to a row that is still
+ * stale (a concurrent upgrade wins once, nothing counts twice); a hash clash
+ * with a concurrent writer is retried once from the database's state.
+ * Returns the row as it is now (ROW_COLUMNS), or null when it is gone.
  */
 export async function upgradeStoredMap(db, row, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
-  if (row.format_version >= versions.current || row.upgrade_error !== null) return row;
+  if (!needsUpgrade(row, versions)) return row;
+  try {
+    return await upgradeOnce(db, row, { judge, versions, now });
+  } catch (err) {
+    if (isConstraint(err)) {
+      try {
+        const fresh = await db.prepare(`SELECT ${ROW_COLUMNS} FROM maps WHERE id = ?1`).bind(row.id).first();
+        if (!fresh) return rowByHash(db, row.hash);
+        return needsUpgrade(fresh, versions) ? await upgradeOnce(db, fresh, { judge, versions, now }) : fresh;
+      } catch (again) {
+        err = again;
+      }
+    }
+    console.error('map upgrade failed', row.id, err?.name, err?.message);
+    return row;
+  }
+}
+
+async function upgradeOnce(db, row, { judge, versions, now }) {
   let p;
   try {
     p = await prepareMap(row.json, judge ?? engine(), { versions });
   } catch (err) {
     if (!(err instanceof HttpError) || err.status !== 422) throw err;
-    await db.prepare('UPDATE maps SET upgrade_error = ?2 WHERE id = ?1').bind(row.id, err.message).run();
-    return { ...row, upgrade_error: err.message };
+    const tried = upgradeAttempt(versions);
+    await db.prepare('UPDATE maps SET upgrade_error = ?2, upgrade_tried = ?3 WHERE id = ?1').bind(row.id, err.message, tried).run();
+    return { ...row, upgrade_error: err.message, upgrade_tried: tried };
   }
   const other = p.hash === row.hash ? null : await db.prepare('SELECT id FROM maps WHERE hash = ?1').bind(p.hash).first();
   const steps = [];
   if (!other || other.id === row.id) {
     steps.push(
       db
-        .prepare('UPDATE maps SET json = ?2, hash = ?3, name = ?4, author = ?5, players = ?6, width = ?7, height = ?8, modded = ?9, format_version = ?10 WHERE id = ?1')
+        .prepare(
+          `UPDATE maps SET json = ?2, hash = ?3, name = ?4, author = ?5, players = ?6, width = ?7, height = ?8, modded = ?9,
+             format_version = ?10, upgrade_error = NULL, upgrade_tried = NULL
+           WHERE id = ?1 AND format_version < ?10`,
+        )
         .bind(row.id, p.canonical, p.hash, p.map.name, p.map.author, p.players, p.map.width, p.map.height, p.modded ? 1 : 0, p.formatVersion),
     );
   } else {
+    // Merge the stale row (read live, inside the batch) into the one that holds the map.
     steps.push(
       db
         .prepare(
-          `UPDATE maps SET listed = MAX(listed, ?2), uploader_id = COALESCE(uploader_id, ?3), downloads = downloads + ?4,
-             used_at = CASE WHEN ?5 IS NULL THEN used_at WHEN used_at IS NULL THEN ?5 ELSE MAX(used_at, ?5) END
-           WHERE id = ?1`,
+          `UPDATE maps SET
+             listed = MAX(maps.listed, o.listed),
+             uploader_id = CASE WHEN o.listed = 1 AND maps.listed = 0 THEN COALESCE(o.uploader_id, maps.uploader_id)
+                                ELSE COALESCE(maps.uploader_id, o.uploader_id) END,
+             downloads = maps.downloads + o.downloads,
+             used_at = CASE WHEN o.used_at IS NULL THEN maps.used_at WHEN maps.used_at IS NULL THEN o.used_at ELSE MAX(maps.used_at, o.used_at) END
+           FROM (SELECT listed, uploader_id, downloads, used_at FROM maps WHERE id = ?2 AND format_version < ?3) AS o
+           WHERE maps.id = ?1`,
         )
-        .bind(other.id, row.listed, row.uploader_id, row.downloads, row.used_at),
-      db.prepare('DELETE FROM maps WHERE id = ?1').bind(row.id),
+        .bind(other.id, row.id, p.formatVersion),
+      db.prepare('DELETE FROM maps WHERE id = ?1 AND format_version < ?2').bind(row.id, p.formatVersion),
     );
   }
   if (p.hash !== row.hash) {
@@ -253,20 +309,29 @@ export async function upgradeStoredMap(db, row, { judge, versions = MAP_VERSIONS
 }
 
 /**
- * Upgrade up to `limit` rows of an older format version (oldest first;
- * `listedOnly`: published maps only). Returns `{ upgraded, failed }`. Rows
- * that cannot be upgraded are marked and not tried again.
+ * Upgrade up to `limit` rows of an older format version that this release
+ * has not tried yet. `listedOnly`: published maps, newest first (the rows the
+ * community list shows); otherwise oldest first (the daily job). Returns
+ * `{ upgraded, failed, skipped }`: failed rows cannot be upgraded (marked),
+ * skipped ones met another error and stay for a later run; one row never
+ * stops the others.
  */
 export async function upgradeStaleMaps(db, { judge, versions = MAP_VERSIONS, now = Date.now(), limit, listedOnly = false } = {}) {
   const { results } = await db
-    .prepare(`SELECT ${ROW_COLUMNS} FROM maps WHERE format_version < ?1 AND upgrade_error IS NULL ${listedOnly ? 'AND listed = 1' : ''} ORDER BY created_at LIMIT ?2`)
-    .bind(versions.current, limit)
+    .prepare(
+      `SELECT ${ROW_COLUMNS} FROM maps
+       WHERE format_version < ?1 AND (upgrade_error IS NULL OR upgrade_tried IS NOT ?2) ${listedOnly ? 'AND listed = 1' : ''}
+       ORDER BY created_at ${listedOnly ? 'DESC' : 'ASC'} LIMIT ?3`,
+    )
+    .bind(versions.current, upgradeAttempt(versions), limit)
     .all();
-  const done = { upgraded: 0, failed: 0 };
+  const done = { upgraded: 0, failed: 0, skipped: 0 };
   for (const row of results) {
     const after = await upgradeStoredMap(db, row, { judge: judge ?? engine(), versions, now });
-    if (after?.upgrade_error) done.failed++;
-    else done.upgraded++;
+    if (after && after.format_version < versions.current) {
+      if (after.upgrade_error !== null && after.upgrade_tried === upgradeAttempt(versions)) done.failed++;
+      else done.skipped++;
+    } else done.upgraded++;
   }
   return done;
 }
@@ -275,7 +340,8 @@ export async function upgradeStaleMaps(db, { judge, versions = MAP_VERSIONS, now
  * The lobby's summary of a listed map a host picked by id and hash (the host
  * sends only those), upgraded to the current format version first. A hash
  * the map had before an upgrade still matches. Returns the summary, null
- * (unknown, unlisted or another map) or `{ incompatible: message }`.
+ * (unknown, unlisted or another map) or `{ refused: message }` (it cannot be
+ * upgraded, or not just now).
  * Unlisted maps cannot be picked by id.
  */
 export async function lookupMap(db, id, hash, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
@@ -288,7 +354,7 @@ export async function lookupMap(db, id, hash, { judge, versions = MAP_VERSIONS, 
     const alias = await db.prepare('SELECT 1 FROM map_aliases WHERE old_hash = ?1 AND hash = ?2').bind(hash, row.hash).first();
     if (!alias) return null;
   }
-  if (row.upgrade_error) return { incompatible: row.upgrade_error };
+  if (row.format_version < versions.current) return { refused: row.upgrade_error ?? MAP_UPGRADE_UNAVAILABLE };
   return summaryOf(row);
 }
 

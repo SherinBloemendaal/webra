@@ -11,6 +11,9 @@ ALTER TABLE maps ADD COLUMN format_version INTEGER NOT NULL DEFAULT 1;
 -- NULL. Such rows leave the map list; their text is still served by id so
 -- the map editor can open it for repair.
 ALTER TABLE maps ADD COLUMN upgrade_error TEXT;
+-- The format version and release that failed (`<format>/<release>`): a
+-- later release, which may migrate it after all, tries again.
+ALTER TABLE maps ADD COLUMN upgrade_tried TEXT;
 CREATE INDEX IF NOT EXISTS maps_format_version ON maps (format_version);
 
 -- The hashes (and ids, when an upgraded map merged into a row that already
