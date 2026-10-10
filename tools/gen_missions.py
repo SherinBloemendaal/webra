@@ -654,6 +654,120 @@ def mission_file(mission, campaign, gen, base_actor_ids):
     return out
 
 
+# ---- Co-op lint: what scripts do only on one client ----------------------------
+#
+# Online, every client runs the scripts with its own `IsLocalPlayer` (docs/
+# contracts.md section 9, "Co-op online"), and the state hash leaves the
+# interpreter out. That is sound only while code that depends on
+# IsLocalPlayer does presentation: messages, speech, the camera, the mission
+# text, delays around those. The lint reads every `if` whose condition uses
+# IsLocalPlayer (all its branches) and refuses calls outside LOCAL_CALLS and
+# assignments to globals outside LOCAL_GLOBALS, so a new or changed mission
+# cannot desync a co-op game quietly.
+
+# InitObjectives (scripts/campaign.lua) only registers objective and win or
+# loss triggers that show messages and play speech.
+LOCAL_CALLS = ('Media.', 'Camera.', 'UserInterface.', 'Trigger.AfterDelay', 'DateTime.', 'Utils.FormatTime', 'InitObjectives', 'tostring')
+LOCAL_GLOBALS = {'TextColor', 'TimerColor'}
+LUA_BLOCK_OPEN = {'if', 'function', 'do', 'repeat'}
+LUA_KEYWORDS = {'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'if', 'in', 'local', 'nil', 'not', 'or',
+                'repeat', 'return', 'then', 'true', 'until', 'while'}
+
+
+def lua_tokens(source):
+    """(kind, text, line) tokens of Lua source without comments and string contents."""
+    out, i, line, n = [], 0, 1, len(source)
+    while i < n:
+        c = source[i]
+        if c == '\n':
+            line += 1
+            i += 1
+        elif c.isspace():
+            i += 1
+        elif source.startswith('--', i):
+            m = re.match(r'--\[(=*)\[', source[i:])
+            end = source.find(']' + m.group(1) + ']', i) + len(m.group(1)) + 2 if m else source.find('\n', i)
+            end = n if end < i else end
+            line += source.count('\n', i, end)
+            i = end
+        elif c in '"\'':
+            j = i + 1
+            while j < n and source[j] != c:
+                j += 2 if source[j] == '\\' else 1
+            out.append(('str', '', line))
+            i = j + 1
+        elif source.startswith('[[', i) or re.match(r'\[=+\[', source[i:]):
+            m = re.match(r'\[(=*)\[', source[i:])
+            end = source.find(']' + m.group(1) + ']', i) + len(m.group(1)) + 2
+            line += source.count('\n', i, end)
+            out.append(('str', '', line))
+            i = end
+        else:
+            m = re.match(r'[A-Za-z_][A-Za-z0-9_]*|\d+(\.\d+)?([eE][-+]?\d+)?|0x[0-9a-fA-F]+|\.\.\.|\.\.|==|~=|<=|>=|.', source[i:])
+            t = m.group(0)
+            out.append(('name' if re.match(r'[A-Za-z_]', t) else 'sym', t, line))
+            i += len(t)
+    return out
+
+
+def lint_local_player(name, source):
+    """Problems ("file:line: ...") in the IsLocalPlayer branches of a script."""
+    toks = lua_tokens(source)
+    problems = []
+    k = 0
+    while k < len(toks):
+        if toks[k][1] != 'if':
+            k += 1
+            continue
+        # The condition runs to `then`; the statement to its matching `end`.
+        then = next(j for j in range(k, len(toks)) if toks[j][1] == 'then')
+        if not any(t[1] == 'IsLocalPlayer' for t in toks[k:then]):
+            k += 1
+            continue
+        depth, j = 1, then + 1
+        while j < len(toks) and depth:
+            t = toks[j][1]
+            # `while` and `for` open their block with `do`.
+            if t in LUA_BLOCK_OPEN:
+                depth += 1
+            elif t in ('end', 'until'):
+                depth -= 1
+            j += 1
+        body = toks[then + 1:j - 1]
+        locals_ = set()
+        braces = 0
+        for b, (kind, text, line) in enumerate(body):
+            # Table constructors: `{ Owner = x }` sets a field of a new table, not a global.
+            braces += (text == '{') - (text == '}')
+            if kind != 'name' or text in LUA_KEYWORDS:
+                continue
+            prev = body[b - 1][1] if b else ''
+            if prev in ('.', ':'):
+                continue
+            if prev == 'local' or (prev == ',' and any(t[1] == 'local' for t in body[max(0, b - 6):b])):
+                locals_.add(text)
+                continue
+            if prev == 'function':
+                continue
+            # The dotted name starting here, and what follows it.
+            e = b
+            while e + 2 < len(body) and body[e + 1][1] in ('.', ':') and body[e + 2][0] == 'name':
+                e += 2
+            dotted = ''.join(t[1] for t in body[b:e + 1])
+            after = body[e + 1][1] if e + 1 < len(body) else ''
+            if after in ('(', '{') or (e + 1 < len(body) and body[e + 1][0] == 'str'):
+                if not dotted.startswith(LOCAL_CALLS):
+                    problems.append(f'{name}:{line}: {dotted}(...) runs only where IsLocalPlayer is true; allowed there: {", ".join(LOCAL_CALLS)}')
+            elif after == '=' and braces == 0:
+                root = text
+                allowed = dotted.startswith(LOCAL_CALLS) if dotted != text else (root in locals_ or root in LOCAL_GLOBALS)
+                if not allowed:
+                    problems.append(f'{name}:{line}: {dotted} is set only where IsLocalPlayer is true; allowed: '
+                                    f'locals, {", ".join(sorted(LOCAL_GLOBALS))} and Camera fields')
+        k = then + 1
+    return problems
+
+
 def main():
     with open(os.path.join(ROOT, 'engine', 'rules.json'), encoding='utf-8') as fh:
         base_rules = json.load(fh)
@@ -679,6 +793,9 @@ def main():
             for mission in c['missions']:
                 gen = generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp)
                 out = mission_file(mission, c['name'], gen, base_actor_ids)
+                problems = [p for sc in out['scripts'] for p in lint_local_player(f"{mission}/{sc['name']}", sc['source'])]
+                if problems:
+                    raise SystemExit('co-op lint:\n' + '\n'.join(problems))
                 text = json.dumps(out, separators=(',', ':'), ensure_ascii=False) + '\n'
                 with open(os.path.join(OUT, mission + '.json'), 'w', encoding='utf-8') as fh:
                     fh.write(text)
@@ -725,4 +842,9 @@ def main():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:2] == ['--lint']:
+        # python3 tools/gen_missions.py --lint FILE...: only the co-op lint (tools/gen-missions.test.mjs).
+        found = [p for f in sys.argv[2:] for p in lint_local_player(os.path.basename(f), read_text(f))]
+        print('\n'.join(found))
+        sys.exit(1 if found else 0)
     main()

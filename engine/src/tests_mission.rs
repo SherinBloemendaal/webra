@@ -457,13 +457,20 @@ fn coop_missions_agree_between_their_players() {
         }
         assert_eq!(lua_in(&mut a, "return tostring(Allies1.IsLocalPlayer) .. tostring(Allies2.IsLocalPlayer)"), "truefalse");
         assert_eq!(lua_in(&mut b, "return tostring(Allies1.IsLocalPlayer) .. tostring(Allies2.IsLocalPlayer)"), "falsetrue");
-        for t in 0..1500 {
+        // To the end of the mission (nobody gives orders, so the Soviets win
+        // sooner or later), or half an hour of game time.
+        let horizon = std::env::var("WEBRA_COOP_TICKS").ok().and_then(|v| v.parse().ok()).unwrap_or(25 * 60 * 30);
+        let mut t = 0;
+        while t < horizon && !(a.game_over && b.game_over) {
             a.step();
             b.step();
+            t += 1;
             assert_eq!(a.state_hash(), b.state_hash(), "{id} differs at tick {t}");
+            assert_eq!(a.game_over, b.game_over, "{id}: the game ends at the same tick");
         }
         assert_eq!(error_of(&a), None, "{id}");
         assert_eq!(error_of(&b), None, "{id}");
+        eprintln!("{id}: {t} ticks, game over: {}, winner: {:?}", a.game_over, a.winner);
     }
     // Names that are not playable, or taken twice, are refused.
     let bad = |humans: Vec<&str>, local: u8| {
