@@ -633,6 +633,14 @@ async function main() {
   assert.equal(musicBadRange.headers.get('content-range'), 'bytes */64171360');
   assert.equal((await music({ headers: { Origin: ORIGIN, 'X-WebRA-Content': '1' } }, ADMIN)).status, 416, 'no Range, no fetch');
   assert.equal((await music({ method: 'POST', headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', 'X-WebRA-CSRF': '1' } }, ADMIN)).status, 405);
+  // The movie relay (cdmusic.js moviesRange): the same gate and Range check, before any upstream request.
+  const movies = (which, init, who = null) => fetch(`${BASE}/api/content/ra-movies/${which}`, { ...init, headers: { ...init.headers, ...(who ? { Cookie: cookies.get(who) } : {}) } });
+  assert.equal((await movies('allied', { headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15' } })).status, 401, 'the movie relay needs an account');
+  assert.equal((await (await movies('soviet', { headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15' } }, HOST)).json()).error.code, 'relay_forbidden');
+  const moviesBadRange = await movies('soviet', { headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=415334456-' } }, ADMIN);
+  assert.equal(moviesBadRange.status, 416);
+  assert.equal(moviesBadRange.headers.get('content-range'), 'bytes */415334456');
+  assert.equal((await movies('aftermath', { headers: { Origin: ORIGIN, 'X-WebRA-Content': '1', Range: 'bytes=0-15' } }, ADMIN)).status, 404, 'only the two freeware movie archives');
   // The relays' budgets (src/relayquota.js): admins see them per account and reset them, audit logged; refusals
   // before the budget never charge it.
   const relay = await api(`/api/admin/users/${accounts[ADMIN].id}`, {}, ADMIN);

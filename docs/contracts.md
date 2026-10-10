@@ -460,6 +460,7 @@ travel over the network. The server never runs the simulation.
 | `POST` | `/api/maps` | map JSON -> `{ id, hash }` (validated, size limited, rate limited); publishes it to the community list |
 | `GET` | `/api/content/ra-quickinstall` | OpenRA's `ra-quickinstall.zip` (EA's freeware Red Alert files) streamed from OpenRA's mirrors, see below |
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
+| `GET` | `/api/content/ra-movies/allied`, `/api/content/ra-movies/soviet` | A byte range of `movies1.mix` or `movies2.mix` (the mission movies) from the same CD images, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
@@ -515,6 +516,17 @@ same-origin`; 502 when neither disc answers (two rounds). The game
 pieces in IndexedDB (`partials` in the content database) to resume, checks
 the whole file's SHA-256 (`313ef2e4...0846`, pinned on both sides) and
 then installs it like a picked `scores.mix`.
+
+`/api/content/ra-movies/allied` and `/api/content/ra-movies/soviet`
+(`moviesRange` in `apps/server/src/cdmusic.js`): the optional one-click
+install of the mission movies, the same relay for `movies1.mix`
+(369,362,336 bytes, Allied disc) and `movies2.mix` (415,334,456 bytes,
+Soviet disc). Same gate, Range rules (416 with `Content-Range: bytes
+*/<size>`), answer and refunds; budgets 1,500 MiB and 288 requests per
+account per UTC day and 192 requests per network per hour. The game
+(`apps/game/js/content/cdmovies.js`) checks each 8 MiB piece against its
+pinned SHA-256 before keeping it, installs the movies from the kept pieces
+and forgets them.
 
 ### WebSocket messages (JSON, `{ "t": type, ... }`)
 

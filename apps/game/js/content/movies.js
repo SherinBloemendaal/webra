@@ -11,28 +11,31 @@
 
 import { openVqa } from './vqa.js';
 
+const vqa = (names) => Object.freeze(names.map((n) => `${n}.vqa`));
+
+/** movies-allied: movies1.mix on the Allied disc. */
+export const ALLIED_MOVIES = vqa([
+  'aagun', 'aftrmath', 'ally1', 'ally10', 'ally10b', 'ally11', 'ally12', 'ally14', 'ally2', 'ally4', 'ally5', 'ally6', 'ally8', 'ally9',
+  'allyend', 'allymorf', 'apcescpe', 'assess', 'battle', 'binoc', 'bmap', 'brdgtilt', 'crontest', 'cronfail', 'destroyr', 'dud',
+  'elevator', 'flare', 'frozen', 'grvestne', 'landing', 'masasslt', 'mcv', 'mcv_land', 'montpass', 'oildrum', 'overrun', 'prolog',
+  'redintro', 'shipsink', 'shorbom1', 'shorbom2', 'shorbomb', 'snowbomb', 'soviet1', 'sovtstar', 'spy', 'tanya1', 'tanya2', 'toofar',
+  'trinity',
+]);
+
+/** movies-soviet: movies2.mix on the Soviet disc (the ones not in movies1.mix). */
+export const SOVIET_MOVIES = vqa([
+  'airfield', 'averted', 'beachead', 'bombrun', 'countdwn', 'double', 'dpthchrg', 'execute', 'mcvbrdge', 'mig', 'movingin',
+  'mtnkfact', 'nukestok', 'onthprwl', 'periscop', 'radrraid', 'search', 'sfrozen', 'sitduck', 'slntsrvc', 'snstrafe', 'sovbatl',
+  'sovcemet', 'sovfinal', 'soviet10', 'soviet11', 'soviet12', 'soviet13', 'soviet14', 'soviet2', 'soviet3', 'soviet4', 'soviet5',
+  'soviet6', 'soviet7', 'soviet8', 'soviet9', 'sovmcv', 'spotter', 'strafe', 'take_off', 'tesla', 'v2rocket',
+]);
+
 /**
  * The movies OpenRA's content installer takes from the Red Alert CDs
  * (mods/ra-content mod.yaml, the movies-allied and movies-soviet packages:
  * movies1.mix on the Allied disc, movies2.mix on the Soviet disc).
  */
-export const MOVIE_FILES = Object.freeze(
-  new Set(
-    [
-      // movies-allied
-      'aagun', 'aftrmath', 'ally1', 'ally10', 'ally10b', 'ally11', 'ally12', 'ally14', 'ally2', 'ally4', 'ally5', 'ally6', 'ally8', 'ally9',
-      'allyend', 'allymorf', 'apcescpe', 'assess', 'battle', 'binoc', 'bmap', 'brdgtilt', 'crontest', 'cronfail', 'destroyr', 'dud',
-      'elevator', 'flare', 'frozen', 'grvestne', 'landing', 'masasslt', 'mcv', 'mcv_land', 'montpass', 'oildrum', 'overrun', 'prolog',
-      'redintro', 'shipsink', 'shorbom1', 'shorbom2', 'shorbomb', 'snowbomb', 'soviet1', 'sovtstar', 'spy', 'tanya1', 'tanya2', 'toofar',
-      'trinity',
-      // movies-soviet (the ones not above)
-      'airfield', 'averted', 'beachead', 'bombrun', 'countdwn', 'double', 'dpthchrg', 'execute', 'mcvbrdge', 'mig', 'movingin',
-      'mtnkfact', 'nukestok', 'onthprwl', 'periscop', 'radrraid', 'search', 'sfrozen', 'sitduck', 'slntsrvc', 'snstrafe', 'sovbatl',
-      'sovcemet', 'sovfinal', 'soviet10', 'soviet11', 'soviet12', 'soviet13', 'soviet14', 'soviet2', 'soviet3', 'soviet4', 'soviet5',
-      'soviet6', 'soviet7', 'soviet8', 'soviet9', 'sovmcv', 'spotter', 'strafe', 'take_off', 'tesla', 'v2rocket',
-    ].map((n) => `${n}.vqa`),
-  ),
-);
+export const MOVIE_FILES = Object.freeze(new Set([...ALLIED_MOVIES, ...SOVIET_MOVIES]));
 
 /** Whether a stored file name is a movie. */
 export const isMovieName = (name) => /\.vqa$/i.test(name);

@@ -31,6 +31,8 @@ import {
   QUICKINSTALL_BYTES,
   QUICKINSTALL_MIRRORS,
 } from './download.js';
+import { downloadMovieArchive, forgetMovieDownload, keptMovieBytes, MOVIE_ARCHIVES, MOVIES_BYTES } from './cdmovies.js';
+import { MOVIE_FILES } from './movies.js';
 import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUSIC_NOTICE, PIECES, pieceLength, SCORES_BYTES, SCORES_PARTIAL } from './cdmusic.js';
 
 export { QUICKINSTALL_MIRRORS };
@@ -98,20 +100,20 @@ export function movieList(names, shown = 8) {
  * the player's own copy (Other ways to install).
  */
 export const ONE_CLICK_PARTS = Object.freeze(['package', 'music']);
-export const PART_LABELS = Object.freeze({ package: 'Graphics, sounds, voices and announcer', music: 'Music from the freeware CDs' });
-const PART_BYTES = Object.freeze({ package: QUICKINSTALL_BYTES, music: SCORES_BYTES });
+export const PART_LABELS = Object.freeze({ package: 'Graphics, sounds, voices and announcer', music: 'Music from the freeware CDs', movies: 'Mission movies' });
 /** What the one-click install downloads at most. */
 export const ONE_CLICK_BYTES = QUICKINSTALL_BYTES + SCORES_BYTES;
 const ENTRY_STATES = Object.freeze({ partial: 'partly installed', complete: 'installed' });
 const STATE_TITLES = Object.freeze({ none: 'Not installed', partial: 'Partly installed', complete: 'Original content installed' });
-const ONE_CLICK_SUMMARY = `One button installs the original graphics, sounds, unit voices, the announcer and the music (${formatBytes(ONE_CLICK_BYTES)} at most) and keeps them on this device. Movies and the Counterstrike and Aftermath music are not part of it: they come from a CD image or your own copy (Other ways to install).`;
+const ONE_CLICK_SUMMARY = `One button installs the original graphics, sounds, unit voices, the announcer and the music (${formatBytes(ONE_CLICK_BYTES)} at most) and keeps them on this device. The mission movies are optional, with a button of their own (${formatBytes(MOVIES_BYTES)}). The Counterstrike and Aftermath music comes from your own expansion discs (Other ways to install).`;
 
 /**
  * What is installed (content/install.js contentSummary) as the dialog shows
  * it: `level` none, partial or complete (everything the one-click install
  * covers is there), `installed` lines per category with counts, `missing`
  * lines for what a complete install would add, and `parts`: which one-click
- * parts (ONE_CLICK_PARTS) are needed.
+ * parts (ONE_CLICK_PARTS, and the optional movies) are needed. The movies
+ * are optional: shown, never counted as missing.
  */
 export function contentState(s) {
   const b = s.byCategory;
@@ -135,10 +137,16 @@ export function contentState(s) {
   if (b.voices) installed.push(`Unit voices: ${b.voices}`);
   if (b.announcer) installed.push(`Announcer (EVA): ${plural(b.announcer, 'line', 'lines')}`);
   if (b.music) installed.push(`Music: ${plural(b.music, 'track', 'tracks')}`);
-  // Not part of the one-click install: said, never counted as missing.
-  if (s.total) installed.push(b.movies ? `Movies: ${b.movies} (${formatBytes(s.bytes.movies ?? 0)})` : 'Movies: none (missions show a card; they come from the CD images)');
+  const movies = b.movies ?? 0;
+  if (s.total) {
+    installed.push(
+      movies
+        ? `Mission movies (optional): ${movies} of ${MOVIE_FILES.size} (${formatBytes(s.bytes.movies ?? 0)})`
+        : 'Mission movies (optional): none; missions show a card instead',
+    );
+  }
   const level = !s.total ? 'none' : missing.length ? 'partial' : 'complete';
-  return { level, installed, missing, parts: { package: packageNeeded, music: !b.music } };
+  return { level, installed, missing, parts: { package: packageNeeded, music: !b.music, movies: movies < MOVIE_FILES.size } };
 }
 
 /** The outcome of one install as short lines for the result card (content/install.js report). */
@@ -350,6 +358,8 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   const missingList = el('ul', { class: 'content-state-list content-missing', hidden: true });
   const stateMeta = el('p', { class: 'audio-note content-state-meta' });
   const installAll = el('button', { type: 'button', class: 'primary content-install-all', text: 'Install everything' });
+  // The movies are hundreds of megabytes: optional, with a button of their own that says the size.
+  const installMovies = el('button', { type: 'button', class: 'content-install-movies', text: 'Install mission movies' });
   const cancel = el('button', { type: 'button', text: 'Cancel', hidden: true });
   const checkMissing = el('button', { type: 'button', text: 'Check for missing files', hidden: true });
   const reinstall = el('button', { type: 'button', text: 'Reinstall...', hidden: true });
@@ -370,7 +380,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     missingTitle,
     missingList,
     stateMeta,
-    el('div', { class: 'audio-buttons content-actions' }, installAll, cancel, checkMissing, reinstall, remove),
+    el('div', { class: 'audio-buttons content-actions' }, installAll, installMovies, cancel, checkMissing, reinstall, remove),
     confirmBox,
   );
   // One line per part while (and after) the one-click install runs.
@@ -411,11 +421,20 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   const neededParts = ({ all = false } = {}) => ONE_CLICK_PARTS.filter((id) => all || current?.state.parts[id]);
   /** Bytes a run of `ids` downloads (the kept ZIP and kept music pieces need none). */
   const downloadBytes = (ids) =>
-    ids.reduce((n, id) => n + (id === 'package' ? (current?.kept ? 0 : QUICKINSTALL_BYTES) : SCORES_BYTES - (current?.musicKept ?? 0)), 0);
+    ids.reduce(
+      (n, id) =>
+        n + (id === 'package' ? (current?.kept ? 0 : QUICKINSTALL_BYTES) : id === 'music' ? SCORES_BYTES - (current?.musicKept ?? 0) : moviesToDownload().reduce((m, a) => m + a.archive.bytes - a.kept, 0)),
+      0,
+    );
+  /** What a part moves through the progress bar (its whole size: kept bytes count as done at once). */
+  const partBytes = (id) => (id === 'package' ? QUICKINSTALL_BYTES : id === 'music' ? SCORES_BYTES : moviesToDownload().reduce((m, a) => m + a.archive.bytes, 0) || MOVIES_BYTES);
+  /** The movie archives with a movie that is not installed: [{ archive, kept }] (kept: bytes already on this device). */
+  const moviesToDownload = () => current?.movieArchives ?? MOVIE_ARCHIVES.map((archive) => ({ archive, kept: 0 }));
 
   /** The install button: what it would do now, or why it cannot. */
   function renderAction() {
     installAll.hidden = !autoInstall;
+    renderMovies();
     reinstall.hidden = !autoInstall || !current || current.state.level === 'none';
     checkMissing.hidden = !current?.kept || current.state.level === 'none';
     remove.hidden = !current || current.state.level === 'none';
@@ -439,6 +458,24 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     installAll.disabled = running;
   }
   let resumable = false;
+
+  /** The movies button: its size, or that they are installed, or when to try again. */
+  function renderMovies() {
+    installMovies.hidden = !autoInstall;
+    if (!current?.state.parts.movies) {
+      installMovies.textContent = 'Mission movies installed';
+      installMovies.disabled = true;
+      return;
+    }
+    if (limited('movies')) {
+      installMovies.textContent = `Mission movies: try again ${formatWait(Math.max(1, Math.ceil((limitedUntil.get('movies') - Date.now()) / 1000)))}`;
+      installMovies.disabled = true;
+      return;
+    }
+    const bytes = downloadBytes(['movies']);
+    installMovies.textContent = `Install mission movies (~${formatBytes(bytes)}, optional)`;
+    installMovies.disabled = running;
+  }
 
   const sync = async () => {
     graphics.set(content.graphics);
@@ -468,7 +505,14 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       } catch {
         // No store: nothing kept.
       }
-      current = { state, kept, musicKept };
+      // The movie archives with a movie that is not installed yet, and how much of each is kept already.
+      const store = await content.store?.().catch(() => null);
+      const movieArchives = [];
+      for (const archive of MOVIE_ARCHIVES) {
+        if (archive.movies.every((m) => content.hasMovie?.(m))) continue;
+        movieArchives.push({ archive, kept: store ? await keptMovieBytes(store, archive).catch(() => 0) : 0 });
+      }
+      current = { state, kept, musicKept, movieArchives };
       stateBox.dataset.level = state.level;
       stateTitleText.textContent = STATE_TITLES[state.level];
       stateList.replaceChildren(...state.installed.map((t) => el('li', { text: t })));
@@ -570,6 +614,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       if (signal.aborted) throw new CancelledError();
       return content.install([file], { onProgress: (t) => setPart(id, 'running', `${t.charAt(0).toLowerCase()}${t.slice(1)}`) });
     }
+    if (id === 'movies') return runMovies(signal, onBytes);
     const store = await content.store();
     setPart(id, 'running', 'downloading');
     const file = await downloadScores({ store, fetchImpl: opts.fetchImpl, signal, onProgress: (n) => onBytes(n) });
@@ -577,6 +622,34 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     const report = await content.install([file]);
     await forgetScoresDownload(store).catch(() => {});
     return report;
+  }
+
+  /** The movies part: each archive with a movie that is not installed, downloaded (or resumed), checked, installed, forgotten. */
+  async function runMovies(signal, onBytes) {
+    const store = await content.store();
+    const todo = moviesToDownload();
+    const reports = [];
+    let base = 0;
+    for (const { archive } of todo) {
+      setPart('movies', 'running', `downloading ${archive.name}`);
+      const file = await downloadMovieArchive({ archive, store, fetchImpl: opts.fetchImpl, signal, onProgress: (n) => onBytes(base + n) });
+      if (signal.aborted) throw new CancelledError();
+      setPart('movies', 'running', `installing ${archive.name}`);
+      try {
+        reports.push(await content.install([file], { onProgress: (t) => setPart('movies', 'running', `${t.charAt(0).toLowerCase()}${t.slice(1)}`) }));
+      } catch (err) {
+        // Pieces that do not make an archive are not kept for the next try.
+        await forgetMovieDownload(store, archive).catch(() => {});
+        throw err;
+      }
+      // Installed: the movies are stored one by one, the archive's pieces are not needed any more.
+      await forgetMovieDownload(store, archive).catch(() => {});
+      base += archive.bytes;
+    }
+    return reports.reduce(
+      (all, r) => ({ ...all, added: all.added + (r.added ?? 0), switched: all.switched || r.switched, kept: all.kept || r.kept }),
+      { added: 0, switched: false, kept: false },
+    );
   }
 
   /**
@@ -596,7 +669,8 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     partRows.clear();
     for (const b of retryButtons) retryButtons.delete(b);
     for (const id of ids) setPart(id, 'waiting', 'waiting');
-    const total = ids.reduce((n, id) => n + PART_BYTES[id], 0);
+    const sizes = new Map(ids.map((id) => [id, partBytes(id)]));
+    const total = ids.reduce((n, id) => n + sizes.get(id), 0);
     const got = new Map(ids.map((id) => [id, 0]));
     const draw = () => {
       const n = [...got.values()].reduce((a, b) => a + b, 0);
@@ -614,17 +688,17 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       }
       try {
         const report = await runPart(id, abort.signal, (n) => {
-          got.set(id, Math.min(n, PART_BYTES[id]));
+          got.set(id, Math.min(n, sizes.get(id)));
           draw();
         });
-        got.set(id, PART_BYTES[id]);
+        got.set(id, sizes.get(id));
         draw();
         reports.push(report);
         setPart(id, 'done', report.added ? `done: ${report.added} files` : 'done: nothing new');
       } catch (err) {
         if (err instanceof CancelledError || abort.signal.aborted) {
           cancelled = true;
-          setPart(id, 'cancelled', id === 'music' ? 'cancelled; the parts already downloaded are kept' : 'cancelled', true);
+          setPart(id, 'cancelled', id !== 'package' ? 'cancelled; the parts already downloaded are kept' : 'cancelled', true);
           continue;
         }
         limit(id, err);
@@ -646,13 +720,14 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     if (reports.some((r) => r.switched)) lines.push('The game now uses the original graphics. You can switch back under Use.');
     if (reports.some((r) => r.kept)) lines.push('ra-quickinstall.zip is kept on this device: installing again or a WebRA update needs no new download.');
     if (failed.length) lines.push(`Not installed: ${failed.map((id) => PART_LABELS[id].toLowerCase()).join(', ')}. Retry above, or install the files yourself (Other ways to install).`);
-    if (cancelled) lines.push('Cancelled. Install again to go on: the music goes on where it stopped.');
+    if (cancelled) lines.push('Cancelled. Install again to go on: the music and the movies go on where they stopped.');
     const title = cancelled ? 'Install cancelled' : failed.length ? 'Install incomplete' : current?.state.level === 'complete' ? 'Original content installed' : 'Installed';
     showResult(title, lines.length ? lines : ['Nothing new was installed.'], added > 0);
     return { reports, failed, cancelled };
   }
 
   installAll.addEventListener('click', () => runParts());
+  installMovies.addEventListener('click', () => runParts(['movies']));
   cancel.addEventListener('click', () => {
     cancel.disabled = true;
     abort?.abort();

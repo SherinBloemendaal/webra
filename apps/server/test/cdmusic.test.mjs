@@ -5,6 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  moviesRange,
+  MOVIES,
+  MOVIES_ACCOUNT_ATTEMPTS,
+  MOVIES_DAILY_MIB,
   scoresRange,
   parseScoresRange,
   allowedRedirect,
@@ -401,4 +405,49 @@ test('the Worker route checks the account gate (requireRelay) before the relay',
   assert.ok(origin > 0 && at > origin, 'checkOrigin runs before the route');
   const block = src.slice(at, src.indexOf('}', at));
   assert.ok(block.indexOf('requireRelay(ctx)') > 0 && block.indexOf('requireRelay(ctx)') < block.indexOf('scoresRange('), 'requireRelay before scoresRange');
+});
+
+// ---- The mission movies (moviesRange): the same relay for movies1.mix and movies2.mix ----
+
+test('movies: the asked window of each archive from its own disc at its pinned offset; nothing else', async () => {
+  for (const [which, m] of Object.entries(MOVIES)) {
+    assert.ok(m.offset > 0 && m.offset + m.bytes <= m.disc.isoBytes, which);
+    const calls = [];
+    const res = await moviesRange(ask('bytes=1000-5095'), makeEnv(), 'ip', ACCOUNT, which, { fetchImpl: archive({}, calls) });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get('content-range'), `bytes 1000-5095/${m.bytes}`);
+    assert.equal(calls[0].url, m.disc.url, 'only the disc that has it');
+    assert.equal(calls.at(-1).init.headers.Range, `bytes=${m.offset + 1000}-${m.offset + 5095}`);
+    assert.equal(await drain(res), 4096);
+    await assert.rejects(moviesRange(ask(`bytes=${m.bytes}-`), makeEnv(), 'ip', ACCOUNT, which, { fetchImpl: archive() }), (e) => e.status === 416 && e.headers['content-range'] === `bytes */${m.bytes}`);
+  }
+  assert.deepEqual([MOVIES.allied.name, MOVIES.soviet.name], ['movies1.mix', 'movies2.mix']);
+  assert.throws(() => moviesRange(ask(), makeEnv(), 'ip', ACCOUNT, 'constructor', { fetchImpl: archive() }), (e) => e.status === 404);
+  await assert.rejects(moviesRange(ask(), makeEnv(), 'ip', null, 'allied', { fetchImpl: archive() }), (e) => e.status === 401);
+});
+
+test(`movies: their own budgets (${MOVIES_DAILY_MIB} MiB and ${MOVIES_ACCOUNT_ATTEMPTS} requests per account per day), refunds of unfinished pieces`, async () => {
+  const { peekQuota } = await import('../src/quota.js');
+  const env = makeEnv();
+  const now = Date.UTC(2026, 9, 9, 8, 0, 0);
+  const pending = [];
+  const waitUntil = (p) => pending.push(p);
+  const piece = `bytes=0-${SCORES_MAX_RANGE - 1}`;
+  const used = (purpose) => peekQuota(env.DB, 'cdmusic-test-salt-0123456789', purpose, ACCOUNT.id, 24 * 3600 * 1000, now);
+  assert.equal(await drain(await moviesRange(ask(piece), env, 'ip', ACCOUNT, 'soviet', { fetchImpl: archive(), now, waitUntil })), SCORES_MAX_RANGE);
+  assert.deepEqual([await used('movies-bytes'), await used('scores-bytes')], [8, 0], 'not the music budget');
+  const res = await moviesRange(ask(piece), env, 'ip', ACCOUNT, 'allied', { fetchImpl: archive(), now, waitUntil });
+  const reader = res.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  await Promise.all(pending.splice(0));
+  assert.equal(await used('movies-bytes'), 8, 'the cancelled piece was given back');
+  assert.equal(await used('movies-account-tries'), 2, 'its request was not');
+  // A day of requests, whatever their outcome: then 429 before any fetch.
+  for (let i = 2; i < MOVIES_ACCOUNT_ATTEMPTS; i++) await assert.rejects(moviesRange(ask(piece), env, `10.9.${i >> 8}.${i & 255}`, ACCOUNT, 'allied', { fetchImpl: archive({ allied: 'down' }), now }), (e) => e.status === 502);
+  const calls = [];
+  await assert.rejects(moviesRange(ask(piece), env, '10.10.0.1', ACCOUNT, 'allied', { fetchImpl: archive({}, calls), now }), (e) => e.status === 429 && e.extra.scope === 'account' && /movies too often/.test(e.message));
+  assert.equal(calls.length, 0);
+  // The MiB budget: a fresh account, two full sets of both archives.
+  assert.ok(MOVIES_DAILY_MIB >= 2 * Math.ceil((MOVIES.allied.bytes + MOVIES.soviet.bytes) / (1024 * 1024)));
 });

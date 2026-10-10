@@ -25,7 +25,7 @@ import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
 import { loadSaveRecord, missionDigest } from './onlinesaves.js';
-import { scoresRange } from './cdmusic.js';
+import { moviesRange, scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
 
@@ -259,6 +259,13 @@ async function route(ctx) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     const user = await requireRelay(ctx);
     return scoresRange(request, env, ctx.ip, user, { salt: ctx.salt(), waitUntil: (p) => exec.waitUntil(p.catch(() => {})) });
+  }
+  m = /^\/api\/content\/ra-movies\/(allied|soviet)$/.exec(path);
+  if (m) {
+    // The mission movies: byte ranges of movies1.mix or movies2.mix from the freeware CD images, streamed, never stored (cdmusic.js).
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    const user = await requireRelay(ctx);
+    return moviesRange(request, env, ctx.ip, user, m[1], { salt: ctx.salt(), waitUntil: (p) => exec.waitUntil(p.catch(() => {})) });
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

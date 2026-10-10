@@ -134,6 +134,10 @@ them (WebRA's own art and synthesized sounds).
   on your device, so installing again or a WebRA update that uses more of
   its files needs no new download. So the WebRA server does relay EA's files
   when you click this.
+- **Mission movies (optional, selected accounts):** a button of their own
+  ("Install mission movies", about 748 MB) reads `movies1.mix` and
+  `movies2.mix` out of the freeware CD images the same way, checks every
+  8 MB piece against its pinned SHA-256, and installs the movies.
 - **Music:** `ra-quickinstall.zip` has no music. The one-click install reads
   only `scores.mix` (64 MB) out of the freeware CD images on the Internet
   Archive by HTTP range through the WebRA server; the game resumes cut off

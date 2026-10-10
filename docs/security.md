@@ -288,6 +288,29 @@ cross-origin isolated page, so the headers changed:
   the `scores.mix` range was downloaded to hash it (the same hash on both
   discs). They are numbers about EA's files, not the files. Tests use
   synthetic bytes and a mocked archive.
+- **The movie relay reads the movie archives out of the same discs.** `GET
+  /api/content/ra-movies/allied` and `/soviet` (`moviesRange` in
+  `apps/server/src/cdmusic.js`) are the same relay for `movies1.mix`
+  (369,362,336 bytes at offset 19,846,497 of the Allied image) and
+  `movies2.mix` (415,334,456 bytes at offset 19,834,209 of the Soviet
+  image), each only from the disc that has it: the same Range rules (one
+  range of at most 8 MiB inside the archive, 416 otherwise), the same
+  redirect checks, `Content-Range` checks, account gate, no-store and
+  refunds. Their budgets are their own, sized for archives of hundreds of
+  megabytes: 1,500 MiB (both archives twice) and 288 requests (three per
+  piece of both) per account per UTC day, and 192 requests per network per
+  hour; the requests are never given back. The game offers them as an
+  optional button with the size (about 748 MB) and never as part of
+  "Install everything". It checks every 8 MiB piece against its pinned
+  SHA-256 before it keeps it (`apps/game/js/content/cdmovies.js`; a whole
+  archive is never held in memory), installs the movies from the kept
+  pieces and then forgets them. The pins were measured on 2026-10-10 like
+  the music's: the offsets from the ISO 9660 directory and `MAIN.MIX`'s
+  index (the `scores.mix` offsets found the same way matched the existing
+  pins), the hashes by streaming each archive once by range through a hash
+  without writing it anywhere. The Counterstrike and Aftermath music is not
+  relayed: those expansion discs were not part of EA's 2008 freeware
+  release, so players install it from their own discs.
 - **CD images from the player.** A dropped or picked `.iso` is read by
   slices (`File.slice`), never loaded whole: the volume descriptor, the
   directories on the way to `MAIN.MIX` and `INSTALL/REDALERT.MIX`, then

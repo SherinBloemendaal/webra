@@ -223,6 +223,12 @@ export class IdbStore {
     return all.filter((r) => r.key === key).map((r) => ({ index: r.index, bytes: r.bytes, info: r.info ?? null }));
   }
 
+  /** One kept piece of `key` (ArrayBuffer), or null. */
+  async getPartial(key, index) {
+    const tx = this.db.transaction(PARTIALS, 'readonly');
+    return (await done(tx.objectStore(PARTIALS).get(partialId(key, index))))?.bytes ?? null;
+  }
+
   /** The indexes of the kept pieces of `key`, without reading the pieces (keys only). */
   async partialIndexes(key) {
     const tx = this.db.transaction(PARTIALS, 'readonly');
@@ -280,6 +286,9 @@ export class MemoryStore {
   }
   async partials(key) {
     return new Map([...this.partialMap.values()].filter((r) => r.key === key).map((r) => [r.index, r.bytes]));
+  }
+  async getPartial(key, index) {
+    return this.partialMap.get(partialId(key, index))?.bytes ?? null;
   }
   async partialIndexes(key) {
     return [...this.partialMap.values()].filter((r) => r.key === key).map((r) => r.index);

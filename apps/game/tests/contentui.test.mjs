@@ -219,6 +219,39 @@ test('installed state: kept music pieces count off the download size, read by ke
   assert.match(textOf(root.querySelector('.content-install-all')), /^Install missing parts \(45\.2 MB\)$/);
 });
 
+test('mission movies: optional, with a button of their own that says the size; never part of Install everything', async () => {
+  const content = fakeContent();
+  content.installed = true;
+  content.music = true;
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'This account downloaded the movies too often today.', retryAfter: 600 } }), { status: 429 });
+  };
+  const { root, view } = mount(content, fakeAudio(), { autoInstall: true, fetchImpl });
+  await settle(10);
+  const box = root.querySelector('.content-state');
+  assert.equal(box.dataset.level, 'complete', 'complete without the movies');
+  assert.match(textOf(box), /Mission movies \(optional\): none/);
+  const movies = root.querySelector('.content-install-movies');
+  assert.equal(movies.hidden, false);
+  assert.match(textOf(movies), /^Install mission movies \(~748\.3 MB, optional\)$/);
+  assert.equal(root.querySelector('.content-install-all').disabled, true, 'everything else is installed');
+  click(movies);
+  await settle(30);
+  assert.deepEqual(calls, ['/api/content/ra-movies/allied'], 'one request, no retry after a 429');
+  assert.match(textOf(root.querySelector('.content-part')), /Mission movies.*failed: This account downloaded the movies too often today: try again in 10 minutes/);
+  assert.match(textOf(movies), /^Mission movies: try again in 10 minutes/);
+  assert.equal(movies.disabled, true);
+  // Installed: said, and the button is off.
+  content.hasMovie = () => true;
+  content.summary = async () => ({ total: 214, byCategory: { ...REPORT.byCategory, music: 15, movies: 94 }, bytes: { sounds: 8e6, graphics: 1e6, movies: 7e8 }, theaters: ['TEMPERAT', 'SNOW'], palette: true });
+  await view.refresh();
+  assert.match(textOf(box), /Mission movies \(optional\): 94 of 94/);
+  assert.equal(movies.textContent, 'Mission movies installed');
+  assert.equal(movies.disabled, true);
+});
+
 test('installed state: the lobby button and the menu label say it', async () => {
   const button = doc.createElement('button');
   const panel = doc.createElement('div');
@@ -239,16 +272,16 @@ test('contentState: what is missing, by part', () => {
   assert.equal(contentState(EMPTY).level, 'none');
   const soundsOnly = contentState(s({ effects: 5 }));
   assert.equal(soundsOnly.level, 'partial');
-  assert.deepEqual(soundsOnly.parts, { package: true, music: true });
+  assert.deepEqual(soundsOnly.parts, { package: true, music: true, movies: true });
   assert.match(soundsOnly.missing.join('|'), /^Graphics: .*\|Unit voices.*\|Announcer \(EVA\).*\|Music/);
   const noPalette = contentState(s({ effects: 5, voices: 1, announcer: 1, music: 3, graphics: 30 }, { palette: false, theaters: ['TEMPERAT', 'SNOW'] }));
   assert.deepEqual(noPalette.missing, ['The palette from temperat.mix (the graphics cannot be used without it)']);
   const noSnow = contentState(s({ effects: 5, voices: 1, announcer: 1, music: 3, graphics: 30 }, { theaters: ['TEMPERAT'] }));
   assert.deepEqual(noSnow.missing, ['Terrain for snow maps']);
-  assert.deepEqual(noSnow.parts, { package: true, music: false });
+  assert.deepEqual(noSnow.parts, { package: true, music: false, movies: true });
   const all = contentState(s({ effects: 5, voices: 1, announcer: 1, music: 3, graphics: 30 }, { theaters: ['TEMPERAT', 'SNOW'] }));
   assert.equal(all.level, 'complete');
-  assert.match(all.installed.at(-1), /Movies: none/, 'movies are said, never missing');
+  assert.match(all.installed.at(-1), /Mission movies \(optional\): none/, 'movies are said, never missing');
 });
 
 test('dialog: dropping the ZIP on the drop zone installs it with progress, then shows what came in and the switch', async () => {
@@ -564,7 +597,7 @@ test('install everything: one progress over the package and the music, a line pe
   assert.equal(cancel.hidden, true);
   assert.equal(music.dataset.phase, 'cancelled');
   assert.match(textOf(music), /cancelled; the parts already downloaded are kept/);
-  assert.match(textOf(root.querySelector('.content-result')), /Install cancelled.*Installed 120 files.*music goes on where it stopped/);
+  assert.match(textOf(root.querySelector('.content-result')), /Install cancelled.*Installed 120 files.*the music and the movies go on where they stopped/);
   // Partly installed now: the button installs what is missing (the music).
   assert.match(textOf(button), /^Install missing parts \(61\.2 MB\)$/);
   assert.equal(button.disabled, false);

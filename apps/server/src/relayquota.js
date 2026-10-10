@@ -9,7 +9,7 @@
 import { networkOf } from './accounts/ip.js';
 import { clearQuota, peekQuota } from './quota.js';
 import { CONTENT_ACCOUNT_ATTEMPTS, CONTENT_ACCOUNT_LIMIT, CONTENT_ACCOUNT_WINDOW_MS, CONTENT_NET_ATTEMPTS, CONTENT_NET_LIMIT, CONTENT_NET_WINDOW_MS } from './content.js';
-import { SCORES_ACCOUNT_ATTEMPTS, SCORES_DAILY_MIB, SCORES_DAY_MS, SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS } from './cdmusic.js';
+import { MOVIES_ACCOUNT_ATTEMPTS, MOVIES_DAILY_MIB, MOVIES_IP_LIMIT, SCORES_ACCOUNT_ATTEMPTS, SCORES_DAILY_MIB, SCORES_DAY_MS, SCORES_IP_LIMIT, SCORES_IP_WINDOW_MS } from './cdmusic.js';
 
 /**
  * Every relay budget: `id` names it in the admin view, `purpose` is its
@@ -20,9 +20,12 @@ export const RELAY_BUDGETS = Object.freeze([
   Object.freeze({ id: 'music', purpose: 'scores-bytes', scope: 'account', unit: 'MiB', limit: SCORES_DAILY_MIB, windowMs: SCORES_DAY_MS }),
   Object.freeze({ id: 'contentAttempts', purpose: 'content-account-tries', scope: 'account', unit: 'requests', limit: CONTENT_ACCOUNT_ATTEMPTS, windowMs: CONTENT_ACCOUNT_WINDOW_MS }),
   Object.freeze({ id: 'musicAttempts', purpose: 'scores-account-tries', scope: 'account', unit: 'requests', limit: SCORES_ACCOUNT_ATTEMPTS, windowMs: SCORES_DAY_MS }),
+  Object.freeze({ id: 'movies', purpose: 'movies-bytes', scope: 'account', unit: 'MiB', limit: MOVIES_DAILY_MIB, windowMs: SCORES_DAY_MS }),
+  Object.freeze({ id: 'moviesAttempts', purpose: 'movies-account-tries', scope: 'account', unit: 'requests', limit: MOVIES_ACCOUNT_ATTEMPTS, windowMs: SCORES_DAY_MS }),
   Object.freeze({ id: 'content', purpose: 'content-net', scope: 'network', unit: 'downloads', limit: CONTENT_NET_LIMIT, windowMs: CONTENT_NET_WINDOW_MS }),
   Object.freeze({ id: 'contentAttempts', purpose: 'content-tries', scope: 'network', unit: 'requests', limit: CONTENT_NET_ATTEMPTS, windowMs: CONTENT_NET_WINDOW_MS }),
   Object.freeze({ id: 'music', purpose: 'scores-ip', scope: 'network', unit: 'requests', limit: SCORES_IP_LIMIT, windowMs: SCORES_IP_WINDOW_MS }),
+  Object.freeze({ id: 'movies', purpose: 'movies-ip', scope: 'network', unit: 'requests', limit: MOVIES_IP_LIMIT, windowMs: SCORES_IP_WINDOW_MS }),
 ]);
 
 /** Addresses of the IP history seen this recently count as the account's networks (the longest network window, with room). */

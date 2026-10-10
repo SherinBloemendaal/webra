@@ -81,7 +81,7 @@ export function canBan(viewer, target) {
 }
 
 /** Names of the one-click relay budgets (apps/server/src/relayquota.js RELAY_BUDGETS) in the drawer. */
-const RELAY_LABELS = Object.freeze({ content: 'Package downloads', contentAttempts: 'Package requests', music: 'Music', musicAttempts: 'Music requests' });
+const RELAY_LABELS = Object.freeze({ content: 'Package downloads', contentAttempts: 'Package requests', music: 'Music', musicAttempts: 'Music requests', movies: 'Movies', moviesAttempts: 'Movie requests' });
 
 /**
  * The one-click relay budgets of a user detail (`relay`, docs/accounts-api.md

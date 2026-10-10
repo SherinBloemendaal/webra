@@ -361,7 +361,7 @@ test('relay budgets: admins see what an account and its recent networks used, an
   assert.equal(reset.body.relay.networks[0].content.used, 0);
   const entry = (await admin.get('/api/admin/audit?action=user.relay_quota_reset')).body.entries[0];
   assert.equal(entry.target.id, id);
-  assert.deepEqual(entry.before, { account: { content: 2, music: 40, contentAttempts: 0, musicAttempts: 0 }, networks: [{ content: 3, contentAttempts: 1, music: 0 }] });
+  assert.deepEqual(entry.before, { account: { content: 2, music: 40, contentAttempts: 0, musicAttempts: 0, movies: 0, moviesAttempts: 0 }, networks: [{ content: 3, contentAttempts: 1, music: 0, movies: 0 }] });
   assert.ok(!JSON.stringify(entry).includes('198.51.100.4'), 'no address in the audit log');
   assert.equal((await mod.req('DELETE', `/api/admin/users/${id}/relay-quota`)).status, 403);
 });
