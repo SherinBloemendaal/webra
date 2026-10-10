@@ -12,6 +12,16 @@ const COALESCE_MS = 1500;
 
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
+/** An actor's state fields (health, stance, veterancy, passengers) that differ from the defaults. */
+function actorState(a) {
+  return {
+    ...(Number.isInteger(a.health) && a.health !== 100 ? { health: a.health } : {}),
+    ...(typeof a.stance === 'string' ? { stance: a.stance } : {}),
+    ...(Number.isInteger(a.veterancy) && a.veterancy > 0 ? { veterancy: a.veterancy } : {}),
+    ...(Array.isArray(a.cargo) && a.cargo.length ? { cargo: [...a.cargo] } : {}),
+  };
+}
+
 export class MapDoc {
   constructor(map = createMap()) {
     this.listeners = new Set();
@@ -32,8 +42,19 @@ export class MapDoc {
     this.ore = ore;
     this.gems = gems;
     this.spawns = clone(map.spawns ?? []);
-    this.actors = clone(map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0 }));
-    this.meta = { name: map.name ?? '', author: map.author ?? '', description: map.description ?? '', biome: map.biome ?? 'temperate' };
+    this.actors = clone(map.actors ?? []).map((a) => ({ type: a.type, owner: a.owner, x: a.x, y: a.y, facing: a.facing ?? 0, ...actorState(a) }));
+    // Properties and the game setup (map format version 2): edited as one
+    // part of the document (touchMeta), so their undo steps are one each.
+    this.meta = {
+      name: map.name ?? '',
+      author: map.author ?? '',
+      description: map.description ?? '',
+      biome: map.biome ?? 'temperate',
+      players: clone(map.players ?? []),
+      options: clone(map.options ?? {}),
+      lockedOptions: clone(map.lockedOptions ?? []),
+      tags: clone(map.tags ?? []),
+    };
     this.rules = map.rules ? clone(map.rules) : null;
   }
 
@@ -61,6 +82,11 @@ export class MapDoc {
       rules: pruneOverrides(this.rules),
       // Optional: a temperate map leaves it out (and keeps its identity).
       ...(this.meta.biome && this.meta.biome !== 'temperate' ? { biome: this.meta.biome } : {}),
+      // Slots beyond the spawns are kept while editing (a removed spawn comes back with its slot) but not written.
+      players: clone(this.meta.players.slice(0, this.spawns.length)),
+      options: clone(this.meta.options),
+      lockedOptions: this.meta.lockedOptions.filter((k) => Object.hasOwn(this.meta.options, k)),
+      tags: clone(this.meta.tags),
     };
   }
 
@@ -188,19 +214,11 @@ export class MapDoc {
     }
     if (!changed) return;
     const top = this.undoStack[this.undoStack.length - 1];
-    if (
-      entry.coalesceKey &&
-      top?.coalesceKey === entry.coalesceKey &&
-      entry.time - top.time < COALESCE_MS &&
-      entry.meta &&
-      !entry.cells &&
-      !entry.objects &&
-      top.meta &&
-      !top.cells &&
-      !top.objects
-    ) {
-      // Typing in one field: keep a single undo step.
-      top.meta.after = entry.meta.after;
+    // Same kind of change: properties only (typing in a field), or objects only (dragging a slider of the selection).
+    const part = (e) => (e.cells ? null : e.meta && !e.objects ? 'meta' : e.objects && !e.meta ? 'objects' : null);
+    if (entry.coalesceKey && top?.coalesceKey === entry.coalesceKey && entry.time - top.time < COALESCE_MS && part(entry) && part(entry) === part(top)) {
+      // One undo step: the first change's before, this one's after.
+      top[part(entry)].after = entry[part(entry)].after;
       top.time = entry.time;
       this.redoStack = [];
     } else {

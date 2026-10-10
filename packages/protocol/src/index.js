@@ -81,6 +81,33 @@ export {
   upgradeMap,
 } from './mapversions.js';
 export { GAME_VERSION } from './version.js';
+export { BIOME_PREVIEW_COLORS, mapThumbnail, PREVIEW_GEMS, PREVIEW_NEUTRAL, PREVIEW_ORE, PREVIEW_TEAM } from './mapthumb.js';
+export {
+  ACTOR_CARGO_MAX,
+  ACTOR_HEALTH_MAX,
+  ACTOR_HEALTH_MIN,
+  ACTOR_STANCES,
+  ACTOR_VETERANCY_MAX,
+  applyMapOptions,
+  canonicalSlot,
+  lockedOptionProblem,
+  lockedSlotProblem,
+  MAP_OPTION_KEYS,
+  MAP_OPTION_VALUES,
+  MAP_SLOT_DEFAULTS,
+  MAP_SLOT_LOCKS,
+  MAP_SLOT_TYPES,
+  MAP_TAG_MAX,
+  MAP_TAGS_MAX,
+  mapSlot,
+  optionLocked,
+  slotLocked,
+  validateActorState,
+  validateLockedOptions,
+  validateMapOptions,
+  validateMapPlayers,
+  validateTags,
+} from './mapsetup.js';
 export {
   encodeReplay,
   FramesDigest,

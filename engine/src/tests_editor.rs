@@ -9,7 +9,7 @@ use crate::world::{World, EDITOR_SLOTS, NONE};
 use crate::Game;
 
 fn actor(t: &str, owner: i32, x: i32, y: i32) -> MapActor {
-    MapActor { ty: t.into(), owner, x, y, facing: 256 }
+    MapActor::new(t, owner, x, y, 256)
 }
 
 /// A 48x48 clear map file with `spawns` and `actors` (`edit` applied to the terrain).

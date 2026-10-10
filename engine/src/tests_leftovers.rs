@@ -477,8 +477,8 @@ fn maps_place_crates_and_husks_in_their_cells() {
         m.gems[i] = 0;
     }
     let mut data = crate::mapdata::MapData::from_map(&m, "Leftovers", "Tester", "");
-    data.actors.push(crate::mapdata::MapActor { ty: "WCRATE".into(), owner: -1, x: 30, y: 30, facing: 0 });
-    data.actors.push(crate::mapdata::MapActor { ty: "3TNK.Husk".into(), owner: -1, x: 31, y: 30, facing: 256 });
+    data.actors.push(crate::mapdata::MapActor::new("WCRATE", -1, 30, 30, 0));
+    data.actors.push(crate::mapdata::MapActor::new("3TNK.Husk", -1, 31, 30, 256));
     let players = [setup("england"), setup("russia")];
     let w = World::from_map(&data, 1, &players, GameOptions::default()).unwrap();
     let c = w.crate_at(w.map.idx(30, 30)).expect("the map's crate");

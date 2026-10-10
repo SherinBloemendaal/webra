@@ -39,10 +39,10 @@ test('uploads: a file from before map versions and its versioned form are one ma
   const legacy = await prepareMap(fixture('format1-legacy.webra-map.json'));
   const file = await prepareMap(fixture('format1-file.webra-map.json'));
   const expected = JSON.parse(fixture('format1-legacy.expected.json'));
-  assert.equal(legacy.hash, expected.hash, 'the identity of maps from before versions is unchanged');
+  assert.equal(legacy.hash, expected.hash, 'stored as the upgraded map the protocol pinned');
   assert.equal(file.hash, legacy.hash);
-  assert.equal(file.canonical, expected.canonical, 'stored without formatVersion 1 and without gameVersion');
-  assert.deepEqual([legacy.formatVersion, legacy.upgradedFrom], [MAP_FORMAT_VERSION, null]);
+  assert.equal(file.canonical, expected.canonical, 'stored upgraded, without gameVersion');
+  assert.deepEqual([legacy.formatVersion, legacy.upgradedFrom], [MAP_FORMAT_VERSION, 1]);
   const db = new FakeD1();
   const a = await storeMap(db, legacy, { listed: true });
   const b = await storeMap(db, file, { listed: true });

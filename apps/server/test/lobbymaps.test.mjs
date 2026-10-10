@@ -116,7 +116,7 @@ test('session: the host shares a map; members download it by hash; strangers and
   assert.ok(row.used_at > 0);
   // The lobby announces it with its details, for everyone, with the map states.
   const lobby = guest.last('lobby');
-  assert.deepEqual(lobby.map, { id: shared.id, hash: p.hash, name: 'Shared session', modded: false, players: 2, author: 'Cartographer', width: W, height: W, bytes: p.canonical.length, shared: true });
+  assert.deepEqual(lobby.map, { id: shared.id, hash: p.hash, name: 'Shared session', modded: false, players: 2, author: 'Cartographer', width: W, height: W, bytes: p.canonical.length, shared: true, setup: { players: [], options: {}, lockedOptions: [] } });
   assert.deepEqual(lobby.slots.filter((x) => x.type === 'human').map((x) => x.mapState), ['installed', 'missing']);
   assert.equal(lobby.spectators[0].mapState, 'missing');
   for (const ws of [host, guest, eye]) for (const m of ws.inbox) assert.ok(parseServerMessage(JSON.stringify(m)).ok, `${ws.name}: ${m.t}`);
@@ -317,16 +317,16 @@ test('routes: map files from before map versions and their versioned form share 
   const versioned = JSON.stringify({ formatVersion: MAP_FORMAT_VERSION, gameVersion: '0.9.0', ...mapFile('versions') });
   const first = await b.req('POST', `/api/sessions/${sid}/map`, legacy, { headers: cred(hw) });
   assert.equal(first.status, 201, JSON.stringify(first.body));
-  assert.equal(first.body.upgradedFrom, undefined, 'format 1 is the current format: nothing to upgrade');
+  assert.equal(first.body.upgradedFrom, 1, 'a format 1 file is upgraded before it is stored');
   const second = await b.req('POST', `/api/sessions/${sid}/map`, versioned, { headers: cred(hw) });
   assert.equal(second.status, 200, 'the same map');
   assert.equal(second.body.hash, first.body.hash);
-  // The guest downloads the canonical form: no version keys, the same identity in every client.
+  // The guest downloads the canonical form: its format version, never who wrote it; the same identity in every client.
   const dl = await b.get(`/api/sessions/${sid}/map?hash=${first.body.hash}`, { csrf: false, headers: cred(gw) });
   assert.equal(dl.status, 200);
   const text = JSON.stringify(dl.body);
   assert.equal(await sha256Hex(text), first.body.hash);
-  assert.ok(!text.includes('formatVersion') && !text.includes('gameVersion'));
+  assert.ok(text.startsWith(`{"formatVersion":${MAP_FORMAT_VERSION},`) && !text.includes('gameVersion'));
   assert.equal(guest.last('lobby').map.hash, first.body.hash);
   // A map from a newer release: refused with what to do, nothing stored.
   const newer = JSON.stringify({ formatVersion: MAP_FORMAT_VERSION + 1, gameVersion: '2.1.0', ...mapFile('future') });

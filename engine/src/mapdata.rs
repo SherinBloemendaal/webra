@@ -1,6 +1,8 @@
 //! Map files (`.webra-map.json`, formats 1 and 2; see docs/contracts.md section 2).
 //!
 //! Format 2 is format 1 plus a `gems` layer; format 1 maps have no gems.
+//! Map format version 2 adds the game setup (`players`, `options`,
+//! `lockedOptions`, `tags`, and the state of pre-placed actors).
 //! The canonical form is the JSON serialization of [`MapData`] with fields in
 //! declaration order (`gems` left out when absent), keys inside `rules`
 //! sorted (serde_json's default map), and no whitespace. Its SHA-256 (hex) is
@@ -23,7 +25,7 @@ use sha2::{Digest, Sha256};
 /// The map format version this engine reads (packages/protocol mapversions.js
 /// MAP_FORMAT_VERSION; a protocol test keeps them equal). A file without
 /// `formatVersion` is version 1.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 /// The format without gems; still read, and written when a map has no gems.
 pub const FORMAT_ORE_ONLY: u32 = 1;
 /// The current format: format 1 plus the `gems` layer.
@@ -76,7 +78,112 @@ pub struct MapData {
     /// map with a biome is not modded.
     #[serde(default, skip_serializing_if = "Biome::is_temperate")]
     pub biome: Biome,
+    /// The game setup (format version 2, packages/protocol mapsetup.js): the
+    /// player slots, the lobby options the map starts with and the ones it
+    /// locks, and its tags. Always in the canonical form, defaults filled in.
+    #[serde(default)]
+    pub players: Vec<MapSlot>,
+    /// Lobby options (camelCase names and values as in the options JSON);
+    /// keys sorted in the canonical form (serde_json's default map).
+    #[serde(default)]
+    pub options: serde_json::Map<String, serde_json::Value>,
+    #[serde(rename = "lockedOptions", default)]
+    pub locked_options: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
+
+/// A player slot of a map (OpenRA MapPlayers): what it holds when the map is
+/// loaded and which parts the lobby may not change. Lobbies apply it; the
+/// engine checks it is well formed.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MapSlot {
+    #[serde(default = "random_faction")]
+    pub faction: String,
+    #[serde(default)]
+    pub team: i32,
+    #[serde(default = "no_color")]
+    pub color: i32,
+    #[serde(rename = "type", default = "open_slot")]
+    pub ty: String,
+    #[serde(default = "normal")]
+    pub difficulty: String,
+    #[serde(default = "normal")]
+    pub bot: String,
+    #[serde(default)]
+    pub lock: Vec<String>,
+}
+
+impl Default for MapSlot {
+    fn default() -> Self {
+        MapSlot {
+            faction: random_faction(),
+            team: 0,
+            color: no_color(),
+            ty: open_slot(),
+            difficulty: normal(),
+            bot: normal(),
+            lock: Vec::new(),
+        }
+    }
+}
+
+fn random_faction() -> String {
+    "random".into()
+}
+fn no_color() -> i32 {
+    -1
+}
+fn open_slot() -> String {
+    "open".into()
+}
+fn normal() -> String {
+    "normal".into()
+}
+fn full_health() -> i32 {
+    100
+}
+fn is_full_health(v: &i32) -> bool {
+    *v == 100
+}
+fn is_zero(v: &i32) -> bool {
+    *v == 0
+}
+
+/// Lobby options a map may set and lock, with their values (packages/protocol
+/// mapsetup.js MAP_OPTION_VALUES; a game test checks them against it).
+pub const MAP_OPTIONS: &[(&str, &[&str])] = &[
+    ("weather", &["full", "cosmetic", "off"]),
+    ("startingCash", &["2500", "5000", "7500", "10000", "20000"]),
+    ("startingUnits", &["mcv", "light", "heavy", "base"]),
+    ("techLevel", &["infonly", "low", "medium", "high", "unrestricted"]),
+    ("gameSpeed", &["slowest", "slower", "normal", "fast", "faster", "fastest"]),
+    ("timeLimit", &["0", "10", "20", "30", "40", "60", "90"]),
+    ("fog", BOOL),
+    ("explored", BOOL),
+    ("buildRadius", BOOL),
+    ("redeployableMcv", BOOL),
+    ("oreRegrowth", BOOL),
+    ("cheats", BOOL),
+    ("crates", BOOL),
+    ("shortGame", BOOL),
+    ("bounty", BOOL),
+    ("separateTeamSpawns", BOOL),
+    ("allyBuildRadius", BOOL),
+    ("reusableEngineers", BOOL),
+];
+const BOOL: &[&str] = &["true", "false"];
+/// Slot values (protocol constants FACTIONS, MAP_SLOT_TYPES, DIFFICULTIES, BOTS, MAP_SLOT_LOCKS).
+const SLOT_FACTIONS: &[&str] = &["random", "randomallies", "randomsoviet", "england", "france", "germany", "russia", "ukraine"];
+const SLOT_TYPES: &[&str] = &["open", "ai", "closed"];
+const SLOT_DIFFICULTIES: &[&str] = &["easy", "normal", "hard"];
+const SLOT_BOTS: &[&str] = &["rush", "normal", "turtle", "naval"];
+const SLOT_LOCKS: &[&str] = &["faction", "team", "color", "type"];
+pub const TAGS_MAX: usize = 8;
+pub const TAG_MAX: usize = 24;
+pub const CARGO_MAX: usize = 16;
+pub const VETERANCY_MAX: i32 = 4;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +196,26 @@ pub struct MapActor {
     pub y: i32,
     #[serde(default)]
     pub facing: i32,
+    /// Health in percent, 1 to 100 (format version 2; 100 left out of the canonical form).
+    #[serde(default = "full_health", skip_serializing_if = "is_full_health")]
+    pub health: i32,
+    /// Fire stance (`hold_fire`, `return_fire`, `defend`, `attack_anything`);
+    /// absent: the actor's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stance: Option<String>,
+    /// Veterancy level, 0 to the actor's levels.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub veterancy: i32,
+    /// Passengers (actor types) inside a transport.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo: Vec<String>,
+}
+
+impl MapActor {
+    /// An actor with the default state (full health, its own stance, no levels, no passengers).
+    pub fn new(ty: &str, owner: i32, x: i32, y: i32, facing: i32) -> MapActor {
+        MapActor { ty: ty.into(), owner, x, y, facing, health: 100, stance: None, veterancy: 0, cargo: Vec::new() }
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -143,7 +270,15 @@ impl MapData {
         if json.len() > MAX_BYTES {
             return Err(format!("map is larger than {} bytes", MAX_BYTES));
         }
-        serde_json::from_str(json).map_err(|e| format!("invalid map JSON: {}", short(&e.to_string())))
+        let d: MapData = serde_json::from_str(json).map_err(|e| format!("invalid map JSON: {}", short(&e.to_string())))?;
+        // A file without `formatVersion` is format 1 (the default, which serde does not check).
+        if d.format_version != FORMAT_VERSION {
+            return Err(format!(
+                "invalid map JSON: this map is in map format {}; it must be upgraded to format {FORMAT_VERSION} before the engine reads it",
+                d.format_version
+            ));
+        }
+        Ok(d)
     }
 
     pub fn canonical_json(&self) -> String {
@@ -318,6 +453,10 @@ impl MapData {
                 }
             }
         }
+        self.validate_setup(&mut errors);
+        for a in self.actors.iter().take(MAX_ACTORS) {
+            MapData::validate_actor_state(a, rules.as_ref(), &mut errors);
+        }
         let ok = errors.is_empty();
         Validation { ok, errors, modded: self.modded(), hash: ok.then(|| self.hash()) }
     }
@@ -385,7 +524,158 @@ impl MapData {
             actors: Vec::new(),
             rules: None,
             biome: Biome::Temperate,
+            players: Vec::new(),
+            options: serde_json::Map::new(),
+            locked_options: Vec::new(),
+            tags: Vec::new(),
         }
+    }
+
+    /// The game setup's checks (format version 2): slots, options, locks, tags.
+    fn validate_setup(&self, errors: &mut Vec<String>) {
+        if self.players.len() > self.spawns.len() {
+            errors.push(format!("players lists {} slots; the map has {} spawns", self.players.len(), self.spawns.len()));
+        }
+        let mut colors = Vec::new();
+        let mut closed = 0;
+        for (i, p) in self.players.iter().enumerate() {
+            let w = format!("players[{i}]");
+            if !SLOT_FACTIONS.contains(&p.faction.as_str()) {
+                errors.push(format!("{w}.faction is unknown"));
+            }
+            if !(0..=4).contains(&p.team) {
+                errors.push(format!("{w}.team must be 0 to 4"));
+            }
+            if !(-1..=7).contains(&p.color) {
+                errors.push(format!("{w}.color must be -1 to 7"));
+            } else if p.color >= 0 {
+                if colors.contains(&p.color) {
+                    errors.push("players: two slots have the same colour".into());
+                }
+                colors.push(p.color);
+            }
+            if !SLOT_TYPES.contains(&p.ty.as_str()) {
+                errors.push(format!("{w}.type must be open, ai or closed"));
+            }
+            if !SLOT_DIFFICULTIES.contains(&p.difficulty.as_str()) {
+                errors.push(format!("{w}.difficulty must be easy, normal or hard"));
+            }
+            if !SLOT_BOTS.contains(&p.bot.as_str()) {
+                errors.push(format!("{w}.bot must be rush, normal, turtle or naval"));
+            }
+            for (k, l) in p.lock.iter().enumerate() {
+                if !SLOT_LOCKS.contains(&l.as_str()) || p.lock[..k].contains(l) {
+                    errors.push(format!("{w}.lock must list faction, team, color or type, each once"));
+                }
+            }
+            if p.lock.iter().any(|l| l == "color") && p.color < 0 {
+                errors.push(format!("{w}: a locked colour needs a colour"));
+            }
+            if p.ty == "closed" && p.lock.iter().any(|l| l == "type") {
+                closed += 1;
+            }
+        }
+        if self.spawns.len() >= 2 && self.spawns.len() - closed.min(self.spawns.len()) < 2 {
+            errors.push("players: a map must leave at least two slots that can play".into());
+        }
+        for (k, v) in &self.options {
+            match MAP_OPTIONS.iter().find(|(name, _)| name == k) {
+                None => errors.push(format!("options: {} is not an option a map can set", short(k))),
+                Some((_, values)) => {
+                    let text = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => v.to_string(),
+                        _ => String::new(),
+                    };
+                    // Strings must be strings and numbers numbers, as in the options JSON.
+                    let kind_ok = match v {
+                        serde_json::Value::String(_) => !values.iter().all(|x| x.parse::<i64>().is_ok() || *x == "true" || *x == "false"),
+                        serde_json::Value::Number(_) => values.iter().all(|x| x.parse::<i64>().is_ok()),
+                        serde_json::Value::Bool(_) => *values == BOOL,
+                        _ => false,
+                    };
+                    if !kind_ok || !values.contains(&text.as_str()) {
+                        errors.push(format!("options.{k} must be one of {}", values.join(", ")));
+                    }
+                }
+            }
+        }
+        for (i, k) in self.locked_options.iter().enumerate() {
+            if !self.options.contains_key(k) || self.locked_options[..i].contains(k) {
+                errors.push(format!("lockedOptions[{i}] must name an option the map sets in options, once"));
+            }
+        }
+        if self.tags.len() > TAGS_MAX {
+            errors.push(format!("tags must be a list of at most {TAGS_MAX}"));
+        }
+        for (i, t) in self.tags.iter().enumerate() {
+            let ok = (1..=TAG_MAX).contains(&t.len())
+                && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b' ' || b == b'-')
+                && t.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+                && t.bytes().last().is_some_and(|b| b.is_ascii_alphanumeric());
+            if !ok || self.tags[..i].contains(t) {
+                errors.push(format!("tags[{i}] must be 1 to {TAG_MAX} lower-case letters, digits, spaces or hyphens, once"));
+            }
+        }
+    }
+
+    /// The pre-placed actor state's checks: ranges, and with the rules
+    /// whether the actor can have a stance, levels and these passengers.
+    fn validate_actor_state(a: &MapActor, rules: Option<&Rules>, errors: &mut Vec<String>) {
+        let what = format!("actor {} at {},{}", short(&a.ty), a.x, a.y);
+        if !(1..=100).contains(&a.health) {
+            errors.push(format!("{what}: health must be 1 to 100 percent"));
+        }
+        let stance = a.stance.as_deref().map(|s| crate::rules::Stance::ALL.iter().copied().find(|x| x.name() == s));
+        if stance == Some(None) {
+            errors.push(format!("{what}: stance must be hold_fire, return_fire, defend or attack_anything"));
+        }
+        if !(0..=VETERANCY_MAX).contains(&a.veterancy) {
+            errors.push(format!("{what}: veterancy must be 0 to {VETERANCY_MAX}"));
+        }
+        if a.cargo.len() > CARGO_MAX {
+            errors.push(format!("{what}: at most {CARGO_MAX} passengers"));
+        }
+        let Some(r) = rules else { return };
+        let Some(t) = r.actor_index(&a.ty) else { return };
+        let info = &r.actors[t];
+        if a.stance.is_some() && (info.stance.is_none() || info.weapons.is_empty()) {
+            errors.push(format!("{what}: {} has no fire stance", short(&a.ty)));
+        }
+        let levels = info.experience.as_ref().map_or(0, |x| x.thresholds.len() as i32);
+        if a.veterancy > levels {
+            errors.push(format!("{what}: {} gains at most {levels} veterancy levels", short(&a.ty)));
+        }
+        if a.health < 100 && matches!(info.kind, crate::rules::Kind::Crate | crate::rules::Kind::Proxy) {
+            errors.push(format!("{what}: {} has no health to set", short(&a.ty)));
+        }
+        if a.cargo.is_empty() {
+            return;
+        }
+        let Some(cargo) = info.abilities.cargo.as_ref().filter(|c| !c.garrison) else {
+            errors.push(format!("{what}: {} carries no passengers", short(&a.ty)));
+            return;
+        };
+        let mut weight = 0;
+        for p in &a.cargo {
+            let unit = r.actor_index(p).and_then(|pi| r.actors[pi].unit.as_ref());
+            match unit.and_then(|u| u.passenger.as_ref().map(|kind| (kind, u.passenger_weight))) {
+                Some((kind, w)) if cargo.types.iter().any(|ty| ty == kind) => weight += w,
+                _ => errors.push(format!("{what}: {} cannot ride in {}", short(p), short(&a.ty))),
+            }
+        }
+        if weight > cargo.max {
+            errors.push(format!("{what}: the passengers weigh {weight}; {} carries {}", short(&a.ty), cargo.max));
+        }
+    }
+
+    /// Whether lobby options (the options JSON a game starts with) keep the
+    /// options this map locks: each locked option must have the map's value.
+    pub fn locked_option_problem(&self, options: &serde_json::Value) -> Option<String> {
+        self.locked_options.iter().find_map(|k| {
+            let want = self.options.get(k)?;
+            (options.get(k) != Some(want)).then(|| format!("this map locks {} to {want}", short(k)))
+        })
     }
 }
 
@@ -438,15 +728,22 @@ mod tests {
             actors: Vec::new(),
             rules: None,
             biome: Biome::Temperate,
+            players: Vec::new(),
+            options: serde_json::Map::new(),
+            locked_options: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
+    /// The game setup's defaults at the end of a canonical form (format version 2).
+    const SETUP_TAIL: &str = r#","players":[],"options":{},"lockedOptions":[],"tags":[]}"#;
+
     #[test]
-    fn format_1_maps_still_load_with_the_same_identity() {
-        // A format 1 file as published before gems existed: no gems key.
+    fn maps_without_gems_have_no_gems_layer() {
+        // Layer format 1 (no gems key) in map format version 2.
         let n = 32 * 32;
         let json = format!(
-            r#"{{"format":1,"name":"Old","author":"x","description":"","width":32,"height":32,"terrain":"{t}","ore":"{t}","spawns":[[4,4],[20,20]],"actors":[],"rules":null}}"#,
+            r#"{{"formatVersion":2,"format":1,"name":"Old","author":"x","description":"","width":32,"height":32,"terrain":"{t}","ore":"{t}","spawns":[[4,4],[20,20]],"actors":[],"rules":null{SETUP_TAIL}"#,
             t = b64().encode(vec![0u8; n])
         );
         let d = MapData::parse(&json).unwrap();
@@ -504,7 +801,7 @@ mod tests {
         let m = Map::generate_for(64, 64, 1, 12, 2);
         let mut d = MapData::from_map(&m, "", "x", "");
         d.spawns = vec![[0, 0]];
-        d.actors.push(MapActor { ty: "NOPE".into(), owner: 5, x: 999, y: 0, facing: 0 });
+        d.actors.push(MapActor::new("NOPE", 5, 999, 0, 0));
         d.rules = Some(serde_json::json!({ "actors": { "1TNK": { "cost": "free" } } }));
         let v = d.validate();
         assert!(!v.ok && v.modded && v.hash.is_none());
@@ -518,16 +815,13 @@ mod tests {
         // (3x4) at 45,46 on a 48x48 map passed and trapped every client at start.
         let m = Map::generate_for(48, 48, 2, 12, 2);
         let mut d = MapData::from_map(&m, "Edge", "x", "");
-        d.actors.push(MapActor { ty: "FACT".into(), owner: 0, x: 45, y: 46, facing: 0 });
+        d.actors.push(MapActor::new("FACT", 0, 45, 46, 0));
         let v = d.validate();
         assert!(!v.ok && v.errors.iter().any(|e| e.contains("does not fit")), "{:?}", v.errors);
         let players = [crate::world::PlayerSetup::new("russia", None), crate::world::PlayerSetup::new("england", None)];
         assert!(crate::world::World::from_map(&d, 1, &players, Default::default()).is_err());
         // Units only need their own cell; a structure that fits exactly is fine.
-        d.actors = vec![
-            MapActor { ty: "E1".into(), owner: 0, x: 47, y: 47, facing: 0 },
-            MapActor { ty: "FACT".into(), owner: -1, x: 45, y: 44, facing: 0 },
-        ];
+        d.actors = vec![MapActor::new("E1", 0, 47, 47, 0), MapActor::new("FACT", -1, 45, 44, 0)];
         assert!(d.validate().errors.iter().all(|e| !e.contains("does not fit") && !e.contains("outside")));
     }
 
@@ -577,12 +871,9 @@ mod tests {
         assert!(errors(&d).iter().any(|e| e.contains("spawn 2 overlaps the start of spawn 1")), "{:?}", errors(&d));
         d.spawns[1] = [30, 30];
         // A structure on a start's yard, and two structures on each other.
-        d.actors = vec![MapActor { ty: "POWR".into(), owner: -1, x: 5, y: 3, facing: 0 }];
+        d.actors = vec![MapActor::new("POWR", -1, 5, 3, 0)];
         assert!(errors(&d).iter().any(|e| e.contains("overlaps the start of spawn 1")), "{:?}", errors(&d));
-        d.actors = vec![
-            MapActor { ty: "POWR".into(), owner: -1, x: 15, y: 15, facing: 0 },
-            MapActor { ty: "FACT".into(), owner: 0, x: 16, y: 13, facing: 0 },
-        ];
+        d.actors = vec![MapActor::new("POWR", -1, 15, 15, 0), MapActor::new("FACT", 0, 16, 13, 0)];
         assert!(errors(&d).iter().any(|e| e.contains("overlaps another structure")), "{:?}", errors(&d));
         d.actors[1].x = 20;
         assert!(d.validate().ok, "{:?}", errors(&d));
@@ -595,12 +886,12 @@ mod tests {
         let temperate = d.canonical_json();
         assert!(!temperate.contains("biome"), "temperate maps keep the old canonical form");
         // An explicit temperate biome is the same map (same hash).
-        let explicit = temperate.trim_end_matches('}').to_string() + r#","biome":"temperate"}"#;
+        let explicit = temperate.replace(r#","players":"#, r#","biome":"temperate","players":"#);
         let temperate_hash = d.hash();
         assert_eq!(MapData::parse(&explicit).unwrap().hash(), temperate_hash);
         d.biome = Biome::Snow;
         let snow = d.canonical_json();
-        assert!(snow.ends_with(r#""rules":null,"biome":"snow"}"#), "{}", &snow[snow.len() - 40..]);
+        assert!(snow.ends_with(&format!(r#""rules":null,"biome":"snow"{SETUP_TAIL}"#)), "{}", &snow[snow.len() - 100..]);
         assert_ne!(d.hash(), temperate_hash, "the biome is part of the identity");
         let v = d.validate();
         assert!(v.ok && !v.modded, "a biome is not a rules override: {:?}", v.errors);
@@ -636,21 +927,28 @@ mod tests {
         assert!(a.canonical_json().contains(r#""rules":{"actors":{"1TNK":{"cost":1}},"weapons""#));
     }
 
-    /// The format 1 baseline fixture of the protocol package (map versions):
-    /// the engine must give exactly the canonical form and hash the protocol
-    /// pinned, for the file as WebRA 0.9 wrote it and with the version header.
+    /// The format 1 baseline fixtures of the protocol package (map versions):
+    /// the engine refuses format 1 (the protocol upgrades it first), and reads
+    /// the upgraded map the protocol pinned to exactly its canonical form and hash.
     #[test]
-    fn baseline_fixture_has_the_pinned_identity_in_both_forms() {
+    fn baseline_fixture_upgraded_has_the_pinned_identity() {
         let expected: serde_json::Value =
             serde_json::from_str(include_str!("../../packages/protocol/test/fixtures/maps/format1-legacy.expected.json")).unwrap();
-        let legacy = MapData::parse(include_str!("../../packages/protocol/test/fixtures/maps/format1-legacy.webra-map.json")).unwrap();
-        let file = MapData::parse(include_str!("../../packages/protocol/test/fixtures/maps/format1-file.webra-map.json")).unwrap();
-        assert_eq!(legacy.canonical_json(), expected["canonical"].as_str().unwrap());
-        assert_eq!(legacy.hash(), expected["hash"].as_str().unwrap());
-        assert_eq!(file.canonical_json(), legacy.canonical_json(), "formatVersion 1 and gameVersion leave the identity alone");
-        assert_eq!(file.game_version.as_deref(), Some("0.9.0"));
-        assert_eq!(legacy.game_version, None);
-        assert!(legacy.validate().ok, "{:?}", legacy.validate().errors);
+        for old in [
+            include_str!("../../packages/protocol/test/fixtures/maps/format1-legacy.webra-map.json"),
+            include_str!("../../packages/protocol/test/fixtures/maps/format1-file.webra-map.json"),
+        ] {
+            assert!(MapData::parse(old.trim()).unwrap_err().contains("must be upgraded to format 2"));
+        }
+        let canonical = expected["canonical"].as_str().unwrap();
+        let upgraded = MapData::parse(canonical).unwrap();
+        assert_eq!(upgraded.canonical_json(), canonical);
+        assert_eq!(upgraded.hash(), expected["hash"].as_str().unwrap());
+        assert!(upgraded.validate().ok, "{:?}", upgraded.validate().errors);
+        // The file form names the release; the identity stays.
+        let file = MapData::parse(&upgraded.file_json()).unwrap();
+        assert_eq!(file.game_version.as_deref(), Some(crate::VERSION));
+        assert_eq!(file.hash(), upgraded.hash());
     }
 
     #[test]
@@ -658,18 +956,23 @@ mod tests {
         let d = small(FORMAT_ORE_ONLY, None);
         let file = d.file_json();
         assert!(
-            file.starts_with(&format!(r#"{{"formatVersion":1,"gameVersion":"{}","format":1,"name":"Small""#, crate::VERSION)),
+            file.starts_with(&format!(r#"{{"formatVersion":2,"gameVersion":"{}","format":1,"name":"Small""#, crate::VERSION)),
             "{file}"
         );
         let back = MapData::parse(&file).unwrap();
         assert_eq!(back.canonical_json(), d.canonical_json());
         assert_eq!(back.hash(), d.hash());
-        let newer = file.replacen(r#""formatVersion":1"#, r#""formatVersion":2"#, 1);
+        let newer = file.replacen(r#""formatVersion":2"#, r#""formatVersion":3"#, 1);
         let err = MapData::parse(&newer).unwrap_err();
-        assert!(err.contains("map format 2, made by a newer version of WebRA"), "{err}");
+        assert!(err.contains("map format 3, made by a newer version of WebRA"), "{err}");
+        let older = file.replacen(r#""formatVersion":2"#, r#""formatVersion":1"#, 1);
+        assert!(MapData::parse(&older).unwrap_err().contains("map format 1; it must be upgraded"));
         let canonical = d.canonical_json();
-        let older = format!(r#"{{"formatVersion":0,{}"#, &canonical[1..]);
-        assert!(MapData::parse(&older).unwrap_err().contains("formatVersion must be 1 or more"));
+        let body = canonical.strip_prefix(r#"{"formatVersion":2,"#).expect("version 2 names itself");
+        let zero = format!(r#"{{"formatVersion":0,{body}"#);
+        assert!(MapData::parse(&zero).unwrap_err().contains("formatVersion must be 1 or more"));
+        // Without formatVersion a file is format 1: refused, to be upgraded first.
+        assert!(MapData::parse(&format!("{{{body}")).unwrap_err().contains("must be upgraded"));
         for bad in [r#""""#, r#""a b""#, &format!("\"{}\"", "1".repeat(33))] {
             let text = format!(r#"{{"gameVersion":{bad},{}"#, &canonical[1..]);
             assert!(MapData::parse(&text).unwrap_err().contains("gameVersion must be a version"), "{bad}");

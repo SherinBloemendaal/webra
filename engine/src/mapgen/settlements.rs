@@ -305,7 +305,7 @@ fn place_orbit(m: &Map, f: &Frame, taken: &mut Taken, k: &Kind, x: i32, y: i32, 
             let i = m.idx(cx, cy);
             taken.cells[i] = true;
         }
-        taken.out.push(MapActor { ty: k.ty.into(), owner: -1, x: ix, y: iy, facing: 0 });
+        taken.out.push(MapActor::new(k.ty, -1, ix, iy, 0));
     }
     true
 }
@@ -387,7 +387,7 @@ pub fn settlements(m: &Map, rules: &Rules, biome: Biome, tech: TechBuildings, se
                         let i = m.idx(x + dx, y + dy);
                         taken.cells[i] = true;
                     }
-                    taken.out.push(MapActor { ty: oil.ty.into(), owner: -1, x, y, facing: 0 });
+                    taken.out.push(MapActor::new(oil.ty, -1, x, y, 0));
                 }
             }
         }

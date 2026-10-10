@@ -1135,30 +1135,66 @@ impl World {
                 continue;
             }
             let Some(ty) = self.rules.actor_index(&a.ty) else { continue };
-            match self.rules.actors[ty].kind {
+            let placed = match self.rules.actors[ty].kind {
                 // Proxies (infantry.rs) have no body to place.
-                Kind::Proxy => {}
-                Kind::Building => {
-                    self.spawn_building(ty as u16, owner, a.x, a.y);
-                }
+                Kind::Proxy => None,
+                Kind::Building => self.spawn_building(ty as u16, owner, a.x, a.y),
                 // Crates and husks keep their cell (crates.rs, husks.rs).
                 Kind::Crate => {
                     if self.crate_at(self.map.idx(a.x, a.y)).is_none() {
                         self.place_crate(ty, owner, a.x, a.y, 0);
                     }
+                    None
                 }
-                Kind::Husk => {
-                    self.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0);
-                }
-                _ => {
-                    self.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
-                }
+                Kind::Husk => Some(self.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0)),
+                _ => Some(self.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024))),
+            };
+            if let Some(i) = placed {
+                self.apply_map_actor_state(i, a);
             }
         }
         self.setup_neutral();
         self.refresh_tokens();
         self.update_power();
         self.update_vision();
+    }
+
+    /// The state a map gives a pre-placed actor (map format version 2,
+    /// mapdata.rs): health in percent of its hit points, its fire stance,
+    /// veterancy levels (quietly: no level-up sound or effect at the start)
+    /// and passengers, made and put inside at once. What does not apply to
+    /// the actor is left out (the map's validation refuses it; the editor's
+    /// preview shows maps that are not valid yet).
+    fn apply_map_actor_state(&mut self, i: usize, a: &crate::mapdata::MapActor) {
+        let ty = self.actors[i].ty as usize;
+        let max_hp = self.rules.actors[ty].hp;
+        if (1..100).contains(&a.health) {
+            self.actors[i].hp = (max_hp as i64 * a.health as i64 / 100).max(1) as i32;
+        }
+        if let Some(stance) = a.stance.as_deref().and_then(|s| crate::rules::Stance::ALL.iter().copied().find(|x| x.name() == s)) {
+            if self.has_stance(i) {
+                self.actors[i].stance = stance;
+            }
+        }
+        let levels = (a.veterancy.max(0) as usize).min(self.max_rank(i) as usize);
+        if levels > 0 {
+            self.actors[i].xp = self.level_experience(i, levels);
+            self.actors[i].rank = levels as u8;
+        }
+        if a.cargo.is_empty() || !self.is_transport(i) {
+            return;
+        }
+        let (x, y, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+        for p in &a.cargo {
+            let Some(pt) = self.rules.actor_index(p) else { continue };
+            if !matches!(self.rules.actors[pt].kind, Kind::Infantry | Kind::Vehicle) {
+                continue;
+            }
+            let passenger = self.spawn_unit(pt as u16, owner, x, y, 0);
+            if !self.load_passenger(i, passenger) {
+                self.remove(passenger);
+            }
+        }
     }
 
     /// The map editor's picture of a map file (apps/game/editor): the world a

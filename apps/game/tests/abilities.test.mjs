@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { MAP_FORMAT_VERSION } from '../js/protocol.js';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
 
@@ -14,6 +15,7 @@ const SIZE = 48;
 /** An open, clear map with pre-placed actors. */
 function openMap(actors) {
   return JSON.stringify({
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Open',
     author: 'Tests',

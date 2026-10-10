@@ -23,6 +23,8 @@ const validate = (json) => JSON.parse(Game.validate_map(json));
 const fixture = (name) => readFileSync(new URL(`../../../packages/protocol/test/fixtures/maps/${name}`, import.meta.url), 'utf8');
 const LEGACY = fixture('format1-legacy.webra-map.json');
 const FILE = fixture('format1-file.webra-map.json');
+/** A file of the current format (version 2) with the whole game setup. */
+const CURRENT = fixture('format2-setup.webra-map.json').trim();
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 
 /** The engine check for maps of the test registry (the engine reads format 1 only): shape and hash. */
@@ -33,12 +35,17 @@ const fakeValidate = (json) => {
 
 // ---- The map editor --------------------------------------------------------------------------
 
-test('editor: a current file opens as it is, without a notice', () => {
-  const opened = openMapFile(JSON.parse(LEGACY));
+test('editor: a current file opens as it is, without a notice; a format 1 file opens upgraded', () => {
+  const opened = openMapFile(JSON.parse(CURRENT));
   assert.equal(opened.status, 'current');
   assert.equal(opened.notice, null);
   assert.deepEqual(opened.problems, []);
-  assert.equal(canonicalJson(opened.map), JSON.parse(fixture('format1-legacy.expected.json')).canonical);
+  assert.equal(canonicalJson(opened.map), JSON.parse(fixture('format2-setup.expected.json')).canonical);
+  assert.equal(canonicalJson(new MapDoc(opened.map).toMap()), JSON.parse(fixture('format2-setup.expected.json')).canonical, 'the document keeps the whole setup');
+  const old = openMapFile(JSON.parse(LEGACY));
+  assert.equal(old.status, 'upgraded');
+  assert.equal(old.notice, MAP_UPGRADED_NOTICE);
+  assert.equal(canonicalJson(old.map), JSON.parse(fixture('format1-legacy.expected.json')).canonical);
 });
 
 test('editor: an older file opens upgraded with the notice to save it', () => {
@@ -79,7 +86,7 @@ test('editor: a map that is no longer compatible opens best effort, with located
 });
 
 test('editor: a newer or damaged file opens best effort; something that is no map does not', () => {
-  const legacy = JSON.parse(LEGACY);
+  const legacy = JSON.parse(CURRENT);
   const newer = openMapFile({ ...legacy, formatVersion: MAP_FORMAT_VERSION + 1, gameVersion: '9.1.0', submarines: [] });
   assert.equal(newer.status, 'newer');
   assert.match(newer.notice, /^This map was made with a newer version of WebRA \(9\.1, format \d+; this version reads format \d+\)\. Update the game to play it\.$/);
@@ -109,10 +116,15 @@ test('editor: saving writes the current format and this release; the identity st
 // ---- The skirmish lobby ------------------------------------------------------------------------
 
 test('lobby: map files of every kind of version are checked, upgraded or refused with the message', () => {
+  const current = inspectMapFile(CURRENT, validate);
+  assert.ok(current.ok, current.errors.join('; '));
+  assert.equal(current.json, CURRENT, 'a current file is installed as it is');
+  assert.equal(current.upgrade, null);
+  assert.deepEqual(current.setup.lockedOptions, ['techLevel'], 'with its game setup');
   const legacy = inspectMapFile(LEGACY, validate);
   assert.ok(legacy.ok, legacy.errors.join('; '));
-  assert.equal(legacy.json, LEGACY, 'a current file is installed as it is');
-  assert.equal(legacy.upgrade, null);
+  assert.equal(legacy.json, JSON.parse(fixture('format1-legacy.expected.json')).canonical, 'a format 1 file is installed upgraded');
+  assert.deepEqual(legacy.upgrade, { from: 1, message: MAP_UPGRADED_NOTICE });
   const file = inspectMapFile(FILE, validate);
   assert.ok(file.ok);
   assert.equal(file.hash, legacy.hash);

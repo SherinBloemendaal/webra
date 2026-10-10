@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { MAP_FORMAT_VERSION } from '@webra/protocol';
 import { readFileSync } from 'node:fs';
 import {
   hashHostKey,
@@ -110,6 +111,7 @@ test('session creation body is validated strictly', () => {
 test('map uploads are validated against the engine rules and hashed canonically', async () => {
   const w = 32;
   const map = {
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Test',
     author: 'Me',
@@ -142,6 +144,7 @@ test('map uploads accept format 1 and format 2 (gems) maps and refuse bad gem la
     return b.toString('base64');
   };
   const map = {
+    formatVersion: MAP_FORMAT_VERSION,
     format: 2,
     name: 'Gems',
     author: 'Me',
@@ -193,6 +196,7 @@ test('map uploads keep an optional biome and accept fords, both gates agree', as
   const terrain = Buffer.alloc(w * w);
   for (let x = 0; x < w; x++) terrain[16 * w + x] = 5; // a ford across the map
   const map = {
+    formatVersion: MAP_FORMAT_VERSION,
     format: 1,
     name: 'Ford',
     author: 'Me',
@@ -208,7 +212,7 @@ test('map uploads keep an optional biome and accept fords, both gates agree', as
   const plain = await prepareMap(JSON.stringify(map));
   assert.ok(!plain.canonical.includes('biome'));
   const desert = await prepareMap(JSON.stringify({ ...map, biome: 'desert' }));
-  assert.ok(desert.canonical.endsWith('"rules":null,"biome":"desert"}'));
+  assert.ok(desert.canonical.endsWith('"rules":null,"biome":"desert","players":[],"options":{},"lockedOptions":[],"tags":[]}'));
   assert.notEqual(desert.hash, plain.hash);
   assert.equal(desert.modded, false, 'a biome is not a rules override');
   assert.equal((await prepareMap(JSON.stringify({ ...map, biome: 'temperate' }))).hash, plain.hash);

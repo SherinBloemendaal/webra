@@ -21,7 +21,7 @@ import { decodeBase64, encodeBase64 } from './base64.js';
 import { excerpt, isPlainObject } from './check.js';
 
 /** The map format version this release reads and writes. */
-export const MAP_FORMAT_VERSION = 1;
+export const MAP_FORMAT_VERSION = 2;
 /** Largest `formatVersion` a file may name (newer than ours is still a clean refusal). */
 export const MAP_FORMAT_VERSION_MAX = 65535;
 /** `gameVersion` values (the engine checks the same rule). */
@@ -38,8 +38,14 @@ export const MAP_UPGRADED_NOTICE = 'This map was upgraded from an older version;
 export const MAP_FORMAT_HISTORY = Object.freeze([
   Object.freeze({
     version: 1,
-    lastGame: null,
+    lastGame: '0.9',
     summary: 'The baseline: every map from before map versions (a file without formatVersion is format 1).',
+  }),
+  Object.freeze({
+    version: 2,
+    lastGame: null,
+    summary:
+      'The map carries its game setup: player slots (faction, team, colour, an AI, locks), the lobby options it starts with and locks, tags, and the health, stance, veterancy and passengers of pre-placed actors.',
   }),
 ]);
 
@@ -51,7 +57,22 @@ export const MAP_FORMAT_HISTORY = Object.freeze([
  * it cannot decide with `ctx.problem(...)`. It must not depend on anything
  * but its input (no clock, no randomness, no engine).
  */
-export const MAP_MIGRATIONS = Object.freeze([]);
+export const MAP_MIGRATIONS = Object.freeze([
+  Object.freeze({
+    from: 1,
+    to: 2,
+    summary: 'Adds the game setup with its defaults: open slots, no options set or locked, no tags.',
+    migrate(map, ctx) {
+      // Defaults that change nothing: every slot open (the lobby decides), the
+      // lobby's options, no tags; actors keep full health, their own stance,
+      // no levels and no passengers (left out of the file at those values).
+      addField(map, ['players'], [], ctx);
+      addField(map, ['options'], {}, ctx);
+      addField(map, ['lockedOptions'], [], ctx);
+      addField(map, ['tags'], [], ctx);
+    },
+  }),
+]);
 
 /** The registry upgradeMap uses by default (tests pass their own). */
 export const MAP_VERSIONS = Object.freeze({ current: MAP_FORMAT_VERSION, history: MAP_FORMAT_HISTORY, migrations: MAP_MIGRATIONS });

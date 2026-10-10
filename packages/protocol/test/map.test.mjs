@@ -47,13 +47,16 @@ test('a valid map validates and keeps its exact text', () => {
   assert.equal(r.map.description, 'Two rivers.\nGood luck.');
 });
 
+/** The game setup's defaults at the end of a format version 2 canonical form (mapsetup.js). */
+const SETUP_TAIL = ',"players":[],"options":{},"lockedOptions":[],"tags":[]}';
+
 test('canonical JSON: contract key order, defaults filled, rules keys sorted, no whitespace', () => {
   const { description: _d, actors: _a, rules: _r, ...minimal } = makeMap();
   const r = validateMap({ ...minimal, rules: { weapons: { '25mm': { range: 6000 } }, actors: { '1TNK': { unit: { speed: 150 }, cost: 400 } } } });
   assert.ok(r.ok, r.errors.join('; '));
   const c = r.canonical;
-  assert.ok(c.startsWith('{"format":1,"name":"Twin Rivers","author":"Commander","description":"","width":32,"height":32,"terrain":"'));
-  assert.ok(c.endsWith(',"actors":[],"rules":{"actors":{"1TNK":{"cost":400,"unit":{"speed":150}}},"weapons":{"25mm":{"range":6000}}}}'));
+  assert.ok(c.startsWith('{"formatVersion":2,"format":1,"name":"Twin Rivers","author":"Commander","description":"","width":32,"height":32,"terrain":"'));
+  assert.ok(c.endsWith(`,"actors":[],"rules":{"actors":{"1TNK":{"cost":400,"unit":{"speed":150}}},"weapons":{"25mm":{"range":6000}}}${SETUP_TAIL}`));
   assert.ok(!/\s/.test(c.replace(/"[^"]*"/g, '')), 'no whitespace outside strings');
   assert.equal(canonicalMapJson(r.map), c);
 });
@@ -115,7 +118,7 @@ test('format 2 maps carry a gems layer between ore and spawns', async () => {
   assert.ok(r.ok, r.errors.join('; '));
   assert.equal(r.map.format, 2);
   const c = r.canonical;
-  assert.ok(c.startsWith('{"format":2,'));
+  assert.ok(c.startsWith('{"formatVersion":2,"format":2,'));
   assert.ok(c.indexOf('"ore":') < c.indexOf('"gems":') && c.indexOf('"gems":') < c.indexOf('"spawns":'), c.slice(0, 120));
   assert.equal(canonicalMapJson(r.map), c);
   assert.equal(await mapHash(r.map), createHash('sha256').update(c).digest('hex'));
@@ -233,7 +236,7 @@ test('biome is optional: absent or temperate keeps the old canonical form, other
   assert.ok(!plain.canonical.includes('biome'));
   const snow = validateMap(makeMap(32, 32, { biome: 'snow' }));
   assert.ok(snow.ok, snow.errors.join('; '));
-  assert.ok(snow.canonical.endsWith(',"rules":null,"biome":"snow"}'));
+  assert.ok(snow.canonical.endsWith(`,"rules":null,"biome":"snow"${SETUP_TAIL}`));
   assert.equal(snow.modded, false, 'a biome is not a rules override');
   assert.notEqual(await mapHash(snow.map), await mapHash(plain.map));
   assert.match(validateMap(makeMap(32, 32, { biome: 'lava' })).errors.join(), /biome must be one of/);
