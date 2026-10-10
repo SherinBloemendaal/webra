@@ -578,6 +578,17 @@ export function buildTerrainAtlas(biome = 'temperate') {
 // ---- Cell layer ----------------------------------------------------------------------------
 
 /**
+ * Seed for terrain decals: a hash of the map's terrain types (engine terrain
+ * bytes, RGBA per cell), so every player of a map, and the map editor, see
+ * the same decals.
+ */
+export function terrainSeed(terrain) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < terrain.length; i += 4) h = Math.imul(h ^ terrain[i], 0x01000193);
+  return h >>> 0;
+}
+
+/**
  * Per-cell tile layer for the shader, RGBA per cell: R tile index, G decal
  * (0 none, 1 + decal index), B water depth (0 at the shore to 255 four or more
  * cells out), A shadow bits (rock to the north, west, north-west). `terrain`

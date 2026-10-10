@@ -1,10 +1,12 @@
 // Editor viewport: camera (pan and zoom like the game), pointer input in cells,
 // and drawing through the game's WebGPU renderer. Terrain goes to the renderer
-// in the same RGBA layout the engine produces (R type, G ore and B gems scaled
-// to 255 at their maximum density, A 255);
-// the fog layer is uploaded fully visible.
+// as the engine's preview of the map has it (js/world.js: tree terrain is
+// clear ground under tree actors there, as in a game), or, without one, in
+// the same RGBA layout from the document (R type, G ore and B gems scaled to
+// 255 at their maximum density, A 255). Tiles are WebRA's for the biome or
+// installed ones (js/art.js). The fog layer is uploaded fully visible.
 
-import { buildTerrainAtlas, cellTiles } from '../../js/art/terrain.js';
+import { buildTerrainAtlas, cellTiles, terrainSeed } from '../../js/art/terrain.js';
 
 const CELL = 24; // world pixels per cell (render.rs PX_PER_CELL)
 const PAN_SPEED = 900; // CSS px per second at zoom 1
@@ -12,7 +14,8 @@ const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 4;
 const ORE_MAX = 12;
 const GEM_MAX = 3;
-const NEUTRAL_TEAM = 7;
+/** Team slot of neutral actors (engine world.rs EDITOR_SLOTS, js/world.js PREVIEW_NEUTRAL). */
+const NEUTRAL_TEAM = 8;
 
 export class EditorView {
   /**
@@ -54,10 +57,13 @@ export class EditorView {
   setBiome(biome) {
     if (biome === this.biome) return;
     this.biome = biome;
+    this.tiled = false;
     this.renderer.setTerrainAtlas(buildTerrainAtlas(biome));
+    this.terrainDirty = true;
   }
 
-  updateTerrain(doc) {
+  /** The document's terrain in the engine's RGBA layout (without a preview). */
+  docTerrain(doc) {
     const b = this.terrainBytes;
     for (let i = 0, n = doc.width * doc.height; i < n; i++) {
       b[i * 4] = doc.terrain[i];
@@ -65,9 +71,28 @@ export class EditorView {
       b[i * 4 + 2] = Math.min(255, Math.floor((doc.gems[i] * 255) / GEM_MAX));
       b[i * 4 + 3] = 255;
     }
+    return b;
+  }
+
+  /**
+   * Upload the terrain: `bytes` from the engine preview (or the document's
+   * own when null) and the tile layer, from `tilesFor(bytes)` (installed
+   * tiles: { atlas, cells } or null) or WebRA's tiles with the game's decal
+   * seed, so the map looks as it will in a game.
+   */
+  updateTerrain(doc, bytes = null, tilesFor = () => null) {
+    const b = bytes && bytes.length === doc.width * doc.height * 4 ? bytes : this.docTerrain(doc);
     this.renderer.uploadTerrain(b);
-    // Tiles, shorelines and decals follow the terrain being edited.
-    this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, 0));
+    const tiles = tilesFor(b);
+    if (tiles) {
+      this.renderer.setTerrainAtlas(tiles.atlas);
+      this.renderer.uploadCells(tiles.cells);
+      this.tiled = true;
+    } else {
+      if (this.tiled) this.renderer.setTerrainAtlas(buildTerrainAtlas(this.biome ?? 'temperate'));
+      this.tiled = false;
+      this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, terrainSeed(b)));
+    }
     this.terrainDirty = false;
   }
 
@@ -232,13 +257,18 @@ export class EditorView {
   // ---- Drawing --------------------------------------------------------------------
 
   /**
-   * Draw a frame.
+   * Draw a frame: the preview's sprites (`actors`, js/world.js) under the
+   * editor's own (`scene.sprites`: spawns, placement ghosts) and rects.
+   * @param anim the render clock (js/anim.js AnimClock uniform)
+   * @param actors Float32Array of sprite instances (8 floats each)
    * @param scene { sprites: number[] (8 floats each), rects: number[] (8 floats each) }
    */
-  draw(time, scene) {
-    const sprites = new Float32Array(scene.sprites);
+  draw(anim, actors, scene) {
+    const sprites = new Float32Array(actors.length + scene.sprites.length);
+    sprites.set(actors, 0);
+    sprites.set(scene.sprites, actors.length);
     const rects = new Float32Array(scene.rects);
-    this.renderer.draw(this.camera, time, sprites, sprites.length / 8, rects, rects.length / 8);
+    this.renderer.draw(this.camera, anim.time, sprites, sprites.length / 8, rects, rects.length / 8, anim);
   }
 }
 

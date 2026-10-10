@@ -41,6 +41,12 @@ export const TOOLS = [
 
 const ROTATE_STEP = 32;
 
+/** Team slot of a document owner: spawn k is player k, neutral the preview's neutral player. */
+export const teamOf = (owner) => (owner >= 0 ? Math.min(owner, 7) : NEUTRAL_TEAM);
+
+/** Radians (clockwise, the renderer's) of a facing in OpenRA angle units (1024 a turn). */
+export const facingRadians = (facing) => (facing * Math.PI * 2) / 1024;
+
 export class Controller {
   constructor(doc, view, catalog, state, hooks) {
     this.doc = doc;
@@ -336,6 +342,19 @@ export class Controller {
 
   // ---- Scene ------------------------------------------------------------------------------
 
+  /**
+   * A ghost of actor type `info` (placement previews, spawns, refused
+   * structures): its body in the idle pose (pose 0, so the sprite id is the
+   * slot for WebRA and installed art alike) and, for a turret or an animated
+   * layer, the second slot on top.
+   */
+  ghost(sprite, info, x, y, angle, team, alpha) {
+    const t = info ? this.order.get(info.id) : undefined;
+    if (t === undefined) return;
+    sprite(x, y, angle, t * 2, team, alpha);
+    if (info.turret || this.overlays[t]) sprite(x, y, angle, t * 2 + 1, team, alpha);
+  }
+
   /** Sprites and rects for this frame, plus HTML labels for spawn numbers. */
   scene() {
     const doc = this.doc;
@@ -354,7 +373,7 @@ export class Controller {
       rect(x, y + t, t, h - 2 * t, c);
       rect(x + w - t, y + t, t, h - 2 * t, c);
     };
-    const team = (owner) => (owner >= 0 ? Math.min(owner, 7) : NEUTRAL_TEAM);
+    const team = teamOf;
     const visible = (x, y, m) => x >= v.x0 - m && x <= v.x1 + m && y >= v.y0 - m && y <= v.y1 + m;
 
     // Spawns: a faint construction yard in the player's colour.
@@ -362,29 +381,26 @@ export class Controller {
     doc.spawns.forEach(([sx, sy], k) => {
       const cx = (sx + SPAWN_W / 2) * CELL;
       const cy = (sy + SPAWN_H / 2) * CELL;
-      if (fact !== undefined) sprite(cx, cy, 0, fact * 2, team(k), 0.45);
+      if (fact !== undefined) this.ghost(sprite, this.catalog.FACT, cx, cy, 0, team(k), 0.45);
       const col = TEAM_COLORS[team(k)];
       outline(sx * CELL, sy * CELL, SPAWN_W * CELL, SPAWN_H * CELL, [col[0], col[1], col[2], 0.95], th * 1.5);
       labels.push({ text: String(k + 1), x: cx, y: cy, team: team(k), selected: k === this.selectedSpawn });
       if (k === this.selectedSpawn) outline(sx * CELL - 3, sy * CELL - 3, SPAWN_W * CELL + 6, SPAWN_H * CELL + 6, [1, 1, 1, 0.9]);
     });
 
-    // Actors: buildings, building turrets, units, unit turrets (engine order).
-    const layers = [[], [], [], []];
+    // The actors themselves come from the engine preview (js/world.js). A
+    // structure the game would refuse there (no room, wrong ground) is not
+    // in it: shown here as a red ghost, so it can be found and moved.
     for (const a of doc.actors) {
       const info = this.info(a.type);
-      const t = info ? this.order.get(info.id) : undefined;
-      if (t === undefined) continue;
-      const building = info.kind === 'building';
+      if (info?.kind !== 'building') continue;
       const [fw, fh] = actorSize(info);
-      const x = building ? (a.x + fw / 2) * CELL : (a.x + 0.5) * CELL;
-      const y = building ? (a.y + fh / 2) * CELL : (a.y + 0.5) * CELL;
-      if (!visible(x, y, 96)) continue;
-      const angle = building ? 0 : (a.facing * Math.PI * 2) / 1024;
-      layers[building ? 0 : 2].push([x, y, angle, t * 2, team(a.owner)]);
-      if (info.turret || this.overlays[t]) layers[building ? 1 : 3].push([x, y, angle, t * 2 + 1, team(a.owner)]);
+      const x = (a.x + fw / 2) * CELL;
+      const y = (a.y + fh / 2) * CELL;
+      if (!visible(x, y, 96) || !placementProblem(doc, this.catalog, a.type, a.x, a.y, a)) continue;
+      this.ghost(sprite, info, x, y, 0, team(a.owner), 0.5);
+      outline(a.x * CELL, a.y * CELL, fw * CELL, fh * CELL, [0.95, 0.25, 0.2, 0.9]);
     }
-    for (const layer of layers) for (const [x, y, angle, id, tm] of layer) sprite(x, y, angle, id, tm, 1);
 
     // Grid
     if (s.grid) {
@@ -471,11 +487,9 @@ export class Controller {
         const building = info.kind === 'building';
         const px = building ? (p.x + fw / 2) * CELL : (p.x + 0.5) * CELL;
         const py = building ? (p.y + fh / 2) * CELL : (p.y + 0.5) * CELL;
-        const angle = building ? 0 : (transformFacing(p.t, s.facing) * Math.PI * 2) / 1024;
+        const angle = building ? 0 : facingRadians(transformFacing(p.t, s.facing));
         const o = mirroredOwner(p.t, s.owner, doc.spawns, doc.width, doc.height);
-        const owner = o >= 0 ? Math.min(o, 7) : NEUTRAL_TEAM;
-        sprite(px, py, angle, t * 2, owner, 0.6);
-        if (info.turret || this.overlays[t]) sprite(px, py, angle, t * 2 + 1, owner, 0.6);
+        this.ghost(sprite, info, px, py, angle, teamOf(o), 0.6);
       }
     }
   }

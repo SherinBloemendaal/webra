@@ -26,7 +26,6 @@
 
 import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
 import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
-import { buildAtlas } from './sprites.js';
 import { AnimClock } from './anim.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
@@ -59,7 +58,8 @@ import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { attachHudTooltips } from './hudtips.js';
 import { hideTooltip } from './ui/tooltip.js';
 import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
-import { buildTerrainAtlas, cellTiles } from './art/terrain.js';
+import { buildTerrainAtlas, cellTiles, terrainSeed } from './art/terrain.js';
+import { applyGameArt, artActors as gameArtActors, buildGameAtlas } from './gameart.js';
 import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
@@ -933,7 +933,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const rules = JSON.parse(game.rules_json());
   // A mission's own actors are drawn and voiced like the actor their art key
   // names (engine rules_json `art`, tools/gen_missions.py).
-  const artActors = rules.actors.map((a) => (a.art ? { ...a, id: a.art } : a));
+  const artActors = gameArtActors(rules.actors);
   // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
   document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
@@ -975,29 +975,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const biome = sky.biome;
   // Sprites: WebRA's own art, or the original graphics and texture packs the
   // player installed (js/content, presentation only). Rebuilt when they change.
+  // The map editor builds its art the same way (js/gameart.js).
   const applyArt = () => {
-    const art = content?.art(artActors, biome) ?? null;
-    let atlas = null;
-    let original = null;
-    if (art?.slots.size) {
-      try {
-        atlas = buildAtlas(artActors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
-        original = art.original;
-      } catch (err) {
-        console.warn('Installed graphics do not fit; using WebRA art:', err);
-      }
-      if (art.report.problems.length) console.info('Installed graphics:', art.report);
-    }
-    atlas ??= buildAtlas(artActors, { biome });
+    const { atlas, original } = buildGameAtlas(content, artActors, biome, renderer.maxTextureSize);
     renderer.setAtlas(atlas);
-    // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
-    game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
-    // Animated building layers (art/animated.js): the engine draws them, the GPU picks the frame.
-    game.set_building_overlays(atlas.overlays);
-    // Pre-rendered animations need to know what each actor is doing (engine render.rs Pose).
-    game.set_sprite_poses(atlas.filter === 'nearest');
-    // Dying soldiers play the death sequences of art that has them (engine infantry_render.rs).
-    game.set_death_art(Uint32Array.from(atlas.deaths), Uint32Array.from(atlas.deathTicks));
+    // Original slots drawn the OpenRA way, animated layers, poses and death sequences.
+    applyGameArt(game, atlas, original);
   };
   applyArt();
   const animClock = new AnimClock();
@@ -1940,13 +1923,6 @@ function selectionInfo(game, ids, allied) {
 
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** Seed for terrain decals: a hash of the map's terrain types (same map, same decals). */
-function terrainSeed(terrain) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < terrain.length; i += 4) h = Math.imul(h ^ terrain[i], 0x01000193);
-  return h >>> 0;
 }
 
 /** The biome and weather badge: name of the sky, and what it does to the battle. */

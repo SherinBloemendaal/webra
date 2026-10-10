@@ -1,15 +1,20 @@
 // WebRA map editor: boot, panels, commands, shortcuts and the render loop.
-// Reuses the game's engine package (actor catalog, generated maps, validation),
-// WebGPU renderer and sprite atlas.
+// Reuses the game's engine package (actor catalog, generated maps, validation,
+// and the preview that draws the map's actors exactly as a game does:
+// js/world.js), WebGPU renderer, sprite atlas and installed content (js/art.js).
 
 import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
-import { Renderer, TEAM_COLORS } from '../js/renderer.js';
-import { buildAtlas, drawIcon } from '../js/sprites.js';
+import { NEUTRAL_COLOR, Renderer, TEAM_COLORS } from '../js/renderer.js';
+import { AnimClock } from '../js/anim.js';
+import { artActors } from '../js/gameart.js';
 import { defaultRegistry } from '../js/registry.js';
+import { settings } from '../js/settings.js';
+import { EditorArt } from './js/art.js';
+import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
 import { TEST_MAP_KEY } from '../js/maploader.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, isTyping } from './js/view.js';
-import { Controller, TOOLS } from './js/controller.js';
+import { Controller, TOOLS, teamOf } from './js/controller.js';
 import { Minimap, previewCanvas } from './js/preview.js';
 import { RulesPanel, MODDED_WARNING, loadRulesBase } from './js/rulespanel.js';
 import { ApiError, fetchMap, listMaps, publishMap, shareLink } from './js/online.js';
@@ -30,6 +35,7 @@ import {
 } from './js/mapformat.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
+import { segmented } from '../js/ui/controls.js';
 import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
 import { renderReport } from '../js/oramap/report.js';
 
@@ -130,34 +136,59 @@ let doc;
 let view;
 let ctl;
 let catalog;
+let actorList;
 let rulesBase;
 let minimap;
+let renderer;
+let art;
+let preview;
 let engineResult = null;
 let jsResult = null;
+const animClock = new AnimClock();
 
 // ---- Boot ---------------------------------------------------------------------------
 
 async function boot() {
   const bootEl = $('#boot');
-  let renderer;
-  let atlas;
-  try {
-    await init();
-    const engineRules = JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json());
-    catalog = Object.fromEntries(engineRules.actors.map((a) => [a.id, a]));
-    rulesBase = await loadRulesBase();
-    renderer = await Renderer.create($('#view'));
-    atlas = buildAtlas(engineRules.actors);
-    renderer.setAtlas(atlas);
-  } catch (err) {
+  const fail = (err) => {
+    bootEl.hidden = false;
     bootEl.classList.add('error');
-    bootEl.textContent = `The editor cannot start: ${err.message ?? err}. It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
+    bootEl.textContent = `The editor cannot start: ${err?.message ?? err}.`;
     console.error(err);
+  };
+  let wasm;
+  try {
+    wasm = await init();
+    const engineRules = JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json());
+    actorList = engineRules.actors;
+    catalog = Object.fromEntries(actorList.map((a) => [a.id, a]));
+    rulesBase = await loadRulesBase();
+  } catch (err) {
+    fail(err);
     return;
   }
-  bootEl.hidden = true;
-  loadPrefs();
+  try {
+    renderer = await Renderer.create($('#view'));
+  } catch (err) {
+    fail(new Error(`${err?.message ?? err} It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+)`));
+    return;
+  }
+  try {
+    // Installed content is read before the first frame, as a game does.
+    art = new EditorArt({ settings });
+    await art.load();
+    // Neutral actors (trees, civilians, tech buildings) in the civilian tan, as in a game (js/main.js).
+    TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
+    animClock.watchReducedMotion();
+    preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
+    await start();
+  } catch (err) {
+    fail(err);
+  }
+}
 
+async function start() {
+  loadPrefs();
   const { map, note } = await initialMap();
   doc = new MapDoc(map);
   view = new EditorView($('#view'), renderer, {
@@ -171,8 +202,12 @@ async function boot() {
     hover: (cell) => updateStatus(cell),
     selectionChanged: () => renderSelection(),
   });
-  ctl.overlays = atlas.overlays;
   minimap = new Minimap($('#minimap'), (x, y) => view.centerOn(x, y));
+  applyArt();
+  art.onChange(() => {
+    applyArt();
+    syncGraphics();
+  });
 
   buildTools();
   buildMapPane();
@@ -188,9 +223,26 @@ async function boot() {
   view.setMap(doc);
   requestAnimationFrame(() => view.fit());
   onDocChange({ cells: true, objects: true, meta: true, resized: true }, { initial: true });
+  $('#boot').hidden = true;
   if (note) toast(note);
-  window.webraEditor = { doc, view, ctl, catalog, rulesBase, state };
+  window.webraEditor = { doc, view, ctl, catalog, rulesBase, state, art, preview };
   requestAnimationFrame(frame);
+}
+
+/**
+ * The sprite atlas of the map's biome with the art in use (installed
+ * content or WebRA's), as a game on the map builds it (js/gameart.js).
+ */
+let artBiome = null;
+function applyArt() {
+  const biome = doc.meta.biome ?? 'temperate';
+  artBiome = biome;
+  const { atlas } = art.build(artActors(actorList), biome, renderer.maxTextureSize);
+  renderer.setAtlas(atlas);
+  ctl.overlays = atlas.overlays;
+  preview.reprepare();
+  view.terrainDirty = true;
+  if (document.querySelector('.palette-item')) renderPaletteIcons();
 }
 
 /** Map to open: `?map=<id>`, else the autosaved draft, else a new map. */
@@ -234,14 +286,33 @@ function savePrefs() {
 
 let last = performance.now();
 let minimapTime = 0;
+/** The map changed since the preview was built (js/world.js). */
+let previewDirty = true;
+/** When installed terrain tiles were last planned (they take a while on big maps). */
+let tilesTime = 0;
+const TILES_EVERY_MS = 250;
 
 function frame(now) {
   const dt = Math.min(0.25, (now - last) / 1000);
+  animClock.advance(now - last, false);
   last = now;
   view.update(dt);
-  if (view.terrainDirty) view.updateTerrain(doc);
+  if (previewDirty) {
+    previewDirty = false;
+    preview.update(JSON.stringify(doc.toMap()));
+    if (preview.error) console.warn('Map preview:', preview.error);
+    view.terrainDirty = true;
+  }
+  if (view.terrainDirty) {
+    // Installed tiles are planned for the whole map: during a stroke at most a few times a second.
+    const tiled = art.originalActive || art.content?.enabledPacks().some((p) => p.manifest.terrain);
+    if (!tiled || !ctl.gesture || now - tilesTime > TILES_EVERY_MS) {
+      tilesTime = now;
+      view.updateTerrain(doc, preview.terrain(), (bytes) => art.terrain(doc.meta.biome ?? 'temperate', bytes, doc.width, doc.height));
+    }
+  }
   const scene = ctl.scene();
-  view.draw(now / 1000, scene);
+  view.draw(animClock.uniform(), preview.sprites(view.viewRect()), scene);
   placeLabels(scene.labels);
   if (now - minimapTime > 66) {
     minimapTime = now;
@@ -282,11 +353,13 @@ let validateTimer = 0;
 
 function onDocChange(change, { initial = false } = {}) {
   if (change.resized) view.setMap(doc);
-  if (change.cells || change.resized) view.terrainDirty = true;
+  if (change.cells || change.objects || change.resized || change.meta || change.rules) previewDirty = true;
   if (change.cells || change.objects || change.resized) minimap.invalidate();
   if (change.meta || change.resized) {
     syncMetaFields();
     view.setBiome(doc.meta.biome ?? 'temperate');
+    // Trees, ice and huts follow the biome (art/world.js), and so does the original theater.
+    if ((doc.meta.biome ?? 'temperate') !== artBiome) applyArt();
     minimap.invalidate();
   }
   if (change.objects || change.resized) {
@@ -545,12 +618,55 @@ function buildMapPane() {
         BIOMES.map((b) => el('option', { value: b }, b.charAt(0).toUpperCase() + b.slice(1))),
       ),
     ]),
+    graphicsControl(),
     el('p', { id: 'map-stats', class: 'hint' }),
     el('h2', {}, 'Validation'),
     el('div', { id: 'validation-head', class: 'verdict' }),
     el('ul', { id: 'validation', class: 'issues' }),
     el('p', { class: 'hint' }, 'Checked by the game engine. Click an entry with a location to jump there.'),
   );
+}
+
+/**
+ * The Graphics choice of the game (registry game.graphics, the game menu's
+ * Settings): the map, palette and previews in WebRA's art or the original
+ * Red Alert graphics installed on this device. Publishing never sends art:
+ * a map is its data only.
+ */
+let graphicsChoice = null;
+function graphicsControl() {
+  graphicsChoice = segmented({
+    name: 'editor-graphics',
+    label: 'Graphics',
+    options: [
+      { value: 'webra', label: 'WebRA' },
+      { value: 'original', label: 'Original' },
+    ],
+    value: art.graphics,
+    describedBy: 'graphics-note',
+    onChange: (v) => {
+      art.graphics = v;
+    },
+  });
+  const wrap = el('div', { class: 'field stacked' }, [el('span', { class: 'label' }, 'Graphics'), graphicsChoice.root, el('p', { id: 'graphics-note', class: 'hint' })]);
+  syncGraphics();
+  return wrap;
+}
+
+function syncGraphics() {
+  if (!graphicsChoice) return;
+  graphicsChoice.set(art.graphics);
+  const has = art.hasOriginal;
+  graphicsChoice.setDisabled('original', !has);
+  graphicsChoice.setTitle('original', has ? '' : 'Install the original content in the game first (start screen, Original content).');
+  const note = $('#graphics-note');
+  if (note) {
+    note.textContent = !has
+      ? 'The original Red Alert graphics are not installed on this device: install them from the game\'s Original content dialog to edit with them.'
+      : art.originalActive
+        ? 'The map is drawn with the original Red Alert graphics, as in a game with Graphics set to Original.'
+        : 'The map is drawn with WebRA\'s own art. The choice is the game\'s Graphics setting.';
+  }
 }
 
 function syncMetaFields() {
@@ -629,9 +745,14 @@ function renderOwnerOptions() {
   owner.value = String(state.owner);
 }
 
+/** Palette pictures in the owner's colour, from the art in use (js/art.js paintPalette). */
 function renderPaletteIcons() {
-  const team = TEAM_COLORS[state.owner >= 0 ? Math.min(state.owner, 7) : 7];
-  document.querySelectorAll('.palette-item').forEach((b) => drawIcon(b.querySelector('canvas'), catalog[b.dataset.actor], team));
+  const team = TEAM_COLORS[teamOf(state.owner)];
+  document.querySelectorAll('.palette-item').forEach((b) => {
+    const actor = catalog[b.dataset.actor];
+    const source = art.paintPalette(b.querySelector('canvas'), actor, ctl.order.get(actor.id) ?? -1, team);
+    b.dataset.art = source;
+  });
 }
 
 function renderSelection() {
