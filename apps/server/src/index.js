@@ -132,7 +132,8 @@ async function sessionMapShare(ctx, id) {
   }
   const prepared = await prepareMap(await readText(ctx.request, MAP_MAX_BYTES));
   const r = rpcResult(await stub.shareMap({ member, account, ip: ctx.ip, prepared }));
-  return json({ id: r.id, hash: r.hash }, r.created ? 201 : 200);
+  // `upgradedFrom`: the file was of an older map format version; the lobby has the upgraded map.
+  return json({ id: r.id, hash: r.hash, ...(prepared.upgradedFrom ? { upgradedFrom: prepared.upgradedFrom } : {}) }, r.created ? 201 : 200);
 }
 
 /** Resumes per network and hour (each upload is a whole save file). */
@@ -187,7 +188,8 @@ async function sessionResume(ctx, id) {
   const seats = save.options.players.map((p, i) => (p.type === 'human' ? (record.members.find((m) => m.seat === i)?.userId ?? null) : null));
   if (save.options.players.some((p, i) => p.type === 'human' && seats[i] === null)) throw new HttpError(409, 'invalid', 'A player of this saved game no longer exists.');
   if (!seats.includes(account.id)) throw new HttpError(403, 'forbidden', 'You did not play in this saved game.');
-  const prepared = save.map ? await prepareMap(save.map) : null;
+  // A saved game keeps the map it was played on: never upgraded (saves are pinned to their engine anyway).
+  const prepared = save.map ? await prepareMap(save.map, undefined, { upgrade: false }) : null;
   const r = rpcResult(
     await stub.loadSave({
       member,

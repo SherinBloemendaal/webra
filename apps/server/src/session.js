@@ -718,8 +718,10 @@ export class Session extends DurableObject {
         if (!room.isHost(client)) throw new RoomError('Only the host can change the map.', ERRORS.NOT_HOST);
         let map = null;
         if (msg.map !== null) {
-          map = await lookupMap(this.env.DB, msg.map.id);
-          if (!map || map.hash !== msg.map.hash) throw new RoomError('Unknown map.', ERRORS.NOT_FOUND);
+          // Upgraded to the current map format first: the lobby names the map every client plays.
+          map = await lookupMap(this.env.DB, msg.map.id, msg.map.hash);
+          if (!map) throw new RoomError('Unknown map.', ERRORS.NOT_FOUND);
+          if (map.incompatible) throw new RoomError(map.incompatible, ERRORS.INVALID);
         }
         // Re-validated inside setMap (host and phase may have changed during the lookup).
         room.setMap(client, map);
