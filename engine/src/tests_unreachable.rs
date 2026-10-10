@@ -335,6 +335,78 @@ fn a_harvester_without_a_reachable_refinery_waits_and_retries() {
     assert_eq!(w.actors[h].bales, 0, "delivered once a refinery stood on its side: {:?}", w.actors[h].harv);
 }
 
+/// A truck picks the refinery with the shortest drive, not the one nearest
+/// as the crow flies: a long wall between them counts (OpenRA
+/// Harvester.ClosestProc).
+#[test]
+fn a_harvester_picks_the_refinery_with_the_shortest_drive() {
+    let mut w = arena(64, 48);
+    // A wall from the top edge down to row 40, between the truck and the near refinery.
+    for y in 0..40 {
+        let i = w.map.idx(30, y);
+        w.map.terrain[i] = Terrain::Rock;
+    }
+    w.reset_passability();
+    let proc_ = ty(&w, "PROC");
+    let behind_wall = w.spawn_building(proc_, 0, 34, 8).unwrap();
+    let around = w.spawn_building(proc_, 0, 8, 24).unwrap();
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.is_harvester(i) {
+            w.remove(i);
+        }
+    }
+    let h = w.spawn_unit(ty(&w, "HARV"), 0, cell_center(26), cell_center(10), 0);
+    w.actors[h].bales = 20;
+    w.actors[h].activity = Activity::Harvest;
+    w.actors[h].harv = HarvState::ToDock;
+    run(&mut w, 2, |_, _| {});
+    assert_eq!(w.resolve(w.actors[h].refinery), Some(around), "not {behind_wall} behind the wall");
+}
+
+/// A bot's truck under fire runs to a refinery it can reach, never to a
+/// nearer one across the water.
+#[test]
+fn a_bots_truck_under_fire_runs_to_a_reachable_refinery() {
+    let mut map = open_map(64, 48);
+    for y in 0..48 {
+        let i = map.idx(32, y);
+        map.terrain[i] = Terrain::Water;
+    }
+    map.spawns = vec![(4, 36), (50, 40)];
+    let players = [PlayerSetup::new("allies", Some(AiDifficulty::Normal)), PlayerSetup::new("soviet", None)];
+    let mut w = World::on_map(3, map, &players, GameOptions::default());
+    w.ai[0].passive = true;
+    let proc_ = ty(&w, "PROC");
+    let across = w.spawn_building(proc_, 0, 36, 6).unwrap();
+    let home = w.spawn_building(proc_, 0, 6, 20).unwrap();
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.is_harvester(i) {
+            w.remove(i);
+        }
+    }
+    let truck = w.spawn_unit(ty(&w, "HARV"), 0, cell_center(26), cell_center(8), 0);
+    let foe = w.spawn_unit(ty(&w, "1TNK"), 1, cell_center(22), cell_center(8), 512);
+    run(&mut w, 25 * 3, |_, _| {});
+    w.order_attack(&[foe], truck, false);
+    let mut home_bound = false;
+    for _ in 0..25 * 10 {
+        w.step();
+        if !w.actors[truck].alive {
+            break;
+        }
+        let a = &w.actors[truck];
+        if a.activity == Activity::Harvest && matches!(a.harv, HarvState::ToDock | HarvState::Unloading) {
+            let r = w.resolve(a.refinery);
+            assert_ne!(r, Some(across), "sent to the refinery across the water");
+            home_bound = r == Some(home);
+            if home_bound {
+                break;
+            }
+        }
+    }
+    assert!(home_bound, "the truck under fire heads for its reachable refinery");
+}
+
 /// A truck whose refinery dock gets walled in lets go of it and delivers
 /// elsewhere.
 #[test]

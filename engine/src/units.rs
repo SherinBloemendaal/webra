@@ -2,7 +2,7 @@
 
 use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::map::Resource;
-use crate::math::{angle_diff, dist, dist_sq, facing_of, facing_vec, isqrt, turn_toward, CELL};
+use crate::math::{angle_diff, dist, facing_of, facing_vec, isqrt, turn_toward, CELL};
 use crate::rules::Kind;
 use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
@@ -787,26 +787,33 @@ impl World {
         dist(a.x, a.y, cx, cy) <= 96
     }
 
-    /// The truck's refinery, or the nearest own refinery whose dock it can
-    /// drive to (OpenRA Harvester.ClosestProc searches paths to the
-    /// refineries, so one across a river is never chosen). None when no
-    /// dock is reachable.
+    /// The truck's refinery, or the own refinery whose dock is the shortest
+    /// drive away (OpenRA Harvester.ClosestProc searches paths to the
+    /// refineries: one across a river is never chosen, and one behind a
+    /// long wall loses to one a little farther by the crow's flight). None
+    /// when no dock is reachable.
     fn pick_refinery(&mut self, i: usize) -> Option<usize> {
         if let Some(r) = self.resolve(self.actors[i].refinery) {
             if self.actors[r].owner == self.actors[i].owner && self.dock_reachable(i, r) {
                 return Some(r);
             }
         }
-        let (x, y, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner);
-        let mut best: Option<(i64, usize)> = None;
-        for (j, b) in self.actors.iter().enumerate() {
-            if !b.alive || b.owner != owner || b.kind != Kind::Building {
-                continue;
-            }
-            if self.rules.actors[b.ty as usize].building.as_ref().unwrap().refinery.is_none() || !self.dock_reachable(i, j) {
-                continue;
-            }
-            let d = dist_sq(x, y, b.x, b.y);
+        let owner = self.actors[i].owner;
+        let candidates: Vec<usize> = (0..self.actors.len())
+            .filter(|&j| {
+                let b = &self.actors[j];
+                b.alive
+                    && b.owner == owner
+                    && b.kind == Kind::Building
+                    && self.rules.actors[b.ty as usize].building.as_ref().unwrap().refinery.is_some()
+                    && self.dock_reachable(i, j)
+            })
+            .collect();
+        let mut best: Option<(i32, usize)> = None;
+        for j in candidates {
+            let dock = self.dock_cell(j);
+            // The field toward the dock, as far as the truck (flowfield.rs).
+            let Some(d) = self.path_remaining(i, dock) else { continue };
             if best.is_none_or(|(bd, _)| d < bd) {
                 best = Some((d, j));
             }
@@ -819,7 +826,7 @@ impl World {
     /// Whether truck `i` can drive to the dock of refinery `r` from where it
     /// stands (same connected area; a truck on a structure's cell counts
     /// from the cells around it).
-    fn dock_reachable(&self, i: usize, r: usize) -> bool {
+    pub(crate) fn dock_reachable(&self, i: usize, r: usize) -> bool {
         let dock = self.dock_cell(r) as usize;
         let pass = self.pass_of(i);
         if pass.blocked[dock] {

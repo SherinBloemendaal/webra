@@ -348,6 +348,8 @@ fn next_resource(w: &World, player: u8, cfg: &BotConfig, i: usize) -> Option<usi
     None
 }
 
+/// The nearest own refinery whose dock the truck can drive to (one across
+/// the water would send it to the bank for good).
 fn nearest_refinery(w: &World, player: u8, i: usize) -> Option<usize> {
     let (x, y) = (w.actors[i].x, w.actors[i].y);
     (0..w.actors.len())
@@ -357,6 +359,7 @@ fn nearest_refinery(w: &World, player: u8, i: usize) -> Option<usize> {
                 && a.owner == player
                 && a.kind == Kind::Building
                 && w.rules.actors[a.ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some())
+                && w.dock_reachable(i, b)
         })
         .min_by_key(|&b| (dist_sq(w.actors[b].x, w.actors[b].y, x, y), b))
 }
