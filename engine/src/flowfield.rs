@@ -368,32 +368,31 @@ impl FlowCache {
     /// Direction byte for `cell` in the complete field toward `goal`,
     /// computing the field if needed (tests and tools; units use `field_at`).
     pub fn dir(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8, cell: usize) -> u8 {
-        let f = self.get(map, pass, locos, goal, loco, None, None);
+        let f = self.get(map, pass, locos, (goal, loco), None, None);
         self.fields[f].dirs[cell]
     }
 
     /// The complete, current field toward `goal` for locomotor `loco`,
     /// computing it if needed (tests and tools; units use `field_at`).
     pub fn field(&mut self, map: &Map, pass: &Passability, locos: &[Locomotor], goal: u32, loco: u8) -> &FlowField {
-        let f = self.get(map, pass, locos, goal, loco, None, None);
+        let f = self.get(map, pass, locos, (goal, loco), None, None);
         &self.fields[f]
     }
 
-    /// The field toward `goal` for locomotor `loco` as a unit on `cell`
-    /// follows it: it covers `cell` (or `cell` cannot reach the goal), and
-    /// is refreshed when passability changed under the unit's next step.
+    /// The field toward `key.0` (the goal) for locomotor `key.1` as a unit
+    /// on `cell` follows it: it covers `cell` (or `cell` cannot reach the
+    /// goal) and is current for every change that touches what it covers.
     /// With `crush` the unit crushes walls (`Crush`): fields are per player then.
     pub fn field_at(
         &mut self,
         map: &Map,
         pass: &Passability,
         locos: &[Locomotor],
-        goal: u32,
-        loco: u8,
+        key: (u32, u8),
         crush: Option<Crush>,
         cell: usize,
     ) -> &FlowField {
-        let f = self.get(map, pass, locos, goal, loco, crush, Some(cell));
+        let f = self.get(map, pass, locos, key, crush, Some(cell));
         &self.fields[f]
     }
 
@@ -416,18 +415,18 @@ impl FlowCache {
         self.fields.is_empty()
     }
 
-    /// Slot of the field for (`goal`, `loco`, `crush`), computed, extended
-    /// or refreshed as `cell` needs (None: complete and current).
+    /// Slot of the field for `key` (goal, locomotor) and `crush`, computed,
+    /// extended or refreshed as `cell` needs (None: complete and current).
     fn get(
         &mut self,
         map: &Map,
         pass: &Passability,
         locos: &[Locomotor],
-        goal: u32,
-        loco: u8,
+        key: (u32, u8),
         crush: Option<Crush>,
         cell: Option<usize>,
     ) -> usize {
+        let (goal, loco) = key;
         self.clock += 1;
         let crusher = crush.as_ref().map_or(0, |c| c.player + 1);
         let blocked: &[bool] = crush.as_ref().map_or(&pass.blocked, |c| c.blocked);

@@ -74,7 +74,9 @@ impl World {
         let (w, h) = (binfo.width, binfo.height);
         let rally_area =
             ya.rally.map(|(rx, ry)| self.cell_index(rx, ry)).filter(|&c| !self.pass_water.blocked[c]).map(|c| self.pass_water.component[c]);
-        let mut best: Option<((bool, std::cmp::Reverse<u32>, usize), (i32, i32))> = None;
+        // Not the rally point's water, smaller water, more units nearby: worse.
+        type ExitKey = (bool, std::cmp::Reverse<u32>, usize);
+        let mut best: Option<(ExitKey, (i32, i32))> = None;
         for &(ex, ey) in &binfo.exits {
             // Outward direction from the yard's centre through the exit cell.
             let (dx, dy) = ((2 * ex + 1 - w).signum(), (2 * ey + 1 - h).signum());

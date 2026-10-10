@@ -861,7 +861,7 @@ fn fields_cover_what_units_ask_for_and_extend_on_demand() {
     let mut cache = FlowCache::new();
     let goal = map.idx(5, 10) as u32;
     let near = map.idx(25, 10);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, near);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, near);
     assert!(!f.complete, "a 120 cell map is not searched to the end for a cell 20 away");
     assert_ne!(f.dirs[near], DIR_NONE);
     assert_eq!(f.dirs[map.idx(100, 10)], DIR_NONE, "far cells are not covered yet");
@@ -881,7 +881,7 @@ fn fields_cover_what_units_ask_for_and_extend_on_demand() {
     let expanded = cache.expanded;
     assert!(expanded < map.cells() as u64 / 2, "a partial search: {expanded} of {} cells", map.cells());
     let far = map.idx(100, 10);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, far);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, far);
     assert_ne!(f.dirs[far], DIR_NONE, "extended to the far cell");
     assert!(f.bound >= bound * 2, "grows by doubling: {} from {bound}", f.bound);
     assert_eq!(cache.computed, 2);
@@ -893,7 +893,7 @@ fn fields_cover_what_units_ask_for_and_extend_on_demand() {
     }
     let pass2 = Passability::new(&map2);
     let mut cache2 = FlowCache::new();
-    let f = cache2.field_at(&map2, &pass2, &locos, map2.idx(5, 10) as u32, 0, None, map2.idx(30, 10));
+    let f = cache2.field_at(&map2, &pass2, &locos, (map2.idx(5, 10) as u32, 0), None, map2.idx(30, 10));
     assert!(f.complete, "searched to the end: the cell cannot be reached");
     assert_eq!(f.dirs[map2.idx(30, 10)], DIR_NONE);
 }
@@ -909,20 +909,20 @@ fn fields_are_recomputed_only_for_changes_they_cover() {
     let mut cache = FlowCache::new();
     let goal = map.idx(5, 20) as u32;
     let cell = map.idx(30, 20);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert!(!f.complete);
     assert_eq!(f.dist[map.idx(100, 20)], crate::flowfield::DIST_NONE, "far cells are not covered");
     assert_eq!(cache.computed, 1);
     // A change far beyond the field's reach.
     pass.set_blocked(map.idx(100, 20), true);
     pass.refresh(&map);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     let next = (30 + DIRS[f.dirs[cell] as usize].0, 20 + DIRS[f.dirs[cell] as usize].1);
     assert_eq!(cache.computed, 1, "kept");
     // A change on a covered cell.
     pass.set_blocked(map.idx(next.0, next.1), true);
     pass.refresh(&map);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert_ne!(f.dirs[cell], DIR_NONE);
     assert_ne!((30 + DIRS[f.dirs[cell] as usize].0, 20 + DIRS[f.dirs[cell] as usize].1), next, "around the block");
     assert_eq!(cache.computed, 2, "recomputed");
@@ -931,21 +931,21 @@ fn fields_are_recomputed_only_for_changes_they_cover() {
         pass.set_blocked(map.idx(15, y), true);
     }
     pass.refresh(&map);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert_eq!(f.dirs[cell], DIR_NONE);
     assert!(f.complete);
     let computed = cache.computed;
-    cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert_eq!(cache.computed, computed, "an unreachable goal is not searched again while nothing changed");
     // A change in the cut-off area changes nothing for the field.
     pass.set_blocked(map.idx(60, 20), true);
     pass.refresh(&map);
-    cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert_eq!(cache.computed, computed, "a change the goal cannot reach is ignored");
     // A gap next to the covered side opens the way again.
     pass.set_blocked(map.idx(15, 20), false);
     pass.refresh(&map);
-    let f = cache.field_at(&map, &pass, &locos, goal, 0, None, cell);
+    let f = cache.field_at(&map, &pass, &locos, (goal, 0), None, cell);
     assert_ne!(f.dirs[cell], DIR_NONE, "the way is open again");
     assert_eq!(cache.computed, computed + 1);
 }
@@ -971,7 +971,7 @@ fn partial_and_kept_fields_equal_fresh_ones() {
     let locos = tank_locos();
     let goal = map.idx(10, 30) as u32;
     let mut partial = FlowCache::new();
-    let f = partial.field_at(&map, &pass, &locos, goal, 0, None, map.idx(60, 30));
+    let f = partial.field_at(&map, &pass, &locos, (goal, 0), None, map.idx(60, 30));
     assert!(!f.complete);
     let mut full = FlowCache::new();
     let g = full.field(&map, &pass, &locos, goal, 0);
@@ -987,9 +987,9 @@ fn partial_and_kept_fields_equal_fresh_ones() {
     pass.refresh(&map);
     pass.set_blocked(map.idx(50, 30), true);
     pass.refresh(&map);
-    let f = partial.field_at(&map, &pass, &locos, goal, 0, None, map.idx(60, 30));
+    let f = partial.field_at(&map, &pass, &locos, (goal, 0), None, map.idx(60, 30));
     let mut fresh = FlowCache::new();
-    let g = fresh.field_at(&map, &pass, &locos, goal, 0, None, map.idx(60, 30));
+    let g = fresh.field_at(&map, &pass, &locos, (goal, 0), None, map.idx(60, 30));
     assert_eq!(f.dirs, g.dirs);
     assert_eq!(f.dist, g.dist);
 }

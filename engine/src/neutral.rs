@@ -1192,7 +1192,7 @@ impl World {
             let mask = self.crush_mask(i);
             let k = self.crush_blocked(crusher - 1, mask);
             let crush = crate::flowfield::Crush { player: crusher - 1, blocked: &self.neutral.crush_blocked[k].blocked };
-            return Some(self.flow.field_at(&self.map, &self.pass, &self.rules.locomotors, goal, loco as u8, Some(crush), cell));
+            return Some(self.flow.field_at(&self.map, &self.pass, &self.rules.locomotors, (goal, loco as u8), Some(crush), cell));
         }
         if self.rules.locomotors[loco].domain == crate::rules::Domain::Air {
             return None;
@@ -1204,7 +1204,7 @@ impl World {
         } else {
             &self.pass
         };
-        Some(self.flow.field_at(&self.map, pass, &self.rules.locomotors, goal, loco as u8, None, cell))
+        Some(self.flow.field_at(&self.map, pass, &self.rules.locomotors, (goal, loco as u8), None, cell))
     }
 
     /// Nearest cell to `goal` that unit `i` can reach from where it stands
