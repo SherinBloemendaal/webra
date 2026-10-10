@@ -3,12 +3,13 @@
 // js/infotip.js show them. Every number here comes from the engine: weather
 // and biomes from engine/src/weather.rs (docs/contracts.md section 3), map
 // styles from engine/src/mapgen, tech levels from the techlevel.* tokens in
-// engine/rules.json, starting units from World::spawn_start_units, AI
-// difficulties from engine/src/ai.rs and ai_arsenal.rs, game speeds from
+// engine/rules.json, starting units from World::spawn_start_units, AI bot
+// types and difficulties from engine/src/ai_bots.rs (OpenRA's ai.yaml in
+// engine/rules.json "bots"), game speeds from
 // SPEED_MS (protocol/constants.js). No DOM here: Node tests import it.
 
 const AI =
-  'AI Easy thinks every 2 s and builds no defences, airfields, minefields or superweapons. Normal thinks every second, builds 2 defences and uses superweapons and special attacks after 15 minutes. Hard thinks every 0.6 s, builds 4 defences and more aircraft and ships, and uses superweapons from the start.';
+  "AI players run OpenRA's Red Alert bots. Rush AI attacks early with squads of 20 or more and adds factories when rich. Normal AI builds a full base and attacks with squads of 40 or more. Turtle AI keeps one barracks and one war factory, walls its base in with defences, lays mines and seldom attacks. Naval AI builds airfields, helipads and a navy and attacks with aircraft and ships. The difficulty sets how fast the bot reacts: Easy takes twice as long, plays with an extra 25% handicap and leaves the Iron Curtain, Chronosphere and Sonar Pulse alone, Normal plays at OpenRA's pace, Hard reacts in two thirds of the time.";
 
 export const HELP = Object.freeze({
   // ---- Game mode -----------------------------------------------------------------
@@ -65,7 +66,7 @@ export const HELP = Object.freeze({
 
   // ---- Players -----------------------------------------------------------------------
   player: `Your name, or who plays in a slot: you (moves you there), an AI or Closed (nobody plays there). ${AI}`,
-  playerOnline: `Who plays in each slot. The host opens and closes slots, adds AI players and picks their difficulty. ${AI}`,
+  playerOnline: `Who plays in each slot. The host opens and closes slots, adds AI players and picks their bot type and difficulty. ${AI}`,
   color: 'Every player has their own colour. Picking a colour another player has swaps the two.',
   colorOnline: 'Every player needs their own colour; a colour in use cannot be picked.',
   faction:

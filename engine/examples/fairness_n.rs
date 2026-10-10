@@ -38,8 +38,10 @@ struct Outcome {
 }
 
 fn play(seed: u64, size: i32, teams: &[u8], faction: &str) -> Outcome {
-    let players: Vec<PlayerSetup> =
-        teams.iter().map(|&team| PlayerSetup { faction: faction.into(), ai: Some(AiDifficulty::Normal), team, handicap: 0 }).collect();
+    let players: Vec<PlayerSetup> = teams
+        .iter()
+        .map(|&team| PlayerSetup { faction: faction.into(), ai: Some(AiDifficulty::Normal), bot: Default::default(), team, handicap: 0 })
+        .collect();
     let n = players.len();
     let mut w = World::with_options(seed, size, &players, env_options());
     let mut out_at: Vec<Option<u32>> = vec![None; n];

@@ -1,82 +1,104 @@
-//! The skirmish AI and the Red Alert infantry: which soldiers it trains
-//! (OpenRA mods/ra ai.yaml UnitBuilderBotModule UnitsToBuild and UnitLimits)
-//! and what it does with engineers (OpenRA CaptureManagerBotModule).
+//! The skirmish AI and capturing (OpenRA CaptureManagerBotModule): every
+//! MinimumCaptureDelay ticks, idle own units that can capture go for the
+//! most valuable capturable actors of a random enemy or neutral player that
+//! the bot can see, each to the nearest one it can reach. OpenRA ranks the
+//! targets by sell value; WebRA by `capture_value`, which also counts what
+//! a structure's traits give its new owner.
+//!
+//! OpenRA removed capturing from the Red Alert bots in 2016 (commit
+//! 7e6488c522) and their UnitsToBuild have no engineers. WebRA's bots keep
+//! the module with OpenRA's defaults and train an engineer on their own
+//! (through the unit builder's requests, like ore trucks) while a neutral
+//! structure worth taking stands where their ground units can reach it:
+//! tech buildings, oil derricks and the like. How much a target is worth is
+//! read from its traits (`capture_value`), never from actor ids.
 
+use crate::ai::rand;
 use crate::infantry::EnterKind;
 use crate::math::dist_sq;
 use crate::rules::{Kind, QueueType};
 use crate::world::{Activity, World};
 
-/// Infantry share of the army in percent and the most at once (0: no
-/// limit), from UnitBuilderBotModule@normal of OpenRA's RA ai.yaml.
-const INFANTRY_TO_BUILD: &[(&str, usize, usize)] =
-    &[("E1", 65, 0), ("E2", 15, 0), ("E3", 30, 0), ("E4", 15, 0), ("E7", 1, 0), ("DOG", 15, 4), ("SHOK", 15, 0)];
-
-/// BaseBuilderBotModule BuildingDelays kenn: no kennel before this tick.
-const KENNEL_DELAY: u32 = 9000;
-
-/// One kennel once the base stands (BaseBuilderBotModule BuildingFractions
-/// kenn 1 and BuildingDelays kenn 9000), for the dogs of UnitsToBuild.
-pub(crate) fn kennel(w: &World, player: u8) -> Option<u16> {
-    if w.tick < KENNEL_DELAY {
-        return None;
-    }
-    let ty = w.rules.actor_index("KENN")? as u16;
-    let owned = w.actors.iter().any(|a| a.alive && a.owner == player && a.ty == ty);
-    let cost = w.rules.actors[ty as usize].cost;
-    (!owned && w.can_start(player, ty) && w.players[player as usize].funds() >= cost).then_some(ty)
-}
-
 /// CaptureManagerBotModule.MinimumCaptureDelay: ticks between capture orders.
-const CAPTURE_DELAY: u32 = 375;
+const CAPTURE_DELAY: i32 = 375;
 /// CaptureManagerBotModule.MaximumCaptureTargetOptions.
 const CAPTURE_OPTIONS: usize = 10;
+/// Most capturers (alive or queued) the bot trains for neutral structures.
+const MAX_ENGINEERS: usize = 2;
 
-/// The soldier to train next (OpenRA UnitBuilderBotModule.ChooseUnitToBuild):
-/// the first buildable type, in an order that changes every think, whose
-/// share of the AI's units is below its UnitsToBuild percentage and that is
-/// under its UnitLimits.
-pub(crate) fn infantry_to_build(w: &World, player: u8) -> Option<u16> {
-    let units: Vec<u16> =
-        w.actors.iter().filter(|a| a.alive && a.owner == player && a.is_unit() && a.kind != Kind::Mine).map(|a| a.ty).collect();
-    let n = INFANTRY_TO_BUILD.len();
-    // OpenRA shuffles with the local random; this rotation is deterministic.
-    let salt = w.ai.get(player as usize).map_or(0, |a| a.salt);
-    let start = ((w.tick as u64 / 25).wrapping_add(salt) % n as u64) as usize;
-    for k in 0..n {
-        let (id, share, limit) = INFANTRY_TO_BUILD[(start + k) % n];
-        let Some(ty) = w.rules.actor_index(id).map(|t| t as u16) else { continue };
-        if w.rules.actors[ty as usize].queue != QueueType::Infantry || !w.can_start(player, ty) {
-            continue;
-        }
-        // Only what the AI can pay for now, like its tanks: a broke AI
-        // trains its cheapest soldier (ai.rs) instead of running a deficit
-        // on dear ones that keeps every tank from starting.
-        if w.rules.actors[ty as usize].cost > w.players[player as usize].funds() {
-            continue;
-        }
-        let have = units.iter().filter(|&&t| t == ty).count();
-        if have * 100 >= share * units.len().max(1) || (limit > 0 && have >= limit) {
-            continue;
-        }
-        return Some(ty);
-    }
-    None
+#[derive(Clone, Default, Debug)]
+pub(crate) struct CaptureState {
+    delay_ticks: i32,
+    /// Capturers on their way (references).
+    active: Vec<u32>,
 }
 
-/// OpenRA CaptureManagerBotModule: every MinimumCaptureDelay ticks, idle own
-/// units that can capture go for the most valuable capturable structures of
-/// an enemy or neutral player the AI can see, each to the nearest of them.
-pub(crate) fn command_capturers(w: &mut World, player: u8) {
-    let Some(st) = w.ai.get_mut(player as usize) else { return };
-    if st.next_capture_at == 0 {
-        // Spread the AIs' first evaluation (OpenRA: a random initial delay).
-        st.next_capture_at = (st.salt.wrapping_add(player as u64 * 97) % CAPTURE_DELAY as u64) as u32 + 1;
-    }
-    if w.tick < st.next_capture_at {
+pub(crate) fn start_capture(w: &mut World, player: u8) {
+    let t = rand(w, 0, CAPTURE_DELAY);
+    w.ai[player as usize].capture.delay_ticks = t;
+}
+
+/// Minutes of CashTrickler income a capture is worth.
+const TRICKLE_MINUTES: i64 = 5;
+/// Worth of a hospital (ChangesHealth for the owner's infantry): a squad of
+/// riflemen's health back, in credits.
+const HOSPITAL_VALUE: i64 = 1000;
+
+/// What capturing structure `t` is worth, from its traits: its sell value
+/// (OpenRA GetSellValue) plus that again for each lasting benefit (support
+/// powers, production, radar, ore storage, power), GivesCashOnCapture, five
+/// minutes of CashTrickler income (oil derricks) and a hospital's healing.
+pub(crate) fn capture_value(w: &World, t: usize) -> i64 {
+    let info = &w.rules.actors[w.actors[t].ty as usize];
+    let Some(b) = info.building.as_ref() else { return info.cost as i64 };
+    let value = b.value as i64;
+    let benefits = [
+        info.abilities.support_powers.as_ref().is_some_and(|l| !l.is_empty()),
+        !b.produces.is_empty(),
+        info.abilities.provides_radar.is_some(),
+        b.refinery.is_some() || b.storage > 0,
+        b.power > 0,
+    ];
+    let world = &info.world;
+    let trickle = world
+        .cash_trickler
+        .as_ref()
+        .map_or(0, |c| c.amount as i64 * TRICKLE_MINUTES * 60 * crate::world::TICKS_PER_SECOND as i64 / c.interval.max(1) as i64);
+    let hospital = if world.hospital_heal.is_some() { HOSPITAL_VALUE } else { 0 };
+    value + value * benefits.iter().filter(|&&x| x).count() as i64 + world.cash_on_capture as i64 + trickle + hospital
+}
+
+fn capturer(w: &World, i: usize) -> bool {
+    w.rules.actors[w.actors[i].ty as usize].abilities.captures.is_some()
+}
+
+pub(crate) fn tick_capture(w: &mut World, player: u8) {
+    let st = &mut w.ai[player as usize].capture;
+    st.delay_ticks -= 1;
+    if st.delay_ticks > 0 {
         return;
     }
-    st.next_capture_at = w.tick + CAPTURE_DELAY;
+    let level = w.ai[player as usize].level();
+    w.ai[player as usize].capture.delay_ticks = level.interval(CAPTURE_DELAY);
+    if w.players[player as usize].defeated || w.winner.is_some() {
+        return;
+    }
+    request_engineer(w, player);
+    command_capturers(w, player);
+}
+
+/// OpenRA QueueCaptureOrders.
+pub(crate) fn command_capturers(w: &mut World, player: u8) {
+    let active: Vec<u32> = w.ai[player as usize]
+        .capture
+        .active
+        .iter()
+        .copied()
+        .filter(|&r| {
+            w.resolve(r).is_some_and(|i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].activity != Activity::Idle)
+        })
+        .collect();
+    w.ai[player as usize].capture.active = active.clone();
     let capturers: Vec<usize> = (0..w.actors.len())
         .filter(|&i| {
             let a = &w.actors[i];
@@ -84,31 +106,94 @@ pub(crate) fn command_capturers(w: &mut World, player: u8) {
                 && a.owner == player
                 && a.in_world()
                 && a.activity == Activity::Idle
-                && a.kind == Kind::Infantry
-                && w.rules.actors[a.ty as usize].abilities.captures.is_some()
+                && capturer(w, i)
+                && !active.contains(&w.make_ref(i))
         })
         .collect();
     if capturers.is_empty() {
         return;
     }
+    // A random enemy or neutral player.
+    let players: Vec<u8> =
+        (0..w.players.len() as u8).filter(|&p| p != player && !w.are_allies(player, p) && !w.players[p as usize].defeated).collect();
+    let Some(target_player) = crate::ai_units::pick(w, &players) else { return };
     let mut options: Vec<usize> = (0..w.actors.len())
         .filter(|&t| {
             let a = &w.actors[t];
             a.alive
-                && a.kind == Kind::Building
-                && !w.are_allies(player, a.owner)
-                && w.targetable(t, player)
+                && a.in_world()
+                && a.owner == target_player
+                && w.is_visible_to(t, player)
+                && !w.is_cloaked_from(t, player)
                 && capturers.iter().any(|&c| w.can_capture(c, t))
         })
         .collect();
-    options.sort_by_key(|&t| (std::cmp::Reverse(w.rules.actors[w.actors[t].ty as usize].building.as_ref().map_or(0, |b| b.value)), t));
+    options.sort_by_key(|&t| (std::cmp::Reverse(capture_value(w, t)), t));
     options.truncate(CAPTURE_OPTIONS);
     for c in capturers {
         let (x, y) = (w.actors[c].x, w.actors[c].y);
-        let best =
-            options.iter().copied().filter(|&t| w.can_capture(c, t)).min_by_key(|&t| (dist_sq(x, y, w.actors[t].x, w.actors[t].y), t));
+        let comp = w.pass.component[w.cell_index(x, y)];
+        let best = options
+            .iter()
+            .copied()
+            .filter(|&t| w.can_capture(c, t) && reachable(w, comp, t))
+            .min_by_key(|&t| (dist_sq(x, y, w.actors[t].x, w.actors[t].y), t));
         if let Some(t) = best {
             w.order_enter(c, t, EnterKind::Capture);
+            let r = w.make_ref(c);
+            w.ai[player as usize].capture.active.push(r);
         }
+    }
+}
+
+/// Whether ground units of component `comp` can walk up to structure `t`.
+fn reachable(w: &World, comp: u32, t: usize) -> bool {
+    let a = &w.actors[t];
+    let Some(b) = w.rules.actors[a.ty as usize].building.as_ref() else {
+        return w.pass.component[w.cell_index(a.x, a.y)] == comp;
+    };
+    (a.cy - 1..=a.cy + b.height).any(|y| {
+        (a.cx - 1..=a.cx + b.width)
+            .any(|x| w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)] && w.pass.component[w.map.idx(x, y)] == comp)
+    })
+}
+
+/// WebRA: train an engineer while a neutral structure worth capturing
+/// stands within reach of the base and the bot has fewer than MAX_ENGINEERS.
+fn request_engineer(w: &mut World, player: u8) {
+    let engineer = (0..w.rules.actors.len() as u16)
+        .filter(|&t| {
+            let info = &w.rules.actors[t as usize];
+            info.queue == QueueType::Infantry && info.abilities.captures.is_some() && w.can_start(player, t)
+        })
+        .min_by_key(|&t| (w.rules.actors[t as usize].cost, t));
+    let Some(engineer) = engineer else { return };
+    let own =
+        w.actors.iter().filter(|a| a.alive && a.owner == player && w.rules.actors[a.ty as usize].abilities.captures.is_some()).count();
+    let queued = w.players[player as usize].queues[QueueType::Infantry as usize].items.iter().filter(|it| it.ty == engineer).count();
+    if own + queued + crate::ai_units::requested(w, player, engineer) >= MAX_ENGINEERS {
+        return;
+    }
+    let base = crate::ai::base_point(w, player);
+    let comp = (0..16)
+        .flat_map(|r| {
+            let (bx, by) = w.cell_of(base.0, base.1);
+            (by - r..=by + r).flat_map(move |y| (bx - r..=bx + r).map(move |x| (x, y)))
+        })
+        .find(|&(x, y)| w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)])
+        .map(|(x, y)| w.pass.component[w.map.idx(x, y)]);
+    let Some(comp) = comp else { return };
+    let worth = (0..w.actors.len()).any(|t| {
+        let a = &w.actors[t];
+        a.alive
+            && a.kind == Kind::Building
+            && w.players[a.owner as usize].neutral
+            && w.rules.actors[a.ty as usize].abilities.capturable.is_some()
+            && w.is_visible_to(t, player)
+            && capture_value(w, t) > 0
+            && reachable(w, comp, t)
+    });
+    if worth {
+        crate::ai_units::request(w, player, engineer);
     }
 }

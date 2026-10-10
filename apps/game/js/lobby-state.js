@@ -109,6 +109,21 @@ export const DIFFICULTIES = [
   { value: 'hard', label: 'Hard' },
 ];
 
+/** OpenRA's Red Alert bot types an AI slot plays (engine/src/ai_bots.rs). */
+export const BOT_TYPES = [
+  { value: 'rush', label: 'Rush AI' },
+  { value: 'normal', label: 'Normal AI' },
+  { value: 'turtle', label: 'Turtle AI' },
+  { value: 'naval', label: 'Naval AI' },
+];
+
+/** An AI player's name: its bot (OpenRA's name), and the difficulty unless Normal (as apps/server names them). */
+export function aiName(p) {
+  const bot = BOT_TYPES.find((b) => b.value === (p.bot ?? 'normal')) ?? BOT_TYPES[1];
+  const diff = DIFFICULTIES.find((d) => d.value === p.difficulty);
+  return diff && diff.value !== 'normal' ? `${bot.label} (${diff.label.toLowerCase()})` : bot.label;
+}
+
 /** Slot type choices; AI difficulty is part of the type. */
 export const SLOT_TYPES = [
   { value: 'human', label: 'You' },
@@ -190,7 +205,7 @@ export const DEFAULTS = {
 
 const DEFAULT_PLAYERS = [
   { type: 'human', name: DEFAULT_NAME, faction: 'germany', color: 0, team: 0, handicap: 0 },
-  { type: 'ai', difficulty: 'normal', faction: 'randomsoviet', color: 1, team: 0, handicap: 0 },
+  { type: 'ai', difficulty: 'normal', bot: 'normal', faction: 'randomsoviet', color: 1, team: 0, handicap: 0 },
 ];
 
 // ---- Small parsers ------------------------------------------------------------
@@ -303,6 +318,8 @@ function sanitizePlayer(raw, fallback) {
     type,
     name: cleanName(typeof p.name === 'string' ? p.name : fallback.name),
     difficulty: oneOf(p.difficulty, DIFFICULTIES.map((d) => d.value), 'normal'),
+    // Lobbies stored before bot types play the Normal AI.
+    bot: oneOf(p.bot, BOT_TYPES.map((b) => b.value), 'normal'),
     faction: FACTIONS.has(p.faction) ? p.faction : fallback.faction,
     color: p.color,
     team: Number.isInteger(p.team) && p.team >= 0 && p.team <= TEAM_COUNT ? p.team : 0,
@@ -388,6 +405,7 @@ export function addSlot(state, colorCount, spawnLimit = MAX_SLOTS) {
     type: 'ai',
     name: DEFAULT_NAME,
     difficulty: 'normal',
+    bot: 'normal',
     faction: 'random',
     color: firstFreeColor(state.players, colorCount),
     team: 0,
@@ -426,6 +444,7 @@ export function setSlotType(state, slot, value, spawnLimit = MAX_SLOTS) {
     if (old) {
       old.type = 'ai';
       old.difficulty = 'normal';
+      old.bot = 'normal';
       p.name = old.name;
     }
     p.type = 'human';
@@ -497,7 +516,7 @@ export function buildOptions(state, mapJson = null) {
     players: s.players.map((p, slot) => {
       if (p.type === 'closed') return { slot, type: 'closed' };
       const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
-      return p.type === 'human' ? { ...base, name: cleanName(p.name) } : { ...base, difficulty: p.difficulty };
+      return p.type === 'human' ? { ...base, name: cleanName(p.name) } : { ...base, difficulty: p.difficulty, bot: p.bot ?? 'normal' };
     }),
     startingCash: s.startingCash,
     startingUnits: s.startingUnits,

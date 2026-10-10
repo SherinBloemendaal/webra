@@ -89,6 +89,9 @@ test('slot, options, map and ready', () => {
   bad({ t: 'slot', slot: 0, team: 5 });
   bad({ t: 'slot', slot: 0, type: 'human' }, /unsupported/);
   bad({ t: 'slot', slot: 0, difficulty: 'brutal' });
+  // OpenRA's bot types (engine/src/ai_bots.rs).
+  for (const bot of ['rush', 'normal', 'turtle', 'naval']) ok({ t: 'slot', slot: 1, type: 'ai', bot });
+  bad({ t: 'slot', slot: 1, bot: 'hacky' });
 
   assert.deepEqual(ok({ t: 'options', options: { ...DEFAULT_OPTIONS } }).options, { ...DEFAULT_OPTIONS });
   bad({ t: 'options', options: { ...DEFAULT_OPTIONS, mapSize: 100 } });

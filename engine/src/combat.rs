@@ -952,12 +952,9 @@ impl World {
         }
         // Damage smoke (fx.rs, presentation only).
         self.note_damage_fx(u);
-        // An AI remembers who hits its structures (ai.rs target choice).
-        if self.actors[u].kind == Kind::Building {
-            if let Some(by) = self.observer.source {
-                crate::ai::note_structure_damage(self, self.actors[u].owner, by);
-            }
-        }
+        // An AI hears of hits on its actors (ai.rs: its bot modules respond,
+        // and it remembers who hits its structures).
+        crate::ai::note_damage(self, u, source, before);
         self.take_cover(u, types);
         // Damage states, panics, burning trees and the hospital (neutral.rs).
         self.on_world_damaged(u, old_hp, dmg, types);

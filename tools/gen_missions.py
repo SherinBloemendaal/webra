@@ -434,6 +434,18 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
             info = condition_info(parse.to_json(rules[aid]))
             if info:
                 conditions[aid if aid not in ids_lower_base.values() else aid] = info
+    # OpenRA's campaign bot (campaign-rules.yaml ModularBot@CampaignAI, Type:
+    # campaign): the bot modules of the mission's own Player rules, those not
+    # kept for the skirmish bots (GrantConditionOnBotOwner conditions). The
+    # ones that need a condition run once the script grants it (bot_conditions).
+    player_rules = rules['Player']
+    bot_owned = {ch['Condition'][0] for k, (v, ch) in player_rules.items() if k.split('@')[0] == 'GrantConditionOnBotOwner'}
+    campaign = next((ch for k, (v, ch) in player_rules.items() if k.split('@')[0] == 'ModularBot' and ch['Type'][0] == 'campaign'), None)
+    if campaign is not None:
+        ids_lower = {a['id'].lower(): a['id'] for a in mission_rules['actors']}
+        bot = {'type': 'campaign', 'name': 'Campaign AI'}
+        gen_rules.bot_modules(bot, player_rules, lambda requires: not set(re.findall(r'[a-z-]+', requires)) & bot_owned, ids_lower)
+        diff['bots'] = [bot]
     return {
         'rules': {k: v for k, v in diff.items() if v},
         'death_spawns': death_spawns,

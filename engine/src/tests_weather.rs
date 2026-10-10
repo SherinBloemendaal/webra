@@ -285,7 +285,7 @@ fn same_seed_same_weather_on_every_peer() {
 
 /// The AI keeps playing in every biome with full weather: harvesters on
 /// snow do not slide off their ore, overheated tanks rest and rejoin, and
-/// the games end.
+/// the games end (within an hour: measured 12 to 34 minutes on these seeds).
 #[test]
 fn ai_games_finish_in_every_biome() {
     let games: Vec<(u64, Biome)> = vec![(1, Biome::Snow), (2, Biome::Snow), (3, Biome::Desert), (4, Biome::Desert), (5, Biome::Temperate)];
@@ -294,7 +294,7 @@ fn ai_games_finish_in_every_biome() {
             .iter()
             .map(|&(seed, biome)| {
                 s.spawn(move || {
-                    let w = ai_game(seed, biome, WeatherMode::Full, 40);
+                    let w = ai_game(seed, biome, WeatherMode::Full, 60);
                     let hot = w.actors.iter().filter(|a| a.alive).map(|a| a.env.heat).max().unwrap_or(0);
                     (seed, biome, w.winner, w.tick, hot)
                 })

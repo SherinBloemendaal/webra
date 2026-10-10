@@ -25,6 +25,7 @@ import {
   BIOMES,
   WEATHER_MODES,
   SLOT_TYPES,
+  BOT_TYPES,
   TEAMS,
   FACTION_GROUPS,
   FACTIONS,
@@ -937,6 +938,18 @@ export class Lobby {
       });
       rec.type = type;
       who.append(type);
+      // The OpenRA bot the AI plays (Rush, Normal, Turtle, Naval).
+      if (player.type === 'ai') {
+        const bot = buildSelect(BOT_TYPES, 'lobby-select lobby-bot');
+        bot.value = player.bot ?? 'normal';
+        bot.setAttribute('aria-label', `Player ${slot + 1} bot`);
+        describedBy(bot, this.columnTips.player);
+        bot.addEventListener('change', () => {
+          this.state.players[slot].bot = bot.value;
+        });
+        rec.bot = bot;
+        who.append(bot);
+      }
     }
 
     // Colour.

@@ -1,4 +1,5 @@
-//! Skirmish AI, the economy when it runs dry (called from `ai::think`).
+//! Skirmish AI, the economy when it runs dry (called from `ai::think`; a
+//! WebRA addition, OpenRA's bots have no such module).
 //!
 //! Long games (water maps, desert heat, sandstorms) can harvest every field a
 //! base reaches. Without this both sides end up broke with nothing to fight
@@ -8,14 +9,14 @@
 //!   or not (a skirmish AI knows the map's resources, as OpenRA's does), see
 //!   `ai::send_idle_harvesters`;
 //! - when it has no income left (no ore its trucks can reach, or no refinery
-//!   and no money for one) and no army to speak of, sells what it no longer
+//!   and no money for one) and no army to speak of (or ore trucks waiting for
+//!   a refinery it cannot pay for), sells what it no longer
 //!   needs, one structure every few seconds, to pay for one last army:
 //!   refineries and silos without ore, tech and support structures, aircraft
 //!   and naval structures without aircraft or ships, then power plants it can
 //!   spare. It keeps its Construction Yard, one barracks, one war factory,
 //!   enough power for them, and its defences.
 
-use crate::ai::is_army_unit;
 use crate::rules::{Kind, QueueType};
 use crate::world::{Order, World, TICKS_PER_SECOND};
 
@@ -23,30 +24,61 @@ use crate::world::{Order, World, TICKS_PER_SECOND};
 pub(crate) const BROKE_FUNDS: i32 = 600;
 /// An army this small (and broke) sells structures for a last army.
 const SMALL_ARMY: usize = 4;
+/// Cells around the yard whose ground components count as the base's.
+const REACH_RING: i32 = 6;
 /// Time between two sales.
 const SELL_EVERY_TICKS: u32 = 8 * TICKS_PER_SECOND;
+
+/// Ticks between two looks at the economy.
+const CHECK_TICKS: u32 = 25;
+
+/// While the bot earns nothing and is nearly broke: drop what does not
+/// fight from its queues and sell what it can do without.
+pub(crate) fn tick(w: &mut World, player: u8) {
+    if !(w.tick + player as u32).is_multiple_of(CHECK_TICKS) {
+        return;
+    }
+    if starving(w, player) {
+        cancel_luxuries(w, player);
+        sell_when_broke(w, player);
+    }
+}
+
+/// No income and little money left: every credit goes into the army (the
+/// base builder only adds power the factories need, ai_base.rs).
+pub(crate) fn starving(w: &World, player: u8) -> bool {
+    w.players[player as usize].funds() < BROKE_FUNDS * 4 && no_income(w, player)
+}
+
+/// An armed ground unit that goes into the bot's squads (not an ore truck,
+/// nor a dog, which OpenRA's bots keep at home): what counts as an army.
+fn is_army_unit(w: &World, i: usize) -> bool {
+    let a = &w.actors[i];
+    matches!(a.kind, Kind::Infantry | Kind::Vehicle)
+        && !w.rules.actors[a.ty as usize].weapons.is_empty()
+        && !w.is_harvester(i)
+        && !w.ai.get(a.owner as usize).is_some_and(|st| st.cfg.excluded.contains(&a.ty))
+}
 
 /// Resource cells in the ground component of `player`'s base (what its ore trucks can reach).
 pub(crate) fn reachable_resources(w: &World, player: u8) -> usize {
     // The base's own cells are under its structures: take the ground
-    // component of the nearest open cell around the yard.
+    // components of the open cells around the yard (all of them: one of the
+    // nearest may be a pocket between structures and cliffs).
     let base = crate::ai::base_point(w, player);
     let (bx, by) = w.cell_of(base.0, base.1);
-    let mut comp = 0;
-    'rings: for r in 0..16 {
-        for y in by - r..=by + r {
-            for x in bx - r..=bx + r {
-                if ((x - bx).abs() == r || (y - by).abs() == r) && w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)] {
-                    comp = w.pass.component[w.map.idx(x, y)];
-                    break 'rings;
+    let mut comps: Vec<u32> = Vec::new();
+    for y in by - REACH_RING..=by + REACH_RING {
+        for x in bx - REACH_RING..=bx + REACH_RING {
+            if w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)] {
+                let c = w.pass.component[w.map.idx(x, y)];
+                if !comps.contains(&c) {
+                    comps.push(c);
                 }
             }
         }
     }
-    if comp == 0 {
-        return 0;
-    }
-    (0..w.map.cells()).filter(|&c| w.map.has_resource(c) && !w.pass.blocked[c] && w.pass.component[c] == comp).count()
+    (0..w.map.cells()).filter(|&c| w.map.has_resource(c) && !w.pass.blocked[c] && comps.contains(&w.pass.component[c])).count()
 }
 
 fn own_buildings(w: &World, player: u8) -> Vec<usize> {
@@ -66,15 +98,18 @@ pub(crate) fn no_income(w: &World, player: u8) -> bool {
 }
 
 /// While starving: drop queued items that do not fight on the ground
-/// (structures other than power, defences, aircraft, ships), refunding what
-/// was paid, so the money goes into the army.
+/// (structures other than power and refineries by reachable ore, defences,
+/// aircraft, ships), refunding what was paid, so the money goes into the army.
 pub(crate) fn cancel_luxuries(w: &mut World, player: u8) {
+    let ore = reachable_resources(w, player) > 0;
     for q in [QueueType::Building, QueueType::Defense, QueueType::Aircraft, QueueType::Ship] {
         let items: Vec<u16> = w.players[player as usize].queues[q as usize].items.iter().filter(|it| !it.done).map(|it| it.ty).collect();
         for ty in items {
             let power = w.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.power > 0);
             let truck = w.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some());
-            if !power && !truck {
+            // A refinery by reachable ore is the way out.
+            let refinery = ore && w.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.refinery.is_some());
+            if !power && !truck && !refinery {
                 w.cancel_production(player, ty);
             }
         }
@@ -92,13 +127,8 @@ pub(crate) fn sell_when_broke(w: &mut World, player: u8) -> bool {
     if w.tick < state.last_sale + SELL_EVERY_TICKS {
         return false;
     }
-    let army = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive && a.owner == player && a.kind != Kind::Building && is_army_unit(w, a.ty as usize)
-        })
-        .count();
-    if army >= SMALL_ARMY || !no_income(w, player) {
+    let army = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && is_army_unit(w, i)).count();
+    if (army >= SMALL_ARMY && !needs_refinery(w, player)) || !no_income(w, player) {
         return false;
     }
     let Some(b) = surplus_structure(w, player) else { return false };
@@ -106,6 +136,21 @@ pub(crate) fn sell_when_broke(w: &mut World, player: u8) -> bool {
     w.queue_order(Order::Sell { player, building: r });
     w.ai[player as usize].last_sale = w.tick;
     true
+}
+
+/// Ore trucks and ore to reach, but no refinery and no money for one: then
+/// the bot sells surplus structures for a refinery, whatever its army.
+fn needs_refinery(w: &World, player: u8) -> bool {
+    let refinery_cost = (0..w.rules.actors.len())
+        .filter(|&t| w.rules.actors[t].building.as_ref().is_some_and(|b| b.refinery.is_some()) && w.can_start(player, t as u16))
+        .map(|t| w.rules.actors[t].cost)
+        .min();
+    let Some(cost) = refinery_cost else { return false };
+    let has_refinery = own_buildings(w, player)
+        .iter()
+        .any(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some()));
+    let trucks = (0..w.actors.len()).any(|i| w.actors[i].alive && w.actors[i].owner == player && w.is_harvester(i));
+    !has_refinery && trucks && reachable_resources(w, player) > 0 && w.players[player as usize].funds() < cost
 }
 
 /// The structure to sell first, or None when only the essentials are left.

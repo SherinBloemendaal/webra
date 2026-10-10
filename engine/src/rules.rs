@@ -15,6 +15,8 @@ struct RawRules {
     locomotors: Vec<RawLocomotor>,
     /// World actor rules of the lobby options (rules_options.rs).
     world: crate::rules_options::RawWorldRules,
+    /// OpenRA's RA bots (ai.yaml, ai_bots.rs).
+    bots: Vec<crate::ai_bots::BotInfo>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -477,6 +479,9 @@ pub struct SupportPowerInfo {
     /// SupportPowerPaletteOrder: position in the support power bar.
     #[serde(default)]
     pub palette_order: i32,
+    /// OrderName: how the AI's SupportPowerBotModule decisions name the power (ai_support.rs).
+    #[serde(default)]
+    pub order_name: String,
     // ---- Aircraft powers (AirstrikePower, ParatroopersPower); see powers.rs and plane.rs.
     /// Actor id of the aircraft that flies in (UnitType).
     #[serde(default)]
@@ -1169,6 +1174,8 @@ pub struct Rules {
     pub locomotor_crushes_crates: Vec<bool>,
     /// World actor rules of the lobby options (rules_options.rs).
     pub world: crate::rules_options::WorldRules,
+    /// The skirmish AI's bot types and their module configs (ai_bots.rs).
+    pub bots: Vec<crate::ai_bots::BotInfo>,
     pub tokens: Vec<String>,
     /// Damage type names that some actor's TakeCover or death animation refers
     /// to; bit `k` of a warhead's, TakeCover's or DeathInfo's damage type mask
@@ -2073,6 +2080,7 @@ impl Rules {
             locomotor_crushes_mines,
             locomotor_crushes_crates,
             world,
+            bots: raw.bots,
             tokens,
             damage_types,
             obtainable: Vec::new(),
@@ -2199,7 +2207,8 @@ fn count(what: &str, len: usize, max: usize) -> Result<(), String> {
 /// Apply mission rules changes (`Rules::load_mission`).
 fn apply_mission_changes(base: &mut serde_json::Value, changes: &serde_json::Value) -> Result<(), String> {
     let c = changes.as_object().ok_or("mission rules must be an object")?;
-    for (section, key_field) in [("actors", "id"), ("weapons", "name"), ("locomotors", "name")] {
+    // `bots`: the mission's campaign bot (ai_bots.rs BotType::Campaign), by type.
+    for (section, key_field) in [("actors", "id"), ("weapons", "name"), ("locomotors", "name"), ("bots", "type")] {
         let Some(entries) = c.get(section) else { continue };
         let entries = entries.as_array().ok_or_else(|| format!("mission rules.{section} must be a list"))?;
         let list = base[section].as_array_mut().expect("rules sections are arrays");
@@ -2222,7 +2231,7 @@ fn apply_mission_changes(base: &mut serde_json::Value, changes: &serde_json::Val
         }
     }
     for k in c.keys() {
-        if !matches!(k.as_str(), "actors" | "weapons" | "locomotors" | "armor_types") {
+        if !matches!(k.as_str(), "actors" | "weapons" | "locomotors" | "bots" | "armor_types") {
             return Err(format!("mission rules: unknown section {}", truncate(k)));
         }
     }

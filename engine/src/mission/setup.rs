@@ -158,7 +158,11 @@ impl World {
             }
         }
         w.diplomacy = diplomacy;
-        w.ai = (0..n).map(|slot| crate::ai::AiState::new(slot as u32, AiDifficulty::Normal)).collect();
+        // The players a script hands to its bot (conditions.rs, `ai_enabled`)
+        // play OpenRA's campaign bot: the mission's own bot modules.
+        w.ai = (0..n)
+            .map(|slot| crate::ai::AiState::new(&w.rules, slot as u8, crate::ai_bots::BotType::Campaign, AiDifficulty::Normal))
+            .collect();
         for a in w.ai.iter_mut() {
             a.salt = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
         }

@@ -880,6 +880,173 @@ def world_rules(src, ids_lower):
     return {'crates': crates, 'starting_units': starting, 'time_limit': time_limit}
 
 
+# OpenRA bot modules (mods/ra/rules/ai.yaml, data/source/rules/ai.yaml) with the
+# defaults of their C# Info classes for the fields RA's ai.yaml leaves out
+# (OpenRA.Mods.Common/Traits/BotModules). The engine's skirmish AI (ai*.rs)
+# runs one bot per AI slot from these.
+BOT_MODULES = {
+    'BaseBuilderBotModule': ('base_builder', {
+        'ConstructionYardTypes': [], 'RefineryTypes': [], 'PowerTypes': [], 'ProductionTypes': [], 'TechTypes': [],
+        'NavalProductionTypes': [], 'SiloTypes': [], 'DefenseTypes': [],
+        'MinBaseRadius': 2, 'MaxBaseRadius': 20, 'MinimumExcessPower': 0, 'MaximumExcessPower': 0, 'ExcessPowerIncrement': 0,
+        'ExcessPowerIncreaseThreshold': 1, 'InititalMinimumRefineryCount': 1, 'AdditionalMinimumRefineryCount': 1,
+        'StructureProductionInactiveDelay': 125, 'StructureProductionActiveDelay': 25, 'StructureProductionRandomBonusDelay': 10,
+        'StructureProductionResumeDelay': 1500, 'MaximumFailedPlacementAttempts': 3, 'MaxResourceCellsToCheck': 3,
+        'CheckForNewBasesDelay': 1500, 'PlaceDefenseTowardsEnemyChance': 100, 'TryMaintainDefenseRange': 5,
+        'NewProductionCashThreshold': 5000, 'NewProductionChance': 50, 'RallyPointScanRadius': 8, 'CheckForWaterRadius': 8,
+        'BuildingFractions': {}, 'BuildingLimits': {}, 'BuildingDelays': {}, 'ProductionMinCashRequirement': 500,
+        'AssignRallyPointsInterval': 100, 'CheckBestResourceLocationInterval': 151, 'SellRefineryInterval': 5000,
+        'SellRefineryTooCloseCellDistance': 6, 'SellRefineryNoResourceDistance': 12, 'MaxRefineryPerIndice': 2,
+        'ExpansionTolerate': [0, 1], 'ForceExpansionTolerate': [2, 3], 'PerExpansionTolerateOnCash': 12000}),
+    'UnitBuilderBotModule': ('unit_builder', {
+        'IdleBaseUnitsMaximum': -1, 'UnitQueues': ['Vehicle', 'Infantry', 'Plane', 'Ship', 'Aircraft'],
+        'UnitsToBuild': {}, 'UnitLimits': {}, 'UnitDelays': {}, 'ProductionMinCashRequirement': 500}),
+    'SquadManagerBotModule': ('squads', {
+        'NavalUnitsTypes': [], 'AirUnitsTypes': [], 'ExcludeFromSquadsTypes': [], 'ConstructionYardTypes': [],
+        'NavalProductionTypes': [], 'ProtectionTypes': [], 'AircraftTargetType': ['Air'], 'SquadSize': 8,
+        'SquadSizeRandomBonus': 30, 'AssignRolesInterval': 50, 'RushInterval': 600, 'AttackForceInterval': 75,
+        'MinimumAttackForceDelay': 0, 'RushAttackScanRadius': 15, 'ProtectUnitScanRadius': 15, 'MaxBaseRadius': 20,
+        'IdleScanRadius': 10, 'DangerScanRadius': 10, 'AttackScanRadius': 12, 'ProtectionScanRadius': 8,
+        'IgnoredEnemyTargetTypes': []}),
+    'HarvesterBotModule': ('harvester', {
+        'HarvesterTypes': [], 'RefineryTypes': [], 'ScanForIdleHarvestersInterval': 50, 'ScanForLowEffectHarvestersInterval': 433,
+        'ScanIntervalMultiplerWhenNoResources': 5, 'HarvesterEnemyAvoidanceRadius': '10c0', 'HarvesterEnemyAvoidanceCostMultipler': 20,
+        'ResourceCellsPerHarvester': 4, 'InitialHarvesters': 4}),
+    'ResourceMapBotModule': ('resource_map', {
+        'ValuableResourceTypes': [], 'ResourceCreatorTypes': [], 'RefineryTypes': [], 'HarvesterTypes': [],
+        'EnemyBaseBuildingTypes': [], 'UpdateResourceMapInverval': 67, 'ResourceMapStrideRadius': 12}),
+    'McvExpansionManagerBotModule': ('mcv_expansion', {
+        'McvTypes': [], 'ConstructionYardTypes': [], 'McvFactoryTypes': [], 'MinimumConstructionYardCount': 1,
+        'AdditionalConstructionYardCount': 0, 'BuildAdditionalMCVCashAmount': 5000, 'ScanForNewMcvInterval': 20,
+        'BuildMcvInterval': 101, 'MoveConyardTick': 5700, 'MoveOldConyardFirst': None, 'CRmodeMinDeployRadius': 2,
+        'CRmodeMaxDeployRadius': 20, 'CRmodeTryMaintainRange': 8, 'CRmodeFriendlyConyardDislikeRange': 14,
+        'CRmodeFriendlyRefineryDislikeRange': 14, 'CBmodeMinDeployRadius': 2, 'CBmodeMaxDeployRadius': 20}),
+    'McvManagerBotModule': ('mcv_manager', {
+        'McvTypes': [], 'ConstructionYardTypes': [], 'McvFactoryTypes': [], 'MinimumConstructionYardCount': 1,
+        'ScanForNewMcvInterval': 20, 'MinBaseRadius': 2, 'MaxBaseRadius': 20, 'RestrictMCVDeploymentFallbackToBase': True}),
+    'PowerDownBotModule': ('power_down', {'Interval': 150, 'PowerDownTypes': []}),
+    'BuildingRepairBotModule': ('building_repair', {'RepairAllBuildingsCoolDown': 107}),
+    'MinelayerBotModule': ('minelayer', {
+        'IgnoredEnemyTargetTypes': [], 'UseEnemyLocationTargetTypes': [], 'MinelayingActorTypes': [], 'MaxPerAssign': 1,
+        'ScanTick': 320, 'MineFieldRadius': 1, 'AwayFromAlliedTargetTypes': [], 'AwayFromEnemyTargetTypes': [],
+        'AwayFromCellDistance': 9, 'FavoritePositionDistance': 6}),
+    'SupportPowerBotModule': ('support_powers', {'Decisions': {}}),
+}
+# SupportPowerDecision and its Consideration defaults.
+DECISION_DEFAULTS = {'MinimumAttractiveness': 1, 'OrderName': 'AirstrikePowerInfoOrder', 'CoarseScanRadius': 20,
+                     'FineScanRadius': 2, 'MinimumScanTimeInterval': 250, 'MaximumScanTimeInterval': 262}
+CONSIDERATION_DEFAULTS = {'Against': 'Enemy', 'Types': 'Air, Ground, Water', 'Attractiveness': 100,
+                          'TargetMetric': 'None', 'CheckRadius': '5c0'}
+# Fields that name actor types: exported as engine actor ids.
+BOT_ACTOR_LIST_FIELDS = {'ConstructionYardTypes', 'RefineryTypes', 'PowerTypes', 'ProductionTypes', 'TechTypes',
+                         'NavalProductionTypes', 'SiloTypes', 'DefenseTypes', 'NavalUnitsTypes', 'AirUnitsTypes',
+                         'ExcludeFromSquadsTypes', 'ProtectionTypes', 'HarvesterTypes', 'ResourceCreatorTypes',
+                         'EnemyBaseBuildingTypes', 'McvTypes', 'McvFactoryTypes', 'PowerDownTypes', 'MinelayingActorTypes'}
+BOT_ACTOR_MAP_FIELDS = {'BuildingFractions', 'BuildingLimits', 'BuildingDelays', 'UnitsToBuild', 'UnitLimits', 'UnitDelays'}
+
+
+def snake(name):
+    """OpenRA field name to the engine's snake case (CRmodeMinDeployRadius -> cr_mode_min_deploy_radius)."""
+    name = name.replace('CRmode', 'CrMode').replace('CBmode', 'CbMode').replace('MCV', 'Mcv')
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+
+def bot_rules(src, ids_lower):
+    """The bots of OpenRA's RA ai.yaml: per ModularBot type its name and the
+    modules enabled for it (GrantConditionOnBotOwner + RequiresCondition), with
+    every field resolved to a value. Actor names become engine ids; names the
+    export does not have (e.g. resource creators 'mine') are left out."""
+    player = src.load('rules', ['ai'])['Player'][1]
+    conditions = {}
+    bots = []
+    for k, (v, ch) in player.items():
+        base = k.split('@')[0]
+        if base == 'ModularBot':
+            bots.append({'type': ch['Type'][0], 'name': ftl.get(ch['Name'][0], ch['Name'][0])})
+        elif base == 'GrantConditionOnBotOwner':
+            for b in tokens(ch['Bots'][0]):
+                conditions[ch['Condition'][0]] = b
+    for bot in bots:
+        enabled = {c for c, b in conditions.items() if b == bot['type']}
+        bot_modules(bot, player, lambda requires, enabled=enabled: not requires or bool(set(re.findall(r'[a-z-]+', requires)) & enabled), ids_lower)
+    return bots
+
+
+# Modules every bot entry has (the engine's BotInfo); a bot without one gets its defaults.
+REQUIRED_BOT_MODULES = ('BaseBuilderBotModule', 'UnitBuilderBotModule', 'SquadManagerBotModule', 'HarvesterBotModule')
+
+
+def bot_modules(bot, player, active, ids_lower):
+    """Fill `bot` with the bot modules of Player rules `player` that
+    `active(requires)` (the module's RequiresCondition, '' without one) keeps.
+    tools/gen_missions.py uses it for a mission's campaign bot."""
+    def actor_ids(names):
+        return [ids_lower[n.lower()] for n in names if n.lower() in ids_lower]
+
+    def value(field, raw, default):
+        if field in BOT_ACTOR_LIST_FIELDS:
+            return actor_ids(tokens(raw))
+        if isinstance(default, list):
+            items = tokens(raw)
+            return [int(x) for x in items] if default and isinstance(default[0], int) else items
+        if isinstance(default, bool) or default is None:
+            return str(raw).lower() == 'true'
+        if field.endswith('Radius') and isinstance(default, str):
+            return wdist(raw)
+        return int(raw)
+
+    def module(base, ch):
+        key, defaults = BOT_MODULES[base]
+        out = {}
+        for field, default in defaults.items():
+            if field == 'Decisions':
+                out['decisions'] = [decision(n[1]) for n in ch.get('Decisions', ['', {}])[1].values()]
+                continue
+            if field not in ch:
+                raw = [] if field in BOT_ACTOR_MAP_FIELDS else default
+                if field == 'HarvesterEnemyAvoidanceRadius':
+                    raw = wdist(default)
+                out[snake(field)] = raw
+                continue
+            if field in BOT_ACTOR_MAP_FIELDS:
+                out[snake(field)] = [[ids_lower[n.lower()], int(x[0])] for n, x in ch[field][1].items() if n.lower() in ids_lower]
+                continue
+            out[snake(field)] = value(field, ch[field][0], default)
+        for field in ch:
+            assert field == 'RequiresCondition' or field in defaults, f'{base}.{field} is not exported'
+        return key, out
+
+    for k, (v, ch) in player.items():
+        base = k.split('@')[0]
+        if base not in BOT_MODULES or not active(ch.get('RequiresCondition', [''])[0]):
+            continue
+        key, out = module(base, ch)
+        assert key not in bot, f'bot {bot["type"]}: two {base}'
+        bot[key] = out
+    for base in REQUIRED_BOT_MODULES:
+        key, _ = BOT_MODULES[base]
+        if key not in bot:
+            bot[key] = module(base, {})[1]
+    return bot
+
+
+def decision(ch):
+    """A SupportPowerDecision of SupportPowerBotModule.Decisions."""
+    get = lambda f: ch[f][0] if f in ch else DECISION_DEFAULTS[f]
+    d = {'order_name': get('OrderName')}
+    for f in ('MinimumAttractiveness', 'CoarseScanRadius', 'FineScanRadius', 'MinimumScanTimeInterval', 'MaximumScanTimeInterval'):
+        d[snake(f)] = int(get(f))
+    d['considerations'] = []
+    for k, (v, c) in ch.items():
+        if k.split('@')[0] != 'Consideration':
+            continue
+        cg = lambda f: c[f][0] if f in c else CONSIDERATION_DEFAULTS[f]
+        d['considerations'].append({'against': cg('Against'), 'types': tokens(cg('Types')),
+                                    'attractiveness': int(cg('Attractiveness')), 'target_metric': cg('TargetMetric'),
+                                    'check_radius': wdist(cg('CheckRadius'))})
+    return d
+
+
 def extra_actor(src, aid):
     """An actors.json-style record for a non-buildable actor, from the OpenRA YAML."""
     tree = src.rules[aid]
@@ -1435,7 +1602,10 @@ def main():
                          'charge': int(v.get('ChargeInterval', 0)), 'prerequisites': tokens(v.get('Prerequisites')),
                          'duration': int(v.get('Duration', 0)), 'range': int(ints(v.get('Range', '1'))[0]) if v.get('Range') and 'c' not in v.get('Range') else wdist(v.get('Range')) // 1024 if v.get('Range') else 1,
                          'max_distance': int(v.get('MaxDistance', 0) or 0),
-                         'palette_order': int(v.get('SupportPowerPaletteOrder', 0) or 0)}
+                         'palette_order': int(v.get('SupportPowerPaletteOrder', 0) or 0),
+                         # SupportPowerInfo.OrderName (default: the Info class name + "Order"); the
+                         # AI's SupportPowerBotModule decisions name powers by it (ai_support.rs).
+                         'order_name': v.get('OrderName', base + 'InfoOrder')}
                 if base in ('AirstrikePower', 'ParatroopersPower'):
                     # Aircraft powers: which plane flies in, how many, and what they drop.
                     unit = v.get('UnitType') or (AIRSTRIKE_UNIT if base == 'AirstrikePower' else PARATROOPERS_UNIT)
@@ -1675,6 +1845,7 @@ def main():
         'weapons': [weapon_info(w, weapons, weapon_index) for w in used_weapons],
         'locomotors': [locomotor_info(l, locos) for l in used_locos],
         'world': world_rules(src, ids_lower),
+        'bots': bot_rules(src, ids_lower),
     }
     with open(OUT, 'w') as fh:
         json.dump(rules, fh, indent=1)

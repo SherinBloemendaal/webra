@@ -1,11 +1,12 @@
 //! Headless AI skirmish with 2..8 players and optional teams.
-//! Usage: cargo run -p webra-sim --release --example skirmish -- [seed] [map size] [teams, e.g. 1122 or 0000]
+//! Usage: cargo run -p webra-sim --release --example skirmish -- [seed] [map size] [teams, e.g. 1122 or 0000] [minutes]
 use webra_sim::world::{AiDifficulty, GameOptions, PlayerSetup, World};
 
 fn main() {
     let seed: u64 = std::env::args().nth(1).map(|s| s.parse().expect("seed is a number")).unwrap_or(1);
     let size: i32 = std::env::args().nth(2).map(|s| s.parse().expect("size is a number")).unwrap_or(96);
     let teams = std::env::args().nth(3).unwrap_or_else(|| "0000".into());
+    let minutes: u32 = std::env::args().nth(4).map(|s| s.parse().expect("minutes is a number")).unwrap_or(40);
     let factions = ["england", "russia", "germany", "ukraine", "france", "soviet", "allies", "russia"];
     let players: Vec<PlayerSetup> = teams
         .chars()
@@ -13,13 +14,14 @@ fn main() {
         .map(|(k, c)| PlayerSetup {
             faction: factions[k % 8].into(),
             ai: Some(AiDifficulty::Normal),
+            bot: Default::default(),
             team: c.to_digit(10).expect("team digit") as u8,
             handicap: 0,
         })
         .collect();
     let mut w = World::with_options(seed, size, &players, GameOptions::default());
     let mut t = 0;
-    while w.winner.is_none() && t < 25 * 60 * 40 {
+    while w.winner.is_none() && t < 25 * 60 * minutes {
         w.step();
         t += 1;
         if t % (25 * 60 * 5) == 0 {

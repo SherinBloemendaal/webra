@@ -1,777 +1,342 @@
-//! Skirmish AI: deploys its MCV, follows a build order, keeps harvesters busy,
-//! builds an army and a few defences, and attacks in growing waves. It plays by
-//! the same rules and economy as a human; difficulty changes how fast it reacts
-//! and how large its waves are.
+//! Skirmish AI: every AI slot runs one of OpenRA's four Red Alert bots (Rush,
+//! Normal, Turtle, Naval; ai_bots.rs) with OpenRA's module configs from
+//! rules.json. It plays by the same rules and economy as a human and runs in
+//! lockstep on every client: all its randomness comes from the world RNG.
 //!
-//! In free for all and team games it picks one enemy player to attack: the
-//! nearest hostile base (measured to its starting yard), and among equally near
+//! The modules, ported from OpenRA.Mods.Common/Traits/BotModules:
+//!
+//! | OpenRA module | file |
+//! |---|---|
+//! | BaseBuilderBotModule (+ BaseBuilderQueueManager) | ai_base.rs |
+//! | UnitBuilderBotModule | ai_units.rs |
+//! | SquadManagerBotModule (assault, rush, air, naval, protection squads) | ai_squads.rs, ai_fuzzy.rs |
+//! | HarvesterBotModule, ResourceMapBotModule | ai_harvest.rs |
+//! | McvManagerBotModule, McvExpansionManagerBotModule | ai_mcv.rs |
+//! | SupportPowerBotModule | ai_support.rs |
+//! | BuildingRepairBotModule, PowerDownBotModule | ai_upkeep.rs |
+//! | MinelayerBotModule | ai_mines.rs |
+//! | CaptureManagerBotModule | ai_infantry.rs |
+//!
+//! WebRA additions: in free for all and team games each AI picks one enemy
+//! player to attack (below): the nearest hostile base, and among equally near
 //! ones a player that recently hit its structures, else the one the fewest
-//! other AIs already attack, so neighbours do not gang up on one player. It
-//! keeps that target until another is clearly better. AI teammates attack the
-//! same enemy as their team leader, and idle units help allies whose base is
-//! under attack. Allies and neutral actors are never targeted.
-//!
-//! Aircraft, ships, unit abilities and superweapons live in ai_arsenal.rs.
+//! other AIs already attack, so neighbours do not gang up on one player. Its
+//! squads prefer that player's actors. AI teammates attack the same enemy as
+//! their team leader. Allies and neutral actors are never targeted. Like most
+//! skirmish AIs it knows where enemy structures are (OpenRA's squads only see
+//! what is visible; without the bases known, games on large maps could stall).
+//! When its economy runs dry it sells surplus structures for one more army
+//! (ai_economy.rs).
 
-use crate::ai_arsenal as arsenal;
-use crate::ai_economy as economy;
-use crate::ai_infantry as infantry;
+use crate::ai_bots::{BotConfig, BotType, Difficulty};
 use crate::math::{dist, CELL};
-use crate::rules::{FootCell, Kind, QueueType};
-use crate::world::{cell_center, Activity, AiDifficulty, HarvState, Order, World};
+use crate::rules::Kind;
+use crate::world::{AiDifficulty, World};
+use std::sync::Arc;
 
-pub(crate) const DEFEND_RADIUS: i32 = 14 * CELL;
 /// Enemy bases within this distance of the nearest one count as equally near.
 const NEAR_TIE: i32 = 8 * CELL;
 /// How long an attack target is kept before it is reconsidered (one minute).
 const RETARGET_TICKS: u32 = 60 * crate::world::TICKS_PER_SECOND;
 /// How long a player that damaged our structures stays the preferred target.
 const GRUDGE_TICKS: u32 = 2 * RETARGET_TICKS;
-/// A gathered army that has not grown for this long attacks below wave size.
-const ARMY_STALL_TICKS: u32 = 90 * crate::world::TICKS_PER_SECOND;
-/// An army that grows too slowly to ever fill its wave (both economies
-/// thin) attacks with what it has after this long without a wave, once the
-/// opening is over: otherwise two such armies wait at home for good.
-const WAVE_PATIENCE_TICKS: u32 = 120 * crate::world::TICKS_PER_SECOND;
-const WAVE_PATIENCE_FROM: u32 = 480 * crate::world::TICKS_PER_SECOND;
-const MIN_LATE_WAVE: usize = 4;
+/// Most attack notifications kept between two bot ticks.
+const MAX_EVENTS: usize = 64;
+
+/// One hit on an own actor (OpenRA IBotRespondToAttack.RespondToAttack).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AttackEvent {
+    /// Actor reference of the victim.
+    pub victim: u32,
+    /// Actor reference of the attacker.
+    pub attacker: u32,
+    /// Health before and after the hit.
+    pub before: i32,
+    pub after: i32,
+}
 
 #[derive(Clone)]
 pub struct AiState {
-    offset: u32,
-    think_interval: u32,
-    wave_size: usize,
-    max_wave: usize,
-    /// Defensive structures to keep around the base.
-    defenses: usize,
-    /// Enemy player the waves go to, and when to reconsider it.
+    pub player: u8,
+    /// The OpenRA bot type this slot plays.
+    pub bot: BotType,
+    pub difficulty: AiDifficulty,
+    pub(crate) cfg: Arc<BotConfig>,
+    /// Enemy player the squads go for, and when to reconsider it.
     pub target_player: Option<u8>,
     retarget_at: u32,
     /// Game seed, to break ties between equally good choices without
     /// favouring low player slots.
     pub salt: u64,
-    pub difficulty: AiDifficulty,
-    /// Naval yard spot (top-left cell) and when it was last looked for.
-    pub(crate) naval_site: Option<(i32, i32)>,
-    pub(crate) naval_checked_at: u32,
-    /// Minefields ordered so far (top-left cells).
-    pub minefields: Vec<(i32, i32)>,
-    /// Earliest tick for the next MAD tank or demolition truck.
-    pub(crate) next_special_at: u32,
-    /// Armed enemy aircraft were seen: build anti-air.
-    pub seen_air: bool,
-    /// Tick of the last structure sold for cash (ai_economy.rs).
-    pub(crate) last_sale: u32,
-    /// Army size last seen and the tick it last grew: a wave that stopped
-    /// growing (no money, no factory) attacks with what it has.
-    army_seen: usize,
-    army_grew_at: u32,
-    /// Tick of the last attack wave (WAVE_PATIENCE_TICKS).
-    last_wave: u32,
-    /// Builds and defends its base but never sends attack waves. Not a lobby
-    /// option: fairness sweeps (examples/target_sweep.rs) use it to stand in
-    /// for a human who turtles.
+    /// Builds and defends its base but never sends attack squads. Not a
+    /// lobby option: fairness sweeps (examples/target_sweep.rs) use it to
+    /// stand in for a human who turtles.
     pub passive: bool,
     /// Per player: last tick it damaged one of our structures.
     pub(crate) hurt_at: Vec<Option<u32>>,
-    /// Next capture orders for engineers (ai_infantry.rs; 0: not scheduled yet).
-    pub(crate) next_capture_at: u32,
+    /// The modules drew their random start delays (OpenRA TraitEnabled).
+    started: bool,
+    /// Hits on own actors since the last bot tick.
+    pub(crate) events: Vec<AttackEvent>,
+    pub(crate) base: crate::ai_base::BaseState,
+    pub(crate) units: crate::ai_units::UnitState,
+    pub(crate) squads: crate::ai_squads::SquadState,
+    pub(crate) harvest: crate::ai_harvest::HarvestState,
+    pub(crate) mcv: crate::ai_mcv::McvState,
+    pub(crate) upkeep: crate::ai_upkeep::UpkeepState,
+    pub(crate) support: crate::ai_support::SupportState,
+    pub(crate) capture: crate::ai_infantry::CaptureState,
+    pub(crate) mines: crate::ai_mines::MineState,
+    /// Tick of the last structure sold for cash (ai_economy.rs).
+    pub(crate) last_sale: u32,
 }
 
 impl AiState {
-    pub fn new(player: u32, difficulty: AiDifficulty) -> AiState {
-        let (think_interval, wave_size, max_wave, defenses) = match difficulty {
-            AiDifficulty::Easy => (50, 10, 12, 0),
-            AiDifficulty::Normal => (25, 6, 20, 2),
-            AiDifficulty::Hard => (15, 5, 30, 4),
-        };
+    pub fn new(rules: &crate::rules::Rules, player: u8, bot: BotType, difficulty: AiDifficulty) -> AiState {
         AiState {
-            offset: player * 7,
-            think_interval,
-            wave_size,
-            max_wave,
-            defenses,
+            player,
+            bot,
+            difficulty,
+            cfg: Arc::new(BotConfig::new(rules, bot)),
             target_player: None,
             retarget_at: 0,
             salt: 0,
-            difficulty,
-            naval_site: None,
-            naval_checked_at: 0,
-            minefields: Vec::new(),
-            next_special_at: 0,
-            seen_air: false,
-            last_sale: 0,
-            army_seen: 0,
-            army_grew_at: 0,
-            last_wave: 0,
             passive: false,
             hurt_at: Vec::new(),
-            next_capture_at: 0,
+            started: false,
+            events: Vec::new(),
+            base: Default::default(),
+            units: Default::default(),
+            squads: Default::default(),
+            harvest: Default::default(),
+            mcv: Default::default(),
+            upkeep: Default::default(),
+            support: Default::default(),
+            capture: Default::default(),
+            mines: Default::default(),
+            last_sale: 0,
         }
+    }
+
+    pub(crate) fn level(&self) -> Difficulty {
+        Difficulty(self.difficulty)
     }
 }
 
-/// Build order by prerequisite token rather than actor id, so it works for both sides.
-const BUILD_ORDER: &[&str] =
-    &["anypower", "proc", "barracks", "weap", "proc", "anypower", "fix", "anypower", "dome", "anypower", "techcenter"];
-
+/// One bot tick (OpenRA ModularBot ticks its modules every world tick, in
+/// the order of ai.yaml; attack notifications reach them first).
 pub fn think(w: &mut World, player: u8) {
-    let state = &w.ai[player as usize];
-    if !(w.tick + state.offset).is_multiple_of(state.think_interval) {
+    let st = &mut w.ai[player as usize];
+    if !st.started {
+        st.started = true;
+        start_modules(w, player);
+    }
+    let events = std::mem::take(&mut w.ai[player as usize].events);
+    for e in events {
+        respond_to_attack(w, player, e);
+    }
+    update_target_player(w, player);
+    crate::ai_harvest::tick_resource_map(w, player);
+    crate::ai_support::tick(w, player);
+    crate::ai_harvest::tick(w, player);
+    crate::ai_base::tick(w, player);
+    crate::ai_upkeep::tick_power_down(w, player);
+    crate::ai_squads::tick(w, player);
+    crate::ai_mcv::tick(w, player);
+    crate::ai_units::tick(w, player);
+    crate::ai_mines::tick(w, player);
+    crate::ai_infantry::tick_capture(w, player);
+    crate::ai_economy::tick(w, player);
+}
+
+/// OpenRA TraitEnabled of every module: random first delays, so not every
+/// AI evaluates on the same tick.
+fn start_modules(w: &mut World, player: u8) {
+    crate::ai_base::start(w, player);
+    crate::ai_units::start(w, player);
+    crate::ai_squads::start(w, player);
+    crate::ai_harvest::start(w, player);
+    crate::ai_mcv::start(w, player);
+    crate::ai_upkeep::start(w, player);
+    crate::ai_infantry::start_capture(w, player);
+    crate::ai_mines::start(w, player);
+}
+
+fn respond_to_attack(w: &mut World, player: u8, e: AttackEvent) {
+    let (Some(victim), Some(attacker)) = (w.resolve(e.victim), w.resolve(e.attacker)) else { return };
+    if w.actors[victim].owner != player {
+        // An ally was hit: the squads help (WebRA, AI teammates and allies).
+        crate::ai_squads::respond_to_attack(w, player, victim, attacker);
         return;
     }
-    deploy_mcv(w, player);
-    place_ready_building(w, player, QueueType::Building);
-    place_ready_building(w, player, QueueType::Defense);
-    arsenal::watch_the_sky(w, player);
-    send_idle_harvesters(w, player);
-    // No income left (ai_economy.rs): money only goes into the army, and
-    // what the base can do without is sold for one more.
-    let starving = economy::no_income(w, player) && w.players[player as usize].funds() < economy::BROKE_FUNDS * 4;
-    if starving {
-        economy::cancel_luxuries(w, player);
-        economy::sell_when_broke(w, player);
-        queue_power_only(w, player);
-    } else {
-        queue_buildings(w, player);
-        queue_defenses(w, player);
-    }
-    queue_units(w, player, starving);
-    if !starving {
-        arsenal::queue_aircraft(w, player);
-        arsenal::queue_ships(w, player);
-    }
-    command_army(w, player);
-    arsenal::command_aircraft(w, player);
-    arsenal::command_ships(w, player);
-    arsenal::command_minelayers(w, player);
-    arsenal::command_chrono_tanks(w, player);
-    let target_player = w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t));
-    arsenal::command_bombers(w, player, target_player);
-    arsenal::command_jammers(w, player);
-    // Engineers capture (ai_infantry.rs).
-    infantry::command_capturers(w, player);
-    use_support_powers(w, player);
+    crate::ai_base::respond_to_attack(w, player, victim, attacker);
+    crate::ai_upkeep::respond_to_attack(w, player, victim, attacker, e);
+    crate::ai_squads::respond_to_attack(w, player, victim, attacker);
+    crate::ai_harvest::respond_to_attack(w, player, victim, attacker);
+    crate::ai_mcv::respond_to_attack(w, player, victim);
+    crate::ai_mines::respond_to_attack(w, player, victim, attacker);
+    crate::ai_support::note_hidden_attack(w, player, victim, attacker);
 }
 
-/// Without a Construction Yard, deploy an MCV (starting units "MCV only").
-fn deploy_mcv(w: &mut World, player: u8) {
-    if w.has_producer(player, QueueType::Building) {
+/// A hit on actor `u` by actor reference `source` (or, without a shooter
+/// actor, by the player of the observer's damage source) that took it from
+/// `before` to its current health (combat.rs). An AI victim prefers to
+/// strike back at the player who hit its structures (`target_candidates`);
+/// the victim's AI and its AI allies hear of the hit (`respond_to_attack`).
+pub(crate) fn note_damage(w: &mut World, u: usize, source: u32, before: i32) {
+    let victim = w.actors[u].owner;
+    let shooter = w.resolve(source);
+    let Some(attacker) = shooter.map(|s| w.actors[s].owner).or(w.observer.source) else { return };
+    if attacker == victim || victim as usize >= w.players.len() {
         return;
     }
-    let mcvs: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive && a.owner == player && a.kind == Kind::Vehicle && w.rules.actors[a.ty as usize].transforms_into.is_some()
-        })
-        .collect();
-    for i in mcvs {
-        if w.actors[i].activity != Activity::Idle {
-            continue;
+    let tick = w.tick;
+    if w.actors[u].kind == Kind::Building && w.are_enemies(victim, attacker) && w.players[victim as usize].is_ai {
+        if let Some(st) = w.ai.get_mut(victim as usize) {
+            if st.hurt_at.len() <= attacker as usize {
+                st.hurt_at.resize(attacker as usize + 1, None);
+            }
+            st.hurt_at[attacker as usize] = Some(tick);
         }
-        if w.can_deploy(i) {
-            let r = w.make_ref(i);
-            w.queue_order(Order::Deploy { player, ids: vec![r] });
-            return;
-        }
-        // Blocked: drive a little and try again next time.
-        let (x, y) = (w.actors[i].x, w.actors[i].y);
-        let dx = if (w.tick / 100).is_multiple_of(2) { 2 * CELL } else { -2 * CELL };
-        w.order_move(&[i], x + dx, y + CELL, false);
     }
-}
-
-/// Ore trucks that found nothing near their refinery (the fields there are
-/// mined out) drive to the nearest explored ore they can reach, away from
-/// enemy structures, instead of waiting for regrowth.
-/// How a waiting ore truck ranks an ore cell (lower first): on the enemy's
-/// side, unexplored, distance, distance to our base, distance to the middle
-/// column, row.
-type OreChoice = (bool, bool, i64, i64, i32, i32);
-
-fn send_idle_harvesters(w: &mut World, player: u8) {
-    let waiting: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive
-                && a.owner == player
-                && a.in_world()
-                && w.is_harvester(i)
-                && a.activity == Activity::Harvest
-                && a.harv == HarvState::Wait
-        })
-        .collect();
-    if waiting.is_empty() {
+    if shooter.is_none() {
         return;
     }
-    let enemy_buildings: Vec<(i32, i32)> = w
-        .actors
-        .iter()
-        .filter(|a| a.alive && a.kind == Kind::Building && w.are_enemies(player, a.owner))
-        .map(|a| w.cell_of(a.x, a.y))
-        .collect();
-    let home = w.cell_of(base_point(w, player).0, base_point(w, player).1);
-    let enemy_bases: Vec<(i32, i32)> = (0..w.players.len() as u8)
-        .filter(|&p| is_live_enemy(w, player, p))
-        .map(|p| w.cell_of(base_point(w, p).0, base_point(w, p).1))
-        .collect();
-    for i in waiting {
-        let (ux, uy) = w.cell_of(w.actors[i].x, w.actors[i].y);
-        let comp = w.pass.component[w.map.idx(ux, uy)];
-        // Ore on our side of the map first (nearer our base than any enemy
-        // base: short, safe trips), explored before unexplored; then any ore
-        // the truck can reach (the AI knows the map's resources), so it never
-        // waits while ore lies elsewhere.
-        let mut best: Option<(OreChoice, usize)> = None;
-        for ci in 0..w.map.cells() {
-            if !w.map.has_resource(ci) || w.pass.blocked[ci] || w.pass.component[ci] != comp {
-                continue;
+    let e = AttackEvent { victim: w.make_ref(u), attacker: source, before, after: w.actors[u].hp };
+    for p in 0..w.players.len().min(w.ai.len()) {
+        let pl = &w.players[p];
+        if pl.is_ai && !pl.defeated && (p == victim as usize || w.are_allies(p as u8, victim)) {
+            let events = &mut w.ai[p].events;
+            if events.len() < MAX_EVENTS {
+                events.push(e);
             }
-            let (x, y) = (ci as i32 % w.map.width, ci as i32 / w.map.width);
-            if enemy_buildings.iter().any(|&(bx, by)| (bx - x).abs() <= 10 && (by - y).abs() <= 10) {
-                continue;
-            }
-            let unexplored = w.players[player as usize].explored[ci] == 0;
-            let d = ((x - ux) * (x - ux) + (y - uy) * (y - uy)) as i64;
-            let d2 = |(bx, by): (i32, i32)| ((x - bx) * (x - bx) + (y - by) * (y - by)) as i64;
-            let far_side = enemy_bases.iter().any(|&b| d2(b) < d2(home));
-            // Ties: nearer our base, then nearer the map's middle column, then
-            // higher up; never scan order, so mirrored trucks on a mirrored
-            // map pick mirrored cells.
-            let key = (far_side, unexplored, d, d2(home), (2 * x - (w.map.width - 1)).abs(), y);
-            if best.is_none_or(|(bk, _)| key < bk) {
-                best = Some((key, ci));
-            }
-        }
-        let best = best.map(|(k, ci)| (k.2, ci));
-        if let Some((_, ci)) = best {
-            let (x, y) = (cell_center(ci as i32 % w.map.width), cell_center(ci as i32 / w.map.width));
-            let r = w.make_ref(i);
-            w.queue_order(Order::Smart { player, ids: vec![r], x, y });
         }
     }
 }
 
-/// A ground unit worth sending into battle in waves (not a harvester, mine
-/// layer or suicide unit; aircraft and ships have their own orders).
-pub(crate) fn is_army_unit(w: &World, ty: usize) -> bool {
-    let info = &w.rules.actors[ty];
-    // Tanya fights infantry only but goes with the squads; dogs stay at home
-    // (OpenRA SquadManagerBotModule ExcludeFromSquadsTypes: dog), and healers
-    // have no weapon against enemies.
-    let fights = info.can_attack(&w.rules, Kind::Vehicle) || (info.kind == Kind::Infantry && info.can_attack(&w.rules, Kind::Infantry));
-    matches!(info.kind, Kind::Infantry | Kind::Vehicle)
-        && fights
-        && !info.targets_allies
-        && info.abilities.attack_leap.is_none()
-        && info.abilities.demo_truck.is_none()
-        && info.abilities.mad_tank.is_none()
+/// One line about a bot's state for balance debugging (examples/ai_probe.rs):
+/// its target player, squads (type, state, units) and units at the base.
+pub fn debug_summary(w: &World, player: u8) -> String {
+    let st = &w.ai[player as usize];
+    format!(
+        "{:?} {:?} target {:?} hanging {} squads {}",
+        st.bot,
+        st.difficulty,
+        st.target_player,
+        st.squads.hanging.len(),
+        crate::ai_squads::describe(w, player)
+    )
 }
+
+// ---- Shared helpers -------------------------------------------------------------------
 
 pub(crate) fn owned_buildings(w: &World, player: u8) -> Vec<usize> {
     (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.actors[i].kind == Kind::Building).collect()
 }
 
-fn count_providing(w: &World, player: u8, token: &str) -> usize {
-    let faction = w.players[player as usize].faction;
-    let Some(t) = w.rules.token(token) else { return 0 };
-    owned_buildings(w, player)
-        .iter()
-        .filter(|&&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().provides[faction].contains(&t))
-        .count()
+/// Own living actors of the listed types (OpenRA AIUtils.CountActorByCommonName
+/// counts these, in the world or not).
+pub(crate) fn own_of(w: &World, player: u8, types: &[u16]) -> Vec<usize> {
+    (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && types.contains(&w.actors[i].ty)).collect()
 }
 
-/// Cheapest enabled building that provides `token`.
-pub(crate) fn building_for(w: &World, player: u8, token: &str) -> Option<u16> {
-    let faction = w.players[player as usize].faction;
-    let t = w.rules.token(token)?;
-    (0..w.rules.actors.len())
-        .filter(|&a| {
-            let info = &w.rules.actors[a];
-            info.kind == Kind::Building
-                && info.queue == QueueType::Building
-                && info.building.as_ref().unwrap().provides[faction].contains(&t)
-                && w.availability(player, a as u16).enabled
-        })
-        .min_by_key(|&a| w.rules.actors[a].cost)
-        .map(|a| a as u16)
-}
-
-pub(crate) fn build_order_done(w: &World, player: u8) -> bool {
-    let mut needed: Vec<(&str, usize)> = Vec::new();
-    BUILD_ORDER.iter().all(|&tok| {
-        match needed.iter_mut().find(|(t, _)| *t == tok) {
-            Some(e) => e.1 += 1,
-            None => needed.push((tok, 1)),
-        }
-        let want = needed.iter().find(|(t, _)| *t == tok).unwrap().1;
-        count_providing(w, player, tok) >= want || building_for(w, player, tok).is_none()
-    })
-}
-
-/// While starving: only a power plant when production would stall without one.
-fn queue_power_only(w: &mut World, player: u8) {
-    if !w.players[player as usize].queues[QueueType::Building as usize].items.is_empty() || !w.has_producer(player, QueueType::Building) {
-        return;
-    }
-    let p = &w.players[player as usize];
-    if p.power_use > p.power_gen {
-        if let Some(ty) = building_for(w, player, "anypower") {
-            w.start_production(player, ty, 1);
-        }
-    }
-}
-
-fn queue_buildings(w: &mut World, player: u8) {
-    if !w.players[player as usize].queues[QueueType::Building as usize].items.is_empty() || !w.has_producer(player, QueueType::Building) {
-        return;
-    }
-    let p = &w.players[player as usize];
-    // Power first when the next building would push us into low power.
-    if p.power_use + 40 > p.power_gen {
-        if let Some(ty) = building_for(w, player, "anypower") {
-            w.start_production(player, ty, 1);
-            return;
-        }
-    }
-    let mut needed: Vec<(&str, usize)> = Vec::new();
-    for &tok in BUILD_ORDER {
-        match needed.iter_mut().find(|(t, _)| *t == tok) {
-            Some(e) => e.1 += 1,
-            None => needed.push((tok, 1)),
-        }
-        let have = count_providing(w, player, tok);
-        let want = needed.iter().find(|(t, _)| *t == tok).unwrap().1;
-        if have < want {
-            if let Some(ty) = building_for(w, player, tok) {
-                if w.players[player as usize].funds() >= w.rules.actors[ty as usize].cost / 2 {
-                    w.start_production(player, ty, 1);
-                }
-                return;
-            }
-        }
-    }
-    // The base stands: a kennel (ai_infantry.rs), helipads, airfields and a naval yard.
-    if let Some(ty) = infantry::kennel(w, player).or_else(|| arsenal::next_building(w, player)) {
-        w.start_production(player, ty, 1);
-    }
-}
-
-/// A few gun or Tesla defences once the base stands, anti-air once enemy
-/// aircraft were seen, then superweapons (ai_arsenal.rs).
-fn queue_defenses(w: &mut World, player: u8) {
-    let dq = QueueType::Defense as usize;
-    if !w.players[player as usize].queues[dq].items.is_empty() || !build_order_done(w, player) {
-        return;
-    }
-    let want = w.ai[player as usize].defenses;
-    let have = owned_buildings(w, player)
-        .iter()
-        .filter(|&&b| {
-            let info = &w.rules.actors[w.actors[b].ty as usize];
-            info.queue == QueueType::Defense && info.can_attack(&w.rules, Kind::Vehicle)
-        })
-        .count();
-    if have < want && w.players[player as usize].funds() >= 1500 {
-        let best = (0..w.rules.actors.len() as u16)
-            .filter(|&a| {
-                let info = &w.rules.actors[a as usize];
-                info.queue == QueueType::Defense
-                    && info.can_attack(&w.rules, Kind::Vehicle)
-                    && !info.is_wall()
-                    && w.availability(player, a).enabled
-            })
-            .max_by_key(|&a| w.rules.actors[a as usize].cost);
-        if let Some(ty) = best {
-            w.start_production(player, ty, 1);
-            return;
-        }
-    }
-    if let Some(ty) = arsenal::next_anti_air_defense(w, player).or_else(|| arsenal::next_superweapon(w, player)) {
-        w.start_production(player, ty, 1);
-    }
-}
-
-/// Army production. `starving` (no income, ai_economy.rs): every credit goes
-/// into units, nothing is held back for the build order.
-fn queue_units(w: &mut World, player: u8, starving: bool) {
-    let order_done = build_order_done(w, player) || starving;
-    let funds = w.players[player as usize].funds();
-    let mut candidates: Vec<u16> = (0..w.rules.actors.len() as u16).filter(|&a| w.availability(player, a).enabled).collect();
-    candidates.sort_by_key(|&a| std::cmp::Reverse(w.rules.actors[a as usize].cost));
-
-    // Infantry is cheap: keep a trickle going, but tanks are the backbone.
-    let count_kind = |k: Kind| w.actors.iter().filter(|a| a.alive && a.owner == player && a.kind == k).count();
-    let (infantry, vehicles) = (count_kind(Kind::Infantry), count_kind(Kind::Vehicle));
-    let iq = QueueType::Infantry as usize;
-    if w.players[player as usize].queues[iq].items.len() < 2 && (infantry < 6 + vehicles * 2 || starving) && (order_done || funds >= 600) {
-        // Anti-air soldiers while enemy aircraft are about, else the mix of
-        // OpenRA's UnitsToBuild (ai_infantry.rs), else the cheapest soldier.
-        let inf =
-            arsenal::anti_air_infantry(w, player, infantry + vehicles).or_else(|| infantry::infantry_to_build(w, player)).or_else(|| {
-                candidates.iter().rev().copied().find(|&a| {
-                    let info = &w.rules.actors[a as usize];
-                    info.queue == QueueType::Infantry && !info.weapons.is_empty()
-                })
-            });
-        if let Some(inf) = inf {
-            w.start_production(player, inf, 1);
-        }
-    }
-
-    // One harvester per refinery, plus a spare when there is money.
-    let refineries = count_providing(w, player, "proc");
-    let harvesters = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == player && w.is_harvester(i)).count();
-    let vq = QueueType::Vehicle as usize;
-    if !w.players[player as usize].queues[vq].items.is_empty() {
-        return;
-    }
-    // Trucks only while there is ore they can reach (ai_economy.rs).
-    if harvesters < refineries + 1 && refineries > 0 && economy::reachable_resources(w, player) > 0 {
-        if let Some(&h) = candidates.iter().find(|&&a| w.rules.actors[a as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some())) {
-            if harvesters < refineries || funds >= 1500 {
-                w.start_production(player, h, 1);
-                return;
-            }
-        }
-    }
-    // Now and then a special: Minelayer, radar jammer, MAD tank or demolition truck.
-    if order_done {
-        if let Some(ty) = arsenal::special_vehicle(w, player) {
-            w.start_production(player, ty, 1);
-            arsenal::special_queued(w, player, ty);
-            return;
-        }
-    }
-    // Tanks as soon as there is a war factory and money to spare beyond the
-    // build order: the best army unit we can afford now.
-    let reserve = if order_done { 0 } else { 600 };
-    let tank = candidates.iter().copied().find(|&a| {
-        let info = &w.rules.actors[a as usize];
-        info.queue == QueueType::Vehicle && is_army_unit(w, a as usize) && info.cost + reserve <= funds
-    });
-    if let Some(tank) = tank {
-        w.start_production(player, tank, 1);
-    }
-}
-
-fn place_ready_building(w: &mut World, player: u8, q: QueueType) {
-    let qi = q as usize;
-    let Some(item) = w.players[player as usize].queues[qi].items.first().cloned() else { return };
-    if !item.done {
-        return;
-    }
-    let (sx, sy) = w.players[player as usize].start;
-    // Gun and Tesla defences go out toward the enemy; everything else
-    // (superweapons, gap generators) around the yard.
-    let info = &w.rules.actors[item.ty as usize];
-    let (ax, ay) = if q == QueueType::Defense && info.can_attack(&w.rules, Kind::Vehicle) {
-        let (dx, dy) = enemy_direction(w, player);
-        (sx + dx * 7 / 1024, sy + dy * 7 / 1024)
-    } else {
-        (sx, sy)
-    };
-    let b = info.building.as_ref().unwrap();
-    let (bw, bh) = (b.width, b.height);
-    // Mirror the scan for bases in the right half of the map, so players on
-    // mirrored spawns lay out mirrored bases. Never flip it vertically:
-    // structures face south, so a base laid out upside down is not
-    // equivalent (generated maps repeat their top half in the bottom half).
-    let (flip_x, flip_y) = (sx * 2 > w.map.width, false);
-    // Refineries go where the dock is closest to ore, so trips stay short
-    // whichever way the dock faces relative to the base.
-    let ore = if b.refinery.is_some() { ore_distance_field(w, sx + 1, sy + 2, 26) } else { Vec::new() };
-    // Spiral outward from the anchor. Prefer spots that leave a one cell gap so
-    // units can still pass; fall back to any legal spot.
-    for strict in [true, false] {
-        let mut best: Option<(i32, (i32, i32))> = None;
-        for r in 0i32..18 {
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx.abs() != r && dy.abs() != r {
-                        continue;
-                    }
-                    // Mirror around the footprint centre, not the top-left corner.
-                    let cx = if flip_x { ax - dx - (bw - 3) } else { ax + dx };
-                    let cy = if flip_y { ay - dy - (bh - 4) } else { ay + dy };
-                    if !w.can_place(player, item.ty, cx, cy) || (strict && !has_clearance(w, cx, cy, bw, bh)) {
-                        continue;
-                    }
-                    if ore.is_empty() {
-                        w.place_building(player, item.ty, cx, cy);
-                        return;
-                    }
-                    let score = dock_ore_distance(w, item.ty, cx, cy, &ore);
-                    if best.is_none_or(|(bs, _)| score < bs) {
-                        best = Some((score, (cx, cy)));
-                    }
-                }
-            }
-        }
-        if let Some((_, (cx, cy))) = best {
-            w.place_building(player, item.ty, cx, cy);
-            return;
-        }
-    }
-    // Nowhere to place: cancel and get the money back.
-    w.cancel_production(player, item.ty);
-}
-
-/// Ground distance (10 per straight step, 14 per diagonal) from every cell to
-/// the nearest ore cell within `radius` cells of a yard centre; `i32::MAX` where no
-/// ore is reachable. Empty when there is no ore near the base.
-fn ore_distance_field(w: &World, sx: i32, sy: i32, radius: i32) -> Vec<i32> {
-    let mut d = vec![i32::MAX; w.map.cells()];
-    let mut heap = std::collections::BinaryHeap::new();
-    for y in sy - radius..=sy + radius {
-        for x in sx - radius..=sx + radius {
-            if w.map.contains(x, y) {
-                let i = w.map.idx(x, y);
-                if w.map.has_resource(i) && !w.pass.blocked[i] {
-                    d[i] = 0;
-                    heap.push(std::cmp::Reverse((0, i)));
-                }
-            }
-        }
-    }
-    if heap.is_empty() {
-        return Vec::new();
-    }
-    while let Some(std::cmp::Reverse((c, i))) = heap.pop() {
-        if c > d[i] {
-            continue;
-        }
-        let (x, y) = ((i as i32) % w.map.width, (i as i32) / w.map.width);
-        for dir in 0..8 {
-            if let Some(j) = crate::flowfield::step(&w.map, &w.pass.blocked, x, y, dir) {
-                let nc = c + if dir % 2 == 0 { 10 } else { 14 };
-                if nc < d[j] {
-                    d[j] = nc;
-                    heap.push(std::cmp::Reverse((nc, j)));
-                }
-            }
-        }
-    }
-    d
-}
-
-/// How far an ore truck drives from the dock of a refinery placed at (cx, cy)
-/// to the nearest ore. The refinery's own walls count, so a dock that faces
-/// away from the ore scores worse than one that faces it.
-fn dock_ore_distance(w: &World, ty: u16, cx: i32, cy: i32, field: &[i32]) -> i32 {
-    let b = w.rules.actors[ty as usize].building.as_ref().unwrap();
-    let Some(rf) = b.refinery.as_ref() else { return 0 };
-    let x = cx * CELL + b.width * crate::math::HALF_CELL + b.center_offset.0 + rf.dock_offset.0;
-    let y = cy * CELL + b.height * crate::math::HALF_CELL + b.center_offset.1 + rf.dock_offset.1;
-    let (dx, dy) = (x.div_euclid(CELL), y.div_euclid(CELL));
-    let walls = |px: i32, py: i32| b.footprint.iter().any(|&(fx, fy, c)| c == FootCell::Occupied && (cx + fx, cy + fy) == (px, py));
-    let mut best = i32::MAX;
-    for (dir, &(ox, oy)) in crate::flowfield::DIRS.iter().enumerate() {
-        let (nx, ny) = (dx + ox, dy + oy);
-        if !w.map.contains(nx, ny) || walls(nx, ny) {
-            continue;
-        }
-        // No cutting past a wall corner on diagonal steps.
-        if ox != 0 && oy != 0 && (walls(dx + ox, dy) || walls(dx, dy + oy)) {
-            continue;
-        }
-        let f = field[w.map.idx(nx, ny)];
-        if f != i32::MAX {
-            best = best.min(f + if dir % 2 == 0 { 10 } else { 14 });
-        }
-    }
-    best
-}
-
-fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
-    for y in cy - 1..=cy + bh {
-        for x in cx - 1..=cx + bw {
-            let inside = x >= cx && x < cx + bw && y >= cy && y < cy + bh;
-            if inside || !w.map.contains(x, y) {
-                continue;
-            }
-            let i = w.map.idx(x, y);
-            if w.building_at[i] != crate::world::NONE {
-                return false;
-            }
-        }
-    }
-    true
+pub(crate) fn count_own(w: &World, player: u8, types: &[u16]) -> usize {
+    w.actors.iter().filter(|a| a.alive && a.owner == player && types.contains(&a.ty)).count()
 }
 
 /// Centre of a player's starting yard.
 pub(crate) fn base_point(w: &World, player: u8) -> (i32, i32) {
     let (sx, sy) = w.players[player as usize].start;
-    (cell_center(sx + 1), cell_center(sy + 2))
+    (crate::world::cell_center(sx + 1), crate::world::cell_center(sy + 2))
 }
 
-/// First enemy unit within `DEFEND_RADIUS` of a point that `player` can see
-/// and target. Mines, cloaked or submerged units and passengers do not count:
-/// the army could only rally to them and stand there.
-fn threat_near(w: &World, player: u8, at: (i32, i32)) -> Option<usize> {
-    (0..w.actors.len()).find(|&i| {
-        let a = &w.actors[i];
-        a.alive
-            && a.in_world()
-            && !matches!(a.kind, Kind::Building | Kind::Mine)
-            && w.are_enemies(player, a.owner)
-            && dist(a.x, a.y, at.0, at.1) <= DEFEND_RADIUS
-            && w.targetable(i, player)
-    })
+/// Uniform random integer in `lo..hi` from the world RNG (OpenRA LocalRandom.Next).
+pub(crate) fn rand(w: &mut World, lo: i32, hi: i32) -> i32 {
+    w.rng.range(lo, hi)
 }
 
-fn command_army(w: &mut World, player: u8) {
-    let base = base_point(w, player);
-    let army: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive && a.owner == player && a.kind != Kind::Building && is_army_unit(w, a.ty as usize)
-        })
-        .collect();
-    // Overheated vehicles (desert heat waves, weather.rs) sit out the next
-    // wave until they cooled down; they still defend the base.
-    let idle: Vec<usize> =
-        army.iter().copied().filter(|&i| w.actors[i].activity == Activity::Idle && !w.actors[i].env.overheated).collect();
-    let rally = rally_point(w, player);
-    // Units at home: idle, or on their way to the rally point (new units).
-    let home_units: Vec<usize> = army
-        .iter()
-        .copied()
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.activity == Activity::Idle
-                || (a.activity == Activity::Move && !a.attack_move && dist(a.dest.0, a.dest.1, rally.0, rally.1) < 2 * CELL)
-        })
-        .collect();
-
-    // Defend: enemies near our base pull the units at home in.
-    if let Some(t) = threat_near(w, player, base) {
-        let (tx, ty) = (w.actors[t].x, w.actors[t].y);
-        w.order_move(&home_units, tx, ty, true);
-        return;
+/// OpenRA damage states by health share: 0 Undamaged, 1 Light, 2 Medium,
+/// 3 Heavy, 4 Critical, 5 Dead (Health.DamageState).
+pub(crate) fn damage_state(hp: i32, max: i32) -> u8 {
+    let (hp, max) = (hp as i64, max.max(1) as i64);
+    if hp <= 0 {
+        5
+    } else if hp * 100 <= max * 25 {
+        4
+    } else if hp * 100 <= max * 50 {
+        3
+    } else if hp * 100 <= max * 75 {
+        2
+    } else if hp < max {
+        1
+    } else {
+        0
     }
-    // Help allies: enemies near a teammate's base pull them there too.
-    if let Some(t) = allied_base_threat(w, player) {
-        let (tx, ty) = (w.actors[t].x, w.actors[t].y);
-        w.order_move(&home_units, tx, ty, true);
-        return;
-    }
-
-    // Gather idle units at a rally point toward the enemy, attack in waves.
-    set_factory_rally(w, player, rally);
-    if w.ai[player as usize].passive {
-        let strays: Vec<usize> =
-            idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) >= 6 * CELL).collect();
-        w.order_move(&strays, rally.0, rally.1, false);
-        return;
-    }
-    let gathered: Vec<usize> = idle.iter().copied().filter(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) < 6 * CELL).collect();
-    let target_player = update_target_player(w, player);
-    let target = enemy_target(w, player, target_player, base);
-    let (wave, max_wave) = (w.ai[player as usize].wave_size, w.ai[player as usize].max_wave);
-    // An army that stopped growing (no money, no factory left) will never fill
-    // the wave: after a while it goes with what it has.
-    let st = &mut w.ai[player as usize];
-    if army.len() > st.army_seen {
-        st.army_grew_at = w.tick;
-    }
-    st.army_seen = army.len();
-    let stalled = w.tick >= st.army_grew_at + ARMY_STALL_TICKS;
-    let patience = w.tick >= WAVE_PATIENCE_FROM && w.tick >= st.last_wave + WAVE_PATIENCE_TICKS && gathered.len() >= MIN_LATE_WAVE;
-    // An enemy without structures only has its last units left: hunt them
-    // down with whatever is at hand instead of waiting for a full wave.
-    let finishing = target_player.is_some_and(|t| !has_buildings(w, t));
-    if finishing {
-        if let Some((tx, ty)) = target {
-            // The whole army, not only the units at the rally point.
-            let hunters: Vec<usize> = army.iter().copied().filter(|&i| w.actors[i].activity != Activity::Attack).collect();
-            if !hunters.is_empty() {
-                w.order_move(&hunters, tx, ty, true);
-            }
-            return;
-        }
-    }
-    if gathered.len() >= wave || (!gathered.is_empty() && (stalled || finishing)) || patience {
-        if let Some((tx, ty)) = target {
-            w.order_move(&gathered, tx, ty, true);
-            // A full wave makes the next one bigger; a wave that went early
-            // (the army grows too slowly) sets the next one to its own size,
-            // so a thin economy attacks more often instead of hoarding.
-            let next = if gathered.len() >= wave { (wave + 2).min(max_wave) } else { gathered.len().clamp(MIN_LATE_WAVE + 2, wave) };
-            w.ai[player as usize].wave_size = next;
-            w.ai[player as usize].last_wave = w.tick;
-        }
-        return;
-    }
-    // Units of an earlier wave that went idle in the field keep pushing; the rest regroup.
-    let (forward, home): (Vec<usize>, Vec<usize>) =
-        idle.into_iter().filter(|i| !gathered.contains(i)).partition(|&i| dist(w.actors[i].x, w.actors[i].y, rally.0, rally.1) > 20 * CELL);
-    if let Some((tx, ty)) = target {
-        w.order_move(&forward, tx, ty, true);
-    }
-    w.order_move(&home, rally.0, rally.1, false);
 }
 
-/// Where the army gathers between waves: six cells from the yard centre
-/// toward the enemy it fights.
-pub(crate) fn rally_point(w: &World, player: u8) -> (i32, i32) {
-    let base = base_point(w, player);
-    let (dx, dy) = enemy_direction(w, player);
-    (base.0 + dx * 6 * CELL / 1024, base.1 + dy * 6 * CELL / 1024)
+/// OpenRA SquadManagerBotModule.IsPreferredEnemyUnit: an enemy actor that is
+/// not a husk, has target types outside `ignored` (TT_* bits) and that
+/// `player` can see. Enemy structures count as seen (the AI knows the bases),
+/// and so do the units of a player without structures.
+pub(crate) fn is_preferred_enemy(w: &World, player: u8, i: usize, ignored: u32) -> bool {
+    let a = &w.actors[i];
+    if !a.alive || !a.in_world() || matches!(a.kind, Kind::Husk | Kind::Crate | Kind::Mine | Kind::Proxy) {
+        return false;
+    }
+    if !w.are_enemies(player, a.owner) || w.players[a.owner as usize].defeated {
+        return false;
+    }
+    // The last units of a player without structures are hunted down, even
+    // aircraft squads would otherwise ignore (or AI-only games could stall).
+    let hunted = !has_buildings(w, a.owner);
+    let tt = crate::ai_bots::target_types(w, i);
+    if tt == 0 || (tt & ignored != 0 && !hunted) {
+        return false;
+    }
+    // Structures are known, and so are hunted units.
+    a.kind == Kind::Building || w.targetable(i, player) || (hunted && !w.is_cloaked_from(i, player))
 }
 
-/// Point every own factory's rally point at `rally`, so new units leave by
-/// the exit nearest to it and drive there.
-fn set_factory_rally(w: &mut World, player: u8, rally: (i32, i32)) {
-    let factories: Vec<usize> = owned_buildings(w, player)
+/// Whether a weapon of unit `i` can hit actor `t` as it is now (OpenRA
+/// AttackBase.HasAnyValidWeapons).
+pub(crate) fn can_attack(w: &World, i: usize, t: usize) -> bool {
+    w.rules.actors[w.actors[i].ty as usize].can_attack_class(&w.rules, w.target_class(t))
+}
+
+/// Where unit `i` can attack actor `t` from (OpenRA FindEnemies and
+/// ClosestTo: the target itself or one of eight points at the edge of the
+/// unit's weapon range around it, which the unit can reach); the offset
+/// from the target of the nearest such point, or None.
+pub(crate) fn attack_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)> {
+    let d = w.domain_of(i);
+    if d == crate::rules::Domain::Air {
+        return Some((0, 0));
+    }
+    let pass = w.pass_for(d);
+    let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
+    let comp = pass.component[ci];
+    let r = w.rules.actors[w.actors[i].ty as usize].max_range(&w.rules);
+    let diag = r * 724 / 1024;
+    let (tx, ty) = (w.actors[t].x, w.actors[t].y);
+    [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r), (diag, diag), (-diag, diag), (-diag, -diag), (diag, -diag)]
         .into_iter()
-        .filter(|&b| {
-            let info = w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap();
-            info.produces.iter().any(|q| matches!(q, QueueType::Infantry | QueueType::Vehicle)) && w.actors[b].rally != Some(rally)
+        .filter(|&(ox, oy)| {
+            let (x, y) = (tx + ox, ty + oy);
+            if x < 0 || y < 0 || x >= w.map.width * CELL || y >= w.map.height * CELL {
+                return false;
+            }
+            let c = w.cell_index(x, y);
+            !pass.blocked[c] && pass.component[c] == comp
         })
-        .collect();
-    for b in factories {
-        w.actors[b].rally = Some(rally);
-    }
+        .min_by_key(|&(ox, oy)| (ox as i64 * ox as i64 + oy as i64 * oy as i64, ox, oy))
 }
 
-/// Direction (length 1024) from `player`'s yard toward the enemy it fights:
-/// its target player's base, else the nearest hostile base, else the map
-/// centre. Rally points and defences face the enemy, not a map side, so
-/// bases in the top and bottom rows of a map behave alike.
-fn enemy_direction(w: &World, player: u8) -> (i32, i32) {
-    let base = base_point(w, player);
-    let enemy = w.ai[player as usize]
-        .target_player
-        .filter(|&t| is_live_enemy(w, player, t))
-        .or_else(|| {
-            (0..w.players.len() as u8)
-                .filter(|&p| is_live_enemy(w, player, p))
-                .min_by_key(|&p| (crate::math::dist_sq(base.0, base.1, base_point(w, p).0, base_point(w, p).1), p))
-        })
-        .map(|p| base_point(w, p));
-    let (tx, ty) = enemy.unwrap_or((w.map.width * CELL / 2, w.map.height * CELL / 2));
-    let (dx, dy) = (tx - base.0, ty - base.1);
-    let len = dist(0, 0, dx, dy);
-    if len == 0 {
-        return (0, 1024);
-    }
-    ((dx as i64 * 1024 / len as i64) as i32, (dy as i64 * 1024 / len as i64) as i32)
+/// The enemy player `player` attacks, while it is still in the game.
+pub(crate) fn current_target(w: &World, player: u8) -> Option<u8> {
+    w.ai.get(player as usize).and_then(|a| a.target_player).filter(|&t| is_live_enemy(w, player, t))
 }
 
-/// A visible enemy unit near the base of a living ally, nearest ally base first.
-fn allied_base_threat(w: &World, player: u8) -> Option<usize> {
-    let base = base_point(w, player);
-    let mut allies: Vec<(i64, u8)> = (0..w.players.len() as u8)
-        .filter(|&p| p != player && w.are_allies(player, p) && !w.players[p as usize].defeated && has_buildings(w, p))
-        .map(|p| {
-            let b = base_point(w, p);
-            (crate::math::dist_sq(base.0, base.1, b.0, b.1), p)
-        })
-        .collect();
-    allies.sort_unstable();
-    allies.into_iter().find_map(|(_, p)| threat_near(w, player, base_point(w, p)))
-}
+// ---- Target choice in free for alls ------------------------------------------------
 
 fn has_buildings(w: &World, player: u8) -> bool {
     w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == Kind::Building)
@@ -823,21 +388,6 @@ fn attackers_of(w: &World, player: u8, p: u8) -> usize {
 /// Whether `p` damaged one of `player`'s structures within `GRUDGE_TICKS`.
 fn has_grudge(w: &World, player: u8, p: u8) -> bool {
     w.ai.get(player as usize).and_then(|a| a.hurt_at.get(p as usize).copied().flatten()).is_some_and(|t| w.tick < t + GRUDGE_TICKS)
-}
-
-/// Record that `attacker` damaged a structure of `victim` (combat.rs): an AI
-/// victim prefers to strike back at it (`target_candidates`).
-pub(crate) fn note_structure_damage(w: &mut World, victim: u8, attacker: u8) {
-    if attacker == victim || !w.players.get(victim as usize).is_some_and(|p| p.is_ai) || !w.are_enemies(victim, attacker) {
-        return;
-    }
-    let tick = w.tick;
-    if let Some(st) = w.ai.get_mut(victim as usize) {
-        if st.hurt_at.len() <= attacker as usize {
-            st.hurt_at.resize(attacker as usize + 1, None);
-        }
-        st.hurt_at[attacker as usize] = Some(tick);
-    }
 }
 
 /// An enemy player `player` could attack and what speaks for it.
@@ -963,94 +513,4 @@ pub(crate) fn update_target_player(w: &mut World, player: u8) -> Option<u8> {
     state.target_player = chosen;
     state.retarget_at = w.tick + RETARGET_TICKS;
     chosen
-}
-
-/// Where to send attacks: the target player's building closest to our base,
-/// else its nearest unit; without a target player, the nearest enemy building.
-/// Like most skirmish AIs, it knows where the enemy bases are.
-fn enemy_target(w: &World, player: u8, target_player: Option<u8>, base: (i32, i32)) -> Option<(i32, i32)> {
-    let mut best: Option<(i64, (i32, i32))> = None;
-    for a in &w.actors {
-        let wanted = match target_player {
-            Some(t) => a.owner == t,
-            None => w.are_enemies(player, a.owner) && !w.players[a.owner as usize].defeated,
-        };
-        // Buildings are known (like most skirmish AIs, it knows the bases);
-        // units only count when they are in the world and not mines, and
-        // not ships (a ground army would stand on the shore for good).
-        if !a.alive || !wanted || !a.in_world() || a.kind == Kind::Mine || a.kind == Kind::Ship {
-            continue;
-        }
-        let d = crate::math::dist_sq(a.x, a.y, base.0, base.1) + if a.kind == Kind::Building { 0 } else { 1 << 50 };
-        if best.is_none_or(|(bd, _)| d < bd) {
-            best = Some((d, (a.x, a.y)));
-        }
-    }
-    best.map(|(_, p)| p)
-}
-
-// ---- Support powers ------------------------------------------------------------
-
-/// The target player's buildings, the ones with the most other buildings
-/// within 5 cells first (where a nuke or a bomb run hurts most); ties go to
-/// the lower index. At most the eight densest.
-pub(crate) fn densest_buildings(w: &World, target: u8) -> Vec<(i32, i32)> {
-    let buildings: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive && a.owner == target && a.kind == Kind::Building && !w.rules.actors[a.ty as usize].is_wall()
-        })
-        .collect();
-    let near = |i: usize| {
-        let a = &w.actors[i];
-        buildings.iter().filter(|&&j| dist(a.x, a.y, w.actors[j].x, w.actors[j].y) <= 5 * CELL).count()
-    };
-    let mut ranked: Vec<(std::cmp::Reverse<usize>, usize)> = buildings.iter().map(|&i| (std::cmp::Reverse(near(i)), i)).collect();
-    ranked.sort_unstable();
-    ranked.into_iter().take(8).map(|(_, i)| (w.actors[i].x, w.actors[i].y)).collect()
-}
-
-/// Fire every ready support power that has a sensible target: the GPS
-/// satellite at once, the spy plane over the target player's base, bombs,
-/// paratroopers and the nuke on its densest structures (never where own or
-/// allied units would be hit), the Iron Curtain on the army in a fight, and
-/// the Chronosphere to jump the gathered army into the enemy base.
-fn use_support_powers(w: &mut World, player: u8) {
-    let ready: Vec<(String, String, Vec<String>)> = w
-        .power_instances(player)
-        .iter()
-        .filter(|p| p.ready())
-        .map(|p| {
-            let info = w.power_info(p);
-            (p.key.clone(), info.kind.clone(), info.footprint.clone())
-        })
-        .collect();
-    if ready.is_empty() {
-        return;
-    }
-    let base = base_point(w, player);
-    let target_player =
-        w.ai[player as usize].target_player.filter(|&t| is_live_enemy(w, player, t)).or_else(|| choose_target_player(w, player));
-    let hard_enough = w.ai[player as usize].difficulty != AiDifficulty::Easy;
-    for (key, kind, footprint) in ready {
-        let safe_densest = |radius: i32| {
-            target_player.and_then(|t| densest_buildings(w, t).into_iter().find(|&(x, y)| arsenal::safe_to_bomb(w, player, x, y, radius)))
-        };
-        let (at, second) = match kind.as_str() {
-            "GpsPower" => (Some(base), None),
-            "AirstrikePower" if key.ends_with("@spyplane") => (enemy_target(w, player, target_player, base), None),
-            "AirstrikePower" | "ParatroopersPower" => (safe_densest(4 * CELL), None),
-            "NukePower" => (safe_densest(7 * CELL), None),
-            "GrantExternalConditionPower" if hard_enough => (arsenal::iron_curtain_target(w, player, &footprint), None),
-            "ChronoshiftPower" if hard_enough => match target_player.and_then(|t| arsenal::chronoshift_target(w, player, t, &footprint)) {
-                Some((dest, src)) => (Some(dest), Some(src)),
-                None => (None, None),
-            },
-            _ => (None, None),
-        };
-        if let Some((x, y)) = at {
-            let (x2, y2) = (second.map(|p| p.0), second.map(|p| p.1));
-            w.queue_order(Order::SupportPower { player, key, x, y, x2, y2 });
-        }
-    }
 }

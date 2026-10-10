@@ -536,3 +536,27 @@ fn script_positions_never_overflow() {
     }
     assert_eq!(error_of(&w), None);
 }
+
+/// Players a mission hands to OpenRA's bot play the campaign bot, configured
+/// by the mission's own bot modules (soviet-05's GoodGuy builds with its
+/// BaseBuilderBotModule@campaign limits once the script grants ai-active).
+#[test]
+fn mission_bots_play_the_campaign_bot_of_their_rules() {
+    let mut w = start("soviet-05", Some("normal"));
+    let good = w.mission().unwrap().player_slot("GoodGuy").unwrap();
+    let cfg = w.ai[good as usize].cfg.clone();
+    assert_eq!(cfg.bot, crate::ai_bots::BotType::Campaign);
+    let powr = w.rules.actor_index("powr").unwrap() as u16;
+    assert!(cfg.limits.contains(&(powr, 6)), "{:?}", cfg.limits);
+    assert!(!w.mission().unwrap().players[good as usize].ai_enabled);
+    lua_in(&mut w, "GoodGuy.GrantCondition('ai-active')");
+    assert!(w.mission().unwrap().players[good as usize].ai_enabled, "the script's condition switches the bot on");
+    assert!(!w.scripted_player(good));
+    for _ in 0..25 * 60 {
+        w.step();
+    }
+    assert_eq!(error_of(&w), None);
+    // The skirmish AI only runs for players whose bot the script switched on.
+    let greece = w.mission().unwrap().player_slot("Greece").unwrap();
+    assert!(w.scripted_player(greece));
+}

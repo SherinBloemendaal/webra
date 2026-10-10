@@ -15,6 +15,8 @@ import {
   TECH_LEVELS,
   GAME_SPEEDS,
   DIFFICULTIES,
+  BOT_TYPES,
+  aiName,
   TEAM_COUNT,
   FACTIONS,
   sanitizeState,
@@ -147,6 +149,14 @@ test('slot types: one human that can move, closing keeps two players', () => {
   assert.equal(s.players[1].difficulty, 'easy');
 });
 
+test("bot types: stored lobbies without them play the Normal AI; names follow OpenRA's", () => {
+  const s = sanitizeState({ players: [{ type: 'human', name: 'A' }, { type: 'ai', difficulty: 'hard' }, { type: 'ai', bot: 'naval' }, { type: 'ai', bot: 'x' }] }, COLORS);
+  assert.deepEqual(s.players.map((p) => p.bot), ['normal', 'normal', 'naval', 'normal']);
+  assert.deepEqual(BOT_TYPES.map((b) => b.value), ['rush', 'normal', 'turtle', 'naval']);
+  assert.equal(aiName({ bot: 'turtle', difficulty: 'hard' }), 'Turtle AI (hard)');
+  assert.equal(aiName({ difficulty: 'normal' }), 'Normal AI');
+});
+
 test('colours swap when taken', () => {
   const s = fresh();
   const [a, b] = [s.players[0].color, s.players[1].color];
@@ -179,11 +189,13 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   s.players[1].team = 2;
   s.players[3].team = 2;
   s.players[3].difficulty = 'hard';
+  s.players[3].bot = 'turtle';
   const o = buildOptions(s, '{"format":1}');
   assert.equal(o.map, null, 'random map: no map file even if one is installed');
   assert.deepEqual(o.players[0], { slot: 0, type: 'human', faction: 'germany', color: 0, team: 0, handicap: 0, name: 'Commander' });
   assert.deepEqual(o.players[2], { slot: 2, type: 'closed' });
-  assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, handicap: 0, difficulty: 'hard' });
+  assert.deepEqual(o.players[3], { slot: 3, type: 'ai', faction: 'random', color: 3, team: 2, handicap: 0, difficulty: 'hard', bot: 'turtle' });
+  assert.equal(o.players[1].bot, 'normal', 'new AI slots play the Normal AI');
   const keys = ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
   // OpenRA's other lobby options.
   keys.push('timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers');
@@ -284,6 +296,7 @@ test('value sets match the multiplayer protocol', () => {
   assert.deepEqual(TECH_LEVELS.map((o) => o.value), protocol.TECH_LEVELS);
   assert.deepEqual(GAME_SPEEDS.map((o) => o.value), protocol.GAME_SPEEDS);
   assert.deepEqual(DIFFICULTIES.map((o) => o.value), protocol.DIFFICULTIES);
+  assert.deepEqual(BOT_TYPES.map((o) => o.value), protocol.BOTS);
   assert.deepEqual([...FACTIONS.keys()].sort(), [...protocol.FACTIONS].sort());
   assert.equal(TEAM_COUNT, protocol.TEAM_MAX);
   assert.equal(MAX_SLOTS, protocol.MAX_PLAYERS);

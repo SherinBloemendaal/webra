@@ -2331,6 +2331,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 60,
+      "order_name": "SovietSpyPlane",
       "unit_type": "U2",
       "squad_size": 1,
       "squad_offset": [
@@ -2355,6 +2356,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 50,
+      "order_name": "SovietParatroopers",
       "unit_type": "BADR",
       "squad_size": 1,
       "squad_offset": [
@@ -2385,6 +2387,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 40,
+      "order_name": "UkraineParabombs",
       "unit_type": "BADR.Bomber",
       "squad_size": 1,
       "squad_offset": [
@@ -2601,6 +2604,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 60,
+      "order_name": "SovietSpyPlane",
       "unit_type": "U2",
       "squad_size": 1,
       "squad_offset": [
@@ -2625,6 +2629,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 50,
+      "order_name": "SovietParatroopers",
       "unit_type": "BADR",
       "squad_size": 1,
       "squad_offset": [
@@ -2655,6 +2660,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 40,
+      "order_name": "UkraineParabombs",
       "unit_type": "BADR.Bomber",
       "squad_size": 1,
       "squad_offset": [
@@ -3287,6 +3293,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 90,
+      "order_name": "GpsPowerInfoOrder",
       "reveal_delay": 375,
       "one_shot": true
      }
@@ -3866,6 +3873,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 20,
+      "order_name": "Chronoshift",
       "footprint": [
        "_x_",
        "xxx",
@@ -3887,6 +3895,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 30,
+      "order_name": "AdvancedChronoshift",
       "footprint": [
        "__x__",
        "_xxx_",
@@ -4104,6 +4113,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 10,
+      "order_name": "GrantExternalConditionPowerInfoOrder",
       "footprint": [
        "_x_",
        "xxx",
@@ -4302,6 +4312,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 70,
+      "order_name": "NukePowerInfoOrder",
       "missile_weapon": 0,
       "missile_delay": 5,
       "flight_delay": 400,
@@ -17212,6 +17223,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 80,
+      "order_name": "SpawnActorPowerInfoOrder",
       "terrain": [
        "Water"
       ],
@@ -40119,5 +40131,2593 @@
     "WarningOneMinuteRemaining"
    ]
   }
- }
+ },
+ "bots": [
+  {
+   "type": "rush",
+   "name": "Rush AI",
+   "resource_map": {
+    "valuable_resource_types": [
+     "Ore",
+     "Gems"
+    ],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "harvester_types": [
+     "HARV"
+    ],
+    "enemy_base_building_types": [
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "BARR",
+     "TENT",
+     "WEAP",
+     "AFLD",
+     "HPAD",
+     "FACT",
+     "POWR",
+     "APWR",
+     "PROC"
+    ],
+    "update_resource_map_inverval": 67,
+    "resource_map_stride_radius": 12
+   },
+   "support_powers": {
+    "decisions": [
+     {
+      "order_name": "SovietSpyPlane",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "SovietParatroopers",
+      "minimum_attractiveness": 5,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 8192
+       },
+       {
+        "against": "Enemy",
+        "types": [
+         "Water"
+        ],
+        "attractiveness": -5,
+        "target_metric": "None",
+        "check_radius": 8192
+       }
+      ]
+     },
+     {
+      "order_name": "UkraineParabombs",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "NukePowerInfoOrder",
+      "minimum_attractiveness": 3000,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "Value",
+        "check_radius": 5120
+       },
+       {
+        "against": "Ally",
+        "types": [
+         "Air",
+         "Ground",
+         "Water"
+        ],
+        "attractiveness": -10,
+        "target_metric": "Value",
+        "check_radius": 7168
+       }
+      ]
+     }
+    ]
+   },
+   "harvester": {
+    "harvester_types": [
+     "HARV"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "scan_for_idle_harvesters_interval": 50,
+    "scan_for_low_effect_harvesters_interval": 433,
+    "scan_interval_multipler_when_no_resources": 5,
+    "harvester_enemy_avoidance_radius": 10240,
+    "harvester_enemy_avoidance_cost_multipler": 20,
+    "resource_cells_per_harvester": 4,
+    "initial_harvesters": 2
+   },
+   "base_builder": {
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "power_types": [
+     "POWR",
+     "APWR"
+    ],
+    "production_types": [
+     "BARR",
+     "TENT",
+     "WEAP"
+    ],
+    "tech_types": [
+     "MSLO",
+     "DOME",
+     "ATEK",
+     "STEK",
+     "FIX"
+    ],
+    "naval_production_types": [],
+    "silo_types": [
+     "SILO"
+    ],
+    "defense_types": [
+     "HBOX",
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "SAM"
+    ],
+    "min_base_radius": 2,
+    "max_base_radius": 20,
+    "minimum_excess_power": 0,
+    "maximum_excess_power": 160,
+    "excess_power_increment": 40,
+    "excess_power_increase_threshold": 4,
+    "initital_minimum_refinery_count": 0,
+    "additional_minimum_refinery_count": 2,
+    "structure_production_inactive_delay": 125,
+    "structure_production_active_delay": 25,
+    "structure_production_random_bonus_delay": 10,
+    "structure_production_resume_delay": 1500,
+    "maximum_failed_placement_attempts": 3,
+    "max_resource_cells_to_check": 3,
+    "check_for_new_bases_delay": 1500,
+    "place_defense_towards_enemy_chance": 100,
+    "try_maintain_defense_range": 5,
+    "new_production_cash_threshold": 7000,
+    "new_production_chance": 50,
+    "rally_point_scan_radius": 8,
+    "check_for_water_radius": 8,
+    "building_fractions": [
+     [
+      "POWR",
+      1
+     ],
+     [
+      "PROC",
+      1
+     ],
+     [
+      "BARR",
+      3
+     ],
+     [
+      "KENN",
+      1
+     ],
+     [
+      "TENT",
+      3
+     ],
+     [
+      "WEAP",
+      4
+     ],
+     [
+      "PBOX",
+      3
+     ],
+     [
+      "GUN",
+      3
+     ],
+     [
+      "TSLA",
+      3
+     ],
+     [
+      "GAP",
+      1
+     ],
+     [
+      "FTUR",
+      3
+     ],
+     [
+      "AGUN",
+      5
+     ],
+     [
+      "SAM",
+      5
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ],
+     [
+      "DOME",
+      10
+     ],
+     [
+      "MSLO",
+      1
+     ]
+    ],
+    "building_limits": [
+     [
+      "BARR",
+      7
+     ],
+     [
+      "TENT",
+      7
+     ],
+     [
+      "KENN",
+      1
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "WEAP",
+      4
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ]
+    ],
+    "building_delays": [
+     [
+      "DOME",
+      7000
+     ],
+     [
+      "FIX",
+      3000
+     ],
+     [
+      "PBOX",
+      2000
+     ],
+     [
+      "GUN",
+      3000
+     ],
+     [
+      "FTUR",
+      2000
+     ],
+     [
+      "TSLA",
+      3000
+     ],
+     [
+      "KENN",
+      9000
+     ],
+     [
+      "ATEK",
+      11000
+     ],
+     [
+      "STEK",
+      11000
+     ]
+    ],
+    "production_min_cash_requirement": 500,
+    "assign_rally_points_interval": 100,
+    "check_best_resource_location_interval": 151,
+    "sell_refinery_interval": 5000,
+    "sell_refinery_too_close_cell_distance": 6,
+    "sell_refinery_no_resource_distance": 12,
+    "max_refinery_per_indice": 2,
+    "expansion_tolerate": [
+     0
+    ],
+    "force_expansion_tolerate": [
+     0
+    ],
+    "per_expansion_tolerate_on_cash": 12000
+   },
+   "power_down": {
+    "interval": 150,
+    "power_down_types": [
+     "DOME",
+     "TSLA",
+     "MSLO",
+     "AGUN",
+     "SAM"
+    ]
+   },
+   "building_repair": {
+    "repair_all_buildings_cool_down": 107
+   },
+   "squads": {
+    "naval_units_types": [
+     "SS",
+     "MSUB",
+     "DD",
+     "CA",
+     "LST",
+     "PT"
+    ],
+    "air_units_types": [
+     "MIG",
+     "YAK",
+     "HELI",
+     "HIND",
+     "MH60"
+    ],
+    "exclude_from_squads_types": [
+     "HARV",
+     "MCV",
+     "DOG",
+     "BADR.Bomber",
+     "U2"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "naval_production_types": [],
+    "protection_types": [
+     "HARV",
+     "MCV",
+     "MSLO",
+     "GAP",
+     "SPEN",
+     "SYRD",
+     "IRON",
+     "PDOX",
+     "TSLA",
+     "AGUN",
+     "DOME",
+     "PBOX",
+     "HBOX",
+     "GUN",
+     "FTUR",
+     "SAM",
+     "ATEK",
+     "WEAP",
+     "FACT",
+     "PROC",
+     "SILO",
+     "HPAD",
+     "AFLD",
+     "AFLD.Ukraine",
+     "POWR",
+     "APWR",
+     "STEK",
+     "BARR",
+     "KENN",
+     "TENT",
+     "FIX",
+     "FPWR",
+     "TENF",
+     "SYRF",
+     "SPEF",
+     "WEAF",
+     "DOMF",
+     "FIXF",
+     "FAPW",
+     "ATEF",
+     "PDOF",
+     "MSLF",
+     "FACF"
+    ],
+    "aircraft_target_type": [
+     "AirborneActor"
+    ],
+    "squad_size": 20,
+    "squad_size_random_bonus": 30,
+    "assign_roles_interval": 50,
+    "rush_interval": 600,
+    "attack_force_interval": 75,
+    "minimum_attack_force_delay": 0,
+    "rush_attack_scan_radius": 15,
+    "protect_unit_scan_radius": 15,
+    "max_base_radius": 20,
+    "idle_scan_radius": 10,
+    "danger_scan_radius": 10,
+    "attack_scan_radius": 12,
+    "protection_scan_radius": 8,
+    "ignored_enemy_target_types": [
+     "AirborneActor"
+    ]
+   },
+   "mcv_expansion": {
+    "mcv_types": [
+     "MCV"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "mcv_factory_types": [
+     "WEAP"
+    ],
+    "minimum_construction_yard_count": 2,
+    "additional_construction_yard_count": 0,
+    "build_additional_mcv_cash_amount": 5000,
+    "scan_for_new_mcv_interval": 20,
+    "build_mcv_interval": 101,
+    "move_conyard_tick": 5700,
+    "move_old_conyard_first": true,
+    "cr_mode_min_deploy_radius": 2,
+    "cr_mode_max_deploy_radius": 20,
+    "cr_mode_try_maintain_range": 8,
+    "cr_mode_friendly_conyard_dislike_range": 14,
+    "cr_mode_friendly_refinery_dislike_range": 14,
+    "cb_mode_min_deploy_radius": 2,
+    "cb_mode_max_deploy_radius": 20
+   },
+   "unit_builder": {
+    "idle_base_units_maximum": -1,
+    "unit_queues": [
+     "Vehicle",
+     "Infantry",
+     "Plane",
+     "Ship",
+     "Aircraft"
+    ],
+    "units_to_build": [
+     [
+      "E1",
+      65
+     ],
+     [
+      "E2",
+      15
+     ],
+     [
+      "E3",
+      30
+     ],
+     [
+      "E4",
+      15
+     ],
+     [
+      "E7",
+      1
+     ],
+     [
+      "DOG",
+      15
+     ],
+     [
+      "SHOK",
+      15
+     ],
+     [
+      "HARV",
+      10
+     ],
+     [
+      "APC",
+      30
+     ],
+     [
+      "JEEP",
+      20
+     ],
+     [
+      "ARTY",
+      15
+     ],
+     [
+      "V2RL",
+      40
+     ],
+     [
+      "FTRK",
+      30
+     ],
+     [
+      "1TNK",
+      50
+     ],
+     [
+      "2TNK",
+      50
+     ],
+     [
+      "3TNK",
+      50
+     ],
+     [
+      "4TNK",
+      25
+     ],
+     [
+      "TTNK",
+      25
+     ],
+     [
+      "STNK",
+      5
+     ]
+    ],
+    "unit_limits": [
+     [
+      "DOG",
+      4
+     ],
+     [
+      "HARV",
+      8
+     ],
+     [
+      "JEEP",
+      4
+     ],
+     [
+      "FTRK",
+      4
+     ]
+    ],
+    "unit_delays": [],
+    "production_min_cash_requirement": 500
+   }
+  },
+  {
+   "type": "normal",
+   "name": "Normal AI",
+   "resource_map": {
+    "valuable_resource_types": [
+     "Ore",
+     "Gems"
+    ],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "harvester_types": [
+     "HARV"
+    ],
+    "enemy_base_building_types": [
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "BARR",
+     "TENT",
+     "WEAP",
+     "AFLD",
+     "HPAD",
+     "FACT",
+     "POWR",
+     "APWR",
+     "PROC"
+    ],
+    "update_resource_map_inverval": 67,
+    "resource_map_stride_radius": 12
+   },
+   "support_powers": {
+    "decisions": [
+     {
+      "order_name": "SovietSpyPlane",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "SovietParatroopers",
+      "minimum_attractiveness": 5,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 8192
+       },
+       {
+        "against": "Enemy",
+        "types": [
+         "Water"
+        ],
+        "attractiveness": -5,
+        "target_metric": "None",
+        "check_radius": 8192
+       }
+      ]
+     },
+     {
+      "order_name": "UkraineParabombs",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "NukePowerInfoOrder",
+      "minimum_attractiveness": 3000,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "Value",
+        "check_radius": 5120
+       },
+       {
+        "against": "Ally",
+        "types": [
+         "Air",
+         "Ground",
+         "Water"
+        ],
+        "attractiveness": -10,
+        "target_metric": "Value",
+        "check_radius": 7168
+       }
+      ]
+     }
+    ]
+   },
+   "harvester": {
+    "harvester_types": [
+     "HARV"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "scan_for_idle_harvesters_interval": 50,
+    "scan_for_low_effect_harvesters_interval": 433,
+    "scan_interval_multipler_when_no_resources": 5,
+    "harvester_enemy_avoidance_radius": 10240,
+    "harvester_enemy_avoidance_cost_multipler": 20,
+    "resource_cells_per_harvester": 4,
+    "initial_harvesters": 4
+   },
+   "base_builder": {
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "power_types": [
+     "POWR",
+     "APWR"
+    ],
+    "production_types": [
+     "BARR",
+     "TENT",
+     "WEAP"
+    ],
+    "tech_types": [
+     "DOME",
+     "ATEK",
+     "STEK",
+     "FIX",
+     "AFLD",
+     "HPAD"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "silo_types": [
+     "SILO"
+    ],
+    "defense_types": [
+     "HBOX",
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "SAM"
+    ],
+    "min_base_radius": 2,
+    "max_base_radius": 20,
+    "minimum_excess_power": 0,
+    "maximum_excess_power": 200,
+    "excess_power_increment": 40,
+    "excess_power_increase_threshold": 4,
+    "initital_minimum_refinery_count": 0,
+    "additional_minimum_refinery_count": 2,
+    "structure_production_inactive_delay": 125,
+    "structure_production_active_delay": 25,
+    "structure_production_random_bonus_delay": 10,
+    "structure_production_resume_delay": 1500,
+    "maximum_failed_placement_attempts": 3,
+    "max_resource_cells_to_check": 3,
+    "check_for_new_bases_delay": 1500,
+    "place_defense_towards_enemy_chance": 100,
+    "try_maintain_defense_range": 5,
+    "new_production_cash_threshold": 8000,
+    "new_production_chance": 50,
+    "rally_point_scan_radius": 8,
+    "check_for_water_radius": 8,
+    "building_fractions": [
+     [
+      "POWR",
+      1
+     ],
+     [
+      "PROC",
+      1
+     ],
+     [
+      "TENT",
+      3
+     ],
+     [
+      "BARR",
+      3
+     ],
+     [
+      "KENN",
+      1
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "WEAP",
+      4
+     ],
+     [
+      "HPAD",
+      1
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "AFLD",
+      1
+     ],
+     [
+      "AFLD.Ukraine",
+      1
+     ],
+     [
+      "PBOX",
+      9
+     ],
+     [
+      "GUN",
+      9
+     ],
+     [
+      "FTUR",
+      10
+     ],
+     [
+      "TSLA",
+      5
+     ],
+     [
+      "GAP",
+      2
+     ],
+     [
+      "FIX",
+      1
+     ],
+     [
+      "AGUN",
+      5
+     ],
+     [
+      "SAM",
+      1
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "MSLO",
+      1
+     ]
+    ],
+    "building_limits": [
+     [
+      "BARR",
+      7
+     ],
+     [
+      "TENT",
+      7
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "WEAP",
+      4
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "HPAD",
+      4
+     ],
+     [
+      "AFLD",
+      4
+     ],
+     [
+      "AFLD.Ukraine",
+      4
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ]
+    ],
+    "building_delays": [
+     [
+      "DOME",
+      6000
+     ],
+     [
+      "FIX",
+      3000
+     ],
+     [
+      "PBOX",
+      1500
+     ],
+     [
+      "GUN",
+      2000
+     ],
+     [
+      "FTUR",
+      1500
+     ],
+     [
+      "TSLA",
+      2800
+     ],
+     [
+      "KENN",
+      7000
+     ],
+     [
+      "SPEN",
+      6000
+     ],
+     [
+      "SYRD",
+      6000
+     ],
+     [
+      "ATEK",
+      9000
+     ],
+     [
+      "STEK",
+      9000
+     ]
+    ],
+    "production_min_cash_requirement": 500,
+    "assign_rally_points_interval": 100,
+    "check_best_resource_location_interval": 151,
+    "sell_refinery_interval": 5000,
+    "sell_refinery_too_close_cell_distance": 6,
+    "sell_refinery_no_resource_distance": 12,
+    "max_refinery_per_indice": 2,
+    "expansion_tolerate": [
+     1,
+     2
+    ],
+    "force_expansion_tolerate": [
+     2,
+     3
+    ],
+    "per_expansion_tolerate_on_cash": 12000
+   },
+   "power_down": {
+    "interval": 150,
+    "power_down_types": [
+     "DOME",
+     "TSLA",
+     "MSLO",
+     "AGUN",
+     "SAM"
+    ]
+   },
+   "building_repair": {
+    "repair_all_buildings_cool_down": 107
+   },
+   "mcv_expansion": {
+    "mcv_types": [
+     "MCV"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "mcv_factory_types": [
+     "WEAP"
+    ],
+    "minimum_construction_yard_count": 2,
+    "additional_construction_yard_count": 0,
+    "build_additional_mcv_cash_amount": 5000,
+    "scan_for_new_mcv_interval": 20,
+    "build_mcv_interval": 101,
+    "move_conyard_tick": 5700,
+    "move_old_conyard_first": null,
+    "cr_mode_min_deploy_radius": 2,
+    "cr_mode_max_deploy_radius": 20,
+    "cr_mode_try_maintain_range": 8,
+    "cr_mode_friendly_conyard_dislike_range": 14,
+    "cr_mode_friendly_refinery_dislike_range": 14,
+    "cb_mode_min_deploy_radius": 2,
+    "cb_mode_max_deploy_radius": 20
+   },
+   "squads": {
+    "naval_units_types": [
+     "SS",
+     "MSUB",
+     "DD",
+     "CA",
+     "LST",
+     "PT"
+    ],
+    "air_units_types": [
+     "MIG",
+     "YAK",
+     "HELI",
+     "HIND",
+     "MH60"
+    ],
+    "exclude_from_squads_types": [
+     "HARV",
+     "MCV",
+     "DOG",
+     "BADR.Bomber",
+     "U2"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "protection_types": [
+     "HARV",
+     "MCV",
+     "MSLO",
+     "GAP",
+     "SPEN",
+     "SYRD",
+     "IRON",
+     "PDOX",
+     "TSLA",
+     "AGUN",
+     "DOME",
+     "PBOX",
+     "HBOX",
+     "GUN",
+     "FTUR",
+     "SAM",
+     "ATEK",
+     "WEAP",
+     "FACT",
+     "PROC",
+     "SILO",
+     "HPAD",
+     "AFLD",
+     "AFLD.Ukraine",
+     "POWR",
+     "APWR",
+     "STEK",
+     "BARR",
+     "KENN",
+     "TENT",
+     "FIX",
+     "FPWR",
+     "TENF",
+     "SYRF",
+     "SPEF",
+     "WEAF",
+     "DOMF",
+     "FIXF",
+     "FAPW",
+     "ATEF",
+     "PDOF",
+     "MSLF",
+     "FACF"
+    ],
+    "aircraft_target_type": [
+     "AirborneActor"
+    ],
+    "squad_size": 40,
+    "squad_size_random_bonus": 30,
+    "assign_roles_interval": 50,
+    "rush_interval": 600,
+    "attack_force_interval": 75,
+    "minimum_attack_force_delay": 0,
+    "rush_attack_scan_radius": 15,
+    "protect_unit_scan_radius": 15,
+    "max_base_radius": 20,
+    "idle_scan_radius": 10,
+    "danger_scan_radius": 10,
+    "attack_scan_radius": 12,
+    "protection_scan_radius": 12,
+    "ignored_enemy_target_types": [
+     "AirborneActor"
+    ]
+   },
+   "unit_builder": {
+    "idle_base_units_maximum": -1,
+    "unit_queues": [
+     "Vehicle",
+     "Infantry",
+     "Plane",
+     "Ship",
+     "Aircraft"
+    ],
+    "units_to_build": [
+     [
+      "E1",
+      65
+     ],
+     [
+      "E2",
+      15
+     ],
+     [
+      "E3",
+      30
+     ],
+     [
+      "E4",
+      15
+     ],
+     [
+      "E7",
+      1
+     ],
+     [
+      "DOG",
+      15
+     ],
+     [
+      "SHOK",
+      15
+     ],
+     [
+      "HARV",
+      15
+     ],
+     [
+      "APC",
+      30
+     ],
+     [
+      "JEEP",
+      20
+     ],
+     [
+      "ARTY",
+      15
+     ],
+     [
+      "V2RL",
+      40
+     ],
+     [
+      "FTRK",
+      30
+     ],
+     [
+      "1TNK",
+      40
+     ],
+     [
+      "2TNK",
+      50
+     ],
+     [
+      "3TNK",
+      50
+     ],
+     [
+      "4TNK",
+      25
+     ],
+     [
+      "TTNK",
+      25
+     ],
+     [
+      "STNK",
+      5
+     ],
+     [
+      "HELI",
+      30
+     ],
+     [
+      "MH60",
+      30
+     ],
+     [
+      "MIG",
+      30
+     ],
+     [
+      "YAK",
+      30
+     ],
+     [
+      "SS",
+      10
+     ],
+     [
+      "MSUB",
+      10
+     ],
+     [
+      "DD",
+      10
+     ],
+     [
+      "CA",
+      10
+     ],
+     [
+      "PT",
+      10
+     ]
+    ],
+    "unit_limits": [
+     [
+      "DOG",
+      4
+     ],
+     [
+      "HARV",
+      8
+     ],
+     [
+      "JEEP",
+      4
+     ],
+     [
+      "FTRK",
+      4
+     ]
+    ],
+    "unit_delays": [],
+    "production_min_cash_requirement": 500
+   }
+  },
+  {
+   "type": "turtle",
+   "name": "Turtle AI",
+   "resource_map": {
+    "valuable_resource_types": [
+     "Ore",
+     "Gems"
+    ],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "harvester_types": [
+     "HARV"
+    ],
+    "enemy_base_building_types": [
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "BARR",
+     "TENT",
+     "WEAP",
+     "AFLD",
+     "HPAD",
+     "FACT",
+     "POWR",
+     "APWR",
+     "PROC"
+    ],
+    "update_resource_map_inverval": 67,
+    "resource_map_stride_radius": 12
+   },
+   "support_powers": {
+    "decisions": [
+     {
+      "order_name": "SovietSpyPlane",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "SovietParatroopers",
+      "minimum_attractiveness": 5,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 8192
+       },
+       {
+        "against": "Enemy",
+        "types": [
+         "Water"
+        ],
+        "attractiveness": -5,
+        "target_metric": "None",
+        "check_radius": 8192
+       }
+      ]
+     },
+     {
+      "order_name": "UkraineParabombs",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "NukePowerInfoOrder",
+      "minimum_attractiveness": 3000,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "Value",
+        "check_radius": 5120
+       },
+       {
+        "against": "Ally",
+        "types": [
+         "Air",
+         "Ground",
+         "Water"
+        ],
+        "attractiveness": -10,
+        "target_metric": "Value",
+        "check_radius": 7168
+       }
+      ]
+     }
+    ]
+   },
+   "harvester": {
+    "harvester_types": [
+     "HARV"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "scan_for_idle_harvesters_interval": 50,
+    "scan_for_low_effect_harvesters_interval": 433,
+    "scan_interval_multipler_when_no_resources": 5,
+    "harvester_enemy_avoidance_radius": 10240,
+    "harvester_enemy_avoidance_cost_multipler": 20,
+    "resource_cells_per_harvester": 4,
+    "initial_harvesters": 4
+   },
+   "base_builder": {
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "power_types": [
+     "POWR",
+     "APWR"
+    ],
+    "production_types": [
+     "BARR",
+     "TENT",
+     "WEAP"
+    ],
+    "tech_types": [
+     "DOME",
+     "ATEK",
+     "STEK",
+     "FIX",
+     "AFLD",
+     "HPAD"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "silo_types": [
+     "SILO"
+    ],
+    "defense_types": [
+     "HBOX",
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "SAM"
+    ],
+    "min_base_radius": 2,
+    "max_base_radius": 20,
+    "minimum_excess_power": 20,
+    "maximum_excess_power": 250,
+    "excess_power_increment": 20,
+    "excess_power_increase_threshold": 2,
+    "initital_minimum_refinery_count": 1,
+    "additional_minimum_refinery_count": 1,
+    "structure_production_inactive_delay": 125,
+    "structure_production_active_delay": 25,
+    "structure_production_random_bonus_delay": 10,
+    "structure_production_resume_delay": 1500,
+    "maximum_failed_placement_attempts": 3,
+    "max_resource_cells_to_check": 3,
+    "check_for_new_bases_delay": 1500,
+    "place_defense_towards_enemy_chance": 100,
+    "try_maintain_defense_range": 5,
+    "new_production_cash_threshold": 5000,
+    "new_production_chance": 50,
+    "rally_point_scan_radius": 8,
+    "check_for_water_radius": 8,
+    "building_fractions": [
+     [
+      "POWR",
+      1
+     ],
+     [
+      "PROC",
+      1
+     ],
+     [
+      "TENT",
+      1
+     ],
+     [
+      "BARR",
+      1
+     ],
+     [
+      "KENN",
+      1
+     ],
+     [
+      "WEAP",
+      3
+     ],
+     [
+      "HPAD",
+      2
+     ],
+     [
+      "AFLD",
+      2
+     ],
+     [
+      "AFLD.Ukraine",
+      2
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "PBOX",
+      13
+     ],
+     [
+      "GUN",
+      12
+     ],
+     [
+      "FTUR",
+      13
+     ],
+     [
+      "TSLA",
+      7
+     ],
+     [
+      "GAP",
+      3
+     ],
+     [
+      "FIX",
+      1
+     ],
+     [
+      "DOME",
+      10
+     ],
+     [
+      "AGUN",
+      5
+     ],
+     [
+      "SAM",
+      5
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "MSLO",
+      1
+     ]
+    ],
+    "building_limits": [
+     [
+      "BARR",
+      1
+     ],
+     [
+      "TENT",
+      1
+     ],
+     [
+      "KENN",
+      1
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "WEAP",
+      1
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "HPAD",
+      4
+     ],
+     [
+      "AFLD",
+      4
+     ],
+     [
+      "AFLD.Ukraine",
+      4
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ]
+    ],
+    "building_delays": [
+     [
+      "DOME",
+      5000
+     ],
+     [
+      "ATEK",
+      7000
+     ],
+     [
+      "STEK",
+      7000
+     ],
+     [
+      "KENN",
+      8000
+     ]
+    ],
+    "production_min_cash_requirement": 500,
+    "assign_rally_points_interval": 100,
+    "check_best_resource_location_interval": 151,
+    "sell_refinery_interval": 5000,
+    "sell_refinery_too_close_cell_distance": 6,
+    "sell_refinery_no_resource_distance": 12,
+    "max_refinery_per_indice": 2,
+    "expansion_tolerate": [
+     0,
+     1
+    ],
+    "force_expansion_tolerate": [
+     6,
+     7,
+     8
+    ],
+    "per_expansion_tolerate_on_cash": 12000
+   },
+   "power_down": {
+    "interval": 150,
+    "power_down_types": [
+     "DOME",
+     "TSLA",
+     "MSLO",
+     "AGUN",
+     "SAM"
+    ]
+   },
+   "building_repair": {
+    "repair_all_buildings_cool_down": 107
+   },
+   "mcv_expansion": {
+    "mcv_types": [
+     "MCV"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "mcv_factory_types": [
+     "WEAP"
+    ],
+    "minimum_construction_yard_count": 2,
+    "additional_construction_yard_count": 0,
+    "build_additional_mcv_cash_amount": 5000,
+    "scan_for_new_mcv_interval": 20,
+    "build_mcv_interval": 101,
+    "move_conyard_tick": 8000,
+    "move_old_conyard_first": false,
+    "cr_mode_min_deploy_radius": 2,
+    "cr_mode_max_deploy_radius": 20,
+    "cr_mode_try_maintain_range": 8,
+    "cr_mode_friendly_conyard_dislike_range": 14,
+    "cr_mode_friendly_refinery_dislike_range": 14,
+    "cb_mode_min_deploy_radius": 2,
+    "cb_mode_max_deploy_radius": 20
+   },
+   "squads": {
+    "naval_units_types": [
+     "SS",
+     "MSUB",
+     "DD",
+     "CA",
+     "LST",
+     "PT"
+    ],
+    "air_units_types": [
+     "MIG",
+     "YAK",
+     "HELI",
+     "HIND",
+     "MH60"
+    ],
+    "exclude_from_squads_types": [
+     "HARV",
+     "MCV",
+     "DOG",
+     "BADR.Bomber",
+     "U2",
+     "MNLY"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "protection_types": [
+     "HARV",
+     "MCV",
+     "MSLO",
+     "GAP",
+     "SPEN",
+     "SYRD",
+     "IRON",
+     "PDOX",
+     "TSLA",
+     "AGUN",
+     "DOME",
+     "PBOX",
+     "HBOX",
+     "GUN",
+     "FTUR",
+     "SAM",
+     "ATEK",
+     "WEAP",
+     "FACT",
+     "PROC",
+     "SILO",
+     "HPAD",
+     "AFLD",
+     "AFLD.Ukraine",
+     "POWR",
+     "APWR",
+     "STEK",
+     "BARR",
+     "KENN",
+     "TENT",
+     "FIX",
+     "FPWR",
+     "TENF",
+     "SYRF",
+     "SPEF",
+     "WEAF",
+     "DOMF",
+     "FIXF",
+     "FAPW",
+     "ATEF",
+     "PDOF",
+     "MSLF",
+     "FACF"
+    ],
+    "aircraft_target_type": [
+     "AirborneActor"
+    ],
+    "squad_size": 10,
+    "squad_size_random_bonus": 30,
+    "assign_roles_interval": 50,
+    "rush_interval": 100000,
+    "attack_force_interval": 75,
+    "minimum_attack_force_delay": 100000,
+    "rush_attack_scan_radius": 15,
+    "protect_unit_scan_radius": 30,
+    "max_base_radius": 20,
+    "idle_scan_radius": 10,
+    "danger_scan_radius": 10,
+    "attack_scan_radius": 12,
+    "protection_scan_radius": 15,
+    "ignored_enemy_target_types": [
+     "AirborneActor"
+    ]
+   },
+   "unit_builder": {
+    "idle_base_units_maximum": -1,
+    "unit_queues": [
+     "Vehicle",
+     "Infantry",
+     "Plane",
+     "Ship",
+     "Aircraft"
+    ],
+    "units_to_build": [
+     [
+      "E1",
+      65
+     ],
+     [
+      "E2",
+      15
+     ],
+     [
+      "E3",
+      30
+     ],
+     [
+      "E4",
+      15
+     ],
+     [
+      "E7",
+      1
+     ],
+     [
+      "DOG",
+      15
+     ],
+     [
+      "SHOK",
+      15
+     ],
+     [
+      "HARV",
+      15
+     ],
+     [
+      "APC",
+      30
+     ],
+     [
+      "JEEP",
+      20
+     ],
+     [
+      "ARTY",
+      15
+     ],
+     [
+      "V2RL",
+      40
+     ],
+     [
+      "FTRK",
+      50
+     ],
+     [
+      "1TNK",
+      50
+     ],
+     [
+      "2TNK",
+      50
+     ],
+     [
+      "3TNK",
+      50
+     ],
+     [
+      "4TNK",
+      25
+     ],
+     [
+      "TTNK",
+      25
+     ],
+     [
+      "STNK",
+      10
+     ],
+     [
+      "HELI",
+      30
+     ],
+     [
+      "MH60",
+      30
+     ],
+     [
+      "MIG",
+      30
+     ],
+     [
+      "YAK",
+      30
+     ],
+     [
+      "SS",
+      10
+     ],
+     [
+      "MSUB",
+      10
+     ],
+     [
+      "DD",
+      10
+     ],
+     [
+      "CA",
+      10
+     ],
+     [
+      "PT",
+      10
+     ],
+     [
+      "MNLY",
+      2
+     ]
+    ],
+    "unit_limits": [
+     [
+      "DOG",
+      3
+     ],
+     [
+      "HARV",
+      8
+     ],
+     [
+      "JEEP",
+      2
+     ],
+     [
+      "FTRK",
+      4
+     ],
+     [
+      "MNLY",
+      2
+     ]
+    ],
+    "unit_delays": [],
+    "production_min_cash_requirement": 500
+   },
+   "minelayer": {
+    "ignored_enemy_target_types": [
+     "Structure",
+     "Defense",
+     "AirborneActor"
+    ],
+    "use_enemy_location_target_types": [
+     "Structure",
+     "Defense",
+     "AirborneActor"
+    ],
+    "minelaying_actor_types": [
+     "MNLY"
+    ],
+    "max_per_assign": 1,
+    "scan_tick": 320,
+    "mine_field_radius": 1,
+    "away_from_allied_target_types": [
+     "Structure",
+     "Defense"
+    ],
+    "away_from_enemy_target_types": [
+     "Structure",
+     "Defense"
+    ],
+    "away_from_cell_distance": 9,
+    "favorite_position_distance": 6
+   }
+  },
+  {
+   "type": "naval",
+   "name": "Naval AI",
+   "support_powers": {
+    "decisions": [
+     {
+      "order_name": "SovietSpyPlane",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "SovietParatroopers",
+      "minimum_attractiveness": 5,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 8192
+       },
+       {
+        "against": "Enemy",
+        "types": [
+         "Water"
+        ],
+        "attractiveness": -5,
+        "target_metric": "None",
+        "check_radius": 8192
+       }
+      ]
+     },
+     {
+      "order_name": "UkraineParabombs",
+      "minimum_attractiveness": 1,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "None",
+        "check_radius": 5120
+       }
+      ]
+     },
+     {
+      "order_name": "NukePowerInfoOrder",
+      "minimum_attractiveness": 3000,
+      "coarse_scan_radius": 20,
+      "fine_scan_radius": 2,
+      "minimum_scan_time_interval": 250,
+      "maximum_scan_time_interval": 262,
+      "considerations": [
+       {
+        "against": "Enemy",
+        "types": [
+         "Structure"
+        ],
+        "attractiveness": 1,
+        "target_metric": "Value",
+        "check_radius": 5120
+       },
+       {
+        "against": "Ally",
+        "types": [
+         "Air",
+         "Ground",
+         "Water"
+        ],
+        "attractiveness": -10,
+        "target_metric": "Value",
+        "check_radius": 7168
+       }
+      ]
+     }
+    ]
+   },
+   "harvester": {
+    "harvester_types": [
+     "HARV"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "scan_for_idle_harvesters_interval": 50,
+    "scan_for_low_effect_harvesters_interval": 433,
+    "scan_interval_multipler_when_no_resources": 5,
+    "harvester_enemy_avoidance_radius": 10240,
+    "harvester_enemy_avoidance_cost_multipler": 20,
+    "resource_cells_per_harvester": 4,
+    "initial_harvesters": 2
+   },
+   "base_builder": {
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "refinery_types": [
+     "PROC"
+    ],
+    "power_types": [
+     "POWR",
+     "APWR"
+    ],
+    "production_types": [
+     "BARR",
+     "TENT",
+     "WEAP",
+     "AFLD",
+     "HPAD"
+    ],
+    "tech_types": [
+     "MSLO",
+     "DOME",
+     "ATEK",
+     "STEK",
+     "FIX"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "silo_types": [
+     "SILO"
+    ],
+    "defense_types": [
+     "HBOX",
+     "PBOX",
+     "GUN",
+     "FTUR",
+     "TSLA",
+     "AGUN",
+     "SAM"
+    ],
+    "min_base_radius": 2,
+    "max_base_radius": 20,
+    "minimum_excess_power": 0,
+    "maximum_excess_power": 400,
+    "excess_power_increment": 40,
+    "excess_power_increase_threshold": 3,
+    "initital_minimum_refinery_count": 1,
+    "additional_minimum_refinery_count": 1,
+    "structure_production_inactive_delay": 125,
+    "structure_production_active_delay": 25,
+    "structure_production_random_bonus_delay": 10,
+    "structure_production_resume_delay": 1500,
+    "maximum_failed_placement_attempts": 3,
+    "max_resource_cells_to_check": 3,
+    "check_for_new_bases_delay": 1500,
+    "place_defense_towards_enemy_chance": 100,
+    "try_maintain_defense_range": 5,
+    "new_production_cash_threshold": 5000,
+    "new_production_chance": 50,
+    "rally_point_scan_radius": 8,
+    "check_for_water_radius": 8,
+    "building_fractions": [
+     [
+      "POWR",
+      1
+     ],
+     [
+      "PROC",
+      25
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "WEAP",
+      1
+     ],
+     [
+      "HPAD",
+      15
+     ],
+     [
+      "AFLD",
+      15
+     ],
+     [
+      "AFLD.Ukraine",
+      15
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ],
+     [
+      "PBOX",
+      2
+     ],
+     [
+      "GUN",
+      2
+     ],
+     [
+      "FTUR",
+      2
+     ],
+     [
+      "TSLA",
+      1
+     ],
+     [
+      "AGUN",
+      5
+     ],
+     [
+      "SAM",
+      5
+     ],
+     [
+      "MSLO",
+      1
+     ]
+    ],
+    "building_limits": [
+     [
+      "PROC",
+      3
+     ],
+     [
+      "DOME",
+      1
+     ],
+     [
+      "BARR",
+      1
+     ],
+     [
+      "TENT",
+      1
+     ],
+     [
+      "SPEN",
+      1
+     ],
+     [
+      "SYRD",
+      1
+     ],
+     [
+      "HPAD",
+      8
+     ],
+     [
+      "AFLD",
+      8
+     ],
+     [
+      "AFLD.Ukraine",
+      8
+     ],
+     [
+      "WEAP",
+      1
+     ],
+     [
+      "ATEK",
+      1
+     ],
+     [
+      "STEK",
+      1
+     ],
+     [
+      "FIX",
+      1
+     ]
+    ],
+    "building_delays": [
+     [
+      "DOME",
+      3000
+     ],
+     [
+      "FIX",
+      20000
+     ],
+     [
+      "TSLA",
+      21000
+     ],
+     [
+      "KENN",
+      4000
+     ]
+    ],
+    "production_min_cash_requirement": 500,
+    "assign_rally_points_interval": 100,
+    "check_best_resource_location_interval": 151,
+    "sell_refinery_interval": 5000,
+    "sell_refinery_too_close_cell_distance": 6,
+    "sell_refinery_no_resource_distance": 12,
+    "max_refinery_per_indice": 2,
+    "expansion_tolerate": [
+     99
+    ],
+    "force_expansion_tolerate": [
+     999
+    ],
+    "per_expansion_tolerate_on_cash": 12000
+   },
+   "power_down": {
+    "interval": 150,
+    "power_down_types": [
+     "DOME",
+     "TSLA",
+     "MSLO",
+     "AGUN",
+     "SAM"
+    ]
+   },
+   "building_repair": {
+    "repair_all_buildings_cool_down": 107
+   },
+   "mcv_manager": {
+    "mcv_types": [
+     "MCV"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "mcv_factory_types": [
+     "WEAP"
+    ],
+    "minimum_construction_yard_count": 1,
+    "scan_for_new_mcv_interval": 20,
+    "min_base_radius": 2,
+    "max_base_radius": 20,
+    "restrict_mcv_deployment_fallback_to_base": true
+   },
+   "squads": {
+    "naval_units_types": [
+     "SS",
+     "MSUB",
+     "DD",
+     "CA",
+     "LST",
+     "PT"
+    ],
+    "air_units_types": [
+     "MIG",
+     "YAK",
+     "HELI",
+     "HIND",
+     "MH60"
+    ],
+    "exclude_from_squads_types": [
+     "HARV",
+     "MCV",
+     "DOG",
+     "BADR.Bomber",
+     "U2"
+    ],
+    "construction_yard_types": [
+     "FACT"
+    ],
+    "naval_production_types": [
+     "SPEN",
+     "SYRD"
+    ],
+    "protection_types": [
+     "HARV",
+     "MCV",
+     "MSLO",
+     "GAP",
+     "SPEN",
+     "SYRD",
+     "IRON",
+     "PDOX",
+     "TSLA",
+     "AGUN",
+     "DOME",
+     "PBOX",
+     "HBOX",
+     "GUN",
+     "FTUR",
+     "SAM",
+     "ATEK",
+     "WEAP",
+     "FACT",
+     "PROC",
+     "SILO",
+     "HPAD",
+     "AFLD",
+     "AFLD.Ukraine",
+     "POWR",
+     "APWR",
+     "STEK",
+     "BARR",
+     "KENN",
+     "TENT",
+     "FIX",
+     "FPWR",
+     "TENF",
+     "SYRF",
+     "SPEF",
+     "WEAF",
+     "DOMF",
+     "FIXF",
+     "FAPW",
+     "ATEF",
+     "PDOF",
+     "MSLF",
+     "FACF"
+    ],
+    "aircraft_target_type": [
+     "AirborneActor"
+    ],
+    "squad_size": 1,
+    "squad_size_random_bonus": 30,
+    "assign_roles_interval": 50,
+    "rush_interval": 600,
+    "attack_force_interval": 75,
+    "minimum_attack_force_delay": 0,
+    "rush_attack_scan_radius": 15,
+    "protect_unit_scan_radius": 15,
+    "max_base_radius": 20,
+    "idle_scan_radius": 10,
+    "danger_scan_radius": 10,
+    "attack_scan_radius": 12,
+    "protection_scan_radius": 8,
+    "ignored_enemy_target_types": [
+     "AirborneActor"
+    ]
+   },
+   "unit_builder": {
+    "idle_base_units_maximum": -1,
+    "unit_queues": [
+     "Vehicle",
+     "Infantry",
+     "Plane",
+     "Ship",
+     "Aircraft"
+    ],
+    "units_to_build": [
+     [
+      "HARV",
+      1
+     ],
+     [
+      "FTRK",
+      40
+     ],
+     [
+      "ARTY",
+      40
+     ],
+     [
+      "V2RL",
+      40
+     ],
+     [
+      "JEEP",
+      40
+     ],
+     [
+      "HELI",
+      30
+     ],
+     [
+      "MH60",
+      30
+     ],
+     [
+      "MIG",
+      15
+     ],
+     [
+      "YAK",
+      60
+     ],
+     [
+      "SS",
+      10
+     ],
+     [
+      "MSUB",
+      30
+     ],
+     [
+      "DD",
+      30
+     ],
+     [
+      "CA",
+      20
+     ],
+     [
+      "PT",
+      10
+     ]
+    ],
+    "unit_limits": [
+     [
+      "HARV",
+      4
+     ],
+     [
+      "FTRK",
+      3
+     ],
+     [
+      "ARTY",
+      1
+     ],
+     [
+      "V2RL",
+      1
+     ],
+     [
+      "JEEP",
+      1
+     ]
+    ],
+    "unit_delays": [
+     [
+      "HARV",
+      10000
+     ]
+    ],
+    "production_min_cash_requirement": 500
+   }
+  }
+ ]
 }

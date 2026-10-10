@@ -542,6 +542,8 @@ pub enum AiDifficulty {
 pub struct PlayerSetup {
     pub faction: String,
     pub ai: Option<AiDifficulty>,
+    /// The OpenRA bot an AI slot plays (ai_bots.rs); ignored for humans.
+    pub bot: crate::ai_bots::BotType,
     /// 0: no team (free for all); equal non-zero teams are allies.
     pub team: u8,
     /// OpenRA handicap in percent (0..95, steps of 5): less firepower and
@@ -551,7 +553,7 @@ pub struct PlayerSetup {
 
 impl PlayerSetup {
     pub fn new(faction: &str, ai: Option<AiDifficulty>) -> PlayerSetup {
-        PlayerSetup { faction: faction.to_string(), ai, team: 0, handicap: 0 }
+        PlayerSetup { faction: faction.to_string(), ai, bot: crate::ai_bots::BotType::Normal, team: 0, handicap: 0 }
     }
 }
 
@@ -1078,7 +1080,9 @@ impl World {
             w.add_player(fi, p.ai.is_some(), spawns[order[slot]]);
             w.players[slot].cash = options.starting_cash;
             w.players[slot].team = p.team;
-            w.players[slot].handicap = i32::from(p.handicap.min(crate::gamerules::MAX_HANDICAP));
+            // An Easy AI plays with an extra handicap (ai_bots.rs).
+            let extra = p.ai.map_or(0, |d| crate::ai_bots::Difficulty(d).handicap());
+            w.players[slot].handicap = i32::from(p.handicap.saturating_add(extra).min(crate::gamerules::MAX_HANDICAP));
             if options.explored {
                 w.players[slot].explored.iter_mut().for_each(|e| *e = 1);
             }
@@ -1086,7 +1090,7 @@ impl World {
         w.ai = players
             .iter()
             .enumerate()
-            .map(|(slot, p)| crate::ai::AiState::new(slot as u32, p.ai.unwrap_or(AiDifficulty::Normal)))
+            .map(|(slot, p)| crate::ai::AiState::new(&w.rules, slot as u8, p.bot, p.ai.unwrap_or(AiDifficulty::Normal)))
             .collect();
         for a in w.ai.iter_mut() {
             a.salt = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
@@ -1105,7 +1109,8 @@ impl World {
             let n = w.players.len() - 1;
             w.players[n].neutral = true;
             w.players[n].cash = 0;
-            w.ai.push(crate::ai::AiState::new(n as u32, AiDifficulty::Easy));
+            let neutral_ai = crate::ai::AiState::new(&w.rules, n as u8, crate::ai_bots::BotType::Normal, AiDifficulty::Easy);
+            w.ai.push(neutral_ai);
         }
         let neutral = w.players.len() as u8 - 1;
         w.crates = crate::crates::CrateState::new(&w.rules, options.crates);
