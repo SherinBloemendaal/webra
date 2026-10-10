@@ -160,7 +160,7 @@ impl Ctx<'_> {
                 building && self.info(h).is_some_and(|i| i.building.as_ref().is_some_and(|b| b.repairable.is_some()))
             }
             "Sell" => building && self.info(h).is_some_and(|i| i.building.as_ref().is_some_and(|b| b.sell_refund > 0)),
-            "Panic" => self.info(h).is_some_and(|i| i.kind == Kind::Infantry && i.weapons.is_empty()),
+            "Panic" => self.m.data.scaredy.contains(&hd.ty),
             "IsCloaked" => abilities.is_some_and(|a| a.cloak.is_some()),
             _ => false,
         }
@@ -428,7 +428,7 @@ impl Ctx<'_> {
             }
             F::ACallFunc => {
                 let func = a.func(0)?;
-                self.queue(h, Act::CallFunc(func));
+                self.queue(h, Act::CallFunc(func, Vec::new()));
                 none
             }
             F::AWait => {
@@ -1002,6 +1002,9 @@ impl Ctx<'_> {
         if let Some(s) = l.stance {
             self.w.actors[i].stance = s;
         }
+        if self.m.data.indestructible.contains(&self.w.rules.actors[t].id) {
+            self.w.actors[i].invulnerable_until = u32::MAX;
+        }
         let r = self.w.make_ref(i);
         self.m.handles[h as usize].state = HState::Live(r);
         self.m.handle_of.insert(r, h);
@@ -1110,10 +1113,7 @@ impl Ctx<'_> {
         let last = self.m.cell_in(entry[entry.len() - 1].0, entry[entry.len() - 1].1);
         let plist = lua.array(passengers.iter().map(|&p| actor_value(p)).collect());
         match action {
-            Some(f) => {
-                let wrapped = self.bind_call(lua, f, vec![actor_value(th), plist.clone()]);
-                self.queue(th, Act::CallFunc(wrapped));
-            }
+            Some(f) => self.queue(th, Act::CallFunc(f, vec![actor_value(th), plist.clone()])),
             None => {
                 if self.is_aircraft(th) {
                     self.queue(th, Act::LandNear(last));
@@ -1124,10 +1124,7 @@ impl Ctx<'_> {
             }
         }
         match (exit_func, exit) {
-            (Some(f), _) => {
-                let wrapped = self.bind_call(lua, f, vec![actor_value(th)]);
-                self.queue(th, Act::CallFunc(wrapped));
-            }
+            (Some(f), _) => self.queue(th, Act::CallFunc(f, vec![actor_value(th)])),
             (None, Some(path)) => {
                 for &(x, y) in &path {
                     let cell = self.m.cell_in(x, y);
@@ -1143,24 +1140,6 @@ impl Ctx<'_> {
         lua.raw_set(rt, Value::Num(1.0), actor_value(th))?;
         lua.raw_set(rt, Value::Num(2.0), plist)?;
         Ok(vec![ret])
-    }
-
-    /// A function that calls `f` with `args` (CallFunc of a Lua function with arguments).
-    fn bind_call(&mut self, lua: &mut Lua, f: Value, args: Vec<Value>) -> Value {
-        let t = lua.array(std::iter::once(f).chain(args).collect());
-        let Value::Table(id) = t else { unreachable!() };
-        Value::Host(F::ACallFunc as u32, Some(UserData::new(UD_GLOBAL, -1, id as i32, 0)))
-    }
-
-    /// Call a function bound by `bind_call`.
-    pub(crate) fn call_bound(&mut self, lua: &mut Lua, table: u32) -> R<()> {
-        let mut items = lua.sequence(table);
-        if items.is_empty() {
-            return Ok(());
-        }
-        let f = items.remove(0);
-        lua.call(self, &f, items)?;
-        Ok(())
     }
 
     /// Reinforcements whose delay has passed enter the world and set off (OpenRA SpawnActorEffect).
@@ -1189,8 +1168,7 @@ impl Ctx<'_> {
                 self.queue(s.handle, Act::Move { cell, close: 2, attack: false });
             }
             if let Some(f) = s.then {
-                let wrapped = self.bind_call(lua, f, vec![actor_value(s.handle)]);
-                self.queue(s.handle, Act::CallFunc(wrapped));
+                self.queue(s.handle, Act::CallFunc(f, vec![actor_value(s.handle)]));
             }
         }
     }
@@ -1242,15 +1220,8 @@ impl Ctx<'_> {
     fn step(&mut self, lua: &mut Lua, h: u32, act: &Act, started: bool, ticks: i32) -> R<bool> {
         // Script-only steps that need no body.
         match act {
-            Act::CallFunc(f) => {
-                match f {
-                    Value::Host(id, Some(u)) if *id == F::ACallFunc as u32 && u.kind == UD_GLOBAL && u.a == -1 => {
-                        self.call_bound(lua, u.b as u32)?
-                    }
-                    _ => {
-                        lua.call(self, f, Vec::new())?;
-                    }
-                }
+            Act::CallFunc(f, args) => {
+                lua.call(self, f, args.clone())?;
                 return Ok(true);
             }
             Act::Wait(n) => return Ok(ticks > *n),
@@ -1530,7 +1501,7 @@ impl Ctx<'_> {
                 self.splice(h, q);
                 true
             }
-            Act::CallFunc(_) | Act::Wait(_) => unreachable!("handled above"),
+            Act::CallFunc(..) | Act::Wait(_) => unreachable!("handled above"),
         })
     }
 

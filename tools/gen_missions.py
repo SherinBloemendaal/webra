@@ -245,8 +245,18 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
             wanted.add(names[t])
 
     # Trees, boxes, ice floes and poles (armor type Tree) stay terrain, as the
-    # .oramap importer makes them: no mission script refers to one.
-    wanted = {n for n in wanted if (parse.to_json(rules[n]).get('Armor') or {}).get('Type') != 'Tree'}
+    # .oramap importer makes them: no mission script refers to one. Bridges
+    # (Bridge, BridgeHut) come from the map's bridge templates, which only an
+    # engine with bridge actors in its built-in rules turns into actors.
+    def exportable(n):
+        t = parse.to_json(rules[n])
+        if (t.get('Armor') or {}).get('Type') == 'Tree':
+            return False
+        if ('Bridge' in t or 'BridgeHut' in t or 'GroundLevelBridge' in t) and n.lower() not in ids_lower_base:
+            notes.append(f'{n.lower()}: no bridge actors in the built-in rules')
+            return False
+        return True
+    wanted = {n for n in wanted if exportable(n)}
     props = {}
     for name in sorted(wanted):
         t = parse.to_json(rules[name])
@@ -313,7 +323,29 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
         stdout, sys.stdout = sys.stdout, open(os.devnull, 'w')
         try:
             gen_rules.main()
-            break
+            # Actors the exported ones refer to (paratroopers, husks, cargo)
+            # must be exported too.
+            with open(out_path, encoding='utf-8') as fh:
+                produced = json.load(fh)
+            have = {a['id'] for a in produced['actors']}
+            refs = set()
+
+            def walk(v):
+                if isinstance(v, str):
+                    if v in rules and v not in have and not v.startswith('^') and v not in ('World', 'Player'):
+                        refs.add(v)
+                elif isinstance(v, dict):
+                    for x in v.values():
+                        walk(x)
+                elif isinstance(v, list):
+                    for x in v:
+                        walk(x)
+            for a in produced['actors']:
+                walk({k: x for k, x in a.items() if k not in ('id', 'name', 'description')})
+            refs = {r for r in refs if exportable(r)}
+            if not refs:
+                break
+            extra.extend(sorted(refs - set(extra)))
         except KeyError as e:
             # A new actor refers to one that is not exported yet (a husk, a passenger): add it.
             missing = str(e.args[0])
@@ -331,6 +363,23 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
     with open(out_path, encoding='utf-8') as fh:
         mission_rules = json.load(fh)
 
+    # Actors without a Health trait cannot be damaged in OpenRA (an oil
+    # derrick's burnt husk): the engine needs positive hit points, so they get
+    # one and the mission lists them as indestructible.
+    indestructible = []
+    for e in mission_rules['actors']:
+        if e['kind'] != 'proxy' and e['hp'] <= 0 and 'Health' not in parse.to_json(rules[e['id']]):
+            e['hp'] = 1
+            indestructible.append(e['id'])
+    # SpawnActorOnDeath of something that is not a husk or a crate (an oil
+    # derrick leaves its burning ruin, a building): the mission does it.
+    kinds = {e['id']: e['kind'] for e in mission_rules['actors']}
+    death_spawns = {}
+    for e in mission_rules['actors']:
+        target = e.get('spawn_on_death')
+        if target and kinds.get(target) not in ('husk', 'crate'):
+            death_spawns[e['id']] = target
+            e['spawn_on_death'] = None
     # The difference to the built-in rules, in the generated order: entries
     # that patch a built-in one carry its key and the changed fields, new ones
     # are complete (appended in this order, so new weapon indices match).
@@ -370,8 +419,16 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
             info = condition_info(parse.to_json(rules[aid]))
             if info:
                 conditions[aid if aid not in ids_lower_base.values() else aid] = info
+    # Targetable NoAutoTarget (barrels): only attacked when ordered to.
+    no_auto_target = sorted(a['id'] for a in mission_rules['actors'] if 'NoAutoTarget' in gen_rules.target_types(parse.to_json(rules[a['id']])))
+    # ScaredyCat: civilians that panic (`actor.Panic()`), and when hit.
+    scaredy = sorted(a['id'] for a in mission_rules['actors'] if 'ScaredyCat' in parse.to_json(rules[a['id']]))
     return {
         'rules': {k: v for k, v in diff.items() if v},
+        'scaredy': scaredy,
+        'no_auto_target': no_auto_target,
+        'indestructible': indestructible,
+        'death_spawns': death_spawns,
         'conditions': conditions,
         'props': props,
         'art': art,
@@ -562,6 +619,10 @@ def mission_file(mission, campaign, gen, base_actor_ids):
         'players': players,
         'actors': [actor_info(a) for a in m['actors']],
         'rules': gen['rules'],
+        'indestructible': gen['indestructible'],
+        'scaredy': gen['scaredy'],
+        'no_auto_target': gen['no_auto_target'],
+        'death_spawns': gen['death_spawns'],
         'conditions': gen['conditions'],
         'props': gen['props'],
         'art': gen['art'],

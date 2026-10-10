@@ -1353,7 +1353,8 @@ impl Rules {
         within(&n("speed"), u.speed, 0, 2 * CELLS)?;
         within(&n("turn_speed"), u.turn_speed, 1, 1024)?;
         within(&n("radius"), u.radius, 1, 2 * CELLS)?;
-        within(&n("passenger_weight"), u.passenger_weight, 1, 100)?;
+        // 0: rides without taking room (OpenRA missions give Tanya Weight 0).
+        within(&n("passenger_weight"), u.passenger_weight, 0, 100)?;
         if u.locomotor >= self.locomotors.len() {
             return Err(n("locomotor: unknown locomotor"));
         }
@@ -1658,7 +1659,8 @@ impl Rules {
         for &o in &p.squad_offset {
             within(&n("squad_offset"), o, -16 * CELLS, 16 * CELLS)?;
         }
-        count(&n("drop_items"), p.drop_items.len(), 16)?;
+        // OpenRA missions drop up to 20 (production-disruption's CHALK3).
+        count(&n("drop_items"), p.drop_items.len(), 32)?;
         for id in &p.drop_items {
             self.actor_id_ref(&n("drop_items"), id, &[Kind::Infantry, Kind::Vehicle])?;
         }

@@ -60,6 +60,19 @@ pub struct MissionData {
     pub start_notification: Option<String>,
     #[serde(default)]
     pub objectives: ObjectivesInfo,
+    /// What an actor type leaves when it dies, when that is not a husk or a
+    /// crate (OpenRA SpawnActorOnDeath of an oil derrick: its burning ruin).
+    #[serde(default)]
+    pub death_spawns: BTreeMap<String, String>,
+    /// Actor types units never pick on their own (Targetable NoAutoTarget: barrels).
+    #[serde(default)]
+    pub no_auto_target: Vec<String>,
+    /// Actor types that panic (OpenRA ScaredyCat): civilians.
+    #[serde(default)]
+    pub scaredy: Vec<String>,
+    /// Actor types without health in OpenRA: never damaged, never targeted.
+    #[serde(default)]
+    pub indestructible: Vec<String>,
     /// Per actor type: the conditions scripts may grant (ExternalCondition)
     /// and what they switch (`actor.GrantCondition`, conditions.rs).
     #[serde(default)]

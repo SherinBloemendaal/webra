@@ -84,6 +84,9 @@ impl Ctx<'_> {
             self.tick_bots();
             self.drain_events(lua);
         }
+        // Old references of gone actors are not needed after a few seconds.
+        let tick = self.w.tick;
+        self.m.gone_of.retain(|_, &mut (_, t)| tick < t + 250);
         if let Some(at) = self.m.game_over_at {
             if self.w.tick >= at {
                 self.w.game_over = true;
@@ -117,11 +120,25 @@ impl Ctx<'_> {
         if let Some(h) = self.known(r) {
             return Some(h);
         }
+        if let Some(&(h, _)) = self.m.gone_of.get(&r) {
+            return Some(h);
+        }
         self.w.resolve(r).map(|i| self.handle_for(i))
     }
 
     fn mark_gone(&mut self, r: u32, snap: Snapshot, died: bool) -> Option<u32> {
-        let h = self.m.handle_of.remove(&r)?;
+        let h = match self.m.handle_of.remove(&r) {
+            Some(h) => h,
+            // Not known to the scripts yet: a handle now, so it can still be named as an attacker.
+            None => {
+                let ty = self.w.rules.actors[snap.ty as usize].id.clone();
+                self.m.handles.push(Handle { ty, owner: snap.owner, state: HState::Gone { snap, died }, tags: Vec::new() });
+                let h = self.m.handles.len() as u32 - 1;
+                self.m.gone_of.insert(r, (h, self.w.tick));
+                return None;
+            }
+        };
+        self.m.gone_of.insert(r, (h, self.w.tick));
         self.m.handles[h as usize].state = HState::Gone { snap, died };
         self.m.handles[h as usize].owner = snap.owner;
         self.m.queues.remove(&h);
@@ -146,13 +163,16 @@ impl Ctx<'_> {
                 if !self.m.triggers.has(h, ActorTrigger::OnDamaged) {
                     return;
                 }
-                let att = self.handle_of_ref(attacker).map_or(Value::Nil, actor_value);
+                // OpenRA always names an attacker; damage without one (a burning
+                // husk, a crush) counts as the actor's own, like Health = x does.
+                let att = actor_value(self.handle_of_ref(attacker).unwrap_or(h));
                 self.fire_actor(lua, h, ActorTrigger::OnDamaged, vec![actor_value(h), att, num(damage as i64)]);
             }
             ScriptEvent::Killed { victim, killer, snap } => {
+                self.death_spawn(&snap);
                 let killer_h = self.handle_of_ref(killer);
                 let Some(h) = self.mark_gone(victim, snap, true) else { return };
-                let k = killer_h.map_or(Value::Nil, actor_value);
+                let k = actor_value(killer_h.unwrap_or(h));
                 self.fire_actor(lua, h, ActorTrigger::OnKilled, vec![actor_value(h), k]);
                 self.group_event(lua, h, GroupEvent::Killed);
                 self.removed_from_world(lua, h);
@@ -222,6 +242,26 @@ impl Ctx<'_> {
                 if let Some(p) = p {
                     self.added_to_world(lua, p);
                 }
+            }
+        }
+    }
+
+    /// SpawnActorOnDeath of a structure (MissionData::death_spawns): the new
+    /// actor takes the dead one's place once its cells are free.
+    fn death_spawn(&mut self, snap: &Snapshot) {
+        let id = &self.w.rules.actors[snap.ty as usize].id;
+        let Some(into) = self.m.data.death_spawns.get(id).cloned() else { return };
+        let Some(t) = self.w.rules.actor_index(&into) else { return };
+        let dead = &self.w.rules.actors[snap.ty as usize];
+        let (w, h) = dead.building.as_ref().map_or((1, 1), |b| (b.width, b.height));
+        let (cx, cy) = ((snap.x - w * CELL / 2).div_euclid(CELL), (snap.y - h * CELL / 2).div_euclid(CELL));
+        let i = match self.w.rules.actors[t].kind {
+            crate::rules::Kind::Building => self.w.spawn_building(t as u16, snap.owner, cx, cy),
+            _ => Some(self.w.spawn_unit(t as u16, snap.owner, snap.x, snap.y, snap.facing)),
+        };
+        if let Some(i) = i {
+            if self.m.data.indestructible.contains(&self.w.rules.actors[t].id) {
+                self.w.actors[i].invulnerable_until = u32::MAX;
             }
         }
     }

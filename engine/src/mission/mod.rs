@@ -274,6 +274,10 @@ pub struct Mission {
     pub(crate) handles: Vec<Handle>,
     /// Engine reference to handle, for actors scripts know.
     pub(crate) handle_of: BTreeMap<u32, u32>,
+    /// Engine references of actors that left the world lately, to their
+    /// handles and the tick they left: a dead shooter still answers as the
+    /// attacker of damage its shots do afterwards.
+    pub(crate) gone_of: BTreeMap<u32, (u32, u32)>,
     /// Map actors by script name, in map order.
     pub(crate) named: Vec<(String, u32)>,
     pub players: Vec<MissionPlayer>,
@@ -292,6 +296,8 @@ pub struct Mission {
     pub(crate) mission_text: Option<(String, String)>,
     pub(crate) ui: Vec<UiEvent>,
     pub error: Option<String>,
+    /// Map actors that could not be placed (name, type, why), for reports and tests.
+    pub unplaced: Vec<(String, String, String)>,
     pub result: MissionResult,
     /// Tick the game ends (OpenRA MissionObjectives GameOverDelay).
     pub(crate) game_over_at: Option<u32>,

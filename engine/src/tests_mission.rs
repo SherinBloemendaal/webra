@@ -59,7 +59,8 @@ fn every_mission_loads_and_runs_without_script_errors() {
             failed = error_of(&w).map(|e| format!("{id} at tick {t}: {e}"));
         }
         if let Some(f) = failed {
-            failures.push(f);
+            let unplaced = w.mission().map(|m| m.unplaced.clone()).unwrap_or_default();
+            failures.push(format!("{f}\nunplaced map actors: {unplaced:?}"));
         }
     }
     assert!(failures.is_empty(), "{} missions failed:\n{}", failures.len(), failures.join("\n\n"));

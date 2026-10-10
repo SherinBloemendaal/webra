@@ -18,7 +18,8 @@ pub enum Act {
         attack: bool,
     },
     Wait(i32),
-    CallFunc(Value),
+    /// Call a script function with these arguments.
+    CallFunc(Value, Vec<Value>),
     /// RemoveSelf: leaves the game without dying.
     Destroy,
     /// Attack-move toward the nearest enemy until none are left (OpenRA Hunt).
@@ -103,7 +104,11 @@ impl Queue {
     pub fn roots(&self, out: &mut Vec<Value>) {
         for a in &self.items {
             match a {
-                Act::CallFunc(f) | Act::PatrolUntil { func: f, .. } => out.push(f.clone()),
+                Act::CallFunc(f, args) => {
+                    out.push(f.clone());
+                    out.extend(args.iter().cloned());
+                }
+                Act::PatrolUntil { func: f, .. } => out.push(f.clone()),
                 _ => {}
             }
         }

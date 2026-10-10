@@ -141,6 +141,7 @@ impl World {
             data: data.clone(),
             handles: Vec::new(),
             handle_of: BTreeMap::new(),
+            gone_of: BTreeMap::new(),
             named: Vec::new(),
             players,
             origin: (data.origin[0], data.origin[1]),
@@ -156,6 +157,7 @@ impl World {
             mission_text: None,
             ui: Vec::new(),
             error: None,
+            unplaced: Vec::new(),
             result: MissionResult::Playing,
             game_over_at: None,
             next_token: 1,
@@ -218,7 +220,7 @@ impl World {
                 let facing = super::setup::facing_in(a.facing.unwrap_or(0));
                 let i = match info.kind {
                     Kind::Proxy => None,
-                    Kind::Building => self.spawn_building_with(t as u16, owner, cx, cy, a.free_actor.unwrap_or(true)),
+                    Kind::Building => self.spawn_building_with(t as u16, owner, cx, cy, a.free_actor.unwrap_or(true), true),
                     Kind::Crate => {
                         if !self.map.contains(cx, cy) || self.crate_at(self.map.idx(cx, cy)).is_some() {
                             None
@@ -250,6 +252,9 @@ impl World {
                 match i {
                     Some(i) => {
                         let r = self.make_ref(i);
+                        if data.indestructible.contains(&self.rules.actors[t].id) {
+                            self.actors[i].invulnerable_until = u32::MAX;
+                        }
                         if let Some(pct) = a.health {
                             let max = self.rules.actors[t].hp as i64;
                             self.actors[i].hp = ((max * pct.clamp(1, 100) as i64) / 100).max(1) as i32;
@@ -278,9 +283,13 @@ impl World {
                         };
                         m.new_handle(self.rules.actors[t].id.clone(), owner, HState::Limbo(limbo))
                     }
-                    None => continue,
+                    None => {
+                        m.unplaced.push((a.name.clone(), a.ty.clone(), format!("does not fit at {},{}", a.x, a.y)));
+                        continue;
+                    }
                 }
             } else {
+                m.unplaced.push((a.name.clone(), a.ty.clone(), "unknown type".into()));
                 continue;
             };
             m.handles[h as usize].tags = a.tags.clone();

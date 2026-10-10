@@ -1314,15 +1314,18 @@ impl World {
     /// the cell tables) or another structure already covers one of its cells
     /// (each cell has one owner in `building_at`).
     pub fn spawn_building(&mut self, ty: u16, owner: u8, cx: i32, cy: i32) -> Option<usize> {
-        self.spawn_building_with(ty, owner, cx, cy, true)
+        self.spawn_building_with(ty, owner, cx, cy, true, false)
     }
 
     /// `spawn_building`; `free_actor` false leaves out a refinery's free ore
-    /// truck (OpenRA FreeActorInit false, set by mission maps).
-    pub fn spawn_building_with(&mut self, ty: u16, owner: u8, cx: i32, cy: i32, free_actor: bool) -> Option<usize> {
+    /// truck (OpenRA FreeActorInit false, set by mission maps). With
+    /// `overlap`, cells another structure already holds stay that one's
+    /// (OpenRA spawns map actors without a placement check: a mission's
+    /// church may stand on a fence).
+    pub fn spawn_building_with(&mut self, ty: u16, owner: u8, cx: i32, cy: i32, free_actor: bool, overlap: bool) -> Option<usize> {
         let info = self.rules.actors.get(ty as usize)?;
         let b = info.building.as_ref()?;
-        if !b.fits(&self.map, cx, cy) || b.cells().any(|(dx, dy)| self.building_at[self.map.idx(cx + dx, cy + dy)] != NONE) {
+        if !b.fits(&self.map, cx, cy) || (!overlap && b.cells().any(|(dx, dy)| self.building_at[self.map.idx(cx + dx, cy + dy)] != NONE)) {
             return None;
         }
         let i = self.alloc();
@@ -1355,6 +1358,9 @@ impl World {
             }
             // Checked by `fits` above.
             let ci = self.map.idx(cx + dx, cy + dy);
+            if self.building_at[ci] != NONE {
+                continue;
+            }
             self.building_at[ci] = i as u32;
             if c == FootCell::Occupied {
                 self.pass.set_blocked(ci, true);

@@ -109,6 +109,7 @@ impl World {
                         || !self.appears_hostile(u, i)
                         || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
+                        || (self.mission.is_some() && self.mission_no_auto_target(u))
                     {
                         continue;
                     }
@@ -130,6 +131,8 @@ impl World {
                         && !self.capture_protected(b, a.owner)
                         && (any_structure || tinfo.defense)
                         && info.can_attack(&self.rules, Kind::Building)
+                        // Barrels and untargetable mission actors (mission/conditions.rs).
+                        && !(self.mission.is_some() && self.mission_no_auto_target(b))
                     {
                         let d = self.target_distance(b, a.x, a.y);
                         if d <= range && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi)) {
