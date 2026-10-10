@@ -4,8 +4,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
   addField,
+  renameRuleFields,
   applyMapFix,
   canonicalMapJson,
+  getPath,
   decodeBase64,
   encodeBase64,
   GAME_VERSION,
@@ -20,6 +22,8 @@ import {
   parseMap,
   renameActors,
   salvageMap,
+  setPath,
+  validateRules,
   upgradeMap,
   validateMap,
 } from '../src/index.js';
@@ -364,4 +368,71 @@ test('salvageMap opens what it can of a broken or incompatible map and lists eve
   const ok = salvageMap(legacy);
   assert.deepEqual(ok.problems, []);
   assert.equal(canonicalMapJson(ok.map), validateMap(legacy).canonical);
+});
+
+// ---- Reserved keys (no prototype pollution) ------------------------------------------------
+
+test('reserved keys never reach a migration, a path or a quick fix', () => {
+  const versions = testVersions();
+  const polluted = () => ({}).polluted !== undefined || Object.prototype.polluted !== undefined;
+  // In the file: refused before any migration runs, wherever it is.
+  for (const raw of [
+    '{"format":1,"__proto__":{"polluted":1}}',
+    JSON.stringify(v1Map()).replace('"spd":5', '"spd":5,"__proto__":{"polluted":1}'),
+    JSON.stringify(v1Map({ rules: { actors: { constructor: { cost: 1 } } } })),
+    JSON.stringify(v1Map({ notes: undefined, prototype: 1 })),
+  ]) {
+    const r = upgradeMap(JSON.parse(raw), versions);
+    assert.equal(r.status, 'invalid', raw.slice(0, 60));
+    assert.match(r.errors[0], /^the map contains the reserved key (__proto__|constructor|prototype)$/);
+    assert.equal(validateMap(JSON.parse(raw), { versions }).ok, false);
+  }
+  assert.equal(polluted(), false);
+  // Rules ids and fields: refused by the validator too.
+  for (const key of ['__proto__', 'constructor', 'prototype']) {
+    assert.throws(() => validateRules(JSON.parse(`{"actors":{"${key}":{"cost":1}}}`)), /invalid id/);
+    assert.throws(() => validateRules(JSON.parse(`{"actors":{"E1":{"${key}":1}}}`)), /invalid field name/);
+  }
+  // Paths: reserved segments throw, descending needs own properties.
+  const obj = {};
+  for (const path of [['__proto__', 'polluted'], ['constructor', 'prototype', 'polluted'], ['a', 'prototype'], [], 'a', [1]]) {
+    assert.throws(() => setPath(obj, path, 1), /invalid map field path/, JSON.stringify(path));
+    assert.throws(() => getPath(obj, path), /invalid map field path/);
+  }
+  assert.equal(getPath({}, ['toString']), undefined, 'inherited properties are not fields');
+  setPath(obj, ['toString', 'x'], 1);
+  assert.deepEqual(Object.keys(obj), ['toString'], 'an inherited name becomes an own object, nothing else changes');
+  // Quick fixes are checked like input.
+  const map = v1Map();
+  for (const action of [
+    { kind: 'setField', path: ['__proto__', 'polluted'], value: 1 },
+    { kind: 'moveField', from: ['notes'], to: ['constructor', 'prototype', 'polluted'] },
+    { kind: 'setField', path: ['rules'], value: JSON.parse('{"__proto__":{"polluted":1}}') },
+    { kind: 'removeActors', match: 'all' },
+    { kind: 'setActorType', match: [{ type: 'E1', x: 1, y: 1 }], type: '<b>' },
+    { kind: 'setTerrain', cells: [[1, 1]], value: 'x' },
+    { kind: 'eval' },
+    null,
+  ]) {
+    assert.throws(() => applyMapFix(map, action), /invalid map fix|invalid map field path|unknown map fix/, JSON.stringify(action));
+  }
+  assert.equal(polluted(), false);
+  // Best effort drops reserved rule keys instead of handing them to the editor.
+  const salvaged = salvageMap(JSON.parse(JSON.stringify(v1Map()).replace('"spd":5', '"spd":5,"__proto__":{"polluted":1}')), { versions });
+  assert.equal(salvaged.map.rules, null);
+  assert.ok(salvaged.problems.some((p) => p.message === 'rules use the reserved key __proto__; the overrides were left out.'));
+  assert.equal(polluted(), false);
+});
+
+test('ids from the file are cut short and stripped of control characters in messages', () => {
+  const long = `X${'Y'.repeat(60)}\u0007`;
+  const ctx = { version: 2, notes: [], problems: [], note(t) { this.notes.push(t); }, problem(p) { this.problems.push(p); } };
+  const map = { actors: [], rules: { actors: { [long]: { cost: 1 }, E1: { gone: 1 } } } };
+  renameActors(map, { [long]: null }, ctx);
+  renameRuleFields(map, 'actors', [[['gone'], null]], ctx);
+  for (const p of ctx.problems) {
+    assert.ok(p.message.length < 200, p.message);
+    assert.doesNotMatch(p.message, /[\x00-\x1f]/);
+  }
+  assert.match(ctx.problems[0].message, /^rules\.actors\.XY{39}: XY{39} was removed in format 2/);
 });

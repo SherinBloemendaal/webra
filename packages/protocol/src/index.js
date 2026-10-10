@@ -74,6 +74,8 @@ export {
   renameActors,
   renameRuleFields,
   renameValues,
+  RESERVED_KEYS,
+  reservedKeyIn,
   setPath,
   upgradeMap,
 } from './mapversions.js';

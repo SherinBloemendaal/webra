@@ -18,7 +18,7 @@
 // a bump without all of them.
 
 import { decodeBase64, encodeBase64 } from './base64.js';
-import { isPlainObject } from './check.js';
+import { excerpt, isPlainObject } from './check.js';
 
 /** The map format version this release reads and writes. */
 export const MAP_FORMAT_VERSION = 1;
@@ -57,6 +57,26 @@ export const MAP_MIGRATIONS = Object.freeze([]);
 export const MAP_VERSIONS = Object.freeze({ current: MAP_FORMAT_VERSION, history: MAP_FORMAT_HISTORY, migrations: MAP_MIGRATIONS });
 
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+
+/** Keys JavaScript treats specially: never a map field, rule id or path segment (no prototype pollution). */
+export const RESERVED_KEYS = Object.freeze(['__proto__', 'constructor', 'prototype']);
+const reserved = (k) => RESERVED_KEYS.includes(k);
+
+/** The first reserved key anywhere in a parsed JSON value, or null. */
+export function reservedKeyIn(v) {
+  const stack = [v];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (Array.isArray(cur)) stack.push(...cur);
+    else if (cur !== null && typeof cur === 'object') {
+      for (const k of Object.keys(cur)) {
+        if (reserved(k)) return k;
+        stack.push(cur[k]);
+      }
+    }
+  }
+  return null;
+}
 
 /** The format version a parsed map names (absent means 1), or null when `formatVersion` is malformed. */
 export function mapFormatVersionOf(input) {
@@ -119,6 +139,9 @@ export function upgradeMap(input, versions = MAP_VERSIONS) {
     ...extra,
   });
   if (!isPlainObject(input)) return result('invalid', { errors: ['map must be a JSON object'] });
+  // Checked before any migration touches the map: paths and ids below can never name them.
+  const bad = reservedKeyIn(input);
+  if (bad !== null) return result('invalid', { errors: [`the map contains the reserved key ${bad}`] });
   const from = mapFormatVersionOf(input);
   if (from === null) return result('invalid', { errors: [`formatVersion must be a whole number from 1 to ${MAP_FORMAT_VERSION_MAX}`] });
   const gameVersion = input.gameVersion ?? null;
@@ -157,8 +180,17 @@ export function upgradeMap(input, versions = MAP_VERSIONS) {
 // Fields are named by key arrays (`['rules', 'actors', 'T01.Husk', 'cost']`):
 // rule ids and fields may contain dots.
 
-/** The value at `path`, or undefined. */
+/** A key path: an array of 1 to 16 strings, none of them reserved. Throws otherwise. */
+function checkPath(path) {
+  if (!Array.isArray(path) || path.length < 1 || path.length > 16 || !path.every((k) => typeof k === 'string' && !reserved(k))) {
+    throw new Error('invalid map field path');
+  }
+  return path;
+}
+
+/** The value at `path` (own properties only), or undefined. */
 export function getPath(obj, path) {
+  checkPath(path);
   let cur = obj;
   for (const k of path) {
     if (!isPlainObject(cur) || !Object.hasOwn(cur, k)) return undefined;
@@ -167,22 +199,30 @@ export function getPath(obj, path) {
   return cur;
 }
 
-/** Set `path` (creating objects on the way); `undefined` deletes it and prunes emptied objects. */
+/** Set an own property, whatever its name (never through a setter or the prototype). */
+function defineOwn(obj, k, value) {
+  Object.defineProperty(obj, k, { value, writable: true, enumerable: true, configurable: true });
+}
+
+/**
+ * Set `path` (creating objects on the way, descending own properties only);
+ * `undefined` deletes it and prunes emptied objects. Reserved keys throw.
+ */
 export function setPath(obj, path, value) {
-  if (!path.length) return;
+  checkPath(path);
   const parents = [obj];
   let cur = obj;
   for (const k of path.slice(0, -1)) {
-    if (!isPlainObject(cur[k])) {
+    if (!Object.hasOwn(cur, k) || !isPlainObject(cur[k])) {
       if (value === undefined) return;
-      cur[k] = {};
+      defineOwn(cur, k, {});
     }
     cur = cur[k];
     parents.push(cur);
   }
   const last = path[path.length - 1];
   if (value !== undefined) {
-    cur[last] = value;
+    defineOwn(cur, last, value);
     return;
   }
   delete cur[last];
@@ -193,7 +233,7 @@ export function setPath(obj, path, value) {
   }
 }
 
-const pathText = (path) => path.join('.');
+const pathText = (path) => path.map((k) => excerpt(k, 40)).join('.');
 
 // ---- Migration helpers ---------------------------------------------------------------
 // The kinds of change a format version may make. Each changes `map` in
@@ -223,15 +263,16 @@ export function renameActors(map, aliases, ctx) {
       open.get(a.type).at.push({ type: a.type, x: a.x, y: a.y });
     }
   }
-  for (const [key, n] of renamed) ctx.note(`Renamed ${n} actor${n === 1 ? '' : 's'} from ${key}.`);
+  for (const [key, n] of renamed) ctx.note(`Renamed ${n} actor${n === 1 ? '' : 's'} from ${excerpt(key, 80)}.`);
   for (const [type, { choices, at }] of open) {
     const first = at[0];
-    const what = `${at.length} ${type} actor${at.length === 1 ? '' : 's'}`;
+    const name = excerpt(type, 40);
+    const what = `${at.length} ${name} actor${at.length === 1 ? '' : 's'}`;
     ctx.problem({
       code: choices.length ? 'actor-split' : 'actor-removed',
       message: choices.length
-        ? `${what}: ${type} was replaced by ${choices.join(' or ')} in format ${ctx.version}; pick one.`
-        : `${what}: ${type} was removed in format ${ctx.version}.`,
+        ? `${what}: ${name} was replaced by ${choices.join(' or ')} in format ${ctx.version}; pick one.`
+        : `${what}: ${name} was removed in format ${ctx.version}.`,
       x: first.x,
       y: first.y,
       at: at.map(({ x, y }) => [x, y]),
@@ -251,16 +292,16 @@ export function renameActors(map, aliases, ctx) {
       const target = Object.keys(overrides).find((k) => k !== id && k.toLowerCase() === to.toLowerCase());
       if (target === undefined) {
         moveOverride(overrides, id, to);
-        ctx.note(`Moved the rules override of ${id} to ${to}.`);
+        ctx.note(`Moved the rules override of ${excerpt(id, 40)} to ${to}.`);
         continue;
       }
       ctx.problem({
         code: 'rules-conflict',
-        message: `rules.actors has overrides for both ${id} and ${target}, which are one actor (${to}) since format ${ctx.version}.`,
+        message: `rules.actors has overrides for both ${excerpt(id, 40)} and ${excerpt(target, 40)}, which are one actor (${to}) since format ${ctx.version}.`,
         path: from,
         fixes: [
-          { label: `Keep the ${id} override`, action: { kind: 'moveField', from, to: ['rules', 'actors', target] } },
-          { label: `Keep the ${target} override`, action: { kind: 'setField', path: from } },
+          { label: `Keep the ${excerpt(id, 40)} override`, action: { kind: 'moveField', from, to: ['rules', 'actors', target] } },
+          { label: `Keep the ${excerpt(target, 40)} override`, action: { kind: 'setField', path: from } },
         ],
       });
       continue;
@@ -269,8 +310,8 @@ export function renameActors(map, aliases, ctx) {
     ctx.problem({
       code: choices.length ? 'rules-split' : 'rules-removed',
       message: choices.length
-        ? `rules.actors.${id}: ${id} was replaced by ${choices.join(' or ')} in format ${ctx.version}; pick where its override goes.`
-        : `rules.actors.${id}: ${id} was removed in format ${ctx.version}, so its override cannot apply.`,
+        ? `rules.actors.${excerpt(id, 40)}: ${excerpt(id, 40)} was replaced by ${choices.join(' or ')} in format ${ctx.version}; pick where its override goes.`
+        : `rules.actors.${excerpt(id, 40)}: ${excerpt(id, 40)} was removed in format ${ctx.version}, so its override cannot apply.`,
       path: from,
       fixes: [
         ...choices.map((c) => ({ label: `Apply it to ${c}`, action: { kind: 'moveField', from, to: ['rules', 'actors', c] } })),
@@ -284,7 +325,7 @@ export function renameActors(map, aliases, ctx) {
 function moveOverride(obj, from, to) {
   const entries = Object.entries(obj);
   for (const k of Object.keys(obj)) delete obj[k];
-  for (const [k, v] of entries) obj[k === from ? to : k] = v;
+  for (const [k, v] of entries) defineOwn(obj, k === from ? to : k, v);
 }
 
 /**
@@ -381,7 +422,7 @@ export function renameRuleFields(map, section, renames, ctx) {
       if (to === null) {
         ctx.problem({
           code: 'rules-field-removed',
-          message: `rules.${section}.${id}.${pathText(from)} was removed in format ${ctx.version}, so this override cannot apply.`,
+          message: `rules.${section}.${excerpt(id, 40)}.${pathText(from)} was removed in format ${ctx.version}, so this override cannot apply.`,
           path: [...at, ...from],
           fixes: [{ label: 'Drop the override', action: { kind: 'setField', path: [...at, ...from] } }],
         });
@@ -403,12 +444,12 @@ export function renameValues(map, path, table, ctx, choices = []) {
   const to = table[v];
   if (typeof to === 'string') {
     setPath(map, path, to);
-    ctx.note(`Changed ${pathText(path)} from ${v} to ${to}.`);
+    ctx.note(`Changed ${pathText(path)} from ${excerpt(v, 40)} to ${to}.`);
     return;
   }
   ctx.problem({
     code: 'value-removed',
-    message: `${pathText(path)} "${v}" was removed in format ${ctx.version}.`,
+    message: `${pathText(path)} "${excerpt(v, 40)}" was removed in format ${ctx.version}.`,
     path,
     fixes: [
       ...choices.map((c) => ({ label: `Use ${c}`, action: { kind: 'setField', path, value: c } })),
@@ -421,14 +462,51 @@ export function renameValues(map, path, table, ctx, choices = []) {
 
 const sameActor = (a, m) => isPlainObject(a) && typeof a.type === 'string' && a.type.toLowerCase() === String(m.type).toLowerCase() && a.x === m.x && a.y === m.y;
 
+const isCell = (c) => Array.isArray(c) && c.length === 2 && c.every((n) => Number.isSafeInteger(n));
+const isMatch = (m) => isPlainObject(m) && typeof m.type === 'string' && Number.isSafeInteger(m.x) && Number.isSafeInteger(m.y);
+const list = (v, ok) => Array.isArray(v) && v.length <= 65536 && v.every(ok);
+
+/** Throws unless `action` is a well-formed quick fix (fixes come from upgradeMap, but are checked like input). */
+function checkAction(action) {
+  const bad = () => {
+    throw new Error('invalid map fix');
+  };
+  if (!isPlainObject(action)) bad();
+  switch (action.kind) {
+    case 'accept':
+      return;
+    case 'removeActors':
+      if (!list(action.match, isMatch)) bad();
+      return;
+    case 'setActorType':
+      if (!list(action.match, isMatch) || typeof action.type !== 'string' || !/^[A-Za-z0-9.]{1,16}$/.test(action.type)) bad();
+      return;
+    case 'setTerrain':
+      if (!list(action.cells, isCell) || !Number.isSafeInteger(action.value) || action.value < 0 || action.value > 255) bad();
+      return;
+    case 'setField':
+      checkPath(action.path);
+      if (action.value !== undefined && reservedKeyIn(action.value) !== null) bad();
+      return;
+    case 'moveField':
+      checkPath(action.from);
+      checkPath(action.to);
+      return;
+    default:
+      throw new Error(`unknown map fix ${excerpt(action.kind)}`);
+  }
+}
+
 /**
  * Apply one quick fix (`problem.fixes[i].action`) to a map. Pure: returns
  * the changed copy. Actions name actors by type and cell and fields by key
- * path, so they stay right after other fixes changed the map.
+ * path, so they stay right after other fixes changed the map. Malformed
+ * actions and reserved path segments throw.
  */
 export function applyMapFix(map, action) {
+  checkAction(action);
   const out = clone(map);
-  switch (action?.kind) {
+  switch (action.kind) {
     case 'accept':
       break;
     case 'removeActors':
@@ -454,8 +532,6 @@ export function applyMapFix(map, action) {
       setPath(out, action.to, value);
       break;
     }
-    default:
-      throw new Error(`unknown map fix ${action?.kind}`);
   }
   return out;
 }

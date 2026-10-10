@@ -18,7 +18,7 @@
 import { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, utf8Length } from './check.js';
 import { GAME_VERSION } from './version.js';
-import { MAP_UPGRADED_NOTICE, MAP_VERSIONS, incompatibleMapMessage, mapFormatVersionOf, upgradeMap } from './mapversions.js';
+import { MAP_UPGRADED_NOTICE, MAP_VERSIONS, incompatibleMapMessage, mapFormatVersionOf, reservedKeyIn, upgradeMap } from './mapversions.js';
 
 export { base64Length, decodeBase64, encodeBase64 } from './base64.js';
 
@@ -46,7 +46,8 @@ export const MODDED_WARNING =
 const MAP_KEYS = ['formatVersion', 'gameVersion', 'format', 'name', 'author', 'description', 'width', 'height', 'terrain', 'ore', 'gems', 'spawns', 'actors', 'rules', 'biome'];
 const ACTOR_KEYS = ['type', 'owner', 'x', 'y', 'facing'];
 const RULE_SECTIONS = { actors: 'id', weapons: 'name' };
-const RULE_KEY_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+// Never a key JavaScript treats specially (`__proto__`, `constructor`, `prototype`): no built-in rule uses one.
+const RULE_KEY_RE = /^(?!(?:__proto__|constructor|prototype)$)[A-Za-z0-9_.-]{1,40}$/;
 const RULE_MAX_DEPTH = 6;
 /** Fields that identify an entry and can never change (see checkPatch). */
 const RULE_FIXED_FIELDS = ['kind', 'queue'];
@@ -423,7 +424,10 @@ export function salvageMap(input, opts = {}) {
     const facing = Number.isSafeInteger(a.facing) && a.facing >= 0 && a.facing <= 1023 ? a.facing : 0;
     m.actors.push({ type: a.type, owner, x: a.x, y: a.y, facing });
   });
-  if (src.rules === undefined || src.rules === null || isPlainObject(src.rules)) m.rules = src.rules ?? null;
+  if (isPlainObject(src.rules) && reservedKeyIn(src.rules) !== null) {
+    m.rules = null;
+    repair(`rules use the reserved key ${reservedKeyIn(src.rules)}; the overrides were left out.`);
+  } else if (src.rules === undefined || src.rules === null || isPlainObject(src.rules)) m.rules = src.rules ?? null;
   else {
     m.rules = null;
     repair('rules is not an object; the overrides were left out.');
