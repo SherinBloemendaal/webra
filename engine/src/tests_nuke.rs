@@ -25,7 +25,9 @@ fn silo_world() -> World {
     let mut w = World::new(17, 64, &[("russia", false), ("england", false)]);
     w.clear_neutral_world();
     let (sx, sy) = w.players[0].start;
-    for (id, dx, dy) in [("APWR", 4, 0), ("APWR", 4, 4), ("APWR", 8, 0), ("BARR", 8, 4), ("PROC", -4, 0), ("WEAP", 0, 6), ("DOME", 8, 8), ("STEK", 4, 8)] {
+    for (id, dx, dy) in
+        [("APWR", 4, 0), ("APWR", 4, 4), ("APWR", 8, 0), ("BARR", 8, 4), ("PROC", -4, 0), ("WEAP", 0, 6), ("DOME", 8, 8), ("STEK", 4, 8)]
+    {
         let t = ty(&w, id);
         assert!(w.spawn_building(t, 0, sx + dx, sy + dy).is_some(), "{id}");
     }
@@ -47,7 +49,7 @@ fn instance(w: &World) -> Option<&crate::powers::PowerInstance> {
 fn the_missile_silo_is_built_charges_and_launches_an_atom_bomb_that_lands() {
     let mut w = silo_world();
     let mslo = ty(&w, "MSLO");
-    assert!(w.rules.obtainable[w.players[0].faction as usize][mslo as usize], "the Soviets build the silo");
+    assert!(w.rules.obtainable[w.players[0].faction][mslo as usize], "the Soviets build the silo");
     // Build and place it like a player (the Defense queue).
     w.queue_order(Order::StartProduction { player: 0, ty: mslo, count: 1 });
     let (sx, sy) = w.players[0].start;
@@ -94,7 +96,11 @@ fn the_missile_silo_is_built_charges_and_launches_an_atom_bomb_that_lands() {
     let tank = w.spawn_unit(ty(&w, "2TNK"), 1, cell_center(ex + 3), cell_center(ey + 3), 0);
     let (tx, ty_) = (ex + 1, ey + 1);
     // Ore within three cells of the target (the last DestroyResource clears five).
-    let ore_cells: Vec<usize> = (-3..=3).flat_map(|dy| (-3..=3).map(move |dx| (dx, dy))).filter(|&(dx, dy)| dx * dx + dy * dy <= 9).map(|(dx, dy)| w.map.idx(tx + dx, ty_ + dy)).collect();
+    let ore_cells: Vec<usize> = (-3..=3)
+        .flat_map(|dy| (-3..=3).map(move |dx| (dx, dy)))
+        .filter(|&(dx, dy)| dx * dx + dy * dy <= 9)
+        .map(|(dx, dy)| w.map.idx(tx + dx, ty_ + dy))
+        .collect();
     for &c in &ore_cells {
         if w.building_at[c] == crate::world::NONE {
             w.map.ore[c] = 10;

@@ -211,8 +211,11 @@ fn run_checked(w: &mut World, ticks: u32, what: &str) {
 fn every_ground_locomotor_crosses_a_river_only_on_the_bridge_or_the_ford() {
     let mut w = river_world();
     let types = one_per_ground_locomotor(&w);
-    let units: Vec<usize> =
-        types.iter().enumerate().map(|(k, &t)| w.spawn_unit(t, 0, cell_center(3 + (k as i32 % 3) * 2), cell_center(20 + k as i32 / 3 * 2), 0)).collect();
+    let units: Vec<usize> = types
+        .iter()
+        .enumerate()
+        .map(|(k, &t)| w.spawn_unit(t, 0, cell_center(3 + (k as i32 % 3) * 2), cell_center(20 + k as i32 / 3 * 2), 0))
+        .collect();
     let ids: Vec<u32> = units.iter().map(|&i| w.make_ref(i)).collect();
     // Across the river, far from both crossings, then into the lake.
     w.queue_order(Order::Move { player: 0, ids: ids.clone(), x: cell_center(40), y: cell_center(15), attack_move: false });

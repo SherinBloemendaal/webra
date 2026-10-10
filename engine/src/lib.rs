@@ -110,17 +110,13 @@ mod tests_naval;
 #[cfg(test)]
 mod tests_neutral;
 #[cfg(test)]
-mod tests_original_art;
-#[cfg(test)]
 mod tests_nuke;
+#[cfg(test)]
+mod tests_original_art;
 #[cfg(test)]
 mod tests_overlays;
 #[cfg(test)]
 mod tests_pathing;
-#[cfg(test)]
-mod tests_target_lines;
-#[cfg(test)]
-mod tests_terrain;
 #[cfg(test)]
 mod tests_planes;
 #[cfg(test)]
@@ -139,6 +135,10 @@ mod tests_sound;
 mod tests_sound_eva;
 #[cfg(test)]
 mod tests_stats;
+#[cfg(test)]
+mod tests_target_lines;
+#[cfg(test)]
+mod tests_terrain;
 #[cfg(test)]
 mod tests_veterancy;
 #[cfg(test)]

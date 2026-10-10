@@ -114,7 +114,9 @@ fn attacks_guards_harvesters_and_engineers_have_openras_colours() {
     assert_eq!((colour(&l[0]), l[0][2]), (CRIMSON, px(cell_center(12))), "attack ground");
     // An engineer sent to capture: crimson; to repair an own structure: yellow.
     let (sx, sy) = w.players[1].start;
-    let yard = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 1 && w.actors[i].kind == crate::rules::Kind::Building).unwrap();
+    let yard = (0..w.actors.len())
+        .find(|&i| w.actors[i].alive && w.actors[i].owner == 1 && w.actors[i].kind == crate::rules::Kind::Building)
+        .unwrap();
     let e6 = unit(&mut w, "E6", 0, sx - 2, sy + 1);
     w.rebuild_hash();
     w.update_vision();
@@ -122,7 +124,9 @@ fn attacks_guards_harvesters_and_engineers_have_openras_colours() {
     w.queue_order(Order::Smart { player: 0, ids: vec![w.make_ref(e6)], x: yx, y: yy });
     run(&mut w, 1);
     assert_eq!(colour(&lines(&w, 0, &[e6])[0]), CRIMSON, "capture");
-    let own = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].kind == crate::rules::Kind::Building).unwrap();
+    let own = (0..w.actors.len())
+        .find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].kind == crate::rules::Kind::Building)
+        .unwrap();
     w.actors[own].hp /= 2;
     let (hx, hy) = w.players[0].start;
     let fixer = unit(&mut w, "E6", 0, hx + 5, hy + 5);
@@ -136,13 +140,16 @@ fn attacks_guards_harvesters_and_engineers_have_openras_colours() {
 #[test]
 fn harvesters_show_the_ore_in_crimson_and_the_refinery_in_green() {
     let mut w = World::new(5, 64, &[("england", false), ("russia", false)]);
-    let harv = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.rules.actors[w.actors[i].ty as usize].id == "HARV");
+    let harv =
+        (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.rules.actors[w.actors[i].ty as usize].id == "HARV");
     let harv = harv.unwrap_or_else(|| {
         let (sx, sy) = w.players[0].start;
         let t = ty(&w, "PROC");
         w.spawn_building(t, 0, sx + 5, sy);
         w.refresh_tokens();
-        (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.rules.actors[w.actors[i].ty as usize].id == "HARV").unwrap()
+        (0..w.actors.len())
+            .find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.rules.actors[w.actors[i].ty as usize].id == "HARV")
+            .unwrap()
     });
     let mut seen = Vec::new();
     for _ in 0..25 * 90 {
@@ -164,7 +171,8 @@ fn aircraft_show_where_they_fly_and_what_they_attack() {
     w.spawn_building(t, 0, sx + 6, sy + 6).unwrap();
     w.refresh_tokens();
     let heli = unit(&mut w, "HELI", 0, sx + 4, sy + 10);
-    w.actors[heli].altitude = w.rules.actors[w.actors[heli].ty as usize].unit.as_ref().unwrap().aircraft.as_ref().unwrap().cruise_altitude.max(CELL);
+    w.actors[heli].altitude =
+        w.rules.actors[w.actors[heli].ty as usize].unit.as_ref().unwrap().aircraft.as_ref().unwrap().cruise_altitude.max(CELL);
     w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(heli)], x: cell_center(40), y: cell_center(30), attack_move: false });
     run(&mut w, 2);
     let l = lines(&w, 0, &[heli]);
