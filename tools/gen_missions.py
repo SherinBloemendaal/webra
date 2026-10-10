@@ -160,8 +160,9 @@ def inherits_chain(raw, name):
 
 def is_prop(t):
     """Script-only actors without a body (no health, not a structure or a power proxy):
-    waypoints, cameras (also allies-03b's movable camera.jeep) and flares."""
-    return 'Health' not in t and 'Building' not in t and not support_power_proxy(t)
+    waypoints, cameras (also allies-03b's movable camera.jeep) and flares. Crates are
+    actors of the engine (crates.rs)."""
+    return 'Health' not in t and 'Building' not in t and 'Crate' not in t and not support_power_proxy(t)
 
 
 def support_power_proxy(t):

@@ -84,6 +84,7 @@ impl Ctx<'_> {
             self.tick_bots();
             self.drain_events(lua);
         }
+        self.tick_flares();
         // Old references of gone actors are not needed after a few seconds.
         let tick = self.w.tick;
         self.m.gone_of.retain(|_, &mut (_, t)| tick < t + 250);
@@ -532,6 +533,20 @@ impl Ctx<'_> {
     /// Players whose bot modules a condition switched on (OpenRA's campaign
     /// bot with HarvesterBotModule, BuildingRepairBotModule, ...): base
     /// builders run the skirmish AI, the repair module repairs damaged structures.
+    /// Props drawn in the game (OpenRA FLARE, image smokland) give off a smoke
+    /// column for as long as they are in the world.
+    fn tick_flares(&mut self) {
+        let period = crate::husks::LEFTOVER_EFFECT_TICKS[crate::husks::LEFTOVER_SMOKE as usize];
+        if self.w.tick % period as u32 != 0 {
+            return;
+        }
+        for hd in &self.m.handles {
+            if let HState::Prop { x, y, image: Some(_), alive: true, .. } = hd.state {
+                self.w.effects.push(crate::husks::leftover_effect(crate::husks::LEFTOVER_SMOKE, x, y));
+            }
+        }
+    }
+
     fn tick_bots(&mut self) {
         if !self.w.tick.is_multiple_of(25) {
             return;
