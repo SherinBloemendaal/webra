@@ -58,8 +58,9 @@ test('the list names tags and thumbnails; the thumbnail is the map data drawn on
   assert.equal(list.length, 1);
   assert.deepEqual(list[0].tags, ['2 players', 'river crossing']);
   assert.equal(list[0].thumbnail, `/api/maps/${stored.id}/thumbnail.png?v=${p.hash.slice(0, 16)}`);
-  const res = await getMapThumbnail({ DB: db }, stored.id);
+  const res = await getMapThumbnail({ DB: db }, stored.id, thumbOpts());
   assert.equal(res.headers.get('content-type'), 'image/png');
+  assert.equal(res.headers.get('etag'), `"${p.hash}"`);
   assert.match(res.headers.get('cache-control'), /public/);
   const png = decodePng(new Uint8Array(await res.arrayBuffer()));
   const want = mapThumbnail(parseMap(fixture('format2-setup.webra-map.json')).map);
@@ -69,8 +70,77 @@ test('the list names tags and thumbnails; the thumbnail is the map data drawn on
   const at = (x, y) => [...png.rgba.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 3)];
   assert.deepEqual(at(26, 26), [230, 64, 51]);
   assert.deepEqual(at(22, 22), [230, 64, 51]);
-  await assert.rejects(getMapThumbnail({ DB: db }, 'nope'), (e) => e instanceof HttpError && e.status === 404);
-  await assert.rejects(getMapThumbnail({ DB: db }, '0123456789abcdef'), (e) => e instanceof HttpError && e.status === 404);
+  await assert.rejects(getMapThumbnail({ DB: db }, 'nope', thumbOpts()), (e) => e instanceof HttpError && e.status === 404);
+  await assert.rejects(getMapThumbnail({ DB: db }, '0123456789abcdef', thumbOpts()), (e) => e instanceof HttpError && e.status === 404);
+});
+
+/** A Cache API stand-in (caches.default): responses by request URL. */
+class FakeCache {
+  constructor() {
+    this.entries = new Map();
+    this.puts = 0;
+  }
+  async match(req) {
+    const hit = this.entries.get(new Request(req).url);
+    return hit ? hit.clone() : undefined;
+  }
+  async put(req, res) {
+    this.puts++;
+    this.entries.set(new Request(req).url, res.clone());
+  }
+}
+
+/** Options of getMapThumbnail as the Worker passes them. */
+function thumbOpts(extra = {}, headers = {}, url = 'https://webra.test/api/maps/x/thumbnail.png?v=1') {
+  return { request: new Request(url, { headers }), ip: '203.0.113.7', salt: 'test-salt', ...extra };
+}
+
+test('thumbnails: drawn once per map version (edge cache by id and stored hash), ETag 304, a quota on drawing', async () => {
+  const db = new FakeD1();
+  const p = await prepareMap(fixture('format2-setup.webra-map.json'));
+  const stored = await storeMap(db, p, { listed: true });
+  const cache = new FakeCache();
+  const drawn = () => db.rows("SELECT COALESCE(SUM(count), 0) AS n FROM rate_limits")[0].n;
+  const first = await getMapThumbnail({ DB: db }, stored.id, thumbOpts({ cache }));
+  assert.equal(first.status, 200);
+  assert.equal(cache.puts, 1);
+  assert.deepEqual([...cache.entries.keys()], [`https://webra.test/api/maps/${stored.id}/thumbnail.png?hash=${p.hash}`], 'keyed by id and stored hash, not the query');
+  assert.equal(drawn(), 1);
+  // Another query string (an old list's ?v=) is the same cache entry: nothing is drawn or counted.
+  const again = await getMapThumbnail({ DB: db }, stored.id, thumbOpts({ cache }, {}, `https://webra.test/api/maps/${stored.id}/thumbnail.png?v=other`));
+  assert.equal(again.status, 200);
+  assert.deepEqual(new Uint8Array(await again.arrayBuffer()), new Uint8Array(await first.arrayBuffer()));
+  assert.equal(cache.puts, 1);
+  assert.equal(drawn(), 1);
+  // The browser names the ETag: 304, no body, nothing drawn.
+  for (const inm of [`"${p.hash}"`, `W/"${p.hash}"`, `"other", "${p.hash}"`, '*']) {
+    const res = await getMapThumbnail({ DB: db }, stored.id, thumbOpts({}, { 'if-none-match': inm }));
+    assert.equal(res.status, 304, inm);
+    assert.equal(res.headers.get('etag'), `"${p.hash}"`);
+    assert.equal(await res.text(), '');
+  }
+  assert.equal(drawn(), 1);
+  // A stale ETag gets the picture.
+  assert.equal((await getMapThumbnail({ DB: db }, stored.id, thumbOpts({}, { 'if-none-match': '"old"' }))).status, 200);
+  assert.equal(drawn(), 2);
+  // Without the cache every request draws; the quota stops a network at its limit.
+  await assert.rejects(
+    getMapThumbnail({ DB: db }, stored.id, thumbOpts({ limit: 2 })),
+    (e) => e instanceof HttpError && e.status === 429 && e.headers?.['retry-after'] === '3600',
+  );
+  // Another network still gets it.
+  assert.equal((await getMapThumbnail({ DB: db }, stored.id, thumbOpts({ limit: 3, ip: '198.51.100.1' }))).status, 200);
+});
+
+test('thumbnails: a stored map that cannot be drawn is logged and answered 404', async (t) => {
+  const db = new FakeD1();
+  const p = await prepareMap(fixture('format2-setup.webra-map.json'));
+  const stored = await storeMap(db, p, { listed: true });
+  db.sqlite.prepare('UPDATE maps SET json = ?1 WHERE id = ?2').run('{"width": 4}', stored.id);
+  const logged = t.mock.method(console, 'error', () => {});
+  await assert.rejects(getMapThumbnail({ DB: db }, stored.id, thumbOpts()), (e) => e instanceof HttpError && e.status === 404);
+  assert.equal(logged.mock.callCount(), 1);
+  assert.match(String(logged.mock.calls[0].arguments[0]), new RegExp(`map ${stored.id}: no thumbnail`));
 });
 
 test('stored maps describe their game setup for lobbies, checked like the protocol checks it', async () => {
@@ -84,4 +154,8 @@ test('stored maps describe their game setup for lobbies, checked like the protoc
   assert.deepEqual(validMapRef(ref, 'map', true).setup, summary.setup, 'the lobby message carries it as it is');
   assert.throws(() => validMapRef({ ...ref, setup: { ...summary.setup, lockedOptions: ['fog'] } }, 'map', true), /lockedOptions/);
   assert.throws(() => validMapRef({ ...ref, setup: { ...summary.setup, players: [{}, {}, {}] } }, 'map', true), /players lists 3/);
+  // null is refused like in a map file (and by the engine).
+  assert.throws(() => validMapRef({ ...ref, setup: { ...summary.setup, players: null } }, 'map', true), /setup\.players must not be null/);
+  assert.throws(() => validMapRef({ ...ref, setup: { ...summary.setup, players: [{ faction: null }] } }, 'map', true), /players\[0\]\.faction must not be null/);
+  assert.throws(() => validMapRef({ ...ref, setup: { ...summary.setup, players: [{ type: 'ai', lock: ['type'] }, { type: 'ai', lock: ['type'] }] } }, 'map', true), /a person can take/);
 });

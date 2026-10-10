@@ -478,7 +478,8 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   const setupMap = {
     ...versioned,
     name: `Locked ${RUN}`,
-    players: [{ faction: 'england', lock: ['faction'] }, { type: 'open', team: 0 }],
+    spawns: [...custom.spawns, [3, 44]],
+    players: [{ faction: 'england', lock: ['faction'] }, { type: 'open', team: 0 }, { faction: 'russia', team: 2, color: 5, lock: ['faction', 'team'] }],
     options: { startingCash: 10000, crates: false },
     lockedOptions: ['startingCash'],
     tags: ['e2e'],
@@ -494,6 +495,20 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   assert.equal((await host.type('error')).code, 'forbidden', 'a locked option cannot change');
   host.send({ t: 'slot', slot: 0, faction: 'russia' });
   assert.equal((await host.type('error')).code, 'forbidden', 'a locked faction cannot change');
+  // Someone joining after the map was picked takes its slot's settings, and
+  // can still change what the map leaves free (the lobby stays startable).
+  const late = new Client('map-late', WATCHER);
+  await late.open(id);
+  late.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION });
+  await late.type('welcome');
+  const joined = await host.type('lobby', (m) => m.slots[2].type === 'human');
+  assert.deepEqual([joined.slots[2].faction, joined.slots[2].team, joined.slots[2].color], ['russia', 2, 5], 'the joiner takes the map slot');
+  late.send({ t: 'slot', slot: 2, color: 6 });
+  await host.type('lobby', (m) => m.slots[2].color === 6);
+  late.send({ t: 'slot', slot: 2, team: 1 });
+  assert.equal((await late.type('error')).code, 'forbidden', 'a locked team cannot change');
+  late.ws.close();
+  await host.type('lobby', (m) => m.slots[2].type === 'open');
   // Back to the custom map (shared again: the same map, the lobby's again).
   const reshared = await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(hw) }, HOST);
   assert.equal(reshared.body.hash, shared.body.hash);

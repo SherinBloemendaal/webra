@@ -164,27 +164,86 @@ function tagsOf(text) {
   }
 }
 
+/** Thumbnails drawn (cache misses) per network and hour (GET /api/maps/<id>/thumbnail.png). */
+export const THUMBNAIL_RENDER_LIMIT = 600;
+/** How long browsers and the edge cache keep a thumbnail (the list links it with the map's hash). */
+const THUMBNAIL_MAX_AGE = 86400;
+
 /**
  * GET /api/maps/<id>/thumbnail.png: the listed map's thumbnail, one pixel per
  * cell, drawn from its data alone (protocol mapThumbnail: terrain, ore and
  * gems, actors, spawns), never from art. A map of an older format version is
  * upgraded first, like GET /api/maps/<id>; one that cannot be is drawn as
- * stored. Cached publicly: the list links it with the map's hash.
+ * stored.
+ *
+ * Drawing reads the whole stored map, so it happens once per map version:
+ * the response is kept in the edge cache (`cache`, caches.default in the
+ * Worker) under the map's id and stored hash, whatever query the request
+ * has, and its ETag is the hash (a request that names it gets 304 before
+ * anything is read but the hash). Each network may make the server draw
+ * THUMBNAIL_RENDER_LIMIT an hour (quota `thumb`); cached and 304 answers do
+ * not count. A map that cannot be drawn is logged and answered 404.
+ *
+ * `request` gives the URL (the cache key's origin) and If-None-Match; `ip`,
+ * `salt` and `limit` the quota; `exec` keeps the cache write alive.
  */
-export async function getMapThumbnail(env, id, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
+export async function getMapThumbnail(
+  env,
+  id,
+  { request, ip, salt, exec = null, cache = null, limit = THUMBNAIL_RENDER_LIMIT, judge, versions = MAP_VERSIONS, now = Date.now() } = {},
+) {
   if (!MAP_ID_RE.test(id)) throw new HttpError(404, 'not_found', 'No such map.');
-  const found = await rowById(env.DB, id);
+  const head = await thumbnailRow(env.DB, id);
+  if (!head || head.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
+  const etag = `"${head.hash}"`;
+  const headers = { 'content-type': 'image/png', 'cache-control': `public, max-age=${THUMBNAIL_MAX_AGE}`, etag, 'x-content-type-options': 'nosniff' };
+  if (etagMatches(request?.headers.get('if-none-match'), etag)) {
+    const { 'content-type': _type, ...rest } = headers;
+    return new Response(null, { status: 304, headers: rest });
+  }
+  const key = new Request(new URL(`/api/maps/${head.id}/thumbnail.png?hash=${head.hash}`, request?.url ?? 'https://webra.invalid/').toString());
+  if (cache) {
+    const hit = await cache.match(key);
+    if (hit) return hit;
+  }
+  if (!(await takeQuota(env.DB, salt, 'thumb', ip, limit, UPLOAD_WINDOW_MS, now))) {
+    throw new HttpError(429, 'rate_limited', 'Too many map pictures. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const found = await rowById(env.DB, head.id);
   if (!found || found.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
   const row = (await upgradeStoredMap(env.DB, found, { judge, versions, now })) ?? found;
-  let map;
+  let png;
   try {
-    map = JSON.parse(row.json);
-    const { width, height, rgba } = mapThumbnail(map);
-    const png = await encodePng(width, height, new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength));
-    return new Response(png, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' } });
-  } catch {
+    const { width, height, rgba } = mapThumbnail(JSON.parse(row.json));
+    png = await encodePng(width, height, new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+  } catch (err) {
+    // A stored map the thumbnail cannot draw is a server-side problem worth seeing.
+    console.error(`map ${head.id}: no thumbnail: ${err?.stack ?? err}`);
     throw new HttpError(404, 'not_found', 'This map has no thumbnail.');
   }
+  const res = new Response(png, { status: 200, headers });
+  if (cache) {
+    const put = cache.put(key, res.clone()).catch((err) => console.error(`map ${head.id}: thumbnail not cached: ${err?.message ?? err}`));
+    if (exec) exec.waitUntil(put);
+    else await put;
+  }
+  return res;
+}
+
+/** The id, hash and listing of a map by id (or by an id an upgrade merged away), without its JSON. */
+async function thumbnailRow(db, id) {
+  const row = await db.prepare('SELECT id, hash, listed FROM maps WHERE id = ?1').bind(id).first();
+  if (row) return row;
+  return db.prepare('SELECT id, hash, listed FROM maps WHERE hash = (SELECT hash FROM map_aliases WHERE old_id = ?1 LIMIT 1)').bind(id).first();
+}
+
+/** Whether an If-None-Match header names `etag` (or is `*`); weak tags compare equal. */
+function etagMatches(header, etag) {
+  if (!header) return false;
+  return header.split(',').some((t) => {
+    const tag = t.trim().replace(/^W\//, '');
+    return tag === '*' || tag === etag;
+  });
 }
 
 /**

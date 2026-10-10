@@ -269,7 +269,7 @@ async function route(ctx) {
   m = /^\/api\/maps\/([^/]+)\/thumbnail\.png$/.exec(path);
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
-    return getMapThumbnail(env, m[1]);
+    return getMapThumbnail(env, m[1], { request, ip: ctx.ip, salt: ctx.salt(), exec, cache: globalThis.caches?.default ?? null, now: ctx.now });
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {
