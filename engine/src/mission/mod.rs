@@ -273,6 +273,20 @@ pub(crate) struct TimeLimit {
     pub expired: bool,
 }
 
+/// A structure of a mission map outside its playable area (OpenRA map
+/// bounds), in `World::offmap`: there it exists, out of reach and out of
+/// sight, and still gives its owner power, prerequisites and storage, and
+/// counts as one of its required units (allies-03b's Soviet base is powered
+/// from beyond the edge).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OffMapStructure {
+    pub owner: u8,
+    /// Actor type index.
+    pub ty: u16,
+    /// Faction index (what it provides, like a structure's own faction).
+    pub faction: u8,
+}
+
 #[derive(Clone, Debug)]
 pub struct Mission {
     pub id: String,

@@ -283,6 +283,13 @@ impl World {
                         };
                         m.new_handle(self.rules.actors[t].id.clone(), owner, HState::Limbo(limbo))
                     }
+                    // A structure beyond the playable area (it does not fit the cropped map).
+                    None if info.kind == Kind::Building => {
+                        let faction =
+                            a.faction.as_deref().and_then(|f| self.rules.faction_index(f)).unwrap_or(self.players[owner as usize].faction);
+                        self.offmap.push(super::OffMapStructure { owner, ty: t as u16, faction: faction as u8 });
+                        continue;
+                    }
                     None => {
                         m.unplaced.push((a.name.clone(), a.ty.clone(), format!("does not fit at {},{}", a.x, a.y)));
                         continue;

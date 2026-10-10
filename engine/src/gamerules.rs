@@ -197,20 +197,25 @@ impl World {
     /// they are; otherwise those in the world, not passengers).
     pub fn has_no_required_units(&self, player: u8) -> bool {
         let short = self.options.short_game;
-        !self.actors.iter().any(|a| {
-            a.alive
-                && a.owner == player
-                && match self.rules.actors[a.ty as usize].options.must_be_destroyed {
-                    Some(required) => {
-                        if short {
-                            required
-                        } else {
-                            a.in_world()
+        // A mission's structures beyond the playable area are in OpenRA's world too.
+        let offmap = self.offmap.iter().any(|s| {
+            s.owner == player && self.rules.actors[s.ty as usize].options.must_be_destroyed.is_some_and(|required| required || !short)
+        });
+        !offmap
+            && !self.actors.iter().any(|a| {
+                a.alive
+                    && a.owner == player
+                    && match self.rules.actors[a.ty as usize].options.must_be_destroyed {
+                        Some(required) => {
+                            if short {
+                                required
+                            } else {
+                                a.in_world()
+                            }
                         }
+                        None => false,
                     }
-                    None => false,
-                }
-        })
+            })
     }
 
     /// OpenRA ConquestVictoryConditions, checked once a second: a player

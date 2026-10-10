@@ -95,6 +95,31 @@ impl Ctx<'_> {
         self.engine_actor(h).ok_or_else(|| LuaError::runtime(format!("{what}: the actor is dead or not in the world")))
     }
 
+    /// The engine actor of `h`, or None when it left the world during this
+    /// tick. Triggers run at the end of the tick (mod.rs), where OpenRA runs
+    /// them at once, while a killed actor still exists until the end of its
+    /// tick: changing it then has no effect instead of failing. (Its handle
+    /// is still live until the script hears of the death, or gone this tick.)
+    fn live_or_leaving(&self, h: u32, what: &str) -> R<Option<usize>> {
+        if let Some(i) = self.engine_actor(h) {
+            return Ok(Some(i));
+        }
+        match self.m.handle(h).map(|hd| &hd.state) {
+            Some(HState::Live(_)) => Ok(None),
+            Some(HState::Gone { at, .. }) if *at == self.w.tick => Ok(None),
+            _ => Err(LuaError::runtime(format!("{what}: the actor is dead or not in the world"))),
+        }
+    }
+
+    /// A script kills engine actor `i` (Kill, Health = 0): OpenRA's
+    /// InflictDamage by the actor itself, so OnDamaged hears `damage` first.
+    fn script_kill(&mut self, i: usize, damage: i32) {
+        let r = self.w.make_ref(i);
+        self.w.script_event(ScriptEvent::Damaged { victim: r, attacker: r, damage });
+        self.w.kill_source = r;
+        self.w.kill(i);
+    }
+
     fn is_mobile_unit(&self, h: u32) -> bool {
         self.info(h).is_some_and(|i| i.unit.is_some() && i.kind != Kind::Building)
     }
@@ -339,15 +364,14 @@ impl Ctx<'_> {
             }
             "Health" => {
                 let hp = v.to_num().map(to_int).ok_or_else(|| LuaError::runtime("Health must be a number"))?;
-                let i = self.live(h, "Health")?;
+                let Some(i) = self.live_or_leaving(h, "Health")? else { return Ok(()) };
                 let max = self.w.rules.actors[self.w.actors[i].ty as usize].hp as i64;
                 let hp = hp.clamp(0, max) as i32;
                 // OpenRA InflictDamage(self, self, HP - value): lower health is
                 // damage (and death at 0), higher is healing.
                 let cur = self.w.actors[i].hp;
                 if hp <= 0 {
-                    self.w.kill_source = self.w.make_ref(i);
-                    self.w.kill(i);
+                    self.script_kill(i, cur);
                 } else if hp < cur {
                     let r = self.w.make_ref(i);
                     self.w.actors[i].hp = hp;
@@ -390,13 +414,13 @@ impl Ctx<'_> {
             }
             "RallyPoint" => {
                 let Some(u) = v.as_userdata().filter(|u| u.kind == UD_CPOS) else { return err("RallyPoint must be a CPos") };
-                let i = self.live(h, "RallyPoint")?;
+                let Some(i) = self.live_or_leaving(h, "RallyPoint")? else { return Ok(()) };
                 let (x, y) = self.cell_center_in(u.a, u.b);
                 self.w.actors[i].rally = Some((x, y));
                 Ok(())
             }
             "IsPrimaryBuilding" => {
-                let i = self.live(h, "IsPrimaryBuilding")?;
+                let Some(i) = self.live_or_leaving(h, "IsPrimaryBuilding")? else { return Ok(()) };
                 self.w.set_primary(i, v.truthy());
                 Ok(())
             }
@@ -546,14 +570,15 @@ impl Ctx<'_> {
             }
             F::AKill => {
                 if let Some(i) = self.engine_actor(h) {
-                    self.w.kill_source = self.w.make_ref(i);
-                    self.w.kill(i);
+                    // OpenRA Health.Kill: damage of the full health, by the actor itself.
+                    let max = self.w.rules.actors[self.w.actors[i].ty as usize].hp;
+                    self.script_kill(i, max);
                 }
                 none
             }
             F::ALoadPassenger => {
                 let p = a.actor(0)?;
-                let t = self.live(h, "LoadPassenger")?;
+                let Some(t) = self.live_or_leaving(h, "LoadPassenger")? else { return Ok(Vec::new()) };
                 if !self.is_idle(p) {
                     return err("LoadPassenger requires the passenger to be idle.");
                 }
@@ -565,7 +590,7 @@ impl Ctx<'_> {
                 none
             }
             F::AUnloadPassenger => {
-                let t = self.live(h, "UnloadPassenger")?;
+                let Some(t) = self.live_or_leaving(h, "UnloadPassenger")? else { return Ok(Vec::new()) };
                 let which = if a.has(0) { Some(a.actor(0)?) } else { None };
                 let ps = self.w.passengers(t);
                 let target = match which {
@@ -655,7 +680,7 @@ impl Ctx<'_> {
             F::ADisguiseAsType => {
                 let ty = self.actor_type(&a.string(0)?)? as u16;
                 let owner = a.player(1)?;
-                let i = self.live(h, "DisguiseAsType")?;
+                let Some(i) = self.live_or_leaving(h, "DisguiseAsType")? else { return Ok(Vec::new()) };
                 let me = &self.w.actors[i];
                 self.w.actors[i].inf.disguise =
                     if ty == me.ty && owner == me.owner { None } else { Some(crate::infantry::Disguise { ty, owner }) };
@@ -769,7 +794,7 @@ impl Ctx<'_> {
             }
             F::AStartBuildingRepairs | F::AStopBuildingRepairs => {
                 let p = a.opt_player(0)?.unwrap_or_else(|| self.owner_of(h));
-                let i = self.live(h, f.name())?;
+                let Some(i) = self.live_or_leaving(h, f.name())? else { return Ok(Vec::new()) };
                 let active = self.w.actors[i].repairers.contains(&p);
                 if (f == F::AStartBuildingRepairs) != active && self.w.can_toggle_repair(p, i) {
                     self.w.toggle_repair(p, i);
@@ -777,7 +802,7 @@ impl Ctx<'_> {
                 none
             }
             F::ASell => {
-                let i = self.live(h, "Sell")?;
+                let Some(i) = self.live_or_leaving(h, "Sell")? else { return Ok(Vec::new()) };
                 self.w.sell(i);
                 none
             }
@@ -801,7 +826,7 @@ impl Ctx<'_> {
                 Ok(vec![num(v as i64)])
             }
             F::AReload => {
-                let i = self.live(h, "Reload")?;
+                let Some(i) = self.live_or_leaving(h, "Reload")? else { return Ok(Vec::new()) };
                 let amount = a.opt_int(1, 1)? as i32;
                 let spent = &mut self.w.actors[i].air.spent;
                 *spent = (*spent - amount).max(0);

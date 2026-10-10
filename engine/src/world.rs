@@ -993,6 +993,8 @@ pub struct World {
     /// A mission runs: engine events are recorded for its triggers.
     pub(crate) mission_on: bool,
     pub(crate) script_events: Vec<crate::mission::ScriptEvent>,
+    /// A mission map's structures beyond its playable area (mission/mod.rs `OffMapStructure`).
+    pub offmap: Vec<crate::mission::OffMapStructure>,
     /// Who dealt the blow of the kill in progress (mission OnKilled triggers).
     pub(crate) kill_source: u32,
     /// Missions: each player's stance toward each other player
@@ -1195,6 +1197,7 @@ impl World {
             mission: None,
             mission_on: false,
             script_events: Vec::new(),
+            offmap: Vec::new(),
             kill_source: NONE,
             diplomacy: Vec::new(),
             map,

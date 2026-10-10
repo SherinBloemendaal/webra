@@ -41,6 +41,13 @@ fn error_of(w: &World) -> Option<String> {
     w.mission().and_then(|m| m.error.clone())
 }
 
+/// Script errors OpenRA has as well, reached only by a player who does
+/// nothing (long runs, `WEBRA_MISSION_TICKS`): soviet-05's Tick marks
+/// Greece's objective on GoodGuy (`GoodGuy.MarkCompletedObjective(BeatUSSR)`)
+/// once the USSR has lost its only unit, the MCV, and OpenRA's objective ids
+/// are per player (MissionObjectiveProperties: "Objective ID is out of range").
+const UPSTREAM_SCRIPT_ERRORS: &[(&str, &str)] = &[("soviet-05", "soviet05.lua:143: Objective ID is out of range.")];
+
 #[test]
 fn every_mission_loads_and_runs_without_script_errors() {
     let ticks: u32 = std::env::var("WEBRA_MISSION_TICKS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
@@ -58,7 +65,22 @@ fn every_mission_loads_and_runs_without_script_errors() {
             t += 1;
             failed = error_of(&w).map(|e| format!("{id} at tick {t}: {e}"));
         }
-        if let Some(f) = failed {
+        if std::env::var("WEBRA_MISSION_REPORT").is_ok() {
+            // One line per mission (with --nocapture): how far it ran and where it stands.
+            let m = w.mission().unwrap();
+            let obj = &m.players[0].objectives;
+            let done = obj.iter().filter(|o| o.state == crate::mission::ObjectiveState::Completed).count();
+            let lost = obj.iter().filter(|o| o.state == crate::mission::ObjectiveState::Failed).count();
+            eprintln!(
+                "{id}: {t} ticks, {:?}, objectives {done} done {lost} failed of {}, map actors not placed: {:?}{}",
+                m.result,
+                obj.len(),
+                m.unplaced,
+                failed.as_deref().map(|f| format!(", ERROR {f}")).unwrap_or_default()
+            );
+        }
+        let upstream = error_of(&w).is_some_and(|e| UPSTREAM_SCRIPT_ERRORS.iter().any(|(m, text)| *m == id && e.starts_with(text)));
+        if let Some(f) = failed.filter(|_| !upstream) {
             let unplaced = w.mission().map(|m| m.unplaced.clone()).unwrap_or_default();
             failures.push(format!("{f}\nunplaced map actors: {unplaced:?}"));
         }
@@ -300,6 +322,46 @@ fn script_activities_run_in_order_and_triggers_fire() {
     let log = w.mission_global("Log").unwrap();
     assert!(log.ends_with("killed true "), "{log}");
     assert!(lua_in(&mut w, "return tostring(Jeep.IsDead) .. ' ' .. Jeep.Type").starts_with("true jeep"));
+}
+
+/// A trigger that runs for the blow that killed an actor (OnDamaged runs at
+/// the end of the tick, after the death) may still change it, as in OpenRA,
+/// where the actor exists until the end of its tick: nothing happens, no error.
+#[test]
+fn changing_an_actor_killed_this_tick_does_nothing() {
+    let mut w = start("allies-01", None);
+    lua_in(
+        &mut w,
+        r#"
+        Plant = Actor23
+        Trigger.OnDamaged(Plant, function(self)
+            self.StartBuildingRepairs()
+            self.Sell()
+            Repaired = 'yes'
+        end)
+        "#,
+    );
+    lua_in(&mut w, "Plant.Kill()");
+    w.step();
+    assert_eq!(w.mission().unwrap().error, None);
+    assert_eq!(lua_in(&mut w, "return tostring(Repaired) .. ' ' .. tostring(Plant.IsDead)"), "yes true");
+    // Later the actor is gone for good: changing it is an error again.
+    w.step();
+    let e = w.mission_exec("Plant.StartBuildingRepairs()").unwrap_err();
+    assert!(e.contains("the actor is dead or not in the world"), "{e}");
+}
+
+/// allies-03b's Soviet base draws its power from two Advanced Power Plants
+/// beyond the map's playable area, as in OpenRA.
+#[test]
+fn structures_beyond_the_playable_area_still_power_their_owner() {
+    let w = start("allies-03b", Some("normal"));
+    let ussr = w.mission().unwrap().player_slot("USSR").unwrap();
+    let apwr = w.rules.actor_index("apwr").unwrap() as u16;
+    assert_eq!(w.offmap.iter().filter(|s| s.owner == ussr && s.ty == apwr).count(), 2);
+    let p = &w.players[ussr as usize];
+    assert!(p.power_gen >= 400 && p.power_gen >= p.power_use, "{} of {}", p.power_gen, p.power_use);
+    assert!(!w.has_no_required_units(ussr));
 }
 
 #[test]

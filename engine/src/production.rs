@@ -66,6 +66,15 @@ impl World {
             }
             p.storage += b.storage;
         }
+        // Structures beyond a mission map's playable area (mission/mod.rs).
+        for s in &self.offmap {
+            let b = self.rules.actors[s.ty as usize].building.as_ref().unwrap();
+            let p = &mut self.players[s.owner as usize];
+            for &t in &b.provides[s.faction as usize] {
+                p.tokens[t as usize] = true;
+            }
+            p.storage += b.storage;
+        }
         // Proxies granted by infiltrations (infantry.rs).
         for p in 0..self.players.len() {
             for t in self.proxy_tokens(p) {
@@ -97,6 +106,16 @@ impl World {
             let p = &mut self.players[a.owner as usize];
             if b.power > 0 {
                 p.power_gen += if b.power_scales_with_health { b.power * a.hp / info.hp.max(1) } else { b.power };
+            } else {
+                p.power_use -= b.power;
+            }
+        }
+        // Structures beyond a mission map's playable area, at full health (mission/mod.rs).
+        for s in &self.offmap {
+            let b = self.rules.actors[s.ty as usize].building.as_ref().unwrap();
+            let p = &mut self.players[s.owner as usize];
+            if b.power > 0 {
+                p.power_gen += b.power;
             } else {
                 p.power_use -= b.power;
             }
