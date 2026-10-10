@@ -104,6 +104,15 @@ impl World {
                 husk = full;
             }
         }
+        // Husk.AllowedTerrain (OpenRA CanExistInCell): no wreck where it cannot
+        // lie, such as the river under a bridge that fell with the vehicle on it.
+        let ci = self.cell_index(a.x, a.y);
+        if let Some(h) = self.rules.actors[husk].options.husk.as_ref() {
+            let names = crate::crates::terrain_names(self, ci);
+            if !h.allowed_terrain.is_empty() && !h.allowed_terrain.iter().any(|t| names.contains(&t.as_str())) {
+                return;
+            }
+        }
         // The speed it died at drags the wreck to its cell's centre (OpenRA HuskSpeedInit).
         let speed = info.unit.as_ref().map_or(0, |u| {
             let ci = self.cell_index(a.x, a.y);
@@ -138,8 +147,10 @@ impl World {
         self.leftover_at.husk[ci] = self.make_ref(h);
         self.pass.set_blocked(ci, true);
         self.pass_water.set_blocked(ci, true);
+        self.pass_landing.set_blocked(ci, true);
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
         h
     }
 
@@ -187,11 +198,11 @@ impl World {
             return;
         }
         self.leftover_at.husk[ci] = NONE;
-        let blocked = self.building_at[ci] != NONE;
-        self.pass.set_blocked(ci, blocked || !self.map.terrain[ci].passable());
-        self.pass_water.set_blocked(ci, blocked || !self.map.terrain[ci].ship_passable());
+        // Terrain and structures (bridges and their huts lie over cells without claiming them).
+        self.set_cell_passability(ci);
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
+        self.pass_landing.refresh(&self.map);
     }
 
     /// Every tick: husks slide to their cell's centre and burn down.

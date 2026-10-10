@@ -29,6 +29,7 @@
  * @property {number} [shadowStart]
  * @property {number[]} [offset]  [x, y] pixels
  * @property {number} [zOffset]
+ * @property {number} [scale]  OpenRA Scale: drawn this much smaller or larger
  */
 
 /**
@@ -274,7 +275,12 @@ export function resolveSequence(def, fileFrameCount) {
   return { facings, length, fileFrames: index.map(fileFrame), shadowFrames, fps: tick > 0 ? 1000 / tick : 0 };
 }
 
-/** The file of a sequence on an OpenRA tileset (TilesetFilenames, else Filename). */
+/**
+ * The file of a sequence on an OpenRA tileset (TilesetFilenames, else
+ * Filename); '' when the original has none there (OpenRA drew that tileset's
+ * art itself, tools/gen_content_tables.py): WebRA art is drawn instead.
+ */
 export function sequenceFile(def, tileset) {
-  return (def.tilesets && def.tilesets[tileset]) || def.file;
+  const own = def.tilesets?.[tileset];
+  return own === undefined ? def.file : own;
 }

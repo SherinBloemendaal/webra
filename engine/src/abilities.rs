@@ -121,22 +121,15 @@ pub struct Nuke {
     pub camera_remove: i32,
 }
 
-/// OpenRA terrain type name of a WebRA terrain class.
+/// OpenRA terrain type name of a WebRA terrain class (map.rs `Terrain::name`).
 pub(crate) fn terrain_name(t: Terrain) -> &'static str {
-    match t {
-        Terrain::Clear => "Clear",
-        Terrain::Rough => "Rough",
-        Terrain::Rock => "Rock",
-        Terrain::Water => "Water",
-        Terrain::Tree => "Tree",
-        Terrain::Ford => "Ford",
-    }
+    t.name()
 }
 
 /// Whether a minelayer may lay on terrain `t` (Minelayer.TerrainTypes);
 /// `resource` is the ore or gems on the cell (terrain types Ore and Gems).
 fn terrain_allowed(names: &[String], t: Terrain, resource: Option<Resource>) -> bool {
-    let name = terrain_name(t);
+    let name = t.name();
     let res = match resource {
         Some(Resource::Ore) => "Ore",
         Some(Resource::Gems) => "Gems",
@@ -502,7 +495,7 @@ impl World {
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.
-            None if self.pass_for(self.domain_of(i)).blocked[self.cell_index(self.actors[i].x, self.actors[i].y)] => i32::MAX,
+            None if self.pass_of(i).blocked[self.cell_index(self.actors[i].x, self.actors[i].y)] => i32::MAX,
             None => return true,
         };
         let a = &mut self.actors[i];
@@ -741,6 +734,8 @@ impl World {
             let to = self.actors[t].owner;
             self.players[to as usize].cash += payload;
             self.note_earned(to, payload);
+            // DonateCash: a cash tick over the structure in its owner's colour.
+            self.show_cash_tick(t, to, payload);
             self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 12, max: 12 });
             self.remove(i);
             return;
@@ -1204,7 +1199,7 @@ impl World {
             }
             let ci = self.map.idx(tx, ty);
             let domain = self.domain_of(i);
-            let open = domain == Domain::Air || !self.pass_for(domain).blocked[ci];
+            let open = domain == Domain::Air || !self.pass_of(i).blocked[ci];
             if !open || self.players[player as usize].explored[ci] == 0 || self.gen_shrouded(player, ci) {
                 continue;
             }

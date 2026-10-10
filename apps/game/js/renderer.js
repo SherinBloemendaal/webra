@@ -28,6 +28,10 @@ export const TEAM_COLORS = [
   [0.40, 0.85, 0.85],
   [0.85, 0.85, 0.85],
 ];
+/** The team colours as they start (TEAM_COLORS is reordered and recoloured per game, js/main.js). */
+export const TEAM_PALETTE = Object.freeze(TEAM_COLORS.map((c) => Object.freeze(c.slice())));
+/** Team colour of the neutral player (civilian buildings and the like, js/main.js). */
+export const NEUTRAL_COLOR = [0.78, 0.72, 0.6];
 
 async function loadShader(name, common) {
   const res = await fetch(`shaders/${name}.wgsl`);

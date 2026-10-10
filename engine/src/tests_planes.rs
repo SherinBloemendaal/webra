@@ -526,6 +526,7 @@ fn a_pilot_over_water_comes_down_but_drowns() {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     let h = w.spawn_unit(ty(&w, "HELI"), 0, x, y, 0);
     w.actors[h].altitude = 1024;
     w.sound.set_enabled(true);

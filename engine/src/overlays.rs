@@ -78,6 +78,9 @@ pub struct RenderOptions {
     /// The original damage smoke (fx.rs `smoke_frame`): milliseconds per
     /// frame, start frames, loop frames.
     pub smoke_frames: Option<(u32, u32, u32)>,
+    /// The original tree fires (neutral.rs `fire_frame`), small, medium and
+    /// large: milliseconds per frame, start, loop and end frames.
+    pub fire_frames: [Option<(u32, u32, u32, u32)>; 3],
     /// Per actor type: its art has death sequences (with `poses`): dying
     /// soldiers show them instead of the built-in bodies (infantry_render.rs).
     pub death_art: Vec<bool>,
@@ -119,6 +122,7 @@ impl Default for RenderOptions {
             unit_overlays: Vec::new(),
             level_stages: Vec::new(),
             smoke_frames: None,
+            fire_frames: [None; 3],
             death_art: Vec::new(),
             infantry_ticks: Vec::new(),
         }
@@ -131,6 +135,10 @@ pub const ORIGINAL_INFO_OVERLAY: i32 = 0;
 pub const ORIGINAL_INFO_LEVEL: i32 = 1;
 /// `[kind, milliseconds per frame, start frames, loop frames]` of the original damage smoke.
 pub const ORIGINAL_INFO_SMOKE: i32 = 2;
+/// `[kind, size, milliseconds per frame, start frames]` and
+/// `[kind, size, loop frames, end frames]` of an original tree fire (size 0..=2).
+pub const ORIGINAL_INFO_FIRE: i32 = 3;
+pub const ORIGINAL_INFO_FIRE_TAIL: i32 = 4;
 /// Integers per `info` record.
 pub const ORIGINAL_INFO_STRIDE: usize = 4;
 
@@ -166,7 +174,19 @@ impl RenderOptions {
         self.unit_overlays.clear();
         self.level_stages.clear();
         self.smoke_frames = None;
+        self.fire_frames = [None; 3];
+        let mut fire_heads = [None; 3];
         for r in info.as_chunks::<ORIGINAL_INFO_STRIDE>().0 {
+            let size = usize::try_from(r[1]).ok().filter(|&s| s < 3);
+            match (r[0], size) {
+                (ORIGINAL_INFO_FIRE, Some(s)) if r[2] > 0 && r[3] >= 0 => fire_heads[s] = Some((r[2] as u32, r[3] as u32)),
+                (ORIGINAL_INFO_FIRE_TAIL, Some(s)) if r[2] > 0 && r[3] >= 0 => {
+                    if let Some((ms, start)) = fire_heads[s] {
+                        self.fire_frames[s] = Some((ms, start, r[2] as u32, r[3] as u32));
+                    }
+                }
+                _ => {}
+            }
             let Ok(ty) = u16::try_from(r[1]) else { continue };
             match r[0] {
                 ORIGINAL_INFO_OVERLAY => self.unit_overlays.push((ty, r[2], r[3])),
@@ -468,7 +488,10 @@ impl World {
         let mut shown: Vec<usize> = selected.iter().filter_map(|&r| self.resolve(r)).collect();
         let mut rel: Vec<f32> = Vec::new();
         let mut bar = |i: usize, shown: &mut Vec<usize>, sink: &mut Sink| {
-            if shown.contains(&i) || !self.shows_overlay_to(i, player) {
+            // Trees, barrels, husks and bridges have no selection decorations
+            // (OpenRA: not Selectable); walls keep theirs.
+            let info = &self.rules.actors[self.actors[i].ty as usize];
+            if shown.contains(&i) || !self.shows_overlay_to(i, player) || (!info.world.selectable && !info.is_wall()) {
                 return;
             }
             shown.push(i);

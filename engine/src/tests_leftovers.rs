@@ -359,8 +359,11 @@ fn a_sold_structure_leaves_its_crew() {
     let infantry = |w: &World| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Infantry).count();
     let n = infantry(&w);
     w.sell(b);
-    // 40 % of 2000 = 800: the guaranteed rifleman, then riflemen while the rest pays (one per footprint cell).
-    assert_eq!(infantry(&w) - n, 8);
+    // 40 % of 2000 = 800: the guaranteed rifleman, then riflemen and
+    // technicians (TECN, TECN2: $10, the neutral world's civilians) while the
+    // rest pays, one per footprint cell: all nine cells.
+    assert_eq!(infantry(&w) - n, 9);
+    assert!(w.actors.iter().any(|a| a.alive && a.owner == 0 && w.rules.actors[a.ty as usize].id.starts_with("TECN")));
     // Below MinHpPercent only the guaranteed ones come out.
     let b = w.spawn_building(weap, 0, 30, 20).unwrap();
     w.actors[b].hp = w.rules.actors[weap as usize].hp / 5;

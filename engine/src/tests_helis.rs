@@ -40,6 +40,7 @@ fn flat_world() -> World {
     let mut w = World::empty(rules, map, 5);
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     let soviet = w.rules.faction_index("soviet").unwrap();
     let england = w.rules.faction_index("england").unwrap();
     w.add_player(soviet, false, (2, 2));
@@ -308,6 +309,7 @@ fn helicopters_land_only_on_landable_free_cells() {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     let i = heli(&mut w, "MH60", 0, 20, 20);
     // On clear ground: lands right there.
     w.queue_order(Order::Land { player: 0, ids: r(&w, i), x: cell_center(22), y: cell_center(24) });

@@ -69,12 +69,17 @@ pub(crate) fn terrain_names(w: &World, ci: usize) -> &'static [&'static str] {
         return &["Gems"];
     }
     match w.map.terrain[ci] {
+        // Older maps without roads and beaches drew them as clear and rough ground.
         Terrain::Clear => &["Clear", "Road"],
         Terrain::Rough => &["Rough", "Beach"],
         Terrain::Rock => &["Rock"],
         Terrain::Water => &["Water"],
         Terrain::Tree => &["Tree"],
-        Terrain::Ford => &["River"],
+        Terrain::Ford | Terrain::River => &["River"],
+        Terrain::Road => &["Road"],
+        Terrain::Bridge => &["Bridge"],
+        Terrain::Beach => &["Beach"],
+        Terrain::Wall => &["Wall"],
     }
 }
 

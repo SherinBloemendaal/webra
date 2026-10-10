@@ -19,7 +19,7 @@ export const TILE = 32;
 export const ATLAS_COLS = 16;
 
 /** Engine terrain values (engine/src/map.rs Terrain). */
-export const T = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4, FORD: 5 });
+export const T = Object.freeze({ CLEAR: 0, ROUGH: 1, ROCK: 2, WATER: 3, TREE: 4, FORD: 5, ROAD: 6, BRIDGE: 7, BEACH: 8, RIVER: 9, WALL: 10 });
 
 /** Tile indices in the atlas. Masks: bit 1 north, 2 east, 4 south, 8 west. */
 export const TILES = Object.freeze({
@@ -30,7 +30,9 @@ export const TILES = Object.freeze({
   FORD: 40, // 16 masks: neighbour is water or ford
   TREE: 56, // 4 variants
   DECAL: 60, // 8 decal overlays (transparent)
-  COUNT: 68,
+  ROAD: 68, // 16 masks: neighbour is road or bridge
+  BEACH: 84, // 4 variants
+  COUNT: 88,
 });
 export const DECALS = 8;
 export const BIOMES = ['temperate', 'snow', 'desert'];
@@ -57,6 +59,8 @@ const PALETTES = {
     shrub: [[34, 70, 26], [60, 104, 40]],
     track: [60, 56, 38],
     accent: [210, 196, 90], // flowers
+    road: [[104, 92, 66], [128, 114, 82]], // packed dirt
+    sand: [[176, 160, 112], [204, 188, 136]],
   },
   snow: {
     ground: [[214, 222, 230], [240, 244, 250]],
@@ -74,6 +78,8 @@ const PALETTES = {
     shrub: [[92, 80, 64], [122, 106, 84]], // dead brush
     track: [176, 186, 200],
     accent: [180, 214, 236], // ice crack highlight
+    road: [[150, 152, 156], [176, 178, 184]], // trodden snow over gravel
+    sand: [[168, 172, 172], [196, 200, 200]], // frozen shingle
   },
   desert: {
     ground: [[188, 150, 96], [214, 178, 118]],
@@ -91,6 +97,8 @@ const PALETTES = {
     shrub: [[124, 110, 62], [160, 140, 80]], // dry brush
     track: [156, 120, 76],
     accent: [232, 226, 206], // bones
+    road: [[150, 112, 72], [172, 132, 86]], // hardpack
+    sand: [[220, 196, 140], [240, 220, 166]],
   },
 };
 
@@ -238,6 +246,64 @@ function ground(p, kind, variant, biome) {
         // Sand: fine pebbles.
         if (grain > 0.965) c = scale(p.stone, 0.9 + hash3(x, y, 77) * 0.3);
       }
+      t.set(x, y, c, 1);
+    }
+  }
+  return t;
+}
+
+// ---- Roads and beaches -------------------------------------------------------------------
+
+/**
+ * A road cell over open ground: a band of the road surface from the middle of
+ * the cell toward each neighbour that is road or bridge too (`mask`: north 1,
+ * east 2, south 4, west 8), with worn edges and wheel ruts; a road cell with
+ * no road around is a patch.
+ */
+function road(p, mask, biome) {
+  const t = ground(p, 'ground', mask % 4, biome);
+  const half = TILE / 2;
+  const width = 11; // half the road's width in tile pixels
+  const reach = (dx, dy) => {
+    // Distance from the road's centre lines (to each connected side, or the middle).
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    let d = Math.hypot(dx, dy) - 5; // the hub
+    if (mask & 1 && dy <= 0) d = Math.min(d, ax);
+    if (mask & 4 && dy >= 0) d = Math.min(d, ax);
+    if (mask & 2 && dx >= 0) d = Math.min(d, ay);
+    if (mask & 8 && dx <= 0) d = Math.min(d, ay);
+    return d;
+  };
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      const dx = x + 0.5 - half;
+      const dy = y + 0.5 - half;
+      const wob = (vnoise(x, y, 4, 1300 + mask) - 0.5) * 3;
+      const d = reach(dx, dy) + wob;
+      if (d > width) continue;
+      const n = fbm(x, y, 1310);
+      let c = mixRgb(p.road[0], p.road[1], clamp01(n * 1.3 - 0.15));
+      c = scale(c, 0.92 + hash3(x, y, 1320) * 0.1);
+      // Ruts along the road, darker toward its edges.
+      if (Math.abs(d - 4) < 0.8) c = scale(c, 0.86);
+      const edge = clamp01((d - width + 3) / 3);
+      t.blend(x, y, c, 1 - edge * 0.7);
+    }
+  }
+  return t;
+}
+
+/** Sand (beaches, OpenRA's Beach terrain): ground of the sand colours with ripples. */
+function beach(p, variant, biome) {
+  const t = new Tile();
+  const seed = 1400 + variant * 13;
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      const n = 0.5 + (fbm(x, y, 1400) - 0.5) * 0.3 + (vnoise(x, y, 6, seed, TILE / 6) - 0.5) * 0.25;
+      let c = mixRgb(p.sand[0], p.sand[1], clamp01(n * 1.2 - 0.1));
+      c = scale(c, 0.95 + hash3(x, y, seed) * 0.08 + Math.sin((x * 0.4 + y * 0.8) * 1.2) * 0.03);
+      if (biome !== 'desert' && hash3(x, y, seed + 1) > 0.975) c = scale(p.stone, 1.1);
       t.set(x, y, c, 1);
     }
   }
@@ -486,6 +552,8 @@ export function buildTerrainAtlas(biome = 'temperate') {
   for (let m = 0; m < 16; m++) tiles[TILES.FORD + m] = water(p, m, true, b);
   for (let v = 0; v < 4; v++) tiles[TILES.TREE + v] = tree(p, v, b);
   for (let k = 0; k < DECALS; k++) tiles[TILES.DECAL + k] = decal(p, k, b);
+  for (let m = 0; m < 16; m++) tiles[TILES.ROAD + m] = road(p, m, b);
+  for (let v = 0; v < 4; v++) tiles[TILES.BEACH + v] = beach(p, v, b);
   const rows = Math.ceil(TILES.COUNT / ATLAS_COLS);
   const width = ATLAS_COLS * TILE;
   const height = rows * TILE;
@@ -519,8 +587,11 @@ export function buildTerrainAtlas(biome = 'temperate') {
 export function cellTiles(terrain, w, h, seed = 0) {
   const out = new Uint8Array(w * h * 4);
   const type = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : terrain[(y * w + x) * 4]);
-  const wet = (t) => t === T.WATER || t === T.FORD || t === -1;
-  const isRock = (t) => t === T.ROCK || t === -1;
+  // Rivers look like water, and so does the river under a bridge's deck (the
+  // bridge actor draws the deck, art/world.js); walls of the tilesets like rock.
+  const wet = (t) => t === T.WATER || t === T.FORD || t === T.RIVER || t === T.BRIDGE || t === -1;
+  const isRock = (t) => t === T.ROCK || t === T.WALL || t === -1;
+  const isRoad = (t) => t === T.ROAD || t === T.BRIDGE;
   // Water depth: steps to the nearest land cell (breadth first), capped at 4.
   const depth = new Uint8Array(w * h).fill(255);
   const queue = [];
@@ -560,10 +631,19 @@ export function cellTiles(terrain, w, h, seed = 0) {
           if (hash3(x, y, seed + 2) < 0.04) decalIndex = 1 + (hash3(x, y, seed + 3) < 0.5 ? 0 : 1);
           break;
         case T.ROCK:
+        case T.WALL:
           tile = TILES.ROCK + n4(isRock);
           break;
         case T.WATER:
+        case T.RIVER:
+        case T.BRIDGE:
           tile = TILES.WATER + n4(wet);
+          break;
+        case T.ROAD:
+          tile = TILES.ROAD + n4(isRoad);
+          break;
+        case T.BEACH:
+          tile = TILES.BEACH + v;
           break;
         case T.TREE:
           tile = TILES.TREE + v;

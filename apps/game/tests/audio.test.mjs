@@ -1019,6 +1019,7 @@ test('the engine reports fire, impact and death events to the client', () => {
     buildRadius: true,
     redeployableMcv: true,
     oreRegrowth: true,
+    techBuildings: 'standard',
     // OpenRA's other lobby options (protocol 6).
     crates: true,
     shortGame: true,

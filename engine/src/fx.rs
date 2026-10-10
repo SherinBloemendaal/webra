@@ -410,8 +410,8 @@ impl World {
 
     /// Once per tick: the landing craft's doors (OpenRA
     /// WithLandingCraftAnimation.ShouldBeOpen: standing still next to open
-    /// ground, OpenTerrainTypes Clear, Rough, Road, Ore, Gems, Beach: WebRA's
-    /// clear and rough cells).
+    /// ground, OpenTerrainTypes Clear, Rough, Road, Ore, Gems, Beach; ore and
+    /// gems lie on clear, rough and road cells).
     pub(crate) fn tick_fx(&mut self) {
         let now = self.tick + 1;
         for i in 0..self.actors.len() {
@@ -441,7 +441,10 @@ impl World {
             (-1..=1).any(|dx| {
                 (dx, dy) != (0, 0)
                     && self.map.contains(cx + dx, cy + dy)
-                    && matches!(self.map.terrain[self.map.idx(cx + dx, cy + dy)], crate::map::Terrain::Clear | crate::map::Terrain::Rough)
+                    && matches!(
+                        self.map.terrain[self.map.idx(cx + dx, cy + dy)],
+                        crate::map::Terrain::Clear | crate::map::Terrain::Rough | crate::map::Terrain::Road | crate::map::Terrain::Beach
+                    )
             })
         })
     }

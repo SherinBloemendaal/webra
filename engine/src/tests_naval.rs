@@ -34,6 +34,12 @@ fn coast() -> World {
     for p in w.players.iter_mut() {
         p.cash = 20000;
     }
+    // A power plant each on land keeps both players in the game (OpenRA
+    // MustBeDestroyed: ships alone do not; a defeated player's ships sink).
+    let powr = ty(&w, "POWR");
+    for (p, (x, y)) in [(2, 2), (2, 30)].into_iter().enumerate() {
+        w.spawn_building(powr, p as u8, x, y).expect("room on land");
+    }
     w.refresh_tokens();
     w.update_power();
     w.update_vision();
@@ -411,6 +417,48 @@ fn transport_ship_loads_from_and_unloads_onto_the_beach() {
     assert!(w.load_passenger(lst, tank2));
     assert_eq!(w.actors[tank2].kind, Kind::Vehicle);
     assert!(!w.can_unload(lst), "no land next to the ship out at sea");
+}
+
+#[test]
+fn landing_craft_run_up_on_beaches_and_other_ships_do_not() {
+    // A beach of three columns between the land and the sea (OpenRA Beach:
+    // locomotor lcraft drives on it at 70 %, ships' locomotors not at all).
+    let mut w = coast();
+    for y in 0..H {
+        for x in SHORE..SHORE + 3 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = Terrain::Beach;
+        }
+    }
+    w.reset_passability();
+    let lst = unit(&mut w, "LST", 0, 40, 20);
+    let dd = unit(&mut w, "DD", 0, 40, 24);
+    assert!(w.lands(lst) && !w.lands(dd));
+    let tank = unit(&mut w, "1TNK", 0, 44, 20);
+    assert!(w.load_passenger(lst, tank));
+    let beach = (SHORE + 1, 20);
+    for (i, y) in [(lst, 20), (dd, 24)] {
+        w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(i)], x: cell_center(beach.0), y: cell_center(y), attack_move: false });
+    }
+    for _ in 0..800 {
+        w.step();
+        assert!(on_water(&w, dd), "a destroyer never leaves the water");
+    }
+    let terrain_under = |w: &World, i: usize| w.map.terrain[w.cell_index(w.actors[i].x, w.actors[i].y)];
+    assert_eq!(terrain_under(&w, lst), Terrain::Beach, "the Transport ran up on the beach");
+    assert_eq!(w.cell_of(w.actors[lst].x, w.actors[lst].y), beach);
+    let (dx, _) = w.cell_of(w.actors[dd].x, w.actors[dd].y);
+    assert!(dx >= SHORE + 3, "the destroyer stopped off the beach, at column {dx}");
+    // Beached, it unloads onto the land next to it.
+    assert!(w.can_unload(lst));
+    w.queue_order(Order::Deploy { player: 0, ids: vec![w.make_ref(lst)] });
+    run(&mut w, 120);
+    assert!(passengers_of(&w, lst).is_empty());
+    assert!(w.actors[tank].in_world() && !on_water(&w, tank));
+    // And it backs off into the sea again.
+    w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(lst)], x: cell_center(45), y: cell_center(20), attack_move: false });
+    run(&mut w, 600);
+    assert!(on_water(&w, lst));
 }
 
 #[test]

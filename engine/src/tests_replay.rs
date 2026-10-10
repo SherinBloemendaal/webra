@@ -240,12 +240,14 @@ fn stats_world() -> World {
         .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, bot: Default::default(), team: t, handicap: 0 })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for b in 0..w.building_at.len() {
         if w.building_at[b] != crate::world::NONE {
             w.pass.set_blocked(b, true);

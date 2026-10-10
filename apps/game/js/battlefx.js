@@ -2,9 +2,11 @@
 // from the engine's events (engine/src/sound_events.rs: CrateCollected and
 // the kinds 38 to 42):
 //
-// - floating cash ("+$1000") where a crate paid out or a kill earned a
-//   bounty, in the player's colour, like OpenRA's FloatingText (crates for
-//   everyone who sees the spot, bounties for the killer and its allies);
+// - floating cash ("+$1000") where a crate paid out, a kill earned a
+//   bounty or cash changed hands (CashTick: oil derricks, captures, thieves,
+//   supply trucks), in the player's colour, like OpenRA's FloatingText
+//   (bounties for the killer and its allies, the rest for everyone who sees
+//   the spot);
 // - camera shake (OpenRA ScreenShaker: ShakeScreen warheads, ShakeOnDeath)
 //   and the nuke's white flash (FlashEffect warhead);
 // - message lines: time limit warnings come with the announcer
@@ -25,6 +27,7 @@ export const FX = Object.freeze({
   PLAYER_LOST: 40,
   SCREEN_SHAKE: 41,
   FLASH: 42,
+  CASH_TICK: 44,
 });
 /** sound_events.rs crate_action_code of GiveCashCrateAction. */
 const GIVE_CASH = 1;
@@ -203,6 +206,9 @@ export class BattleFx {
         }
         case FX.BOUNTY:
           if (this.allied(owner)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
+          break;
+        case FX.CASH_TICK:
+          if (visible(x * k, y * k)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
           break;
         case FX.TIME_LIMIT_EXPIRED:
           // Warnings speak and write through the announcer (js/audio/director.js); the end is a line only.

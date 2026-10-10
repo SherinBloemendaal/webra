@@ -95,6 +95,13 @@ export const WEAPON_SYNTH = {
   // Crate explosions (engine/src/crates.rs: misc.yaml ExplodeCrateAction).
   CrateNapalm: [null, 'burn'],
   CrateExplosion: [null, 'explosion_large'],
+  // The neutral world (engine/src/neutral.rs): armed civilians, barrels and
+  // their fire clusters, bridge demolition; the civilians' panic trigger is silent.
+  Pistol: ['rifle', 'hit'],
+  BarrelExplode: [null, 'explosion_large'],
+  BarrelCluster: [null, 'explosion_small'],
+  CivPanicExplosion: [null, null],
+  Demolish: [null, 'explosion_large'],
 };
 
 /** Memoize a sound lookup: battles ask for the same few sounds thousands of times. */

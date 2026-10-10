@@ -34,6 +34,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
+import { CIVILIAN_DRAW, worldDraw, worldSecond } from './art/world.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
 import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
@@ -540,11 +541,12 @@ export function spriteList(actors) {
       // Proxies (engine/src/infantry.rs) have no body.
       list.push(null, null);
     } else if (a.kind === 'building') {
-      const draw = BUILDING_DRAW[key];
+      // The neutral world (trees, houses, tech buildings, bridges) has its own art module.
+      const draw = BUILDING_DRAW[key] ?? worldDraw(a);
       if (!draw) throw new Error(`no sprite for building ${a.id} (looked up as ${key})`);
       list.push([a.width * 24, a.height * 24, draw]);
       const anim = buildingAnim(key);
-      list.push(BUILDING_TURRET[key] ?? (anim ? layerSprite(anim, 0) : null));
+      list.push(BUILDING_TURRET[key] ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null));
     } else if (a.kind === 'crate') {
       // Crates (art/leftovers.js): the land image, then the water image.
       const d = CRATE_DRAW[key] ?? CRATE_DRAW.CRATE;
@@ -555,10 +557,11 @@ export function spriteList(actors) {
       if (!base) throw new Error(`no sprite for husk ${a.id} (looked up as ${huskBase(a.id)})`);
       list.push(huskOf(base.body), null);
     } else {
-      const d = UNIT_DRAW[key] ?? fallbackUnit(a);
+      const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(a);
       if (!d) throw new Error(`no sprite for unit ${a.id} (looked up as ${key})`);
       list.push(d.body);
-      list.push(a.kind === 'infantry' ? (PRONE[key] ?? d.body) : (d.turret ?? null));
+      // Infantry: the prone pose, or for civilians the panic pose (engine neutral.rs draws_panic).
+      list.push(a.kind === 'infantry' ? (PRONE[key] ?? CIVILIAN_DRAW[key]?.panic ?? d.body) : (d.turret ?? null));
     }
   }
   const muzzles = new Set(MUZZLE_ACTORS);
@@ -660,7 +663,8 @@ function shelfPack(boxes, width, startY = 0) {
  * pixels; each is placed in the atlas once. A building whose second slot is
  * replaced has no animated WebRA layer (`overlays` 0). `opts.filter` is the
  * sampler the renderer uses ('nearest' for pixel art); `opts.maxSize` the
- * largest atlas side.
+ * largest atlas side. `opts.biome` is the map's biome (temperate, snow or
+ * desert): the neutral world's trees, ice and huts follow it (art/world.js).
  */
 export function buildAtlas(actors, opts = {}) {
   const slots = opts.slots ?? new Map();
@@ -759,12 +763,15 @@ export function buildAtlas(actors, opts = {}) {
   }
   const cctx = color.getContext('2d');
   const mctx = mask.getContext('2d');
+  // The map's biome: trees, ice and huts of the neutral world look like it (art/world.js).
+  const biome = opts.biome ?? 'temperate';
+  const passes = [[cctx, { ...COLOR_PASS, biome }], [mctx, { ...MASK_PASS, biome }]];
   const frames = new Float32Array(next * FRAME_FLOATS);
   list.forEach((s, i) => {
     const p = boxes[i];
     const [w, h, draw] = s ?? [1, 1, null];
     if (draw) {
-      for (const [ctx, P] of [[cctx, COLOR_PASS], [mctx, MASK_PASS]]) {
+      for (const [ctx, P] of passes) {
         ctx.save();
         ctx.translate(p.x + PAD, p.y + PAD);
         ctx.scale(RES, RES);
@@ -906,13 +913,13 @@ export function drawIcon(canvas, actor, teamRgb) {
   if (actor.kind === 'building') {
     w = actor.width * 24;
     h = actor.height * 24;
-    parts.push([BUILDING_DRAW[key], 0, 0]);
+    parts.push([BUILDING_DRAW[key] ?? worldDraw(actor), 0, 0]);
     const t = BUILDING_TURRET[key];
     if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
     const anim = buildingAnim(key);
     if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
   } else {
-    const d = UNIT_DRAW[key] ?? fallbackUnit(actor);
+    const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? fallbackUnit(actor);
     [w, h] = d.body;
     parts.push([d.body[2], 0, 0]);
     if (d.turret) parts.push([d.turret[2], (w - d.turret[0]) / 2, (h - d.turret[1]) / 2]);
@@ -953,7 +960,7 @@ function cameoModel(typeName, kind) {
     if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
     return { building: true, w, h, parts };
   }
-  const d = UNIT_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);
+  const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);
   if (!d) return null;
   const [w, h] = d.body;
   const parts = [[d.body[2], 0, 0]];

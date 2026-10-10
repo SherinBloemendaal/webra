@@ -298,7 +298,7 @@ impl World {
         let a = &self.actors[i];
         let (cx, cy) = self.cell_of(a.x, a.y);
         let d = self.domain_of(i);
-        let comp = (d != Domain::Air).then(|| self.pass_for(d).component[self.map.idx(cx, cy)]);
+        let comp = (d != Domain::Air).then(|| self.pass_of(i).component[self.map.idx(cx, cy)]);
         DIRS.iter()
             .map(|&(dx, dy)| (cx + dx, cy + dy))
             .filter(|&(x, y)| {
@@ -307,7 +307,7 @@ impl World {
                 }
                 let Some(comp) = comp else { return true };
                 let ci = self.map.idx(x, y);
-                let pass = self.pass_for(d);
+                let pass = self.pass_of(i);
                 !pass.blocked[ci] && pass.component[ci] == comp
             })
             .collect()

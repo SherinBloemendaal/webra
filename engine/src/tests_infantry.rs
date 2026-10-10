@@ -18,6 +18,8 @@ fn run(w: &mut World, ticks: u32) {
 /// (Russia); both explored everything and have their Construction Yard.
 fn flat_world() -> World {
     let mut w = World::new(7, 64, &[("england", false), ("russia", false)]);
+    // Trees, mines and tech buildings of the generated map (neutral.rs) out of the way.
+    w.clear_neutral_world();
     for i in 0..w.map.cells() {
         w.map.terrain[i] = crate::map::Terrain::Clear;
         w.map.ore[i] = 0;
@@ -25,6 +27,7 @@ fn flat_world() -> World {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     // Structures block their solid cells (bibs stay passable, as in the game).
     for i in 0..w.actors.len() {
         let a = &w.actors[i];
@@ -170,23 +173,6 @@ fn engineer_repairs_an_own_structure_and_walls_and_allies_follow_the_rules() {
     assert!(!w.can_capture(e6b, wall));
 }
 
-#[test]
-fn bridge_huts_take_engineers_while_their_bridge_is_damaged() {
-    let mut w = flat_world();
-    // A stand-in for a bridge hut of the world objects.
-    let hut = building(&mut w, "SILO", 0, 30, 30);
-    let e6 = unit(&mut w, "E6", 1, 30, 34);
-    w.register_bridge_hut(hut);
-    assert!(!w.can_repair_bridge(e6, hut), "bridge intact");
-    w.set_bridge_hut_state(hut, true, false);
-    assert!(w.order_enter(e6, hut, EnterKind::RepairBridge));
-    run(&mut w, 200);
-    assert!(!w.actors[e6].alive, "the engineer went in");
-    assert_eq!(w.take_bridge_repairs(), vec![w.make_ref(hut)]);
-    assert!(w.take_bridge_repairs().is_empty());
-    assert!(w.inf.bridge_huts[0].repairing);
-}
-
 // ---- Spies and thieves -------------------------------------------------------------------
 
 #[test]
@@ -260,6 +246,7 @@ fn spy_in_a_sub_pen_grants_the_sonar_pulse_that_reveals_submarines() {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     let spen = w.spawn_building(ty(&w, "SPEN"), 1, 30, 40).unwrap();
     let spy = unit(&mut w, "SPY.England", 0, 31, 36);
     smart(&mut w, 0, &[spy], spen);
@@ -528,6 +515,7 @@ fn flat_reset(w: &mut World) {
     }
     w.pass = crate::flowfield::Passability::new(&w.map);
     w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
     for b in 0..w.building_at.len() {
         if w.building_at[b] != crate::world::NONE {
             w.pass.set_blocked(b, true);

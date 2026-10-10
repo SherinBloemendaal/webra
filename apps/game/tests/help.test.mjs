@@ -73,6 +73,12 @@ test('weather, biome and speed help match the engine numbers', () => {
     const label = speed.charAt(0).toUpperCase() + speed.slice(1);
     assert.match(HELP.gameSpeed, new RegExp(`${label} ${share} %`), speed);
   }
+  // Ore and gem mines (OpenRA SeedsResource, engine/src/neutral.rs): one bale per interval.
+  const rules = JSON.parse(read('../../../engine/rules.json'));
+  for (const id of ['MINE', 'GMINE']) {
+    const seeds = rules.actors.find((a) => a.id === id).world.seeds;
+    assert.match(HELP.oreRegrowth, new RegExp(`every ${seeds.interval / 25} s`), id);
+  }
   // AI difficulties (engine/src/ai.rs: think interval in ticks, defences).
   const ai = read('../../../engine/src/ai.rs');
   const rows = Object.fromEntries([...ai.matchAll(/AiDifficulty::(\w+) => \((\d+), (\d+), (\d+), (\d+)\)/g)].map((m) => [m[1], m.slice(2).map(Number)]));

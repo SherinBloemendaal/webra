@@ -3114,15 +3114,24 @@ export const ACTOR_SOUNDS = {
       "6": "Zapped"
     }
   },
+  "MINV": {
+    "death": [
+      "mineblo1"
+    ]
+  },
   "MINP": {
     "death": [
       "mine1"
     ]
   },
-  "MINV": {
-    "death": [
-      "mineblo1"
-    ]
+  "powerproxy.parabombs": {
+    "powers": {
+      "AirstrikePower": {
+        "kind": "AirstrikePower",
+        "selectTarget": "SelectTarget",
+        "selectTargetText": "Select target."
+      }
+    }
   },
   "powerproxy.sonarpulse": {
     "powers": {
@@ -3134,6 +3143,58 @@ export const ACTOR_SOUNDS = {
         "selectTargetText": "Select target.",
         "deploy": "sonpulse"
       }
+    }
+  },
+  "powerproxy.paratroopers": {
+    "powers": {
+      "ParatroopersPower": {
+        "kind": "ParatroopersPower",
+        "selectTarget": "SelectTarget",
+        "selectTargetText": "Select target."
+      }
+    }
+  },
+  "fact.colorpicker": {
+    "build": [
+      "placbldg",
+      "build5"
+    ],
+    "sell": [
+      "cashturn"
+    ],
+    "sellNotification": "StructureSold",
+    "undeploy": [
+      "cashturn"
+    ],
+    "death": [
+      "kaboom22"
+    ],
+    "damaged": [
+      "kaboom1"
+    ],
+    "capture": {
+      "speech": "BuildingCaptured",
+      "text": "Structure captured."
+    },
+    "repairing": "Repairing"
+  },
+  "CTFLAG": {
+    "build": [
+      "placbldg",
+      "build5"
+    ],
+    "sell": [
+      "cashturn"
+    ],
+    "death": [
+      "kaboom22"
+    ],
+    "damaged": [
+      "kaboom1"
+    ],
+    "capture": {
+      "speech": "BuildingCaptured",
+      "text": "Structure captured."
     }
   },
   "SS": {

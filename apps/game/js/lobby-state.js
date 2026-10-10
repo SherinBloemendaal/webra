@@ -59,6 +59,18 @@ export const WEATHER_MODES = [
   { value: 'off', label: 'Off' },
 ];
 
+/**
+ * Tech buildings of a generated map (engine/src/mapgen/settlements.rs, OpenRA's
+ * map generator option "Buildings").
+ */
+export const TECH_BUILDINGS = [
+  { value: 'none', label: 'None' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'extra', label: 'Extra' },
+  { value: 'oilonly', label: 'Oil only' },
+  { value: 'oilrush', label: 'Oil rush' },
+];
+
 export const STARTING_CASH = [2500, 5000, 7500, 10000, 20000];
 
 export const STARTING_UNITS = [
@@ -155,6 +167,7 @@ export const DEFAULTS = {
   mapStyle: 'random',
   biome: 'random',
   weather: 'full',
+  techBuildings: 'standard',
   startingCash: 5000,
   startingUnits: 'mcv',
   techLevel: 'unrestricted',
@@ -312,6 +325,7 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     mapStyle: oneOf(s.mapStyle, MAP_STYLES.map((m) => m.value), DEFAULTS.mapStyle),
     biome: oneOf(s.biome, BIOMES.map((m) => m.value), DEFAULTS.biome),
     weather: oneOf(s.weather, WEATHER_MODES.map((m) => m.value), DEFAULTS.weather),
+    techBuildings: oneOf(s.techBuildings, TECH_BUILDINGS.map((m) => m.value), DEFAULTS.techBuildings),
     mapSource: oneOf(s.mapSource, ['random', 'file'], 'random'),
     startingCash: oneOf(s.startingCash, STARTING_CASH, DEFAULTS.startingCash),
     startingUnits: oneOf(s.startingUnits, STARTING_UNITS.map((o) => o.value), DEFAULTS.startingUnits),
@@ -479,6 +493,7 @@ export function buildOptions(state, mapJson = null) {
     mapStyle: s.mapStyle,
     biome: s.biome,
     weather: s.weather,
+    techBuildings: s.techBuildings,
     players: s.players.map((p, slot) => {
       if (p.type === 'closed') return { slot, type: 'closed' };
       const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };

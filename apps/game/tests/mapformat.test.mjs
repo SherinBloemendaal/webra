@@ -166,8 +166,12 @@ test('layers must decode to width*height bytes with valid values', () => {
   const map = makeMap();
   assert.ok(validateMap({ ...map, terrain: encodeBase64(new Uint8Array(10)) }).errors.some((e) => e.includes('terrain has 10 bytes')));
   assert.ok(validateMap({ ...map, ore: 'not base64!' }).errors.some((e) => e.includes('ore is not valid base64')));
-  const badTerrain = makeMap({}, (t) => (t[5] = 9));
-  assert.ok(validateMap(badTerrain).errors.some((e) => e.includes('outside 0..5')));
+  const badTerrain = makeMap({}, (t) => (t[5] = 11));
+  assert.ok(validateMap(badTerrain).errors.some((e) => e.includes('outside 0..10')));
+  // OpenRA's terrain types (6 road .. 10 wall) are valid.
+  for (const value of [TERRAIN.ROAD, TERRAIN.BRIDGE, TERRAIN.BEACH, TERRAIN.RIVER, TERRAIN.WALL]) {
+    assert.ok(!validateMap(makeMap({}, (t) => (t[5] = value))).errors.some((e) => e.includes('outside')), `terrain ${value}`);
+  }
   const badOre = makeMap({}, (_t, o) => (o[5] = 13));
   assert.ok(validateMap(badOre).errors.some((e) => e.includes('above 12')));
   const oreOnRock = makeMap({}, (t, o) => ((t[5] = TERRAIN.ROCK), (o[5] = 4)));

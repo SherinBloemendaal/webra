@@ -81,7 +81,7 @@ test('invalid maps report problems', () => {
     [{ height: 257 }, /height/],
     [{ terrain: 'AAAA' }, /terrain/],
     [{ ore: Buffer.alloc(32 * 32, 13).toString('base64') }, /ore density/],
-    [{ terrain: Buffer.alloc(32 * 32, 6).toString('base64') }, /terrain value/],
+    [{ terrain: Buffer.alloc(32 * 32, 11).toString('base64') }, /terrain value/],
     [{ terrain: Buffer.alloc(32 * 32, 3).toString('base64') }, /ore can only/],
     [{ spawns: [[1, 1]] }, /2 to 8/],
     [{ spawns: Array.from({ length: 9 }, (_, i) => [i, 0]) }, /2 to 8/],
@@ -136,7 +136,7 @@ test('the gems layer is checked like the engine checks it', () => {
   const cases = [
     [gemMap({ [32 * 20 + 20]: 4 }), 'invalid gem density 4'],
     [gemMap({ [ore]: 1 }), 'a cell cannot hold both ore and gems'],
-    [gemMap(undefined, { terrain: rock.toString('base64') }), 'gems can only lie on clear or rough ground'],
+    [gemMap(undefined, { terrain: rock.toString('base64') }), 'gems can only lie on clear or rough ground or roads'],
     [gemMap(undefined, { gems: Buffer.alloc(32 * 31).toString('base64') }), 'the gems layer must have 1024 bytes'],
     [gemMap(undefined, { gems: '!'.repeat(base64Len(32 * 32)) }), 'gems is not valid base64'],
     [gemMap(undefined, { gems: 7 }), 'gems must be base64 text'],
@@ -207,13 +207,18 @@ test('rules overrides are checked against the engine rules like the engine does'
   assert.equal(isModded({ rules: null }), false);
 });
 
-test('fords are terrain 5 and hold no ore', () => {
+test('fords are terrain 5 and hold no ore; OpenRA terrain types go up to 10', () => {
   const ford = makeMap();
   const terrain = Buffer.from(ford.terrain, 'base64');
   terrain[7] = 5;
   assert.ok(validateMap({ ...ford, terrain: terrain.toString('base64') }).ok);
-  terrain[7] = 6;
-  assert.match(validateMap({ ...ford, terrain: terrain.toString('base64') }).errors.join(), /invalid terrain value 6/);
+  // 6 road, 7 bridge, 8 beach, 9 river, 10 wall (engine map.rs Terrain).
+  for (const value of [6, 7, 8, 9, 10]) {
+    terrain[7] = value;
+    assert.ok(validateMap({ ...ford, terrain: terrain.toString('base64') }).ok, `terrain ${value}`);
+  }
+  terrain[7] = 11;
+  assert.match(validateMap({ ...ford, terrain: terrain.toString('base64') }).errors.join(), /invalid terrain value 11/);
   terrain[7] = 0;
   terrain[32 * 10 + 10] = 5; // the ore cell
   assert.match(validateMap({ ...ford, terrain: terrain.toString('base64') }).errors.join(), /ore can only lie/);

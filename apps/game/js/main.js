@@ -19,7 +19,7 @@
 // worker sent, so ticks never block rendering or input.
 
 import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
-import { Renderer, TEAM_COLORS } from './renderer.js';
+import { NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { AnimClock } from './anim.js';
 import { Input } from './input.js';
@@ -533,7 +533,8 @@ function applyColors(slots) {
   // Engine player N is the N-th slot that actually plays (closed and open
   // slots are left out by the engine too), so skip them here as well.
   const players = slots.filter((p) => p && p.type !== 'closed' && p.type !== 'open' && Number.isInteger(p.color));
-  const palette = TEAM_COLORS.map((c) => c.slice());
+  // From the colours as they start: the last game may have recoloured a slot (its neutral player).
+  const palette = TEAM_PALETTE.map((c) => c.slice());
   const used = new Set(players.map((p) => p.color));
   const rest = palette.map((_, i) => i).filter((i) => !used.has(i));
   players
@@ -721,9 +722,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
   const allies = (a, b) => a === b || (!slots[a]?.neutral && !slots[b]?.neutral && !!slots[a]?.team && slots[a]?.team === slots[b]?.team);
+  // The neutral player (civilian and tech buildings, trees, bridges: engine
+  // neutral.rs) is drawn in a civilian tan, not a player's colour.
+  slots.forEach((slot, i) => {
+    if (slot.neutral && TEAM_COLORS[i]) TEAM_COLORS[i] = NEUTRAL_COLOR.slice();
+  });
+  /** Whether the local player (not a spectator) is allied to `owner`. */
+  const allied = (owner) => !viewer && allies(player, owner);
   // Spectators and replays have no player of their own: they hear no player's
   // private notifications (placement, deploy and sell sounds, "Unit ready", ...).
-  audio?.attachGame({ game, rules, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied: (owner) => !viewer && allies(player, owner) });
+  audio?.attachGame({ game, rules, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
   // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
@@ -753,14 +761,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     let original = null;
     if (art?.slots.size) {
       try {
-        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize });
+        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
         original = art.original;
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
       if (art.report.problems.length) console.info('Installed graphics:', art.report);
     }
-    atlas ??= buildAtlas(rules.actors);
+    atlas ??= buildAtlas(rules.actors, { biome });
     renderer.setAtlas(atlas);
     // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
     game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
@@ -860,7 +868,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     },
     onSelectionChanged: (ids, info) => {
       audio?.selection(ids, info);
-      sidebar?.setSelection(selectionInfo(game, ids));
+      sidebar?.setSelection(selectionInfo(game, ids, allied));
       sidebar?.setDeployState(input.deployState());
       commandBar?.update();
     },
@@ -1535,7 +1543,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         powerBar.update(state.powers ?? []);
         commandBar.update();
         audio?.playerState(state);
-        sidebar.setSelection(selectionInfo(game, input.selection));
+        sidebar.setSelection(selectionInfo(game, input.selection, allied));
         sidebar.setDeployState(input.deployState());
       }
       const stats = watching() ? game.observer_stats() : null;
@@ -1625,9 +1633,19 @@ function saveScreenshot(canvas) {
   });
 }
 
-function selectionInfo(game, ids) {
+/**
+ * Selection panel info: actor_json() of one actor, with `description` set to
+ * the TooltipDescription its viewer reads (tech buildings: @ally for the owner
+ * and its allies, @other for the rest); a summary for several.
+ * @param {(owner: number) => boolean} allied whether the local player is allied to `owner`
+ */
+function selectionInfo(game, ids, allied) {
   if (ids.length === 0) return null;
-  if (ids.length === 1) return JSON.parse(game.actor_json(ids[0]));
+  if (ids.length === 1) {
+    const info = JSON.parse(game.actor_json(ids[0]));
+    if (info) info.description = (allied(info.owner) ? info.allyDescription : info.otherDescription) || '';
+    return info;
+  }
   return { count: ids.length, name: `${ids.length} units selected` };
 }
 

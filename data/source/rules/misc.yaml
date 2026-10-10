@@ -1,80 +1,19 @@
-# Excerpt of OpenRA mods/ra/rules/misc.yaml (commit b6fc03fcfaef1277592bbd4cbc7d44dd85219902):
-# the mines laid by the Minelayer (they inherit ^Mine from defaults.yaml), the
-# crates (^Crate, dropped by the CrateSpawner of world.yaml), and the proxies
-# a Spy's infiltration grants with the Sonar Pulse's SONAR actor. Not
-# buildable, so they are not in data/actors.json; tools/gen_rules.py resolves
-# them (EXTRA_ACTORS) through parse.py.
-
-MINP:
-	Inherits: ^Mine
-	FireWarheadsOnDeath:
-		Weapon: APMine
-
 MINV:
 	Inherits: ^Mine
+	RenderSprites:
+		Image: minv
+		FactionImages:
+			soviet: minp
+			russia: minp
+			ukraine: minp
 	FireWarheadsOnDeath:
 		Weapon: ATMine
 
-CAMERA:
-	Interactable:
-	EditorOnlyTooltip:
-		Name: actor-camera-name
-	Immobile:
-		OccupiesSpace: false
-	RevealsShroud:
-		Range: 10c0
-		Type: CenterPosition
-	BodyOrientation:
-		QuantizedFacings: 1
-	WithSpriteBody:
-	RenderSpritesEditorOnly:
-		Image: camera
-	MapEditorData:
-		Categories: System
-
-camera.spyplane:
-	Inherits: CAMERA
-	EditorOnlyTooltip:
-		Name: actor-camera-spyplane-name
-
-SONAR:
-	Inherits: camera.spyplane
-	EditorOnlyTooltip:
-		Name: actor-sonar-name
-	-RevealsShroud:
-	DetectCloaked:
-		DetectionTypes: Underwater
-		Range: 10c0
-
-powerproxy.sonarpulse:
-	SpawnActorPower:
-		Icon: sonar
-		Name: actor-powerproxy-sonarpulse.name
-		Description: actor-powerproxy-sonarpulse.description
-		ChargeInterval: 750
-		EndChargeSpeechNotification: SonarPulseReady
-		SelectTargetSpeechNotification: SelectTarget
-		EndChargeTextNotification: notification-sonar-pulse-ready
-		SelectTargetTextNotification: notification-select-target
-		Actor: sonar
-		Terrain: Water
-		AllowUnderShroud: false
-		LifeTime: 250
-		DeploySound: sonpulse.aud
-		EffectImage: moveflsh
-		EffectPalette: moveflash
-		SupportPowerPaletteOrder: 80
-		EffectSequence: idle
-		BlockedCursor: move-blocked
-
-barracks.upgraded:
-	ProvidesPrerequisite:
-
-vehicles.upgraded:
-	ProvidesPrerequisite:
-
-aircraft.upgraded:
-	ProvidesPrerequisite:
+# Only kept for backwards-compatibility with existing and imported maps, use MINV instead
+MINP:
+	Inherits: MINV
+	FireWarheadsOnDeath:
+		Weapon: APMine
 
 CRATE:
 	Inherits: ^Crate
@@ -238,3 +177,287 @@ SCRATE:
 	Inherits: ^Crate
 	Tooltip:
 		Name: actor-scrate-name
+
+CAMERA:
+	Interactable:
+	EditorOnlyTooltip:
+		Name: actor-camera-name
+	Immobile:
+		OccupiesSpace: false
+	RevealsShroud:
+		Range: 10c0
+		Type: CenterPosition
+	BodyOrientation:
+		QuantizedFacings: 1
+	WithSpriteBody:
+	RenderSpritesEditorOnly:
+		Image: camera
+	MapEditorData:
+		Categories: System
+
+camera.paradrop:
+	Inherits: CAMERA
+	EditorOnlyTooltip:
+		Name: actor-camera-paradrop-name
+	RevealsShroud:
+		Range: 6c0
+
+camera.spyplane:
+	Inherits: CAMERA
+	EditorOnlyTooltip:
+		Name: actor-camera-spyplane-name
+
+SONAR:
+	Inherits: camera.spyplane
+	EditorOnlyTooltip:
+		Name: actor-sonar-name
+	-RevealsShroud:
+	DetectCloaked:
+		DetectionTypes: Underwater
+		Range: 10c0
+
+FLARE:
+	Immobile:
+		OccupiesSpace: false
+	RevealsShroud:
+		Range: 3c0
+		Type: CenterPosition
+	RenderSprites:
+		Image: smokland
+	WithSpriteBody:
+		StartSequence: open
+	BodyOrientation:
+		QuantizedFacings: 1
+	HiddenUnderFog:
+		Type: CenterPosition
+	Interactable:
+	Tooltip:
+		Name: actor-flare-name
+		ShowOwnerRow: false
+	MapEditorData:
+		Categories: Decoration
+
+MINE:
+	Inherits@1: ^SpriteActor
+	Interactable:
+	HiddenUnderShroud:
+	Tooltip:
+		Name: actor-mine-name
+	RenderSprites:
+		Palette: terrain
+	WithSpriteBody:
+	Building:
+		Footprint: x
+		Dimensions: 1,1
+	AppearsOnRadar:
+	RadarColorFromTerrain:
+		Terrain: Ore
+	AppearsOnMapPreview:
+		Terrain: Ore
+	SeedsResource:
+	MapEditorData:
+		Categories: Resource spawn
+	RequiresSpecificOwners:
+		ValidOwnerNames: Neutral
+
+GMINE:
+	Inherits@1: ^SpriteActor
+	Interactable:
+	HiddenUnderShroud:
+	Tooltip:
+		Name: actor-gmine-name
+	RenderSprites:
+		Palette: player
+	WithSpriteBody:
+	Building:
+		Footprint: x
+		Dimensions: 1,1
+	AppearsOnRadar:
+	RadarColorFromTerrain:
+		Terrain: Gems
+	AppearsOnMapPreview:
+		Terrain: Gems
+	SeedsResource:
+		ResourceType: Gems
+	MapEditorData:
+		Categories: Resource spawn
+	RequiresSpecificOwners:
+		ValidOwnerNames: Neutral
+
+RAILMINE:
+	Inherits@1: ^SpriteActor
+	Interactable:
+	HiddenUnderShroud:
+	Tooltip:
+		Name: actor-railmine-name
+	RenderSprites:
+		Palette: player
+	WithSpriteBody:
+	Building:
+		Footprint: xx
+		Dimensions: 2,1
+	MapEditorData:
+		ExcludeTilesets: INTERIOR
+		Categories: Civilian building
+	RequiresSpecificOwners:
+		ValidOwnerNames: Neutral
+
+QUEE:
+	Inherits@1: ^SpriteActor
+	Inherits@shape: ^2x1Shape
+	Interactable:
+	HiddenUnderShroud:
+	Tooltip:
+		Name: actor-quee-name
+	Building:
+		Footprint: xx
+		Dimensions: 2,1
+	WithSpriteBody:
+	AppearsOnRadar:
+	MapEditorData:
+		RequireTilesets: INTERIOR
+		Categories: Critter
+
+LAR1:
+	Inherits@1: ^SpriteActor
+	Inherits@shape: ^1x1Shape
+	Interactable:
+	HiddenUnderShroud:
+	Tooltip:
+		Name: actor-lar1-name
+	Building:
+		Footprint: x
+		Dimensions: 1,1
+	RenderSprites:
+		Palette: terrain
+	WithSpriteBody:
+	AppearsOnRadar:
+	MapEditorData:
+		RequireTilesets: INTERIOR
+		Categories: Critter
+
+LAR2:
+	Inherits@1: LAR1
+	Tooltip:
+		Name: actor-lar2-name
+
+powerproxy.parabombs:
+	AirstrikePower:
+		Icon: parabombs
+		Name: actor-powerproxy-parabombs.name
+		Description: actor-powerproxy-parabombs.description
+		OneShot: true
+		AllowMultiple: true
+		UnitType: badr.bomber
+		SelectTargetSpeechNotification: SelectTarget
+		SelectTargetTextNotification: notification-select-target
+		QuantizedFacings: 8
+		DisplayBeacon: True
+		BeaconPoster: pbmbicon
+		CameraActor: camera
+		CameraRemoveDelay: 150
+		ArrowSequence: arrow
+		ClockSequence: clock
+		CircleSequence: circles
+
+powerproxy.sonarpulse:
+	SpawnActorPower:
+		Icon: sonar
+		Name: actor-powerproxy-sonarpulse.name
+		Description: actor-powerproxy-sonarpulse.description
+		ChargeInterval: 750
+		EndChargeSpeechNotification: SonarPulseReady
+		SelectTargetSpeechNotification: SelectTarget
+		EndChargeTextNotification: notification-sonar-pulse-ready
+		SelectTargetTextNotification: notification-select-target
+		Actor: sonar
+		Terrain: Water
+		AllowUnderShroud: false
+		LifeTime: 250
+		DeploySound: sonpulse.aud
+		EffectImage: moveflsh
+		EffectPalette: moveflash
+		SupportPowerPaletteOrder: 80
+		EffectSequence: idle
+		BlockedCursor: move-blocked
+
+powerproxy.paratroopers:
+	ParatroopersPower:
+		Icon: paratroopers
+		Name: actor-powerproxy-paratroopers.name
+		Description: actor-powerproxy-paratroopers.description
+		DropItems: E1,E1,E1,E3,E3
+		SelectTargetSpeechNotification: SelectTarget
+		SelectTargetTextNotification: notification-select-target
+		AllowImpassableCells: false
+		QuantizedFacings: 8
+		CameraActor: camera.paradrop
+		DisplayBeacon: true
+		BeaconPoster: pinficon
+		ArrowSequence: arrow
+		ClockSequence: clock
+		CircleSequence: circles
+
+barracks.upgraded:
+	ProvidesPrerequisite:
+
+vehicles.upgraded:
+	ProvidesPrerequisite:
+
+aircraft.upgraded:
+	ProvidesPrerequisite:
+
+mpspawn:
+	Interactable:
+	EditorOnlyTooltip:
+		Name: actor-mpspawn-name
+	Immobile:
+		OccupiesSpace: false
+	WithSpriteBody:
+	RenderSpritesEditorOnly:
+	BodyOrientation:
+		QuantizedFacings: 1
+	MapEditorData:
+		Categories: System
+	RequiresSpecificOwners:
+		ValidOwnerNames: Neutral
+
+waypoint:
+	Interactable:
+	EditorOnlyTooltip:
+		Name: actor-waypoint-name
+	Immobile:
+		OccupiesSpace: false
+	WithSpriteBody:
+	RenderSpritesEditorOnly:
+	BodyOrientation:
+		QuantizedFacings: 1
+	MapEditorData:
+		Categories: System
+
+fact.colorpicker:
+	Inherits: FACT
+	-Buildable:
+	-MapEditorData:
+	-BaseBuilding:
+	RenderSprites:
+		Image: fact
+		Palette: colorpicker
+
+CTFLAG:
+	Inherits: ^TechBuilding
+	Building:
+		Footprint: x
+		Dimensions: 1,1
+	Tooltip:
+		Name: actor-ctflag-name
+	WithBuildingBib:
+		HasMinibib: true
+	-HitShape:
+	-Health:
+	-FireWarheadsOnDeath:
+	-Selectable:
+	-Targetable:
+	MapEditorData:
+		Categories: Decoration
+	Interactable:

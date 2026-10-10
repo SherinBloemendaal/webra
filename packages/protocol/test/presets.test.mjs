@@ -22,6 +22,14 @@ test('a mode sets every lobby option but the seed and the map size', () => {
   assert.deepEqual([...PRESET_KEYS].sort(), LOBBY_OPTION_KEYS.filter((k) => k !== 'seed' && k !== 'mapSize').sort());
 });
 
+test('a mode saved before techBuildings existed takes its default', () => {
+  const { techBuildings, ...old } = bundle({ techBuildings: 'oilrush' });
+  assert.equal(techBuildings, 'oilrush');
+  assert.equal(validatePresetOptions(old).techBuildings, DEFAULT_OPTIONS.techBuildings);
+  assert.equal(validatePresetOptions(bundle({ techBuildings: 'extra' })).techBuildings, 'extra');
+  assert.throws(() => validatePresetOptions(bundle({ techBuildings: 'lots' })), /techBuildings/);
+});
+
 test('built-in modes: unique ids and names, complete bundles the server accepts', () => {
   assert.equal(new Set(BUILTIN_MODES.map((m) => m.id)).size, BUILTIN_MODES.length);
   assert.equal(new Set(BUILTIN_MODES.map((m) => m.name.toLowerCase())).size, BUILTIN_MODES.length);
