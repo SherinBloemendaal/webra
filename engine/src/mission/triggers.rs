@@ -5,7 +5,9 @@
 use crate::lua::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Per-actor triggers (OpenRA's `Trigger` enum, the ones on actors).
+/// Per-actor triggers (OpenRA's `Trigger` enum, the ones on actors), named
+/// like the `Trigger.On*` functions that register them.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum ActorTrigger {
     OnIdle,
@@ -61,7 +63,8 @@ impl ActorTrigger {
     }
 }
 
-/// Triggers on players.
+/// Triggers on players, named like the `Trigger.On*` functions that register them.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PlayerTrigger {
     OnPlayerWon,

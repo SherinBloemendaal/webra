@@ -412,10 +412,8 @@ impl Heap {
                         }
                     }
                 }
-                Value::Cell(c) => {
-                    if !std::mem::replace(&mut cmark[c as usize], true) {
-                        stack.push(self.cells.get(c).clone());
-                    }
+                Value::Cell(c) if !std::mem::replace(&mut cmark[c as usize], true) => {
+                    stack.push(self.cells.get(c).clone());
                 }
                 _ => {}
             }

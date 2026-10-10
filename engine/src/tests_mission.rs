@@ -235,7 +235,7 @@ fn soviet_01_can_be_won_with_orders() {
 fn lua_in(w: &mut World, src: &str) -> String {
     let r = w.mission_exec(src).unwrap_or_else(|e| panic!("{e}"));
     match r.into_iter().next() {
-        Some(v) => v.to_text().unwrap_or_else(|| format!("{}", v.type_name())),
+        Some(v) => v.to_text().unwrap_or_else(|| v.type_name().to_string()),
         None => "nil".into(),
     }
 }

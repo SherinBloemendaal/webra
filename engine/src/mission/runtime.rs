@@ -537,7 +537,7 @@ impl Ctx<'_> {
     /// column for as long as they are in the world.
     fn tick_flares(&mut self) {
         let period = crate::husks::LEFTOVER_EFFECT_TICKS[crate::husks::LEFTOVER_SMOKE as usize];
-        if self.w.tick % period as u32 != 0 {
+        if !self.w.tick.is_multiple_of(period as u32) {
             return;
         }
         for hd in &self.m.handles {
