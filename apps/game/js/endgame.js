@@ -10,6 +10,8 @@
 //   the defeated player gives no more orders (the engine refuses them, online
 //   the server drops them too) and the AIs play on until the game ends.
 // - Spectators and the replay viewer only get the final result.
+// - A won game is over: the victory dialog stays until the player leaves,
+//   plays again or opens the next mission; there is no playing on after it.
 //
 // EndGameFlow is the state machine (no DOM); EndGameDialog draws it.
 
@@ -116,9 +118,9 @@ export class EndGameFlow {
     this.onChange(this);
   }
 
-  /** Close the dialog (the game goes on behind; nothing else changes). */
+  /** Close the dialog (the game goes on behind; nothing else changes). A won game's dialog stays. */
   close() {
-    if (this.dialog === null) return;
+    if (this.dialog === null || this.phase === 'won') return;
     this.dialog = null;
     this.onChange(this);
   }
@@ -183,8 +185,8 @@ export function dialogContent(flow, { winnerText = '', canRestart = false, resta
     case DIALOGS.VICTORY:
       return {
         title: 'Mission accomplished',
-        text: join('Your side won.', paused),
-        buttons: tail([{ id: 'continue', label: 'Continue playing', primary: true }]),
+        text: join('Your side won.', result),
+        buttons: tail([]).map((b, i) => (i === 0 ? { ...b, primary: true } : b)),
       };
     case DIALOGS.FINAL:
       return {
@@ -227,12 +229,11 @@ function missionContent(flow, { canRestart, restartLabel, canDownload, next, pau
       }
       return {
         title: 'Mission accomplished',
-        text: join(next ? `Next: ${next}.` : 'Every objective is done.', paused),
+        text: next ? `Next: ${next}.` : 'Every objective is done.',
         buttons: [
           ...(next ? [{ id: 'next', label: 'Next mission', primary: true }] : []),
-          { id: 'continue', label: 'Keep playing', primary: !next },
-          ...restart.map((b) => ({ ...b, label: 'Play again' })),
-          ...rest,
+          ...restart.map((b) => ({ ...b, label: 'Play again', primary: !next })),
+          ...rest.map((b) => (!next && !restart.length && b.id === 'leave' ? { ...b, primary: true } : b)),
         ],
       };
     default:
