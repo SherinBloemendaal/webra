@@ -47,7 +47,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
   so a ground route over a river never cuts the water network. Structures
   never stand on a ford (naval yards need open water), and fords hold no ore
-  or gems. Generated maps put fords where ground routes cross water.
+  or gems. Generated maps put fords where ground routes cross water. A ford
+  is drawn as a crossing (WebRA's shallow ford tiles; with the original
+  graphics rough ground with beach tiles, like Red Alert's ford templates),
+  never as open water, since ground units walk on it.
 - Terrain types 6 to 10 are OpenRA's (`data/source/rules/world.yaml`,
   `defaults.yaml`; speeds per locomotor in `engine/rules.json`): road (6)
   is clear ground with OpenRA's road speed, buildable and able to hold
@@ -1224,7 +1227,8 @@ Support powers (engine/src/powers.rs, API documented at the top of that
 file): one timer per player per power key (the OpenRA trait name, e.g.
 `AirstrikePower@spyplane`), however many structures provide it. Order
 `{"o": "support_power", player, key, x, y, x2?, y2?}` (world units; the
-optional second point gives aircraft powers their flight direction), wasm
+optional second point gives aircraft powers their flight direction; the
+engine leaves it out when there is none, and `null` counts as left out), wasm
 `Game.activate_power(player, key, x, y, x2?, y2?)` (world pixels), and
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
@@ -1828,7 +1832,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | Methods | Used by | Across the boundary |
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
-| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines and, with "Show unit paths", `build_paths`), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |

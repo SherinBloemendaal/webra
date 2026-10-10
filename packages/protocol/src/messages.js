@@ -112,7 +112,7 @@ function idList(v, what) {
 
 const i32 = (v, what) => int(v, I32_MIN, I32_MAX, what);
 const u32 = (v, what) => int(v, 0, U32_MAX, what);
-/** Field that may be left out (serde `Option` with a default in the engine). */
+/** Field that may be left out, or null (serde `Option` with a default in the engine reads null as none). */
 const optional = (check) => Object.assign((v, what) => check(v, what), { optional: true });
 /** Support power key: an OpenRA trait name such as `AirstrikePower@spyplane`. */
 const powerKey = (v, what) => {
@@ -188,7 +188,7 @@ export function validOrder(o, what = 'order') {
   object(o, ['o', 'player', ...Object.keys(schema)], what);
   const out = { o: o.o, player: int(o.player, 0, MAX_PLAYERS - 1, `${what}.player`) };
   for (const [k, check] of Object.entries(schema)) {
-    if (!has(o, k) && check.optional) continue;
+    if (check.optional && (!has(o, k) || o[k] === null)) continue;
     if (!has(o, k)) fail(`${what}.${k} is required`);
     out[k] = check(o[k], `${what}.${k}`);
   }

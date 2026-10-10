@@ -100,6 +100,8 @@ export const HELP = Object.freeze({
   'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
+  'settings.targetLines':
+    'Lines from your selected units to what they were ordered to do, like OpenRA: green to where they move, red to what they attack or capture, orange for attack-moves and guarding, yellow for repairs and deliveries, with a dot at each target and queued waypoints after it. After orders: for a moment after an order or a selection, and while Shift is held. With Shift: only while Shift is held. Off: never.',
   'settings.playerStanceColors': 'Colours players by how they stand to you, like OpenRA: you green, allies yellow, enemies red. Spectators always see the players own colours.',
   'settings.mouseCapture':
     'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Alt+M (Option+M on a Mac; rebindable in Controls) turns it off and on, Esc releases it; opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
