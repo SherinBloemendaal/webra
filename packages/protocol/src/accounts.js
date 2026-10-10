@@ -426,6 +426,8 @@ const SETTINGS_SECTIONS = {
       return v;
     },
   },
+  // Error reports (docs/security.md, "Error reports"): on unless the player switched them off.
+  privacy: { errorReports: boolean },
 };
 
 /**
