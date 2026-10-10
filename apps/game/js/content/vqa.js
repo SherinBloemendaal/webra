@@ -40,8 +40,14 @@ export const VQA_LIMITS = Object.freeze({
   maxWidth: 1024,
   maxHeight: 768,
   maxFrameRate: 60,
-  /** Longest sound track, in samples per channel (12 minutes at Red Alert's 22050 Hz). */
-  maxAudioSamples: 16 * 1024 * 1024,
+  /**
+   * Longest sound track, in seconds (Red Alert's longest movies run about
+   * four minutes). A sound track may also not run more than two seconds past
+   * the pictures, so a small file cannot claim a huge one (SND1 chunks name
+   * their own output size): at most 6 minutes of 48 kHz stereo, 132 MiB of
+   * samples, and for Red Alert's mono 22050 Hz 30 MiB.
+   */
+  maxAudioSeconds: 360,
 });
 
 const HEADER_BYTES = 42;
@@ -513,7 +519,9 @@ export class VqaVideo {
     };
     let total = 0;
     for (const c of chunks) total += samplesOf(c);
-    if (total > this.limits.maxAudioSamples) throw new VqaError('sound track too long');
+    // As long as the pictures (plus two seconds), never longer than maxAudioSeconds.
+    const seconds = Math.min(this.limits.maxAudioSeconds, this.frameCount / this.header.frameRate + 2);
+    if (total > Math.ceil(seconds * sampleRate)) throw new VqaError('sound track too long');
     const data = Array.from({ length: channels }, () => new Float32Array(total));
     const ima = Array.from({ length: channels }, () => ({ index: 0, sample: 0 }));
     const ws = new Uint8Array(65535);

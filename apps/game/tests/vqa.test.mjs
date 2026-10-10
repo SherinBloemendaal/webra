@@ -222,7 +222,15 @@ test('VQA: malformed files throw VqaError instead of hanging or allocating witho
   assert.throws(() => openVqa(smallMovie({ vpt: vqaChunk('VPTZ', lcwEncode(new Uint8Array(100))) })).nextFrame(), /overruns its output/);
   assert.throws(() => openVqa(smallMovie({ vpt: vqaChunk('VPT0', Uint8Array.of(0, 0, 0, 0, 0x20, 0, 0, 0)) })).nextFrame(), /outside the codebook/);
   assert.throws(() => openVqa(smallMovie({ vpt: vqaChunk('XXXX', new Uint8Array(2)) })).nextFrame(), /unknown frame chunk/);
-  assert.throws(() => openVqa(good, { ...VQA_LIMITS, maxAudioSamples: 10 }).decodeAudio(), /too long/);
+  assert.throws(() => openVqa(good, { ...VQA_LIMITS, maxAudioSeconds: 0.0001 }).decodeAudio(), /too long/);
+  // A sound track much longer than the pictures is refused before anything is allocated:
+  // SND1 chunks of 4 bytes that each claim 65535 samples.
+  const greedy = buildVqa({
+    width: W,
+    height: H,
+    frames: [[...Array.from({ length: 8 }, () => vqaChunk('SND1', Uint8Array.of(0xff, 0xff, 0, 0))), vqaChunk('VQFR', vqaChunk('VPT0', VEC_1))]],
+  });
+  assert.throws(() => openVqa(greedy).decodeAudio(), /too long/);
   // Random damage: every outcome is a decoded movie or a VqaError, never another error or a hang.
   const r = rng(9);
   for (let n = 0; n < 400; n++) {
