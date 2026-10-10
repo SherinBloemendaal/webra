@@ -523,7 +523,7 @@ kbd {
 
 /* Map versions: the upgrade notice and quick fixes of a map opened best effort. */
 .issues li.notice {
-  color: #9fd0ff;
+  color: color-mix(in srgb, var(--ui-info) 55%, white);
 }
 
 .issues li.notice::before {
