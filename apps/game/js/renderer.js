@@ -12,10 +12,10 @@ const RECT_FLOATS = 8;
 const HEAT_FLOATS = 4;
 const LINE_FLOATS = 8;
 // shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2), art.
-const GLOBALS_BYTES = 224;
-const ANIM_OFFSET = 40;
-const ENV_OFFSET = 44;
-const ART_OFFSET = 52;
+const GLOBALS_BYTES = 352;
+const ANIM_OFFSET = 72;
+const ENV_OFFSET = 76;
+const ART_OFFSET = 84;
 const STILL = { time: 0, enabled: false };
 
 export const TEAM_COLORS = [
@@ -27,9 +27,20 @@ export const TEAM_COLORS = [
   [0.95, 0.55, 0.20],
   [0.40, 0.85, 0.85],
   [0.85, 0.85, 0.85],
+  // Players 9 to 16 (missions with more players than a lobby has: js/main.js applyMissionColors).
+  [0.55, 0.35, 0.20],
+  [0.95, 0.60, 0.75],
+  [0.55, 0.65, 0.30],
+  [0.30, 0.35, 0.70],
+  [0.70, 0.20, 0.45],
+  [0.95, 0.95, 0.55],
+  [0.25, 0.55, 0.50],
+  [0.50, 0.50, 0.50],
 ];
-/** The team colours as they start (TEAM_COLORS is reordered and recoloured per game, js/main.js). */
-export const TEAM_PALETTE = Object.freeze(TEAM_COLORS.map((c) => Object.freeze(c.slice())));
+/** Colours a lobby offers: the first eight. */
+export const LOBBY_COLOR_COUNT = 8;
+/** The lobby colours as they start (TEAM_COLORS is reordered and recoloured per game, js/main.js). */
+export const TEAM_PALETTE = Object.freeze(TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT).map((c) => Object.freeze(c.slice())));
 /** Team colour of the neutral player (civilian buildings and the like, js/main.js). */
 export const NEUTRAL_COLOR = [0.78, 0.72, 0.6];
 

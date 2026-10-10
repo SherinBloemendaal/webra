@@ -30,7 +30,7 @@ fn vs(@builtin(vertex_index) vi: u32, @location(0) p: vec4f, @location(1) color:
     o.pos = vec4f(s.x / g.view_size.x * 2.0 - 1.0, 1.0 - s.y / g.view_size.y * 2.0, 0.0, 1.0);
     o.color = color;
     if (color.r < 0.0) {
-        let team = min(u32(-color.r - 0.5), 7u);
+        let team = min(u32(-color.r - 0.5), 15u);
         o.color = vec4f(min(g.team_colors[team].rgb * color.g, vec3f(1.0)), color.a);
     }
     return o;

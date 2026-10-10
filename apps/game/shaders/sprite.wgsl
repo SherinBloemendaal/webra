@@ -201,7 +201,7 @@ fn vs(@builtin(vertex_index) vi: u32,
 fn fs(in: VsOut) -> @location(0) vec4f {
     let base = textureSample(atlas, samp, in.uv);
     let m = textureSample(mask, samp, in.uv).r;
-    let team = g.team_colors[min(in.team, 7u)].rgb;
+    let team = g.team_colors[min(in.team, 15u)].rgb;
     // Team areas are painted grey in the atlas; the grey level becomes shading.
     var rgb = mix(base.rgb, team * (0.35 + base.r * 1.05), m);
     // flash > 0: white hit flash; flash < 0: solid black (aircraft shadows).

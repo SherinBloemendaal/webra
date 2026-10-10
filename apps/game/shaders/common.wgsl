@@ -5,7 +5,8 @@ struct Globals {
     zoom: f32,         // device pixels per world pixel
     time: f32,         // seconds
     map_size: vec2f,   // map size in cells
-    team_colors: array<vec4f, 8>,
+    // Player colours: the eight of the lobby, then more for missions with more players.
+    team_colors: array<vec4f, 16>,
     anim: vec4f,       // render clock for sprite animations: seconds, enabled (js/anim.js)
     // Biome and weather (js/weather-fx.js): biome (0 temperate, 1 snow,
     // 2 desert), weather (0 clear, 1 rain, 2 thunderstorm, 3 snowfall,
