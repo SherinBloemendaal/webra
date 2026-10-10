@@ -1805,6 +1805,10 @@ Differences from OpenRA, all deterministic:
   sees the same.
 - Script errors stop the mission's scripts (the battle goes on) and show an
   error banner with Restart, like OpenRA's script error screen.
+- The map is cropped to its bounds. Structures beyond them
+  (`World::offmap`) keep giving power, prerequisites and storage and count
+  as required units, as in OpenRA; other actors there, and tree clumps that
+  stick out of the bounds, are left out (`Mission::unplaced`).
 - Missions are single player. In OpenRA's co-op missions (Evacuation,
   Exodus, Infiltration) the other playable slots stay empty, like
   unoccupied slots in OpenRA (their scripts check for that).
