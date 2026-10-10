@@ -2,7 +2,10 @@
 
 use super::ast::*;
 use super::heap::Closure;
-use super::{fmt_number, raw_equal, stdlib, ErrorKind, Host, Lua, LuaError, Value, MAX_DEPTH, MAX_STRING};
+use super::{
+    fmt_number, raw_equal, stdlib, ErrorKind, Host, Lua, LuaError, Value, BUILTIN_LEVELS, CALL_LEVELS, HOST_LEVELS, MAX_DEPTH, MAX_LEVELS,
+    MAX_STRING,
+};
 use std::sync::Arc;
 
 enum Flow {
@@ -54,12 +57,33 @@ impl Lua {
         e
     }
 
-    fn enter(&mut self) -> Result<(), LuaError> {
+    /// A call nests one deeper: at most MAX_DEPTH calls and MAX_LEVELS levels.
+    fn enter(&mut self, levels: u32) -> Result<(), LuaError> {
         if self.depth >= MAX_DEPTH {
             return Err(LuaError::runtime("stack overflow"));
         }
-        self.charge(1)?;
+        self.nest(levels)?;
+        if let Err(e) = self.charge(1) {
+            self.levels -= levels;
+            return Err(e);
+        }
         self.depth += 1;
+        Ok(())
+    }
+
+    fn leave(&mut self, levels: u32) {
+        self.depth -= 1;
+        self.levels -= levels;
+    }
+
+    /// One recursive evaluation deeper (an expression, a block, a call).
+    pub(crate) fn nest(&mut self, levels: u32) -> Result<(), LuaError> {
+        if self.levels + levels > MAX_LEVELS {
+            return Err(LuaError::runtime("stack overflow"));
+        }
+        self.levels += levels;
+        #[cfg(test)]
+        stack_probe::note(self.levels);
         Ok(())
     }
 
@@ -67,15 +91,15 @@ impl Lua {
         match f {
             Value::Func(id) => self.call_closure(host, *id, args),
             Value::Builtin(b, t) => {
-                self.enter()?;
+                self.enter(BUILTIN_LEVELS)?;
                 let r = stdlib::call(self, host, *b, *t, args);
-                self.depth -= 1;
+                self.leave(BUILTIN_LEVELS);
                 r
             }
             Value::Host(id, this) => {
-                self.enter()?;
+                self.enter(HOST_LEVELS)?;
                 let r = host.call(self, *id, *this, args);
-                self.depth -= 1;
+                self.leave(HOST_LEVELS);
                 r
             }
             other => Err(LuaError::runtime(format!("attempt to call a {} value", other.type_name()))),
@@ -87,7 +111,7 @@ impl Lua {
             let c = self.heap.closures.get(id);
             (c.proto.clone(), c.upvals.clone())
         };
-        self.enter()?;
+        self.enter(CALL_LEVELS)?;
         let mut frame = Frame {
             slots: vec![Value::Nil; proto.nslots.max(1)],
             varargs: Vec::new(),
@@ -108,7 +132,7 @@ impl Lua {
             }
         }
         let r = self.exec_block(host, &mut frame, &proto.body);
-        self.depth -= 1;
+        self.leave(CALL_LEVELS);
         match r {
             Ok(Flow::Return(v)) => Ok(v),
             Ok(_) => Ok(Vec::new()),
@@ -121,6 +145,13 @@ impl Lua {
     }
 
     fn exec_block(&mut self, host: &mut dyn Host, frame: &mut Frame, block: &[Stat]) -> Result<Flow, LuaError> {
+        self.nest(1)?;
+        let r = self.exec_block_inner(host, frame, block);
+        self.levels -= 1;
+        r
+    }
+
+    fn exec_block_inner(&mut self, host: &mut dyn Host, frame: &mut Frame, block: &[Stat]) -> Result<Flow, LuaError> {
         for s in block {
             match self.exec_stat(host, frame, s)? {
                 Flow::Normal => {}
@@ -391,6 +422,13 @@ impl Lua {
 
     /// All values of a call or `...`; one value for anything else.
     fn eval_multi(&mut self, host: &mut dyn Host, frame: &mut Frame, e: &Expr) -> Result<Vec<Value>, LuaError> {
+        self.nest(1)?;
+        let r = self.eval_multi_inner(host, frame, e);
+        self.levels -= 1;
+        r
+    }
+
+    fn eval_multi_inner(&mut self, host: &mut dyn Host, frame: &mut Frame, e: &Expr) -> Result<Vec<Value>, LuaError> {
         match e {
             Expr::Vararg => Ok(frame.varargs.clone()),
             Expr::Call(f, args, line) => {
@@ -418,6 +456,13 @@ impl Lua {
     }
 
     fn eval(&mut self, host: &mut dyn Host, frame: &mut Frame, e: &Expr) -> Result<Value, LuaError> {
+        self.nest(1)?;
+        let r = self.eval_inner(host, frame, e);
+        self.levels -= 1;
+        r
+    }
+
+    fn eval_inner(&mut self, host: &mut dyn Host, frame: &mut Frame, e: &Expr) -> Result<Value, LuaError> {
         Ok(match e {
             Expr::Nil => Value::Nil,
             Expr::True => Value::Bool(true),
@@ -641,5 +686,39 @@ impl Lua {
                 }
             }
         }))
+    }
+}
+
+/// Test builds: the lowest native stack address the interpreter reached, to
+/// measure what one level costs (`tests.rs` `native_stack_per_level`).
+#[cfg(test)]
+pub(crate) mod stack_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LOW: Cell<usize> = const { Cell::new(usize::MAX) };
+        static PEAK: Cell<u32> = const { Cell::new(0) };
+    }
+
+    #[inline(never)]
+    pub fn note(levels: u32) {
+        let marker = 0u8;
+        let at = std::ptr::addr_of!(marker) as usize;
+        LOW.with(|l| l.set(l.get().min(at)));
+        PEAK.with(|p| p.set(p.get().max(levels)));
+    }
+
+    /// Start measuring: the current stack address.
+    #[inline(never)]
+    pub fn start() -> usize {
+        LOW.with(|l| l.set(usize::MAX));
+        PEAK.with(|p| p.set(0));
+        let marker = 0u8;
+        std::ptr::addr_of!(marker) as usize
+    }
+
+    /// Bytes of stack used since `start`, and the most levels in use.
+    pub fn used(start: usize) -> (usize, u32) {
+        (LOW.with(|l| start.saturating_sub(l.get())), PEAK.with(Cell::get))
     }
 }

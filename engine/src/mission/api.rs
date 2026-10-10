@@ -30,24 +30,55 @@ pub(crate) fn player_value(p: u8) -> Value {
     Value::UserData(UserData::new(UD_PLAYER, p as i32, 0, 0))
 }
 
+/// The largest cell coordinate a script value holds (CPos, CVec): far beyond
+/// any map, and small enough that `cell * CELL` and sums of two stay in i32.
+pub(crate) const MAX_SCRIPT_CELL: i32 = 1 << 20;
+/// The largest world coordinate or distance a script value holds (WPos, WVec,
+/// WDist), likewise.
+pub(crate) const MAX_SCRIPT_WORLD: i32 = 1 << 29;
+
+const fn cells(v: i32) -> i32 {
+    if v > MAX_SCRIPT_CELL {
+        MAX_SCRIPT_CELL
+    } else if v < -MAX_SCRIPT_CELL {
+        -MAX_SCRIPT_CELL
+    } else {
+        v
+    }
+}
+
+const fn world(v: i32) -> i32 {
+    if v > MAX_SCRIPT_WORLD {
+        MAX_SCRIPT_WORLD
+    } else if v < -MAX_SCRIPT_WORLD {
+        -MAX_SCRIPT_WORLD
+    } else {
+        v
+    }
+}
+
+// Script positions, vectors and distances are clamped to the ranges above, so
+// the engine's arithmetic on them (cell centres, map offsets, distances) never
+// overflows whatever a script computes.
+
 pub(crate) fn cpos(x: i32, y: i32) -> Value {
-    Value::UserData(UserData::new(UD_CPOS, x, y, 0))
+    Value::UserData(UserData::new(UD_CPOS, cells(x), cells(y), 0))
 }
 
 pub(crate) fn wpos(x: i32, y: i32, z: i32) -> Value {
-    Value::UserData(UserData::new(UD_WPOS, x, y, z))
+    Value::UserData(UserData::new(UD_WPOS, world(x), world(y), world(z)))
 }
 
 pub(crate) fn cvec(x: i32, y: i32) -> Value {
-    Value::UserData(UserData::new(UD_CVEC, x, y, 0))
+    Value::UserData(UserData::new(UD_CVEC, cells(x), cells(y), 0))
 }
 
 pub(crate) fn wvec(x: i32, y: i32, z: i32) -> Value {
-    Value::UserData(UserData::new(UD_WVEC, x, y, z))
+    Value::UserData(UserData::new(UD_WVEC, world(x), world(y), world(z)))
 }
 
 pub(crate) fn wdist(l: i32) -> Value {
-    Value::UserData(UserData::new(UD_WDIST, l, 0, 0))
+    Value::UserData(UserData::new(UD_WDIST, world(l), 0, 0))
 }
 
 pub(crate) fn angle(a: i32) -> Value {
@@ -634,27 +665,29 @@ impl Host for Ctx<'_> {
         }
     }
 
+    /// Position, vector and distance arithmetic. OpenRA's are C# ints, which
+    /// wrap; so do these (and i32::MIN / -1 never traps).
     fn arith(&mut self, op: BinOp, a: &Value, b: &Value) -> Option<Value> {
         let int = |v: &Value| v.to_num().map(to_int);
         match (a, b) {
             (Value::UserData(x), Value::UserData(y)) => match (x.kind, y.kind, op) {
-                (UD_CPOS, UD_CVEC, BinOp::Add) => Some(cpos(x.a + y.a, x.b + y.b)),
-                (UD_CVEC, UD_CPOS, BinOp::Add) => Some(cpos(x.a + y.a, x.b + y.b)),
-                (UD_CPOS, UD_CVEC, BinOp::Sub) => Some(cpos(x.a - y.a, x.b - y.b)),
-                (UD_CPOS, UD_CPOS, BinOp::Sub) => Some(cvec(x.a - y.a, x.b - y.b)),
-                (UD_CVEC, UD_CVEC, BinOp::Add) => Some(cvec(x.a + y.a, x.b + y.b)),
-                (UD_CVEC, UD_CVEC, BinOp::Sub) => Some(cvec(x.a - y.a, x.b - y.b)),
-                (UD_WPOS, UD_WVEC, BinOp::Add) => Some(wpos(x.a + y.a, x.b + y.b, x.c + y.c)),
-                (UD_WPOS, UD_WVEC, BinOp::Sub) => Some(wpos(x.a - y.a, x.b - y.b, x.c - y.c)),
-                (UD_WPOS, UD_WPOS, BinOp::Sub) => Some(wvec(x.a - y.a, x.b - y.b, x.c - y.c)),
-                (UD_WVEC, UD_WVEC, BinOp::Add) => Some(wvec(x.a + y.a, x.b + y.b, x.c + y.c)),
-                (UD_WVEC, UD_WVEC, BinOp::Sub) => Some(wvec(x.a - y.a, x.b - y.b, x.c - y.c)),
-                (UD_WDIST, UD_WDIST, BinOp::Add) => Some(wdist(x.a + y.a)),
-                (UD_WDIST, UD_WDIST, BinOp::Sub) => Some(wdist(x.a - y.a)),
+                (UD_CPOS, UD_CVEC, BinOp::Add) => Some(cpos(x.a.wrapping_add(y.a), x.b.wrapping_add(y.b))),
+                (UD_CVEC, UD_CPOS, BinOp::Add) => Some(cpos(x.a.wrapping_add(y.a), x.b.wrapping_add(y.b))),
+                (UD_CPOS, UD_CVEC, BinOp::Sub) => Some(cpos(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b))),
+                (UD_CPOS, UD_CPOS, BinOp::Sub) => Some(cvec(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b))),
+                (UD_CVEC, UD_CVEC, BinOp::Add) => Some(cvec(x.a.wrapping_add(y.a), x.b.wrapping_add(y.b))),
+                (UD_CVEC, UD_CVEC, BinOp::Sub) => Some(cvec(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b))),
+                (UD_WPOS, UD_WVEC, BinOp::Add) => Some(wpos(x.a.wrapping_add(y.a), x.b.wrapping_add(y.b), x.c.wrapping_add(y.c))),
+                (UD_WPOS, UD_WVEC, BinOp::Sub) => Some(wpos(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b), x.c.wrapping_sub(y.c))),
+                (UD_WPOS, UD_WPOS, BinOp::Sub) => Some(wvec(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b), x.c.wrapping_sub(y.c))),
+                (UD_WVEC, UD_WVEC, BinOp::Add) => Some(wvec(x.a.wrapping_add(y.a), x.b.wrapping_add(y.b), x.c.wrapping_add(y.c))),
+                (UD_WVEC, UD_WVEC, BinOp::Sub) => Some(wvec(x.a.wrapping_sub(y.a), x.b.wrapping_sub(y.b), x.c.wrapping_sub(y.c))),
+                (UD_WDIST, UD_WDIST, BinOp::Add) => Some(wdist(x.a.wrapping_add(y.a))),
+                (UD_WDIST, UD_WDIST, BinOp::Sub) => Some(wdist(x.a.wrapping_sub(y.a))),
                 (UD_WDIST, UD_WDIST, BinOp::Lt) => Some(Value::Bool(x.a < y.a)),
                 (UD_WDIST, UD_WDIST, BinOp::Le) => Some(Value::Bool(x.a <= y.a)),
-                (UD_ANGLE, UD_ANGLE, BinOp::Add) => Some(angle(x.a + y.a)),
-                (UD_ANGLE, UD_ANGLE, BinOp::Sub) => Some(angle(x.a - y.a)),
+                (UD_ANGLE, UD_ANGLE, BinOp::Add) => Some(angle(x.a.wrapping_add(y.a))),
+                (UD_ANGLE, UD_ANGLE, BinOp::Sub) => Some(angle(x.a.wrapping_sub(y.a))),
                 _ => None,
             },
             (Value::UserData(x), n) | (n, Value::UserData(x)) if matches!(op, BinOp::Mul) => {
@@ -672,9 +705,9 @@ impl Host for Ctx<'_> {
                     return None;
                 }
                 match x.kind {
-                    UD_CVEC => Some(cvec(x.a / k, x.b / k)),
-                    UD_WVEC => Some(wvec(x.a / k, x.b / k, x.c / k)),
-                    UD_WDIST => Some(wdist(x.a / k)),
+                    UD_CVEC => Some(cvec(x.a.wrapping_div(k), x.b.wrapping_div(k))),
+                    UD_WVEC => Some(wvec(x.a.wrapping_div(k), x.b.wrapping_div(k), x.c.wrapping_div(k))),
+                    UD_WDIST => Some(wdist(x.a.wrapping_div(k))),
                     _ => None,
                 }
             }
@@ -684,9 +717,9 @@ impl Host for Ctx<'_> {
 
     fn negate(&mut self, obj: UserData) -> Option<Value> {
         match obj.kind {
-            UD_CVEC => Some(cvec(-obj.a, -obj.b)),
-            UD_WVEC => Some(wvec(-obj.a, -obj.b, -obj.c)),
-            UD_WDIST => Some(wdist(-obj.a)),
+            UD_CVEC => Some(cvec(obj.a.wrapping_neg(), obj.b.wrapping_neg())),
+            UD_WVEC => Some(wvec(obj.a.wrapping_neg(), obj.b.wrapping_neg(), obj.c.wrapping_neg())),
+            UD_WDIST => Some(wdist(obj.a.wrapping_neg())),
             _ => None,
         }
     }
@@ -920,7 +953,8 @@ impl Ctx<'_> {
             (Global::DateTime, "TimeLimit") => {
                 let t = value.to_num().map(to_int).ok_or_else(|| LuaError::runtime("DateTime.TimeLimit must be a number"))?;
                 // OpenRA: the time limit counts from now; 0 switches it off.
-                self.m.time_limit = TimeLimit { end: if t <= 0 { 0 } else { self.w.tick + t as u32 }, warned: Vec::new(), expired: false };
+                self.m.time_limit =
+                    TimeLimit { end: if t <= 0 { 0 } else { self.w.tick.saturating_add(t as u32) }, warned: Vec::new(), expired: false };
                 Ok(())
             }
             (Global::DateTime, "TimeLimitNotification") => Ok(()),
@@ -1353,7 +1387,7 @@ impl Ctx<'_> {
             F::CVecNew => one(cvec(a.int(0)? as i32, a.int(1)? as i32)),
             F::WVecNew => one(wvec(a.int(0)? as i32, a.int(1)? as i32, a.int(2)? as i32)),
             F::WDistNew => one(wdist(a.int(0)? as i32)),
-            F::WDistFromCells => one(wdist(a.int(0)? as i32 * CELL)),
+            F::WDistFromCells => one(wdist((a.int(0)? as i32).saturating_mul(CELL))),
             F::AngleNew => one(angle(a.int(0)? as i32)),
             F::HSLColorNew => {
                 let (h, s, l) = (a.int(0)?.clamp(0, 255), a.int(1)?.clamp(0, 255), a.int(2)?.clamp(0, 255));
@@ -1390,14 +1424,14 @@ impl Ctx<'_> {
     pub(crate) fn collection(&mut self, lua: &mut Lua, a: &A, i: usize) -> R<Vec<Value>> {
         let t = a.table(i)?;
         let items = lua.sequence(t);
-        lua.charge(items.len())?;
+        lua.charge(items.len() as u64)?;
         Ok(items)
     }
 
     /// Run `f` with no arguments `delay` ticks from now (after the current tick's scripts).
     pub(crate) fn later(&mut self, f: Value, delay: i64) {
         let seq = self.m.next_seq();
-        let tick = self.w.tick + delay.max(0) as u32;
+        let tick = self.w.tick.saturating_add(delay.clamp(0, u32::MAX as i64) as u32);
         self.m.delayed.push(Delayed { tick, seq, func: f });
     }
 

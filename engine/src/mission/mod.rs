@@ -573,6 +573,12 @@ pub(crate) fn error_text(e: &LuaError) -> String {
     e.report()
 }
 
+/// The script value ranges (cells, world units) for tests.
+#[cfg(test)]
+pub(crate) fn api_limits() -> (i32, i32) {
+    (api::MAX_SCRIPT_CELL, api::MAX_SCRIPT_WORLD)
+}
+
 #[cfg(test)]
 impl World {
     /// Tests: run a chunk of Lua in the mission's interpreter, with the API.

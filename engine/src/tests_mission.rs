@@ -474,3 +474,58 @@ fn coop_missions_agree_between_their_players() {
     assert!(bad(vec!["Allies1", "Allies1"], 0).contains("taken twice"));
     assert!(bad(vec!["Allies1"], 1).contains("local player"));
 }
+
+/// Host round trips (`Utils.Do` calling back into Lua) nest the mission API's
+/// frames between the interpreter's: they take HOST_LEVELS levels each, which
+/// must keep MAX_LEVELS inside the interpreter's stack bound, and unbounded
+/// round trips end in a "stack overflow" error within 512 KiB of stack.
+#[test]
+fn host_round_trips_fit_the_native_stack() {
+    use crate::lua::interp::stack_probe;
+    let measure = start("allies-01", None);
+    let h = std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let mut w = measure;
+            let begin = stack_probe::start();
+            w.mission_exec("local function f(n) if n == 0 then return end Utils.Do({ 1 }, function() f(n - 1) end) end f(25)").unwrap();
+            let (used, levels) = stack_probe::used(begin);
+            assert!(levels > 200, "only {levels} levels");
+            crate::lua::tests::assert_levels_fit("host round trips", used, levels);
+        })
+        .unwrap();
+    h.join().unwrap();
+    let deep = start("allies-01", None);
+    let h = std::thread::Builder::new()
+        .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { 512 << 10 })
+        .spawn(move || {
+            let mut w = deep;
+            let e = w.mission_exec("local function f() Utils.Do({ 1 }, function() f() end) end f()").unwrap_err();
+            assert!(e.contains("stack overflow"), "{e}");
+            let e = w.mission_exec("local function f() Utils.Do({ 1 }, function() return ((((((((f())))))))) end) end f()").unwrap_err();
+            assert!(e.contains("stack overflow"), "{e}");
+        })
+        .unwrap();
+    h.join().unwrap();
+}
+
+/// Script positions, vectors and distances stay in a range the engine's
+/// arithmetic cannot overflow, whatever a script computes (OpenRA's are C#
+/// ints; extreme values clamp here instead of wrapping into the map).
+#[test]
+fn script_positions_never_overflow() {
+    let mut w = start("allies-01", None);
+    let max = crate::mission::api_limits().0;
+    assert_eq!(lua_in(&mut w, "return CPos.New(1e300, -1e300).X"), max.to_string());
+    assert_eq!(lua_in(&mut w, "return (CPos.New(2^31, 0) + CVec.New(2^31, 0)).X"), max.to_string());
+    assert_eq!(lua_in(&mut w, "return WDist.FromCells(2^31).Length"), crate::mission::api_limits().1.to_string());
+    assert_eq!(lua_in(&mut w, "return (WVec.New(-2^31, 0, 0) / -1).X"), crate::mission::api_limits().1.to_string());
+    assert_eq!(lua_in(&mut w, "return (-WDist.New(-2^31)).Length"), crate::mission::api_limits().1.to_string());
+    // Using them is safe too: an actor ordered far off the map, a huge delay.
+    lua_in(&mut w, "local a = Actor.Create('e1', true, { Owner = Player.GetPlayer('Greece'), Location = CPos.New(60, 50) }) a.Move(CPos.New(1e300, 1e300), 2^40)");
+    lua_in(&mut w, "Trigger.AfterDelay(1e300, function() end) Reinforcements.Reinforce(Player.GetPlayer('Greece'), { 'e1', 'e1' }, { CPos.New(60, 50) }, 2^40)");
+    for _ in 0..50 {
+        w.step();
+    }
+    assert_eq!(error_of(&w), None);
+}

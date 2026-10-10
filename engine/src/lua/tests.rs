@@ -250,8 +250,8 @@ fn runaway_scripts_stop_deterministically() {
 
 #[test]
 fn deep_recursion_fits_in_a_small_stack() {
-    // The WebAssembly stack is about 1 MiB: the depth limit must hold within
-    // half of it in an optimised build (debug builds use far bigger frames).
+    // The WebAssembly stack is about 1 MiB: the limits must hold within half
+    // of it in an optimised build (debug builds use far bigger frames).
     let h = std::thread::Builder::new()
         .stack_size(if cfg!(debug_assertions) { 32 << 20 } else { 512 << 10 })
         .spawn(|| {
@@ -259,6 +259,14 @@ fn deep_recursion_fits_in_a_small_stack() {
             assert!(e.message().contains("stack overflow"));
             let e = run("local function f(t) return {f({t})} end return f({})").unwrap_err();
             assert!(e.message().contains("stack overflow"));
+            // Recursion inside the deepest expressions the parser takes, and
+            // through library calls: the level budget stops it first.
+            let src = format!("local function f(n) return {}f(n + 1){} end return f(1)", "(1 + ".repeat(45), ")".repeat(45));
+            assert!(run(&src).unwrap_err().message().contains("stack overflow"));
+            // pcall turns the overflow into a value at the deepest level; it comes back up.
+            assert!(eval("local function f(n) return select(2, pcall(f, n + 1)) end return f(1)").contains("stack overflow"));
+            let e = run("local function f(t) table.sort({1, 2, 3}, function(a, b) f(t) return a < b end) end f(1)").unwrap_err();
+            assert!(e.message().contains("stack overflow"), "{}", e.message());
             // Deeply nested expressions are refused by the parser.
             let src = format!("return {}1{}", "(".repeat(300), ")".repeat(300));
             assert!(run(&src).unwrap_err().message().contains("syntax levels"));
@@ -399,4 +407,93 @@ fn host_functions_objects_and_arithmetic() {
     assert_eq!(r[0].to_text().unwrap(), "11,22 11 6 true five true");
     let e = lua.exec(&mut Pos, "host.lua", "local p = Pos.New(1, 1) p.X = 3").unwrap_err();
     assert_eq!(e.message(), "host.lua:1: read only");
+}
+
+/// The stack one level costs, measured in this build for the deepest kinds
+/// of nesting (expressions, Lua calls, library calls; host round trips are
+/// measured in tests_mission.rs). Every kind must fit MAX_LEVELS levels in
+/// `STACK_FOR_LEVELS` bytes, so a run never uses more native stack than that:
+/// with the caller's frames it stays inside 512 KiB, half the 1 MiB
+/// WebAssembly stack. (An optimised build measured about 560 to 680 bytes
+/// per level.)
+pub(crate) const STACK_FOR_LEVELS: usize = 384 << 10;
+
+pub(crate) fn assert_levels_fit(what: &str, used: usize, levels: u32) {
+    let per_level = used as f64 / levels.max(1) as f64;
+    let worst = per_level * MAX_LEVELS as f64;
+    eprintln!("{what}: {used} bytes for {levels} levels, {per_level:.0} per level, {worst:.0} for MAX_LEVELS");
+    if !cfg!(debug_assertions) {
+        assert!(worst <= STACK_FOR_LEVELS as f64, "{what}: {worst:.0} bytes for MAX_LEVELS levels, more than {STACK_FOR_LEVELS}");
+    }
+}
+
+#[test]
+fn native_stack_per_level() {
+    use super::interp::stack_probe;
+    let h = std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let cases = [
+                ("nested parentheses", format!("return {}1{}", "(".repeat(95), ")".repeat(95))),
+                ("Lua calls", "local function f(n) if n == 0 then return 0 end return 1 + f(n - 1) end return f(70)".to_string()),
+                (
+                    "library calls",
+                    "local function f(n) if n == 0 then return 0 end return select(2, pcall(f, n - 1)) end return f(55)".to_string(),
+                ),
+                (
+                    "calls in nested expressions",
+                    format!(
+                        "local function f(n) if n == 0 then return 0 end return {}f(n - 1){} end return f(10)",
+                        "(1 + ".repeat(20),
+                        ")".repeat(20)
+                    ),
+                ),
+            ];
+            for (what, src) in cases {
+                let start = stack_probe::start();
+                run(&src).unwrap_or_else(|e| panic!("{what}: {}", e.message()));
+                let (used, levels) = stack_probe::used(start);
+                assert!(levels >= 90, "{what}: only {levels} levels");
+                assert_levels_fit(what, used, levels);
+            }
+        })
+        .unwrap();
+    h.join().unwrap();
+}
+
+/// Integers from scripts can be anything a double holds: sizes, counts and
+/// positions near 2^62 or +-1e300 are refused or clamped, never wrapped into
+/// a huge allocation or a panic.
+#[test]
+fn huge_integers_never_overflow() {
+    for n in ["2^62", "2^63", "1e300", "-1e300", "-2^63"] {
+        let src = format!("return string.rep('ab', {n})");
+        let r = run(&src);
+        if n.starts_with('-') {
+            assert_eq!(eval(&src), "");
+        } else {
+            assert!(r.unwrap_err().message().contains("string length overflow"), "{n}");
+        }
+        // unpack over an enormous range: refused, whichever end is huge.
+        let e = run(&format!("return unpack({{}}, -({n}), {n})"));
+        if n.starts_with('-') {
+            assert!(e.unwrap().is_empty(), "{n}: i > j gives nothing");
+        } else {
+            assert!(e.unwrap_err().message().contains("too many results"), "{n}");
+        }
+        // Positions saturate: from before the start to past the end.
+        assert_eq!(eval(&format!("return string.sub('abc', -({n}), {n})")), if n.starts_with('-') { "" } else { "abc" });
+        assert_eq!(eval(&format!("return (string.find('abc', 'b', -({n})))")), if n.starts_with('-') { "nil" } else { "2" });
+        assert_eq!(eval(&format!("return select('#', string.byte('abc', -({n}), {n}))")), if n.starts_with('-') { "0" } else { "3" });
+        assert!(run(&format!("return select(-({n}), 1, 2)")).is_err() == !n.starts_with('-'), "{n}");
+        // table.concat to the largest index ends (at the first missing value).
+        assert!(run(&format!("return table.concat({{'a'}}, '', 1, {n})")).is_err() == !n.starts_with('-') || n == "-2^63");
+    }
+    // The last possible index ends the loop instead of wrapping around.
+    assert_eq!(eval("local t = {} t[2^63] = 'x' return table.concat(t, '', 2^63, 2^63)"), "x");
+    // string.byte results cost budget like unpack's.
+    let mut lua = Lua::new();
+    lua.set_budget(1_000);
+    let e = lua.exec(&mut NoHost, "byte.lua", "local s = string.rep('x', 100000) return string.byte(s, 1, -1)").unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Budget);
 }

@@ -514,7 +514,9 @@ impl Ctx<'_> {
             }
             F::AAttackMove | F::AMove | F::AScriptedMove | F::AMoveIntoWorld => {
                 let (cx, cy) = a.cpos(0)?;
-                let close = if matches!(f, F::AAttackMove | F::AMove) { a.opt_int(1, 0)? as i32 } else { 0 };
+                // Cells, kept to the script cell range so `close * CELL` cannot overflow.
+                let close =
+                    if matches!(f, F::AAttackMove | F::AMove) { a.opt_int(1, 0)?.clamp(0, MAX_SCRIPT_CELL as i64) as i32 } else { 0 };
                 let cell = self.m.cell_in(cx, cy);
                 let act = match f {
                     F::AMoveIntoWorld => Act::MoveIntoWorld(cell),
@@ -621,7 +623,7 @@ impl Ctx<'_> {
                 } else {
                     None
                 };
-                let range = a.opt_int(1, 5)? as i32;
+                let range = a.opt_int(1, 5)?.clamp(0, MAX_SCRIPT_CELL as i64) as i32;
                 self.queue(h, Act::Unload { cell, range });
                 none
             }
@@ -858,7 +860,7 @@ impl Ctx<'_> {
         }
         if duration > 0 {
             let origin = self.w.actors[i].ab.chrono_return.map_or((ox, oy), |(x, y, _)| (x, y));
-            self.w.actors[i].ab.chrono_return = Some((origin.0, origin.1, self.w.tick + duration as u32));
+            self.w.actors[i].ab.chrono_return = Some((origin.0, origin.1, self.w.tick.saturating_add(duration as u32)));
         }
     }
 
@@ -1115,7 +1117,7 @@ impl Ctx<'_> {
             let seq = self.m.next_seq();
             let rest: Vec<(i32, i32)> = path.iter().skip(1).map(|&(x, y)| self.m.cell_in(x, y)).collect();
             self.m.spawns.push(PendingSpawn {
-                tick: self.w.tick + (k as i64 * interval).max(0) as u32,
+                tick: self.w.tick.saturating_add((k as i64).saturating_mul(interval).clamp(0, u32::MAX as i64) as u32),
                 seq,
                 handle: h,
                 path: rest,

@@ -32,7 +32,8 @@ fn posrelat(pos: i64, len: usize) -> i64 {
     if pos >= 0 {
         pos
     } else {
-        len as i64 + pos + 1
+        // Saturating: a position like -2^63 is simply before the start.
+        (len as i64).saturating_add(pos).saturating_add(1)
     }
 }
 
@@ -50,7 +51,7 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, a: &Args
         }
         SUpper | SLower => {
             let mut s = a.bytes(0)?;
-            lua.charge(s.len() / 16)?;
+            lua.charge((s.len() / 16) as u64)?;
             if b == SUpper {
                 s.make_ascii_uppercase();
             } else {
@@ -64,10 +65,12 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, a: &Args
             if n <= 0 || s.is_empty() {
                 return Ok(vec![Value::str("")]);
             }
-            if s.len() as i64 * n > MAX_STRING as i64 {
+            // Checked in i128: a count like 2^62 must be refused, not wrap.
+            let total = s.len() as i128 * n as i128;
+            if total > MAX_STRING as i128 {
                 return Err(LuaError::runtime("string length overflow"));
             }
-            lua.charge(s.len() * n as usize / 16)?;
+            lua.charge((total / 16) as u64)?;
             Ok(vec![lua.make_str(s.repeat(n as usize))?])
         }
         SReverse => {
@@ -83,6 +86,8 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, a: &Args
             if i > j {
                 return Ok(Vec::new());
             }
+            // Every result costs, like unpack's.
+            lua.charge((j - i) as u64)?;
             Ok(s[(i - 1) as usize..j as usize].iter().map(|&c| Value::Num(c as f64)).collect())
         }
         SChar => {
@@ -117,7 +122,7 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, a: &Args
             while src <= s.len() {
                 let mut ms = MatchState::new(&s, &p, lua.budget());
                 let r = ms.do_match(src, 0);
-                lua.charge(ms.steps)?;
+                lua.charge(ms.steps as u64)?;
                 if let Some(e) = r? {
                     let next = if e == src { e + 1 } else { e };
                     lua.raw_set(bound, Value::Num(3.0), Value::Num(next as f64))?;
@@ -146,14 +151,14 @@ fn find(lua: &mut Lua, a: &Args, find: bool) -> Result<Vec<Value>, LuaError> {
     let s = a.bytes(0)?;
     let p = a.bytes(1)?;
     let l = s.len() as i64;
-    let mut init = posrelat(a.opt_int(2, 1)?, s.len()) - 1;
+    let mut init = posrelat(a.opt_int(2, 1)?, s.len()).saturating_sub(1);
     if init < 0 {
         init = 0;
     } else if init > l {
         init = l;
     }
     let init = init as usize;
-    lua.charge(s.len() / 16)?;
+    lua.charge((s.len() / 16) as u64)?;
     if find && (a.get(3).truthy() || !has_specials(&p)) {
         // Plain search.
         if p.is_empty() {
@@ -171,7 +176,7 @@ fn find(lua: &mut Lua, a: &Args, find: bool) -> Result<Vec<Value>, LuaError> {
     loop {
         let mut ms = MatchState::new(&s, &p, lua.budget());
         let r = ms.do_match(s1, pstart);
-        lua.charge(ms.steps)?;
+        lua.charge(ms.steps as u64)?;
         if let Some(e) = r? {
             return if find {
                 let mut out = vec![Value::Num(s1 as f64 + 1.0), Value::Num(e as f64)];
@@ -204,7 +209,7 @@ fn gsub(lua: &mut Lua, host: &mut dyn Host, a: &Args) -> Result<Vec<Value>, LuaE
     while n < max_n {
         let mut ms = MatchState::new(&s, &p, lua.budget());
         let r = ms.do_match(src, pstart);
-        lua.charge(ms.steps)?;
+        lua.charge(ms.steps as u64)?;
         let e = r?;
         if let Some(e) = e {
             n += 1;
@@ -790,6 +795,6 @@ fn format(lua: &mut Lua, a: &Args) -> Result<Vec<Value>, LuaError> {
             return Err(LuaError::runtime("string length overflow"));
         }
     }
-    lua.charge(out.len() / 16)?;
+    lua.charge((out.len() / 16) as u64)?;
     Ok(vec![lua.make_str(out)?])
 }

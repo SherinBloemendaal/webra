@@ -324,7 +324,7 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, args: Ve
             }
             let n = a.int(0)?;
             let start = if n < 0 {
-                if -n > rest.len() as i64 {
+                if n.unsigned_abs() > rest.len() as u64 {
                     return Err(a.bad(0, "index out of range"));
                 }
                 rest.len() as i64 + n
@@ -375,10 +375,10 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, args: Ve
             if i > j {
                 return Ok(Vec::new());
             }
-            if j - i >= MAX_RESULTS as i64 {
-                return Err(LuaError::runtime("too many results to unpack"));
-            }
-            lua.charge((j - i) as usize)?;
+            // i <= j here; the difference can still exceed i64 (i = -2^63, j = 2^63 - 1).
+            let span =
+                j.checked_sub(i).filter(|&n| n < MAX_RESULTS as i64).ok_or_else(|| LuaError::runtime("too many results to unpack"))?;
+            lua.charge(span as u64)?;
             Ok((i..=j).map(|k| lua.raw_get(t, &Value::Num(k as f64))).collect())
         }
         Print => {
@@ -397,7 +397,7 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, args: Ve
                     if pos < 1 || pos > n as i64 + 1 {
                         return Err(a.bad(1, "position out of bounds"));
                     }
-                    lua.charge(n)?;
+                    lua.charge(n as u64)?;
                     lua.heap.tables.get_mut(t).insert_at(pos as usize, a.get(2))
                 }
                 _ => return Err(LuaError::runtime("wrong number of arguments to 'insert'")),
@@ -417,7 +417,7 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, args: Ve
             if pos < 1 || pos > n as i64 {
                 return Ok(Vec::new());
             }
-            lua.charge(n)?;
+            lua.charge(n as u64)?;
             one(lua.heap.tables.get_mut(t).remove_at(pos as usize, n))
         }
         TConcat => {
@@ -452,7 +452,11 @@ pub fn call(lua: &mut Lua, host: &mut dyn Host, b: Builtin, bound: u32, args: Ve
                 if out.len() > super::MAX_STRING {
                     return Err(LuaError::runtime("string length overflow"));
                 }
-                k += 1;
+                // j = 2^63 - 1 must end, not wrap around.
+                match k.checked_add(1) {
+                    Some(next) => k = next,
+                    None => break,
+                }
             }
             Ok(vec![lua.make_str(out)?])
         }

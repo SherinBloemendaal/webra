@@ -28,7 +28,7 @@
 
 mod ast;
 mod heap;
-mod interp;
+pub(crate) mod interp;
 mod lexer;
 mod number;
 mod parser;
@@ -36,7 +36,7 @@ mod stdlib;
 mod strlib;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use ast::BinOp;
 pub use number::{fmt_number, parse_number};
@@ -55,6 +55,20 @@ pub fn lstr(s: &str) -> LStr {
 pub const NO_TABLE: u32 = u32::MAX;
 /// Deepest call nesting (Lua functions and library calls).
 pub const MAX_DEPTH: u32 = 120;
+/// Native stack budget of one run, in levels: every recursive evaluation of
+/// an expression, block or call nests the interpreter's Rust frames, so each
+/// one takes levels and running out is a "stack overflow" error before the
+/// real stack (1 MiB in WebAssembly) can run out. Sized from measured frame
+/// costs (`tests.rs` `native_stack_per_level`: about 560 to 680 bytes per
+/// level in an optimised build) so the deepest run fits in 384 KiB.
+pub const MAX_LEVELS: u32 = 540;
+/// Levels a call into a Lua function takes (its call and block frames).
+pub const CALL_LEVELS: u32 = 3;
+/// Levels a call into a library function takes.
+pub const BUILTIN_LEVELS: u32 = 2;
+/// Levels a call into the host (the mission API) takes: its frames are the
+/// largest, and the host may call back into Lua (`Utils.Do`).
+pub const HOST_LEVELS: u32 = 8;
 /// Default instruction budget of one run.
 pub const DEFAULT_BUDGET: i64 = 5_000_000;
 /// Heap limit in slots (a table entry, a cell, a closure), roughly 16 bytes each.
@@ -356,6 +370,8 @@ pub struct Lua {
     string_lib: u32,
     budget: i64,
     depth: u32,
+    /// Native nesting in levels (`MAX_LEVELS`).
+    levels: u32,
 }
 
 impl Default for Lua {
@@ -369,7 +385,7 @@ impl Lua {
         let mut heap = Heap::default();
         let globals = heap.new_table();
         let string_lib = heap.new_table();
-        let mut lua = Lua { heap, globals, string_lib, budget: DEFAULT_BUDGET, depth: 0 };
+        let mut lua = Lua { heap, globals, string_lib, budget: DEFAULT_BUDGET, depth: 0, levels: 0 };
         stdlib::open(&mut lua);
         lua
     }
@@ -392,8 +408,9 @@ impl Lua {
     }
 
     /// Use `n` instructions of the budget (library and host functions charge for their work).
-    pub fn charge(&mut self, n: usize) -> Result<(), LuaError> {
-        self.budget -= n as i64;
+    /// Spend `n` units of the budget (saturating: a huge `n` simply runs it out).
+    pub fn charge(&mut self, n: u64) -> Result<(), LuaError> {
+        self.budget = self.budget.saturating_sub(n.min(i64::MAX as u64) as i64);
         if self.budget < 0 {
             return Err(LuaError::fatal(ErrorKind::Budget, "script exceeded its instruction budget"));
         }

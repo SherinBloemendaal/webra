@@ -18,7 +18,7 @@ impl Ctx<'_> {
         }
         let token = self.m.next_token;
         self.m.next_token += 1;
-        let end = if duration > 0 { self.w.tick + duration as u32 } else { 0 };
+        let end = if duration > 0 { self.w.tick.saturating_add(duration as u32) } else { 0 };
         self.m.conditions.entry(h).or_default().push((token, c.to_string(), end));
         self.apply_conditions(h);
         Ok(token)
