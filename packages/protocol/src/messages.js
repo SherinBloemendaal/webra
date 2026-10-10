@@ -70,6 +70,7 @@ import {
 } from './check.js';
 import { MAP_MAX_BYTES, MAP_MAX_SIZE, MAP_MIN_SIZE } from './map.js';
 import { validateGameOptions, validateLobbyOptions, validFaction } from './options.js';
+import { coopMission, validCoopMission } from './mission.js';
 
 const CLIENT_ID_MAX = 0x7fffffff;
 
@@ -316,6 +317,11 @@ const CLIENT = {
     if (!has(m, 'map')) fail('map is required (null for a generated map)');
     return { t: C2S.MAP, map: validMapRef(m.map) };
   },
+  [C2S.MISSION](m) {
+    object(m, ['t', 'mission'], 'mission');
+    if (!has(m, 'mission')) fail('mission is required (null for a skirmish)');
+    return { t: C2S.MISSION, mission: m.mission === null ? null : validCoopMission(m.mission) };
+  },
   [C2S.READY](m) {
     object(m, ['t', 'ready', 'mapHash'], 'ready');
     const mapHash = m.mapHash === null || m.mapHash === undefined ? null : matches(m.mapHash, SHA256_RE, 'mapHash');
@@ -453,7 +459,7 @@ const SERVER = {
     return out;
   },
   [S2C.LOBBY](m) {
-    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators', 'resume'], 'lobby');
+    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators', 'resume', 'mission'], 'lobby');
     if (!Array.isArray(m.slots) || m.slots.length < MIN_PLAYERS || m.slots.length > MAX_PLAYERS) {
       fail('lobby.slots must list 2 to 8 slots');
     }
@@ -486,6 +492,11 @@ const SERVER = {
     };
     // A lobby that resumes a saved online game: which one, and whose places still wait.
     if (has(m, 'resume')) out.resume = validResumeInfo(m.resume);
+    // A co-op mission instead of a skirmish (no map file then).
+    if (has(m, 'mission')) {
+      out.mission = validCoopMission(m.mission, 'lobby.mission');
+      if (map !== null) fail('a mission lobby has no map file');
+    }
     return out;
   },
   [S2C.CHAT](m) {
@@ -500,7 +511,7 @@ const SERVER = {
     return out;
   },
   [S2C.START](m) {
-    object(m, ['t', 'seed', 'options', 'map', 'players', 'delay', 'resume'], 'start');
+    object(m, ['t', 'seed', 'options', 'map', 'players', 'delay', 'resume', 'mission'], 'start');
     const options = validateGameOptions(m.options);
     if (!Array.isArray(m.players) || m.players.length !== options.players.length) {
       fail('start.players must match options.players');
@@ -530,6 +541,14 @@ const SERVER = {
       players,
       delay: int(m.delay, 1, 25, 'delay'),
     };
+    // A co-op mission: every player is a person taking the mission's playable players in order.
+    if (has(m, 'mission')) {
+      out.mission = validCoopMission(m.mission, 'start.mission');
+      if (out.map !== null) fail('a mission has no map file');
+      if (players.length !== coopMission(out.mission.id).players.length || players.some((p) => p.type !== 'human')) {
+        fail('every playable player of a co-op mission is a person');
+      }
+    }
     // A resumed online save: the game continues after `ticks` ticks whose state hash is `hash`.
     if (has(m, 'resume')) {
       object(m.resume, ['ticks', 'hash'], 'start.resume');
@@ -729,6 +748,7 @@ export const client = {
   slot: (slot, fields = {}) => ({ t: C2S.SLOT, slot, ...fields }),
   options: (options) => ({ t: C2S.OPTIONS, options }),
   map: (map) => ({ t: C2S.MAP, map }),
+  mission: (mission) => ({ t: C2S.MISSION, mission }),
   ready: (ready, mapHash) => ({ t: C2S.READY, ready, mapHash }),
   chat: (textValue, team = false) => (team ? { t: C2S.CHAT, text: textValue, team: true } : { t: C2S.CHAT, text: textValue }),
   start: () => ({ t: C2S.START }),

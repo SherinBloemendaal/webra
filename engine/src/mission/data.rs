@@ -19,6 +19,9 @@ pub struct MissionData {
     pub campaign: String,
     #[serde(default)]
     pub author: String,
+    /// OpenRA offers it in the multiplayer lobby (a co-op mission).
+    #[serde(default)]
+    pub lobby: bool,
     #[serde(default)]
     pub source: String,
     #[serde(default)]

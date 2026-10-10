@@ -242,6 +242,8 @@ export const C2S = Object.freeze({
   SLOT: 'slot',
   OPTIONS: 'options',
   MAP: 'map',
+  /** Host: play a co-op mission (protocol mission.js) instead of a skirmish, or back (null). */
+  MISSION: 'mission',
   READY: 'ready',
   CHAT: 'chat',
   START: 'start',

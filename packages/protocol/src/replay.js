@@ -15,7 +15,7 @@ import { fail, int, isPlainObject, object, oneOf, ProtocolError, text, utf8Lengt
 import { validFrameOrders } from './messages.js';
 import { parseMap, sha256Hex } from './map.js';
 import { validateGameOptions } from './options.js';
-import { validateMissionOptions, validMissionRef } from './mission.js';
+import { coopMission, validateMissionOptions, validCoopMission, validMissionRef } from './mission.js';
 
 export const REPLAY_FORMAT = 'webra-replay';
 export const REPLAY_VERSION = 1;
@@ -74,6 +74,13 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
     if (out.player !== 0) fail('a mission is played by player 0');
     if (v.map !== null) fail('a mission has no map file');
     out.mission = validMissionRef(v.mission, 'mission');
+  } else if (v.mission !== undefined && out.mode === 'online') {
+    // A co-op mission played online: its mission file and options; every player a person.
+    out.mission = validCoopMission(v.mission, 'mission');
+    if (v.map !== null) fail('a mission has no map file');
+    if (players !== coopMission(out.mission.id).players.length || out.options.players.some((p) => p.type !== 'human')) {
+      fail('every playable player of a co-op mission is a person');
+    }
   } else if (v.mission !== undefined) {
     fail('only missions carry a mission record');
   }

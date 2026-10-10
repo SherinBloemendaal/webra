@@ -72,6 +72,9 @@ export {
 } from './replay.js';
 export { assignSpawns } from './spawns.js';
 export {
+  COOP_MISSIONS,
+  coopMission,
+  validCoopMission,
   MISSION_ID_RE,
   MISSION_OPTION_KEYS,
   MISSION_OPTION_RE,

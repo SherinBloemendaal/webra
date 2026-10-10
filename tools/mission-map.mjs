@@ -70,6 +70,8 @@ process.stdout.write(
   JSON.stringify({
     title: String(childValue(yaml, 'Title', '')).trim(),
     author: String(childValue(yaml, 'Author', '')).trim(),
+    // Where OpenRA offers the map: MissionSelector, Lobby (co-op missions) or both.
+    visibility: String(childValue(yaml, 'Visibility', '')).split(',').map((v) => v.trim()).filter(Boolean),
     tileset,
     origin: [bx, by],
     map: {

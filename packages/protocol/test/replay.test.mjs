@@ -236,3 +236,25 @@ test('mission records are checked strictly', async () => {
   ];
   for (const r of bad) assert.equal((await check(r)).ok, false, JSON.stringify(r).slice(0, 200));
 });
+
+test('online co-op missions carry their mission and options', async () => {
+  const { COOP_MISSIONS } = await import('../src/index.js');
+  const m = COOP_MISSIONS.find((x) => x.id === 'evacuation');
+  const coop = {
+    ...base(),
+    mode: 'online',
+    options: { ...OPTIONS, players: OPTIONS.players.map((p) => ({ ...p, type: 'human', name: `P${p.slot}`, difficulty: undefined })).map(({ difficulty: _d, ...p }) => p) },
+    mission: { id: 'evacuation', hash: m.hash, options: { difficulty: 'easy' } },
+  };
+  const r = await check(coop);
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.replay.mission, { id: 'evacuation', hash: m.hash, options: { difficulty: 'easy' } });
+  for (const bad of [
+    { ...coop, mission: { ...coop.mission, hash: 'b'.repeat(64) } },
+    { ...coop, mission: { ...coop.mission, id: 'allies-01' } },
+    { ...coop, mission: { ...coop.mission, options: { difficulty: 'tough' } } },
+    { ...coop, options: OPTIONS },
+  ]) {
+    assert.equal((await check(bad)).ok, false, JSON.stringify(bad.mission));
+  }
+});

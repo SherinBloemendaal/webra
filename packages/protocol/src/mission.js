@@ -8,6 +8,35 @@
 
 import { GAME_SPEEDS, SEED_MAX, SHA256_RE } from './constants.js';
 import { fail, int, isPlainObject, matches, object, oneOf } from './check.js';
+import { COOP_MISSIONS } from './coop-missions.js';
+
+export { COOP_MISSIONS };
+
+/** The co-op mission with `id`, or null. */
+export function coopMission(id) {
+  return COOP_MISSIONS.find((m) => m.id === id) ?? null;
+}
+
+/**
+ * A co-op mission played online (lobby, start, online replays and saves):
+ * `{ id, hash, options }`, one of COOP_MISSIONS with its file's hash and a
+ * value for every one of its options. Returns a fresh object; throws
+ * ProtocolError otherwise.
+ */
+export function validCoopMission(v, what = 'mission') {
+  object(v, ['id', 'hash', 'options'], what);
+  const id = matches(v.id, MISSION_ID_RE, `${what}.id`);
+  const m = coopMission(id);
+  if (!m) fail(`${what}: ${id} is not a co-op mission`);
+  if (matches(v.hash, SHA256_RE, `${what}.hash`) !== m.hash) fail(`${what}: the mission file is not this version's`);
+  if (!isPlainObject(v.options)) fail(`${what}.options must be an object`);
+  const options = {};
+  for (const k of Object.keys(v.options)) if (!Object.hasOwn(m.options, k)) fail(`${what}.options: unknown option ${k}`);
+  for (const [k, o] of Object.entries(m.options)) {
+    options[k] = Object.hasOwn(v.options, k) ? oneOf(v.options[k], o.values, `${what}.options.${k}`) : o.default;
+  }
+  return { id, hash: m.hash, options };
+}
 
 /** Mission ids: the file names of apps/game/missions. */
 export const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
