@@ -21,7 +21,7 @@ import {
 import pkg from '../package.json' with { type: 'json' };
 import { checkCsrf, checkOrigin, errorResponse, HttpError, json, jsonText, readJson, readText, withCookies } from './http.js';
 import { listSessions, pruneSessions } from './directory.js';
-import { checkJsonType, getMap, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
+import { checkJsonType, getMap, getMapThumbnail, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
 import { pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
@@ -265,6 +265,11 @@ async function route(ctx) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     const user = await requireRelay(ctx);
     return scoresRange(request, env, ctx.ip, user, { salt: ctx.salt() });
+  }
+  m = /^\/api\/maps\/([^/]+)\/thumbnail\.png$/.exec(path);
+  if (m) {
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    return getMapThumbnail(env, m[1]);
   }
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {

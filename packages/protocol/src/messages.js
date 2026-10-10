@@ -69,6 +69,7 @@ import {
   truncate,
   utf8Length,
 } from './check.js';
+import { validateLockedOptions, validateMapOptions, validateMapPlayers } from './mapsetup.js';
 import { MAP_MAX_BYTES, MAP_MAX_SIZE, MAP_MIN_SIZE } from './map.js';
 import { validateGameOptions, validateLobbyOptions, validFaction } from './options.js';
 import { coopMission, validCoopMission } from './mission.js';
@@ -228,7 +229,8 @@ const MAP_REF_KEYS = ['id', 'hash', 'name', 'modded'];
  * and `shared`: a map the host shared with this session only, see
  * docs/security.md "Map sharing").
  */
-const MAP_INFO_KEYS = [...MAP_REF_KEYS, 'players', 'author', 'width', 'height', 'bytes', 'shared'];
+const MAP_INFO_KEYS = [...MAP_REF_KEYS, 'players', 'author', 'width', 'height', 'bytes', 'shared', 'setup'];
+const MAP_SETUP_KEYS = ['players', 'options', 'lockedOptions'];
 
 /**
  * Map reference in a lobby: null for a generated map, else a stored map. The
@@ -251,6 +253,16 @@ export function validMapRef(v, what = 'map', full = false) {
     out.height = int(v.height, MAP_MIN_SIZE, MAP_MAX_SIZE, `${what}.height`);
     out.bytes = int(v.bytes, 1, MAP_MAX_BYTES, `${what}.bytes`);
     out.shared = bool(v.shared, `${what}.shared`);
+    // The map's game setup (map format version 2, mapsetup.js): online rooms apply and enforce it.
+    if (has(v, 'setup')) {
+      object(v.setup, MAP_SETUP_KEYS, `${what}.setup`);
+      const options = validateMapOptions(v.setup.options ?? {});
+      out.setup = {
+        players: validateMapPlayers(v.setup.players ?? [], out.players),
+        options,
+        lockedOptions: validateLockedOptions(v.setup.lockedOptions ?? [], options),
+      };
+    }
   }
   return out;
 }

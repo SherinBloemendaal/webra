@@ -17,7 +17,8 @@
 // the session serves them to its own members only (session.js). Publishing a
 // map that was shared before lists it.
 
-import { GAME_VERSION, incompatibleMapMessage, MAP_ID_RE, MAP_MAX_BYTES, MAP_VERSIONS, parseMap, SHA256_RE, sha256Hex } from '@webra/protocol';
+import { GAME_VERSION, incompatibleMapMessage, MAP_ID_RE, MAP_MAX_BYTES, MAP_VERSIONS, mapThumbnail, parseMap, SHA256_RE, sha256Hex } from '@webra/protocol';
+import { encodePng } from './png.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { randomHex } from './crypto.js';
 import { engine, EngineTrap } from './engine.js';
@@ -130,7 +131,7 @@ export async function listMaps(env, { judge, versions = MAP_VERSIONS, now = Date
     console.error('map upgrade pass failed', err?.name, err?.message);
   }
   const { results } = await env.DB.prepare(
-    `SELECT id, name, author, players, width, height, hash, modded, downloads, created_at
+    `SELECT id, name, author, players, width, height, hash, modded, downloads, created_at, json_extract(json, '$.tags') AS tags
      FROM maps WHERE listed = 1 AND format_version = ?1 AND upgrade_error IS NULL ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`,
   )
     .bind(versions.current)
@@ -147,8 +148,43 @@ export async function listMaps(env, { judge, versions = MAP_VERSIONS, now = Date
       modded: r.modded === 1,
       downloads: r.downloads,
       createdAt: r.created_at,
+      tags: tagsOf(r.tags),
+      // Drawn from the map data (never from art); the hash in the URL names this version of the map.
+      thumbnail: `/api/maps/${r.id}/thumbnail.png?v=${r.hash.slice(0, 16)}`,
     })),
   );
+}
+
+function tagsOf(text) {
+  try {
+    const t = text ? JSON.parse(text) : [];
+    return Array.isArray(t) ? t.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * GET /api/maps/<id>/thumbnail.png: the listed map's thumbnail, one pixel per
+ * cell, drawn from its data alone (protocol mapThumbnail: terrain, ore and
+ * gems, actors, spawns), never from art. A map of an older format version is
+ * upgraded first, like GET /api/maps/<id>; one that cannot be is drawn as
+ * stored. Cached publicly: the list links it with the map's hash.
+ */
+export async function getMapThumbnail(env, id, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
+  if (!MAP_ID_RE.test(id)) throw new HttpError(404, 'not_found', 'No such map.');
+  const found = await rowById(env.DB, id);
+  if (!found || found.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
+  const row = (await upgradeStoredMap(env.DB, found, { judge, versions, now })) ?? found;
+  let map;
+  try {
+    map = JSON.parse(row.json);
+    const { width, height, rgba } = mapThumbnail(map);
+    const png = await encodePng(width, height, new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+    return new Response(png, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' } });
+  } catch {
+    throw new HttpError(404, 'not_found', 'This map has no thumbnail.');
+  }
 }
 
 /**
@@ -170,7 +206,9 @@ export async function getMap(env, ctx, id, { judge, versions = MAP_VERSIONS, now
   return jsonText(row.json, 200, { 'cache-control': 'public, max-age=3600' });
 }
 
-const SUMMARY_COLUMNS = 'id, name, author, hash, modded, players, width, height, listed, LENGTH(CAST(json AS BLOB)) AS bytes';
+// The game setup (map format version 2) comes out of the stored JSON: online rooms apply and enforce it.
+const SUMMARY_COLUMNS =
+  "id, name, author, hash, modded, players, width, height, listed, LENGTH(CAST(json AS BLOB)) AS bytes, json_extract(json, '$.players') AS setup_players, json_extract(json, '$.options') AS setup_options, json_extract(json, '$.lockedOptions') AS setup_locked";
 /** What upgradeStoredMap needs besides the summary. */
 const ROW_COLUMNS = `${SUMMARY_COLUMNS}, json, format_version, upgrade_error, upgrade_tried, downloads, uploader_id, used_at`;
 
@@ -187,7 +225,20 @@ function summaryOf(row) {
     height: row.height,
     bytes: row.bytes,
     shared: row.listed !== 1,
+    setup: setupOf(row),
   };
+}
+
+/** The game setup of a row: slots, options and locked options (none for a map of an older format version). */
+function setupOf(row) {
+  const parse = (text, fallback) => {
+    try {
+      return text ? JSON.parse(text) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return { players: parse(row.setup_players, []), options: parse(row.setup_options, {}), lockedOptions: parse(row.setup_locked, []) };
 }
 
 /** The row with this id, or the row an upgrade merged it into. */

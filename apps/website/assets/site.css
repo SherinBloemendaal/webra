@@ -1222,6 +1222,36 @@ code {
   color: var(--text);
 }
 
+.map-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: auto;
+  max-height: 220px;
+  object-fit: contain;
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius);
+  background: var(--bg);
+  image-rendering: pixelated;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tags li {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font: 0.75rem/1.6 var(--mono);
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;
