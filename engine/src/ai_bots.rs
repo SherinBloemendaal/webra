@@ -19,18 +19,13 @@ use crate::world::AiDifficulty;
 use serde::Deserialize;
 
 /// OpenRA's RA bot types (ModularBot@*.Type).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum BotType {
     Rush,
+    #[default]
     Normal,
     Turtle,
     Naval,
-}
-
-impl Default for BotType {
-    fn default() -> Self {
-        BotType::Normal
-    }
 }
 
 impl BotType {

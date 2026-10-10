@@ -994,7 +994,7 @@ MinimumAttackForceDelay and MoveConyardTick stay as they are); Easy waits
 twice as long, plays with an extra 25 % handicap (OpenRA's handicap, on top
 of the slot's) and leaves the Iron Curtain, Chronosphere and Sonar Pulse
 alone. Reacting slower alone did not weaken a bot: Normal AI at Easy timing
-won 8 of 16 against Normal; with the handicap 4 of 16. Settings from before
+won 8 of 16 against Normal; with the handicap 5 of 16. Settings from before
 bot types (`difficulty` only) play the Normal AI at that difficulty.
 
 **Differences from OpenRA**, all to make AI-only games end and keep the
@@ -1003,8 +1003,8 @@ engine's rules:
 - Like most skirmish AIs, the bots know where enemy structures are (squads,
   support powers), and hunt the last units of a player without structures,
   aircraft included. OpenRA's squads only see what is visible.
-- Squads attack-move onto structures, not to the edge of their weapon range:
-  the engine's units only auto-target what they see.
+- Ground squads attack-move onto structures, not to the edge of their
+  weapon range: the engine's units only auto-target what they see.
 - A squad whose leader can hit nothing (Tanya among structures, anti-air
   only aircraft left) takes another unit as leader. After a squad fled from
   a player's actors, squads prefer other enemies for three minutes.
@@ -1012,14 +1012,17 @@ engine's rules:
   always attacks.
 - Stalemate breaker: units at the base that stopped growing for two minutes
   (from minute 10) leave below SquadSize, at least 4 (any number once the
-  bot earns nothing).
+  bot earns nothing); bots that attack at any time (MinimumAttackForceDelay
+  below five minutes, all but Turtle AI) also send them after five minutes
+  without an attack force.
 - Air squads look for targets over the whole map and skip flight paths with
-  heavy anti-air (OpenRA's grid misses the map edges and its check skips
-  the safe paths); they fly to structures under the fog before attacking.
+  heavy enemy anti-air (OpenRA's grid misses the map edges, and its check
+  skips the safe paths and counts own anti-air too); they fly to structures
+  under the fog before attacking.
 - No refineries while no ore is in reach; while broke and earning nothing
-  (`ai_economy.rs`) only the power and a factory the army needs, unit
-  production below ProductionMinCashRequirement, and surplus structures sold
-  for an army or a refinery.
+  (`ai_economy.rs`) only the power, the first refinery and a factory the
+  army needs, unit production below ProductionMinCashRequirement, and
+  surplus structures sold for an army or a refinery.
 - Placement: structures spiral out from the base centre (mirrored for bases
   in the right half), refineries go where the dock is nearest to ore,
   defences use OpenRA's ordering toward the nearest enemy with mirrored
@@ -1040,29 +1043,32 @@ engine's rules:
 - Allies: an attack on an ally's structure, ore truck or MCV calls the
   bot's protection squad too.
 
-**Measurements** (`examples/bot_matrix.rs`, 16 seeds per pairing, 1v1 on
-generated 80 maps of random style, each bot both spawns, Normal difficulty,
-60 minutes at most; wins of the first bot listed, then of the second, and
-game lengths in minutes):
+**Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
+1v1 on generated 80 maps of random style with the standard tech buildings,
+each bot on both spawns, Normal difficulty, 90 minutes at most; wins of the
+first bot listed, then of the second, and game lengths in minutes):
 
 | Pairing | Wins | Unfinished | Mean | Median | Longest |
 |---|---|---|---|---|---|
-| Rush vs Rush | 4-12 | 0 | 15.3 | 12.7 | 59.9 |
-| Rush vs Normal | 11-5 | 0 | 17.2 | 14.5 | 41.8 |
-| Rush vs Turtle | 10-6 | 0 | 19.4 | 13.1 | 56.1 |
-| Rush vs Naval | 15-1 | 0 | 7.7 | 7.7 | 16.6 |
-| Normal vs Normal | 8-8 | 0 | 19.1 | 18.1 | 40.8 |
-| Normal vs Turtle | 13-3 | 0 | 26.4 | 26.5 | 54.0 |
-| Normal vs Naval | 13-3 | 0 | 13.1 | 13.1 | 24.2 |
-| Turtle vs Turtle | 5-9 | 2 (lakes, islands) | 33.3 | 34.9 | 56.5 |
-| Turtle vs Naval | 6-10 | 0 | 20.6 | 18.5 | 54.0 |
-| Naval vs Naval | 10-6 | 0 | 11.8 | 11.3 | 25.0 |
+| Rush vs Rush | 7-9 | 0 | 14.9 | 14.1 | 26.2 |
+| Rush vs Normal | 11-5 | 0 | 17.6 | 18.6 | 25.1 |
+| Rush vs Turtle | 11-5 | 0 | 24.4 | 21.0 | 66.0 |
+| Rush vs Naval | 16-0 | 0 | 8.5 | 8.0 | 19.0 |
+| Normal vs Normal | 10-6 | 0 | 22.7 | 18.1 | 65.6 |
+| Normal vs Turtle | 12-4 | 0 | 29.3 | 27.8 | 54.6 |
+| Normal vs Naval | 13-3 | 0 | 12.8 | 12.0 | 23.3 |
+| Turtle vs Turtle | 4-11 | 1 (seed 8, lakes) | 39.7 | 38.7 | 78.2 |
+| Turtle vs Naval | 3-13 | 0 | 24.4 | 24.1 | 66.1 |
+| Naval vs Naval | 8-8 | 0 | 10.9 | 10.7 | 18.5 |
 
-Two Turtle AIs can still outlast an hour on water maps: Turtle AI forms an
-attack force at most every 100000 ticks (MinimumAttackForceDelay, about 67
-minutes, first one at a random time) and otherwise only defends.
-Difficulty (Normal AI against Normal AI, same setup): Easy against Normal
-4-12, Normal against Hard 4-12, Easy against Hard 5-10 (one unfinished).
+Two Turtle AIs can outlast an hour and a half on water maps: Turtle AI forms
+an attack force at most every 100000 ticks (MinimumAttackForceDelay, about
+67 minutes, the first at a random time) and the stalemate breaker only
+sends its units once they stop growing. Difficulty (Normal AI against
+Normal AI, same setup): Easy against Normal 5-11, Normal against Hard 7-9,
+Easy against Hard 3-13. Four player free for alls on 96 maps (the engine's
+whole-game tests) end after 20 to 66 minutes, 2v2s after 9 to 49;
+`ai_vs_ai -- 3` ends after 14:44.
 
 ### Skirmish AI target choice (`engine/src/ai.rs`)
 

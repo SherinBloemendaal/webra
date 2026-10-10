@@ -24,6 +24,8 @@ use crate::world::{Order, World, TICKS_PER_SECOND};
 pub(crate) const BROKE_FUNDS: i32 = 600;
 /// An army this small (and broke) sells structures for a last army.
 const SMALL_ARMY: usize = 4;
+/// Cells around the yard whose ground components count as the base's.
+const REACH_RING: i32 = 6;
 /// Time between two sales.
 const SELL_EVERY_TICKS: u32 = 8 * TICKS_PER_SECOND;
 
@@ -61,24 +63,22 @@ fn is_army_unit(w: &World, i: usize) -> bool {
 /// Resource cells in the ground component of `player`'s base (what its ore trucks can reach).
 pub(crate) fn reachable_resources(w: &World, player: u8) -> usize {
     // The base's own cells are under its structures: take the ground
-    // component of the nearest open cell around the yard.
+    // components of the open cells around the yard (all of them: one of the
+    // nearest may be a pocket between structures and cliffs).
     let base = crate::ai::base_point(w, player);
     let (bx, by) = w.cell_of(base.0, base.1);
-    let mut comp = 0;
-    'rings: for r in 0..16 {
-        for y in by - r..=by + r {
-            for x in bx - r..=bx + r {
-                if ((x - bx).abs() == r || (y - by).abs() == r) && w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)] {
-                    comp = w.pass.component[w.map.idx(x, y)];
-                    break 'rings;
+    let mut comps: Vec<u32> = Vec::new();
+    for y in by - REACH_RING..=by + REACH_RING {
+        for x in bx - REACH_RING..=bx + REACH_RING {
+            if w.map.contains(x, y) && !w.pass.blocked[w.map.idx(x, y)] {
+                let c = w.pass.component[w.map.idx(x, y)];
+                if !comps.contains(&c) {
+                    comps.push(c);
                 }
             }
         }
     }
-    if comp == 0 {
-        return 0;
-    }
-    (0..w.map.cells()).filter(|&c| w.map.has_resource(c) && !w.pass.blocked[c] && w.pass.component[c] == comp).count()
+    (0..w.map.cells()).filter(|&c| w.map.has_resource(c) && !w.pass.blocked[c] && comps.contains(&w.pass.component[c])).count()
 }
 
 fn own_buildings(w: &World, player: u8) -> Vec<usize> {
@@ -98,15 +98,18 @@ pub(crate) fn no_income(w: &World, player: u8) -> bool {
 }
 
 /// While starving: drop queued items that do not fight on the ground
-/// (structures other than power, defences, aircraft, ships), refunding what
-/// was paid, so the money goes into the army.
+/// (structures other than power and refineries by reachable ore, defences,
+/// aircraft, ships), refunding what was paid, so the money goes into the army.
 pub(crate) fn cancel_luxuries(w: &mut World, player: u8) {
+    let ore = reachable_resources(w, player) > 0;
     for q in [QueueType::Building, QueueType::Defense, QueueType::Aircraft, QueueType::Ship] {
         let items: Vec<u16> = w.players[player as usize].queues[q as usize].items.iter().filter(|it| !it.done).map(|it| it.ty).collect();
         for ty in items {
             let power = w.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.power > 0);
             let truck = w.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some());
-            if !power && !truck {
+            // A refinery by reachable ore is the way out.
+            let refinery = ore && w.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.refinery.is_some());
+            if !power && !truck && !refinery {
                 w.cancel_production(player, ty);
             }
         }

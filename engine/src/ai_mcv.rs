@@ -13,6 +13,7 @@
 //! lobby option.
 
 use crate::ai::{count_own, own_of, rand};
+use crate::ai_base::Cell;
 use crate::ai_bots::BotConfig;
 use crate::world::{Activity, Order, World};
 
@@ -333,13 +334,7 @@ fn threats(w: &World, player: u8, side2: i32, i: usize) -> i32 {
 
 /// OpenRA GetExpansionCenter: the resource square that scores best for the
 /// mode (spot, score, square centre).
-fn expansion_center(
-    w: &mut World,
-    player: u8,
-    cfg: &BotConfig,
-    mcv: usize,
-    fallback: bool,
-) -> (Option<(i32, i32)>, i32, Option<(i32, i32)>) {
+fn expansion_center(w: &mut World, player: u8, cfg: &BotConfig, mcv: usize, fallback: bool) -> (Option<Cell>, i32, Option<Cell>) {
     let side = cfg.info.resource_map.as_ref().map_or(24, |r| r.resource_map_stride_radius * 2);
     let side2 = side * side;
     let st = &w.ai[player as usize].harvest;
@@ -401,7 +396,7 @@ fn expansion_center(
                 (sum / n as i32) >> 1
             };
             let (max_failed, failed) = (w.ai[player as usize].mcv.max_failed, w.ai[player as usize].mcv.failed);
-            let mut best: Option<(i32, (i32, i32), (i32, i32))> = None;
+            let mut best: Option<(i32, Cell, Cell)> = None;
             for i in 0..n {
                 let ix = w.ai[player as usize].harvest.indices[i].clone();
                 if (failed > max_failed >> 1 && ix.resource_cells <= threshold) || last_failed == Some(ix.center) {
@@ -460,7 +455,7 @@ fn choose_deploy_location(
     cfg: &BotConfig,
     mcv: usize,
     fallback: bool,
-) -> (Option<(i32, i32)>, Option<(i32, i32)>, Option<(i32, i32)>) {
+) -> (Option<Cell>, Option<Cell>, Option<Cell>) {
     let (center, attraction, check) = expansion_center(w, player, cfg, mcv, fallback);
     let st = &w.ai[player as usize].mcv;
     let (min, max, keep) = (st.min_radius, st.max_radius, st.keep);

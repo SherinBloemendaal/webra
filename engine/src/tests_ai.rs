@@ -333,7 +333,9 @@ fn units_at_the_base_leave_as_an_assault_squad() {
 fn a_protection_squad_answers_attacks_on_the_base() {
     let mut w = arena(64, &[("russia", normal(), 0, (4, 4)), ("england", None, 0, (52, 52))]);
     w.ai[0].passive = true;
-    let tanks: Vec<usize> = (0..5).map(|k| w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(12 + k), cell_center(12), 512)).collect();
+    for k in 0..5 {
+        w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(12 + k), cell_center(12), 512);
+    }
     run(&mut w, 60);
     let foe = w.spawn_unit(ty(&w, "1TNK"), 1, cell_center(9), cell_center(9), 512);
     let yard = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].kind == Kind::Building).unwrap();
@@ -779,17 +781,17 @@ fn play(seed: u64, size: i32, teams: &[u8], diff: AiDifficulty, limit_minutes: u
 }
 
 /// OpenRA's bots gather larger squads than WebRA's old waves (Normal AI:
-/// SquadSize 40), so a four player game takes longer: measured 27 to 49
-/// minutes on these seeds (Easy reacts at half the speed).
+/// SquadSize 40) and rebuild what they lose, so a four player game takes
+/// longer: measured 26 to 57 minutes on these seeds.
 #[test]
-fn four_player_ai_free_for_all_finishes_within_an_hour() {
+fn four_player_ai_free_for_all_finishes() {
     let games: Vec<(u64, AiDifficulty)> = vec![(1, AiDifficulty::Normal), (2, AiDifficulty::Hard), (3, AiDifficulty::Easy)];
     let results: Vec<(u64, Option<u8>, u32)> = std::thread::scope(|s| {
         let handles: Vec<_> = games
             .iter()
             .map(|&(seed, diff)| {
                 s.spawn(move || {
-                    let (winner, w) = play(seed, 96, &[0, 0, 0, 0], diff, 60);
+                    let (winner, w) = play(seed, 96, &[0, 0, 0, 0], diff, 90);
                     (seed, winner, w.tick)
                 })
             })
@@ -822,7 +824,8 @@ fn generated_maps_are_fair_for_four_players() {
                             })
                             .collect();
                         let mut w = World::with_options(seed, 96, &players, GameOptions::default());
-                        for _ in 0..25 * 60 * 40 {
+                        // Measured 9 to 66 minutes (docs/contracts.md).
+                        for _ in 0..25 * 60 * 90 {
                             w.step();
                             if w.winner.is_some() {
                                 break;

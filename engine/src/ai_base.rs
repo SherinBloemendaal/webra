@@ -53,7 +53,7 @@ pub(crate) struct BaseState {
     /// OpenRA DefenseCenter: where the base was last attacked (cell).
     pub(crate) defense_center: Option<(i32, i32)>,
     /// Refineries an expanding MCV asked for: (MCV reference, yard cell, ore cell).
-    pub(crate) requested_refineries: Vec<(u32, (i32, i32), (i32, i32))>,
+    pub(crate) requested_refineries: Vec<RefineryRequest>,
     resource_conyard_center: Option<(i32, i32)>,
     rally_ticks: i32,
     rally_stack: Vec<u32>,
@@ -61,6 +61,11 @@ pub(crate) struct BaseState {
     sell_refinery_ticks: i32,
     being_produced: Vec<(u16, i32)>,
 }
+
+/// A map cell (x, y).
+pub(crate) type Cell = (i32, i32);
+/// A refinery an expanding MCV asked for: (MCV reference, yard cell, ore cell).
+pub(crate) type RefineryRequest = (u32, Cell, Cell);
 
 const QUEUES: [QueueType; 2] = [QueueType::Building, QueueType::Defense];
 
@@ -379,11 +384,23 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
     let power_ok = power.is_some_and(|p| power_amount(w, p) > 0);
     let excess = w.players[player as usize].power_gen - w.players[player as usize].power_use;
     let min_excess = qm(w, player, idx).min_excess_power;
-    // Starving (ai_economy.rs): only the power the factories need, and a
-    // factory when none is left to spend the money on an army.
+    let ore = crate::ai_economy::reachable_resources(w, player) > 0;
+    // Starving (ai_economy.rs): only the power the factories need, a first
+    // refinery, and a factory when none is left to spend the money on an army.
     if crate::ai_economy::starving(w, player) {
         if excess < 0 && power_ok {
             return power;
+        }
+        // The first refinery by reachable ore is the way out.
+        let has_refinery = owned_buildings(w, player)
+            .iter()
+            .any(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some()));
+        if ore && !has_refinery {
+            if let Some(r) =
+                buildable.iter().copied().filter(|t| cfg.refineries.contains(t)).min_by_key(|&t| (w.rules.actors[t as usize].cost, t))
+            {
+                return Some(r);
+            }
         }
         if !w.has_producer(player, QueueType::Infantry) && !w.has_producer(player, QueueType::Vehicle) {
             return buildable
@@ -400,7 +417,6 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
     }
     // Then the economy: refineries (WebRA: only while ore is in reach;
     // a refinery without ore is money thrown away).
-    let ore = crate::ai_economy::reachable_resources(w, player) > 0;
     if ore && (!w.ai[player as usize].base.requested_refineries.is_empty() || !adequate_refineries(w, player, cfg)) {
         if let Some(r) = producible(w, player, cfg, &cfg.refineries, &buildable) {
             if sufficient_power(w, player, cfg, r) {
@@ -526,14 +542,7 @@ enum Placement {
 
 /// BaseBuilderQueueManager.ChooseBuildLocation: the top-left cell, and the
 /// base centre it was looked for around.
-fn choose_build_location(
-    w: &mut World,
-    player: u8,
-    cfg: &BotConfig,
-    ty: u16,
-    kind: Placement,
-    idx: usize,
-) -> (Option<(i32, i32)>, Option<(i32, i32)>) {
+fn choose_build_location(w: &mut World, player: u8, cfg: &BotConfig, ty: u16, kind: Placement, idx: usize) -> (Option<Cell>, Option<Cell>) {
     let bb = &cfg.info.base_builder;
     let center = if kind == Placement::Defense { defense_base_center(w, player) } else { random_base_center(w, player) };
     match kind {
@@ -600,7 +609,7 @@ fn find_pos(
     let theta = keep.unwrap_or(0) as i64;
     let len = crate::math::isqrt(cell_dist_sq(target, center));
     let deta = len - theta;
-    let mut cells: Vec<((i64, (i32, i32)), (i32, i32))> = Vec::new();
+    let mut cells: Vec<((i64, Cell), Cell)> = Vec::new();
     for y in center.1 - max..=center.1 + max {
         for x in center.0 - max..=center.0 + max {
             let d = cell_dist_sq((x, y), center);

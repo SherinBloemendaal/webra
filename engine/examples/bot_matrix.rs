@@ -20,9 +20,8 @@ fn play(a: BotType, b: BotType, seed: u64, minutes: u32, diffs: [AiDifficulty; 2
     let swap = seed % 2 == 1;
     let bots = if swap { [b, a] } else { [a, b] };
     let diffs = if swap { [diffs[1], diffs[0]] } else { diffs };
-    let factions = if (seed / 2) % 2 == 0 { ["allies", "soviet"] } else { ["soviet", "allies"] };
-    let players: Vec<PlayerSetup> =
-        (0..2).map(|k| PlayerSetup { bot: bots[k], ..PlayerSetup::new(factions[k], Some(diffs[k])) }).collect();
+    let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
+    let players: Vec<PlayerSetup> = (0..2).map(|k| PlayerSetup { bot: bots[k], ..PlayerSetup::new(factions[k], Some(diffs[k])) }).collect();
     let options = GameOptions { map_style: style, ..GameOptions::default() };
     let mut w = World::with_options(seed, size, &players, options);
     for _ in 0..25 * 60 * minutes {
@@ -61,7 +60,8 @@ fn main() {
     println!("{seeds} seeds per pairing, {minutes} minutes at most, {difficulty:?} against {second:?}, map {size}, style {style:?}");
     for (a, b) in pairings {
         let games: Vec<Game> = std::thread::scope(|s| {
-            let handles: Vec<_> = (0..seeds).map(|seed| s.spawn(move || play(a, b, seed, minutes, [difficulty, second], size, style))).collect();
+            let handles: Vec<_> =
+                (0..seeds).map(|seed| s.spawn(move || play(a, b, seed, minutes, [difficulty, second], size, style))).collect();
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
         let wins = |k: usize| games.iter().filter(|g| g.winner == Some(k)).count();

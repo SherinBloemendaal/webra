@@ -18,7 +18,7 @@ fn main() {
     let style = MapStyle::from_name(&std::env::var("AI_STYLE").unwrap_or_else(|_| "random".into())).expect("AI_STYLE");
     let size: i32 = std::env::var("AI_SIZE").map(|s| s.parse().expect("AI_SIZE")).unwrap_or(80);
     // The same sides as examples/bot_matrix.rs for this seed.
-    let sides = if (seed / 2) % 2 == 0 { ["allies", "soviet"] } else { ["soviet", "allies"] };
+    let sides = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
     let factions: Vec<String> = match std::env::var("AI_FACTIONS") {
         Ok(list) => list.split(',').map(|f| f.to_string()).collect(),
         Err(_) => (0..bots.len()).map(|k| sides[k % 2].to_string()).collect(),

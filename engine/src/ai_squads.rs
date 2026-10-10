@@ -39,6 +39,10 @@ const BACKOFF_TICKS: i32 = 4;
 const STALL_TICKS: u32 = 120 * crate::world::TICKS_PER_SECOND;
 const STALL_FROM: u32 = 600 * crate::world::TICKS_PER_SECOND;
 const STALL_MIN_UNITS: usize = 4;
+/// WebRA patience: a bot that may form attack forces at any time
+/// (MinimumAttackForceDelay below this) sends the units at its base after
+/// this long without an attack force, even while they still trickle in.
+const PATIENCE_TICKS: u32 = 300 * crate::world::TICKS_PER_SECOND;
 /// WebRA: after a squad fled from a player's actors, squads prefer other
 /// enemies for this long (else a squad too weak for its target player's
 /// defences would gather, flee and gather again for good).
@@ -105,6 +109,8 @@ pub(crate) struct SquadState {
     /// Units at the base when last counted, and the tick they last grew.
     hanging_seen: usize,
     hanging_grew_at: u32,
+    /// Tick of the last attack force (or rush) that left the base.
+    left_at: u32,
     /// Players a squad fled from, and until when squads look elsewhere first.
     fled_from: Vec<(u8, u32)>,
 }
@@ -309,17 +315,21 @@ fn create_attack_force(w: &mut World, player: u8, cfg: &BotConfig) {
         return;
     }
     let k = new_squad(w, player, SquadType::Assault, None);
+    let tick = w.tick;
     let st = sq(w, player);
     let units = std::mem::take(&mut st.hanging);
     st.squads[k].units = units;
+    st.left_at = tick;
     w.ai[player as usize].units.idle_units = 0;
 }
 
 /// WebRA: an army at the base that stopped growing (both economies dry, or
 /// at its unit limits) would wait for SquadSize for good; after STALL_TICKS
-/// it leaves as an assault squad with what it has.
+/// it leaves as an assault squad with what it has, and so it does after
+/// PATIENCE_TICKS without an attack force (bots that attack at any time).
 fn break_stalemate(w: &mut World, player: u8) {
     let tick = w.tick;
+    let patient = (w.ai[player as usize].cfg.info.squads.minimum_attack_force_delay as u32) < PATIENCE_TICKS;
     let st = sq(w, player);
     let n = st.hanging.len();
     if n > st.hanging_seen {
@@ -328,7 +338,9 @@ fn break_stalemate(w: &mut World, player: u8) {
     st.hanging_seen = n;
     let min = if crate::ai_economy::no_income(w, player) { 1 } else { STALL_MIN_UNITS };
     let st = sq(w, player);
-    if tick < STALL_FROM || tick < st.hanging_grew_at + STALL_TICKS || n < min {
+    let stalled = tick >= st.hanging_grew_at + STALL_TICKS;
+    let waited = patient && tick >= st.left_at + PATIENCE_TICKS;
+    if tick < STALL_FROM || !(stalled || waited) || n < min {
         return;
     }
     let k = new_squad(w, player, SquadType::Assault, None);
@@ -337,6 +349,7 @@ fn break_stalemate(w: &mut World, player: u8) {
     st.squads[k].units = units;
     st.hanging_seen = 0;
     st.hanging_grew_at = tick;
+    st.left_at = tick;
     w.ai[player as usize].units.idle_units = 0;
 }
 
@@ -384,9 +397,11 @@ fn try_rush(w: &mut World, player: u8, cfg: &BotConfig) {
             set_target(w, player, k, Some(target));
         }
         let k = squad_of_type(w, player, SquadType::Rush).unwrap_or_else(|| new_squad(w, player, SquadType::Rush, Some(target)));
+        let tick = w.tick;
         let st = sq(w, player);
         let units = std::mem::take(&mut st.hanging);
         st.squads[k].units.extend(units);
+        st.left_at = tick;
         w.ai[player as usize].units.idle_units = 0;
         return;
     }
@@ -448,7 +463,11 @@ fn find_enemies(w: &World, player: u8, cfg: &BotConfig, actors: &[usize], source
         // Squads aim at structures themselves, not at the edge of their
         // weapon range: the engine's units only auto-target what they see
         // (OpenRA's also remember structures under the fog).
-        .filter_map(|&a| attack_offset(w, source, a).map(|o| (a, if w.actors[a].kind == Kind::Building { (0, 0) } else { o })))
+        // (Ships keep the edge of their range: they cannot drive ashore.)
+        .filter_map(|&a| {
+            let ground = w.domain_of(source) == crate::rules::Domain::Ground;
+            attack_offset(w, source, a).map(|o| (a, if ground && w.actors[a].kind == Kind::Building { (0, 0) } else { o }))
+        })
         .collect()
 }
 
@@ -909,7 +928,11 @@ fn air_idle(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
             continue;
         }
         let to = (cell_center(cell.0), cell_center(cell.1));
-        let on_line = actors_on_line(w, from, to, danger * CELL);
+        // Enemy anti-air along the way (OpenRA counts every actor on the line, own ones too).
+        let on_line: Vec<usize> = actors_on_line(w, from, to, danger * CELL)
+            .into_iter()
+            .filter(|&i| is_preferred_enemy(w, player, i, cfg.ignored_targets))
+            .collect();
         if count_anti_air(w, cfg, &on_line) * MISSILE_UNIT_MULTIPLIER >= units.len() {
             continue;
         }
