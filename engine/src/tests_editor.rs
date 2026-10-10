@@ -152,3 +152,15 @@ fn the_report_counts_ore_per_base_and_names_cut_off_spawns() {
     assert_eq!(r["bases"][0]["rush"], serde_json::Value::Null, "no way by ground");
     assert_eq!(r["unreachableSpawns"], serde_json::json!([1]));
 }
+
+#[test]
+fn fog_preview_shows_what_a_spawn_sees_at_the_start() {
+    let d = data(&[(4, 4), (40, 40)], vec![], |_| {});
+    let w = World::editor_preview(&d).expect("preview");
+    let fog = w.editor_fog(0);
+    assert_eq!(fog.len(), 48 * 48);
+    assert_eq!(fog[w.map.idx(5, 6)], 255, "around the start");
+    assert_eq!(fog[w.map.idx(44, 44)], 0, "the other start is shrouded");
+    assert_eq!(w.editor_fog(5), vec![0; 48 * 48], "no such spawn");
+    assert_eq!(w.actors.iter().filter(|a| a.alive).count(), 0, "the preview itself is unchanged");
+}

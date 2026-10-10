@@ -45,6 +45,7 @@ export const LAYERS = [
   { key: 'zones', label: 'Spawn zones', hint: 'Each cell in the colour of the start that reaches it first by ground.' },
   { key: 'rush', label: 'Rush paths', hint: 'The shortest ground path from each start to the nearest other start.' },
   { key: 'reach', label: 'Unreachable ground', hint: 'Dark where ground units from spawn 1 cannot get.' },
+  { key: 'fog', label: 'Fog preview', hint: 'What the player of the chosen spawn sees when a game starts (with the lobby\'s default starting units).' },
 ];
 
 /** Layer switches; `onChange(key, on)`. */

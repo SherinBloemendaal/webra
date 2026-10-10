@@ -88,7 +88,9 @@ const state = {
   actorType: null,
   owner: -1,
   facing: 0,
-  layers: { grid: true, actors: true, spawns: true, resources: false, passability: false, buildable: false, zones: false, rush: false, reach: false },
+  layers: { grid: true, actors: true, spawns: true, resources: false, passability: false, buildable: false, zones: false, rush: false, reach: false, fog: false },
+  /** The spawn whose start the fog preview shows. */
+  fogSpawn: 0,
   region: null,
   clip: null,
   pasteLayers: { terrain: true, resources: true, actors: true },
@@ -269,6 +271,10 @@ let analysisDirty = true;
 let tilesTime = 0;
 const TILES_EVERY_MS = 250;
 
+/** Previews built so far, and the fog shown (js/world.js, Game.editor_fog). */
+let previewBuilds = 0;
+let shownFog = 'clear';
+
 /** Layers that need the engine's cell checks. */
 const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
@@ -279,7 +285,7 @@ function frame(now) {
   view.update(dt);
   if (previewDirty) {
     previewDirty = false;
-    preview.update(JSON.stringify(doc.toMap()));
+    if (preview.update(JSON.stringify(doc.toMap()))) previewBuilds++;
     if (preview.error) console.warn('Map preview:', preview.error);
     view.terrainDirty = true;
     analysisDirty = true;
@@ -288,6 +294,12 @@ function frame(now) {
     analysisDirty = false;
     ctl.analysis = preview.game.editor_cells();
     if (activeTab === 'check') renderFairness();
+  }
+  // Fog preview: what the chosen spawn sees at the start, else everything visible.
+  const fogKey = state.layers.fog && preview.game ? `${previewBuilds}:${state.fogSpawn}` : 'clear';
+  if (fogKey !== shownFog) {
+    shownFog = fogKey;
+    view.uploadFog(fogKey === 'clear' ? null : preview.game.editor_fog(state.fogSpawn));
   }
   if (view.terrainDirty) {
     // Installed tiles are planned for the whole map: during a stroke at most a few times a second.
@@ -945,6 +957,12 @@ function filterPalette() {
 }
 
 function renderOwnerOptions() {
+  const fog = $('#fog-spawn');
+  if (fog) {
+    if (state.fogSpawn >= doc.spawns.length) state.fogSpawn = 0;
+    fog.replaceChildren(...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`)));
+    fog.value = String(state.fogSpawn);
+  }
   const owner = $('#owner');
   if (!owner) return;
   if (state.owner >= doc.spawns.length) state.owner = -1;
@@ -1014,9 +1032,11 @@ function renderSelection() {
 
 function buildLayersPane() {
   const pane = $('[data-pane="layers"]');
+  const fogSpawn = el('select', { id: 'fog-spawn', class: 'ui-input', 'aria-label': 'Fog preview of spawn', onchange: () => (state.fogSpawn = Number(fogSpawn.value)) });
   pane.append(
     el('h2', {}, 'Show on the map'),
     layersList(state.layers, (key, on) => setLayer(key, on)),
+    el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, 'Fog preview of'), fogSpawn]),
     el('p', { class: 'hint' }, 'Passability, buildable ground, zones, rush paths and reach are measured by the game engine on the map as a game starts it (trees, structures and walls block).'),
   );
 }

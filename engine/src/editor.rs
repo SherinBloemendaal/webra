@@ -8,6 +8,9 @@
 //! (the rush distance), the ore and gems, the buildable ground and the zone
 //! around it, the harbour the generator's metrics see (mapgen/metrics.rs),
 //! and the map's totals.
+//! `editor_fog`: what the player of a spawn sees when a game starts (its
+//! starting units placed as the lobby's default starts them, vision
+//! updated), one byte per cell as `fog_bytes`.
 
 use std::collections::VecDeque;
 
@@ -196,5 +199,21 @@ impl World {
             "reachable": reachable,
             "unreachableSpawns": unreachable_spawns,
         })
+    }
+
+    /// The fog the player of spawn `k` starts a game with (see the module
+    /// comment); all shroud for a spawn the map does not have.
+    pub fn editor_fog(&self, k: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        if k >= self.map.spawns.len() || k >= crate::world::EDITOR_SLOTS {
+            out.resize(self.map.cells(), 0);
+            return out;
+        }
+        let mut w = self.clone();
+        w.spawn_start(k as u8);
+        w.refresh_tokens();
+        w.update_vision();
+        w.fog_bytes(k as u8, &mut out);
+        out
     }
 }

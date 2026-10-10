@@ -55,6 +55,11 @@ export class EditorView {
     this.setBiome(doc.meta?.biome ?? 'temperate');
   }
 
+  /** The fog layer: `bytes` (one per cell, 0 shroud, 255 visible) or everything visible for null. */
+  uploadFog(bytes) {
+    this.renderer.uploadFog(bytes && bytes.length === this.mapW * this.mapH ? bytes : new Uint8Array(this.mapW * this.mapH).fill(255));
+  }
+
   /** Terrain art of the map's biome (the same tiles as in the game). */
   setBiome(biome) {
     if (biome === this.biome) return;

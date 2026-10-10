@@ -170,7 +170,8 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `editor_report()` is JSON with per spawn `rush` (ground steps to the nearest
   other start, or null), `ore`, `oreCells`, `gems`, `gemCells`, `buildable`
   (within `reach` cells), `zone`, `harbourCells`, `navalYardSite`, and the
-  totals and `unreachableSpawns`.
+  totals and `unreachableSpawns`. `editor_fog(k)` is the fog the player of
+  spawn k starts a game with (default starting units), one byte per cell.
 - Editor test play: the editor writes the map to sessionStorage
   `webra.editor.testMap` and a setup to `webra.editor.testSetup`
   (`{ players: [{ type, faction, difficulty, bot, team }], camera: [x, y] |

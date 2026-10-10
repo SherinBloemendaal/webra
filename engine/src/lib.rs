@@ -249,6 +249,12 @@ impl Game {
         self.world.editor_cells()
     }
 
+    /// What the player of spawn `k` sees at the start of a game on an editor
+    /// preview (editor.rs `editor_fog`): one byte per cell, 0 shroud, 255 visible.
+    pub fn editor_fog(&self, k: u32) -> Vec<u8> {
+        self.world.editor_fog(k as usize)
+    }
+
     /// The map editor's fairness report of an editor preview (editor.rs `editor_report`), JSON.
     pub fn editor_report(&self) -> String {
         self.world.editor_report().to_string()
