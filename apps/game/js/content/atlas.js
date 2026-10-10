@@ -217,12 +217,37 @@ export function templateImage(tiles, lookup, [width, height], [boxW, boxH]) {
 function stillPoses(images, names) {
   const have = {};
   names.forEach((name, k) => {
-    if (!images[k]) return;
-    const d = { frames: [k], length: 1, facings: 1, fps: 1, classic: false, interpolatedFacings: 0, rotate: false };
-    have[name] = { loop: { ...d, mode: MODE.LOOP }, once: { ...d, mode: MODE.ONCE }, still: { ...d, mode: MODE.STILL }, index: { ...d, mode: MODE.INDEX } };
+    // Every way a pose can be played (deaths vanish too), like a loaded sequence.
+    if (images[k]) have[name] = modes({ length: 1, facings: 1, fps: 1 }, [k], {});
   });
   const poses = poseTable(have);
   return poses ? { images: images.map((img) => img ?? images.find(Boolean)), poses } : null;
+}
+
+/**
+ * Why a slot's art cannot go into the atlas, or null when it can: every
+ * pose of POSE_COUNT needs frames that name images of the art (js/sprites.js
+ * buildAtlas reads them all). Art that fails is left out, so only its own
+ * slot keeps WebRA's art.
+ */
+export function artProblem(art) {
+  if (!art) return null;
+  const poses = art.poses ?? [];
+  if (poses.length !== POSE_COUNT) return `${poses.length} poses instead of ${POSE_COUNT}`;
+  for (let p = 0; p < POSE_COUNT; p++) {
+    const d = poses[p];
+    if (!d || !Array.isArray(d.frames) || !d.frames.length) return `pose ${p} is missing`;
+    if (d.frames.some((f) => !Number.isInteger(f) || f < 0 || f >= art.images.length)) return `pose ${p} names an image the art does not have`;
+  }
+  return null;
+}
+
+/** `art` when it can go into the atlas (artProblem), else null with the reason in `problems`. */
+function checked(name, art, problems) {
+  const problem = artProblem(art);
+  if (!problem) return art;
+  problems.push(`${name}: ${problem}`);
+  return null;
 }
 
 /** The descriptor fields of a pose (buildAtlas reads them) from a resolved sequence. */
@@ -404,6 +429,12 @@ export function explosionSlot(k, actorCount) {
  * problems }` with `art` null when the idle pose cannot be made.
  */
 function slotArt(image, mapping, opts) {
+  const r = buildSlotArt(image, mapping, opts);
+  return { art: checked(image, r.art, r.problems), problems: r.problems };
+}
+
+/** slotArt before the art is checked. */
+function buildSlotArt(image, mapping, opts) {
   const { files, tileset, lookup, offset, wall, under = null, door = false, level = false, lift = {}, effect = false, index = false } = opts;
   const { lead = {}, reverseEnd = false, activeMode = 'loop' } = opts;
   const seqs = SEQUENCES[image] ?? {};
@@ -566,10 +597,11 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       }
       return templateImage(sprite.frames, terrainLookup, rec.size, [a.width ?? 1, a.height ?? 1]);
     };
-    const body = stillPoses([image('healthy'), image('damaged')], ['idle', 'damaged']);
-    const second = stillPoses(
-      [image('destroyed'), image('destroyed_north'), image('destroyed_south'), image('destroyed_both')],
-      ['idle', 'move', 'attack', 'harvest'],
+    const body = checked(a.id, stillPoses([image('healthy'), image('damaged')], ['idle', 'damaged']), out.problems);
+    const second = checked(
+      `${a.id} destroyed`,
+      stillPoses([image('destroyed'), image('destroyed_north'), image('destroyed_south'), image('destroyed_both')], ['idle', 'move', 'attack', 'harvest']),
+      out.problems,
     );
     return body ? { body, second } : null;
   };

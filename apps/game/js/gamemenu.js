@@ -48,6 +48,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
+  'targetLines',
   'playerStanceColors',
   'mouseCapture',
   'mouseCaptureSpeed',
@@ -135,6 +136,7 @@ export const MENU_SETTINGS = Object.freeze([
   'edgeScrollSpeed',
   'keyScrollSpeed',
   'showUnitPaths',
+  'targetLines',
   'healthBars',
   'playerStanceColors',
   'mouseCapture',
@@ -510,11 +512,13 @@ export class GameMenu {
     if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
 
     // ---- Scrolling and units ----
+    const targetLines = choice('targetLines', 'Target lines', SCHEMA.targetLines.labels);
     list.append(
       el('h2', null, 'Scrolling and units'),
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
+      withHelp(targetLines, 'targetLines', targetLines.querySelector('[role="radiogroup"]')),
       choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       check('playerStanceColors', 'Relationship colours'),
     );

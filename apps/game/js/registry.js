@@ -81,6 +81,14 @@ export const GROUPS = deepFreeze({
       edgeScrollSpeed: { type: 'number', default: 1, min: 0, max: 3, step: 0.25, label: 'Edge scroll speed', help: '0 turns edge scrolling off.' },
       keyScrollSpeed: { type: 'number', default: 1, min: 0.25, max: 3, step: 0.25, label: 'Arrow key scroll speed' },
       showUnitPaths: { type: 'boolean', default: false, label: 'Show unit paths' },
+      // OpenRA TargetLines (Settings.Game.TargetLines, DrawLineToTarget): js/targetlines.js.
+      targetLines: {
+        type: 'choice',
+        default: 'automatic',
+        options: ['disabled', 'manual', 'automatic'],
+        labels: { disabled: 'Off', manual: 'With Shift', automatic: 'After orders' },
+        label: 'Target lines',
+      },
       pixelRatioCap: { type: 'number', default: 2, min: 0.5, max: 3, step: 0.25, label: 'Highest pixel ratio', help: 'Lower is faster on phones.' },
       lowQuality: { type: 'boolean', default: false, label: 'Low quality rendering' },
       // Camera shake and the nuke's flash (js/battlefx.js): 'auto' follows prefers-reduced-motion.
