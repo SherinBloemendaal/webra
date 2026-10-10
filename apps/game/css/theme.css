@@ -1,8 +1,8 @@
 /* WebRA theme: one place for the colours, fonts, sizes and metal chrome of
    every screen (start screen, lobby, sidebar, menus, dialogs). Gunmetal
-   panels with bevels and rivets, faint scanlines, and an accent that follows
-   the player's side: steel blue for the Allies, red for the Soviets
-   (js/main.js sets <html data-faction>). Loaded before every other sheet. */
+   panels with bevels and rivets, faint scanlines, and one accent on every
+   screen: Red Alert red. The website keeps the same palette in
+   apps/website/assets/site.css. Loaded before every other sheet. */
 
 :root {
   /* ---- Gunmetal chrome ---- */
@@ -25,15 +25,33 @@
   --ui-ok: #4fd067;
   --ui-warn: #f0c030;
   --ui-bad: #ec4532;
-  --ui-focus: #ffd75e;
+  /* Information callouts (notes, messages of the day): not the accent, so
+     they never read as an error or a selected part. */
+  --ui-info: #4a82c4;
 
-  /* ---- Faction accent (Allies by default) ---- */
-  --ui-accent: #4a82c4;
-  --ui-accent-hi: #93c0f2;
-  --ui-accent-lo: #1b3555;
-  --ui-accent-glow: rgba(74, 130, 196, 0.45);
-  --ui-primary: #2f5f96; /* main action buttons */
-  --ui-primary-hi: #3d76b5;
+  /* ---- Accent: Red Alert red, on every screen ----
+     Contrast on the gunmetal (tests/theme-tokens.test.mjs checks it):
+     --ui-accent is for parts that are not text (borders, stripes, fills,
+     the slider track), at least 3:1 on the panels; --ui-accent-hi is for
+     text, icons and the focus ring, at least 4.5:1 (WCAG AA) on every
+     panel and well; white text on every --ui-primary* button is at least
+     4.5:1. */
+  --ui-accent: #e0301f;
+  --ui-accent-hi: #ff7a66; /* text, links, icons, focus ring */
+  --ui-accent-hover: #ffb3a6; /* text and links under the pointer */
+  --ui-accent-lo: #4a1510; /* chosen backgrounds, dim borders */
+  --ui-accent-glow: rgba(224, 48, 31, 0.45);
+  --ui-accent-disabled: #6e3a34; /* accent parts of a disabled control */
+  --ui-primary: #b8231a; /* main action buttons (gradient bottom) */
+  --ui-primary-hi: #d42318; /* gradient top */
+  --ui-primary-hover: #d8301f;
+  --ui-primary-active: #8f1a12;
+  --ui-primary-disabled: #3a2422;
+  --ui-focus: var(--ui-accent-hi);
+  /* The main action button, at rest, under the pointer and pressed. */
+  --ui-primary-fill: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  --ui-primary-fill-hover: linear-gradient(180deg, var(--ui-primary-hover), var(--ui-primary-hi));
+  --ui-primary-fill-active: linear-gradient(180deg, var(--ui-primary), var(--ui-primary-active));
 
   /* ---- Type ---- */
   --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -74,15 +92,6 @@
   --danger: var(--ui-bad);
 
   color-scheme: dark;
-}
-
-:root[data-faction='soviet'] {
-  --ui-accent: #c43a2b;
-  --ui-accent-hi: #ff8a72;
-  --ui-accent-lo: #561610;
-  --ui-accent-glow: rgba(196, 58, 43, 0.5);
-  --ui-primary: #8f2a1f;
-  --ui-primary-hi: #b23726;
 }
 
 /* The scaled parts: the game screen, its menu and dialogs. Custom properties

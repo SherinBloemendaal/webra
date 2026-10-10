@@ -935,8 +935,6 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A mission's own actors are drawn and voiced like the actor their art key
   // names (engine rules_json `art`, tools/gen_missions.py).
   const artActors = rules.actors.map((a) => (a.art ? { ...a, id: a.art } : a));
-  // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
-  document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
   // A mission's alliances are its own (map.yaml Players: Allies), as the engine has them.
