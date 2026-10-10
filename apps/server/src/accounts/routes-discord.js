@@ -10,6 +10,7 @@ import { authorizeUrl, DiscordError, fetchDiscordUser, OAUTH_COOKIE, OAUTH_TTL_M
 import { banOf, initialStatus, insertUser, uniqueViolation, userByDiscord, userByEmail, userByUsername, userById } from './users.js';
 import { createSession, hasRecentReauth } from './sessions.js';
 import { LIMITS, methodDisabled } from './routes-auth.js';
+import { logError } from '../telemetry.js';
 
 const MODES = ['login', 'signup', 'link', 'reauth'];
 const DEFAULT_RETURN = '/account/';
@@ -130,7 +131,7 @@ async function callback(ctx) {
     discord = await fetchDiscordUser(ctx.env, ctx.origin, code, row.verifier);
   } catch (err) {
     if (err instanceof DiscordError) {
-      console.error('discord oauth failed', err.message);
+      logError('discord oauth failed', err);
       return back('unavailable');
     }
     throw err;

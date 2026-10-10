@@ -69,8 +69,16 @@ body.editor {
 }
 
 .editor button.primary {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
+}
+
+.editor button.primary:hover:not(:disabled) {
+  background: var(--ui-primary-fill-hover);
+}
+
+.editor button.primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
 }
 
 .editor button.danger {
@@ -373,19 +381,9 @@ body.editor {
   border: 1px solid var(--ui-edge);
   border-radius: 2px;
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+  /* The terrain's colour in the map preview, set by editor.js (MATERIALS). */
+  background: var(--swatch, var(--ui-metal-3));
 }
-
-/* Terrain swatches, in the colours of the map preview (js/mapformat.js PREVIEW_COLORS). */
-.swatch i.terrain-0 { background: #3e582c; }
-.swatch i.terrain-1 { background: #605c3a; }
-.swatch i.terrain-2 { background: #807666; }
-.swatch i.terrain-3 { background: #244666; }
-.swatch i.terrain-4 { background: #1c3618; }
-.swatch i.terrain-5 { background: #4a7076; }
-.swatch i.terrain-6 { background: #766852; }
-.swatch i.terrain-8 { background: #b0a070; }
-.swatch i.terrain-9 { background: #2c5270; }
-.swatch i.terrain-10 { background: #60605c; }
 
 #tools .ui-segmented {
   width: 100%;
@@ -960,4 +958,14 @@ body.editor {
   #side {
     transition: none;
   }
+}
+
+/* Map versions: the upgrade notice of a map opened best effort (js/upgrade.js). */
+.issues li.notice {
+  border-left-color: var(--ui-info);
+  color: color-mix(in srgb, var(--ui-info) 55%, white);
+}
+
+.issues li.ok {
+  border-left-color: var(--ui-ok);
 }

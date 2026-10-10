@@ -16,6 +16,7 @@
 import { errorResponse, HttpError, isReturnPath, parseCookies, cookieName, withCookies } from './http.js';
 import { ipSalt } from './ipkey.js';
 import { applyPlayHeaders } from './static-headers.js';
+import { logError, reportHttpError } from './telemetry.js';
 import { bannedError, inactiveError, ipBannedError, RequestContext } from './accounts/context.js';
 import { clearPlayPassCookie, passKey, passMatchesSession, PASS_TTL_S, PLAY_COOKIE, playPassCookie, signPass, sidOfHash, verifyPass } from './accounts/playpass.js';
 import { loadSiteCached } from './accounts/site.js';
@@ -167,8 +168,11 @@ export async function servePlay(request, env, exec, now = Date.now()) {
   } catch (err) {
     const clear = clearPlayPassCookie(request);
     const cookies = passValue && !ctx.cookies.includes(clear) ? [...ctx.cookies, clear] : ctx.cookies;
-    if (err instanceof HttpError) return refuse(request, url, err, cookies);
-    console.error('play gate error', err?.name, err?.message);
+    if (err instanceof HttpError) {
+      reportHttpError(err);
+      return refuse(request, url, err, cookies);
+    }
+    logError('play gate error', err);
     return refuse(request, url, new HttpError(500, 'internal', 'Internal error.'), cookies);
   }
 }

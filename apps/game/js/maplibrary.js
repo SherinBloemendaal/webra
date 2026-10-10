@@ -12,8 +12,14 @@
 // is the caller's (it needs the game's WebAssembly). Stored in IndexedDB,
 // in memory where IndexedDB is unavailable. Bounded: the least recently used
 // maps go first beyond LIBRARY_MAX_MAPS maps or LIBRARY_MAX_BYTES of text.
+//
+// Map versions (docs/contracts.md section 2): entries hold maps of the
+// format version of the release that stored them. After a format change the
+// first use of the library upgrades them (new canonical text, new hash, the
+// old entry goes); a map that can no longer be upgraded is dropped, its file
+// opens in the map editor.
 
-import { mapHash, parseMap, utf8Length } from './protocol.js';
+import { MAP_VERSIONS, mapFormatVersionOf, mapHash, parseMap, utf8Length } from './protocol.js';
 
 export const LIBRARY_MAX_MAPS = 64;
 export const LIBRARY_MAX_BYTES = 24 * 1024 * 1024;
@@ -94,12 +100,19 @@ function meta({ json, ...rest }) {
 }
 
 export class MapLibrary {
-  /** @param {{ all, get, put, remove }} backend @param {() => number} [now] */
-  constructor(backend, now = () => Date.now()) {
+  /**
+   * @param {{ all, get, put, remove }} backend
+   * @param {() => number} [now]
+   * @param {object} [versions] map format versions (packages/protocol MAP_VERSIONS; tests pass their own)
+   */
+  constructor(backend, now = () => Date.now(), versions = MAP_VERSIONS) {
     this.backend = backend;
     this.now = now;
+    this.versions = versions;
     /** Falls back to memory once the browser refuses IndexedDB (private mode, quota). */
     this.fallback = null;
+    /** The one pass that upgrades entries of older format versions (upgradeStored). */
+    this.upgrading = null;
   }
 
   /** The browser's library, or an in-memory one when IndexedDB is unavailable. */
@@ -121,8 +134,59 @@ export class MapLibrary {
     }
   }
 
+  /**
+   * Upgrade entries an older release stored (once per library object; list
+   * and get wait for it). Returns how many were upgraded and dropped.
+   */
+  upgradeStored() {
+    this.upgrading ??= (async () => {
+      const done = { upgraded: 0, dropped: 0 };
+      for (const row of await this.use((b) => b.all())) {
+        let version = null;
+        try {
+          version = mapFormatVersionOf(JSON.parse(row.json));
+        } catch {
+          // Unreadable text: parseMap below says why.
+        }
+        if (version === this.versions.current) continue;
+        const r = parseMap(row.json, { versions: this.versions });
+        if (!r.ok) {
+          console.warn(`Map library: "${row.name}" is no longer compatible and was removed:`, r.errors[0]);
+          await this.use((b) => b.remove(row.hash));
+          done.dropped++;
+          continue;
+        }
+        const hash = await mapHash(r.map);
+        await this.use((b) => b.put(this.entry(r, hash, row, this.now())));
+        if (hash !== row.hash) await this.use((b) => b.remove(row.hash));
+        done.upgraded++;
+      }
+      return done;
+    })();
+    return this.upgrading;
+  }
+
+  /** A library row for a parsed map (`old`: the entry it replaces, if any). */
+  entry(r, hash, old, now) {
+    return {
+      hash,
+      name: r.map.name,
+      author: r.map.author,
+      players: r.players,
+      width: r.map.width,
+      height: r.map.height,
+      modded: r.modded,
+      bytes: utf8Length(r.canonical),
+      source: old?.source ?? 'file',
+      addedAt: old?.addedAt ?? now,
+      usedAt: old?.usedAt ?? now,
+      json: r.canonical,
+    };
+  }
+
   /** Every map without its text, most recently used first. */
   async list() {
+    await this.upgradeStored();
     const rows = await this.use((b) => b.all());
     return rows.map(meta).sort((a, b) => b.usedAt - a.usedAt || a.name.localeCompare(b.name));
   }
@@ -130,6 +194,7 @@ export class MapLibrary {
   /** The entry with its canonical text, or null. */
   async get(hash) {
     if (typeof hash !== 'string') return null;
+    await this.upgradeStored();
     return this.use((b) => b.get(hash));
   }
 
@@ -145,26 +210,14 @@ export class MapLibrary {
    */
   async add(textValue, { source = 'file', expectHash = null } = {}) {
     if (!LIBRARY_SOURCES.includes(source)) throw new Error(`unknown map source ${source}`);
-    const r = parseMap(textValue);
-    if (!r.ok) throw new Error(`Invalid map: ${r.errors.slice(0, 3).join('; ')}`);
+    // Stored upgraded (canonical text of the current format), like everywhere else.
+    const r = parseMap(textValue, { versions: this.versions });
+    if (!r.ok) throw new Error(r.compat ? r.compat.message : `Invalid map: ${r.errors.slice(0, 3).join('; ')}`);
     const hash = await mapHash(r.map);
     if (expectHash !== null && hash !== expectHash) throw new Error('The map does not match the expected hash.');
     const now = this.now();
     const old = await this.get(hash);
-    const row = {
-      hash,
-      name: r.map.name,
-      author: r.map.author,
-      players: r.players,
-      width: r.map.width,
-      height: r.map.height,
-      modded: r.modded,
-      bytes: utf8Length(r.canonical),
-      source: old?.source ?? source,
-      addedAt: old?.addedAt ?? now,
-      usedAt: now,
-      json: r.canonical,
-    };
+    const row = { ...this.entry(r, hash, old ?? { source }, now), usedAt: now };
     await this.use((b) => b.put(row));
     await this.trim(hash);
     return meta(row);

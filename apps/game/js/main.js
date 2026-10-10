@@ -24,7 +24,7 @@
 // with the Game's method names, and the loop draws the newest frame the
 // worker sent, so ticks never block rendering or input.
 
-import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, take_panic, version } from '../pkg/webra_sim.js';
 import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
 import { AnimClock } from './anim.js';
 import { Input } from './input.js';
@@ -79,9 +79,11 @@ import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
+import { connectRegistry, setTags } from './telemetry/index.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
+import { TargetLines, withTargetLines } from './targetlines.js';
 
 const PLAYER = 0;
 
@@ -126,6 +128,8 @@ const playAccess = new PlayAccess({ onLost: playAccessLost });
 let uiScale = null;
 
 async function boot() {
+  // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
+  connectRegistry(defaultRegistry());
   let gpuError = null;
   try {
     wasm = await loadEngine();
@@ -171,6 +175,7 @@ async function boot() {
       gpuError = `${err.message} WebRA needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
     }
   }
+  setTags({ renderer: renderer ? 'webgpu' : 'unavailable' });
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
@@ -202,7 +207,12 @@ async function loadEngine() {
 
 /** Where the next game's simulation runs (js/sim/host.js): a worker if possible. */
 function newSimHost() {
-  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule }));
+  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule, engine: { version, takePanic: take_panic } }));
+}
+
+/** Error report tags for a game that started (js/telemetry): its mode and whether original graphics are in use. */
+function tagGame(mode) {
+  setTags({ mode, original_content: content?.originalActive ? 'on' : 'off' });
 }
 
 /** The game files were refused (js/account/gate.js): sign in again, or see why on the account page. */
@@ -530,6 +540,7 @@ async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
     host.dispose();
     throw err;
   }
+  tagGame('online');
   const driver = new DriverHandle(host, conn, { tickMs: spec.tickMs, onCaughtUp, onCheck });
   const recorder = info.recorder ? new RecorderHandle(host, info.recorder.start) : null;
   return { host, game: host.game, driver, recorder };
@@ -736,6 +747,8 @@ async function launch(spec, lobby, failText) {
     await content?.load();
     host = await newSimHost();
     const info = await host.start(spec);
+    // A save continues a skirmish or a mission.
+    tagGame(spec.kind === 'save' ? (spec.mission ? 'mission' : 'skirmish') : spec.kind);
     return { host, info };
   } catch (err) {
     host?.dispose();
@@ -947,8 +960,6 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A mission's own actors are drawn and voiced like the actor their art key
   // names (engine rules_json `art`, tools/gen_missions.py).
   const artActors = gameArtActors(rules.actors);
-  // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
-  document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
   // A mission's alliances are its own (map.yaml Players: Allies), as the engine has them.
@@ -975,7 +986,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // A defeated player who watches on gives no orders either (js/endgame.js).
   let spectating = false;
   const watching = () => !!viewer || spectating;
-  const ui = viewer ? viewOnly(watched) : viewOnly(watched, () => spectating);
+  // OpenRA's target lines (js/targetlines.js): ordered and newly selected units show theirs for a moment.
+  const targetLines = new TargetLines({ mode: () => settings.get('targetLines') });
+  const ui = withTargetLines(viewer ? viewOnly(watched) : viewOnly(watched, () => spectating), (ids) => targetLines.ordered(ids));
   const players = viewer ?? roster ?? [];
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
   const view = { player: viewer ? OBSERVER_VIEW : player };
@@ -1083,6 +1096,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (key) audio?.selectTarget(key);
     },
     onSelectionChanged: (ids, info) => {
+      targetLines.selected(ids);
       audio?.selection(ids, info);
       sidebar?.setSelection(selectionInfo(game, ids, allied));
       sidebar?.setDeployState(input.deployState());
@@ -1715,6 +1729,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       rect: [v.x0, v.y0, v.x1, v.y1],
       audio: true,
       paths: settings.get('showUnitPaths'),
+      // Selected units whose target lines show (js/targetlines.js; Shift: waypoint mode).
+      targetLines: targetLines.visible(input.selection, { shift: input.keys.has('Shift') }),
       instances: choice.path,
     });
     // Main thread time the simulation took this frame (in a worker: posting the step).

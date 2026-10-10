@@ -29,7 +29,6 @@ import {
   TEAMS,
   FACTION_GROUPS,
   FACTIONS,
-  factionSide,
   randomSeed,
   parseSeed,
   parseUnits,
@@ -132,6 +131,19 @@ function rgbCss(c) {
 }
 
 /** Build a <select>; choices are {value,label} or groups {label, items}. */
+/**
+ * Keep a select's tooltip on its chosen option, so a select too narrow for
+ * its text (player slots on small screens) still tells it in full. Call it
+ * after the select's own change listener, which may put the value back.
+ */
+function titleFollowsChoice(select) {
+  const sync = () => {
+    select.title = [...select.querySelectorAll('option')].find((o) => o.value === select.value)?.textContent ?? '';
+  };
+  sync();
+  select.addEventListener('change', sync);
+}
+
 function buildSelect(choices, className) {
   const select = el('select', className);
   const add = (parent, c) => {
@@ -371,6 +383,7 @@ export class Lobby {
    *     validate: (json: string) => {ok: boolean, errors: string[], modded: boolean, hash: string},
    *     filePreview: (json: string) => Uint8Array,
    *     importOramap?: (bytes: Uint8Array, fileName: string) => Promise<{json: string, report: object}>,
+   *     versions?: object,  the map format version registry (tests; the protocol's by default)
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
@@ -443,10 +456,11 @@ export class Lobby {
     if (!this.maps) return null;
     const stored = readJson(MAP_STORAGE_KEY);
     if (!stored || typeof stored.json !== 'string') return null;
-    const info = inspectMapFile(stored.json, this.maps.validate);
+    const info = inspectMapFile(stored.json, this.maps.validate, this.maps.versions);
     // Only a map that still validates, and whose rules were accepted, comes back.
     if (!info.ok || (info.modded && stored.accepted !== info.hash)) return null;
-    return { json: stored.json, info, accepted: true };
+    // Stored by an older release: it comes back upgraded (no notice: the player's file is not at hand).
+    return { json: info.json, info: { ...info, upgrade: null }, accepted: true };
   }
 
   /** Spawn count and acceptance of the installed map, for startProblem. */
@@ -522,20 +536,21 @@ export class Lobby {
   offerMapText(text, source = 'file', setup = null) {
     this.mapErrors = [];
     this.state.mapSource = 'file';
-    const info = inspectMapFile(text, this.maps.validate);
+    const info = inspectMapFile(text, this.maps.validate, this.maps.versions);
     if (!info.ok) {
       this.mapErrors = info.errors;
       this.renderMapSource();
       return;
     }
+    // An older format version arrives upgraded (info.json); the notice shows with the map.
     if (info.modded) {
       // Modded maps are installed only after the player accepts the warning.
-      this.pendingMap = { json: text, info, source, setup };
+      this.pendingMap = { json: info.json, info, source, setup };
       this.renderMapSource();
       this.acceptBtn.focus();
       return;
     }
-    this.installMap(text, info, source, setup);
+    this.installMap(info.json, info, source, setup);
   }
 
   /**
@@ -913,9 +928,11 @@ export class Lobby {
     const rec = { row };
     const closed = player.type === 'closed';
 
-    // Player: name for you, slot type for the others.
-    const who = cell('lobby-cell-player', 'Player');
-    who.append(el('span', 'lobby-badge', `P${slot + 1}`));
+    // Player: name for you, slot type (with the AI's difficulty) and bot for
+    // the others. They wrap under each other when the column is narrow.
+    const cellPlayer = cell('lobby-cell-player', 'Player');
+    const who = el('div', 'lobby-who');
+    cellPlayer.append(el('span', 'lobby-badge', `P${slot + 1}`), who);
     if (player.type === 'human') {
       const name = el('input', 'lobby-input lobby-name');
       name.type = 'text';
@@ -950,6 +967,7 @@ export class Lobby {
           this.renderProblem(this.typeRefusal(slot, type.value));
         }
       });
+      titleFollowsChoice(type);
       rec.type = type;
       who.append(type);
       // The OpenRA bot the AI plays (Rush, Normal, Turtle, Naval).
@@ -961,6 +979,7 @@ export class Lobby {
         bot.addEventListener('change', () => {
           this.state.players[slot].bot = bot.value;
         });
+        titleFollowsChoice(bot);
         rec.bot = bot;
         who.append(bot);
       }
@@ -987,6 +1006,7 @@ export class Lobby {
       this.state.players[slot].faction = faction.value;
       this.renderSlot(slot);
     });
+    titleFollowsChoice(faction);
     const factionRow = el('div', 'lobby-faction-row');
     factionRow.append(flag, faction);
     const desc = el('p', 'lobby-faction-desc');
@@ -1006,6 +1026,7 @@ export class Lobby {
       // Separate team spawns move team mates together on the preview.
       this.schedulePreview();
     });
+    titleFollowsChoice(team);
     // Handicap (OpenRA): less firepower and armour, slower production.
     const handicap = buildSelect(HANDICAPS, 'lobby-select lobby-handicap');
     handicap.value = String(player.handicap ?? 0);
@@ -1015,6 +1036,7 @@ export class Lobby {
     handicap.addEventListener('change', () => {
       this.state.players[slot].handicap = Number(handicap.value);
     });
+    titleFollowsChoice(handicap);
     teamCell.append(team, handicap);
     Object.assign(rec, { team, handicap });
 
@@ -1245,6 +1267,12 @@ export class Lobby {
         title,
         el('span', 'lobby-muted', `by ${i.author}, ${i.width} x ${i.height}, ${i.spawns} start positions, ${capitalize(i.biome)}`),
       );
+      // Map versions: a file of an older format version was upgraded (non-blocking).
+      if (i.upgrade) {
+        const notice = el('span', 'lobby-muted lobby-map-notice', i.upgrade.message);
+        notice.setAttribute('role', 'status');
+        this.mapInfo.append(notice);
+      }
     }
 
     this.moddedBox.hidden = !this.pendingMap;
@@ -1292,12 +1320,6 @@ export class Lobby {
     rec.row.className = `lobby-slot lobby-slot-${p.type}`;
     rec.row.style.setProperty('--slot-color', p.type === 'closed' ? 'var(--l-edge)' : rgbCss(this.colors[p.color]));
     rec.flag.dataset.faction = p.faction;
-    // The screen takes the colours of the side you picked (css/theme.css).
-    if (p.type === 'human') {
-      const side = factionSide(p.faction);
-      if (side) document.documentElement.dataset.faction = side;
-      else delete document.documentElement.dataset.faction;
-    }
     rec.desc.textContent = p.type === 'closed' ? 'Nobody plays in this slot.' : f.desc;
     this.pickers[slot].render();
   }

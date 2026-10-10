@@ -11,6 +11,7 @@
 // (they could not catch up), and the game itself goes on.
 
 import { LOG_MAX_BYTES, logEntryBytes } from '@webra/protocol';
+import { logError } from './telemetry.js';
 
 /** A chunk is sealed after this many frames or this many bytes of JSON. */
 export const CHUNK_FRAMES = 512;
@@ -91,7 +92,7 @@ export class OrderLog {
       .catch((err) => {
         // Kept in memory instead; reads still work.
         this.failed = true;
-        console.error('order log write failed', err?.message);
+        logError('order log write failed', err);
       });
   }
 

@@ -83,7 +83,16 @@ const BRIDGE = 7;
 const BEACH = 8;
 const RIVER = 9;
 const WALL = 10;
-const isWaterType = (v) => v === WATER || v === FORD || v === RIVER || v === BRIDGE;
+/** Open water to draw: rivers, and the river under a bridge's deck (the bridge actor draws the deck). */
+const isWaterType = (v) => v === WATER || v === RIVER || v === BRIDGE;
+/**
+ * The tile class an engine terrain is drawn as: walls as rock, beaches as
+ * rough ground (beach tiles by the water) and fords as a gravel crossing,
+ * rough ground with beach tiles toward the water like Red Alert's ford
+ * templates (Rough and Road tiles over the river), never as open water
+ * the units would seem to walk on.
+ */
+const drawnAs = (v) => (v === WALL ? ROCK : v === BEACH || v === FORD ? ROUGH : v);
 
 export function hash(x, y, salt = 0) {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(salt + 1, 2246822519);
@@ -300,11 +309,7 @@ function fitScore(tile, want, seams) {
  * @param {Uint8Array} terrain engine terrain bytes (RGBA per cell, R = type)
  */
 export function planTerrain(terrain, w, h, pools) {
-  // Walls are drawn as rock, beaches as rough ground (beach tiles by the water).
-  const type = (x, y) => {
-    const v = terrain[(y * w + x) * 4];
-    return v === WALL ? ROCK : v === BEACH ? ROUGH : v;
-  };
+  const type = (x, y) => drawnAs(terrain[(y * w + x) * 4]);
   const picks = new Array(w * h).fill(null);
   const trees = new Uint8Array(w * h);
   const coast = { cells: 0, fitted: 0 };
@@ -593,7 +598,7 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
     } else {
       // Past the atlas budget a cell keeps a plain tile of its kind (always placed early).
       const own = picks[i];
-      const plain = isWaterType(terrain[i * 4]) ? pools.water[0] : pools.clear[0];
+      const plain = isWaterType(drawnAs(terrain[i * 4])) ? pools.water[0] : pools.clear[0];
       for (const t of [own, plain]) {
         if (!t) continue;
         k = place(t.key, indexedTile(t.data, ORIGINAL_TILE, ORIGINAL_TILE, lookup, ORIGINAL_TILE, null, rotation));
@@ -698,10 +703,19 @@ function gridTile(img, size, col, row) {
 }
 
 /**
+ * The pack class (content/packs.js TERRAIN_CLASSES) each engine terrain is
+ * drawn with: the engine's first six terrains have a class of their own;
+ * roads are drawn as clear ground, bridges (the bridge actor draws the deck)
+ * and rivers as water, beaches as rough ground and walls as rock.
+ */
+export const PACK_CLASS_OF_TERRAIN = Object.freeze([CLEAR, ROUGH, ROCK, WATER, TREE, FORD, CLEAR, WATER, ROUGH, WATER, ROCK]);
+
+/**
  * Tile terrain from a texture pack's tiles (manifest `terrain`, content/packs.js):
- * `{ atlas, cells }`. Each class is a row of variants picked per cell;
- * missing classes fall back (rough and tree to clear, rock to rough, ford to
- * water). `images` maps the pack's paths to decoded `{ width, height, rgba }`.
+ * `{ atlas, cells }`. Each class is a row of variants picked per cell
+ * (PACK_CLASS_OF_TERRAIN); missing classes fall back (rough and tree to
+ * clear, rock and ford to rough). `images` maps the pack's paths to
+ * decoded `{ width, height, rgba }`.
  */
 export function packTerrain(t, images, terrain, w, h) {
   const size = t.tileSize;
@@ -712,7 +726,8 @@ export function packTerrain(t, images, terrain, w, h) {
   const rough = strip('rough').length ? strip('rough') : clear;
   const rock = strip('rock').length ? strip('rock') : rough;
   const tree = strip('tree').length ? strip('tree') : clear;
-  const ford = strip('ford').length ? strip('ford') : water;
+  // A ford is a crossing: without tiles of its own it is rough ground, never open water.
+  const ford = strip('ford').length ? strip('ford') : rough;
   const atlas = blankAtlas(size);
   const classes = [clear, rough, rock, water, tree, ford]; // engine terrain values 0..5
   const bases = [];
@@ -725,7 +740,7 @@ export function packTerrain(t, images, terrain, w, h) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
-      const [base, count] = bases[Math.min(5, terrain[i * 4])];
+      const [base, count] = bases[PACK_CLASS_OF_TERRAIN[terrain[i * 4]] ?? CLEAR];
       cells[i * 4] = base + (hash(x, y) % count);
       cells[i * 4 + 3] = 255;
     }

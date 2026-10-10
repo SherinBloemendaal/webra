@@ -734,6 +734,7 @@ Serialized size at most 32 KiB.
     ]
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
+  "privacy": { "errorReports": true },               // "Send error reports" (docs/security.md, "Error reports")
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
                                    // (the game keeps e.g. "mouseCaptureHints": 0..99 there)
 }

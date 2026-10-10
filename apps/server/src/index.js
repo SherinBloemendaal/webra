@@ -3,7 +3,8 @@
 // (playgate.js, docs/security.md). Other static files (the website) are
 // served by Workers Assets directly; only /api/*, /play and /play/* reach
 // this handler first (wrangler.jsonc `run_worker_first`). The daily cron
-// trigger runs the accounts retention job.
+// trigger runs the accounts retention job. Errors are reported to WebRA's
+// Sentry when SENTRY_DSN is set (telemetry.js).
 
 import {
   framesDigest,
@@ -28,8 +29,11 @@ import { loadSaveRecord, missionDigest } from './onlinesaves.js';
 import { scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
+import { Session as SessionObject } from './session.js';
+import { instrumentSession, logError, reportHttpError, withTelemetry } from './telemetry.js';
 
-export { Session } from './session.js';
+/** The session Durable Object (wrangler.jsonc), with error reports. */
+export const Session = instrumentSession(SessionObject);
 
 const SERVER_VERSION = pkg.version;
 const SESSION_LIMIT = 20;
@@ -132,7 +136,8 @@ async function sessionMapShare(ctx, id) {
   }
   const prepared = await prepareMap(await readText(ctx.request, MAP_MAX_BYTES));
   const r = rpcResult(await stub.shareMap({ member, account, ip: ctx.ip, prepared }));
-  return json({ id: r.id, hash: r.hash }, r.created ? 201 : 200);
+  // `upgradedFrom`: the file was of an older map format version; the lobby has the upgraded map.
+  return json({ id: r.id, hash: r.hash, ...(prepared.upgradedFrom ? { upgradedFrom: prepared.upgradedFrom } : {}) }, r.created ? 201 : 200);
 }
 
 /** Resumes per network and hour (each upload is a whole save file). */
@@ -187,7 +192,8 @@ async function sessionResume(ctx, id) {
   const seats = save.options.players.map((p, i) => (p.type === 'human' ? (record.members.find((m) => m.seat === i)?.userId ?? null) : null));
   if (save.options.players.some((p, i) => p.type === 'human' && seats[i] === null)) throw new HttpError(409, 'invalid', 'A player of this saved game no longer exists.');
   if (!seats.includes(account.id)) throw new HttpError(403, 'forbidden', 'You did not play in this saved game.');
-  const prepared = save.map ? await prepareMap(save.map) : null;
+  // A saved game keeps the map it was played on: never upgraded (saves are pinned to their engine anyway).
+  const prepared = save.map ? await prepareMap(save.map, undefined, { upgrade: false }) : null;
   const r = rpcResult(
     await stub.loadSave({
       member,
@@ -274,7 +280,7 @@ function methodNotAllowed(allow) {
   return new HttpError(405, 'bad_message', 'Method not allowed.', { allow });
 }
 
-export default {
+export default withTelemetry({
   async fetch(request, env, exec) {
     const url = new URL(request.url);
     if (isPlayPath(url.pathname)) return servePlay(request, env, exec);
@@ -283,11 +289,14 @@ export default {
     try {
       return await route(ctx);
     } catch (err) {
-      if (err instanceof HttpError) return withCookies(errorResponse(err.status, err.code, err.message, err.headers, err.extra), ctx.cookies);
-      // Never echo internals or request data; log only the error type and message.
-      console.error('api error', err?.name, err?.message);
+      if (err instanceof HttpError) {
+        reportHttpError(err);
+        return withCookies(errorResponse(err.status, err.code, err.message, err.headers, err.extra), ctx.cookies);
+      }
+      // Never echo internals or request data; log only the error type and message (and report it).
+      logError('api error', err);
       return withCookies(errorResponse(500, 'internal', 'Internal error.'), ctx.cookies);
     }
   },
   scheduled,
-};
+});

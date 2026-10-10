@@ -14,14 +14,16 @@
 // (order log, sync, resume), leaving, and the stall drop. The play gate:
 // anonymous and pending visitors get no game files, an active account gets
 // them with a play pass, signing out clears it. A second, two-player lobby
-// shares the host's custom map with the session only: the guest installs it
-// by hash (checked with the protocol package), the game starts on it, the
-// players save it online, a rematch brings both back into the lobby with
-// their rejoin keys, and the save is resumed in a new session.
+// shares the host's custom map (a file from before map versions; its
+// versioned twin is the same map, a newer format is refused) with the
+// session only: the guest installs it by hash (checked with the protocol
+// package), the game starts on it, the players save it online, a rematch
+// brings both back into the lobby with their rejoin keys, and the save is
+// resumed in a new session.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { COOP_MISSIONS, encodeClient, encodeReplay, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
+import { COOP_MISSIONS, encodeClient, encodeReplay, MAP_FORMAT_VERSION, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -429,7 +431,8 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   await host.type('lobby', (m) => m.slots[1].type === 'human');
   const member = (w) => ({ [MEMBER_HEADER]: `${w.you}.${w.key}` });
 
-  // The host shares a map made for this run (a custom map nobody else has).
+  // The host shares a map made for this run (a custom map nobody else has),
+  // as a file from before map versions (no formatVersion: format 1).
   const w = 48;
   const terrain = Buffer.alloc(w * w).toString('base64');
   const custom = { format: 1, name: `Custom <b>${RUN}</b>`, author: `Host ${RUN}`, width: w, height: w, terrain, ore: terrain, spawns: [[3, 3], [44, 44]] };
@@ -438,6 +441,14 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   assert.equal((await api(path, { method: 'POST', body: JSON.stringify(custom) }, HOST)).status, 403, 'the member header is required');
   const shared = await api(path, { method: 'POST', body: JSON.stringify(custom), headers: member(hw) }, HOST);
   assert.equal(shared.status, 201, JSON.stringify(shared.body));
+  // Map versions: the same map as a versioned file is the same map; a newer format is refused with what to do.
+  const versioned = { formatVersion: MAP_FORMAT_VERSION, gameVersion: '0.9.0', ...custom };
+  const twin = await api(path, { method: 'POST', body: JSON.stringify(versioned), headers: member(hw) }, HOST);
+  assert.equal(twin.status, 200, JSON.stringify(twin.body));
+  assert.equal(twin.body.hash, shared.body.hash);
+  const newer = await api(path, { method: 'POST', body: JSON.stringify({ ...versioned, formatVersion: MAP_FORMAT_VERSION + 1 }), headers: member(hw) }, HOST);
+  assert.equal(newer.status, 422);
+  assert.match(newer.body.error.message, /^This map was made with a newer version of WebRA \(0\.9, format \d+; this version reads format \d+\)\. Update the game to play it\.$/);
   const announced = await guest.type('lobby', (m) => m.map !== null);
   const { id: mapId, bytes, ...details } = announced.map;
   assert.equal(mapId, shared.body.id);
@@ -470,6 +481,8 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   const text = await dl.text();
   const parsed = parseMap(text);
   assert.ok(parsed.ok, parsed.errors?.join('; '));
+  assert.equal(parsed.upgrade, null, 'the lobby serves the current format');
+  assert.ok(!text.includes('formatVersion') && !text.includes('gameVersion'), 'canonical: format 1 names no version');
   assert.equal(await mapHash(parsed.map), shared.body.hash);
   assert.equal(await sha256Hex(text), shared.body.hash, 'the canonical text');
   guest.send({ t: 'mapstate', hash: shared.body.hash, state: 'installed' });

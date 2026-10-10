@@ -20,7 +20,8 @@
 
 import { BRIDGES, PICK_ANY, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
-import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, TERRAIN } from '../../editor/js/mapformat.js';
+import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, MAP_FORMAT_VERSION, TERRAIN } from '../../editor/js/mapformat.js';
+import { GAME_VERSION } from '../protocol.js';
 
 export class OramapError extends Error {
   constructor(message, report = null) {
@@ -513,6 +514,9 @@ export function convertOramap(input, opts) {
   // Format 2 (with a gems layer) only when a cell holds gems, like every WebRA writer.
   const format = formatFor(gemsOut);
   const map = {
+    // A map file of the current format version, stamped with this release (docs/contracts.md "Map versions").
+    formatVersion: MAP_FORMAT_VERSION,
+    gameVersion: GAME_VERSION,
     format,
     name: title,
     author,

@@ -10,8 +10,9 @@
 // (`instances: 'gpu'`) sends its tick-rate records and the fog as
 // transferred buffers in every mode, and only when they changed.
 
-import init, { Game, initSync, version } from '../../pkg/webra_sim.js';
+import init, { Game, initSync, take_panic, version } from '../../pkg/webra_sim.js';
 import { SimCore } from './core.js';
+import { EngineError, serializeError } from './engine-error.js';
 import { BufferPool, SharedFrames } from './framebuffer.js';
 
 /** Where messages go: the worker global in browsers; tests may install another port first. */
@@ -28,6 +29,23 @@ const post = (msg, transfer = []) => port.postMessage(msg, transfer);
 function emit(type, payload) {
   post({ t: 'event', type, payload });
 }
+
+/**
+ * Send an error to the main thread for the error report (js/sim/host.js;
+ * docs/contracts.md section 8, `error`). The worker has no error reporting
+ * of its own: the main thread decides whether reports are sent at all.
+ */
+function report(err) {
+  try {
+    post({ t: 'error', error: serializeError(err) });
+  } catch {
+    // The port is gone: nothing to report to.
+  }
+}
+
+// Errors nothing caught (a bug in this worker's own code).
+globalThis.addEventListener?.('error', (e) => report(e.error ?? new Error(e.message || 'error in the simulation worker')));
+globalThis.addEventListener?.('unhandledrejection', (e) => report(e.reason));
 
 /** Copy `{ ptr, len }` of wasm memory into a pooled ArrayBuffer (transfer mode). */
 function copyOut(Type, loc, transfer) {
@@ -90,6 +108,8 @@ function reply(id, fn) {
   try {
     post({ t: 'result', id, value: fn() });
   } catch (err) {
+    // Engine failures are reported by the core (onFailure); other errors
+    // answer bad requests and are the caller's to handle.
     post({ t: 'result', id, error: String(err?.message ?? err) });
   }
 }
@@ -99,9 +119,13 @@ async function onInit(msg) {
     wasm = msg.module ? initSync({ module: msg.module }) : await init();
     mode = msg.mode === 'shared' && typeof SharedArrayBuffer === 'function' ? 'shared' : 'transfer';
     if (mode === 'shared') shared = new SharedFrames({ sprites: 'f32', rects: 'f32', fog: 'u8', lines: 'f32', heat: 'f32' });
-    core = new SimCore({ Game, memory: () => wasm.memory, emit });
+    core = new SimCore({ Game, memory: () => wasm.memory, emit, engine: { version, takePanic: take_panic }, onFailure: report });
     post({ t: 'ready', version: version(), mode, shared: shared ? shared.describe() : null });
   } catch (err) {
+    // Fetching the engine can fail for reasons outside the game (the
+    // network, a sign-in that ended): only a failure with the module the
+    // page already compiled is a bug worth a report.
+    if (msg.module) report(err);
     post({ t: 'failed', error: String(err?.message ?? err) });
   }
 }
@@ -133,6 +157,8 @@ function onMessage(msg) {
       try {
         packed = pack(core.step(msg.req));
       } catch (err) {
+        // An engine failure was reported by the core; anything else is a bug here.
+        if (!(err instanceof EngineError)) report(err);
         post({ t: 'failed', error: `The simulation stopped: ${err?.message ?? err}` });
         return;
       }

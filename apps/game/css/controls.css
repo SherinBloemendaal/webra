@@ -278,6 +278,13 @@ input.ui-check:disabled {
   cursor: not-allowed;
 }
 
+input.ui-switch:checked:disabled,
+input.ui-check:checked:disabled,
+input.ui-check:indeterminate:disabled {
+  border-color: var(--ui-accent-disabled);
+  box-shadow: var(--ui-bevel-in);
+}
+
 .ui-row:has(> input:disabled) > .ui-label {
   color: var(--ui-muted);
   cursor: not-allowed;
@@ -369,7 +376,7 @@ input.ui-check:disabled {
 }
 
 .ui-segmented > input:checked + .ui-segment {
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   box-shadow:
     var(--ui-bevel-in),
     inset 0 0 0.8em -0.2em var(--ui-accent-glow);
@@ -394,6 +401,10 @@ input.ui-check:disabled {
   opacity: 0.45;
   background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
   cursor: not-allowed;
+}
+
+.ui-segmented > input:checked:disabled + .ui-segment {
+  background: var(--ui-primary-disabled);
 }
 
 /* A group that fills its line (the cell is as wide as the card). */
@@ -495,6 +506,16 @@ input.ui-slider:focus-visible {
 input.ui-slider:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+input.ui-slider:disabled::-webkit-slider-runnable-track {
+  background:
+    linear-gradient(90deg, var(--ui-accent-disabled) 0 var(--ui-fill, 0%), transparent var(--ui-fill, 0%)),
+    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+}
+
+input.ui-slider:disabled::-moz-range-progress {
+  background: var(--ui-accent-disabled);
 }
 
 /* ---- Select and text fields ------------------------------------------------

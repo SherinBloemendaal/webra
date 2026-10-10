@@ -96,7 +96,8 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
 
   if (v.map !== null) {
     if (typeof v.map !== 'string') fail('map must be canonical map JSON text or null');
-    const r = parseMap(v.map);
+    // The map as played: never upgraded (files are pinned to the engine that made them anyway).
+    const r = parseMap(v.map, { upgrade: false });
     if (!r.ok) fail(`map: ${r.errors.slice(0, 3).join('; ')}`);
     if (r.canonical !== v.map) fail('map is not in canonical form');
     if (players > r.players) fail(`the map has room for ${r.players} players`);

@@ -492,7 +492,7 @@ fn presentation_state_never_changes_the_simulation() {
             busy.build_render(view, 0.5, 0.0, 0.0, size, size);
             busy.build_render_records(view);
             busy.fog_ptr(view);
-            busy.build_lines(view, 0.5, true);
+            busy.build_lines(view, 0.5, true, None);
             busy.build_heat_fx(view, 0.0, 0.0, size, size);
         }
         events += busy.take_audio_events().len();

@@ -238,7 +238,7 @@ test('palette parity: every actor of the rules is in exactly one palette group, 
 });
 
 import { publishMap } from '../editor/js/online.js';
-import { canonicalJson } from '../editor/js/mapformat.js';
+import { canonicalJson, canonicalMap } from '../editor/js/mapformat.js';
 
 test('publishing sends the map data only: canonical JSON, no pictures or installed art', async () => {
   const map = JSON.parse(mapJson([{ type: '1TNK', owner: 0, x: 10, y: 10, facing: 256 }]));
@@ -258,6 +258,6 @@ test('publishing sends the map data only: canonical JSON, no pictures or install
   assert.equal(sent[0].init.headers['Content-Type'], 'application/json');
   assert.equal(typeof sent[0].init.body, 'string');
   assert.equal(sent[0].init.body, canonicalJson(map));
-  assert.deepEqual(Object.keys(JSON.parse(sent[0].init.body)).sort(), Object.keys(map).filter((k) => map[k] !== undefined).sort());
+  assert.deepEqual(Object.keys(JSON.parse(sent[0].init.body)), Object.keys(canonicalMap(map)), 'the map file\'s own fields only');
   assert.doesNotMatch(sent[0].init.body, /data:image|base64,|png/i);
 });

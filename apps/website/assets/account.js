@@ -511,7 +511,8 @@ export async function mountAccountPage(root, deps = {}) {
       help: user.usernameChangedAt ? `Last changed ${formatDateTime(user.usernameChangedAt)}. You can change it once every 30 days.` : 'You can change it once every 30 days.',
     });
     const displayName = field('Display name', el('input', { type: 'text', value: user.displayName ?? '', maxlength: String(DISPLAY_NAME_MAX), autocomplete: 'nickname' }));
-    const color = field('Colour', el('input', { type: 'color', value: user.avatarColor ?? '#4a82c4' }));
+    // Without a colour of its own the game draws the avatar in the accent red (--ui-accent).
+    const color = field('Colour', el('input', { type: 'color', value: user.avatarColor ?? '#e0301f' }));
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save profile' });
     const form = el('form', { class: 'form-grid', novalidate: true }, username.row, displayName.row, color.row, el('div', { class: 'form-actions' }, save));
     form.addEventListener('submit', async (e) => {

@@ -103,7 +103,7 @@
 
 .rn-tag-new {
   border-color: var(--ui-edge);
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   color: #fff;
 }
 
@@ -161,11 +161,11 @@
 }
 
 .rn-link:hover {
-  filter: brightness(1.2);
+  color: var(--ui-accent-hover);
 }
 
 .rn-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 

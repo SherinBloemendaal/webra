@@ -33,11 +33,18 @@ import { LAYERS, fairnessView, historyList, keysList, layersList, problemsView, 
 import { mapSizeDialog, modal, newMapDialog, testPlayDialog, BIOME_CHOICES } from './js/dialogs.js';
 import { editorIcon } from './js/icons.js';
 import { PALETTE_GROUPS } from './js/palette.js';
-import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, parseMap, validateMap } from './js/mapformat.js';
+import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, mapFileText, parseMap, validateMap } from './js/mapformat.js';
+import { applyFix, openMapFile } from './js/upgrade.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
+/**
+ * The last opened file's format version story (js/upgrade.js openMapFile):
+ * `notice` (upgraded, or why it is not compatible) stays until the map is
+ * saved; `problems` with their quick fixes until fixed.
+ */
+let opened = { notice: null, problems: [] };
 /** Recovery copies: the last maps worked on, kept when the draft moves on to another map. */
 const RECOVERY_KEY = 'webra.editor.recovery';
 const RECOVERY_COPIES = 3;
@@ -155,8 +162,10 @@ async function boot() {
 
 async function start() {
   loadPrefs();
-  const { map, note } = await initialMap();
-  doc = new MapDoc(map);
+  const { map: raw, note } = await initialMap();
+  const first = openMapFile(raw);
+  doc = new MapDoc(first.map ?? newBlankMap());
+  opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
   view = new EditorView($('#view'), renderer, {
     down: (c, e) => ctl.down(c, e),
     move: (c, e) => ctl.move(c, e),
@@ -192,7 +201,7 @@ async function start() {
   requestAnimationFrame(() => view.fit());
   onDocChange({ cells: true, objects: true, meta: true, resized: true }, { initial: true });
   $('#boot').hidden = true;
-  if (note) toast(note);
+  if (note || first.notice) toast([note, first.notice].filter(Boolean).join(' '), first.status !== 'current' && first.status !== 'upgraded');
   window.webraEditor = { doc, view, ctl, catalog, rulesBase, state, art, preview, keys };
   setInterval(saveRecovery, RECOVERY_EVERY_MS);
   window.addEventListener('pagehide', () => {
@@ -453,6 +462,7 @@ function runValidation() {
     ? `Valid map${js.warnings.length ? `, ${js.warnings.length} warning${js.warnings.length === 1 ? '' : 's'}` : ''}`
     : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before test play or publishing`;
   $('#validation').replaceChildren(
+    openedView(),
     problemsView(
       { engine, issues: js.issues, fixes },
       (p, f) => {
@@ -472,6 +482,39 @@ function runValidation() {
     `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
     `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
     (engine.hash ? `, hash ${engine.hash.slice(0, 12)}` : '');
+}
+
+/**
+ * How the file was opened (map versions, js/upgrade.js): the upgrade notice
+ * and the problems of a map opened best effort with their quick fixes, until
+ * saved or fixed.
+ */
+function openedView() {
+  const items = [];
+  if (opened.notice) items.push(el('li', { class: 'notice' }, el('span', { class: 'issue-text' }, opened.notice)));
+  for (const p of opened.problems) {
+    const located = Number.isInteger(p.x) && Number.isInteger(p.y);
+    const actions = p.fixed
+      ? [el('span', { class: 'muted' }, `Fixed: ${p.fixed} (undo with ${keyOf('undo') || 'Ctrl+Z'}).`)]
+      : [
+          located ? el('button', { type: 'button', class: 'link', onclick: () => view.centerOnCell(p.x, p.y) }, 'Show') : null,
+          ...(p.fixes ?? []).map((f) => el('button', { type: 'button', class: 'fix', onclick: () => fixOpened(p, f) }, f.label)),
+        ];
+    items.push(el('li', { class: p.fixed ? 'ok' : p.fixes?.length ? 'error' : 'warning' }, [el('span', { class: 'issue-text' }, p.message), el('span', { class: 'issue-actions' }, actions)]));
+  }
+  return items.length ? el('ul', { class: 'issues opened' }, items) : el('span', { hidden: true });
+}
+
+function fixOpened(p, fix) {
+  let next;
+  try {
+    next = applyFix(doc.toMap(), fix);
+  } catch (err) {
+    toast(`This fix cannot be applied: ${err.message}`, true);
+    return;
+  }
+  p.fixed = fix.label;
+  doc.replace(next, fix.label);
 }
 
 function renderFairness() {
@@ -547,7 +590,9 @@ function buildTools() {
   const paint = segmented({ name: 'paint-layer', label: 'Paint', options: PAINT_LAYERS, value: state.paint, block: true, onChange: (v) => setPaint(v) });
   paint.root.id = 'paint-layer';
   const materials = MATERIALS.map((m, k) => {
-    const b = el('button', { type: 'button', class: 'swatch', 'data-material': String(m.t), 'aria-label': TERRAIN_NAMES[m.t], onclick: () => setMaterial(m.t) }, [el('i', { class: `terrain-${m.t}` }), el('span', {}, TERRAIN_NAMES[m.t])]);
+    const chip = el('i');
+    chip.style.setProperty('--swatch', m.color);
+    const b = el('button', { type: 'button', class: 'swatch', 'data-material': String(m.t), 'aria-label': TERRAIN_NAMES[m.t], onclick: () => setMaterial(m.t) }, [chip, el('span', {}, TERRAIN_NAMES[m.t])]);
     tips.push(attachTooltip(b, () => ({ title: TERRAIN_NAMES[m.t], hotkey: keyOf(`material.${k}`), desc: MATERIAL_HINTS[m.t] })));
     return b;
   });
@@ -1227,8 +1272,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    loadMap(map, `Open ${m.name}`);
-    toast(`Opened "${map.name}".`);
+    loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`);
   } catch (err) {
     toast(err.message, true);
   }
@@ -1245,18 +1289,32 @@ async function copy(text) {
 
 // ---- Commands ---------------------------------------------------------------------------------------
 
-function loadMap(map, label) {
-  const res = validateMap(map, { catalog, rulesBase });
+/**
+ * Open a parsed map file (any format version, js/upgrade.js) as one undoable
+ * step. `done` is the toast on success; the upgrade notice or the reason a
+ * map is not compatible goes with it and stays in the Check tab until saved.
+ */
+function loadMap(raw, label, done = null) {
+  const next = openMapFile(raw);
+  if (!next.map) {
+    toast(`Cannot open this map: ${next.error}`, true);
+    return false;
+  }
+  const res = validateMap(next.map, { catalog, rulesBase });
   try {
-    doc.replace(map, label);
+    doc.replace(next.map, label);
   } catch (err) {
     toast(`Cannot open this map: ${err.message}`, true);
     return false;
   }
+  opened = { notice: next.notice ?? null, problems: next.problems ?? [] };
+  runValidation();
   ctl.selection.clear();
   ctl.setRegion(null);
   view.fit();
-  if (!res.ok) toast(`Opened with ${res.errors.length} problem(s); see the Check tab.`, true);
+  if (next.notice) toast([done, next.notice].filter(Boolean).join(' '), next.status !== 'upgraded');
+  else if (!res.ok) toast(`${done ?? ''} It has ${res.errors.length} problem(s); see the Check tab.`.trim(), true);
+  else if (done) toast(done);
   return true;
 }
 
@@ -1278,7 +1336,7 @@ function openFile(file) {
       toast(err.message, true);
       return;
     }
-    if (loadMap(map, `Open ${file.name}`)) toast(`Opened ${file.name}.`);
+    loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`);
   });
 }
 
@@ -1313,7 +1371,7 @@ function showImportReport(report, map, failure) {
   $('#import-report')?.remove();
   const open = (withRules) => {
     const m = withRules ? map : { ...map, rules: null };
-    if (loadMap(m, `Import ${report.title}`)) toast(`Imported "${report.title}".`);
+    loadMap(m, `Import ${report.title}`, `Imported "${report.title}".`);
   };
   const buttons = [];
   if (map) {
@@ -1338,7 +1396,11 @@ function showImportReport(report, map, failure) {
 
 function saveFile() {
   const map = doc.toMap();
-  download(new Blob([canonicalJson(map)], { type: 'application/json' }), mapFileName(map.name));
+  // A file of the current format, stamped with this release (docs/contracts.md "Map versions").
+  download(new Blob([mapFileText(map)], { type: 'application/json' }), mapFileName(map.name));
+  // Saved: the upgrade (or repair) is kept now.
+  opened = { notice: null, problems: opened.problems.filter((p) => !p.fixed) };
+  runValidation();
   toast('Map downloaded.');
 }
 

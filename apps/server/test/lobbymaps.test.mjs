@@ -5,7 +5,7 @@
 // staying out of the public list, and their retention.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MEMBER_HEADER, parseServerMessage, PROTOCOL_VERSION, sha256Hex } from '@webra/protocol';
+import { MAP_FORMAT_VERSION, MEMBER_HEADER, parseServerMessage, PROTOCOL_VERSION, sha256Hex } from '@webra/protocol';
 import { Browser, Clock, makeEnv, PASSWORD, promote, scheduled, setSite, signup } from './accounts-harness.mjs';
 import { makeSession } from './fake-do.mjs';
 import { Room, RoomError } from '../src/room.js';
@@ -297,6 +297,55 @@ test('routes: publishing a shared map lists it; anonymous sharing works when the
   // A listed map stays listed when it is shared again.
   await anon.req('POST', `/api/sessions/${sid}/map`, text, { headers: { [MEMBER_HEADER]: `${hw.you}.${hw.key}` } });
   assert.equal(env.DB.rows('SELECT listed FROM maps')[0].listed, 1);
+});
+
+test('routes: map files from before map versions and their versioned form share as one map; a newer format is refused', async () => {
+  const env = makeEnv({ email: false });
+  const s = await makeSession({ DB: env.DB, maxPlayers: 2 });
+  await setSite(env, { onlineRequiresAccount: false });
+  const host = s.connect('host', '10.0.0.1');
+  await s.send(host, hello(s, 'Anon', { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  const guest = s.connect('guest', '10.0.0.2');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const sid = wireSession(env, s.session);
+  const cred = (w) => ({ [MEMBER_HEADER]: `${w.you}.${w.key}` });
+  const b = new Browser(env);
+  // A file as WebRA 0.9 wrote it (no formatVersion), then the same map as a versioned file.
+  const legacy = JSON.stringify(mapFile('versions'));
+  const versioned = JSON.stringify({ formatVersion: MAP_FORMAT_VERSION, gameVersion: '0.9.0', ...mapFile('versions') });
+  const first = await b.req('POST', `/api/sessions/${sid}/map`, legacy, { headers: cred(hw) });
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  assert.equal(first.body.upgradedFrom, undefined, 'format 1 is the current format: nothing to upgrade');
+  const second = await b.req('POST', `/api/sessions/${sid}/map`, versioned, { headers: cred(hw) });
+  assert.equal(second.status, 200, 'the same map');
+  assert.equal(second.body.hash, first.body.hash);
+  // The guest downloads the canonical form: no version keys, the same identity in every client.
+  const dl = await b.get(`/api/sessions/${sid}/map?hash=${first.body.hash}`, { csrf: false, headers: cred(gw) });
+  assert.equal(dl.status, 200);
+  const text = JSON.stringify(dl.body);
+  assert.equal(await sha256Hex(text), first.body.hash);
+  assert.ok(!text.includes('formatVersion') && !text.includes('gameVersion'));
+  assert.equal(guest.last('lobby').map.hash, first.body.hash);
+  // A map from a newer release: refused with what to do, nothing stored.
+  const newer = JSON.stringify({ formatVersion: MAP_FORMAT_VERSION + 1, gameVersion: '2.1.0', ...mapFile('future') });
+  const refused = await b.req('POST', `/api/sessions/${sid}/map`, newer, { headers: cred(hw) });
+  assert.equal(refused.status, 422);
+  assert.equal(
+    refused.body.error.message,
+    `This map was made with a newer version of WebRA (2.1, format ${MAP_FORMAT_VERSION + 1}; this version reads format ${MAP_FORMAT_VERSION}). Update the game to play it.`,
+  );
+  const author = await signup(env, 'Versioned');
+  promote(env, author.user.id);
+  const pub = await author.post('/api/maps', JSON.parse(newer));
+  assert.equal(pub.status, 422, 'publishing too');
+  assert.match(pub.body.error.message, /^This map was made with a newer version of WebRA/);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM maps')[0].n, 1);
+  // Malformed version keys are invalid maps.
+  const bad = await author.post('/api/maps', { ...mapFile('bad'), formatVersion: 'one' });
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.error.message, /formatVersion must be a whole number/);
 });
 
 test('the public session list names a shared map without its id, hash or author', async () => {
