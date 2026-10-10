@@ -58,10 +58,20 @@ export function engineMismatch(replay, version) {
   return `This ${what} was made with WebRA ${replay.engine}; this is WebRA ${version}. The simulation can differ between versions, so ${what}s only load in the version that made them.`;
 }
 
-/** A fresh game in lockstep mode from a replay's start settings. */
-export function newGame(Game, replay) {
+/**
+ * A fresh game in lockstep mode from a replay's start settings. A mission
+ * replay (`mode: 'mission'`) needs the text of its mission file, checked
+ * against `replay.mission.hash` by the caller.
+ */
+export function newGame(Game, replay, missionText = null) {
   const options = JSON.stringify(replay.options);
-  const game = replay.map ? Game.from_map(replay.map, options) : Game.from_options(options);
+  let game;
+  if (replay.mode === 'mission') {
+    if (typeof missionText !== 'string') throw new Error('a mission replay needs its mission file');
+    game = Game.from_mission(missionText, options);
+  } else {
+    game = replay.map ? Game.from_map(replay.map, options) : Game.from_options(options);
+  }
   game.set_lockstep(true);
   return game;
 }
@@ -72,12 +82,14 @@ export function newGame(Game, replay) {
  */
 export class Recorder {
   /**
-   * @param {{ mode: 'skirmish' | 'online', options: object, map: string | null, mapHash: string | null,
+   * @param {{ mode: 'skirmish' | 'online' | 'mission', options: object, map: string | null, mapHash: string | null,
    *   player: number | null, engine: string, title: string, createdAt?: number,
+   *   mission?: { id: string, hash: string } | null,
    *   frames?: Array<[number, any[]]>, hashes?: Array<[number, string]> }} start
+   *   `mission`: the mission file of a mission game (protocol mission.js)
    */
-  constructor({ mode, options, map, mapHash, player, engine, title, createdAt = Date.now(), frames = [], hashes = [] }) {
-    this.start = { mode, options, map, mapHash, player, engine, title, createdAt };
+  constructor({ mode, options, map, mapHash, player, engine, title, createdAt = Date.now(), mission = null, frames = [], hashes = [] }) {
+    this.start = { mode, options, map, mapHash, player, engine, title, createdAt, mission };
     this.frames = frames.slice();
     this.hashes = hashes.slice();
     this.bytes = (map ? map.length : 0) + JSON.stringify(frames).length;
@@ -128,6 +140,7 @@ export class Recorder {
       ticks: ticksKept,
       frames: this.frames.filter(([t]) => t < ticksKept),
       hashes,
+      ...(this.start.mode === 'mission' ? { mission: this.start.mission } : {}),
     };
   }
 
@@ -270,10 +283,10 @@ export class LocalDriver {
  * seeking runs within a time budget per animation frame (`seeking`).
  */
 export class ReplayController {
-  constructor(Game, replay, { keyframeTicks = KEYFRAME_TICKS, maxKeyframes = MAX_KEYFRAMES } = {}) {
+  constructor(Game, replay, { keyframeTicks = KEYFRAME_TICKS, maxKeyframes = MAX_KEYFRAMES, missionText = null } = {}) {
     this.Game = Game;
     this.replay = replay;
-    this.game = newGame(Game, replay);
+    this.game = newGame(Game, replay, missionText);
     this.player = new FramePlayer(this.game, replay);
     this.length = replay.ticks;
     this.speed = 1;

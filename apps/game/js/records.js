@@ -167,8 +167,8 @@ async function loadDialog(store, ctx) {
 }
 
 /**
- * Game menu actions for a recorded game: save (skirmish, to the browser or a
- * file) and download the replay. Each `run()` resolves with the message to show.
+ * Game menu actions for a recorded game: save (skirmish and missions, to the
+ * browser or a file) and download the replay. Each `run()` resolves with the message to show.
  * `recorder` is the handle on the recorder that runs with the simulation
  * (js/sim/proxy.js RecorderHandle): `start`, `full`, and `encode(kind)`
  * resolving with `{ text, ticks, full }`; `ready()` is false while a save loads;
@@ -179,7 +179,8 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
   const saves = store ?? SaveStore.browser();
   const fail = (err) => err?.message ?? String(err);
   const actions = [];
-  if (recorder.start.mode === 'skirmish' && recorder.start.player !== null) {
+  // Single player games: skirmish and campaign missions.
+  if ((recorder.start.mode === 'skirmish' || recorder.start.mode === 'mission') && recorder.start.player !== null) {
     actions.push({
       id: 'save',
       label: 'Save game',

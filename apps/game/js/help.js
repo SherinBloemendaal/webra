@@ -76,6 +76,12 @@ export const HELP = Object.freeze({
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators.',
 
+  // ---- Campaign (js/campaign/menu.js) ------------------------------------------------------
+  campaign:
+    "OpenRA's Red Alert missions with their maps, rules and scripts: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions. In the campaigns a chapter opens once you win a mission of the chapter before it (any of its variants); the other missions are open from the start. Your progress is kept with your settings and follows your account. The original movies are not part of WebRA: a card stands in for each.",
+  'mission.difficulty':
+    "How hard the mission's script makes it, as the mission sets it: more or stronger enemies, fewer reinforcements, less time or less money. Some missions have a fourth level, Real tough guy.",
+
   // ---- In-game settings (Esc menu, js/scale.js and js/layout.js) -----------------------
   'settings.uiScale':
     'Size of the sidebar, bars, menus and dialogs, from 50 % to 200 %; the battlefield gets the room that is left. It changes size only: how sharp the battlefield is drawn is Max resolution and Low quality.',

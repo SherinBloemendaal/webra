@@ -374,6 +374,7 @@ export class Lobby {
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
+   *   onCampaign?: () => void,  open the campaign screen
    *   onReleaseNotes?: () => void,
    * }} config `maps` gives player-count previews and map files; without it
    *   only `mapPreview` (two players) is used and map files are unavailable.
@@ -386,6 +387,7 @@ export class Lobby {
     this.legacyPreview = config.mapPreview || null;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
+    this.onCampaign = config.onCampaign ?? null;
     this.onReleaseNotes = config.onReleaseNotes || null;
     this.blocked = false;
     this.previewFrame = 0;
@@ -1126,11 +1128,19 @@ export class Lobby {
     const go = el('div', 'lobby-go');
     this.problemText = el('p', 'lobby-problem');
     this.problemText.setAttribute('role', 'status');
+    // The campaign's mission browser (js/campaign/menu.js).
+    let campaign = null;
+    if (this.onCampaign) {
+      campaign = el('button', 'lobby-btn lobby-btn-secondary', 'Campaign');
+      campaign.type = 'button';
+      campaign.title = 'Play the Allied and Soviet campaigns and the expansion missions';
+      campaign.addEventListener('click', () => this.onCampaign());
+    }
     this.startBtn = el('button', 'lobby-btn lobby-btn-primary', 'Start game');
     this.startBtn.type = 'button';
     this.startBtn.title = 'Start the skirmish (Enter)';
     this.startBtn.addEventListener('click', () => this.start());
-    go.append(this.problemText, this.startBtn);
+    go.append(this.problemText, ...(campaign ? [campaign] : []), this.startBtn);
 
     bar.append(stress, go);
     return bar;

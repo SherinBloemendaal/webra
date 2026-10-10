@@ -34,6 +34,31 @@ export const EXPIRE_MS = 3000;
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
+/**
+ * What a mission sends with its frames (js/sim/core.js `mission`): the newest
+ * panel state (engine `mission_state`) and the events of its scripts since
+ * the UI last took them (engine `take_mission_events`).
+ */
+export class MissionFeed {
+  constructor() {
+    this.state = null;
+    this.events = [];
+  }
+
+  onFrame(m) {
+    if (!m) return;
+    if (m.state) this.state = JSON.parse(m.state);
+    if (m.events) for (const e of JSON.parse(m.events)) this.events.push(e);
+  }
+
+  /** The events since the last call, oldest first. */
+  take() {
+    const out = this.events;
+    this.events = [];
+    return out;
+  }
+}
+
 /** Static facts shared by both handles (from SimCore.info()). */
 class StaticFacts {
   constructor(info) {
@@ -88,6 +113,7 @@ export class DirectGame extends StaticFacts {
     super(info);
     this.core = core;
     this.pendingAudio = null;
+    this.mission = new MissionFeed();
     this.lastFrame = null;
     for (const m of [...ORDERS, ...UI_STATE, ...SETTINGS]) this[m] = (...args) => core.call(m, args);
     for (const m of QUERIES) this[m] = (...args) => core.query(m, args);
@@ -108,6 +134,7 @@ export class DirectGame extends StaticFacts {
   onFrame(frame) {
     this.lastFrame = frame;
     this.pendingAudio = frame.audio;
+    this.mission.onFrame(frame.mission);
   }
 
   tick_count() {
@@ -206,6 +233,7 @@ export class RemoteGame extends StaticFacts {
     this.table = null;
     this.tick = info.tick;
     this.pendingAudio = null;
+    this.mission = new MissionFeed();
     this.frameFog = null;
     this.viewPlayer = null;
     for (const m of [...ORDERS, ...SETTINGS]) this[m] = (...args) => link.post({ t: 'call', method: m, args });
@@ -246,6 +274,7 @@ export class RemoteGame extends StaticFacts {
     if (frame.table) this.table = frame.table;
     this.tick = frame.tick;
     if (frame.audio) this.pendingAudio = this.pendingAudio ? concat(this.pendingAudio, frame.audio) : frame.audio;
+    this.mission.onFrame(frame.mission);
     this.frameFog = frame.fog;
     this.viewPlayer = viewPlayer;
   }

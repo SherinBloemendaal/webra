@@ -1,0 +1,405 @@
+/* Campaign: the mission browser (js/campaign/menu.js) and, in a mission, the
+   objectives panel, mission messages and text, the movie card and the script
+   error banner (js/campaign/view.js). Same gunmetal chrome as the lobby. */
+
+#campaign-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: start center;
+  overflow: auto;
+  padding: 24px 16px;
+  background:
+    var(--ui-scan),
+    var(--ui-grid),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
+  color: var(--ui-text);
+  font: var(--ui-fs-m) var(--ui-font);
+}
+
+.campaign-page {
+  width: min(1080px, 100%);
+  padding: 18px 20px 20px;
+  background:
+    var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-shadow);
+}
+
+.campaign-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.campaign-title {
+  flex: 1;
+  margin: 0;
+  font: 900 30px/1.1 var(--ui-font-display);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.campaign-body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 18px;
+}
+
+.campaign-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.campaign-btn,
+.campaign-tab,
+.campaign-mission {
+  padding: 7px 12px;
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: 2px;
+  box-shadow: var(--ui-bevel);
+  font: 700 12px var(--ui-font);
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.campaign-btn,
+.campaign-tab {
+  text-transform: uppercase;
+}
+
+.campaign-btn:hover:not(:disabled),
+.campaign-tab:hover,
+.campaign-mission:hover {
+  filter: brightness(1.2);
+}
+
+.campaign-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.campaign-btn:focus-visible,
+.campaign-tab:focus-visible,
+.campaign-mission:focus-visible,
+.campaign-select:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.campaign-btn-primary {
+  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  color: #fff;
+}
+
+.campaign-tab[aria-selected='true'] {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.campaign-missions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.campaign-mission {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.campaign-mission[aria-current='true'] {
+  border-color: var(--ui-accent);
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-accent-lo));
+}
+
+.campaign-mission[data-state='closed'] {
+  color: var(--ui-muted);
+}
+
+.campaign-mission-state {
+  flex: none;
+  color: var(--ui-muted);
+  font-weight: 400;
+}
+
+.campaign-mission[data-state='won'] .campaign-mission-state {
+  color: var(--ui-ok);
+}
+
+.campaign-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.campaign-preview {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #000;
+  border: 1px solid var(--ui-edge);
+}
+
+.campaign-mission-name {
+  margin: 0;
+  font: 800 20px var(--ui-font-display);
+  letter-spacing: 1px;
+}
+
+.campaign-briefing {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.campaign-muted,
+.campaign-loading {
+  margin: 0;
+  color: var(--ui-muted);
+}
+
+.campaign-error {
+  margin: 0;
+  color: var(--ui-bad);
+  overflow-wrap: anywhere;
+}
+
+.campaign-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.campaign-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.campaign-select {
+  padding: 6px 8px;
+  background: var(--ui-metal-0);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-line);
+  border-radius: 2px;
+  font: inherit;
+}
+
+.campaign-details > .campaign-btn-primary {
+  align-self: flex-start;
+  padding: 10px 22px;
+  font-size: 14px;
+}
+
+@media (max-width: 700px) {
+  .campaign-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .campaign-btn,
+  .campaign-tab,
+  .campaign-mission,
+  .campaign-select {
+    min-height: max(44px, calc(44 * var(--ui-px)));
+  }
+}
+
+/* ---- In a mission (js/campaign/view.js) ------------------------------------------ */
+
+.mission-panel {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  z-index: 6;
+  width: min(380px, calc(100% - 24px));
+  max-height: 60%;
+  overflow: auto;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--ui-metal-1) 92%, transparent);
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: 2px;
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-text);
+  font: var(--ui-fs-s) var(--ui-font);
+}
+
+.mission-panel h2 {
+  margin: 0 0 6px;
+  font: 800 var(--ui-fs-m) var(--ui-font-display);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.mission-objectives {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mission-objective {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.mission-objective::before {
+  content: '\25A1';
+  color: var(--ui-muted);
+}
+
+.mission-objective[data-state='completed']::before {
+  content: '\2714';
+  color: var(--ui-ok);
+}
+
+.mission-objective[data-state='failed']::before {
+  content: '\2716';
+  color: var(--ui-bad);
+}
+
+.mission-objective[data-state='completed'],
+.mission-objective[data-state='failed'] {
+  color: var(--ui-muted);
+}
+
+.mission-objective-type {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.mission-messages {
+  position: absolute;
+  left: 12px;
+  bottom: 96px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(640px, calc(100% - 24px));
+  pointer-events: none;
+  font: 600 var(--ui-fs-m) var(--ui-font);
+  text-shadow: 1px 1px 0 #000, 0 0 4px #000;
+}
+
+.mission-message {
+  overflow-wrap: anywhere;
+  transition: opacity 0.6s;
+}
+
+.mission-message.fading {
+  opacity: 0;
+}
+
+.mission-text {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+  font: 700 var(--ui-fs-l) var(--ui-font);
+  text-align: center;
+  white-space: pre-wrap;
+  text-shadow: 1px 1px 0 #000, 0 0 6px #000;
+}
+
+.mission-floating {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  font: 700 var(--ui-fs-s) var(--ui-font);
+  text-shadow: 1px 1px 0 #000;
+  white-space: nowrap;
+}
+
+.mission-card {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.mission-card-box {
+  width: min(520px, calc(100% - 32px));
+  padding: 18px 20px;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
+  border-radius: 2px;
+  color: var(--ui-text);
+  text-align: center;
+}
+
+.mission-card-box h2 {
+  margin: 0 0 8px;
+  font: 800 20px var(--ui-font-display);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.mission-card-box p {
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.mission-error {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  z-index: 7;
+  width: min(460px, calc(100% - 24px));
+  padding: 10px 12px;
+  background: rgba(110, 30, 22, 0.94);
+  border: 1px solid #8c2c1f;
+  border-radius: 2px;
+  color: #ffe1d8;
+  font: var(--ui-fs-s) var(--ui-font);
+}
+
+.mission-error pre {
+  max-height: 160px;
+  overflow: auto;
+  margin: 6px 0;
+  white-space: pre-wrap;
+  font: var(--ui-fs-xs) var(--ui-font-mono);
+}
+
+.mission-error .campaign-btn {
+  margin-right: 6px;
+}

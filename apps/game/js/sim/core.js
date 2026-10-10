@@ -54,16 +54,20 @@ export class SimCore {
     /** What the last records were built for (GPU instance path), and their generation. */
     this.recordsKey = null;
     this.recordsGen = 0;
+    /** Whether the game plays a mission (asked once), and the tick its panel state was sent for. */
+    this.missionOn = null;
+    this.missionTick = -1;
   }
 
   // ---- Start ------------------------------------------------------------------------
 
   /**
    * Create the game.
-   * @param {object} spec `{ kind: 'skirmish' | 'save' | 'replay' | 'stress' | 'online', tickMs, ... }`:
+   * @param {object} spec `{ kind: 'skirmish' | 'mission' | 'save' | 'replay' | 'stress' | 'online', tickMs, ... }`:
    *   skirmish: options, map (canonical text or null), player, recorder (Recorder start or null)
-   *   save:     replay (the save)
-   *   replay:   replay
+   *   mission:  mission (the mission file's text), options ({ seed, gameSpeed, options }), recorder
+   *   save:     replay (the save), mission (its mission file's text for a mission save)
+   *   replay:   replay, mission (likewise)
    *   stress:   seed, units, size
    *   online:   options, map, player, spectator, delay, rejoining, recorder (start or null)
    * @returns {object} static facts about the game (see `info`)
@@ -81,16 +85,23 @@ export class SimCore {
         this.local = new LocalDriver(this.game, { player: spec.player, recorder: this.recorder });
         break;
       }
+      case 'mission': {
+        // The person playing is player 0 (engine mission/setup.rs).
+        this.game = G.from_mission(spec.mission, JSON.stringify(spec.options));
+        this.recorder = spec.recorder ? new Recorder(spec.recorder) : null;
+        this.local = new LocalDriver(this.game, { player: 0, recorder: this.recorder });
+        break;
+      }
       case 'save': {
         const save = spec.replay;
-        this.game = newGame(G, save);
+        this.game = newGame(G, save, spec.mission ?? null);
         // The recording goes on from the save's frames.
         this.recorder = new Recorder({ ...save, frames: save.frames, hashes: save.hashes, createdAt: Date.now() });
         this.local = new LocalDriver(this.game, { player: save.player, recorder: this.recorder, preload: save });
         break;
       }
       case 'replay': {
-        this.replay = new ReplayController(G, spec.replay);
+        this.replay = new ReplayController(G, spec.replay, { missionText: spec.mission ?? null });
         this.game = this.replay.game;
         break;
       }
@@ -153,6 +164,8 @@ export class SimCore {
       // Biome and weather at the start (engine/src/weather.rs): the terrain art and the minimap palette follow the biome.
       weatherJson: g.weather_json(),
       recorder: this.recorder ? { start: this.recorder.start } : null,
+      // A mission (engine mission/): where the camera starts (world pixels) and its players' names and colours.
+      mission: g.is_mission() ? { camera: Array.from(g.mission_camera()), players: JSON.parse(g.mission_state()).players } : null,
     };
   }
 
@@ -350,6 +363,18 @@ export class SimCore {
     }
     const status = this.status(busy);
     if (loadError) status.loadError = loadError;
+    // A mission: its panel state when a tick ran (or first), and what its
+    // scripts asked to show or play (dropped while fast-forwarding, like sounds).
+    let mission = null;
+    this.missionOn ??= g.is_mission();
+    if (this.missionOn) {
+      const events = g.take_mission_events();
+      mission = {
+        state: ticks > 0 || this.missionTick !== tick ? g.mission_state() : null,
+        events: busy || events === '[]' ? null : events,
+      };
+      this.missionTick = tick;
+    }
 
     let terrain = null;
     if (g.terrain_dirty()) terrain = { ptr: g.terrain_ptr(), len: g.terrain_len() };
@@ -412,6 +437,7 @@ export class SimCore {
       answers,
       audio,
       table,
+      mission,
       instances: gpu ? 'gpu' : 'cpu',
       buildMs,
       renderBytes,

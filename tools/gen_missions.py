@@ -23,7 +23,7 @@ mission this tool
   and the mission use, the briefing and videos, the lobby options
   (difficulty), starting cash, tech level, time limit texts and bot modules;
 
-and writes apps/game/missions/<id>.json (docs/contracts.md section 11) and
+and writes apps/game/missions/<id>.json (docs/contracts.md section 9) and
 apps/game/missions/index.json (the campaign menu).
 
 Which new actors are exported: every type placed on the map, every string in

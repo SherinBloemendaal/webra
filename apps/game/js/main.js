@@ -13,13 +13,19 @@
 // and show at the end, for spectators and in replays. Restart (js/restart.js)
 // plays a single player game again with the same settings.
 //
+// The campaign (js/campaign): the Campaign button of the lobby opens the
+// mission browser; a mission runs in the engine like any game (its Lua
+// scripts too, engine/src/mission), is recorded and saved like a skirmish and
+// shows its objectives, messages and movies (js/campaign/view.js). Winning
+// one opens the next chapter (js/campaign/progress.js).
+//
 // The simulation (the wasm Game, its driver, the recorder) runs in a Web
 // Worker when the browser allows it (js/sim): the UI talks to a game handle
 // with the Game's method names, and the loop draws the newest frame the
 // worker sent, so ticks never block rendering or input.
 
 import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
-import { NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
+import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { AnimClock } from './anim.js';
 import { Input } from './input.js';
@@ -70,7 +76,10 @@ import { askOf } from './sim/methods.js';
 import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
-import { restartRecord, saveRestart, takeRestart } from './restart.js';
+import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
+import { CampaignMenu } from './campaign/menu.js';
+import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
+import { MissionView } from './campaign/view.js';
 
 const PLAYER = 0;
 
@@ -129,7 +138,7 @@ async function boot() {
   setupContent();
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
-    colors: TEAM_COLORS,
+    colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
     mapPreview: (seed, size) => Game.map_preview(seed, size),
     // Skirmish lobby: previews per player count and map files.
@@ -150,6 +159,7 @@ async function boot() {
     },
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
+    onCampaign: () => campaign?.open(),
     onReleaseNotes: () => releaseNotes.open(),
   });
   if (!gpuError) {
@@ -162,9 +172,13 @@ async function boot() {
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
-  // Restart (js/restart.js): the game the page was reloaded for, with the same settings.
+  setupCampaign(lobby, gpuError);
+  // Restart (js/restart.js): the game the page was reloaded for, with the same
+  // settings; a mission to play (restart, next mission) or the campaign screen.
   const again = takeRestart(sessionStore());
-  if (again && !gpuError && renderer) startSkirmish(again.options, lobby);
+  if (again?.kind === 'campaign') campaign?.open(again.id);
+  else if (again?.kind === 'mission' && !gpuError && renderer) startMissionById(again.id, again.options, again.gameSpeed, lobby);
+  else if (again?.kind === 'skirmish' && !gpuError && renderer) startSkirmish(again.options, lobby);
   else offerLinkedMap(lobby);
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
@@ -435,7 +449,7 @@ function setupOnline(lobby, gpuError) {
         Game,
         version: version(),
         createGame: createOnlineGame,
-        colors: TEAM_COLORS,
+        colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
         colorNames: COLOR_NAMES,
         // A host shares .oramap maps too: converted like in the skirmish lobby, checked by the engine.
         importOramap: (bytes, fileName) =>
@@ -496,6 +510,139 @@ async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
   const driver = new DriverHandle(host, conn, { tickMs: spec.tickMs, onCaughtUp, onCheck });
   const recorder = info.recorder ? new RecorderHandle(host, info.recorder.start) : null;
   return { host, game: host.game, driver, recorder };
+}
+
+// ---- Campaign ------------------------------------------------------------------
+// The mission browser (js/campaign/menu.js) and starting missions. Mission
+// files come from missions/ (tools/gen_missions.py) and must match the
+// SHA-256 the index, a save or a replay names before the engine gets them.
+
+/** The campaign screen (null without the engine). */
+let campaign = null;
+const progress = new CampaignProgress();
+let missionIndexLoad = null;
+/** Recently fetched mission files: `${id}:${hash}` -> text. */
+const missionTexts = new Map();
+const MISSION_TEXT_CACHE = 4;
+
+/** apps/game/missions/index.json. */
+function missionIndex() {
+  missionIndexLoad ??= playAccess
+    .load(async () => {
+      const res = await fetch(new URL('../missions/index.json', import.meta.url));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .catch((err) => {
+      missionIndexLoad = null;
+      throw err;
+    });
+  return missionIndexLoad;
+}
+
+/** The text of mission file `id`, refused unless its SHA-256 is `hash`. */
+async function missionFile(id, hash) {
+  const key = `${id}:${hash}`;
+  if (missionTexts.has(key)) return missionTexts.get(key);
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new Error('unknown mission');
+  const text = await playAccess.load(async () => {
+    const res = await fetch(new URL(`../missions/${id}.json`, import.meta.url));
+    if (!res.ok) throw new Error(res.status === 404 ? 'this version of the game does not have the mission' : `HTTP ${res.status}`);
+    return res.text();
+  });
+  if (Game.mission_hash(text) !== hash) throw new Error('the mission file differs from the one this was made with (another version of the game)');
+  missionTexts.set(key, text);
+  while (missionTexts.size > MISSION_TEXT_CACHE) missionTexts.delete(missionTexts.keys().next().value);
+  return text;
+}
+
+function setupCampaign(lobby, gpuError) {
+  const root = $('campaign-root');
+  if (!root || !wasm) return;
+  campaign = new CampaignMenu(root, {
+    index: missionIndex,
+    missionText: (entry) => missionFile(entry.id, entry.sha256),
+    preview: (text) => {
+      const { map } = JSON.parse(text);
+      return { rgba: Game.mission_preview(text), width: map.width, height: map.height };
+    },
+    progress,
+    onPlay: (entry, options, gameSpeed) => {
+      campaign.close();
+      if (gpuError || !renderer) return lobby.showError(gpuError ?? 'WebGPU is not available.');
+      startMission(entry, options, gameSpeed, lobby);
+    },
+  });
+}
+
+/** The engine's mission options of `entry` from the chosen values (defaults for the rest, unknown values dropped). */
+function missionOptions(entry, chosen = {}) {
+  const out = {};
+  for (const [key, o] of Object.entries(entry.options ?? {})) {
+    out[key] = o.values.some(([v]) => v === chosen[key]) ? chosen[key] : o.default;
+  }
+  return out;
+}
+
+/** Names and colours of a mission's players (engine order), for statistics and the observer panel. */
+function missionRoster(players) {
+  return players.map((p, i) => ({ name: p.name, color: TEAM_COLORS[i] ?? [1, 1, 1] }));
+}
+
+/** A mission's players draw in their own colours (map.yaml Players: Color). */
+function applyMissionColors(players) {
+  players.forEach((p, i) => {
+    const v = parseInt(p.color, 16);
+    if (i < TEAM_COLORS.length && Number.isFinite(v)) TEAM_COLORS[i] = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+  });
+}
+
+/** Start mission `id` (a restart, the next mission). */
+async function startMissionById(id, options, gameSpeed, lobby) {
+  let found = null;
+  try {
+    found = findMission(await missionIndex(), id);
+  } catch (err) {
+    return lobby.showError(`Could not load the campaign: ${loadErrorText(err)}`);
+  }
+  if (!found) return lobby.showError('This version of the game does not have that mission.');
+  startMission(found.mission, options, gameSpeed, lobby);
+}
+
+async function startMission(entry, chosen, gameSpeed, lobby) {
+  if (!renderer) return;
+  let text;
+  try {
+    text = await missionFile(entry.id, entry.sha256);
+  } catch (err) {
+    return lobby.showError(`Could not load the mission: ${loadErrorText(err)}`);
+  }
+  const speed = Object.hasOwn(SPEEDS, gameSpeed) ? gameSpeed : 'normal';
+  const options = { seed: Math.floor(Math.random() * 0x7fffffff), gameSpeed: speed, options: missionOptions(entry, chosen) };
+  const recording = records
+    ? { mode: 'mission', options, map: null, mapHash: null, player: 0, engine: version(), title: entry.title.slice(0, 64), mission: { id: entry.id, hash: entry.sha256 } }
+    : null;
+  const tickMs = SPEEDS[speed];
+  const run = await launch({ kind: 'mission', mission: text, options, recorder: recording, tickMs }, lobby, 'Could not start the mission');
+  if (!run) return;
+  const players = run.info.mission.players;
+  applyMissionColors(players);
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player: 0,
+    recorder: recorderOf(run),
+    roster: missionRoster(players),
+    restart: missionRecord(entry.id, options.options, speed),
+    mission: { entry, options: options.options },
+  });
+}
+
+/** A mission save or replay: its mission file and index entry, or throws why it cannot be played. */
+async function missionOfRecord(replay) {
+  const text = await missionFile(replay.mission.id, replay.mission.hash);
+  const found = findMission(await missionIndex(), replay.mission.id);
+  return { text, entry: found?.mission ?? null };
 }
 
 /** Whether this tab was in an online game before a reload (js/online.js keeps the rejoin key per tab). */
@@ -636,6 +783,7 @@ async function loadSave(replay, lobby) {
   if (replay.mode === 'online') return lobby.showError('This is a saved online game: resume it with its players from Play online.');
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
+  if (replay.mode === 'mission') return loadMissionSave(replay, lobby);
   try {
     if (!(await acceptMap(replay))) return;
   } catch (err) {
@@ -658,11 +806,60 @@ async function loadSave(replay, lobby) {
   });
 }
 
+/** Continue a saved mission: its mission file must be the one it was saved with. */
+async function loadMissionSave(replay, lobby) {
+  let m;
+  try {
+    m = await missionOfRecord(replay);
+  } catch (err) {
+    return lobby.showError(`Could not load the save: ${loadErrorText(err)}`);
+  }
+  const tickMs = SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal;
+  const run = await launch({ kind: 'save', replay, mission: m.text, tickMs }, lobby, 'Could not load the save');
+  if (!run) return;
+  const players = run.info.mission.players;
+  applyMissionColors(players);
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player: 0,
+    recorder: recorderOf(run),
+    roster: missionRoster(players),
+    restart: missionRecord(replay.mission.id, replay.options.options, replay.options.gameSpeed),
+    fromSave: true,
+    mission: { entry: m.entry, options: replay.options.options },
+  });
+}
+
+/** Watch a mission replay. */
+async function watchMissionReplay(replay, lobby) {
+  let m;
+  try {
+    m = await missionOfRecord(replay);
+  } catch (err) {
+    return lobby.showError(`Could not open the replay: ${loadErrorText(err)}`);
+  }
+  const tickMs = SPEEDS[replay.options.gameSpeed] ?? SPEEDS.normal;
+  const run = await launch({ kind: 'replay', replay, mission: m.text, tickMs }, lobby, 'Could not open the replay');
+  if (!run) return;
+  const players = run.info.mission.players;
+  applyMissionColors(players);
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player: 0,
+    replay: new ReplayHandle(run.host, run.info.replayLength),
+    viewer: missionRoster(players),
+    mission: { entry: m.entry, options: replay.options.options },
+  });
+}
+
 /** Open the replay viewer. */
 async function watchReplay(replay, lobby) {
   if (!renderer || !records) return;
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
+  if (replay.mode === 'mission') return watchMissionReplay(replay, lobby);
   try {
     if (!(await acceptMap(replay))) return;
   } catch (err) {
@@ -705,7 +902,9 @@ function recorderOf({ host, info }) {
 // view switcher and stats. `roster` names and colours the players of any
 // game (statistics, the observer panel after a defeat); `restart` is the
 // js/restart.js record of a single player game (null: no restart).
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false }) {
+// `mission` (`{ entry, options }`: its index entry, or null when the index no
+// longer lists it, and its options) marks a campaign mission (js/campaign).
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null }) {
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;
@@ -717,11 +916,17 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
   const rules = JSON.parse(game.rules_json());
+  // A mission's own actors are drawn and voiced like the actor their art key
+  // names (engine rules_json `art`, tools/gen_missions.py).
+  const artActors = rules.actors.map((a) => (a.art ? { ...a, id: a.art } : a));
   // The chrome follows the local player's side: steel blue Allies, red Soviets (css/theme.css).
   document.documentElement.dataset.faction = rules.players?.[player]?.side === 1 ? 'soviet' : 'allies';
   // Relationships (engine World::are_allies): the same player, or the same non-zero team.
   const slots = rules.players ?? [];
-  const allies = (a, b) => a === b || (!slots[a]?.neutral && !slots[b]?.neutral && !!slots[a]?.team && slots[a]?.team === slots[b]?.team);
+  // A mission's alliances are its own (map.yaml Players: Allies), as the engine has them.
+  const allies = mission
+    ? (a, b) => a === b || game.are_allies(a, b)
+    : (a, b) => a === b || (!slots[a]?.neutral && !slots[b]?.neutral && !!slots[a]?.team && slots[a]?.team === slots[b]?.team);
   // The neutral player (civilian and tech buildings, trees, bridges: engine
   // neutral.rs) is drawn in a civilian tan, not a player's colour.
   slots.forEach((slot, i) => {
@@ -731,7 +936,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const allied = (owner) => !viewer && allies(player, owner);
   // Spectators and replays have no player of their own: they hear no player's
   // private notifications (placement, deploy and sell sounds, "Unit ready", ...).
-  audio?.attachGame({ game, rules, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
+  audio?.attachGame({ game, rules: { ...rules, actors: artActors }, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
   // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
@@ -756,19 +961,19 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Sprites: WebRA's own art, or the original graphics and texture packs the
   // player installed (js/content, presentation only). Rebuilt when they change.
   const applyArt = () => {
-    const art = content?.art(rules.actors, biome) ?? null;
+    const art = content?.art(artActors, biome) ?? null;
     let atlas = null;
     let original = null;
     if (art?.slots.size) {
       try {
-        atlas = buildAtlas(rules.actors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
+        atlas = buildAtlas(artActors, { slots: art.slots, layers: art.layers, filter: art.filter, maxSize: renderer.maxTextureSize, biome });
         original = art.original;
       } catch (err) {
         console.warn('Installed graphics do not fit; using WebRA art:', err);
       }
       if (art.report.problems.length) console.info('Installed graphics:', art.report);
     }
-    atlas ??= buildAtlas(rules.actors, { biome });
+    atlas ??= buildAtlas(artActors, { biome });
     renderer.setAtlas(atlas);
     // Slots with original art are drawn the OpenRA way (rotors, effects, projectiles, overlays).
     game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
@@ -981,6 +1186,28 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     powerBar.root.hidden = true;
     commandBar.root.hidden = true;
   }
+  // A mission's objectives, messages, mission text and movies (js/campaign/view.js).
+  const missionView = mission
+    ? new MissionView({
+        field: $('field'),
+        hudButtons: $('menu-button').parentElement,
+        feed: game.mission,
+        audio,
+        centerOn: (x, y) => input.centerOn(x, y),
+        ping: (x, y, rgb, ticks) => pings.add(x, y, rgb, ticks, performance.now()),
+        toScreen: (x, y) => {
+          const c = input.camera;
+          const sx = (x - c.x) * c.zoom;
+          const sy = (y - c.y) * c.zoom;
+          const canvas = $('view');
+          return sx >= 0 && sy >= 0 && sx <= canvas.clientWidth && sy <= canvas.clientHeight ? [sx, sy] : null;
+        },
+        pxPerCell: rules.pxPerCell,
+        tickMs,
+        onRestart: () => restartGame?.(),
+        onLeave: () => leave(),
+      })
+    : null;
   // Debug menu (js/debug.js): cheats when the game allows them, local views, stepping while paused.
   // A local game stands still while the menu, the debug menu's pause or an end-game dialog asks for it.
   let paused = false;
@@ -1059,7 +1286,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
   window.addEventListener('resize', applyGameScale);
   watchPixelRatio(window, applyGameScale);
-  const [sx, sy] = game.start_position(player);
+  // A mission starts where its script put the camera (else at the player's first actor).
+  const [sx, sy] = game.info.mission?.camera ?? game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 
@@ -1076,6 +1304,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     online?.onQuit();
     replay?.dispose();
     await audio?.leave();
+    // Out of a mission: back to the campaign screen, at that mission.
+    if (mission?.entry && !replay) saveRestart(campaignRecord(mission.entry.id), sessionStore());
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
@@ -1092,7 +1322,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   }
   /** Whether the end of game screens offer the restart button now. */
   const canRestart = () => (rematch ? ['propose', 'accept'].includes(rematch.action()) : !!restartGame);
-  const restartLabel = () => (rematch ? rematch.label() : replay ? 'Restart replay' : 'Play again');
+  const restartLabel = () => (rematch ? rematch.label() : replay ? 'Restart replay' : mission ? 'Restart mission' : 'Play again');
   const restartGame = rematch
     ? () => rematch.run()
     : replay
@@ -1363,13 +1593,45 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       continue: () => flow.close(),
       stats: openStats,
       restart: () => restartGame?.(),
+      next: () => playNext(),
       download: async () => showToast(await download.run()),
       leave,
       exit,
     },
-    context: () => ({ winnerText: winnerText(), canRestart: canRestart(), restartLabel: restartLabel(), canDownload: !!download }),
+    context: () => ({
+      winnerText: winnerText(),
+      canRestart: canRestart(),
+      restartLabel: restartLabel(),
+      canDownload: !!download,
+      mission: mission && !replay ? { next: nextEntry?.title ?? null } : null,
+    }),
     blocked: () => !!statsScreen?.isOpen || menu.isOpen,
   });
+  // ---- Campaign progress (js/campaign/progress.js) ----------------------------------------
+  /** The mission to offer after this one was won, or null. */
+  let nextEntry = null;
+  /** Won: record it (the next chapter opens) and find the next mission for the dialog. */
+  const missionWon = async () => {
+    if (!mission?.entry || replay || viewer) return;
+    progress.won(mission.entry.id, mission.options?.difficulty ?? null);
+    try {
+      nextEntry = nextMission(await missionIndex(), mission.entry.id, progress.get());
+    } catch {
+      nextEntry = null;
+    }
+    endDialog.render();
+  };
+  /** Start the next mission with the same difficulty (when it has that one) and speed. */
+  const playNext = () => {
+    if (!nextEntry) return;
+    const record = missionRecord(nextEntry.id, missionOptions(nextEntry, mission.options ?? {}), restart?.gameSpeed ?? 'normal');
+    if (!saveRestart(record, sessionStore())) {
+      showToast('Could not start the next mission: this browser does not let the page keep the settings.');
+      return;
+    }
+    leaving = true;
+    location.reload();
+  };
   // A rematch proposal changes what the end of game screens offer.
   rematch?.subscribe(() => {
     endDialog.render();
@@ -1525,6 +1787,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
     minimap?.frame(now);
+    missionView?.frame();
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -1562,6 +1825,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         // The announcer: "Mission failed" on the defeat, "Mission accomplished" on a win (also an ally's, after a defeat).
         if (event === 'defeat') audio?.gameOver(false);
         else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
+        if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
       }
     }

@@ -1,4 +1,4 @@
-//! Mission files (`apps/game/missions/<id>.json`, docs/contracts.md section 11),
+//! Mission files (`apps/game/missions/<id>.json`, docs/contracts.md section 9),
 //! made from OpenRA's missions by tools/gen_missions.py.
 
 use crate::mapdata::MapData;

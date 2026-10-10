@@ -1,4 +1,4 @@
-//! The WebAssembly API of missions (mission/, docs/contracts.md section 11):
+//! The WebAssembly API of missions (mission/, docs/contracts.md section 9):
 //! start a mission, read its objectives and text, drain what the scripts
 //! want shown or played.
 

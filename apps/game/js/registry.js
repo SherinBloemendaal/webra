@@ -232,7 +232,7 @@ export const GROUPS = deepFreeze({
   },
   extra: {
     label: 'Other',
-    description: 'The original content notice, the mouse capture hint and the map editor.',
+    description: 'The original content notice, the mouse capture hint, the map editor and the campaign progress.',
     scope: 'game',
     open: true,
     maxBytes: 8 * 1024,
@@ -259,6 +259,14 @@ export const GROUPS = deepFreeze({
       editorGrid: { type: 'boolean', default: true, label: 'Map editor: show grid' },
       // How often the "Mouse captured" hint was shown (js/mouselock.js shows it the first few times).
       mouseCaptureHints: { type: 'integer', default: 0, min: 0, max: 99, label: 'Mouse capture hints shown' },
+      // Campaign missions won (js/campaign/progress.js): mission id -> the difficulty it was won on ('' without one).
+      campaignProgress: {
+        type: 'json',
+        default: {},
+        maxBytes: 3 * 1024,
+        label: 'Campaign progress',
+        help: 'The missions won and their difficulty; the next chapter of a campaign opens once one mission of the chapter before is won.',
+      },
     },
   },
 });

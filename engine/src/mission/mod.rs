@@ -6,7 +6,7 @@
 //! `World::step`, so a mission is lockstep-safe and replays exactly: the same
 //! orders give the same game, scripts included. Saves and replays store the
 //! mission and its options plus the orders and re-simulate (docs/contracts.md
-//! section 11): the interpreter state never has to be written down.
+//! section 9): the interpreter state never has to be written down.
 //!
 //! The scripting API is OpenRA's (OpenRA.Mods.Common/Scripting): globals like
 //! `Actor`, `Trigger`, `Reinforcements`, `Media`, `Utils`, and properties and

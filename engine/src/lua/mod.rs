@@ -2,7 +2,7 @@
 //!
 //! OpenRA runs map scripts with Lua 5.1 (Eluant). WebRA needs them inside the
 //! lockstep simulation, compiled to WebAssembly, so this is a small
-//! interpreter written for that (docs/contracts.md section 11 explains the
+//! interpreter written for that (docs/contracts.md section 9 explains the
 //! choice):
 //!
 //! - **Deterministic.** Numbers are IEEE doubles, as in Lua 5.1, but only

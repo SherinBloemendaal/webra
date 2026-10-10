@@ -152,10 +152,13 @@ function button(text, className, onClick) {
  * `[{ id, label, primary? }]` in display order.
  *
  * @param {EndGameFlow} flow
- * @param {{ winnerText?: string, canRestart?: boolean, restartLabel?: string, canDownload?: boolean }} ctx
- *   `restartLabel`: the restart button's text (online: the rematch, js/online.js)
+ * @param {{ winnerText?: string, canRestart?: boolean, restartLabel?: string, canDownload?: boolean,
+ *   mission?: { next: string | null } | null }} ctx
+ *   `restartLabel`: the restart button's text (online: the rematch, js/online.js);
+ *   `mission`: a campaign mission (not its replay), with the title of the
+ *   mission to play next once this one is won (js/campaign/progress.js)
  */
-export function dialogContent(flow, { winnerText = '', canRestart = false, restartLabel = null, canDownload = false } = {}) {
+export function dialogContent(flow, { winnerText = '', canRestart = false, restartLabel = null, canDownload = false, mission = null } = {}) {
   const paused = flow.paused ? 'The game is paused.' : flow.online && !flow.viewer ? 'Online games cannot be paused: the game goes on while this is open.' : '';
   const result = winnerText ? `${winnerText}.` : '';
   const tail = (list) => [
@@ -167,6 +170,7 @@ export function dialogContent(flow, { winnerText = '', canRestart = false, resta
     { id: 'exit', label: 'Exit' },
   ];
   const join = (...parts) => parts.filter(Boolean).join(' ');
+  if (mission) return missionContent(flow, { canRestart, restartLabel, canDownload, next: mission.next, paused, join });
   switch (flow.dialog) {
     case DIALOGS.DEFEAT:
       return {
@@ -191,6 +195,45 @@ export function dialogContent(flow, { winnerText = '', canRestart = false, resta
           paused,
         ),
         buttons: [{ id: 'stats', label: 'View statistics', primary: true }, { id: 'continue', label: 'Keep watching' }, ...tail([]).slice(1)],
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * A campaign mission's dialogs: the next mission or the campaign screen after
+ * a win, another try after a defeat. "Back to the campaign" is the leave action.
+ */
+function missionContent(flow, { canRestart, restartLabel, canDownload, next, paused, join }) {
+  const rest = [
+    { id: 'stats', label: 'View statistics' },
+    ...(canDownload ? [{ id: 'download', label: 'Download replay' }] : []),
+    { id: 'leave', label: 'Back to the campaign' },
+    { id: 'exit', label: 'Exit' },
+  ];
+  const restart = canRestart ? [{ id: 'restart', label: restartLabel ?? 'Restart mission' }] : [];
+  switch (flow.dialog) {
+    case DIALOGS.DEFEAT:
+      return {
+        title: 'Mission failed',
+        text: join('The mission failed.', paused),
+        buttons: [...restart.map((b) => ({ ...b, primary: true })), { id: 'spectate', label: 'Keep watching', primary: !restart.length }, ...rest],
+      };
+    case DIALOGS.VICTORY:
+    case DIALOGS.FINAL:
+      if (!flow.won) {
+        return { title: 'Mission failed', text: join('The mission is over.', paused), buttons: [...restart.map((b) => ({ ...b, primary: true })), { id: 'continue', label: 'Keep watching' }, ...rest] };
+      }
+      return {
+        title: 'Mission accomplished',
+        text: join(next ? `Next: ${next}.` : 'Every objective is done.', paused),
+        buttons: [
+          ...(next ? [{ id: 'next', label: 'Next mission', primary: true }] : []),
+          { id: 'continue', label: 'Keep playing', primary: !next },
+          ...restart.map((b) => ({ ...b, label: 'Play again' })),
+          ...rest,
+        ],
       };
     default:
       return null;
