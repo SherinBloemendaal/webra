@@ -1,5 +1,5 @@
 /* Pre-game skirmish lobby, built by js/lobby.js. Riveted gunmetal panels with
-   bevels, labels and primary actions in the side's accent (theme.css).
+   bevels, labels and primary actions in the red accent (theme.css).
    Everything is scoped under #menu. */
 
 #menu {
@@ -10,10 +10,10 @@
   --l-edge: var(--ui-line);
   --l-edge-hi: var(--ui-bevel-hi);
   --l-edge-lo: var(--ui-bevel-lo);
-  --l-gold: var(--ui-accent-hi);
-  --l-gold-dim: var(--ui-accent-lo);
-  --l-red: #8f2a1f;
-  --l-red-hi: var(--ui-accent);
+  --l-accent: var(--ui-accent-hi);
+  --l-accent-lo: var(--ui-accent-lo);
+  --l-danger-btn: #8f2a1f;
+  --l-accent-edge: var(--ui-accent);
   --l-text: var(--ui-text);
   --l-muted: var(--ui-muted);
   --l-danger: var(--ui-bad);
@@ -33,7 +33,7 @@
     var(--ui-scan),
     linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
   border: 1px solid var(--ui-edge);
-  border-top: 3px solid var(--l-gold);
+  border-top: 3px solid var(--l-accent);
   border-radius: var(--l-radius);
   box-shadow:
     inset 1px 0 0 var(--l-edge-hi),
@@ -69,7 +69,7 @@
   bottom: -3px;
   width: 120px;
   height: 5px;
-  background: repeating-linear-gradient(-45deg, var(--l-gold) 0 6px, #111 6px 12px);
+  background: repeating-linear-gradient(-45deg, var(--l-accent) 0 6px, #111 6px 12px);
   opacity: 0.8;
 }
 
@@ -113,8 +113,8 @@
   padding: 2px 0;
   background: none;
   border: 0;
-  border-bottom: 1px dashed var(--l-gold-dim);
-  color: var(--l-gold);
+  border-bottom: 1px dashed var(--l-accent-lo);
+  color: var(--l-accent);
   font: 700 11px/1.4 var(--ui-font);
   letter-spacing: 1.2px;
   text-transform: uppercase;
@@ -127,7 +127,7 @@
 }
 
 #menu .lobby-notes:focus-visible {
-  outline: 2px solid var(--l-gold);
+  outline: 2px solid var(--l-accent);
   outline-offset: 2px;
 }
 
@@ -190,11 +190,11 @@
   padding: 7px 12px 7px 10px;
   background: var(--l-head);
   border-bottom: 1px solid var(--l-edge);
-  border-left: 3px solid var(--l-red-hi);
+  border-left: 3px solid var(--l-accent-edge);
   font: 700 12px/1.2 var(--ui-font);
   letter-spacing: 1.8px;
   text-transform: uppercase;
-  color: var(--l-gold);
+  color: var(--l-accent);
 }
 
 #menu .lobby-panel-body {
@@ -226,8 +226,8 @@
   padding-right: 26px;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--l-gold) 50%),
-    linear-gradient(135deg, var(--l-gold) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--l-accent) 50%),
+    linear-gradient(135deg, var(--l-accent) 50%, transparent 50%);
   background-position:
     calc(100% - 14px) 50%,
     calc(100% - 9px) 50%;
@@ -242,7 +242,7 @@
 }
 
 #menu .lobby-select optgroup {
-  color: var(--l-gold);
+  color: var(--l-accent);
 }
 
 #menu .lobby-select:hover,
@@ -342,7 +342,7 @@
   height: 46px;
   min-width: 220px;
   padding: 0 28px;
-  background: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
+  background: var(--ui-primary-fill);
   border-color: var(--ui-edge);
   color: #fff;
   font-size: 15px;
@@ -351,7 +351,15 @@
 }
 
 #menu .lobby-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-primary-hi) 82%, #fff), var(--ui-primary-hi));
+  background: var(--ui-primary-fill-hover);
+}
+
+#menu .lobby-btn-primary:active:not(:disabled) {
+  background: var(--ui-primary-fill-active);
+}
+
+#menu .lobby-btn-primary:disabled {
+  background: var(--ui-primary-disabled);
 }
 
 /* ---- Map source and map files ------------------------------------------------ */
@@ -364,7 +372,7 @@
 
 #menu .lobby-source-btn[aria-pressed='true'] {
   background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
-  border-color: var(--l-gold-dim);
+  border-color: var(--l-accent-lo);
   color: #fff;
 }
 
@@ -440,7 +448,7 @@
 }
 
 #menu .lobby-btn-danger {
-  background: linear-gradient(180deg, #a83524, var(--l-red));
+  background: linear-gradient(180deg, #a83524, var(--l-danger-btn));
   border-color: var(--ui-edge);
 }
 
@@ -532,7 +540,7 @@
   position: absolute;
   inset: 4px;
   pointer-events: none;
-  --c: var(--l-gold);
+  --c: var(--l-accent);
   background:
     linear-gradient(var(--c), var(--c)) top left / 14px 2px no-repeat,
     linear-gradient(var(--c), var(--c)) top left / 2px 14px no-repeat,
@@ -637,15 +645,24 @@
 
 /* ---- Player slots ----------------------------------------------------------- */
 
+/* One set of columns for the header and every row (the rows are subgrids),
+   so the columns line up and the player column takes the width of its widest
+   row: an AI's type (with its difficulty) and bot side by side, never cut
+   off. Narrower, the bot wraps under the type; narrower still, the rows
+   become cards (below). */
 #menu .lobby-slots {
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(min-content, max-content) 68px minmax(160px, 1.4fr) minmax(84px, 1fr) 32px;
+  gap: 6px 8px;
 }
 
 #menu .lobby-slot {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 68px minmax(0, 1.5fr) minmax(0, 0.9fr) 32px;
-  gap: 10px;
+  /* Browsers without subgrid keep the first line: columns per row. */
+  grid-template-columns: minmax(0, 1.6fr) 68px minmax(0, 1.4fr) minmax(0, 0.9fr) 32px;
+  grid-template-columns: subgrid;
+  gap: 8px;
   align-items: start;
 }
 
@@ -672,21 +689,42 @@
 
 #menu .lobby-cell-player {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 32px;
 }
 
+/* The name field, or the slot type and the bot. Each select is as wide as
+   its longest choice and wraps to a line of its own when the two do not
+   fit; its tooltip names the choice (js/lobby.js titleFollowsChoice). */
+#menu .lobby-who {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+#menu .lobby-who > .lobby-select {
+  flex: 1 0 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+#menu .lobby-who > .lobby-input {
+  flex: 1;
+}
+
 #menu .lobby-badge {
   flex: none;
+  margin-top: 5px;
   display: grid;
   place-items: center;
   width: 28px;
   height: 22px;
   background: var(--l-head);
   border: 1px solid var(--l-edge);
-  color: var(--l-gold);
+  color: var(--l-accent);
   font: 700 11px/1 var(--ui-font-mono);
 }
 
@@ -698,16 +736,6 @@
 #menu .lobby-ai-name small {
   color: var(--l-muted);
   font-size: 11px;
-}
-
-#menu .lobby-type {
-  flex: 1;
-}
-
-/* The AI's bot type next to its slot type; both wrap on narrow screens. */
-#menu .lobby-bot {
-  flex: 1;
-  min-width: 0;
 }
 
 /* Closed slots: nobody plays there, so their settings fade out. */
@@ -768,7 +796,7 @@
   content: '+';
   font-size: 16px;
   line-height: 1;
-  color: var(--l-gold);
+  color: var(--l-accent);
 }
 
 #menu .lobby-faction-row {
@@ -882,7 +910,7 @@
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid var(--l-gold);
+  border-top: 5px solid var(--l-accent);
 }
 
 #menu .lobby-color-list {
@@ -907,7 +935,7 @@
 }
 
 #menu .lobby-color-list:focus-visible {
-  outline: 2px solid var(--l-gold);
+  outline: 2px solid var(--l-accent);
   outline-offset: 1px;
 }
 
@@ -926,7 +954,7 @@
 }
 
 #menu .lobby-color-opt.active {
-  border-color: var(--l-gold);
+  border-color: var(--l-accent);
   background: color-mix(in srgb, var(--ui-accent) 16%, transparent);
 }
 
@@ -1042,7 +1070,7 @@
 #menu .lobby-problem {
   margin: 0;
   max-width: 340px;
-  color: var(--l-gold);
+  color: var(--ui-warn);
   font-size: 12.5px;
   line-height: 1.3;
   text-align: right;
@@ -1058,6 +1086,10 @@
 @container (max-width: 560px) {
   #menu .lobby-slot-head {
     display: none;
+  }
+
+  #menu .lobby-slots {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   #menu .lobby-slot:not(.lobby-slot-head) {
