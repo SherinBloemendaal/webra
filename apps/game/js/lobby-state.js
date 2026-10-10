@@ -6,6 +6,7 @@
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
 import { assignSpawns } from '../protocol/spawns.js';
+import { noteUserText } from './telemetry/index.js';
 
 /** The installed map file lives in its own key (it can be large). */
 export const MAP_STORAGE_KEY = 'webra.lobby.map.v1';
@@ -567,6 +568,8 @@ export function inspectMapFile(text, validate) {
   } catch (err) {
     return fail(`Could not check the map: ${err?.message ?? err}`);
   }
+  // The map's name and author are cut out of error reports (js/telemetry).
+  noteUserText({ name: data.name, author: data.author });
   if (!v || !v.ok) return { ok: false, errors: v?.errors?.length ? v.errors : ['The map is not valid.'] };
   return {
     ok: true,

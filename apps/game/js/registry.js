@@ -230,6 +230,20 @@ export const GROUPS = deepFreeze({
       lastSeenVersion: { type: 'string', default: null, nullable: true, maxLength: 64, version: true, label: 'Last seen version' },
     },
   },
+  privacy: {
+    label: 'Privacy',
+    description: 'Error reports to WebRA\'s own Sentry (the privacy notice says what they hold).',
+    scope: 'game',
+    settings: {
+      // js/telemetry/index.js reads it before the game loads and follows every change.
+      errorReports: {
+        type: 'boolean',
+        default: true,
+        label: 'Send error reports',
+        help: 'When something breaks, the game and the website send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account.',
+      },
+    },
+  },
   extra: {
     label: 'Other',
     description: 'The original content notice, the mouse capture hint, the map editor and the campaign progress.',

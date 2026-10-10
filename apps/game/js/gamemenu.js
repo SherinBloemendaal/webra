@@ -52,6 +52,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCapture',
   'mouseCaptureSpeed',
   'mouseCaptureEscMenu',
+  'errorReports',
 ]);
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
@@ -543,6 +544,9 @@ export class GameMenu {
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
     }
+
+    // ---- Privacy (js/telemetry: error reports). Not reset by Defaults: switching reports back on is the player's call. ----
+    list.append(el('h2', null, 'Privacy'), check('errorReports', 'Send error reports'));
 
     c.append(
       list,

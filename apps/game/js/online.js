@@ -69,6 +69,7 @@ import {
 } from './protocol.js';
 import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
+import { reportMessage } from './telemetry/index.js';
 import { onlineRefusal } from './account/ui.js';
 import { switchInput } from './ui/controls.js';
 import { infoTip, describedBy } from './infotip.js';
@@ -745,7 +746,7 @@ export class OnlineUI {
       .on('frame', (m) => this.net('frame', m))
       .on('log', (m) => this.net('log', m))
       .on('sync', (m) => this.net('sync', m))
-      .on('desync', (d) => this.inGame && this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true))
+      .on('desync', (d) => this.onDesync(d))
       .on('rematch', (m) => this.onRematch(m))
       .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
@@ -815,6 +816,17 @@ export class OnlineUI {
   back() {
     this.leaveSession();
     this.ctx.onBack();
+  }
+
+  /**
+   * The server saw the players' games differ (`desync`): said in the game,
+   * and reported with this game's newest state hashes (js/telemetry).
+   */
+  onDesync(d) {
+    if (!this.inGame) return;
+    this.gameLine(`Desync detected at tick ${d.tick}: the game states differ. Results may not match.`, true);
+    const send = (context) => reportMessage('Lockstep desync', { context: { ...context, desyncTick: d.tick } });
+    this.simHost?.command('report').then(send, () => send({ mode: 'online' }));
   }
 
   onServerError(m) {
@@ -1830,6 +1842,7 @@ export class OnlineUI {
     }
     const { host, game, driver, recorder } = session;
     this.driver = driver;
+    this.simHost = host;
     this.recorder = recorder;
     this.mySeat = me ? me.player : null;
     // Messages that arrived while the game was being set up.

@@ -24,7 +24,7 @@
 // with the Game's method names, and the loop draws the newest frame the
 // worker sent, so ticks never block rendering or input.
 
-import init, { Game, base_rules_json, version } from '../pkg/webra_sim.js';
+import init, { Game, base_rules_json, take_panic, version } from '../pkg/webra_sim.js';
 import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
 import { buildAtlas } from './sprites.js';
 import { AnimClock } from './anim.js';
@@ -79,6 +79,7 @@ import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
+import { connectRegistry, setTags } from './telemetry/index.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
@@ -126,6 +127,8 @@ const playAccess = new PlayAccess({ onLost: playAccessLost });
 let uiScale = null;
 
 async function boot() {
+  // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
+  connectRegistry(defaultRegistry());
   let gpuError = null;
   try {
     wasm = await loadEngine();
@@ -171,6 +174,7 @@ async function boot() {
       gpuError = `${err.message} WebRA needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
     }
   }
+  setTags({ renderer: renderer ? 'webgpu' : 'unavailable' });
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   setupOnline(lobby, gpuError);
@@ -202,7 +206,12 @@ async function loadEngine() {
 
 /** Where the next game's simulation runs (js/sim/host.js): a worker if possible. */
 function newSimHost() {
-  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule }));
+  return playAccess.load(() => createSimHost({ Game, memory: () => wasm.memory, module: wasmModule, engine: { version, takePanic: take_panic } }));
+}
+
+/** Error report tags for a game that started (js/telemetry): its mode and whether original graphics are in use. */
+function tagGame(mode) {
+  setTags({ mode, original_content: content?.originalActive ? 'on' : 'off' });
 }
 
 /** The game files were refused (js/account/gate.js): sign in again, or see why on the account page. */
@@ -517,6 +526,7 @@ async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
     host.dispose();
     throw err;
   }
+  tagGame('online');
   const driver = new DriverHandle(host, conn, { tickMs: spec.tickMs, onCaughtUp, onCheck });
   const recorder = info.recorder ? new RecorderHandle(host, info.recorder.start) : null;
   return { host, game: host.game, driver, recorder };
@@ -723,6 +733,8 @@ async function launch(spec, lobby, failText) {
     await content?.load();
     host = await newSimHost();
     const info = await host.start(spec);
+    // A save continues a skirmish or a mission.
+    tagGame(spec.kind === 'save' ? (spec.mission ? 'mission' : 'skirmish') : spec.kind);
     return { host, info };
   } catch (err) {
     host?.dispose();
