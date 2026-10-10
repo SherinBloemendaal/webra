@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas, animationPlan, spriteList, drawCameo, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
+import { buildAtlas, animationPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM } from '../js/art/animated.js';
 import { worldDraw } from '../js/art/world.js';
@@ -366,4 +366,25 @@ test('cameo aliases reuse the base art and the cache hands out one canvas per ke
   } finally {
     delete globalThis.document;
   }
+});
+
+test('every actor in the rules has an icon, crates, husks and mines included (the map editor palette paints one each)', () => {
+  const kinds = new Set();
+  for (const a of actors) {
+    const log = [];
+    const ctx = fakeContext(log, null);
+    ctx.clearRect = () => log.push('clear');
+    const canvas = { width: 48, height: 40, getContext: () => ctx };
+    assert.doesNotThrow(() => drawIcon(canvas, a, [0.3, 0.55, 0.95]), `${a.id} (${a.kind})`);
+    assert.equal(ctx.depth, 0, `${a.id}: save and restore pair up`);
+    if (a.kind === 'proxy') {
+      assert.deepEqual(log, ['clear'], `${a.id}: a proxy has no body to draw`);
+    } else if (a.world?.bridgeHut) {
+      // Bridge huts have no art (OpenRA LegacyBridgeHut: no RenderSprites).
+    } else {
+      assert.ok(log.some((l) => l.startsWith('fill:')), `${a.id} (${a.kind}) draws something`);
+      kinds.add(a.kind);
+    }
+  }
+  for (const k of ['building', 'infantry', 'vehicle', 'ship', 'aircraft', 'crate', 'husk', 'mine']) assert.ok(kinds.has(k), `an icon of a ${k}`);
 });
