@@ -428,3 +428,74 @@ export function buildIso(files, { padTo = 0, fillDirs = 0 } = {}) {
   for (const [e, at] of fileAt) out.set(e.data, at * SECTOR);
   return out;
 }
+
+// ---- VQA movies ---------------------------------------------------------------------
+
+/** A VQA chunk: tag, big-endian size, the data (byte arrays or chunks), a zero pad byte to an even length. */
+export function vqaChunk(tag, ...parts) {
+  const data = concat(parts);
+  const out = new Uint8Array(8 + data.length + (data.length & 1));
+  for (let i = 0; i < 4; i++) out[i] = tag.charCodeAt(i);
+  new DataView(out.buffer).setUint32(4, data.length, false);
+  out.set(data, 8);
+  return out;
+}
+
+/**
+ * A VQA movie (version 2 unless told otherwise): the FORM/WVQA header, VQHD,
+ * the FINF frame index and the frames, each a list of chunks (vqaChunk).
+ * `extraHeader` chunks go between VQHD and FINF; `keyFrames` sets bit 30 in
+ * the index entries of those frames, as Westwood's files do.
+ */
+export function buildVqa({
+  width = 8,
+  height = 4,
+  blockWidth = 4,
+  blockHeight = 2,
+  frameRate = 15,
+  cbParts = 2,
+  version = 2,
+  flags = 0,
+  colors = 256,
+  sampleRate = 22050,
+  channels = 1,
+  bits = 16,
+  frames,
+  extraHeader = [],
+  keyFrames = [0],
+}) {
+  const header = new Uint8Array(42);
+  const h = new DataView(header.buffer);
+  h.setUint16(0, version, true);
+  h.setUint16(2, flags, true);
+  h.setUint16(4, frames.length, true);
+  h.setUint16(6, width, true);
+  h.setUint16(8, height, true);
+  header[10] = blockWidth;
+  header[11] = blockHeight;
+  header[12] = frameRate;
+  header[13] = cbParts;
+  h.setUint16(14, colors, true);
+  h.setUint16(24, sampleRate, true);
+  header[26] = channels;
+  header[27] = bits;
+  const vqhd = vqaChunk('VQHD', header);
+  const extra = concat(extraHeader);
+  const index = new Uint8Array(frames.length * 4);
+  const finfAt = 12 + vqhd.length + extra.length;
+  let at = finfAt + 8 + index.length;
+  const bodies = frames.map((chunks, i) => {
+    const body = concat(chunks);
+    new DataView(index.buffer).setUint32(i * 4, (at / 2) | (keyFrames.includes(i) ? 0x40000000 : 0), true);
+    at += body.length;
+    return body;
+  });
+  const finf = vqaChunk('FINF', index);
+  const rest = concat([vqhd, extra, finf, ...bodies]);
+  const out = new Uint8Array(12 + rest.length);
+  out.set([0x46, 0x4f, 0x52, 0x4d], 0); // FORM
+  new DataView(out.buffer).setUint32(4, rest.length + 4, false);
+  out.set([0x57, 0x56, 0x51, 0x41], 8); // WVQA
+  out.set(rest, 12);
+  return out;
+}

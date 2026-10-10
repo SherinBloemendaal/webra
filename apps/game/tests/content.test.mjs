@@ -52,7 +52,7 @@ import {
   GEM_LEVELS,
   GEM_VARIANTS,
 } from '../js/content/terrain.js';
-import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS } from '../js/content/install.js';
+import { installContent, contentSummary, contentFromZip, QUICKINSTALL_LIMITS, MAX_FILE_BYTES } from '../js/content/install.js';
 import { MemoryStore, storageProblem, StorageError } from '../js/content/store.js';
 import { ContentSystem, orderPacks, mergePackPrefs } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
@@ -77,6 +77,9 @@ import {
   sheetRgba,
   decodeTestPng,
   pixelDocument,
+  buildIso,
+  buildVqa,
+  vqaChunk,
 } from './content-fixtures.mjs';
 import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
 
@@ -1376,4 +1379,82 @@ test('content system: pack install, order and choice go to the synced settings a
   assert.deepEqual(content.packs.map((p) => [p.record.id, p.enabled]), [[one.id, true], [two.id, false]]);
   await content.removePack(one.id);
   assert.deepEqual(registry.get('content', 'packs').map((p) => p.id), [two.id, 'elsewhere|x']);
+});
+
+// ---- Movies -------------------------------------------------------------------------
+
+/** A tiny synthetic movie (one 8x4 frame). */
+function tinyMovie(seed = 1) {
+  const codebook = Uint8Array.from({ length: 32 }, (_, i) => (i * seed) & 255);
+  return buildVqa({ frames: [[vqaChunk('VQFR', vqaChunk('CBF0', codebook), vqaChunk('CPL0', new Uint8Array(768)), vqaChunk('VPT0', Uint8Array.of(0, 1, 2, 3, 0, 0, 0, 0)))]] });
+}
+
+test('install: movies from movies1.mix inside MAIN.MIX of a CD image and loose .vqa files, stored one at a time', async () => {
+  const landing = tinyMovie(3);
+  const ally1 = tinyMovie(5);
+  const movies1 = buildMix([
+    { name: 'landing.vqa', data: landing },
+    { name: 'prolog.vqa', data: new Uint8Array(100) }, // does not decode: reported, not stored
+  ]);
+  const main = buildMix([
+    { name: 'movies1.mix', data: movies1 },
+    { name: 'sounds.mix', data: buildMix([{ name: 'cannon1.aud', data: imaAud(sineSamples(800)) }]) },
+  ]);
+  const iso = buildIso({ 'MAIN.MIX': main });
+  const store = new MemoryStore();
+  const puts = [];
+  const putAll = store.putAll.bind(store);
+  store.putAll = async (records) => {
+    puts.push(records.map((r) => r.name));
+    return putAll(records);
+  };
+  const progress = [];
+  const r = await installContent(
+    [new File([iso], 'CD1_ALLIED_DISC.ISO'), new File([ally1], 'ALLY1.VQA'), new File([tinyMovie()], 'notlisted.vqa')],
+    store,
+    { onProgress: (t) => progress.push(t) },
+  );
+  assert.ok(r.archives.includes('cd1_allied_disc.iso/main.mix/movies1.mix'), r.archives.join());
+  assert.deepEqual(r.movies, ['ally1.vqa', 'landing.vqa']);
+  assert.equal(r.byCategory.movies, 2);
+  assert.equal(r.byCategory.effects, 1);
+  assert.equal(r.added, 3);
+  assert.deepEqual(r.skipped, ['notlisted.vqa'], 'only the movies of the OpenRA packages are taken');
+  assert.ok(r.errors.some((e) => /prolog\.vqa.*not a VQA movie/.test(e)), r.errors.join('; '));
+  assert.deepEqual(puts, [['cannon1.aud'], ['landing.vqa'], ['ally1.vqa']], 'each movie in a transaction of its own');
+  assert.ok(progress.some((t) => /Saving movie landing\.vqa/.test(t)));
+  const stored = await store.get('landing.vqa');
+  assert.equal(stored.kind, 'movie');
+  assert.deepEqual(new Uint8Array(stored.bytes), landing);
+  assert.equal(stored.bytes.byteLength, landing.length, 'the stored buffer is the movie alone');
+  const s = await contentSummary(store);
+  assert.equal(s.byCategory.movies, 2);
+  assert.equal(s.bytes.movies, landing.length + ally1.length);
+  assert.ok(s.bytes.sounds > 0);
+  // The content system knows them without loading them, and reads one when asked.
+  const { content } = contentSystem(store);
+  await content.load();
+  assert.equal(content.hasMovie('landing.vqa'), true);
+  assert.equal(content.hasMovie('prolog.vqa'), false);
+  assert.deepEqual(await content.movieBytes('ally1.vqa'), ally1);
+  assert.equal(await content.movieBytes('prolog.vqa'), null);
+  assert.equal(content.getFile('landing.vqa'), null, 'movies are not kept in memory with the graphics');
+  await content.removeOriginal();
+  assert.equal(content.hasMovie('landing.vqa'), false);
+});
+
+test('install: a movie larger than the limit is refused unread; a full storage stops the movies with a clear message', async () => {
+  const store = new MemoryStore();
+  const huge = { name: 'landing.vqa', size: MAX_FILE_BYTES.movie + 1, arrayBuffer: async () => assert.fail('read'), slice: () => assert.fail('read') };
+  const r = await installContent([huge], store);
+  assert.equal(r.added, 0);
+  assert.match(r.errors[0], /landing\.vqa.*too large/);
+  const full = new MemoryStore();
+  full.putAll = async () => {
+    throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' });
+  };
+  const r2 = await installContent([new File([tinyMovie()], 'landing.vqa'), new File([tinyMovie(2)], 'ally1.vqa')], full);
+  assert.equal(r2.added, 0);
+  assert.equal(r2.errors.length, 1, r2.errors.join('; '));
+  assert.match(r2.errors[0], /were not saved: This browser has no room left/);
 });

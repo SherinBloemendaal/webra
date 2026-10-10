@@ -403,3 +403,36 @@
 .mission-error .campaign-btn {
   margin-right: 6px;
 }
+
+/* ---- Movies (js/content/movies.js) ------------------------------------------------ */
+
+/* The original movies, full screen over everything; a click or Esc skips them. */
+.movie-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #000;
+  cursor: pointer;
+}
+
+.movie-overlay:focus {
+  outline: none;
+}
+
+.movie-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.movie-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font: var(--ui-fs-xs) var(--ui-font);
+  pointer-events: none;
+}

@@ -6,8 +6,9 @@
 //   player sees what changed
 // - mission messages (Media.DisplayMessage, OpenRA's chat lines), the mission
 //   text (UserInterface.SetMissionText) and floating texts over the map
-// - movies (Media.PlayMovieFullscreen and friends): WebRA has no videos, so a
-//   card names the movie and closes with a click, Esc, or after a few seconds
+// - movies (Media.PlayMovieFullscreen and friends): the original movie when
+//   the player installed it (js/content/movies.js, never bundled), else a card
+//   that names the movie and closes with a click, Esc, or after a few seconds
 // - speech and sounds the scripts play, camera moves, radar pings
 // - a script error: a banner with the error and Restart or Leave (the
 //   mission's scripts stop; the battle itself goes on, like OpenRA)
@@ -61,6 +62,8 @@ export class MissionView {
    *   toScreen(x: number, y: number): [number, number] | null,  world pixels to CSS pixels of the field
    *   pxPerCell: number, tickMs: number,
    *   localPlayer?: number,  the engine player of this screen (co-op missions online; else 0)
+   *   movies?: { has(file: string): boolean, play(file: string, parent: HTMLElement): Promise<string>, stop(): void } | null,
+   *     the original movies the player installed (content/movies.js createMoviePlayer); without one, or when it fails, a card
    *   onRestart(): void, onLeave(): void,
    *   now?(): number,
    * }} o
@@ -226,36 +229,55 @@ export class MissionView {
     });
   }
 
-  /** The card that stands for a movie (no videos in WebRA). */
+  /**
+   * A movie: the original one full screen when the player installed it
+   * (`movies`), else a card that names it (also when the movie fails).
+   */
   movie(file) {
     this.card?.close();
-    const root = el('div', 'mission-card');
-    const box = el('div', 'mission-card-box');
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-label', 'Movie');
-    const close = () => {
-      clearTimeout(timer);
-      window.removeEventListener('keydown', onKey, true);
-      root.remove();
-      if (this.card === handle) this.card = null;
+    const card = () => {
+      const root = el('div', 'mission-card');
+      const box = el('div', 'mission-card-box');
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-label', 'Movie');
+      const close = () => {
+        clearTimeout(timer);
+        window.removeEventListener('keydown', onKey, true);
+        root.remove();
+        if (this.card === handle) this.card = null;
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          close();
+        }
+      };
+      const skip = button('Skip', 'campaign-btn campaign-btn-primary', close);
+      box.append(el('h2', null, movieTitle(file)), el('p', null, 'The original game plays a movie here.'), skip);
+      root.append(box);
+      root.addEventListener('click', close);
+      this.o.field.append(root);
+      window.addEventListener('keydown', onKey, true);
+      const timer = setTimeout(close, MOVIE_CARD_MS);
+      const handle = { close };
+      this.card = handle;
+      skip.focus({ preventScroll: true });
     };
-    const onKey = (e) => {
-      if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        close();
-      }
-    };
-    const skip = button('Skip', 'campaign-btn campaign-btn-primary', close);
-    box.append(el('h2', null, movieTitle(file)), el('p', null, 'The original game plays a movie here.'), skip);
-    root.append(box);
-    root.addEventListener('click', close);
-    this.o.field.append(root);
-    window.addEventListener('keydown', onKey, true);
-    const timer = setTimeout(close, MOVIE_CARD_MS);
-    const handle = { close };
+    const movies = this.o.movies;
+    if (!movies?.has(file)) {
+      card();
+      return;
+    }
+    // The movie plays over the field; closing it (another movie) ends it as skipped.
+    const handle = { close: () => movies.stop() };
     this.card = handle;
-    skip.focus({ preventScroll: true });
+    const ended = (result) => {
+      if (this.card !== handle) return; // a newer movie took over
+      this.card = null;
+      if (result === 'failed' || result === 'missing') card();
+    };
+    movies.play(file, this.o.field).then(ended, () => ended('failed'));
   }
 
   showError(text) {

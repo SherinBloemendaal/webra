@@ -1,7 +1,8 @@
 // Installed content for the renderer and the sound system: the original Red
 // Alert graphics the player installed from their own copy (content/install.js)
 // and texture packs (content/packs.js), both kept in this browser
-// (content/store.js). Everything here is presentation: the simulation never
+// (content/store.js), and which original movies are installed (read one at a
+// time when a mission plays one, content/movies.js). Everything here is presentation: the simulation never
 // sees it, so games with different content stay in sync.
 //
 // Priority per sprite, cameo, terrain and sound: texture pack (enabled packs
@@ -26,6 +27,7 @@ import { cameoSource, originalCameoPixels } from './cameos.js';
 import { originalCursors } from './cursors.js';
 import { ACTOR_ART, ACTOR_PALETTE } from './tables.js';
 import { decodePackImages, packCameos, packId, packSlots, readPack, validateManifest, PackError } from './packs.js';
+import { isMovieName } from './movies.js';
 import { defaultRegistry } from '../registry.js';
 
 /** Settings key of the graphics choice (js/settings.js). */
@@ -78,6 +80,8 @@ export class ContentSystem {
     this.known = known;
     /** Installed original graphics: file name -> bytes. */
     this.files = new Map();
+    /** Names of the installed original movies (their bytes stay in the store until one plays). */
+    this.movies = new Set();
     /** Installed packs in order: { record, manifest, images, enabled, problems }. */
     this.packs = [];
     this.listeners = new Set();
@@ -153,6 +157,7 @@ export class ContentSystem {
       const store = await this.store();
       const records = await store.getAll((name) => /\.(shp|pal|tem|sno|des|int)$/i.test(name));
       this.files = new Map(records.map((r) => [r.name, new Uint8Array(r.bytes)]));
+      this.movies = new Set((await store.names()).filter(isMovieName));
       const packs = [];
       for (const { record, enabled } of await this.orderedPacks(store)) packs.push(await this.preparePack({ ...record, enabled }));
       this.packs = packs;
@@ -206,6 +211,18 @@ export class ContentSystem {
 
   getFile(name) {
     return this.files.get(name) ?? null;
+  }
+
+  /** Whether the original movie `name` ("landing.vqa") is installed. */
+  hasMovie(name) {
+    return this.movies.has(name);
+  }
+
+  /** The bytes of an installed movie, or null. */
+  async movieBytes(name) {
+    if (!this.movies.has(name)) return null;
+    const record = await (await this.store()).get(name);
+    return record ? new Uint8Array(record.bytes) : null;
   }
 
   /**
@@ -312,7 +329,7 @@ export class ContentSystem {
     return contentSummary(await this.store());
   }
 
-  /** Remove the installed original content (sounds and graphics), back to WebRA art. Packs stay. */
+  /** Remove the installed original content (sounds, graphics and movies), back to WebRA art. Packs stay. */
   async removeOriginal() {
     await (await this.store()).clear();
     await this.reload();

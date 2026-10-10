@@ -4,8 +4,9 @@
 //
 // Object stores of the "webra-content" database:
 // - files: { name, bytes (ArrayBuffer), size, from, kind } from the player's
-//   own Red Alert files: sounds (.aud and voice variants, kind "sound") and
-//   graphics (.shp, .pal, .tem, .sno, .des, kind "graphics").
+//   own Red Alert files: sounds (.aud and voice variants, kind "sound"),
+//   graphics (.shp, .pal, .tem, .sno, .des, kind "graphics") and movies
+//   (.vqa, kind "movie").
 // - meta: { name, size, kind } per file, so the settings panel can show what
 //   is installed without reading every file.
 // - packs: texture packs, { id, name, author, version, license, description,
@@ -24,9 +25,10 @@ const PACKS = 'packs';
 const PARTIALS = 'partials';
 
 const GRAPHICS_EXT = /\.(shp|pal|tem|sno|des|int)$/i;
+const MOVIE_EXT = /\.vqa$/i;
 
 /** Which kind of file a stored name is. */
-export const kindOf = (name) => (GRAPHICS_EXT.test(name) ? 'graphics' : 'sound');
+export const kindOf = (name) => (GRAPHICS_EXT.test(name) ? 'graphics' : MOVIE_EXT.test(name) ? 'movie' : 'sound');
 
 const done = (req) =>
   new Promise((resolve, reject) => {

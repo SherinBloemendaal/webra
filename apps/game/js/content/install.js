@@ -3,8 +3,9 @@
 // the CD image itself, main.mix and redalert.mix, or the archives inside
 // them, or loose files).
 // We read them in the browser, keep only what WebRA uses (the sounds of
-// js/audio/catalog.js and the graphics of content/tables.js), check that
-// each file decodes, and store them in this browser (content/store.js).
+// js/audio/catalog.js, the graphics of content/tables.js and the movies of
+// content/movies.js), check that each file decodes, and store them in this
+// browser (content/store.js).
 // Nothing is uploaded and nothing is shipped with WebRA.
 
 import { MixArchive, MixError, blobSource } from '../audio/mix.js';
@@ -14,7 +15,9 @@ import { allOriginalNames, ARCHIVES as SOUND_ARCHIVES, EVA, MUSIC_FILES } from '
 import { ACTOR_PALETTE, GRAPHICS_FILES, TERRAIN } from './tables.js';
 import { decodeSprite } from './shp.js';
 import { decodePalette } from './palette.js';
-import { kindOf } from './store.js';
+import { kindOf, storageProblem } from './store.js';
+import { openVqa } from './vqa.js';
+import { MOVIE_FILES, isMovieName } from './movies.js';
 import { openZip, looksLikeZip, ZipError } from '../oramap/zip.js';
 
 const MAX_DEPTH = 3;
@@ -31,10 +34,23 @@ const ANNOUNCER = new Set(Object.values(EVA).flatMap((e) => e.originals));
  * Archives searched inside other archives: the sound archives, plus the
  * graphics ones (units and structures in conquer.mix, cameos in hires.mix,
  * one archive per theater; desert.mix comes from Tiberian Dawn, as in
- * OpenRA). lores.mix is left out: its low resolution cameos share names
- * with the hires ones.
+ * OpenRA), plus the movies (movies1.mix in MAIN.MIX of the Allied disc,
+ * movies2.mix of the Soviet disc, as OpenRA's movies-allied and
+ * movies-soviet packages). lores.mix is left out: its low resolution cameos
+ * share names with the hires ones.
  */
-export const ARCHIVES = [...SOUND_ARCHIVES, 'conquer.mix', 'hires.mix', 'hires1.mix', 'temperat.mix', 'snow.mix', 'interior.mix', 'desert.mix'].filter(
+export const ARCHIVES = [
+  ...SOUND_ARCHIVES,
+  'conquer.mix',
+  'hires.mix',
+  'hires1.mix',
+  'temperat.mix',
+  'snow.mix',
+  'interior.mix',
+  'desert.mix',
+  'movies1.mix',
+  'movies2.mix',
+].filter(
   (v, i, all) => all.indexOf(v) === i,
 );
 
@@ -42,16 +58,21 @@ export const ARCHIVES = [...SOUND_ARCHIVES, 'conquer.mix', 'hires.mix', 'hires1.
  * The largest file of each kind taken from an archive or picked loose: an
  * index or a file claiming more is reported as too large instead of being
  * read into memory. Generous for the real files (music tracks are a few
- * megabytes; scores.mix itself, 61 MB, is opened as an archive, not read).
+ * megabytes, movies a few dozen; scores.mix itself, 61 MB, is opened as an
+ * archive, not read).
  */
-export const MAX_FILE_BYTES = Object.freeze({ music: 32 * 1024 * 1024, other: 8 * 1024 * 1024 });
+export const MAX_FILE_BYTES = Object.freeze({ music: 32 * 1024 * 1024, movie: 64 * 1024 * 1024, other: 8 * 1024 * 1024 });
 
 /** The size limit for a wanted file (MAX_FILE_BYTES). */
-export const maxBytesOf = (name) => (MUSIC_FILES.has(name) ? MAX_FILE_BYTES.music : MAX_FILE_BYTES.other);
+export const maxBytesOf = (name) => (MUSIC_FILES.has(name) ? MAX_FILE_BYTES.music : isMovieName(name) ? MAX_FILE_BYTES.movie : MAX_FILE_BYTES.other);
+
+/** The install report's categories, all zero. */
+export const emptyCategories = () => ({ effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0, movies: 0 });
 
 /** Which settings group a stored file belongs to (for the install report). */
 export function categoryOf(name) {
   if (kindOf(name) === 'graphics') return 'graphics';
+  if (kindOf(name) === 'movie') return 'movies';
   if (MUSIC_FILES.has(name)) return 'music';
   if (ANNOUNCER.has(name)) return 'announcer';
   if (VOICE_EXT.test(name)) return 'voices';
@@ -69,6 +90,10 @@ export function checkFile(name, bytes) {
       else decodeSprite(bytes);
       return null;
     }
+    if (kindOf(name) === 'movie') {
+      openVqa(bytes); // the header, the frame index and every chunk
+      return null;
+    }
     if (!looksLikeAud(bytes)) return 'not an AUD sound';
     decodeAud(bytes); // reject files we could not play later
     return null;
@@ -80,13 +105,18 @@ export function checkFile(name, bytes) {
 /**
  * Find wanted files in what the player picked: Red Alert CD images (.iso),
  * MIX archives (nested ones too, encrypted indexes included) and loose files.
+ * Movies are large: they are not read here, `movies` says where each one is
+ * (a byte source: the archive entry or the picked file), and saveMovies
+ * reads, checks and stores them one at a time.
  * @param {Iterable<File | Blob & { name: string }>} files
  * @param {{ wanted: Set<string>, onProgress?(text: string): void, publicKey?: { n: bigint, e: bigint }, check?: typeof checkFile }} o
- * @returns {Promise<{ found: Map<string, { bytes: Uint8Array, from: string }>, archives: string[], skipped: string[], errors: string[] }>}
+ * @returns {Promise<{ found: Map<string, { bytes: Uint8Array, from: string }>, movies: Map<string, { source: { size: number, read(offset: number, length: number): Promise<Uint8Array> }, from: string }>,
+ *   archives: string[], skipped: string[], errors: string[] }>}
  */
 export async function scanFiles(files, { wanted, onProgress = () => {}, publicKey, check = checkFile }) {
   const found = new Map();
-  const report = { found, archives: [], skipped: [], errors: [] };
+  const movies = new Map();
+  const report = { found, movies, archives: [], skipped: [], errors: [] };
 
   /** Whether `size` is within the limit for `name`; reports it otherwise. */
   const fits = (name, size, from) => {
@@ -105,6 +135,12 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
     found.set(name, { bytes: bytes.slice(), from });
   };
 
+  /** Remember where a wanted movie is (read when it is saved). */
+  const takeMovie = (name, source, from) => {
+    if (movies.has(name) || !wanted.has(name)) return;
+    movies.set(name, { source, from });
+  };
+
   async function scanMix(source, label, depth) {
     let archive;
     try {
@@ -118,9 +154,10 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
     }
     report.archives.push(label);
     for (const name of wanted) {
-      if (found.has(name) || !archive.has(name)) continue;
+      if (found.has(name) || movies.has(name) || !archive.has(name)) continue;
       if (!fits(name, archive.sizeOf(name), label)) continue;
-      take(name, await archive.read(name), label);
+      if (isMovieName(name)) takeMovie(name, archive.entrySource(name), label);
+      else take(name, await archive.read(name), label);
     }
     if (depth >= MAX_DEPTH) return;
     for (const nested of ARCHIVES) {
@@ -168,7 +205,9 @@ export async function scanFiles(files, { wanted, onProgress = () => {}, publicKe
       onProgress(`Reading ${name}`);
       await scanMix(blobSource(file), name, 0);
     } else if (wanted.has(name)) {
-      if (fits(name, file.size, name)) take(name, new Uint8Array(await file.arrayBuffer()), name);
+      if (!fits(name, file.size, name)) continue;
+      if (isMovieName(name)) takeMovie(name, blobSource(file), name);
+      else take(name, new Uint8Array(await file.arrayBuffer()), name);
     } else {
       report.skipped.push(name);
     }
@@ -202,7 +241,7 @@ export const QUICKINSTALL_LIMITS = Object.freeze({
 export async function contentFromZip(bytes, label = 'archive.zip') {
   const zip = openZip(bytes, QUICKINSTALL_LIMITS);
   const names = zip.names();
-  const wanted = names.filter((n) => /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i.test(n));
+  const wanted = names.filter((n) => /\.(mix|aud|v0\d|r0\d|shp|pal|tem|sno|des|vqa)$/i.test(n));
   if (!wanted.length || names.some((n) => baseName(n) === 'manifest.json' || baseName(n) === 'map.yaml')) {
     throw new ZipError(`${label} is not a Red Alert content package (it should hold .mix files)`);
   }
@@ -255,12 +294,54 @@ export function theatersIn(names) {
 }
 
 /**
- * Import sounds and graphics from files the player picked, in one pass.
- * @returns {Promise<{ added: number, bytes: number, byCategory: Record<string, number>, theaters: string[],
+ * Read, check and store the movies `scanFiles` found, one at a time and each
+ * in its own transaction (together they are hundreds of megabytes: only one
+ * is in memory at a time). Problems go to `errors`; a full storage stops
+ * the rest. Returns the stored records' { name, size }.
+ */
+export async function saveMovies(movies, store, { onProgress = () => {}, errors = [], check = checkFile } = {}) {
+  const saved = [];
+  let i = 0;
+  for (const [name, { source, from }] of movies) {
+    i++;
+    onProgress(`Saving movie ${name} (${i} of ${movies.size})`);
+    let bytes;
+    try {
+      bytes = await source.read(0, source.size);
+      if (bytes.length !== source.size) throw new Error('short read');
+    } catch (err) {
+      errors.push(`${name} (in ${from}): could not be read (${err.message ?? err})`);
+      continue;
+    }
+    const problem = check(name, bytes);
+    if (problem) {
+      errors.push(`${name} (in ${from}): ${problem}`);
+      continue;
+    }
+    // A record of its own: the stored buffer is exactly the movie, not a larger read it is a window of.
+    const own = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
+    try {
+      await store.putAll([{ name, bytes: own.buffer, size: own.length, from, kind: kindOf(name) }]);
+    } catch (err) {
+      errors.push(`Movies from ${name} on were not saved: ${storageProblem(err).message}`);
+      break;
+    }
+    saved.push({ name, size: own.length });
+  }
+  return saved;
+}
+
+/**
+ * Import sounds, graphics and movies from files the player picked, in one pass.
+ * @returns {Promise<{ added: number, bytes: number, byCategory: Record<string, number>, theaters: string[], movies: string[],
  *   archives: string[], skipped: string[], errors: string[] }>}
  */
-export async function installContent(files, store, { onProgress = () => {}, publicKey, sounds = allOriginalNames(), graphics = GRAPHICS_FILES } = {}) {
-  const wanted = new Set([...sounds, ...graphics]);
+export async function installContent(
+  files,
+  store,
+  { onProgress = () => {}, publicKey, sounds = allOriginalNames(), graphics = GRAPHICS_FILES, movies = MOVIE_FILES } = {},
+) {
+  const wanted = new Set([...sounds, ...graphics, ...movies]);
   // ZIPs (OpenRA's ra-quickinstall.zip) are unpacked first; their MIX files install like picked ones.
   const zipErrors = [];
   const expanded = await expandZips(files, zipErrors, onProgress);
@@ -271,17 +352,19 @@ export async function installContent(files, store, { onProgress = () => {}, publ
     onProgress(`Saving ${records.length} files in this browser`);
     await store.putAll(records);
   }
-  const byCategory = { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0 };
+  const movieRecords = await saveMovies(scan.movies, store, { onProgress, errors: scan.errors });
+  const byCategory = emptyCategories();
   let bytes = 0;
-  for (const r of records) {
+  for (const r of [...records, ...movieRecords]) {
     byCategory[categoryOf(r.name)]++;
     bytes += r.size;
   }
   return {
-    added: records.length,
+    added: records.length + movieRecords.length,
     bytes,
     byCategory,
     theaters: theatersIn(await store.names()),
+    movies: movieRecords.map((r) => r.name).sort(),
     archives: scan.archives,
     skipped: scan.skipped,
     errors: scan.errors,
@@ -295,11 +378,12 @@ export async function installContent(files, store, { onProgress = () => {}, publ
  */
 export async function contentSummary(store) {
   const meta = await store.meta();
-  const byCategory = { effects: 0, voices: 0, announcer: 0, music: 0, graphics: 0 };
-  const bytes = { sounds: 0, graphics: 0 };
+  const byCategory = emptyCategories();
+  const bytes = { sounds: 0, graphics: 0, movies: 0 };
   for (const m of meta) {
     byCategory[categoryOf(m.name)]++;
-    bytes[m.kind === 'graphics' ? 'graphics' : 'sounds'] += m.size ?? 0;
+    const kind = m.kind ?? kindOf(m.name);
+    bytes[kind === 'graphics' ? 'graphics' : kind === 'movie' ? 'movies' : 'sounds'] += m.size ?? 0;
   }
   const names = meta.map((m) => m.name);
   return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), palette: names.includes(ACTOR_PALETTE) };

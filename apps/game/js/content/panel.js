@@ -31,12 +31,12 @@ import { CancelledError, downloadScores, forgetScoresDownload, FREEWARE_CDS, MUS
 
 export { QUICKINSTALL_MIRRORS };
 
-const ACCEPT_CONTENT = '.zip,.iso,.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03,.shp,.pal,.tem,.sno,.des';
+const ACCEPT_CONTENT = '.zip,.iso,.mix,.aud,.v00,.v01,.v02,.v03,.r00,.r01,.r02,.r03,.shp,.pal,.tem,.sno,.des,.vqa';
 const ACCEPT_PACK = '.webrapack,.zip';
 /** Largest pack file read for the preview (content/packs.js PACK_LIMITS.maxArchiveBytes). */
 const MAX_PACK_FILE = 64 * 1024 * 1024;
 /** Red Alert files the installer takes besides ZIPs. */
-const CONTENT_FILE = /\.(iso|mix|aud|v0\d|r0\d|shp|pal|tem|sno|des)$/i;
+const CONTENT_FILE = /\.(iso|mix|aud|v0\d|r0\d|shp|pal|tem|sno|des|vqa)$/i;
 
 const THEATER_NAMES = { TEMPERAT: 'temperate', SNOW: 'snow', DESERT: 'desert (from Tiberian Dawn)' };
 
@@ -84,6 +84,20 @@ export function musicText(tracks) {
   return tracks ? `Music: ${plural(tracks, 'track', 'tracks')}.` : `Music: none. ${MUSIC_SOURCE_HINT}`;
 }
 
+/** Movie names for the player ("landing.vqa", ...: "landing, prolog and 3 more"). */
+export function movieList(names, shown = 8) {
+  const bare = names.map((n) => n.replace(/\.vqa$/i, ''));
+  if (bare.length <= shown) return bare.length > 1 ? `${bare.slice(0, -1).join(', ')} and ${bare.at(-1)}` : (bare[0] ?? '');
+  return `${bare.slice(0, shown).join(', ')} and ${bare.length - shown} more`;
+}
+
+/** Whether movies are installed, and where they come from when they are not. */
+export function moviesText(count, bytes = 0) {
+  return count
+    ? `Movies: ${plural(count, 'movie', 'movies')} (${formatBytes(bytes)}); missions play them full screen.`
+    : 'Movies: none; missions show a card instead (they come from movies1.mix and movies2.mix on the Allied and Soviet CDs, not in ra-quickinstall.zip).';
+}
+
 /** The installed summary as text (content/install.js contentSummary). */
 export function summaryText(s) {
   if (!s.total) return `Nothing installed yet. WebRA uses its own art and synthesized sounds. ${musicText(0)}`;
@@ -105,6 +119,7 @@ export function summaryText(s) {
   } else {
     parts.push('Graphics: none (they come from conquer.mix, hires.mix and the theater archives, all in ra-quickinstall.zip).');
   }
+  parts.push(moviesText(b.movies ?? 0, s.bytes?.movies ?? 0));
   return `Installed on this device. ${parts.join(' ')}`;
 }
 
@@ -121,6 +136,7 @@ export function installResultLines(r) {
       const theaters = r.theaters?.length ? r.theaters.map((t) => THEATER_NAMES[t] ?? t.toLowerCase()).join(', ') : 'none';
       lines.push(`Graphics: ${plural(b.graphics, 'file', 'files')}; terrain for ${theaters}.`);
     }
+    if (r.movies?.length) lines.push(`Movies: ${movieList(r.movies)}.`);
     if (r.switched) lines.push('The game now uses the original graphics. You can switch back below or under Use.');
   }
   if (r.errors?.length) lines.push(`Skipped: ${r.errors.slice(0, 3).join('; ')}${r.errors.length > 3 ? '; ...' : ''}`);
@@ -632,12 +648,12 @@ export function mountContentSettings(root, content, audio, opts = {}) {
         el('summary', { text: 'Other ways: the freeware CDs, or your own copy of Red Alert' }),
         el('p', {
           class: 'audio-note',
-          text: 'With music: download the Allied or the Soviet CD image of the freeware release from the Internet Archive and drop the .iso here (or choose it below). WebRA reads only the parts it needs straight from the file, never the whole image, and installs the music, sounds and graphics on the disc.',
+          text: 'With music and movies: download the Allied or the Soviet CD image of the freeware release from the Internet Archive and drop the .iso here (or choose it below). WebRA reads only the parts it needs straight from the file, never the whole image, and installs the music, sounds, graphics and campaign movies on the disc (the movies take a few hundred megabytes of browser storage).',
         }),
         cdList(),
         el('p', {
           class: 'audio-note',
-          text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix), or loose files. desert.mix from Tiberian Dawn adds desert terrain. Sounds and graphics are installed in one go.',
+          text: 'Choose main.mix and redalert.mix (the freeware release or the CD), or the archives inside them (conquer.mix, hires.mix, temperat.mix, snow.mix, sounds.mix, allies.mix, russian.mix, speech.mix, scores.mix, movies1.mix, movies2.mix), or loose files (an OpenRA content folder with its movies folder works too). desert.mix from Tiberian Dawn adds desert terrain. Sounds, graphics and movies are installed in one go.',
         }),
         el('div', { class: 'audio-buttons' }, pickFiles, pickFolder),
       ),
