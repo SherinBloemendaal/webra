@@ -1,0 +1,323 @@
+//! A world for a mission: its players with their relations, its map actors,
+//! and the scripts loaded and started (OpenRA's World.LoadComplete:
+//! map actors spawned, then the scripts run, then `WorldLoaded`).
+
+use super::data::MissionData;
+use super::{api, HState, Limbo, Mission, MissionPlayer, MissionResult, WinState, LOAD_BUDGET};
+use crate::lua::{Lua, Value};
+use crate::math::{CELL, HALF_CELL};
+use crate::rules::{Kind, Rules, Stance, TECH_LEVELS};
+use crate::world::{AiDifficulty, GameOptions, World};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+/// OpenRA MapGrid SubCellOffsets of a rectangular grid (index 0 is the whole cell).
+const SUBCELL_OFFSETS: [(i32, i32); 6] = [(0, 0), (-299, -256), (256, -256), (0, 0), (-299, 256), (256, 256)];
+
+/// Diplomacy values of `World::diplomacy` (the stance of one player toward another).
+pub const NEUTRAL: u8 = 0;
+pub const ALLY: u8 = 1;
+pub const ENEMY: u8 = 2;
+
+/// The choices a mission starts with: lobby options (`difficulty`) by id.
+#[derive(Clone, Debug, Default)]
+pub struct MissionOptions {
+    pub options: BTreeMap<String, String>,
+}
+
+pub(crate) fn stance_of(name: &str) -> Option<Stance> {
+    match name.to_ascii_lowercase().as_str() {
+        "holdfire" | "hold_fire" => Some(Stance::HoldFire),
+        "returnfire" | "return_fire" => Some(Stance::ReturnFire),
+        "defend" => Some(Stance::Defend),
+        "attackanything" | "attack_anything" => Some(Stance::AttackAnything),
+        _ => None,
+    }
+}
+
+/// OpenRA WAngle (counter-clockwise) to an engine facing (clockwise), and back.
+pub(crate) fn facing_in(w: i32) -> i32 {
+    (1024 - w.rem_euclid(1024)) % 1024
+}
+
+pub(crate) fn facing_out(f: i32) -> i32 {
+    (1024 - f.rem_euclid(1024)) % 1024
+}
+
+pub(crate) fn parse_hex(s: &str) -> u32 {
+    super::parse_color(s).unwrap_or(0xffff_ffff)
+}
+
+impl World {
+    /// A world playing `data` (a mission file). The scripts are loaded and
+    /// `WorldLoaded` runs before this returns; a script error does not fail
+    /// the call, it ends the mission (see `Mission::error`).
+    pub fn from_mission(data: MissionData, seed: u64, chosen: &MissionOptions) -> Result<World, String> {
+        let rules = Rules::load_mission(&data.rules)?;
+        let map = data.map.to_map()?;
+        let data = Arc::new(data);
+        // The person playing is slot 0; the other players follow in the
+        // mission's order. Other playable slots (co-op missions) stay empty,
+        // like unoccupied slots in OpenRA: their scripts check for nil.
+        let human = data.human();
+        let mut order = vec![human];
+        order.extend((0..data.players.len()).filter(|&i| i != human && !data.players[i].playable));
+        let tech = TECH_LEVELS.iter().position(|t| *t == data.tech_level).unwrap_or(TECH_LEVELS.len() - 1);
+        let options = GameOptions {
+            starting_cash: data.starting_cash,
+            starting_units: crate::world::StartingUnits::Mcv,
+            tech_level: tech,
+            fog: true,
+            explored: false,
+            build_radius: true,
+            // Campaign rules: no ally build radius, no reusable engineers, no
+            // bounties, no crates, no short game; MCVs undeploy.
+            ally_build_radius: false,
+            redeployable_mcv: true,
+            ore_regrowth: true,
+            map_style: crate::mapgen::MapStyle::Random,
+            biome: Some(data.map.biome),
+            weather: crate::weather::WeatherMode::Off,
+            cheats: false,
+            reusable_engineers: false,
+            crates: false,
+            short_game: false,
+            time_limit: 0,
+            tick_ms: 40,
+            bounty: false,
+            separate_team_spawns: false,
+        };
+        let mut w = World::empty(rules, map, seed);
+        w.options = options.clone();
+        w.env = crate::weather::Environment::new(data.map.biome, options.weather, seed);
+        let mut players = Vec::new();
+        for &pi in &order {
+            let p = &data.players[pi];
+            let fi = w.rules.faction_index(&p.faction).or_else(|| w.rules.faction_index("allies")).expect("allies faction");
+            let bot = pi != human;
+            w.add_player(fi, bot, (0, 0));
+            let slot = w.players.len() - 1;
+            w.players[slot].cash = data.starting_cash;
+            w.players[slot].neutral = p.owns_world;
+            players.push(MissionPlayer {
+                name: p.name.clone(),
+                color: parse_hex(&p.color),
+                playable: pi == human,
+                non_combatant: p.non_combatant || p.owns_world,
+                bot,
+                objectives: Vec::new(),
+                win: WinState::Undefined,
+                conditions: Vec::new(),
+                ai_enabled: false,
+            });
+        }
+        // Relations as each player's reference states them (OpenRA PlayerReference
+        // Allies and Enemies; everyone else is neutral).
+        let n = players.len();
+        let mut diplomacy = vec![NEUTRAL; n * n];
+        for (a, &pa) in order.iter().enumerate() {
+            let p = &data.players[pa];
+            for (b, &pb) in order.iter().enumerate() {
+                let other = &data.players[pb].name;
+                diplomacy[a * n + b] = if a == b || p.allies.contains(other) {
+                    ALLY
+                } else if p.enemies.contains(other) {
+                    ENEMY
+                } else {
+                    NEUTRAL
+                };
+            }
+        }
+        w.diplomacy = diplomacy;
+        w.ai = (0..n).map(|slot| crate::ai::AiState::new(slot as u32, AiDifficulty::Normal)).collect();
+        for a in w.ai.iter_mut() {
+            a.salt = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+        }
+        w.crates = crate::crates::CrateState::new(&w.rules, false);
+
+        let mut m = Mission {
+            id: data.id.clone(),
+            lua: None,
+            data: data.clone(),
+            handles: Vec::new(),
+            handle_of: BTreeMap::new(),
+            named: Vec::new(),
+            players,
+            origin: (data.origin[0], data.origin[1]),
+            triggers: Default::default(),
+            queues: BTreeMap::new(),
+            delayed: Vec::new(),
+            spawns: Vec::new(),
+            builds: Vec::new(),
+            seq: 0,
+            options: BTreeMap::new(),
+            time_limit: Default::default(),
+            camera: None,
+            mission_text: None,
+            ui: Vec::new(),
+            error: None,
+            result: MissionResult::Playing,
+            game_over_at: None,
+            next_token: 1,
+            discovered: BTreeMap::new(),
+            panic: BTreeMap::new(),
+            low_power_quiet: Default::default(),
+            conditions: BTreeMap::new(),
+            budget: LOAD_BUDGET,
+        };
+        for id in data.options.keys() {
+            if let Some(v) = data.option_value(id, &chosen.options) {
+                m.options.insert(id.clone(), v.to_string());
+            }
+        }
+        w.spawn_map_actors(&mut m);
+        w.refresh_tokens();
+        w.update_power();
+        w.update_vision();
+        w.mission_on = true;
+
+        // The scripts: OpenRA's sandbox, the API globals, the map actors as
+        // globals, every script file in order, then WorldLoaded.
+        let mut lua = Lua::new();
+        api::install(&mut lua);
+        for (name, h) in m.named.clone() {
+            lua.set_global(&name, api::actor_value(h));
+        }
+        lua.set_budget(LOAD_BUDGET);
+        {
+            let mut ctx = api::Ctx { w: &mut w, m: &mut m };
+            ctx.load_scripts(&mut lua);
+        }
+        m.lua = Some(lua);
+        w.mission = Some(Box::new(m));
+        Ok(w)
+    }
+
+    /// Spawn the mission's map actors and give each a handle (OpenRA SpawnMapActors).
+    fn spawn_map_actors(&mut self, m: &mut Mission) {
+        let data = m.data.clone();
+        for a in &data.actors {
+            let Some(owner) = m.player_slot(&a.owner).or_else(|| m.players.iter().position(|p| p.non_combatant).map(|p| p as u8)) else {
+                continue;
+            };
+            let (cx, cy) = m.cell_in(a.x, a.y);
+            let ty = a.ty.as_str();
+            let h = if ty == "waypoint" || ty == "mpspawn" {
+                m.new_handle(ty.to_string(), owner, HState::Marker { x: cx * CELL + HALF_CELL, y: cy * CELL + HALF_CELL })
+            } else if let Some(p) = data.props.get(ty) {
+                let state = HState::Prop {
+                    x: cx * CELL + HALF_CELL,
+                    y: cy * CELL + HALF_CELL,
+                    reveal: p.reveal,
+                    image: p.image.clone(),
+                    alive: true,
+                };
+                m.new_handle(ty.to_string(), owner, state)
+            } else if let Some(t) = self.rules.actor_index(ty) {
+                let info = self.rules.actors[t].clone();
+                let facing = super::setup::facing_in(a.facing.unwrap_or(0));
+                let i = match info.kind {
+                    Kind::Proxy => None,
+                    Kind::Building => self.spawn_building_with(t as u16, owner, cx, cy, a.free_actor.unwrap_or(true)),
+                    Kind::Crate => {
+                        if !self.map.contains(cx, cy) || self.crate_at(self.map.idx(cx, cy)).is_some() {
+                            None
+                        } else {
+                            Some(self.place_crate(t, owner, cx, cy, 0))
+                        }
+                    }
+                    Kind::Husk => {
+                        if !self.map.contains(cx, cy) {
+                            None
+                        } else {
+                            Some(self.place_husk(t, owner, cx * CELL + HALF_CELL, cy * CELL + HALF_CELL, facing, 0))
+                        }
+                    }
+                    _ => {
+                        if !self.map.contains(cx, cy) {
+                            None
+                        } else {
+                            let (ox, oy) = match (info.kind, a.subcell) {
+                                (Kind::Infantry, Some(s)) => SUBCELL_OFFSETS.get(s as usize).copied().unwrap_or((0, 0)),
+                                _ => (0, 0),
+                            };
+                            let u = self.spawn_unit(t as u16, owner, cx * CELL + HALF_CELL + ox, cy * CELL + HALF_CELL + oy, facing);
+                            self.place_map_aircraft(u);
+                            Some(u)
+                        }
+                    }
+                };
+                match i {
+                    Some(i) => {
+                        let r = self.make_ref(i);
+                        if let Some(pct) = a.health {
+                            let max = self.rules.actors[t].hp as i64;
+                            self.actors[i].hp = ((max * pct.clamp(1, 100) as i64) / 100).max(1) as i32;
+                        }
+                        if let Some(s) = a.stance.as_deref().and_then(stance_of) {
+                            self.actors[i].stance = s;
+                        }
+                        if let Some(tf) = a.turret_facing {
+                            let f = facing_in(tf);
+                            self.actors[i].turret = f;
+                            self.actors[i].pturret = f;
+                        }
+                        if let Some(fi) = a.faction.as_deref().and_then(|f| self.rules.faction_index(f)) {
+                            self.actors[i].faction = fi as u8;
+                        }
+                        m.new_handle(self.rules.actors[t].id.clone(), owner, HState::Live(r))
+                    }
+                    None if info.kind == Kind::Proxy => {
+                        let limbo = Limbo {
+                            x: cx * CELL + HALF_CELL,
+                            y: cy * CELL + HALF_CELL,
+                            altitude: None,
+                            facing,
+                            health: None,
+                            stance: None,
+                        };
+                        m.new_handle(self.rules.actors[t].id.clone(), owner, HState::Limbo(limbo))
+                    }
+                    None => continue,
+                }
+            } else {
+                continue;
+            };
+            m.handles[h as usize].tags = a.tags.clone();
+            m.named.push((a.name.clone(), h));
+        }
+    }
+
+    /// A map aircraft stands landed (OpenRA spawns map actors at ground level):
+    /// on its owner's airfield or helipad under it, else on the spot.
+    fn place_map_aircraft(&mut self, u: usize) {
+        if self.actors[u].kind != crate::rules::Kind::Aircraft {
+            return;
+        }
+        let ci = self.cell_index(self.actors[u].x, self.actors[u].y);
+        let base = self.building_at[ci];
+        if base != crate::world::NONE && self.actors[base as usize].owner == self.actors[u].owner {
+            let b = base as usize;
+            if self.is_plane(u) {
+                self.plane_produced(u, b);
+            } else {
+                self.heli_produced(u, b);
+            }
+            return;
+        }
+        if !self.is_plane(u) {
+            self.actors[u].altitude = 0;
+            self.actors[u].heli.landed = true;
+        }
+    }
+
+    /// Map cell and its subcell offset for scripts (OpenRA DefaultSubCell is the center).
+    pub(crate) fn mission_subcell_offset(s: i32) -> (i32, i32) {
+        SUBCELL_OFFSETS.get(s as usize).copied().unwrap_or((0, 0))
+    }
+}
+
+/// An actor's handle as a script value (setup and api).
+pub(crate) fn handle_value(h: u32) -> Value {
+    api::actor_value(h)
+}

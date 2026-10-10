@@ -36,6 +36,7 @@ pub mod mapdata;
 pub mod mapgen;
 pub mod math;
 pub mod minimap;
+pub mod mission;
 mod naval;
 pub mod observer;
 pub mod overlays;
@@ -87,6 +88,8 @@ mod tests_instances;
 mod tests_leftovers;
 #[cfg(test)]
 mod tests_minimap;
+#[cfg(test)]
+mod tests_mission;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]

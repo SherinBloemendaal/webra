@@ -481,6 +481,14 @@ impl World {
         // one being captured has its exits shut (Exit RequiresCondition !being-captured, infantry.rs).
         let producers: Vec<usize> = self.producers_of(player, ty).into_iter().filter(|&b| !self.being_captured(b)).collect();
         let Some(&b) = producers.iter().find(|&&b| self.actors[b].primary).or(producers.first()) else { return false };
+        self.produce_at(b, player, ty).is_some()
+    }
+
+    /// A unit of type `ty` for `player` leaves structure `b` (at its least
+    /// crowded exit, toward its rally point). None when it cannot get out
+    /// (a ship yard with every exit blocked). Missions use it directly
+    /// (OpenRA Production.Produce, `actor.Produce`).
+    pub(crate) fn produce_at(&mut self, b: usize, player: u8, ty: u16) -> Option<usize> {
         let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
         let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
         let exits = binfo.exits.clone();
@@ -507,7 +515,7 @@ impl World {
         let mut facing = 512;
         // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
         if self.is_water_type(ty) {
-            let Some((cx, cy, f)) = self.naval_spawn_cell(b) else { return false };
+            let (cx, cy, f) = self.naval_spawn_cell(b)?;
             (ex, ey, facing) = (cx, cy, f);
         }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
@@ -515,18 +523,21 @@ impl World {
         // OpenRA INotifyProduction: the factory's door opens for it (doors.rs).
         self.door_unit_produced(b, u);
         self.sound.push(SoundEventKind::UnitProduced, ty as i32, ux, uy, player, 0);
+        // Mission triggers (OnProduction).
+        let (producer, unit) = (self.make_ref(b), self.make_ref(u));
+        self.script_event(crate::mission::ScriptEvent::Produced { producer, unit });
         // Helicopters start landed on their helipad (helicopter.rs).
         self.heli_produced(u, b);
         // Planes park on their airfield (plane.rs).
         if self.plane_produced(u, b) {
-            return true;
+            return Some(u);
         }
         if self.is_harvester(u) {
-            return true;
+            return Some(u);
         }
         let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))));
         self.order_move(&[u], rx, ry, false);
-        true
+        Some(u)
     }
 
     // ---- Placement ---------------------------------------------------------
@@ -649,6 +660,8 @@ impl World {
         self.note_built(player, ty);
         let (bx, by) = (self.actors[b].x, self.actors[b].y);
         self.sound.push(SoundEventKind::BuildingPlaced, ty as i32, bx, by, player, 0);
+        let building = self.make_ref(b);
+        self.script_event(crate::mission::ScriptEvent::Placed { player, building });
         // The construction yard's placement animation (fx.rs, presentation only).
         self.note_placed(player);
         self.clear_mines_under(b);
@@ -745,6 +758,8 @@ impl World {
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);
+        let actor = self.make_ref(b);
+        self.script_event(crate::mission::ScriptEvent::Sold { actor });
         self.remove(b);
         true
     }

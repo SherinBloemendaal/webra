@@ -304,7 +304,7 @@ impl World {
     fn fire_support_power(&mut self, player: u8, info: &SupportPowerInfo, power: i32, x: i32, y: i32, dir: Option<(i32, i32)>) -> bool {
         match info.kind.as_str() {
             // plane.rs: spy plane, parabombs (AirstrikePower) and paratroopers.
-            "AirstrikePower" | "ParatroopersPower" => self.launch_air_power(player, info, power, x, y, dir),
+            "AirstrikePower" | "ParatroopersPower" => self.launch_air_power(player, info, power, x, y, dir).is_some(),
             // abilities.rs: superweapons. Chronoshift takes the source area as the second point.
             "ChronoshiftPower" => self.fire_chronoshift(player, info, x, y, dir),
             "GrantExternalConditionPower" => self.fire_iron_curtain(info, x, y),

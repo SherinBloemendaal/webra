@@ -202,6 +202,7 @@ impl World {
         a.y = y;
         a.px = x;
         a.py = y;
+        self.script_event(crate::mission::ScriptEvent::PassengerEntered { transport: tref, passenger: pref });
         true
     }
 
@@ -351,6 +352,8 @@ impl World {
             }
         }
         self.order_move(&[p], gx, gy, false);
+        let (transport, passenger) = (self.make_ref(t), r);
+        self.script_event(crate::mission::ScriptEvent::PassengerExited { transport, passenger });
         Some(p)
     }
 
@@ -389,8 +392,10 @@ impl World {
     fn empty_cargo(&mut self, t: usize, eject: bool) {
         let (x, y) = (self.actors[t].x, self.actors[t].y);
         let refs = std::mem::take(&mut self.actors[t].cargo);
+        let tref = self.make_ref(t);
         for r in refs {
             let Some(p) = self.resolve(r) else { continue };
+            self.script_event(crate::mission::ScriptEvent::PassengerExited { transport: tref, passenger: r });
             let a = &mut self.actors[p];
             a.carrier = NONE;
             a.x = x;

@@ -977,6 +977,16 @@ pub struct World {
     /// The game ended (a winner was decided, or every remaining player lost
     /// at once: the time limit can end a game without a winner; gamerules.rs).
     pub game_over: bool,
+    /// The mission this world plays (mission/), with its scripts.
+    pub mission: Option<Box<crate::mission::Mission>>,
+    /// A mission runs: engine events are recorded for its triggers.
+    pub(crate) mission_on: bool,
+    pub(crate) script_events: Vec<crate::mission::ScriptEvent>,
+    /// Who dealt the blow of the kill in progress (mission OnKilled triggers).
+    pub(crate) kill_source: u32,
+    /// Missions: each player's stance toward each other player
+    /// (`mission::setup` ALLY, NEUTRAL, ENEMY), row major. Empty: teams decide.
+    pub diplomacy: Vec<u8>,
 }
 
 /// Where a world's map came from (`World::setup`).
@@ -1161,6 +1171,11 @@ impl World {
             smudges: crate::smudges::Smudges::new(cells),
             game_over: false,
             leftover_at: crate::husks::LeftoverCells::new(cells),
+            mission: None,
+            mission_on: false,
+            script_events: Vec::new(),
+            kill_source: NONE,
+            diplomacy: Vec::new(),
             map,
         }
     }
@@ -1201,12 +1216,23 @@ impl World {
             return false;
         }
         let (pa, pb) = (&self.players[a as usize], &self.players[b as usize]);
+        if !self.diplomacy.is_empty() {
+            return self.diplomacy[a as usize * self.players.len() + b as usize] == crate::mission::setup::ENEMY;
+        }
         !pa.neutral && !pb.neutral && (pa.team == 0 || pa.team != pb.team)
     }
 
     #[inline]
     pub fn are_allies(&self, a: u8, b: u8) -> bool {
+        if !self.diplomacy.is_empty() {
+            return a == b || self.diplomacy[a as usize * self.players.len() + b as usize] == crate::mission::setup::ALLY;
+        }
         a == b || (!self.are_enemies(a, b) && !self.players[a as usize].neutral && !self.players[b as usize].neutral)
+    }
+
+    /// Whether some players are allied to others (teams, or a mission's relations).
+    pub fn has_alliances(&self) -> bool {
+        !self.diplomacy.is_empty() || self.players.iter().any(|p| p.team != 0)
     }
 
     // ---- Actor references -------------------------------------------------
@@ -1288,6 +1314,12 @@ impl World {
     /// the cell tables) or another structure already covers one of its cells
     /// (each cell has one owner in `building_at`).
     pub fn spawn_building(&mut self, ty: u16, owner: u8, cx: i32, cy: i32) -> Option<usize> {
+        self.spawn_building_with(ty, owner, cx, cy, true)
+    }
+
+    /// `spawn_building`; `free_actor` false leaves out a refinery's free ore
+    /// truck (OpenRA FreeActorInit false, set by mission maps).
+    pub fn spawn_building_with(&mut self, ty: u16, owner: u8, cx: i32, cy: i32, free_actor: bool) -> Option<usize> {
         let info = self.rules.actors.get(ty as usize)?;
         let b = info.building.as_ref()?;
         if !b.fits(&self.map, cx, cy) || b.cells().any(|(dx, dy)| self.building_at[self.map.idx(cx + dx, cy + dy)] != NONE) {
@@ -1314,7 +1346,7 @@ impl World {
         a.stance = self.initial_stance(ty, owner);
         a.born = self.tick;
         let footprint = b.footprint.clone();
-        let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset));
+        let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset)).filter(|_| free_actor);
         self.actors[i] = a;
         self.init_abilities(i);
         for (dx, dy, c) in footprint {
@@ -1361,6 +1393,12 @@ impl World {
         }
         // Kill bounty for the player that dealt the blow (gamerules.rs).
         self.give_bounty(i);
+        // Mission triggers (OnKilled): the victim where it died and its killer.
+        let killer = std::mem::replace(&mut self.kill_source, NONE);
+        if self.mission_on {
+            let (victim, snap) = (self.make_ref(i), crate::mission::Snapshot::of(self, i));
+            self.script_events.push(crate::mission::ScriptEvent::Killed { victim, killer, snap });
+        }
         self.actors[i].alive = false;
         self.actors[i].hp = 0;
         self.losses[self.actors[i].owner as usize] += 1;
@@ -1403,6 +1441,10 @@ impl World {
     pub fn remove(&mut self, i: usize) {
         if !self.actors[i].alive {
             return;
+        }
+        if self.mission_on {
+            let (actor, snap) = (self.make_ref(i), crate::mission::Snapshot::of(self, i));
+            self.script_events.push(crate::mission::ScriptEvent::Removed { actor, snap });
         }
         self.actors[i].alive = false;
         self.dying.push(i as u32);
@@ -2120,7 +2162,8 @@ impl World {
         // Landing craft doors (fx.rs, presentation only).
         self.tick_fx();
         for p in 0..self.players.len() {
-            if self.players[p].is_ai && !self.players[p].defeated {
+            // Mission players follow their scripts, not the skirmish AI (mission/).
+            if self.players[p].is_ai && !self.players[p].defeated && !self.scripted_player(p as u8) {
                 crate::ai::think(self, p as u8);
             }
         }
@@ -2144,6 +2187,11 @@ impl World {
         self.tick_projectiles();
         self.tick_crashes();
         self.cleanup_dead();
+        // Mission scripts (mission/): triggers, script activities, Tick().
+        if self.mission.is_some() {
+            self.tick_mission();
+            self.cleanup_dead();
+        }
         if self.tokens_dirty {
             self.refresh_tokens();
         }
@@ -2160,7 +2208,9 @@ impl World {
             e.ttl -= 1;
         }
         self.effects.retain(|e| e.ttl > 0);
-        if self.tick.is_multiple_of(TICKS_PER_SECOND) {
+        // Missions win and lose by their objectives (OpenRA campaign rules
+        // remove ConquestVictoryConditions).
+        if self.tick.is_multiple_of(TICKS_PER_SECOND) && self.mission.is_none() {
             self.check_victory();
         }
         // The time limit counts every tick (gamerules.rs).
@@ -2244,6 +2294,10 @@ impl World {
         }
         for &g in &self.map.gems {
             mix(g as i64);
+        }
+        // Mission scripts and their state (mission/).
+        if let Some(m) = &self.mission {
+            mix(m.state_hash() as i64);
         }
         h
     }

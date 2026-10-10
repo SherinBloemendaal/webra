@@ -1170,6 +1170,24 @@ impl Rules {
         Ok(rules)
     }
 
+    /// Load the built-in rules with the changes of a mission (mission/data.rs,
+    /// made by tools/gen_missions.py): `actors`, `weapons` and `locomotors`
+    /// are lists whose entries either name a built-in entry (by id or name)
+    /// and set some of its fields, or are complete new entries appended in
+    /// order (weapon and locomotor indices count on that order);
+    /// `armor_types` lists armor types appended to the built-in ones. The
+    /// result is validated like any modded map.
+    pub fn load_mission(changes: &serde_json::Value) -> Result<Rules, String> {
+        let mut base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
+        if !changes.is_null() {
+            apply_mission_changes(&mut base, changes)?;
+        }
+        let raw: RawRules = serde_json::from_value(base).map_err(|e| format!("mission rules are invalid: {e}"))?;
+        let rules = Rules::from_raw(raw)?;
+        rules.validate()?;
+        Ok(rules)
+    }
+
     /// Semantic checks that keep the simulation panic-free and bounded, whatever
     /// a modded map sets: value ranges, table lengths and cross references.
     /// Every field an override can reach is covered: indices into the weapon
@@ -2092,6 +2110,39 @@ fn within(what: &str, v: i32, lo: i32, hi: i32) -> Result<(), String> {
 fn count(what: &str, len: usize, max: usize) -> Result<(), String> {
     if len > max {
         return Err(format!("{what} may have at most {max} entries, has {len}"));
+    }
+    Ok(())
+}
+
+/// Apply mission rules changes (`Rules::load_mission`).
+fn apply_mission_changes(base: &mut serde_json::Value, changes: &serde_json::Value) -> Result<(), String> {
+    let c = changes.as_object().ok_or("mission rules must be an object")?;
+    for (section, key_field) in [("actors", "id"), ("weapons", "name"), ("locomotors", "name")] {
+        let Some(entries) = c.get(section) else { continue };
+        let entries = entries.as_array().ok_or_else(|| format!("mission rules.{section} must be a list"))?;
+        let list = base[section].as_array_mut().expect("rules sections are arrays");
+        for e in entries {
+            let obj = e.as_object().ok_or_else(|| format!("mission rules.{section}: entries must be objects"))?;
+            let key =
+                obj.get(key_field).and_then(|v| v.as_str()).ok_or_else(|| format!("mission rules.{section}: entry without {key_field}"))?;
+            match list.iter_mut().find(|t| t[key_field].as_str() == Some(key)) {
+                Some(target) => {
+                    let t = target.as_object_mut().expect("rules entries are objects");
+                    for (k, v) in obj {
+                        if !t.contains_key(k) {
+                            return Err(format!("mission rules.{section}.{}: unknown field {}", truncate(key), truncate(k)));
+                        }
+                        t.insert(k.clone(), v.clone());
+                    }
+                }
+                None => list.push(e.clone()),
+            }
+        }
+    }
+    for k in c.keys() {
+        if !matches!(k.as_str(), "actors" | "weapons" | "locomotors" | "armor_types") {
+            return Err(format!("mission rules: unknown section {}", truncate(k)));
+        }
     }
     Ok(())
 }

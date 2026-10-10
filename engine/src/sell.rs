@@ -17,6 +17,10 @@ impl World {
         let a = &self.actors[b];
         let info = &self.rules.actors[a.ty as usize];
         let (Some(s), Some(bi)) = (info.options.sell_survivors.clone(), info.building.as_ref()) else { return };
+        // A mission condition can switch SpawnActorsOnSell off (mission/conditions.rs).
+        if self.mission.is_some() && self.mission_no_sell_survivors(b) {
+            return;
+        }
         let owner = a.owner;
         let faction = self.players[owner as usize].faction;
         if !s.factions.is_empty() && !s.factions.contains(&faction) {

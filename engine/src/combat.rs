@@ -150,6 +150,8 @@ impl World {
             && self.is_visible_to(t, player)
             && !self.untargetable_aircraft(t)
             && !self.is_cloaked_from(t, player)
+            // Mission conditions can switch Targetable off (mission/conditions.rs).
+            && !(self.mission.is_some() && self.mission_untargetable(t))
     }
 
     // ---- Fire targets -------------------------------------------------------------
@@ -913,6 +915,11 @@ impl World {
             self.sound.push(SoundEventKind::DamageHeavy, ty, x, y, owner, 0);
         }
         self.note_damage(u, dealt);
+        // Mission triggers (OnDamaged).
+        if self.mission_on {
+            let victim = self.make_ref(u);
+            self.script_events.push(crate::mission::ScriptEvent::Damaged { victim, attacker: source, damage: dealt });
+        }
         // Damage smoke (fx.rs, presentation only).
         self.note_damage_fx(u);
         // An AI remembers who hits its structures (ai.rs target choice).
@@ -926,6 +933,7 @@ impl World {
             // Which death animation and scream (infantry_combat.rs).
             self.note_death_types(u, types);
             self.award_kill(u, source);
+            self.kill_source = source;
             self.kill(u);
             return;
         }

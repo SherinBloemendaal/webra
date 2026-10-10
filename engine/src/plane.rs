@@ -758,7 +758,7 @@ impl World {
     /// ParatroopersPower toward (x, y). `dir` is an optional second point: the
     /// planes fly from the target toward it; without one they come from the
     /// player's base side. `power` is the power's `sound_events::power_ref`.
-    /// Returns false when the power cannot be launched.
+    /// Returns the aircraft, or None when the power cannot be launched.
     pub(crate) fn launch_air_power(
         &mut self,
         player: u8,
@@ -767,11 +767,9 @@ impl World {
         x: i32,
         y: i32,
         dir: Option<(i32, i32)>,
-    ) -> bool {
-        let Some(ty) = self.rules.actor_index(&info.unit_type) else { return false };
-        if self.rules.actors[ty].unit.as_ref().and_then(|u| u.aircraft.as_ref()).is_none() {
-            return false;
-        }
+    ) -> Option<Vec<usize>> {
+        let ty = self.rules.actor_index(&info.unit_type)?;
+        self.rules.actors[ty].unit.as_ref().and_then(|u| u.aircraft.as_ref())?;
         let drops: Vec<u16> = info.drop_items.iter().filter_map(|d| self.rules.actor_index(d)).map(|t| t as u16).collect();
         let mission = match info.kind.as_str() {
             "ParatroopersPower" => Mission::Paradrop,
@@ -779,7 +777,7 @@ impl World {
             _ => Mission::SpyPlane,
         };
         if mission == Mission::Paradrop && drops.is_empty() {
-            return false;
+            return None;
         }
         // Flight direction: toward the second point, else away from the player's base.
         let (sx, sy) = self.players[player as usize].start;
@@ -799,6 +797,7 @@ impl World {
         back += SUPPORT_CORDON;
         let (ox, oy) = (info.squad_offset.first().copied().unwrap_or(0), info.squad_offset.get(1).copied().unwrap_or(0));
         let cruise = self.rules.actors[ty].unit.as_ref().unwrap().aircraft.as_ref().unwrap().cruise_altitude;
+        let mut planes = Vec::new();
         for k in 0..info.squad_size.max(1) {
             // OpenRA SquadOffset: x along the flight, y sideways, alternating sides.
             let side = if k % 2 == 1 { -1 } else { 1 };
@@ -821,8 +820,9 @@ impl World {
             if mission == Mission::Paradrop {
                 a.air.cargo = drops.clone();
             }
+            planes.push(u);
         }
-        true
+        Some(planes)
     }
 
     /// Spy plane, paratrooper and bomber flights: straight across the target, then off the map.

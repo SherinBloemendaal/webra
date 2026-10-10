@@ -26,6 +26,8 @@ pub struct Beacon {
     /// Tick it was placed and the first tick it is gone.
     pub placed: u32,
     pub expires: u32,
+    /// Placed by a mission script: a player's own beacon does not replace it.
+    pub scripted: bool,
 }
 
 /// Every player's current beacon, in placing order.
@@ -70,8 +72,19 @@ impl World {
         let (cx, cy) = self.cell_of(x, y);
         let (x, y) = (crate::world::cell_center(cx), crate::world::cell_center(cy));
         let duration = self.rules.player.beacon_duration.max(1) as u32;
-        self.beacons.list.retain(|b| b.owner != player);
-        self.beacons.list.push(Beacon { owner: player, x, y, placed: self.tick, expires: self.tick + duration });
+        self.beacons.list.retain(|b| b.owner != player || b.scripted);
+        self.beacons.list.push(Beacon { owner: player, x, y, placed: self.tick, expires: self.tick + duration, scripted: false });
+        self.sound.push(SoundEventKind::BeaconPlaced, 0, x, y, player, duration as i32);
+    }
+
+    /// A mission script's beacon (OpenRA `Beacon.New`): at (x, y) for
+    /// `duration` ticks; it does not replace or get replaced by the player's own.
+    pub(crate) fn place_script_beacon(&mut self, player: u8, x: i32, y: i32, duration: u32) {
+        if player as usize >= self.players.len() || x < 0 || y < 0 || x >= self.map.width * CELL || y >= self.map.height * CELL {
+            return;
+        }
+        let duration = duration.max(1);
+        self.beacons.list.push(Beacon { owner: player, x, y, placed: self.tick, expires: self.tick + duration, scripted: true });
         self.sound.push(SoundEventKind::BeaconPlaced, 0, x, y, player, duration as i32);
     }
 

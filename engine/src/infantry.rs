@@ -436,6 +436,9 @@ impl World {
         }
         let experience =
             captor.and_then(|c| self.capture_with(c, t).map(|ci| ci.experience)).filter(|_| self.are_enemies(new_owner, old)).unwrap_or(0);
+        // Mission triggers (OnCapture, OnKilledOrCaptured).
+        let (actor, captor_ref) = (self.make_ref(t), captor.map_or(NONE, |c| self.make_ref(c)));
+        self.script_event(crate::mission::ScriptEvent::Captured { actor, captor: captor_ref, old, new: new_owner });
         self.note_player_experience(new_owner, experience);
         // A husk becomes its vehicle again for the captor (TransformOnCapture, husks.rs).
         if self.actors[t].kind == Kind::Husk {
@@ -509,6 +512,9 @@ impl World {
         // The spy's disguise drops (Disguise RevealDisguiseOn: Infiltrate is not
         // RA's default, but the unit is used up anyway).
         self.actors[i].inf.disguise = None;
+        // Mission triggers (OnInfiltrated).
+        let (target, infiltrator) = (self.make_ref(t), self.make_ref(i));
+        self.script_event(crate::mission::ScriptEvent::Infiltrated { target, infiltrator });
         self.uncloak_on(i, "Infiltrate");
         let effects = self.rules.actors[tty as usize].abilities.infiltrated.clone().unwrap_or_default();
         for e in effects.iter().filter(|e| e.types.iter().any(|x| inf.types.contains(x))) {
@@ -611,6 +617,7 @@ impl World {
         }
         self.rules.actors[a.ty as usize].abilities.demolition.is_some()
             && self.rules.actors[ta.ty as usize].abilities.demolishable.is_some()
+            && !(self.mission.is_some() && self.mission_undemolishable(t))
             && (forced || self.relation(a.owner, ta.owner) & (RELATION_ENEMY | RELATION_NEUTRAL) != 0)
     }
 

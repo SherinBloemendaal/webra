@@ -101,6 +101,10 @@ impl World {
         a.waypoints.clear();
         a.guard = NONE;
         a.hold = false;
+        // A player's order replaces what a mission script queued (mission/).
+        if self.mission.is_some() {
+            self.cancel_script_activities(i);
+        }
     }
 
     // ---- Attack ground --------------------------------------------------------------
