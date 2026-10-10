@@ -395,3 +395,42 @@ fn missions_are_deterministic() {
         assert_ne!(before, c1.state_hash());
     }
 }
+
+/// Player maps (uploaded, shared in lobbies, imported .oramap) are map files:
+/// the format has no field for scripts, so none can reach the interpreter.
+/// Only mission files (the game's own, pinned by hash) run Lua.
+#[test]
+fn player_maps_cannot_carry_scripts() {
+    let map: serde_json::Value = serde_json::from_str(&crate::Game::generated_map(5, 64, 2)).unwrap();
+    let ok: serde_json::Value = serde_json::from_str(&crate::Game::validate_map(&map.to_string())).unwrap();
+    assert_eq!(ok["ok"], true, "{ok}");
+    for (key, value) in [
+        ("scripts", serde_json::json!([{ "name": "x.lua", "source": "while true do end" }])),
+        ("lua", serde_json::json!("while true do end")),
+        ("mission", serde_json::json!({ "id": "allies-01" })),
+    ] {
+        let mut bad = map.clone();
+        bad[key] = value;
+        let v: serde_json::Value = serde_json::from_str(&crate::Game::validate_map(&bad.to_string())).unwrap();
+        assert_eq!(v["ok"], false, "{key}: {v}");
+        assert!(v["errors"][0].as_str().unwrap().contains("unknown field"), "{key}: {v}");
+    }
+}
+
+/// Every run of a mission script has its instruction budget: a script that
+/// never ends stops with an error no pcall can catch, and the game goes on.
+#[test]
+fn a_script_that_never_ends_is_stopped() {
+    let mut w = start("allies-01", None);
+    let e = w.mission_exec("pcall(function() while true do end end) Survived = true").unwrap_err();
+    assert!(e.contains("budget") || e.contains("instructions"), "{e}");
+    assert_eq!(w.mission_global("Survived"), None);
+    let e = w.mission_exec("local function f() return f() + 1 end f()").unwrap_err();
+    assert!(e.contains("stack overflow") || e.contains("depth"), "{e}");
+    let e = w.mission_exec("local t = {} for i = 1, 1e9 do t[i] = string.rep('x', 1000) end").unwrap_err();
+    assert!(!e.is_empty());
+    let hash = w.state_hash();
+    w.step();
+    assert_ne!(w.state_hash(), hash, "the game goes on");
+}
+

@@ -89,6 +89,17 @@ test('the engine binding validates maps like the game build', () => {
   assert.deepEqual(e.validateMap(JSON.stringify({ ...withGems, gems: gems.toString('base64') })).errors, ['invalid gem density 4']);
 });
 
+test('maps cannot carry scripts: the validator refuses any field for them', () => {
+  // Only the game's own mission files run Lua (engine/src/mission); a map
+  // file has no place for a script, so the server and the game refuse one.
+  const e = new Engine(wasmModule);
+  for (const extra of [{ scripts: [{ name: 'x.lua', source: 'while true do end' }] }, { lua: 'while true do end' }, { mission: { id: 'allies-01' } }]) {
+    const v = e.validateMap(JSON.stringify({ ...blankMap(), ...extra }));
+    assert.equal(v.ok, false, Object.keys(extra)[0]);
+    assert.match(v.errors[0], /unknown field/);
+  }
+});
+
 test('after a trap the engine is instantiated afresh', () => {
   const e = new Engine(trappingModule());
   assert.deepEqual(e.validateMap('x'), { ok: true });

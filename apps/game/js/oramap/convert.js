@@ -475,7 +475,7 @@ export function convertOramap(input, opts) {
   delete report.luaInRules;
   if (luaFiles.length || luaInRules) {
     const names = luaFiles.length ? ` (${luaFiles.slice(0, 5).join(', ')}${luaFiles.length > 5 ? ', ...' : ''})` : '';
-    report.unsupported.push(`Lua scripts${names} are not run: WebRA cannot run Lua, so scripted events and mission objectives are missing.`);
+    report.unsupported.push(`Lua scripts${names} are not run: imported maps never run scripts (only the game's own campaign missions do), so scripted events and mission objectives are missing.`);
   }
 
   // ---- Report ---------------------------------------------------------------------------------
