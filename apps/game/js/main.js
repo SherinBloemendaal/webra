@@ -410,6 +410,16 @@ async function dropContent(files) {
   }
 }
 
+/** Where the map editor's test play starts the camera (world pixels), or null. */
+let testCamera = null;
+
+/** The test play camera, once: a restarted game starts at the player's base. */
+function takeTestCamera() {
+  const c = testCamera;
+  testCamera = null;
+  return c;
+}
+
 /**
  * A map handed over by the URL (`?editorTest=1` from the map editor, or
  * `?map=<id>` from the website's map list) goes through the lobby's normal map
@@ -419,9 +429,12 @@ async function offerLinkedMap(lobby) {
   const params = new URLSearchParams(location.search);
   if (params.get('editorTest') !== '1' && !params.get('map')) return;
   try {
-    const { loadPendingMap } = await playAccess.load(() => import('./maploader.js'));
+    const { loadPendingMap, loadTestSetup } = await playAccess.load(() => import('./maploader.js'));
     const map = await loadPendingMap(params);
-    if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link');
+    // Test play from the editor: its slots and bots, and where the camera starts.
+    const setup = loadTestSetup(params);
+    testCamera = setup?.camera ?? null;
+    if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link', setup);
   } catch (err) {
     lobby.reportMapProblem(loadErrorText(err));
   }
@@ -1294,8 +1307,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
   window.addEventListener('resize', applyGameScale);
   watchPixelRatio(window, applyGameScale);
-  // A mission starts where its script put the camera (else at the player's first actor).
-  const [sx, sy] = game.info.mission?.camera ?? game.start_position(player);
+  // A mission starts where its script put the camera; editor test play where
+  // the editor's view was (once); else at the player's first actor.
+  const [sx, sy] = game.info.mission?.camera ?? takeTestCamera() ?? game.start_position(player);
   input.centerOn(sx, sy);
   if (stress) input.camera.zoom = 1;
 

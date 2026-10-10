@@ -519,7 +519,7 @@ export class Lobby {
    * accepts the warning when it is modded. `source` (js/maplibrary.js
    * LIBRARY_SOURCES) says where it came from for the map library.
    */
-  offerMapText(text, source = 'file') {
+  offerMapText(text, source = 'file', setup = null) {
     this.mapErrors = [];
     this.state.mapSource = 'file';
     const info = inspectMapFile(text, this.maps.validate);
@@ -530,12 +530,25 @@ export class Lobby {
     }
     if (info.modded) {
       // Modded maps are installed only after the player accepts the warning.
-      this.pendingMap = { json: text, info, source };
+      this.pendingMap = { json: text, info, source, setup };
       this.renderMapSource();
       this.acceptBtn.focus();
       return;
     }
-    this.installMap(text, info, source);
+    this.installMap(text, info, source, setup);
+  }
+
+  /**
+   * The map editor's test play setup (js/maploader.js loadTestSetup): its
+   * slots, checked like stored lobby settings (the player keeps their name
+   * and colour), and with `autostart` the game starts at once.
+   */
+  applyTestSetup(setup) {
+    const me = this.state.players.find((p) => p.type === 'human');
+    const players = setup.players.slice(0, this.spawnLimit()).map((p) => ({ ...p, name: p.type === 'human' ? me?.name : DEFAULT_NAME, color: p.type === 'human' ? me?.color : undefined }));
+    this.state.players = sanitizeState({ ...this.state, players }, this.colors.length).players;
+    this.renderSlots();
+    if (setup.autostart) queueMicrotask(() => this.start());
   }
 
   /** Show why a requested map (for example from a link) could not be loaded. */
@@ -545,7 +558,7 @@ export class Lobby {
     this.renderMapSource();
   }
 
-  installMap(json, info, source = 'file') {
+  installMap(json, info, source = 'file', setup = null) {
     this.pendingMap = null;
     this.mapErrors = [];
     this.mapFile = { json, info, accepted: true };
@@ -555,6 +568,7 @@ export class Lobby {
     this.renderMapSource();
     this.renderSlots();
     this.schedulePreview();
+    if (setup) this.applyTestSetup(setup);
   }
 
   /**
@@ -775,7 +789,7 @@ export class Lobby {
     this.acceptBtn = el('button', 'lobby-btn lobby-btn-danger', 'Accept and install');
     this.acceptBtn.type = 'button';
     this.acceptBtn.addEventListener('click', () => {
-      if (this.pendingMap) this.installMap(this.pendingMap.json, this.pendingMap.info, this.pendingMap.source);
+      if (this.pendingMap) this.installMap(this.pendingMap.json, this.pendingMap.info, this.pendingMap.source, this.pendingMap.setup);
     });
     const cancel = el('button', 'lobby-btn', 'Cancel');
     cancel.type = 'button';
