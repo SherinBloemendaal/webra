@@ -6,6 +6,7 @@
   "license": "GPL-3.0-or-later",
   "type": "module",
   "dependencies": {
+    "@sentry/cloudflare": "11.6.0",
     "@webra/protocol": "*"
   },
   "devDependencies": {
