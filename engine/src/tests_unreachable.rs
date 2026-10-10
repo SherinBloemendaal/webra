@@ -439,6 +439,29 @@ fn a_bots_truck_under_fire_runs_to_a_reachable_refinery() {
     assert!(home_bound, "the truck under fire heads for its reachable refinery");
 }
 
+/// A truck goes for the ore with the shortest drive: a cell nearer as the
+/// crow flies but behind a wall loses to one a little farther off (OpenRA
+/// FindAndDeliverResources.ClosestHarvestablePos searches paths).
+#[test]
+fn a_harvester_mines_the_ore_with_the_shortest_drive() {
+    let mut w = arena(64, 48);
+    // A wall from the top edge down to row 30, two cells east of the truck.
+    for y in 0..30 {
+        let i = w.map.idx(22, y);
+        w.map.terrain[i] = Terrain::Rock;
+    }
+    w.reset_passability();
+    let behind_wall = w.map.idx(24, 20);
+    let open = w.map.idx(14, 20);
+    w.map.ore[behind_wall] = 5;
+    w.map.ore[open] = 5;
+    let h = w.spawn_unit(ty(&w, "HARV"), 0, cell_center(20), cell_center(20), 0);
+    w.actors[h].activity = Activity::Harvest;
+    w.actors[h].harv = HarvState::Search;
+    run(&mut w, 2, |_, _| {});
+    assert_eq!(w.actors[h].harv_cell, open as u32, "six cells west, not four cells east and twenty around the wall");
+}
+
 /// A truck whose refinery dock gets walled in lets go of it and delivers
 /// elsewhere.
 #[test]

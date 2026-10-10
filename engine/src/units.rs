@@ -854,10 +854,12 @@ impl World {
         self.cell_index(x, y) as u32
     }
 
-    /// The nearest unclaimed ore or gem cell. As in OpenRA
-    /// (FindAndDeliverResources.ClosestHarvestablePos) only the distance
-    /// counts, not the resource's value: a truck mines the field it is sent
-    /// to or the nearest one, gems or ore alike.
+    /// The unclaimed ore or gem cell with the shortest drive among those
+    /// within the search radius of the last field (or the refinery). As in
+    /// OpenRA (FindAndDeliverResources.ClosestHarvestablePos, a path
+    /// search) only the drive counts, not the resource's value: a truck
+    /// mines the field it is sent to or the nearest one, gems or ore alike,
+    /// and a cell behind a wall loses to one a little farther off.
     fn find_ore(&mut self, i: usize, hv: &crate::rules::HarvesterInfo) -> Option<u32> {
         let a = &self.actors[i];
         let (origin, radius) = if a.harv_cell != NONE {
@@ -868,7 +870,6 @@ impl World {
         } else {
             (self.cell_of(a.x, a.y), hv.search_from_proc)
         };
-        let comp = self.pass.component[self.cell_index(a.x, a.y)];
         let (ux, uy) = self.cell_of(a.x, a.y);
         // Cells other harvesters already claimed.
         let claimed: Vec<u32> = self
@@ -893,26 +894,55 @@ impl World {
             }
             None => (ux, uy),
         };
-        let mut best: Option<((i32, i32, i32), u32)> = None;
-        for y in origin.1 - radius..=origin.1 + radius {
-            for x in origin.0 - radius..=origin.0 + radius {
-                if !self.map.contains(x, y) {
-                    continue;
+        // Drive lengths from the truck over the rectangle that holds it and
+        // the search box (ten per straight step, fourteen diagonal).
+        let (x0, y0) = ((origin.0 - radius).min(ux).max(0), (origin.1 - radius).min(uy).max(0));
+        let (x1, y1) = ((origin.0 + radius).max(ux).min(self.map.width - 1), (origin.1 + radius).max(uy).min(self.map.height - 1));
+        let inside = |x: i32, y: i32| x >= x0 && x <= x1 && y >= y0 && y <= y1;
+        let in_box = |x: i32, y: i32| (x - origin.0).abs() <= radius && (y - origin.1).abs() <= radius;
+        let start = self.map.idx(ux, uy);
+        let mut cost = vec![i32::MAX; self.map.cells()];
+        let mut heap = std::collections::BinaryHeap::new();
+        if !self.pass.blocked[start] {
+            cost[start] = 0;
+            heap.push(std::cmp::Reverse((0, start)));
+        }
+        let mut best: Option<((i32, i32, i32, i32), u32)> = None;
+        while let Some(std::cmp::Reverse((c, ci))) = heap.pop() {
+            if c > cost[ci] {
+                continue;
+            }
+            let (x, y) = (ci as i32 % self.map.width, ci as i32 / self.map.width);
+            if in_box(x, y) && self.map.has_resource(ci) && !claimed.contains(&(ci as u32)) {
+                let key = (
+                    c,
+                    (x - ux).pow(2) + (y - uy).pow(2),
+                    (x - dock.0).pow(2) + (y - dock.1).pow(2),
+                    crate::flowfield::centre_distance(&self.map, x, y),
+                );
+                if best.is_none_or(|(bk, bc)| key < bk || (key == bk && (ci as u32) < bc)) {
+                    best = Some((key, ci as u32));
                 }
-                let c = self.map.idx(x, y);
-                if !self.map.has_resource(c) || self.pass.blocked[c] || self.pass.component[c] != comp {
-                    continue;
-                }
-                if claimed.contains(&(c as u32)) {
-                    continue;
-                }
-                let d = (x - ux).pow(2) + (y - uy).pow(2);
-                let key = (d, (x - dock.0).pow(2) + (y - dock.1).pow(2), crate::flowfield::centre_distance(&self.map, x, y));
-                if best.is_none_or(|(bk, bc)| key < bk || (key == bk && (c as u32) < bc)) {
-                    best = Some((key, c as u32));
+            }
+            // Everything that could still beat the best is dearer than it.
+            if best.is_some_and(|(bk, _)| c > bk.0) {
+                break;
+            }
+            for dir in 0..8 {
+                if let Some(j) = crate::flowfield::step(&self.map, &self.pass.blocked, x, y, dir) {
+                    let (jx, jy) = (j as i32 % self.map.width, j as i32 / self.map.width);
+                    if !inside(jx, jy) {
+                        continue;
+                    }
+                    let nc = c + if dir % 2 == 0 { 10 } else { 14 };
+                    if nc < cost[j] {
+                        cost[j] = nc;
+                        heap.push(std::cmp::Reverse((nc, j)));
+                    }
                 }
             }
         }
+
         if best.is_none() && self.actors[i].harv_cell != NONE {
             // Nothing near the last field: search again from the refinery.
             self.actors[i].harv_cell = NONE;
