@@ -25,7 +25,7 @@ WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and 
 Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [webra.sherin.dev](https://webra.sherin.dev/)). Playing needs a WebRA account while the site setting `gameRequiresAccount` is on (the default): sign up on the [account page](https://webra.sherin.dev/account/), and once the account is active (closed beta: an admin approves it) the game opens. The server enforces this for every game file, not only the start page ([security notes](docs/security.md#the-play-gate-2026-10-09)).
 
 ### Game modes
-- [x] **Campaign**: OpenRA's Red Alert missions with their maps, rules and Lua scripts, run inside the deterministic simulation: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions (60 in all). The Campaign button of the lobby lists them with map, briefing, difficulty and game speed; chapters open as you win (progress follows your account). In a mission: objectives panel, mission messages and timers, the scripts' speech, camera moves and radar pings, a card where the original plays a movie, next mission, restart, save and load, replays
+- [x] **Campaign**: OpenRA's Red Alert missions with their maps, rules and Lua scripts, run inside the deterministic simulation: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions (60 in all). The Campaign button of the lobby lists them with map, briefing, difficulty and game speed; chapters open as you win (progress follows your account). In a mission: objectives panel, mission messages and timers, the scripts' speech, camera moves and radar pings, the original movies when you installed them from your own copy (else a card in their place), next mission, restart, save and load, replays
 - [x] Skirmish against the AI with **2 to 8 players**: free for all or teams (allies share vision and win together), AI at Easy, Normal or Hard
 - [x] **Fair AI target choice** in free for alls: each AI attacks the nearest base (measured to the starting yard, so an expansion does not draw attacks), and among equally near ones first a player that recently hit its structures, then the one the fewest other AIs already attack, then the next base around the map in a direction the seed picks; strength no longer matters, so two AIs do not gang up on the weakest neighbour (often you, early on). An AI keeps its target until another is clearly better instead of switching every minute
 - [x] The AI uses the whole arsenal: helicopters and planes (away from heavy anti-air), naval yards and warships where water reaches the enemy, minefields, chrono tanks, MAD tanks and demolition trucks, radar jammers, and on Hard (Normal after 15 minutes) the Iron Curtain, Chronosphere and Atom Bomb, never where allies would be hit
@@ -147,6 +147,11 @@ them (WebRA's own art and synthesized sounds).
   `scores.mix` itself, or the loose tracks from the `expand` folder of an
   OpenRA content install (`araziod.aud`, `wastelnd.aud`, ...). They join the
   playlist after the base tracks, as in OpenRA's music player.
+- **Movies:** the campaign movies are in `movies1.mix` (Allied disc) and
+  `movies2.mix` (Soviet disc) inside `MAIN.MIX`, so a freeware CD image (or
+  those archives, or the `.vqa` files of an OpenRA content install) installs
+  them too, and missions then play them full screen with sound (a click,
+  Esc, Space or Enter skips one); without them a card names the movie.
 - `desert.mix` from Tiberian Dawn adds desert terrain, as in OpenRA. The
   interior theater is not used (WebRA has no interior maps).
 - Effects, projectiles, mines and helicopter rotors keep WebRA art.

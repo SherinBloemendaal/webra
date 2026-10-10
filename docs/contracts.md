@@ -522,6 +522,7 @@ Client to server:
 | `options` | `options` (host only) | lobby |
 | `map` | `{ id, hash, name, modded }` (host only; a published map, or `null` for a generated one; a map shared with the session goes through `POST /api/sessions/:id/map`) | lobby |
 | `mapstate` | `hash, state: installed \| declined` (for the lobby map with that hash) | lobby |
+| `mission` | `{ id, hash, options }` or `null` (host only; a co-op mission of `COOP_MISSIONS` with its file's hash, or back to a skirmish; section 9, "Co-op online") | lobby |
 | `kick` | `client` (host only: remove a spectator; players are removed through `slot`) | lobby |
 | `ready` | `ready: bool, mapHash` | lobby (must have the map installed; ready with the hash counts as installed) |
 | `rematch` | `accept: bool` (host: propose, then withdraw with `false`; players: accept or decline) | in game |
@@ -539,7 +540,8 @@ options, map, hostId, spectators: [{client, name, account?, mapState?}], maxSpec
 signed-in account, and `mapState` while the lobby has a map; `map` is null or
 `{ id, hash, name, modded, players, author, width, height, bytes, shared }`,
 looked up by the server, also in `start`; `resume?` while the lobby resumes
-a save: `{ id, title, createdAt, ticks, waiting: [names] }`), `rematch {state, by, accepted,
+a save: `{ id, title, createdAt, ticks, waiting: [names] }`; `mission?` while
+the lobby plays a co-op mission: `{ id, hash, options }`, also in `start`), `rematch {state, by, accepted,
 waiting, msLeft?, reason?}` (see "Rematch"), `save {state, ...}` and
 `start.resume?: { ticks, hash }` (see "Online saves"), `chat
 {from, text, team?}` (with `team: true` the line went to the sender's team
@@ -1363,7 +1365,10 @@ options }` with at most 8 mission options (`options.difficulty`: `easy`,
 the game options of section 3. The person playing is player 0, so `player`
 is 0 and every frame carries player 0's orders only. The loader fetches the
 mission file and refuses it when its hash differs (another version of the
-game). `packages/protocol/src/mission.js` validates both.
+game). `packages/protocol/src/mission.js` validates both. An online replay
+or save of a co-op mission (`mode: "online"`) keeps the game options and
+adds `mission: { id, hash, options }` (section 9, "Co-op online"): a
+mission of `COOP_MISSIONS` with this version's file, every player a person.
 
 - Limits: 32 MiB, eight hours of game time, orders and options as strict as
   the network messages, frame players within the options, map canonical and
@@ -1797,9 +1802,10 @@ Differences from OpenRA, all deterministic:
 - Engine events (killed, damaged, captured, produced, sold, passengers,
   infiltrated, placed) reach triggers at the end of the tick they happened
   in: a callback runs up to one tick later than OpenRA's.
-- Movies (`Media.PlayMovieFullscreen`, `PlayMovieInRadar`) are a card in the
-  game (no videos); their callback runs on the next tick. Music calls leave
-  the music to the player's settings and call back at once.
+- Movies (`Media.PlayMovieFullscreen`, `PlayMovieInRadar`) play full screen
+  from the player's own original content, or show a card ("Movies" below);
+  the game goes on meanwhile and their callback runs on the next tick. Music
+  calls leave the music to the player's settings and call back at once.
 - `DateTime` gives the game time; the real date (`CurrentYear`, ...,
   `IsHalloween`) is fixed (2000-01-01 00:00, not Halloween) so every player
   sees the same.
@@ -1809,9 +1815,10 @@ Differences from OpenRA, all deterministic:
   (`World::offmap`) keep giving power, prerequisites and storage and count
   as required units, as in OpenRA; other actors there, and tree clumps that
   stick out of the bounds, are left out (`Mission::unplaced`).
-- Missions are single player. In OpenRA's co-op missions (Evacuation,
-  Exodus, Infiltration) the other playable slots stay empty, like
-  unoccupied slots in OpenRA (their scripts check for that).
+- From the campaign screen a mission is single player; in OpenRA's co-op
+  missions (Evacuation, Exodus, Infiltration) the other playable slots then
+  stay empty, like unoccupied slots in OpenRA (their scripts check for
+  that). Online, people play them together ("Co-op online" below).
 
 ### Saves, replays, restart
 
@@ -1831,8 +1838,8 @@ difficulty it was won on, synced with the account). In the numbered
 campaigns the first chapter is open and a chapter opens once a mission of
 the chapter before it is won; the expansion and OpenRA missions are open
 from the start. In a mission, `js/campaign/view.js` shows the objectives
-panel, messages, mission text, floating texts, movie cards and script
-errors, plays the scripts' speech and sounds, moves the camera and pings the
+panel, messages, mission text, floating texts, movies (or their cards) and
+script errors, plays the scripts' speech and sounds, moves the camera and pings the
 radar; the end of game dialogs offer the next mission, a restart and the
 way back to the campaign.
 
@@ -1855,3 +1862,69 @@ determinism of whole missions) and `apps/game/tests/campaign.test.mjs`
 (every mission in the wasm engine with its art, a mission through the
 simulation boundary with saves and replays, the campaign screen and the
 mission view).
+
+### Co-op online
+
+OpenRA offers three missions in its multiplayer lobby (map.yaml
+`Visibility: Lobby`): Evacuation, Exodus and Infiltration, each for two
+people. `tools/gen_missions.py` lists them in `index.json` (`coop`: the
+playable players in slot order) and writes
+`packages/protocol/src/coop-missions.js` (`COOP_MISSIONS`: id, title, the
+SHA-256 of the mission file, the playable players, the number of actor
+types its rules have, the values of each option), which the game and the
+server share.
+
+- **Lobby.** The host picks a co-op mission in the online lobby (`mission`
+  message, validated against `COOP_MISSIONS`: a file of another version is
+  refused). The first slots become the mission's playable players, people
+  only (OpenRA `AllowBots: False`); later slots close; faction, colour and
+  team are the mission's. Only the game speed of the lobby options applies.
+  The game starts when every place holds a ready person. Choosing a map or
+  a generated map goes back to a skirmish.
+- **Start.** `start.mission` names the mission; every client loads its own
+  copy of the mission file from its own server, checks the hash and starts
+  `Game.from_mission` with `humans` (the playable players, engine players 0
+  and 1) and `localPlayer` (its own seat). No client ever sends a script or a
+  mission file to another.
+- **Lockstep.** The scripts run on every client. `IsLocalPlayer` is true for
+  each client's own player only, and the scripts use it for presentation
+  (their objective messages, timer colours, the camera), so the interpreter
+  state may differ between clients without changing the game. The state hash
+  of a co-op mission therefore leaves the interpreter heap, the trigger and
+  timer counts and the local result out (like OpenRA, whose sync hash never
+  covers Lua) and covers what the scripts did: actor handles, objectives,
+  activity queues, reinforcements, builds and the whole world.
+  `engine/src/tests_mission.rs` and `apps/game/tests/campaign.test.mjs` run
+  both points of view side by side and compare the hashes every tick.
+- **Server.** Orders are checked against the mission's actor types
+  (`COOP_MISSIONS[].actors`), cheats are off. Rematches keep the mission.
+  Online saves record the mission (`map_hash` holds the SHA-256 of the
+  validated `{ id, hash, options }`), and a resume needs the same mission
+  file and options. Online replays and saves carry `mission: { id, hash,
+  options }` (section 7); the replay viewer loads the file like the game.
+- **Directory.** A co-op mission lobby is listed under the mission's title
+  (`map: { mission, name }`).
+
+### Movies
+
+`Media.PlayMovieFullscreen` (and the other movie calls) send a `movie` event
+with the file name; `MissionView.movie` asks the movie player
+(`js/content/movies.js` `createMoviePlayer`, the `movies` option) and shows
+the card when the movie is not installed or fails. The installer
+(`js/content/install.js`) takes the movies of OpenRA's `movies-allied` and
+`movies-soviet` packages (`MOVIE_FILES`) from `movies1.mix` and
+`movies2.mix` (nested in `MAIN.MIX`, also on CD images) or loose `.vqa`
+files, checks each with `openVqa` and stores it with kind `movie`, one
+transaction per movie (a full storage stops the rest with a message);
+`ContentSystem` keeps only their names (`hasMovie`) and reads one when it
+plays (`movieBytes`). `js/content/vqa.js` decodes Red Alert's VQA version 2
+(and the 15-bit version 3 layout): 8-bit codebooks (CBF0, CBFZ, CBP0, CBPZ
+applied a frame after the last part, as OpenRA), palettes (CPL0, CPLZ),
+vector pointers (VPT0, VPTZ, VPTR, VPRZ) and SND0, SND1 (Westwood ADPCM) and
+SND2 (IMA ADPCM) sound; sizes, frame index, chunks and LCW output are
+checked and anything wrong throws `VqaError`. The player decodes at most
+`DECODE_PER_TICK` frames per animation frame, follows the sound track's
+clock, and resolves `play` with `played`, `skipped` (click, Esc, Space,
+Enter, `stop`, or another movie), `missing` or `failed`. Presentation only:
+the mission goes on while a movie plays (the engine calls the script's
+callback on the next tick).

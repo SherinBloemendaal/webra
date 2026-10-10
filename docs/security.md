@@ -669,6 +669,51 @@ players (docs/contracts.md section 4, "Online saves").
   session computes it while reading its order log one chunk at a time, and a
   resumed start writes each log chunk before reading the next.
 
+## Mission scripts and co-op missions (2026-10-10)
+
+The campaign runs OpenRA's Lua mission scripts inside the simulation
+(engine/src/lua, engine/src/mission; docs/contracts.md section 9).
+
+- **Where Lua comes from.** Only the game's own mission files
+  (`apps/game/missions/<id>.json`, generated from the vendored OpenRA files
+  and served with the game) carry scripts. Every load checks the file's
+  SHA-256: against `index.json` (the campaign screen), against the hash a
+  save or replay names, and online against `COOP_MISSIONS` (the protocol
+  package, the same on game and server). Saves, replays and the online
+  protocol name a mission by id and hash only; no client ever sends a script
+  or a mission file to another, and the server never receives one.
+- **Player maps cannot carry scripts.** Uploaded, shared and imported maps
+  are map files (`.webra-map.json`): the format has no field for scripts and
+  the engine's parser refuses unknown fields (`MapData`,
+  `deny_unknown_fields`), so the validator the server runs
+  (`Game.validate_map` in apps/server/src/engine.js) and the game refuse a
+  map with `scripts`, `lua` or `mission` (tests:
+  `player_maps_cannot_carry_scripts` in engine/src/tests_mission.rs, "maps
+  cannot carry scripts" in apps/server/test/engine.test.mjs). A map's
+  `rules` overrides only reach `Rules::load_with`, never the interpreter. The
+  `.oramap` importer never runs the Lua files of a package and says so in
+  its report. A world built from a map has no mission and no interpreter.
+- **Limits that hold anyway.** Every script run (loading, each callback, the
+  per-tick `Tick`) gets an instruction budget (50 million while loading, 20
+  million per tick), calls nest at most 120 deep, the parser at most 200,
+  strings are capped at 1 MiB and the heap at 3 million slots; running out
+  is an error no `pcall` can catch, and it only stops the mission's scripts
+  (test: `a_script_that_never_ends_is_stopped`). The sandbox has OpenRA's
+  globals only: no io, os, debug, load, require, string.dump or coroutines,
+  so a script reaches nothing outside the simulation. The interpreter has no
+  `unsafe` code. Mission files are at most 4 MiB.
+- **Co-op online.** The host picks a mission from `COOP_MISSIONS` by id and
+  hash; the server refuses any other, keeps orders within the mission's
+  actor types and turns cheats off. Each client runs the scripts with its
+  own local player; the state hash of a co-op game leaves the interpreter
+  state out (presentation differs per client, as in OpenRA, whose sync hash
+  never covers Lua) and covers everything the scripts did to the game, so a
+  client whose scripts misbehave still shows up as a desync.
+- **Movies** from the player's own content are decoded in the browser
+  (js/content/vqa.js) with every size, chunk and decompression bound
+  checked; a broken file throws and the card shows instead. Videos are never
+  bundled or uploaded.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
