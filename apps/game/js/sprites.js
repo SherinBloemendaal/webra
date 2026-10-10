@@ -397,6 +397,9 @@ const SPRITE_ALIAS = {
   PDOF: 'PDOX',
   MSLF: 'MSLO',
   FACF: 'FACT',
+  // The campaign's helicopter wrecks (OpenRA tran1husk, tran2husk): the Chinook, charred.
+  TRAN1HUSK: 'TRAN',
+  TRAN2HUSK: 'TRAN',
 };
 
 /** The sprite key an actor id draws with (case-insensitive, aliases resolved). */
@@ -907,7 +910,7 @@ export function drawIcon(canvas, actor, teamRgb) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Each part is [draw, dx, dy]: turrets are drawn centred on the body.
   const parts = [];
-  const key = spriteKey(actor.id);
+  const key = spriteKey(actor.art ?? actor.id);
   let w;
   let h;
   if (actor.kind === 'building') {

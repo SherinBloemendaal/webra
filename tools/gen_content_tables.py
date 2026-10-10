@@ -195,6 +195,8 @@ NO_ORIGINAL = {
     'gmine.des', 'gmine.sno', 'gmine.tem', 'hospicon.shp', 'lhus.shp', 'mine.des', 'mine.int', 'missmake.shp', 'oilb.shp',
     'railmine.des', 'railmine.sno', 'railmine.tem', 'rushouse.shp', 'snowhut.shp', 'tanktrap1.shp', 'tanktrap2.shp',
     'rice.tem', 'tc01.des', 'utilpol1.shp', 'utilpol2.shp', 'v19.des', 'windmill.shp',
+    # Campaign characters and wrecks OpenRA drew itself (MISSION_ART): WebRA art.
+    'einstein.shp', 'chan.shp', 'tran1husk.shp', 'tran2husk.shp', 'anticon.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
@@ -660,6 +662,23 @@ def overlays_of(tree):
     return out
 
 
+# Characters and creatures only the campaign has (tools/gen_missions.py names
+# them as a mission actor's `art` key): art key, OpenRA actor, kind. Drawn
+# like that OpenRA actor; WebRA's own art is in apps/game/js/art/world.js
+# (characters) and apps/game/js/sprites.js (ants, wrecks).
+MISSION_ART = [
+    ('EINSTEIN', 'EINSTEIN', 'infantry'),
+    ('DELPHI', 'DELPHI', 'infantry'),
+    ('CHAN', 'CHAN', 'infantry'),
+    ('GNRL', 'GNRL', 'infantry'),
+    ('ANT', 'WarriorAnt', 'infantry'),
+    ('FIREANT', 'FireAnt', 'infantry'),
+    ('SCOUTANT', 'ScoutAnt', 'infantry'),
+    ('TRAN1HUSK', 'TRAN.Husk1', 'husk'),
+    ('TRAN2HUSK', 'TRAN.Husk2', 'husk'),
+]
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
@@ -691,10 +710,11 @@ def actor_art(actors, seqs):
             if bridge:
                 art[aid] = {'image': aid.lower(), 'bridge': bridge}
             continue
-        image = images.get(aid.upper(), aid.lower())
+        src = a.get('source', aid)
+        image = images.get(src.upper(), src.lower())
         if image not in seqs:
             continue
-        tree = rules_of(aid)
+        tree = rules_of(src)
         entry = {'image': image}
         if kind == 'building':
             wall = a.get('_wall', False)
@@ -767,10 +787,10 @@ def actor_art(actors, seqs):
             entry['body'] = poses(image, {'idle': 'idle'})
             entry['second'] = {}
         elif kind == 'infantry':
-            entry['body'] = poses(image, infantry_poses(rules_of(aid)))
+            entry['body'] = poses(image, infantry_poses(tree))
             # Prone: OpenRA's TakeCover plays its ProneSequencePrefix ("prone-")
             # plus the standing sequence: stands, run and attacks.
-            standing = infantry_poses(rules_of(aid))
+            standing = infantry_poses(tree)
             prefix = (trait(tree, 'TakeCover') or {}).get('ProneSequencePrefix', ['prone-'])[0]
             prone = {'idle': standing['idle'], 'move': standing['move'], 'attack': standing.get('attack', 'shoot')}
             for pose in ('stand2', 'attack2'):
@@ -784,7 +804,7 @@ def actor_art(actors, seqs):
                     entry['body'].update(poses(image, {'parachute': tokens(ch.get('StandSequences', ['parachute'])[0])[0]}))
             # Civilians never lie down; their second slot is the panic of
             # ScaredyCat (IRenderInfantrySequenceModifier: PanicSequencePrefix).
-            scared = trait(rules_of(aid), 'ScaredyCat')
+            scared = trait(tree, 'ScaredyCat')
             if scared is not None:
                 panic = scared.get('PanicSequencePrefix', ['panic-'])[0]
                 entry['second'] = poses(image, {'idle': panic + 'stand', 'move': panic + 'run'})
@@ -935,8 +955,9 @@ def render_facts(actors, seqs):
     facts = {}
     for a in actors:
         aid = a['id']
-        image = images.get(aid.upper(), aid.lower())
-        tree = rules_of(aid)
+        src = a.get('source', aid)
+        image = images.get(src.upper(), src.lower())
+        tree = rules_of(src)
         out = []
         seen = set()
 
@@ -1277,6 +1298,8 @@ def main():
             '_wall': a['id'].upper() in walls,
             'bridge': bool(a.get('world', {}).get('bridge')),
         })
+    for key, source, kind in MISSION_ART:
+        actors.append({'id': key, 'source': source, 'kind': kind, 'turret': False, 'harvester': False, '_wall': False, 'bridge': False})
     render = render_data(rules)
     art, used = actor_art(actors, seqs)
     specials, explosion_art = special_art(seqs, used, render['explosions'])

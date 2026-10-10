@@ -53,7 +53,8 @@ export function paintBackdrop(ctx, w, h) {
 export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdrop = paintBackdrop } = {}) {
   return {
     paint(canvas, actor, teamRgb) {
-      const picture = art(actor.id, canvas.width, { team: teamRgb, kind: actor.kind, height: canvas.height });
+      // A mission's own actor uses the art of its art key (engine rules_json `art`).
+      const picture = art(actor.art ?? actor.id, canvas.width, { team: teamRgb, kind: actor.kind, height: canvas.height });
       const ctx = canvas.getContext('2d');
       if (picture) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);

@@ -36,6 +36,27 @@ function cross(ctx, P, x, y, s) {
 }
 
 /** Standing infantry (sprite key -> [w, h, draw]). */
+/** A giant ant seen from above (facing north) in `dark` and `light`. */
+function antDraw(dark, light) {
+  return (ctx, P) => {
+    circle(ctx, P.c(C.shadow), 8, 12, 6);
+    // Legs: three pairs from the thorax, bent backwards.
+    for (const [y, dy] of [[8.5, -2.5], [10.5, 0.5], [12.5, 3.5]]) {
+      line(ctx, P.c(dark), 0.9, 6.4, y, 1.4, y + dy);
+      line(ctx, P.c(dark), 0.9, 9.6, y, 14.6, y + dy);
+    }
+    poly(ctx, P.c(dark), [5.6, 1.4, 4.6, 0.3, 6.4, 1.8]); // mandibles
+    poly(ctx, P.c(dark), [10.4, 1.4, 11.4, 0.3, 9.6, 1.8]);
+    circle(ctx, P.c(light), 8, 3.6, 2.8); // head
+    circle(ctx, P.c(dark), 8, 10, 2.4); // thorax
+    rect(ctx, P.team(0.9), 6.8, 9.2, 2.4, 1.4); // team mark
+    circle(ctx, P.c(light), 8, 16.4, 4.4); // abdomen
+    circle(ctx, P.c(dark), 8, 17, 2.6);
+    circle(ctx, P.c(OUTLINE), 6.8, 2.6, 0.6); // eyes
+    circle(ctx, P.c(OUTLINE), 9.2, 2.6, 0.6);
+  };
+}
+
 export const INFANTRY_DRAW = {
   // Grenadier: a raised arm with a grenade, a pouch on the hip.
   E2: {
@@ -79,6 +100,11 @@ export const INFANTRY_DRAW = {
       rect(ctx, P.c('#4a2a16'), 4.5, 7.4, 1, 2.2); // ponytail
     }],
   },
+  // Giant ants of the ant missions (OpenRA WarriorAnt, FireAnt, ScoutAnt):
+  // head, thorax and abdomen with six legs and mandibles, a team coloured mark.
+  ANT: { body: [16, 22, antDraw('#5a2c1c', '#7a3e26')] },
+  FIREANT: { body: [16, 22, antDraw('#9a2a14', '#d0501e')] },
+  SCOUTANT: { body: [16, 22, antDraw('#24201c', '#4a403a')] },
   // Attack dog: a long body, head forward, a team coloured collar.
   DOG: {
     body: [8, 14, (ctx, P) => {

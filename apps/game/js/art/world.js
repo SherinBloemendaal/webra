@@ -684,6 +684,12 @@ const CIVILIANS = {
   C11: { shirt: '#6a5a8a', legs: '#3a3a4a', hair: '#d0d0d0' },
   TECN: { shirt: '#e4e4dc', legs: '#5a5a62', hair: '#3a2a1a', coat: true, gun: true },
   TECN2: { shirt: '#c8d0dc', legs: '#4a4a52', hair: '#5a3a1a', coat: true, gun: true },
+  // The campaign's characters (tools/gen_content_tables.py MISSION_ART):
+  // Einstein in his lab coat, the agents Delphi and Chan, a Soviet general.
+  EINSTEIN: { shirt: '#f2f2ee', legs: '#5a5a62', hair: '#e8e8e8', coat: true },
+  DELPHI: { shirt: '#3a3a42', legs: '#26262c', hair: '#2a2016', gun: true },
+  CHAN: { shirt: '#e4e8ec', legs: '#3c3c48', hair: '#141210', coat: true },
+  GNRL: { shirt: '#5a6040', legs: '#3e4230', hair: '#8a2a20', coat: true, gun: true },
 };
 
 /** A civilian seen from above (facing north), in the shape of WebRA's soldiers (sprites.js E1). */
