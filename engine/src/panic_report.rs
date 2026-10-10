@@ -31,18 +31,25 @@ pub fn note_tick(tick: u32) {
     TICK.store(tick, Ordering::Relaxed);
 }
 
-/// Keep a panic for `take_panic`; returns the console line for it.
+/// Keep a panic for `take_panic`, with the tick noted last; returns the console line for it.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub fn record(message: &str, location: Option<(&str, u32, u32)>) -> String {
+    let (line, json) = describe(message, location, TICK.load(Ordering::Relaxed));
+    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(json);
+    line
+}
+
+/// The console line and the `take_panic` JSON of a panic.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn describe(message: &str, location: Option<(&str, u32, u32)>, tick: u32) -> (String, String) {
     let message: String = message.chars().take(MESSAGE_MAX).collect();
-    let tick = TICK.load(Ordering::Relaxed);
     let at = location.map(|(file, line, col)| format!("{file}:{line}:{col}"));
     let json = serde_json::json!({ "message": message, "location": at, "tick": tick }).to_string();
-    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(json);
-    match at {
+    let line = match at {
         Some(at) => format!("webra engine panic at {at} (tick {tick}): {message}"),
         None => format!("webra engine panic (tick {tick}): {message}"),
-    }
+    };
+    (line, json)
 }
 
 /// The last panic since the previous call, as JSON
@@ -81,27 +88,36 @@ mod hook {
 mod tests {
     use super::*;
 
-    // One test: the statics are shared by every test of this module.
     #[test]
-    fn record_and_take() {
-        assert_eq!(take(), None);
-        note_tick(1234);
-        let line = record("index out of bounds: the len is 3 but the index is 7", Some(("engine/src/world.rs", 12, 5)));
+    fn describe_a_panic() {
+        let (line, json) = describe("index out of bounds: the len is 3 but the index is 7", Some(("engine/src/world.rs", 12, 5)), 1234);
         assert_eq!(
             line,
             "webra engine panic at engine/src/world.rs:12:5 (tick 1234): index out of bounds: the len is 3 but the index is 7"
         );
-        let json: serde_json::Value = serde_json::from_str(&take().expect("kept")).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(json["message"], "index out of bounds: the len is 3 but the index is 7");
         assert_eq!(json["location"], "engine/src/world.rs:12:5");
         assert_eq!(json["tick"], 1234);
-        // Taken once.
-        assert_eq!(take(), None);
         // No location, and a long message is cut.
         let long = "x".repeat(MESSAGE_MAX + 50);
-        assert_eq!(record(&long, None), format!("webra engine panic (tick 1234): {}", "x".repeat(MESSAGE_MAX)));
-        let json: serde_json::Value = serde_json::from_str(&take().unwrap()).unwrap();
+        let (line, json) = describe(&long, None, 7);
+        assert_eq!(line, format!("webra engine panic (tick 7): {}", "x".repeat(MESSAGE_MAX)));
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(json["location"].is_null());
         assert_eq!(json["message"].as_str().unwrap().len(), MESSAGE_MAX);
+    }
+
+    // The only test that records: the kept panic is shared, the tick too
+    // (other tests run games in parallel and note theirs), so it is read back
+    // rather than assumed.
+    #[test]
+    fn record_and_take_once() {
+        assert_eq!(take(), None);
+        let line = record("boom", Some(("engine/src/lib.rs", 1, 2)));
+        let json: serde_json::Value = serde_json::from_str(&take().expect("kept")).unwrap();
+        assert_eq!(json["message"], "boom");
+        assert_eq!(line, format!("webra engine panic at engine/src/lib.rs:1:2 (tick {}): boom", json["tick"]));
+        assert_eq!(take(), None);
     }
 }
