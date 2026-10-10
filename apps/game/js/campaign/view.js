@@ -60,12 +60,14 @@ export class MissionView {
    *   ping(x: number, y: number, rgb: number[], ticks: number): void,  world pixels
    *   toScreen(x: number, y: number): [number, number] | null,  world pixels to CSS pixels of the field
    *   pxPerCell: number, tickMs: number,
+   *   localPlayer?: number,  the engine player of this screen (co-op missions online; else 0)
    *   onRestart(): void, onLeave(): void,
    *   now?(): number,
    * }} o
    */
   constructor(o) {
     this.o = o;
+    this.localPlayer = o.localPlayer ?? 0;
     this.now = o.now ?? (() => performance.now());
     this.state = null;
     this.objectivesKey = '';
@@ -123,13 +125,13 @@ export class MissionView {
         this.message(e.prefix, e.text, e.color);
         break;
       case 'speech':
-        if (e.player === 255 || e.player === 0) {
+        if (e.player === 255 || e.player === this.localPlayer) {
           const key = speechKey(e.name);
           if (key) o.audio?.announce(key);
         }
         break;
       case 'sound':
-        if (e.player === 255 || e.player === 0) o.audio?.notify(e.name);
+        if (e.player === 255 || e.player === this.localPlayer) o.audio?.notify(e.name);
         break;
       case 'sound_file':
         // An original sound by file name; without the player's own copy there is nothing to play.
