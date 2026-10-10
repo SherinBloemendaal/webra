@@ -124,7 +124,7 @@ export const HELP = Object.freeze({
   'audio.cashTicks': 'Plays a tick while the credits counter in the sidebar counts up or down, like Red Alert.',
   'audio.clickSounds': 'Plays a click on buttons, tabs and switches, like Red Alert. Production and support power buttons keep their own sounds.',
   'audio.musicOn': 'Plays music during games. Music needs installed original content or a texture pack with music.',
-  'audio.menuMusic': "Plays Red Alert's intro track behind the main menu when the music is installed. After a game the score track (won) or the map track (lost) plays until you pick another track.",
+  'audio.menuMusic': "Plays Red Alert's intro track behind the main menu and its screens when the music is installed. It starts as soon as the browser allows sound: at once, or with your first click, tap or key press on the page. After a game the score track (won) or the map track (lost) plays until you pick another track.",
   'audio.musicShuffle': 'Plays the tracks in a random order. Off: in playlist order.',
   'audio.musicRepeat': 'All: the playlist starts again after the last track. One: the current track repeats. Off: music stops after the last track.',
 });
