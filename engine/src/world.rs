@@ -1004,6 +1004,10 @@ pub struct World {
     pub diplomacy: Vec<u8>,
 }
 
+/// Spawn players of the map editor's preview (`World::editor_preview`):
+/// the most a map has; its neutral player is the next slot.
+pub const EDITOR_SLOTS: usize = 8;
+
 /// Where a world's map came from (`World::setup`).
 enum MapSource<'a> {
     /// Generated: its spawns are listed by column, top first, for fair team
@@ -1114,38 +1118,72 @@ impl World {
         }
         let neutral = w.players.len() as u8 - 1;
         w.crates = crate::crates::CrateState::new(&w.rules, options.crates);
+        w.place_map_actors(actors, players.len(), neutral);
+        w
+    }
+
+    /// Place a map file's pre-placed actors (owners of `players` spawns,
+    /// neutral ones to `neutral`; those of empty spawns are skipped), then
+    /// the trees of tree terrain and the bridges (neutral.rs, bridges.rs).
+    fn place_map_actors(&mut self, actors: &[crate::mapdata::MapActor], players: usize, neutral: u8) {
         for a in actors {
             let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
-            if a.owner >= players.len() as i32 {
+            if a.owner >= players as i32 {
                 continue;
             }
-            let Some(ty) = w.rules.actor_index(&a.ty) else { continue };
-            match w.rules.actors[ty].kind {
+            let Some(ty) = self.rules.actor_index(&a.ty) else { continue };
+            match self.rules.actors[ty].kind {
                 // Proxies (infantry.rs) have no body to place.
                 Kind::Proxy => {}
                 Kind::Building => {
-                    w.spawn_building(ty as u16, owner, a.x, a.y);
+                    self.spawn_building(ty as u16, owner, a.x, a.y);
                 }
                 // Crates and husks keep their cell (crates.rs, husks.rs).
                 Kind::Crate => {
-                    if w.crate_at(w.map.idx(a.x, a.y)).is_none() {
-                        w.place_crate(ty, owner, a.x, a.y, 0);
+                    if self.crate_at(self.map.idx(a.x, a.y)).is_none() {
+                        self.place_crate(ty, owner, a.x, a.y, 0);
                     }
                 }
                 Kind::Husk => {
-                    w.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0);
+                    self.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0);
                 }
                 _ => {
-                    w.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
+                    self.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024));
                 }
             }
         }
-        // Trees from tree terrain, bridges (neutral.rs, bridges.rs).
-        w.setup_neutral();
-        w.refresh_tokens();
-        w.update_power();
-        w.update_vision();
-        w
+        self.setup_neutral();
+        self.refresh_tokens();
+        self.update_power();
+        self.update_vision();
+    }
+
+    /// The map editor's picture of a map file (apps/game/editor): the world a
+    /// game on it starts with, drawn by the game's renderer, so the editor
+    /// shows the map's actors, the trees of tree terrain and the bridges
+    /// exactly as the game does. The map is not validated (the editor shows
+    /// maps while they are being made) and nobody plays: `EDITOR_SLOTS`
+    /// passive players stand at the spawns without starting units, the
+    /// neutral player follows them. Rules overrides that do not load fall
+    /// back to the base rules (the editor reports them). Never simulated.
+    pub fn editor_preview(data: &crate::mapdata::MapData) -> Result<World, String> {
+        let rules = Rules::load_with(data.rules()).unwrap_or_else(|_| Rules::load());
+        let map = data.to_map()?;
+        let mut w = World::empty(rules, map, 0);
+        w.env = crate::weather::Environment::new(data.biome, GameOptions::default().weather, 0);
+        let faction = w.rules.faction_index("allies").expect("built-in faction");
+        for k in 0..EDITOR_SLOTS {
+            let start = w.map.spawns.get(k).copied().unwrap_or((0, 0));
+            w.add_player(faction, false, start);
+        }
+        w.add_player(faction, false, (0, 0));
+        let neutral = EDITOR_SLOTS as u8;
+        w.players[neutral as usize].neutral = true;
+        w.crates = crate::crates::CrateState::new(&w.rules, false);
+        // Actors off the map (an invalid file) are left out; the editor lists them.
+        let inside: Vec<crate::mapdata::MapActor> = data.actors.iter().filter(|a| w.map.contains(a.x, a.y)).cloned().collect();
+        w.place_map_actors(&inside, EDITOR_SLOTS, neutral);
+        Ok(w)
     }
 
     pub(crate) fn empty(rules: Rules, map: Map, seed: u64) -> World {

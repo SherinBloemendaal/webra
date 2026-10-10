@@ -89,6 +89,8 @@ mod tests_debug;
 #[cfg(test)]
 mod tests_doors;
 #[cfg(test)]
+mod tests_editor;
+#[cfg(test)]
 mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
@@ -226,6 +228,17 @@ impl Game {
         let o = parse_options(options_json).map_err(|e| JsError::new(&e))?;
         let world = World::from_map(&data, o.seed, &o.players, o.options).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))
+    }
+
+    /// The map editor's view of a map file (apps/game/editor): the map's
+    /// actors, the trees of its tree terrain and its bridges as a game on it
+    /// starts them, for `build_render` and `terrain_ptr` with
+    /// `observer_player()`. Not validated and never ticked: no player
+    /// starts there (World::editor_preview). Spawn k's actors are drawn as
+    /// player k, neutral ones as player `world::EDITOR_SLOTS`.
+    pub fn editor_preview(map_json: &str) -> Result<Game, JsError> {
+        let data = mapdata::MapData::parse(map_json).map_err(|e| JsError::new(&e))?;
+        Ok(Game::wrap(World::editor_preview(&data).map_err(|e| JsError::new(&e))?))
     }
 
     /// SHA-256 (hex) identity of a map file's canonical form.
