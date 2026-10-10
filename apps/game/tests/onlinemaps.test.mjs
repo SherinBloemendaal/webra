@@ -487,3 +487,69 @@ test('a lobby that resumes a save shows it and keeps the saved settings', async 
     uninstallDom();
   }
 });
+
+// ---- Co-op missions --------------------------------------------------------------------------------
+
+test('online lobby: the host picks a co-op mission; places are the mission players, people only, its difficulty', async () => {
+  const { COOP_MISSIONS } = await import('../protocol/index.js');
+  const evac = COOP_MISSIONS.find((m) => m.id === 'evacuation');
+  const { root, ui, sent } = await mountLobby({ host: true });
+  ui.missionPreviews = new Map();
+  ui.missionEntries = new Map();
+  ui.ctx.missionInfo = async () => ({ briefing: 'Get them out.', options: { difficulty: { label: 'Difficulty', values: [['easy', 'Easy'], ['normal', 'Normal']] } } });
+  ui.ctx.missionText = async () => JSON.stringify({ map: { width: 4 } });
+  ui.ctx.Game.mission_preview = () => new Uint8Array(4 * 4 * 4);
+  try {
+    ui.onLobby({
+      slots: [
+        { type: 'human', client: 1, name: 'Host', faction: 'random', color: 0, team: 0, ready: false },
+        { type: 'human', client: 2, name: 'Guest', faction: 'random', color: 1, team: 0, ready: false },
+      ],
+      options: { ...DEFAULT_OPTIONS },
+      map: null,
+      hostId: 1,
+      spectators: [],
+      maxSpectators: 2,
+    });
+    const picker = root.querySelector('.online-map select');
+    const group = picker.querySelectorAll('optgroup').find((g) => g.label === 'Co-op missions');
+    assert.deepEqual(group.querySelectorAll('option').map((o) => o.value), COOP_MISSIONS.map((m) => `mission:${m.id}`));
+    picker.value = 'mission:evacuation';
+    picker.dispatchEvent(new FakeEvent('change'));
+    await settle();
+    const mission = { id: 'evacuation', hash: evac.hash, options: { difficulty: 'normal' } };
+    assert.deepEqual(sent.at(-1), { t: 'mission', mission });
+    // The server answers with the mission lobby.
+    ui.onLobby({
+      slots: [
+        { type: 'human', client: 1, name: 'Host', faction: 'random', color: 0, team: 0, ready: false },
+        { type: 'human', client: 2, name: 'Guest', faction: 'random', color: 1, team: 0, ready: false },
+        { type: 'closed' },
+      ],
+      options: { ...DEFAULT_OPTIONS },
+      map: null,
+      hostId: 1,
+      spectators: [],
+      maxSpectators: 2,
+      mission,
+    });
+    await settle();
+    await settle();
+    const badges = root.querySelectorAll('.online-slot .online-badge').map((b) => b.textContent);
+    assert.ok(badges.includes('Allies1') && badges.includes('Allies2'), badges.join(','));
+    assert.match(textOf(root.querySelector('.online-map')), /Evacuation \(2 players\)/);
+    assert.match(textOf(root.querySelector('.online-map')), /Get them out\./);
+    // No computer players, no skirmish options but the game speed.
+    const typeChoices = root.querySelectorAll('.online-slot select').flatMap((s) => s.querySelectorAll('option').map((o) => o.value));
+    assert.ok(!typeChoices.includes('ai'), typeChoices.join(','));
+    assert.equal(ui.optionWorld.hidden, true);
+    assert.equal(ui.optionRows.gameSpeed.hidden, false);
+    // The host picks the difficulty.
+    const difficulty = root.querySelectorAll('.online-mission select')[0];
+    difficulty.value = 'easy';
+    difficulty.dispatchEvent(new FakeEvent('change'));
+    assert.deepEqual(sent.at(-1), { t: 'mission', mission: { ...mission, options: { difficulty: 'easy' } } });
+  } finally {
+    uninstallDom();
+  }
+});
