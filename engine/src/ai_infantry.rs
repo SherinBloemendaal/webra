@@ -38,9 +38,16 @@ pub(crate) fn start_capture(w: &mut World, player: u8) {
     w.ai[player as usize].capture.delay_ticks = t;
 }
 
-/// What capturing structure `t` is worth: its sell value (OpenRA
-/// GetSellValue), plus its value again for each lasting benefit its traits
-/// give the new owner (support powers, production, radar, ore storage).
+/// Minutes of CashTrickler income a capture is worth.
+const TRICKLE_MINUTES: i64 = 5;
+/// Worth of a hospital (ChangesHealth for the owner's infantry): a squad of
+/// riflemen's health back, in credits.
+const HOSPITAL_VALUE: i64 = 1000;
+
+/// What capturing structure `t` is worth, from its traits: its sell value
+/// (OpenRA GetSellValue) plus that again for each lasting benefit (support
+/// powers, production, radar, ore storage, power), GivesCashOnCapture, five
+/// minutes of CashTrickler income (oil derricks) and a hospital's healing.
 pub(crate) fn capture_value(w: &World, t: usize) -> i64 {
     let info = &w.rules.actors[w.actors[t].ty as usize];
     let Some(b) = info.building.as_ref() else { return info.cost as i64 };
@@ -52,7 +59,13 @@ pub(crate) fn capture_value(w: &World, t: usize) -> i64 {
         b.refinery.is_some() || b.storage > 0,
         b.power > 0,
     ];
-    value + value * benefits.iter().filter(|&&x| x).count() as i64
+    let world = &info.world;
+    let trickle = world
+        .cash_trickler
+        .as_ref()
+        .map_or(0, |c| c.amount as i64 * TRICKLE_MINUTES * 60 * crate::world::TICKS_PER_SECOND as i64 / c.interval.max(1) as i64);
+    let hospital = if world.hospital_heal.is_some() { HOSPITAL_VALUE } else { 0 };
+    value + value * benefits.iter().filter(|&&x| x).count() as i64 + world.cash_on_capture as i64 + trickle + hospital
 }
 
 fn capturer(w: &World, i: usize) -> bool {
@@ -71,11 +84,11 @@ pub(crate) fn tick_capture(w: &mut World, player: u8) {
         return;
     }
     request_engineer(w, player);
-    queue_capture_orders(w, player);
+    command_capturers(w, player);
 }
 
 /// OpenRA QueueCaptureOrders.
-fn queue_capture_orders(w: &mut World, player: u8) {
+pub(crate) fn command_capturers(w: &mut World, player: u8) {
     let active: Vec<u32> = w.ai[player as usize]
         .capture
         .active

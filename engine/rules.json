@@ -40141,7 +40141,10 @@
      "Ore",
      "Gems"
     ],
-    "resource_creator_types": [],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
     "refinery_types": [
      "PROC"
     ],
@@ -40747,7 +40750,10 @@
      "Ore",
      "Gems"
     ],
-    "resource_creator_types": [],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
     "refinery_types": [
      "PROC"
     ],
@@ -41442,7 +41448,10 @@
      "Ore",
      "Gems"
     ],
-    "resource_creator_types": [],
+    "resource_creator_types": [
+     "MINE",
+     "GMINE"
+    ],
     "refinery_types": [
      "PROC"
     ],

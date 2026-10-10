@@ -1030,7 +1030,14 @@ fn ai_sends_idle_units_to_an_ally_whose_base_is_attacked() {
     let (bx, by) = w.players[1].start;
     let raiders = spawn_tanks(&mut w, 2, (bx + 1, by + 6), 2);
     let ally_base = (cell_center(bx + 1), cell_center(by + 2));
-    run(&mut w, 30);
+    // The AI sorts its new units first, then a raider shoots the ally's yard.
+    run(&mut w, 60);
+    let yard = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 1 && w.actors[i].kind == Kind::Building).unwrap();
+    let src = w.make_ref(raiders[0]);
+    w.with_damage_source(2, |w| w.damage_from(yard, 10, src, 0));
+    // A protection squad forms next tick and leaves at its next squad
+    // update (SquadManagerBotModule.AttackForceInterval: 75 ticks).
+    run(&mut w, 200);
     // Every tank is on an attack-move to the ally's base or already fighting the raiders.
     let helping = helpers
         .iter()
@@ -1090,6 +1097,12 @@ fn ai_fires_ready_support_powers_at_its_target() {
     let (sx, sy) = w.players[0].start;
     for (id, x, y) in [("MSLO", sx + 5, sy), ("APWR", sx, sy + 5), ("APWR", sx + 4, sy + 5)] {
         w.spawn_building(ty(&w, id), 0, x, y);
+    }
+    // Something worth a nuke (SupportPowerBotModule: MinimumAttractiveness
+    // 3000 of structure value within five cells).
+    let (ex, ey) = w.players[1].start;
+    for (id, dx, dy) in [("POWR", 4, 0), ("PROC", 0, 4), ("WEAP", 4, 4)] {
+        w.spawn_building(ty(&w, id), 1, ex + dx, ey + dy);
     }
     run(&mut w, 2);
     let nuke = |w: &World| w.power_instances(0).iter().find(|p| p.key == "NukePower").cloned();

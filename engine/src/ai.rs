@@ -165,6 +165,8 @@ fn start_modules(w: &mut World, player: u8) {
 fn respond_to_attack(w: &mut World, player: u8, e: AttackEvent) {
     let (Some(victim), Some(attacker)) = (w.resolve(e.victim), w.resolve(e.attacker)) else { return };
     if w.actors[victim].owner != player {
+        // An ally was hit: the squads help (WebRA, AI teammates and allies).
+        crate::ai_squads::respond_to_attack(w, player, victim, attacker);
         return;
     }
     crate::ai_base::respond_to_attack(w, player, victim, attacker);
@@ -176,32 +178,39 @@ fn respond_to_attack(w: &mut World, player: u8, e: AttackEvent) {
     crate::ai_support::note_hidden_attack(w, player, victim, attacker);
 }
 
-/// A hit on actor `u` by actor reference `source` that took it from
-/// `before` to its current health (combat.rs): AI owners hear of it
-/// (`respond_to_attack`), and an AI whose structure was hit by an enemy
-/// prefers to strike back at that player (`target_candidates`).
+/// A hit on actor `u` by actor reference `source` (or, without a shooter
+/// actor, by the player of the observer's damage source) that took it from
+/// `before` to its current health (combat.rs). An AI victim prefers to
+/// strike back at the player who hit its structures (`target_candidates`);
+/// the victim's AI and its AI allies hear of the hit (`respond_to_attack`).
 pub(crate) fn note_damage(w: &mut World, u: usize, source: u32, before: i32) {
     let victim = w.actors[u].owner;
-    if !w.players.get(victim as usize).is_some_and(|p| p.is_ai) || victim as usize >= w.ai.len() {
+    let shooter = w.resolve(source);
+    let Some(attacker) = shooter.map(|s| w.actors[s].owner).or(w.observer.source) else { return };
+    if attacker == victim || victim as usize >= w.players.len() {
         return;
     }
-    let Some(s) = w.resolve(source) else { return };
-    let attacker = w.actors[s].owner;
-    if attacker == victim {
-        return;
-    }
-    if w.actors[u].kind == Kind::Building && w.are_enemies(victim, attacker) {
-        let tick = w.tick;
-        let st = &mut w.ai[victim as usize];
-        if st.hurt_at.len() <= attacker as usize {
-            st.hurt_at.resize(attacker as usize + 1, None);
+    let tick = w.tick;
+    if w.actors[u].kind == Kind::Building && w.are_enemies(victim, attacker) && w.players[victim as usize].is_ai {
+        if let Some(st) = w.ai.get_mut(victim as usize) {
+            if st.hurt_at.len() <= attacker as usize {
+                st.hurt_at.resize(attacker as usize + 1, None);
+            }
+            st.hurt_at[attacker as usize] = Some(tick);
         }
-        st.hurt_at[attacker as usize] = Some(tick);
+    }
+    if shooter.is_none() {
+        return;
     }
     let e = AttackEvent { victim: w.make_ref(u), attacker: source, before, after: w.actors[u].hp };
-    let events = &mut w.ai[victim as usize].events;
-    if events.len() < MAX_EVENTS {
-        events.push(e);
+    for p in 0..w.players.len().min(w.ai.len()) {
+        let pl = &w.players[p];
+        if pl.is_ai && !pl.defeated && (p == victim as usize || w.are_allies(p as u8, victim)) {
+            let events = &mut w.ai[p].events;
+            if events.len() < MAX_EVENTS {
+                events.push(e);
+            }
+        }
     }
 }
 

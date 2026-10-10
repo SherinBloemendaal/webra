@@ -489,7 +489,9 @@ fn infantry_state_is_deterministic() {
 fn ai_trains_dogs_and_grenadiers_within_limits() {
     let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
     w.players[0].cash = 50_000;
-    run(&mut w, 25 * 60 * 8);
+    // The Normal AI builds its kennel after BuildingDelays kenn 7000, when
+    // BuildingFractions pick it (in random order among the others).
+    run(&mut w, 25 * 60 * 14);
     let count = |id: &str| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == ty(&w, id)).count();
     assert!(count("E2") > 0, "grenadiers");
     assert!(count("DOG") > 0 && count("DOG") <= 4, "dogs, UnitLimits 4: {}", count("DOG"));
@@ -502,7 +504,14 @@ fn ai_engineers_capture_what_they_see() {
     flat_reset(&mut w);
     let powr = building(&mut w, "POWR", 1, 30, 30);
     let e6 = unit(&mut w, "E6", 0, 31, 35);
-    run(&mut w, 25 * 40);
+    // OpenRA's capture manager picks a random enemy or neutral player every
+    // MinimumCaptureDelay; a few rounds.
+    for _ in 0..25 * 120 {
+        w.step();
+        if w.actors[powr].owner == 0 {
+            break;
+        }
+    }
     assert_eq!(w.actors[powr].owner, 0, "captured by the AI's engineer");
     assert!(!w.actors[e6].alive);
 }

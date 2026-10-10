@@ -334,14 +334,15 @@ fn check_no_leaks(w: &World, player: u8) {
 
 #[test]
 fn ai_games_never_leak_hidden_or_jammed_enemies() {
-    // Hard AIs build radar domes, radar jammers, gap generators and cloaked units.
+    // Hard AIs build radar domes, gap generators and cloaked units, and one has a radar jammer.
     let hard = |f: &str| crate::world::PlayerSetup::new(f, Some(crate::world::AiDifficulty::Hard));
-    // Seed 5: an AI fields a jammer within the twelve minutes.
-    // The game this seed plays has the Soviet AI build a radar jammer; the
-    // tech buildings of a generated map (mapgen/settlements.rs) would make it
-    // a different game, so this one leaves them out.
+    // Without the tech buildings of a generated map (mapgen/settlements.rs).
     let options = crate::world::GameOptions { tech_buildings: crate::mapgen::settlements::TechBuildings::None, ..Default::default() };
     let mut w = World::with_options(5, 80, &[hard("england"), hard("russia"), hard("france")], options);
+    // OpenRA's bots never build radar jammers: the Soviet AI gets one.
+    let (sx, sy) = w.players[1].start;
+    let mrj = w.rules.actor_index("MRJ").unwrap() as u16;
+    w.spawn_unit(mrj, 1, crate::world::cell_center(sx + 1), crate::world::cell_center(sy + 5), 512);
     let mut online = [false; 3];
     let mut had_dome = [false; 3];
     let mut saw_jammer = false;
@@ -360,5 +361,5 @@ fn ai_games_never_leak_hidden_or_jammed_enemies() {
     // An AI overrun before its radar dome stood never gets one; the others do.
     assert!(online.iter().zip(&had_dome).all(|(&o, &d)| o || !d), "every AI with a radar dome got its radar online");
     assert!(online.iter().filter(|&&o| o).count() >= 2, "AIs build radar domes: {online:?}");
-    assert!(saw_jammer, "an AI built a radar jammer");
+    assert!(saw_jammer, "the radar jammer took part");
 }
