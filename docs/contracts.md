@@ -1227,7 +1227,8 @@ Support powers (engine/src/powers.rs, API documented at the top of that
 file): one timer per player per power key (the OpenRA trait name, e.g.
 `AirstrikePower@spyplane`), however many structures provide it. Order
 `{"o": "support_power", player, key, x, y, x2?, y2?}` (world units; the
-optional second point gives aircraft powers their flight direction), wasm
+optional second point gives aircraft powers their flight direction; the
+engine leaves it out when there is none, and `null` counts as left out), wasm
 `Game.activate_power(player, key, x, y, x2?, y2?)` (world pixels), and
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):

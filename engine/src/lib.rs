@@ -111,6 +111,8 @@ mod tests_neutral;
 #[cfg(test)]
 mod tests_original_art;
 #[cfg(test)]
+mod tests_nuke;
+#[cfg(test)]
 mod tests_overlays;
 #[cfg(test)]
 mod tests_pathing;
