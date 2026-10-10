@@ -1030,6 +1030,21 @@ impl World {
                 .is_some_and(|un| un.repair_at.iter().any(|id| id.eq_ignore_ascii_case(&binfo.id)))
     }
 
+    /// The vehicle (or landed helicopter) that holds depot `d`'s pad, if it
+    /// is not `i` (OpenRA Reservable: a service depot serves one at a time).
+    fn pad_holder(&self, d: usize, i: usize) -> Option<usize> {
+        self.resolve(self.actors[d].dock_user).filter(|&u| {
+            u != i && self.actors[u].alive && (self.actors[u].kind == Kind::Aircraft || self.actors[u].activity == Activity::Repair)
+        })
+    }
+
+    /// Whether vehicle `i` is being serviced on its depot's pad (it holds
+    /// the pad): the crowd does not push it off.
+    pub(crate) fn on_repair_pad(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        a.activity == Activity::Repair && self.resolve(a.depot).is_some_and(|d| self.actors[d].dock_user == self.make_ref(i))
+    }
+
     fn tick_repair(&mut self, i: usize) {
         let Some(d) = self.resolve(self.actors[i].depot) else {
             self.actors[i].activity = Activity::Idle;
@@ -1039,7 +1054,22 @@ impl World {
         let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
         let rep = binfo.repairs.clone().unwrap();
         let pad = self.map.idx(depot.cx + binfo.width / 2, depot.cy + binfo.height / 2) as u32;
+        let holder = self.pad_holder(d, i);
         if !self.at_cell_center(i, pad) {
+            if holder.is_some() {
+                // Another vehicle is on the pad: wait close by for its turn
+                // (OpenRA Resupply waits for the reservation), without the
+                // stuck rules that would end the visit.
+                let (px, py) = (cell_center(pad as i32 % self.map.width), cell_center(pad as i32 / self.map.width));
+                let a = &mut self.actors[i];
+                a.best_dist = i32::MAX;
+                a.stuck_ticks = 0;
+                a.stall_ticks = 0;
+                if dist(a.x, a.y, px, py) > 3 * CELL {
+                    self.move_toward(i, pad);
+                }
+                return;
+            }
             if self.goal_reached(i, pad, 0, false) {
                 self.actors[i].activity = Activity::Idle;
                 return;
@@ -1047,11 +1077,16 @@ impl World {
             self.move_toward(i, pad);
             return;
         }
+        if holder.is_some() {
+            return;
+        }
+        self.actors[d].dock_user = self.make_ref(i);
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.actors[i].hp >= max_hp {
             let (width, height) = (binfo.width, binfo.height);
             self.note_repaired(i, d);
-            // Done: leave the pad toward the depot's rally point (or just below it).
+            // Done: leave the pad toward the depot's rally point (or just
+            // below it); the move frees the pad (`release_dock`).
             let (rx, ry) =
                 self.actors[d].rally.unwrap_or((cell_center(self.actors[d].cx + width / 2), cell_center(self.actors[d].cy + height + 1)));
             self.order_move(&[i], rx, ry, false);
@@ -1227,7 +1262,7 @@ impl World {
             }
             let a = &self.actors[i];
             // Units busy at a dock or repair pad hold their spot.
-            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting) {
+            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting) || self.on_repair_pad(i) {
                 continue;
             }
             let (px, py) = (px.clamp(-MAX_PUSH, MAX_PUSH), py.clamp(-MAX_PUSH, MAX_PUSH));

@@ -304,6 +304,60 @@ fn boarding_a_ship_out_at_sea_waits_at_the_shore() {
     assert!(w.passengers(lst).len() >= 5, "{} boarded", w.passengers(lst).len());
 }
 
+/// A transport unloading next to a one-cell islet puts its passengers on
+/// the mainland, never on the islet they could not leave.
+#[test]
+fn passengers_are_unloaded_onto_the_mainland_not_an_islet() {
+    let mut w = arena(64, 48);
+    // Sea east of column 24 with a beach column; one islet cell at (26, 20) right next to the ship.
+    flood(&mut w, (0..48).flat_map(|y| (24..64).map(move |x| (x, y))).filter(|&(x, y)| (x, y) != (26, 20)));
+    for y in 0..48 {
+        let i = w.map.idx(24, y);
+        w.map.terrain[i] = Terrain::Beach;
+    }
+    w.reset_passability();
+    assert_eq!(w.pass.area_size(w.map.idx(26, 20)), 1, "an islet");
+    let lst = w.spawn_unit(ty(&w, "LST"), 0, cell_center(25), cell_center(20), 0);
+    let men = block(&mut w, "E1", 0, 10, 18, 3, 5);
+    for &m in &men {
+        assert!(w.load_passenger(lst, m));
+    }
+    w.order_unload(lst);
+    run(&mut w, 25 * 20, |_, _| {});
+    assert!(w.passengers(lst).is_empty(), "all out");
+    for &m in &men {
+        let (cx, cy) = w.cell_of(w.actors[m].x, w.actors[m].y);
+        assert!(cx <= 24, "on the mainland, not the islet: ({cx}, {cy})");
+    }
+}
+
+/// Several damaged vehicles sent to one service depot all get repaired in
+/// turn: the one on the pad is not pushed off, the others wait around it.
+#[test]
+fn several_vehicles_sent_to_one_depot_all_get_repaired() {
+    let mut w = arena(64, 48);
+    w.players[0].cash = 100_000;
+    let fix = w.spawn_building(ty(&w, "FIX"), 0, 30, 20).unwrap();
+    let tanks = block(&mut w, "1TNK", 0, 20, 20, 3, 6);
+    let max = w.rules.actors[ty(&w, "1TNK") as usize].hp;
+    for &t in &tanks {
+        w.actors[t].hp = max / 4;
+    }
+    let ids: Vec<u32> = tanks.iter().map(|&t| w.make_ref(t)).collect();
+    let (fx, fy) = (w.actors[fix].x, w.actors[fix].y);
+    w.queue_order(Order::Smart { player: 0, ids, x: fx, y: fy });
+    let mut done_at = None;
+    for k in 0..25 * 180 {
+        w.step();
+        if tanks.iter().all(|&t| w.actors[t].hp == max) {
+            done_at = Some(k);
+            break;
+        }
+    }
+    let hps: Vec<i32> = tanks.iter().map(|&t| w.actors[t].hp).collect();
+    assert!(done_at.is_some(), "all six repaired within three minutes: {hps:?} {:?}", activities(&w, &tanks));
+}
+
 /// A rally point across the water: produced units drive to the bank and idle.
 #[test]
 fn a_rally_point_across_the_water_sends_units_to_the_bank() {

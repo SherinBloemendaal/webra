@@ -269,7 +269,9 @@ impl World {
 
     /// A free cell next to `t` where passenger `p` can stand: passable for
     /// `p`'s domain (land next to a ship), without units of that domain on it
-    /// or heading to it. Nearest first, then lowest index (deterministic).
+    /// or heading to it. The largest connected area first (a passenger put
+    /// on a one-cell islet or in a walled pocket could never leave, OpenRA
+    /// issues 4675 and 16353), then nearest, then lowest index (deterministic).
     pub fn exit_cell(&self, t: usize, p: usize) -> Option<usize> {
         let d = self.domain_of(p);
         if d == Domain::Air {
@@ -277,28 +279,20 @@ impl World {
         }
         let pass = self.pass_of(p);
         let (tcx, tcy) = self.cell_of(self.actors[t].x, self.actors[t].y);
-        for r in 1..=EXIT_RINGS {
-            let mut cands: Vec<(i32, usize)> = Vec::new();
-            for y in tcy - r..=tcy + r {
-                for x in tcx - r..=tcx + r {
-                    if (x - tcx).abs() != r && (y - tcy).abs() != r {
-                        continue;
-                    }
-                    if !self.map.contains(x, y) {
-                        continue;
-                    }
-                    let ci = self.map.idx(x, y);
-                    if !pass.blocked[ci] {
-                        cands.push(((x - tcx).pow(2) + (y - tcy).pow(2), ci));
-                    }
+        let mut cands: Vec<(std::cmp::Reverse<u32>, i32, usize)> = Vec::new();
+        for y in tcy - EXIT_RINGS..=tcy + EXIT_RINGS {
+            for x in tcx - EXIT_RINGS..=tcx + EXIT_RINGS {
+                if (x, y) == (tcx, tcy) || !self.map.contains(x, y) {
+                    continue;
+                }
+                let ci = self.map.idx(x, y);
+                if !pass.blocked[ci] {
+                    cands.push((std::cmp::Reverse(pass.area_size(ci)), (x - tcx).pow(2) + (y - tcy).pow(2), ci));
                 }
             }
-            cands.sort_unstable();
-            if let Some(&(_, c)) = cands.iter().find(|&&(_, c)| self.exit_cell_free(t, c, d)) {
-                return Some(c);
-            }
         }
-        None
+        cands.sort_unstable();
+        cands.iter().find(|&&(_, _, c)| self.exit_cell_free(t, c, d)).map(|&(_, _, c)| c)
     }
 
     fn exit_cell_free(&self, t: usize, c: usize, d: Domain) -> bool {

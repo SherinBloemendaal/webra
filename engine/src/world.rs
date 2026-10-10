@@ -1939,10 +1939,16 @@ impl World {
     /// Called for every new order to a unit: frees the refinery dock it held
     /// and ends helicopter tasks (landing, resupply) with their helipad reservation.
     pub(crate) fn release_dock(&mut self, i: usize) {
+        let me = self.make_ref(i);
         if let Some(r) = self.resolve(self.actors[i].refinery) {
-            let me = self.make_ref(i);
             if self.actors[r].dock_user == me {
                 self.actors[r].dock_user = NONE;
+            }
+        }
+        // The service depot's pad (units.rs tick_repair).
+        if let Some(d) = self.resolve(self.actors[i].depot) {
+            if self.actors[d].dock_user == me {
+                self.actors[d].dock_user = NONE;
             }
         }
         self.heli_cancel(i);
