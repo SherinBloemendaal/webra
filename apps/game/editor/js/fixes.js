@@ -2,7 +2,7 @@
 // itself (not by reading messages), each with a place to jump to and an
 // action that repairs it as one undoable step. Pure module, no DOM.
 
-import { LIMITS, TERRAIN, catalogEntry, footprintOf, isBuildable, isPassable } from './mapformat.js';
+import { LIMITS, TERRAIN, canOccupy, catalogEntry, footprintOf, groundFor, isBuildable } from './mapformat.js';
 import { SPAWN_H, SPAWN_W } from './symmetry.js';
 import { actorCells, deleteActors, placementProblem } from './edits.js';
 
@@ -140,7 +140,7 @@ export function findFixes(doc, catalog) {
     }
     const others = new Set([a]);
     const problem = placementProblem(doc, catalog, a.type, a.x, a.y, others);
-    if (problem === 'needs clear ground' || problem === 'needs passable ground') {
+    if (problem === 'needs clear ground' || problem === 'needs passable ground' || problem === 'needs water') {
       out.push({
         key: `actor-ground-${i}`,
         level: 'warning',
@@ -148,13 +148,12 @@ export function findFixes(doc, catalog) {
         ...at,
         fixes: [
           {
-            label: 'Clear the ground under it',
+            label: problem === 'needs water' ? 'Put water under it' : 'Clear the ground under it',
             apply: (d) => {
               for (const [dx, dy, c] of footprintOf(info)) {
                 if (c === 3) continue;
                 const t = d.terrain[d.idx(a.x + dx, a.y + dy)];
-                const ok = info.kind === 'building' && c === 1 ? isBuildable(t) : isPassable(t);
-                if (!ok) d.setCell(a.x + dx, a.y + dy, TERRAIN.CLEAR, 0, 0);
+                if (!canOccupy(info, c, t)) d.setCell(a.x + dx, a.y + dy, groundFor(info), 0, 0);
               }
             },
           },
