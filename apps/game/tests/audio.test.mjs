@@ -127,10 +127,10 @@ test('every engine weapon has a sound class, and synthesized sounds exist for al
 });
 
 test('weapons map to their original OpenRA sound names', () => {
-  assert.deepEqual(fireSound('90mm'), { synth: 'cannon', originals: ['cannon1.aud'] });
+  assert.deepEqual(fireSound('90mm'), { synth: 'cannon', originals: ['cannon1.aud'], openra: true });
   assert.deepEqual(fireSound('M1Carbine').originals, ['gun11.aud']);
   assert.deepEqual(impactSound('90mm', false).originals, ['kaboom12.aud']);
-  assert.deepEqual(impactSound('90mm', true), { synth: 'splash', originals: ['splash9.aud'] });
+  assert.deepEqual(impactSound('90mm', true), { synth: 'splash', originals: ['splash9.aud'], openra: true });
   assert.equal(impactSound('M1Carbine', true).synth, 'splash_small');
   assert.equal(fireSound('Atomic').synth, null, 'no fire sound for a warhead');
   assert.equal(impactSound('Atomic', false).synth, 'explosion_huge');
@@ -583,7 +583,7 @@ test('rules data: lost lines, captures, infiltration, repairs and actor sound fi
 });
 
 test('sound notifications follow notifications.yaml: files, volumes and interrupt types', () => {
-  assert.deepEqual(notificationSound('ClickSound'), { synth: 'ui_click', originals: ['ramenu1.aud'], volume: 1, interrupt: 'Overlap' });
+  assert.deepEqual(notificationSound('ClickSound'), { synth: 'ui_click', originals: ['ramenu1.aud'], volume: 1, interrupt: 'Overlap', openra: true });
   assert.equal(notificationSound('ClickDisabledSound'), null, 'empty in RA: silent');
   assert.equal(notificationSound('CashTickUp').volume, 0.33);
   assert.equal(notificationSound('ChatLine').interrupt, 'Interrupt');
@@ -822,8 +822,9 @@ test('placing a structure plays every BuildSounds entry at once (OpenRA PlaceBui
   assert.ok(synth[0].buffer.samples.length > 1000);
 });
 
-test('the audio system plays every layer of a layered sound on the effects bus', () => {
+test('the audio system plays every layer of a layered sound on the effects bus', async () => {
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
   const played = [];
   audio.mixer.play = (buffer, opts) => played.push([buffer, opts.bus, opts.gain]);
   audio.bank.resolveAll = (sound) => sound.originals.map((n) => ({ buffer: n, rate: 1 }));
@@ -835,8 +836,8 @@ test('an MCV deploying plays its TransformSounds, a yard packing up its Undeploy
   assert.deepEqual(ACTOR_SOUNDS.MCV.transform, ['placbldg', 'build5'], 'vehicles.yaml MCV Transforms TransformSounds');
   assert.deepEqual(ACTOR_SOUNDS.FACT.undeploy, ['cashturn'], 'defaults.yaml ^Building UndeploySounds');
   assert.equal(ACTOR_SOUNDS.FACT.transform, undefined, 'the yard names no TransformSounds');
-  assert.deepEqual(transformSounds('MCV'), [{ synth: 'place_building', originals: ['placbldg.aud', 'build5.aud'], layered: true }]);
-  assert.deepEqual(transformSounds('FACT'), [{ synth: 'sell', originals: ['cashturn.aud'], layered: true }]);
+  assert.deepEqual(transformSounds('MCV'), [{ synth: 'place_building', originals: ['placbldg.aud', 'build5.aud'], layered: true, openra: true }]);
+  assert.deepEqual(transformSounds('FACT'), [{ synth: 'sell', originals: ['cashturn.aud'], layered: true, openra: true }]);
   assert.deepEqual(transformSounds('1TNK'), [], 'nothing named, nothing played');
   assert.deepEqual(deployBlocked('MCV'), { sound: null, announce: 'buildingCannotPlaceAudio' }, 'NoTransformNotification: BuildingCannotPlaceAudio');
   assert.deepEqual(EVA.buildingCannotPlaceAudio.originals, ['nodeply1.aud']);
@@ -1020,6 +1021,7 @@ test('local orders through the watched game get replies; production speaks throu
 
 test('sound notifications honour DoNotPlay, Interrupt and Overlap, and the click setting', async () => {
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
   const handles = [];
   audio.mixer.play = (buffer, opts) => {
     let end;

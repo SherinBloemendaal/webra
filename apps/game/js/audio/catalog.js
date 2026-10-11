@@ -6,6 +6,14 @@
 // sounds come from the rules dump via catalog-data.js; voice sets, speech
 // notifications and music follow mods/ra/audio). A name the player's files do
 // not contain simply falls back to the synthesized sound.
+//
+// Sounds of a cue OpenRA defines carry `openra: true`. With original sounds
+// in use (the player installed some and the setting is on, bank.js), such a
+// cue plays only originals: where OpenRA plays nothing (a rifle bullet's
+// impact, a tree falling) or only a file OpenRA made itself that no copy of
+// Red Alert has ("Battle control online", OPENRA_MADE), it stays silent
+// instead of playing WebRA's own sound. Cues without `openra` (thunder) are
+// WebRA's own and always play.
 
 import {
   WEAPON_SOUNDS,
@@ -17,12 +25,21 @@ import {
   PLAYER_NOTIFICATIONS,
   WORLD_NOTIFICATIONS,
   VOICE_SETS,
+  OPENRA_WEAPONS,
+  OPENRA_ACTORS,
+  OPENRA_MADE_SOUNDS,
 } from './catalog-data.js';
 
 export { VOICE_SETS };
 
+const OPENRA_WEAPON = new Set(OPENRA_WEAPONS);
+const OPENRA_ACTOR = new Set(OPENRA_ACTORS);
+
 /** "conscmp1" -> "conscmp1.aud"; names with an extension (voice variants like "ackno.v01") stay as they are. */
 export const fileName = (base) => (/\.[a-z0-9]{3}$/i.test(base) ? base : `${base}.aud`).toLowerCase();
+
+/** Sound files OpenRA made itself (data/source/bits.txt): a player's copy of Red Alert never has them. */
+export const OPENRA_MADE = new Set(OPENRA_MADE_SOUNDS.map(fileName));
 
 // ---- Weapons -------------------------------------------------------------------
 
@@ -115,17 +132,53 @@ function cached(fn) {
   };
 }
 
-/** Fire sound of a weapon: { synth, originals } (synth null: silent). */
+/** Fire sound of a weapon: { synth, originals, openra } (synth null: silent). */
 export const fireSound = cached((weapon) => {
   const [synth] = WEAPON_SYNTH[weapon] ?? ['cannon', 'explosion_small'];
-  return { synth, originals: (WEAPON_SOUNDS[weapon]?.report ?? []).map(fileName) };
+  return { synth, originals: (WEAPON_SOUNDS[weapon]?.report ?? []).map(fileName), openra: OPENRA_WEAPON.has(weapon) };
 });
 
-/** Impact sound of a weapon; `water` when it landed in open water. */
+/** Impact sound of a weapon; `water` when it landed in open water (a silent impact stays silent there). */
 export const impactSound = cached((weapon, water) => {
   const [, synth] = WEAPON_SYNTH[weapon] ?? ['cannon', 'explosion_small'];
-  if (water) return { synth: synth === 'hit' ? 'splash_small' : 'splash', originals: (WEAPON_SOUNDS[weapon]?.water ?? []).map(fileName) };
-  return { synth, originals: (WEAPON_SOUNDS[weapon]?.impact ?? []).map(fileName) };
+  const openra = OPENRA_WEAPON.has(weapon);
+  if (water) return { synth: synth && (synth === 'hit' ? 'splash_small' : 'splash'), originals: (WEAPON_SOUNDS[weapon]?.water ?? []).map(fileName), openra };
+  return { synth, originals: (WEAPON_SOUNDS[weapon]?.impact ?? []).map(fileName), openra };
+});
+
+/**
+ * What a shooter plays as it fires besides its weapon's Report, or null:
+ * the Tesla Coil's AttackTesla.ChargeAudio. OpenRA plays it as the coil
+ * starts charging, InitialChargeDelay (22 ticks) before its first zap; the
+ * engine has no charge phase (the coil zaps once per ReloadDelay), so it
+ * plays with the zap. WebRA's own tesla sound already holds the charge.
+ */
+export const fireChargeSound = cached((shooterId) => {
+  const f = actorSounds(shooterId).teslaCharge;
+  return f ? { synth: null, originals: [fileName(f)], openra: true } : null;
+});
+
+/**
+ * A MAD tank charging (`detonate` false: MadTank.ChargeSound) or blowing up
+ * (DetonationSound, together with its DetonationWeapon's impact sounds).
+ * @returns {{ synth: string | null, originals: string[], openra: true }[]}
+ */
+export const madTankSounds = cached((actorId, detonate) => {
+  const m = actorSounds(actorId).mad;
+  if (!m) return [];
+  if (!detonate) return [{ synth: 'thump', originals: [fileName(m.charge)], openra: true }];
+  return [{ synth: null, originals: [fileName(m.detonate)], openra: true }, impactSound(m.weapon, false)];
+});
+
+/**
+ * An actor teleported (OpenRA Teleport, at both ends): a chrono tank's own
+ * jump plays PortableChrono's ChronoshiftSound (`portable`), the
+ * Chronosphere and the way back Chronoshiftable's.
+ */
+export const teleportSound = cached((actorId, portable) => {
+  const a = actorSounds(actorId);
+  const f = portable ? a.portableChrono : a.chronoshift;
+  return { synth: 'chrono', originals: f ? [fileName(f)] : [], openra: OPENRA_ACTOR.has(baseActor(actorId)) };
 });
 
 // ---- Actors ----------------------------------------------------------------------
@@ -142,15 +195,16 @@ const INFANTRY_DIE = ['dedman1', 'dedman2', 'dedman3', 'dedman4', 'dedman5', 'de
  * Death event: die1..die6): Die, Burned (fire) or Zapped (electricity).
  */
 export const deathSound = cached((actorId, kind, sequence = 0) => {
+  const openra = OPENRA_ACTOR.has(baseActor(actorId));
   if (kind === 'infantry') {
     const set = VOICE_SETS[voiceSetFor(actorId, kind)];
     const line = (ACTOR_SOUNDS[baseActor(actorId)]?.screams?.[sequence] ?? 'Die').toLowerCase();
     const bases = set?.lines[line] ?? INFANTRY_DIE;
-    return { synth: 'infantry_die', originals: bases.map(fileName) };
+    return { synth: 'infantry_die', originals: bases.map(fileName), openra };
   }
   if (kind === 'mine' || kind === 'husk' || kind === 'crate' || kind === 'proxy') return { synth: null, originals: [] };
   const synth = kind === 'building' ? 'explosion_building' : kind === 'ship' ? 'explosion_ship' : 'explosion_large';
-  return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName) };
+  return { synth, originals: (ACTOR_SOUNDS[actorId]?.death ?? []).map(fileName), openra };
 });
 
 /**
@@ -159,7 +213,7 @@ export const deathSound = cached((actorId, kind, sequence = 0) => {
  * the bank plays all of its originals instead of picking one. Our own
  * place_building sound already holds both the thud and the clank.
  */
-export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName), layered: true }));
+export const placeSound = cached((actorId) => ({ synth: 'place_building', originals: (ACTOR_SOUNDS[actorId]?.build ?? ['placbldg']).map(fileName), layered: true, openra: OPENRA_ACTOR.has(actorId) }));
 
 /**
  * What an actor that transforms (OpenRA Transforms: an MCV deploying, a
@@ -172,8 +226,8 @@ export const placeSound = cached((actorId) => ({ synth: 'place_building', origin
 export const transformSounds = cached((actorId) => {
   const a = ACTOR_SOUNDS[actorId] ?? {};
   const out = [];
-  if (a.undeploy?.length) out.push({ synth: 'sell', originals: a.undeploy.map(fileName), layered: true });
-  if (a.transform?.length) out.push({ synth: 'place_building', originals: a.transform.map(fileName), layered: true });
+  if (a.undeploy?.length) out.push({ synth: 'sell', originals: a.undeploy.map(fileName), layered: true, openra: true });
+  if (a.transform?.length) out.push({ synth: 'place_building', originals: a.transform.map(fileName), layered: true, openra: true });
   return out;
 });
 
@@ -183,11 +237,11 @@ export const transformSounds = cached((actorId) => {
  */
 export const deployBlocked = cached((actorId) => {
   const a = ACTOR_SOUNDS[actorId] ?? {};
-  const sound = a.noTransform?.length ? { synth: null, originals: a.noTransform.map(fileName), layered: true } : null;
+  const sound = a.noTransform?.length ? { synth: null, originals: a.noTransform.map(fileName), layered: true, openra: true } : null;
   return { sound, announce: speechKey(a.noTransformNotification) };
 });
 
-export const sellSound = cached((actorId) => ({ synth: 'sell', originals: (ACTOR_SOUNDS[actorId]?.sell ?? ['cashturn']).map(fileName) }));
+export const sellSound = cached((actorId) => ({ synth: 'sell', originals: (ACTOR_SOUNDS[actorId]?.sell ?? ['cashturn']).map(fileName), openra: OPENRA_ACTOR.has(actorId) }));
 
 // ---- Unit voices -------------------------------------------------------------------
 
@@ -238,9 +292,12 @@ export function voiceLine(actorId, kind, side, line) {
   const bases = set.lines[line];
   if (!bases) return null;
   const variants = set.plain.includes(line) ? [''] : (set.variants[side] ?? set.variants.allies ?? ['']);
+  // An OpenRA actor without a VoiceSet (the Badger, the spy plane) says nothing in OpenRA.
+  const actor = baseActor(actorId);
+  const voiced = !!ACTOR_SOUNDS[actor]?.voice;
   const originals = [];
-  for (const base of bases) for (const v of variants) originals.push(fileName(base + v));
-  return { synth: line === 'select' ? 'radio_select' : 'radio_ack', originals, spoken: SPOKEN[line] ?? SPOKEN.action };
+  if (voiced || !OPENRA_ACTOR.has(actor)) for (const base of bases) for (const v of variants) originals.push(fileName(base + v));
+  return { synth: line === 'select' ? 'radio_select' : 'radio_ack', originals, spoken: SPOKEN[line] ?? SPOKEN.action, openra: OPENRA_ACTOR.has(actor) };
 }
 
 // ---- Announcements (EVA) -------------------------------------------------------------
@@ -343,7 +400,7 @@ export function spokenText(name) {
 export const EVA = {};
 for (const [name, file] of Object.entries(SPEECH)) {
   const [text, chime, cooldown] = SPEECH_LINES[name] ?? [spokenText(name), 'eva_info', 1];
-  EVA[evaKey(name)] = { name, text, chime, originals: file ? [fileName(file)] : [], cooldown };
+  EVA[evaKey(name)] = { name, text, chime, originals: file ? [fileName(file)] : [], cooldown, openra: true };
 }
 for (const [key, text] of Object.entries({
   // DamageNotifier AllyTextNotification: an ally's structure is under attack (no speech in RA).
@@ -461,12 +518,12 @@ export function powerNotifications(providerId, key) {
 }
 
 /** A one-off sound file of the rules as a sound: { synth, originals } (null synth: silent without originals). */
-const fileSound = (file, synth) => ({ synth, originals: file ? [fileName(file)] : [] });
+const fileSound = (file, synth) => ({ synth, originals: file ? [fileName(file)] : [], openra: true });
 
 /** OpenRA SoundOnDamageTransition DamagedSounds (falling to Heavy), or null when the actor has none. */
 export const damagedSound = cached((actorId) => {
   const list = actorSounds(actorId).damaged ?? [];
-  return list.length ? { synth: 'damaged', originals: list.map(fileName) } : null;
+  return list.length ? { synth: 'damaged', originals: list.map(fileName), openra: true } : null;
 });
 
 /** OpenRA Crushable.CrushSound, or null. */
@@ -572,7 +629,7 @@ export const notificationSound = cached((name) => {
   if (!n) return null;
   const synth = n.file || name in SOUND_SYNTH ? (SOUND_SYNTH[name] ?? null) : null;
   if (!n.file && !synth) return null;
-  return { synth, originals: n.file ? [fileName(n.file)] : [], volume: n.volume, interrupt: n.interrupt };
+  return { synth, originals: n.file ? [fileName(n.file)] : [], volume: n.volume, interrupt: n.interrupt, openra: true };
 });
 
 /** Power kind codes of PowerActivated events (sound_events.rs power_code). */
@@ -609,18 +666,20 @@ export const CASH_TICK_GAIN = CASH_TICK_SOUNDS.up.volume;
 /**
  * Sound where a support power strikes: the power's own (OpenRA
  * GrantExternalConditionPower.OnFireSound, SpawnActorPower.DeploySound) when
- * the rules name one, else ours. The Chronosphere plays Chronoshiftable's
- * chrono2 where units vanish and appear.
+ * the rules name one, else ours. The Chronosphere has none of its own: every
+ * vehicle it moves plays Chronoshiftable's sound at both ends (teleportSound).
+ * The nuke's rumble at the silo and the blip of the other powers are WebRA's;
+ * OpenRA plays nothing there, so they stay silent with original sounds.
  * @param {number} code power kind code (POWER_KINDS)
  * @param {{ onFire?: string, deploy?: string }} [rules] the power's notifications (powerNotifications)
  */
 export function powerSound(code, rules = {}) {
   const kind = POWER_KINDS[code];
-  if (kind === 'ChronoshiftPower') return { synth: 'chrono', originals: ['chrono2'].map(fileName) };
-  if (kind === 'GrantExternalConditionPower') return { synth: 'iron_curtain', originals: [rules.onFire ?? 'ironcur9'].map(fileName) };
-  if (kind === 'NukePower') return { synth: 'nuke_launch', originals: [] };
-  if (rules.deploy || rules.onFire) return { synth: 'sonar_pulse', originals: [fileName(rules.deploy ?? rules.onFire)] };
-  return { synth: 'radio_select', originals: [] };
+  if (kind === 'ChronoshiftPower') return { synth: null, originals: [], openra: true };
+  if (kind === 'GrantExternalConditionPower') return { synth: 'iron_curtain', originals: [rules.onFire ?? 'ironcur9'].map(fileName), openra: true };
+  if (kind === 'NukePower') return { synth: 'nuke_launch', originals: [], openra: true };
+  if (rules.deploy || rules.onFire) return { synth: 'sonar_pulse', originals: [fileName(rules.deploy ?? rules.onFire)], openra: true };
+  return { synth: 'radio_select', originals: [], openra: !!kind };
 }
 
 // ---- Music ------------------------------------------------------------------------------
@@ -693,7 +752,11 @@ export function allOriginalNames() {
     add(a.undeploy ?? []);
     add(a.noTransform ?? []);
     add(a.damaged ?? []);
-    add([a.crush, a.chute, a.ejectChute, a.paraImpact?.ground, a.paraImpact?.water, a.cloak?.on, a.cloak?.off, a.rearm].filter(Boolean));
+    add(
+      [a.crush, a.chute, a.ejectChute, a.paraImpact?.ground, a.paraImpact?.water, a.cloak?.on, a.cloak?.off, a.rearm, a.mad?.charge, a.mad?.detonate, a.chronoshift, a.portableChrono, a.teslaCharge].filter(
+        Boolean,
+      ),
+    );
     for (const p of Object.values(a.powers ?? {})) {
       add(
         [p.onFire, p.deploy, p.launchSound, p.incomingSound, p.beginChargeSound, p.endChargeSound, p.selectTargetSound, p.insufficientPowerSound].filter(Boolean),
@@ -702,7 +765,7 @@ export function allOriginalNames() {
   }
   for (const c of Object.values(CRATE_SOUNDS)) if (c.sound) add([c.sound]);
   add(INFANTRY_DIE);
-  add(['placbldg', 'cashturn', 'chrono2', 'ironcur9']);
+  add(['placbldg', 'cashturn', 'ironcur9']);
   for (const n of Object.keys(SOUND_NOTIFICATIONS)) add(notificationSound(n)?.originals ?? []);
   for (const set of Object.values(VOICE_SETS)) {
     for (const [line, bases] of Object.entries(set.lines)) {

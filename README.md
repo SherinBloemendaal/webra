@@ -165,8 +165,18 @@ them (WebRA's own art and synthesized sounds).
   Esc, Space or Enter skips one); without them a card names the movie.
 - `desert.mix` from Tiberian Dawn adds desert terrain, as in OpenRA. The
   interior theater is not used (WebRA has no interior maps).
-- Effects, projectiles, mines and helicopter rotors keep WebRA art.
-  Generated maps store terrain types, not Red Alert templates, so the
+- Art Red Alert does not have keeps WebRA's: the Mobile Flak and the Black
+  Hawk (OpenRA's own units, unit and cameo), neutral decorations OpenRA drew
+  itself (huts, ammo boxes, poles, tank traps, the oil derrick, ...),
+  veterancy ranks, contrails, the chronoshift shimmer, ability markers and
+  the level up and heal crate animations. OpenRA's own files are not
+  shipped (see [data/CATALOG.md](data/CATALOG.md) for why).
+- With original sounds, a sound OpenRA does not have stays silent instead
+  of WebRA's (a bullet's impact, a tree falling), and so do the lines OpenRA
+  recorded itself ("Battle control online", "Unit stolen", the thief's
+  lines): the announcer shows them as text. Drop those files from an OpenRA
+  install (`mods/ra/bits`) on the game to hear them.
+- Generated maps store terrain types, not Red Alert templates, so the
   original terrain is matched per cell (plain tiles inside an area, shore
   and cliff tiles facing the right way at borders): close to the original,
   not hand-made.

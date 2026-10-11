@@ -773,13 +773,17 @@ impl World {
         self.actors[i].ab.timer += 1;
         let t = self.actors[i].ab.timer;
         let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
         if t % m.thump_interval.max(1) == 0 {
             self.percent_blast(i, m.thump_weapon);
             self.abil.fx.push(AbilityFx { x, y, kind: FxKind::Thump, ttl: 10, max: 10 });
         }
+        if t == m.charge_delay {
+            self.sound.push(SoundEventKind::MadTank, ty, x, y, owner, 0);
+        }
         if t >= m.charge_delay + m.detonation_delay {
+            self.sound.push(SoundEventKind::MadTank, ty, x, y, owner, 1);
             self.percent_blast(i, m.detonation_weapon);
-            let owner = self.actors[i].owner;
             if let Some(driver) = self.rules.actor_index(&m.driver) {
                 self.spawn_unit(driver as u16, owner, x, y, 512);
             }
@@ -916,18 +920,22 @@ impl World {
                 continue;
             }
             let charge = self.rules.actors[self.actors[i].ty as usize].abilities.portable_chrono.as_ref().unwrap().charge_delay;
-            self.teleport(i, cell_center(cx), cell_center(cy));
+            self.teleport(i, cell_center(cx), cell_center(cy), true);
             self.actors[i].ab.chrono_charge = charge;
         }
     }
 
-    /// Move unit `i` to (x, y) instantly with a chronoshift flash at both ends.
-    pub(crate) fn teleport(&mut self, i: usize, x: i32, y: i32) {
+    /// Move unit `i` to (x, y) instantly with a chronoshift flash and sound
+    /// at both ends (OpenRA Teleport); `portable` when a chrono tank jumps on
+    /// its own (PortableChrono's ChronoshiftSound, not Chronoshiftable's).
+    pub(crate) fn teleport(&mut self, i: usize, x: i32, y: i32, portable: bool) {
         self.release_dock(i);
         let (ox, oy) = (self.actors[i].x, self.actors[i].y);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
         for (fx, fy) in [(ox, oy), (x, y)] {
             self.effects.push(Effect { x: fx, y: fy, tx: fx, ty: fy, kind: EffectKind::ChronoShimmer, ttl: 20, max: 20 });
             self.abil.fx.push(AbilityFx { x: fx, y: fy, kind: FxKind::Chrono, ttl: 12, max: 12 });
+            self.sound.push(SoundEventKind::Teleported, ty, fx, fy, owner, i32::from(portable));
         }
         let a = &mut self.actors[i];
         a.x = x;
@@ -1216,7 +1224,7 @@ impl World {
             }
             let origin = self.actors[i].ab.chrono_return.map_or((self.actors[i].x, self.actors[i].y), |(ox, oy, _)| (ox, oy));
             let (ox, oy) = (self.actors[i].x - cell_center(ux), self.actors[i].y - cell_center(uy));
-            self.teleport(i, cell_center(tx) + ox, cell_center(ty) + oy);
+            self.teleport(i, cell_center(tx) + ox, cell_center(ty) + oy, false);
             if info.duration > 0 {
                 self.actors[i].ab.chrono_return = Some((origin.0, origin.1, self.tick + info.duration as u32));
             }
@@ -1232,7 +1240,7 @@ impl World {
             }
             if self.tick >= t {
                 self.actors[i].ab.chrono_return = None;
-                self.teleport(i, x, y);
+                self.teleport(i, x, y, false);
             }
         }
     }

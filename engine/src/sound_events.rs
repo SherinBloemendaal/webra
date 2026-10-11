@@ -161,6 +161,14 @@ pub enum SoundEventKind {
     /// InfiltrateForCash, DeliversCash); a = the amount, owner = the player
     /// whose colour it shows. Everyone who sees the spot sees it.
     CashTick = 44,
+    /// A deployed MAD tank of `owner` (OpenRA MadTank): b = 0 when it starts
+    /// charging (ChargeSound, ChargeDelay ticks after deploying), 1 when it
+    /// detonates (DetonationSound and its DetonationWeapon's impact); a = actor type.
+    MadTank = 45,
+    /// An actor of `owner` was teleported (OpenRA Teleport: ChronoshiftSound),
+    /// one event at each end; a = actor type, b = 1 for a chrono tank's own
+    /// jump (PortableChrono), 0 for the Chronosphere and the return (Chronoshiftable).
+    Teleported = 46,
 }
 
 /// `owner` of events every player hears (time limit warnings).

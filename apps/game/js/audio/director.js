@@ -15,7 +15,10 @@
 
 import {
   fireSound,
+  fireChargeSound,
   impactSound,
+  madTankSounds,
+  teleportSound,
   deathSound,
   placeSound,
   sellSound,
@@ -92,6 +95,10 @@ export const EV = {
   PILOT_EJECTED: 37,
   /** OpenRA AnnounceOnKill: `a` the killer's type (Tanya), to its owner. */
   KILL_ANNOUNCED: 43,
+  /** OpenRA MadTank: `b` 0 charging (ChargeSound), 1 detonating (DetonationSound). */
+  MAD_TANK: 45,
+  /** OpenRA Teleport, at each end: `b` 1 a chrono tank's own jump (PortableChrono), 0 Chronoshiftable. */
+  TELEPORTED: 46,
 };
 
 /** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
@@ -424,7 +431,11 @@ export class Director {
       const heard = own || visible(x, y);
       switch (kind) {
         case EV.FIRE:
-          if (heard) this.queue(fireSound(this.rules.weapons[a]), x, y);
+          if (heard) {
+            this.queue(fireSound(this.rules.weapons[a]), x, y);
+            // b: the shooter's type (the Tesla Coil's charge).
+            this.queue(fireChargeSound(this.actor(b).id), x, y);
+          }
           break;
         case EV.IMPACT:
           if (heard) this.queue(impactSound(this.rules.weapons[a], b === 1), x, y);
@@ -589,6 +600,13 @@ export class Director {
         case EV.TIME_LIMIT_WARNING:
           // OpenRA TimeLimitManager: to everyone, spectators too.
           if (owner === ALL_PLAYERS || own) this.announce(timeLimitLine(a));
+          break;
+        // World sounds of OpenRA's MadTank and Teleport (Game.Sound.Play at the actor).
+        case EV.MAD_TANK:
+          if (heard) for (const sound of madTankSounds(this.actor(a).id, b === 1)) this.queue(sound, x, y);
+          break;
+        case EV.TELEPORTED:
+          if (heard) this.queue(teleportSound(this.actor(a).id, b === 1), x, y);
           break;
         case EV.CRATE_COLLECTED:
           if (own) {

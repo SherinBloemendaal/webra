@@ -128,7 +128,7 @@ export const HELP = Object.freeze({
   'audio.speech':
     "When no original voice line is installed, your browser speaks unit replies and announcements with your system's voices. Off: radio blips and chimes only.",
   'audio.original':
-    "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Off: WebRA's sounds even when the originals are installed.",
+    "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Where Red Alert has no sound, as in OpenRA, it stays quiet, and lines OpenRA recorded itself (\"Battle control online\") show as text. Off: WebRA's sounds even when the originals are installed.",
   'audio.cashTicks': 'Plays a tick while the credits counter in the sidebar counts up or down, like Red Alert.',
   'audio.clickSounds': 'Plays a click on buttons, tabs and switches, like Red Alert. Production and support power buttons keep their own sounds.',
   'audio.musicOn': 'Plays music during games. Music needs installed original content or a texture pack with music.',
