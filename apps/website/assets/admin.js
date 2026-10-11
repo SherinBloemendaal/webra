@@ -118,6 +118,14 @@ export async function mountAdmin(root, deps = {}) {
   }
 
   // ---- Overview --------------------------------------------------------------------------
+  /** Account mail sent today against the daily ceiling; a warning once it is reached. */
+  function mailBudgetLine(budget) {
+    if (!budget) return null;
+    const text = `Account email today: ${budget.sentToday} of ${budget.dailyLimit} (UTC day).`;
+    if (!budget.limitReached) return el('p', { class: 'form-help', text });
+    return el('p', { class: 'notice notice-error', role: 'alert' }, el('strong', { text: 'Daily email limit reached. ' }), el('span', { text: `${text} No verification or reset email goes out until the next UTC day; players are not told. Raise EMAIL_DAILY_LIMIT if this is real use.` }));
+  }
+
   async function renderOverview() {
     const status = statusLine();
     panel.replaceChildren(status.node, el('p', { class: 'status-line', text: 'Loading...' }));
@@ -152,6 +160,7 @@ export async function mountAdmin(root, deps = {}) {
           el('span', { text: `Roles: ${s.users.byRole.admin} admin, ${s.users.byRole.moderator} moderator, ${s.users.byRole.user} user. ` }),
           el('span', { text: `Email sending: ${s.services.email ? 'available' : 'not available (needs the email plan)'}. Discord: ${s.services.discord ? 'configured' : 'not configured'}.` }),
         ),
+        mailBudgetLine(s.email),
       );
       for (const a of panel.querySelectorAll('a.stat-link')) {
         a.addEventListener('click', (e) => {
@@ -340,7 +349,8 @@ export async function mountAdmin(root, deps = {}) {
     await fillUser(id, body, aside.querySelector(`#${titleId}`));
   }
 
-  async function fillUser(id, body, title) {
+  /** Fill the drawer; `flash` is a result message shown on the reloaded drawer. */
+  async function fillUser(id, body, title, flash = null) {
     let d;
     try {
       d = await api.user(id);
@@ -349,9 +359,12 @@ export async function mountAdmin(root, deps = {}) {
       return;
     }
     const u = d.user;
+    // Whether verification links can be sent now (admins' detail only).
+    const mailing = d.emailSending === true;
     title.textContent = u.username;
     const status = statusLine();
-    const reload = () => fillUser(id, body, title);
+    if (flash) status.show(flash, 'ok');
+    const reload = (msg = null) => fillUser(id, body, title, msg);
     const parts = [status.node, el('p', {}, statusBadge(u.status), el('span', { class: 'badge', text: u.role }), ...(u.flags ?? []).map((f) => el('span', { class: 'badge badge-flag', text: FLAGS[f] ?? f })))];
 
     // Facts
@@ -361,7 +374,7 @@ export async function mountAdmin(root, deps = {}) {
         { class: 'detail-facts' },
         ...[
           ['Display name', u.displayName],
-          ['Email', u.email ? `${u.email}${u.emailVerified ? ' (verified)' : ' (not verified)'}` : 'none'],
+          ['Email', emailFact(u, d.emailLink, mailing)],
           ['Created', formatDateTime(u.createdAt)],
           ['Last seen', formatDateTime(u.lastSeenAt)],
           ['Approved', u.approvedAt ? `${formatDateTime(u.approvedAt)}` : 'no'],
@@ -380,8 +393,8 @@ export async function mountAdmin(root, deps = {}) {
         if (confirm && !(await confirmDialog(label, confirm, { confirmText: label, danger }))) return;
         await busy(b, status, async () => {
           const msg = await fn();
-          if (msg) status.show(msg, 'ok');
-          await reload();
+          // The drawer is rebuilt: the message goes onto the new one.
+          await reload(msg);
           refreshTable();
         }, errorText);
       });
@@ -406,6 +419,14 @@ export async function mountAdmin(root, deps = {}) {
       }
     }
     if (can.sessions) act('Sign out everywhere', async () => (await api.logoutUser(u.id), 'Every session is signed out.'), { confirm: `Sign ${u.username} out on every device?` });
+    if (can.edit && u.email && !u.emailVerified && u.status !== 'deleted') {
+      if (mailing) act('Send verification link', async () => {
+        const r = await api.resendUserEmail(u.id);
+        if (!r.sent) return 'The email could not be sent (sending failed or the daily email limit is reached). Try again later.';
+        return r.notice ? `${u.email} already belongs to another verified account: it got a notice that it has an account, not a link.` : `A verification email went to ${u.email}.`;
+      });
+      act('Mark email verified', async () => (await api.verifyUserEmail(u.id), `${u.email} is marked verified.`), { confirm: `Mark ${u.email} as verified for ${u.username}? Only do this when you know the address is theirs.` });
+    }
     if (can.resetLink) {
       const b = el('button', { type: 'button', class: 'btn btn-small', text: 'Password reset link' });
       b.addEventListener('click', () => resetLinkDialog(u));
@@ -486,6 +507,18 @@ export async function mountAdmin(root, deps = {}) {
     if (can.relayQuota && d.relay) parts.push(relayBlock(u, d.relay, status, reload));
     if (can.settings) parts.push(settingsEditor(u));
     body.replaceChildren(...present(parts));
+  }
+
+  /** The email line of the user drawer: the address, whether it is verified, and an open link (admins see it). */
+  function emailFact(u, link, mailing) {
+    if (!u.email && !link) return 'none';
+    const parts = [];
+    if (u.email) parts.push(`${u.email} (${u.emailVerified ? 'verified' : 'not verified'}${u.emailSetAt ? `, set ${formatDateTime(u.emailSetAt)}` : ''})`);
+    if (link) {
+      const what = link.purpose === 'change' ? `change to ${link.email} waiting` : 'verification link';
+      parts.push(`${what}: sent ${formatDateTime(link.sentAt)}, valid until ${formatDateTime(link.expiresAt)}`);
+    } else if (u.email && !u.emailVerified) parts.push(mailing ? 'no open link' : 'verification email is not available yet');
+    return parts.join('; ');
   }
 
   /** The one-click relay budgets (package and music) of the account and its recent networks, with a reset. */

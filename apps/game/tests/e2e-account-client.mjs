@@ -52,7 +52,7 @@ step(`site: registration open ${site.registration.open}, approval ${site.registr
 // ---- A player signs up, an admin is made through the dev route ---------------------------
 const admin = browser();
 const adminName = `adm${RUN}`;
-const a = await admin.api.signup({ username: adminName, password: PASSWORD, acceptPrivacy: true });
+const a = await admin.api.signup({ username: adminName, email: `${adminName}@example.com`, password: PASSWORD, acceptPrivacy: true });
 assert.ok(admin.cookie()?.startsWith('webra_session='), 'plain HTTP to localhost: the local cookie name');
 const promote = await admin.raw('/api/dev/promote', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WebRA-CSRF': '1' }, body: JSON.stringify({ username: adminName, role: 'admin' }) });
 assert.equal(promote.status < 300, true, `dev promote: ${promote.status} (start wrangler dev with --var WEBRA_DEV_ROUTES:1)`);
@@ -65,7 +65,7 @@ step('signup, promote, sign in: admin active');
 
 const player = browser();
 const pname = `ply${RUN}`;
-const p = (await player.api.signup({ username: pname, displayName: 'Client Tester', password: PASSWORD, acceptPrivacy: true })).user;
+const p = (await player.api.signup({ username: pname, email: `${pname}@example.com`, displayName: 'Client Tester', password: PASSWORD, acceptPrivacy: true })).user;
 step(`player signed up: ${p.status}`);
 await rejects(player.api.stats(), 'forbidden');
 
@@ -193,7 +193,7 @@ step('reset link, force sign-out, delete, restore, purge');
 // The player's own deletion path.
 const leaver = browser();
 const lname = `lv${RUN}`;
-await leaver.api.signup({ username: lname, password: PASSWORD, acceptPrivacy: true });
+await leaver.api.signup({ username: lname, email: `${lname}@example.com`, password: PASSWORD, acceptPrivacy: true });
 await rejects(leaver.api.deleteAccount(lname), 'reauth_required');
 await leaver.api.reauth({ password: PASSWORD });
 await leaver.api.deleteAccount(lname);

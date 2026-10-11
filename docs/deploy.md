@@ -245,6 +245,9 @@ settings.
 | `PASSWORD_PEPPER` | secret, optional | At least 16 characters; HMAC key applied to passwords before PBKDF2 |
 | `IP_HASH_SALT` | secret, **required** | At least 16 random characters; HMAC key for every stored address hash (sessions, rate limits). Without it the Worker answers `503 misconfigured` to anything that would store one (only plain HTTP to localhost uses a fixed development key) |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | variables in `wrangler.jsonc` (empty DSN: off), set by the deploy | Error reports of the Worker (see Error reports) |
+| `EMAIL_FROM` | repository variable, passed by the deploy (absent locally) | Sender of account mail; set, the deploy also adds the `send_email` binding `EMAIL` (see Email). Unset: no email |
+| `SITE_ORIGIN` | variable in `wrangler.jsonc` | Where links in account mail point (`https://webra.sherin.dev`); `wrangler dev` links to its own local address |
+| `EMAIL_DAILY_LIMIT` | variable in `wrangler.jsonc` | Most account mails per UTC day, whoever asks (default 300, 1 to 100,000); over it nothing is sent until the next day and the admin overview warns |
 | `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
@@ -324,36 +327,79 @@ into writes:
 
 ### Email (needs the Workers Paid plan)
 
-Email verification and password reset links are sent with Cloudflare Email
-Service (Email Sending). It requires the Workers Paid plan, so the binding is
-not configured yet: a deploy with it would fail on the Free plan. Until then
-the Worker detects the missing `env.EMAIL`, reports email as unavailable, and
-signup does not require email verification. To enable it:
+Every new account gives an email address. Verification links (and password
+reset links) are sent with Cloudflare Email Service (Email Sending) through
+the Workers `send_email` binding `EMAIL`, from the address in the variable
+`EMAIL_FROM`. Sending to arbitrary recipients needs the Workers Paid plan
+(3,000 emails a month included, then $0.35 per 1,000), and a `send_email`
+binding in `wrangler.jsonc` would break deploys and `wrangler dev` before
+that, so the binding is not committed: the deploy workflow adds it, and the
+variable, only when the repository variable `EMAIL_FROM` is set
+(`tools/email-config.mjs` writes `apps/server/wrangler.deploy.jsonc`, the
+committed configuration plus the binding restricted to that one sender, and
+deploys with it). Until then the Worker reports email as unavailable: signup
+still requires an address but keeps it unverified, there is no verification
+step, the account page says that verification email is not available yet,
+and admins can mark addresses verified by hand.
 
-1. Upgrade the account to the Workers Paid plan.
-2. Dashboard: Compute, Email Service, Email Sending, **Onboard Domain**, pick
-   `sherin.dev`. Cloudflare adds the records on the `cf-bounce` subdomain (MX
-   for bounces, SPF and DKIM TXT records) and a DMARC TXT record on
-   `_dmarc.sherin.dev`; review them against existing mail records of the zone
-   (an existing DMARC record stays; merge rather than duplicate). Wait until
-   the domain shows as verified.
-3. Add the binding to `apps/server/wrangler.jsonc` (top level), restricted to
-   the one sender the Worker uses:
+To enable it (owner, in this order):
 
-   ```jsonc
-   "send_email": [
-     { "name": "EMAIL", "allowed_sender_addresses": ["noreply@webra.sherin.dev"] }
-   ],
-   ```
+1. Upgrade the Cloudflare account to the **Workers Paid** plan.
+2. Dashboard: Compute, Email Service, Email Sending, **Onboard Domain**, and
+   pick the sending domain. A subdomain keeps account mail apart from other
+   mail of `sherin.dev`: onboard `webra.sherin.dev` (Email Sending treats a
+   subdomain as its own sending domain) and use
+   `noreply@webra.sherin.dev`; onboarding `sherin.dev` itself works too.
+   Cloudflare adds the records itself (the zone must be on Cloudflare DNS):
+   - on the `cf-bounce` subdomain of the sending domain: MX records (bounces
+     back to Cloudflare), the SPF TXT record
+     `v=spf1 include:_spf.mx.cloudflare.net ~all`, and the DKIM TXT record
+     (selector `cf-bounce._domainkey`);
+   - a DMARC TXT record on `_dmarc.<sending domain>`.
+   Review them against existing mail records of the zone (an existing DMARC
+   record stays: merge rather than duplicate). Wait until the domain shows
+   as verified; sends from an unverified domain fail with
+   `E_SENDER_NOT_VERIFIED`.
+3. GitHub: add the repository variable (Settings, Secrets and variables,
+   Actions, Variables) `EMAIL_FROM` = `noreply@webra.sherin.dev` (an address
+   on the onboarded domain; it is not a secret). Nothing in the repository
+   changes.
+4. Deploy (push to main or run the workflow). The step "Deploy the Worker"
+   then runs `wrangler deploy --config wrangler.deploy.jsonc --var
+   EMAIL_FROM:...`. `GET /api/site` reports `services.email: true`; with the
+   site setting "Email verification required" on (the default), new signups
+   start as `pending_email` until they follow their link (24 hours; they can
+   ask for a new one), and signups that never confirm expire after 7 days.
+   Existing accounts keep their status; accounts with an unverified address
+   can confirm it from their account page, accounts without an address keep
+   working and can add one.
 
-   and remove the `send_email` assertion in
-   `apps/server/test/accounts-misc.test.mjs` ("no email binding yet").
-4. Deploy. `GET /api/site` then reports `services.email: true`, and email
-   verification is in effect while the site setting is on (existing accounts
-   keep their status; ask unverified users to confirm from their account page).
+The daily ceiling `EMAIL_DAILY_LIMIT` (300 in `wrangler.jsonc`) keeps a
+flood of requests from running up the bill: the admin overview shows the
+day's count and warns once it is reached; raise it in `wrangler.jsonc` when
+real use needs more. The Worker serves only `webra.sherin.dev`
+(`workers_dev` and `preview_urls` are off), and mail links always point at
+`SITE_ORIGIN`.
 
-Under `wrangler dev` the binding is simulated (messages are written to local
-files, nothing is sent) unless `"remote": true` is added to it.
+To switch email off again, delete the repository variable and deploy.
+Delivery problems show in the dashboard (Email Sending logs) and as
+"email send failed: E_..." errors of the Worker (the error code only, never
+the address). New accounts start with a conservative daily sending limit
+that Cloudflare raises with good deliverability (`E_DAILY_LIMIT_EXCEEDED`
+until then); signups are never refused because a mail failed.
+
+Under `wrangler dev` there is no email: signup keeps addresses unverified.
+The end-to-end email test uses the development outbox instead of Email
+Service (its own database directory, because signups are rate limited per
+address):
+
+```bash
+cd apps/server
+npx wrangler d1 migrations apply webra --local --persist-to /tmp/webra-email-e2e
+npx wrangler dev --port 8798 --local-upstream localhost:8798 --persist-to /tmp/webra-email-e2e \
+  --var WEBRA_DEV_ROUTES:1 --var WEBRA_DEV_MAIL:1
+node test/e2e/email.mjs http://localhost:8798
+```
 
 ### Retention job
 

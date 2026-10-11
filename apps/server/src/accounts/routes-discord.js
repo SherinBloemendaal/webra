@@ -4,7 +4,9 @@
 import { emailKey, validEmail, validUsername } from '@webra/protocol';
 import { cookieHeader, cookieName, HttpError, isReturnPath, json, parseCookies } from '../http.js';
 import { randomInt, randomToken, sha256Hex } from '../crypto.js';
-import { invalid } from './context.js';
+import { check, invalid } from './context.js';
+import { queueAddressMail } from './verification.js';
+import { networkOf } from './ip.js';
 import { rotate, statusAfterVerification } from './common.js';
 import { authorizeUrl, DiscordError, fetchDiscordUser, OAUTH_COOKIE, OAUTH_TTL_MS, pkceChallenge } from './discord.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByDiscord, userByEmail, userByUsername, userById } from './users.js';
@@ -24,7 +26,7 @@ async function requireDiscord(ctx) {
 }
 
 async function start(ctx) {
-  const body = await ctx.body(['mode', 'returnTo', 'acceptPrivacy']);
+  const body = await ctx.body(['mode', 'returnTo', 'acceptPrivacy', 'email']);
   await ctx.assertIpAllowed();
   const eff = await requireDiscord(ctx);
   if (!MODES.includes(body.mode)) throw invalid('mode', 'Mode must be login, signup, link or reauth.');
@@ -33,6 +35,12 @@ async function start(ctx) {
   await ctx.burst('discord', LIMITS.discordBurst);
   let userId = null;
   let sessionHash = null;
+  // Signup only: the address to use when Discord reports no verified one (docs/accounts-api.md 4.6).
+  let email = null;
+  if (body.email !== undefined && body.email !== null && body.email !== '') {
+    if (body.mode !== 'signup') throw invalid('email', 'An email address is only sent when signing up.');
+    email = check(() => validEmail(body.email));
+  }
   if (body.mode === 'signup') {
     if (!eff.registrationOpen) throw new HttpError(403, 'registration_closed', 'Signup is closed right now.');
     if (body.acceptPrivacy !== true) throw invalid('acceptPrivacy', 'Please accept the privacy notice.');
@@ -54,10 +62,10 @@ async function start(ctx) {
   const binding = randomToken();
   await ctx.db
     .prepare(
-      `INSERT INTO oauth_states (state_hash, binding_hash, verifier, mode, user_id, session_hash, return_to, expires_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+      `INSERT INTO oauth_states (state_hash, binding_hash, verifier, mode, user_id, session_hash, return_to, expires_at, email)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
     )
-    .bind(await sha256Hex(state), await sha256Hex(binding), verifier, body.mode, userId, sessionHash, returnTo, ctx.now + OAUTH_TTL_MS)
+    .bind(await sha256Hex(state), await sha256Hex(binding), verifier, body.mode, userId, sessionHash, returnTo, ctx.now + OAUTH_TTL_MS, email)
     .run();
   ctx.cookies.push(cookieHeader(ctx.request, OAUTH_COOKIE, binding, OAUTH_TTL_MS / 1000));
   return json({ url: authorizeUrl(ctx.env, ctx.origin, state, await pkceChallenge(verifier)) });
@@ -181,13 +189,17 @@ async function callback(ctx) {
   } else {
     if (row.mode !== 'signup') return back('no_account');
     if (!eff.registrationOpen) return back('registration_closed');
-    if (!(await ctx.limitSoft('signup', ctx.ip, ...LIMITS.signup))) return back('rate_limited');
+    // Every new account has an address: Discord's verified one, else the one typed on the signup form.
+    const email = verifiedEmail ?? row.email;
+    if (!email) return back('email_required');
+    if (!(await ctx.limitSoft('signup', networkOf(ctx.ip), ...LIMITS.signup))) return back('rate_limited');
+    // Discord proved this address, so only its owner learns that it has an account.
     if (verifiedEmail && (await userByEmail(ctx.db, verifiedEmail, ctx.now))) return back('email_taken');
     const username = await freeUsername(ctx.db, discord.username, ctx.now);
     const status = initialStatus({ emailVerified: verifiedEmail !== null, eff });
     const { id, statement } = insertUser(
       ctx.db,
-      { username, email: verifiedEmail, emailVerified: verifiedEmail !== null, status, discord: { id: discord.id, username: discord.username } },
+      { username, email, emailVerified: verifiedEmail !== null, status, discord: { id: discord.id, username: discord.username } },
       ctx.now,
     );
     try {
@@ -198,6 +210,8 @@ async function callback(ctx) {
       if (which === 'discord') return back('already_linked');
       throw err;
     }
+    // A typed address is confirmed like any other signup's (the answer does not wait for the mail).
+    if (!verifiedEmail && eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
     user = await userById(ctx.db, id, ctx.now);
   }
   const s = await createSession(ctx.env, ctx.request, ctx.ip, user.id, ctx.now);

@@ -965,6 +965,19 @@ code {
   color: var(--text);
 }
 
+/* Visitors who may not play get no game art (assets/site.js initFactions
+   hides the canvases): the text takes the whole card. */
+.country:has(> canvas[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.side-roster li:has(> canvas[hidden]) {
+  width: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
 /* ---- How it works -------------------------------------------------------- */
 
 .pipeline {

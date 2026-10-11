@@ -82,28 +82,105 @@ test('account page: sign up needs the privacy notice; a new account waits for ap
   await settle(5);
   assert.match(textOf(root), /Accept the privacy notice/);
   check(root.querySelector('#signup-privacy'));
+  // The email address is required (checked here first, as the server checks it).
+  submit(form);
+  await settle(5);
+  assert.match(textOf(root), /Enter your email address/);
+  assert.equal(server.requests.some((r) => r.url === '/api/auth/signup'), false);
+  inputByLabel(root, /^Email/).value = 'not an address';
+  submit(form);
+  await settle(5);
+  assert.match(textOf(root), /Email address is malformed/);
+  inputByLabel(root, /^Email/).value = 'boris@example.com';
   submit(form);
   await settle(20);
   const req = server.requests.find((r) => r.url === '/api/auth/signup');
   assert.equal(JSON.parse(req.body).acceptPrivacy, true);
+  assert.equal(JSON.parse(req.body).email, 'boris@example.com');
   assert.match(textOf(root), /Waiting for approval/);
   assert.match(textOf(root), /closed beta/);
 });
 
-test('account page: no email field while the server cannot confirm addresses', async () => {
+test('account page: the email field is always there and required; its help says whether links can be sent', async () => {
   const server = new MockAccountServer();
   const off = await page(server, '#signup');
-  const emailRow = (root) => {
-    const input = inputByLabel(root, /^Email/);
-    let n = input;
-    while (n && !n.hidden) n = n.parentNode;
-    return n;
-  };
-  assert.ok(emailRow(off.root), 'hidden without email sending');
+  const input = inputByLabel(off.root, /^Email/);
+  assert.ok(input, 'shown without email sending too');
+  assert.equal(input.required, true);
+  let n = input;
+  while (n && !n.hidden) n = n.parentNode;
+  assert.equal(n, null, 'never hidden');
+  assert.match(textOf(off.root), /cannot send confirmation links yet/);
   off.root.remove();
   server.services.email = true;
   const on = await page(server, '#signup');
-  assert.equal(emailRow(on.root), null, 'shown when email works');
+  assert.match(textOf(on.root), /We send a link to confirm it/);
+  inputByLabel(on.root, /^Username/).value = 'Mailer';
+  inputByLabel(on.root, /^Email/).value = 'mailer@example.com';
+  inputByLabel(on.root, /^Password/).value = 'a long passphrase';
+  check(on.root.querySelector('#signup-privacy'));
+  submit(on.root.querySelectorAll('form')[0]);
+  await settle(20);
+  assert.match(textOf(on.root), /We sent a link to mailer@example\.com/);
+  assert.match(textOf(on.root), /Verify your email/);
+});
+
+test('account page: Discord signup sends the typed address along (for a Discord account without a verified one)', async () => {
+  const server = new MockAccountServer();
+  server.services.discord = true;
+  const { root } = await page(server, '#signup');
+  assert.match(textOf(root), /without one, enter your email above/);
+  check(root.querySelector('#signup-privacy'));
+  inputByLabel(root, /^Email/).value = 'bad address';
+  click(byText(root, 'button', /Sign up with Discord/));
+  await settle(10);
+  assert.equal(server.requests.some((r) => r.url === '/api/auth/discord/start'), false, 'a malformed address is caught first');
+  inputByLabel(root, /^Email/).value = 'nelly@example.com';
+  click(byText(root, 'button', /Sign up with Discord/));
+  await settle(10);
+  const start = server.requests.find((r) => r.url === '/api/auth/discord/start');
+  assert.deepEqual({ ...JSON.parse(start.body), returnTo: undefined }, { mode: 'signup', acceptPrivacy: true, email: 'nelly@example.com', returnTo: undefined });
+  uninstallDom();
+  doc = installDom();
+  const back = await page(server, '#discord=error&code=email_required');
+  assert.match(textOf(back.root), /no verified email address/);
+});
+
+test('account page email section: change, add without sending, resend, no removal', async () => {
+  const server = new MockAccountServer();
+  server.services.email = true;
+  const u = server.addUser({ username: 'Mailer', password: 'a long passphrase', email: 'mailer@example.com' });
+  server.signIn(u);
+  const { root } = await page(server);
+  const section = () => root.querySelector('[aria-labelledby="section-email"]');
+  assert.match(textOf(section()), /mailer@example\.com.*Not verified/);
+  assert.equal(byText(section(), 'button', /Remove email/), undefined, 'addresses are required');
+  click(byText(section(), 'button', /Send verification link/));
+  await settle(10);
+  assert.equal(server.resends, 1);
+  assert.match(textOf(section()), /new link is on its way to mailer@example\.com/);
+  // Without email sending: an unverified address can still be corrected; the section says links are not available.
+  server.services.email = false;
+  uninstallDom();
+  doc = installDom();
+  const off = await page(server);
+  const sec = off.root.querySelector('[aria-labelledby="section-email"]');
+  assert.match(textOf(sec), /Verification email is not available on this server yet/);
+  assert.equal(byText(sec, 'button', /Send verification link/), undefined);
+  server.current().session.reauthUntil = server.now + 600_000;
+  inputByLabel(sec, /New email/).value = 'mailer2@example.com';
+  submit(sec.querySelector('form'));
+  await settle(20);
+  assert.equal(u.email, 'mailer2@example.com');
+  assert.match(textOf(off.root), /Saved/);
+  // A verified address cannot be swapped while links cannot be sent.
+  u.emailVerified = true;
+  uninstallDom();
+  doc = installDom();
+  const verified = await page(server);
+  const vsec = verified.root.querySelector('[aria-labelledby="section-email"]');
+  assert.match(textOf(vsec), /can be changed once this server sends verification email/);
+  assert.equal(vsec.querySelector('form'), null);
 });
 
 test('account page: closed registration and switched off methods are hidden', async () => {
@@ -233,6 +310,7 @@ test('returnTo: sign up of an account that is active at once goes to the game; D
   server.site.registration.approvalRequired = false;
   const { root, navigated } = await page(server, '#signup', '?returnTo=%2Fplay%2F');
   inputByLabel(root, /^Username/).value = 'Boris';
+  inputByLabel(root, /^Email/).value = 'boris@example.com';
   inputByLabel(root, /^Password/).value = 'a long passphrase';
   check(root.querySelector('#signup-privacy'));
   submit(root.querySelectorAll('form')[0]);

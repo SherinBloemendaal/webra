@@ -67,9 +67,10 @@ test('the IP history keeps the 20 most recent addresses', async () => {
 test('test-only promote route: only with the variable, over plain HTTP, on a local host', async () => {
   const wrangler = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   assert.equal(wrangler.includes('WEBRA_DEV_ROUTES'), false, 'the variable is never configured for deploys');
+  assert.equal(wrangler.includes('WEBRA_DEV_MAIL'), false, 'nor the development outbox');
   const env = makeEnv({ email: false });
   const local = new Browser(env, { origin: 'http://localhost:8799' });
-  await local.post('/api/auth/signup', { username: 'Smoke Admin', password: PASSWORD, acceptPrivacy: true });
+  await local.post('/api/auth/signup', { username: 'Smoke Admin', email: 'smoke@example.com', password: PASSWORD, acceptPrivacy: true });
   const body = { username: 'Smoke Admin', role: 'admin' };
   assert.equal((await local.post('/api/dev/promote', body)).status, 404, 'no variable');
   env.WEBRA_DEV_ROUTES = '1';
@@ -87,12 +88,13 @@ test('test-only promote route: only with the variable, over plain HTTP, on a loc
   assert.equal((await local.post('/api/dev/promote', body, { csrf: false })).status, 403);
 });
 
-test('wrangler.jsonc: daily cron, Discord client id variable, no email binding yet, no secrets', () => {
+test('wrangler.jsonc: daily cron, Discord client id variable, no email binding (the deploy adds it), no secrets', () => {
   const textValue = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   const config = JSON.parse(textValue.replace(/^\s*\/\/.*$/gm, ''));
   assert.deepEqual(config.triggers.crons, ['17 3 * * *']);
   assert.equal(typeof config.vars.DISCORD_CLIENT_ID, 'string');
-  assert.equal(config.send_email, undefined, 'needs the Workers Paid plan: enabled later (docs/deploy.md)');
+  assert.equal(config.send_email, undefined, 'needs the Workers Paid plan: added by the deploy with EMAIL_FROM (tools/email-config.mjs)');
+  assert.equal(config.vars.EMAIL_FROM, undefined, 'set by the deploy, absent locally');
   assert.deepEqual(config.ratelimits, [{ name: 'AUTH_LIMITER', namespace_id: '1001', simple: { limit: 20, period: 60 } }]);
   assert.equal(JSON.stringify(config).includes('IP_HASH_SALT'), false, 'the IP hash secret is a secret, never a variable');
   assert.equal(/SECRET|PEPPER/.test(JSON.stringify(config.vars)), false);

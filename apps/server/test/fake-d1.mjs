@@ -66,9 +66,13 @@ class Statement {
       this.db.writes += results.length;
       return { success: true, results, meta: { changes: results.length } };
     }
+    // D1 counts rows that triggers change too (unlike sqlite3_changes): measured with total_changes().
+    const total = () => Number(this.db.sqlite.prepare('SELECT total_changes() AS n').get().n);
+    const before = total();
     const r = st.run(...this.args);
-    this.db.writes += Number(r.changes);
-    return { success: true, results: [], meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
+    const changes = total() - before;
+    this.db.writes += changes;
+    return { success: true, results: [], meta: { changes, last_row_id: Number(r.lastInsertRowid) } };
   }
 }
 

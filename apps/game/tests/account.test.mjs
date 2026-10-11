@@ -22,7 +22,7 @@ test('api: CSRF header on every write and on account and admin reads; JSON only 
   const { server, api } = setup();
   await api.site();
   await api.me();
-  await api.signup({ username: 'Tanya', password: 'a long passphrase', acceptPrivacy: true });
+  await api.signup({ username: 'Tanya', email: 'tanya@example.com', password: 'a long passphrase', acceptPrivacy: true });
   await api.account();
   const [site, me, signup, account] = server.requests;
   assert.equal(site.headers['x-webra-csrf'], undefined);
@@ -64,7 +64,7 @@ test('api: errors carry code, message, field and extras; offline and non-JSON an
 
 test('api: sessions, settings with versions (412 brings the current document), export, admin queries', async () => {
   const { server, api } = setup();
-  await api.signup({ username: 'Tanya', password: 'a long passphrase', acceptPrivacy: true });
+  await api.signup({ username: 'Tanya', email: 'tanya@example.com', password: 'a long passphrase', acceptPrivacy: true });
   assert.equal((await api.me()).user.username, 'Tanya');
   const s0 = await api.settings();
   assert.equal(s0.version, 0);

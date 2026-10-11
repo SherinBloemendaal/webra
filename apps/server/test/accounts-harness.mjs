@@ -91,6 +91,7 @@ export function makeEnv({ email = true, discord = false, vars = {} } = {}) {
   return {
     DB: new FakeD1(),
     EMAIL: email ? new FakeEmail() : undefined,
+    ...(email ? { EMAIL_FROM: 'noreply@webra.sherin.dev' } : {}),
     SESSION: new FakeSessions(),
     ASSETS: { fetch: async () => new Response('asset') },
     IP_HASH_SALT: 'test-ip-hash-salt-not-a-real-secret',
@@ -99,13 +100,17 @@ export function makeEnv({ email = true, discord = false, vars = {} } = {}) {
   };
 }
 
-const exec = { waitUntil: (p) => p?.catch?.(() => {}), passThroughOnException() {} };
+/** Work the Worker finishes after its answers (exec.waitUntil), awaited by `call` like the runtime would. */
+const background = [];
+const exec = { waitUntil: (p) => background.push(Promise.resolve(p).catch(() => {})), passThroughOnException() {} };
 
-/** One Worker request. */
+/** One Worker request; resolves once its background work (mail) is done too. */
 export async function call(env, method, url, { body, headers = {} } = {}) {
   const init = { method, headers };
   if (body !== undefined) init.body = typeof body === 'string' ? body : JSON.stringify(body);
-  return worker.fetch(new Request(url, init), env, exec);
+  const res = await worker.fetch(new Request(url, init), env, exec);
+  while (background.length) await background.shift();
+  return res;
 }
 
 export async function scheduled(env, time) {
@@ -203,9 +208,8 @@ export async function setSite(env, patch) {
 
 export const PASSWORD = 'correct horse battery';
 
-/** Sign up and return the browser (signed in). */
-/** `email` defaults to <username>@example.com while email works, else none (addresses need confirmation). */
-export async function signup(env, username, { email = env.EMAIL ? `${username.toLowerCase().replace(/\s+/g, '.')}@example.com` : null, ip, password = PASSWORD } = {}) {
+/** Sign up and return the browser (signed in); `email` defaults to <username>@example.com. */
+export async function signup(env, username, { email = `${username.toLowerCase().replace(/\s+/g, '.')}@example.com`, ip, password = PASSWORD } = {}) {
   const b = new Browser(env, { ip: ip ?? `198.51.100.${Math.floor(Math.random() * 200) + 10}` });
   const r = await b.post('/api/auth/signup', { username, email, password, acceptPrivacy: true });
   if (r.status !== 201) throw new Error(`signup ${username}: ${r.status} ${JSON.stringify(r.body)}`);

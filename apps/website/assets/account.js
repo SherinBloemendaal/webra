@@ -90,6 +90,7 @@ export const DISCORD_ERRORS = {
   no_account: 'No WebRA account is linked to that Discord account. Sign up with Discord, or sign in another way and link Discord on this page.',
   already_linked: 'That Discord account is already linked to another WebRA account.',
   email_taken: 'The email of that Discord account belongs to another WebRA account. Sign in to that account and link Discord there.',
+  email_required: 'Your Discord account has no verified email address. Enter your email above and sign up with Discord again.',
   registration_closed: 'Signing up is closed right now.',
   method_disabled: 'Discord sign-in is switched off right now.',
   banned: 'This account is banned.',
@@ -220,12 +221,21 @@ export async function mountAccountPage(root, deps = {}) {
     view.append(el('div', { class: 'panel form-card' }, list, panel));
   }
 
-  function discordButton(label, mode, status, { privacy } = {}) {
+  /** `email` (signup): reads the typed address, sent along for when Discord reports no verified one. */
+  function discordButton(label, mode, status, { privacy, email } = {}) {
     const b = el('button', { type: 'button', class: 'btn btn-discord', text: label });
     b.addEventListener('click', () =>
       busy(b, status, async () => {
         if (privacy && !privacy.checked) throw new Error('Accept the privacy notice first.');
-        const { url } = await api.discordStart({ mode, returnTo: mode === 'login' || mode === 'signup' ? discordReturn(target) : '/account/', ...(mode === 'signup' ? { acceptPrivacy: true } : {}) });
+        const typed = email ? email() : '';
+        const problem = typed ? check(() => validEmail(typed)) : null;
+        if (problem) throw new Error(problem);
+        const { url } = await api.discordStart({
+          mode,
+          returnTo: mode === 'login' || mode === 'signup' ? discordReturn(target) : '/account/',
+          ...(mode === 'signup' ? { acceptPrivacy: true } : {}),
+          ...(mode === 'signup' && typed ? { email: typed } : {}),
+        });
         navigate(url);
       }, errorText),
     );
@@ -285,16 +295,16 @@ export async function mountAccountPage(root, deps = {}) {
     const site = session.site;
     if (site && site.registration?.open === false) return el('p', { class: 'notice', text: 'Signing up is closed right now. Check back later.' });
     const policy = site?.policy ?? { usernameMin: USERNAME_MIN, usernameMax: USERNAME_MAX, passwordMin: ACCOUNT_PASSWORD_MIN, passwordMax: ACCOUNT_PASSWORD_MAX, displayNameMax: DISPLAY_NAME_MAX };
-    const emailRequired = !!site?.registration?.emailVerificationRequired;
     const username = field('Username', el('input', { type: 'text', autocomplete: 'username', required: true, minlength: String(policy.usernameMin), maxlength: String(policy.usernameMax), spellcheck: 'false' }), {
       help: `${policy.usernameMin} to ${policy.usernameMax} characters: letters, digits, space, _ - and . Shown in lobbies.`,
     });
     const displayName = field('Display name (optional)', el('input', { type: 'text', autocomplete: 'nickname', maxlength: String(policy.displayNameMax) }));
-    const email = field(emailRequired ? 'Email' : 'Email (optional)', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX), required: emailRequired }), {
-      help: emailRequired ? 'We send a link to verify it.' : 'For password resets. We send a link to confirm it. You can add it later.',
+    // Every new account gives an address (docs/accounts-api.md 4.2).
+    const email = field('Email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX), required: true }), {
+      help: methods.email
+        ? 'We send a link to confirm it. Used for password resets, never shown to other players.'
+        : 'Never shown to other players. This server cannot send confirmation links yet; you confirm the address from your account page once it can.',
     });
-    // Addresses are only taken once they can be confirmed: no email field while this server sends no email.
-    email.row.hidden = !methods.email;
     const usePasskey = methods.passkey && methods.password ? switchRow('Use a passkey instead of a password') : null;
     const password = field('Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(policy.passwordMin), maxlength: String(policy.passwordMax) }), {
       help: `At least ${policy.passwordMin} characters. A long phrase is best.`,
@@ -339,15 +349,20 @@ export async function mountAccountPage(root, deps = {}) {
         username.input.focus();
         return status.show(err.message, 'error');
       }
-      if (emailRequired && !email.input.value.trim()) return status.show('Enter your email.', 'error');
-      const emailProblem = email.input.value.trim() ? check(() => validEmail(email.input.value.trim())) : null;
-      if (emailProblem) return status.show(emailProblem, 'error');
+      if (!email.input.value.trim()) {
+        email.input.focus();
+        return status.show('Enter your email address.', 'error');
+      }
+      const emailProblem = check(() => validEmail(email.input.value.trim()));
+      if (emailProblem) {
+        email.input.focus();
+        return status.show(emailProblem, 'error');
+      }
       const withPasskey = passkeyOnly || !!usePasskey?.input.checked;
-      const pwProblem = withPasskey ? null : check(() => validNewPassword(password.input.value, { username: name, email: email.input.value.trim() || null }));
+      const pwProblem = withPasskey ? null : check(() => validNewPassword(password.input.value, { username: name, email: email.input.value.trim() }));
       if (pwProblem) return status.show(pwProblem, 'error');
-      const input = { username: name, acceptPrivacy: true };
+      const input = { username: name, email: email.input.value.trim(), acceptPrivacy: true };
       if (displayName.input.value.trim()) input.displayName = displayName.input.value.trim();
-      if (email.input.value.trim()) input.email = email.input.value.trim();
       await busy(submit, status, async () => {
         if (withPasskey) {
           try {
@@ -361,7 +376,7 @@ export async function mountAccountPage(root, deps = {}) {
         const r = await api.signup(input);
         await session.setUser(r.user);
         if (goOn()) return;
-        notice.show('Your account is created.', 'ok');
+        notice.show(methods.email ? `Your account is created. We sent a link to ${input.email} to confirm it.` : 'Your account is created.', 'ok');
         render();
       }, (err) => {
         if (err.field) form.querySelector(`[name="${err.field}"]`)?.focus?.();
@@ -376,7 +391,12 @@ export async function mountAccountPage(root, deps = {}) {
     ])
       f.input.setAttribute('name', n);
     const out = el('div', { class: 'form-stack' }, form);
-    if (methods.discord) out.append(el('p', { class: 'form-help', text: 'Or create the account with Discord (accept the privacy notice above first):' }), el('div', { class: 'form-actions' }, discordButton('Sign up with Discord', 'signup', status, { privacy })));
+    if (methods.discord) {
+      out.append(
+        el('p', { class: 'form-help', text: "Or create the account with Discord (accept the privacy notice above first). It uses your Discord account's verified email; without one, enter your email above." }),
+        el('div', { class: 'form-actions' }, discordButton('Sign up with Discord', 'signup', status, { privacy, email: () => email.input.value.trim() })),
+      );
+    }
     return out;
   }
 
@@ -536,22 +556,29 @@ export async function mountAccountPage(root, deps = {}) {
     const methods = signInMethods(session.site);
     const current = user.email
       ? el('p', {}, el('span', { text: user.email }), el('span', { class: user.emailVerified ? 'badge badge-open' : 'badge badge-warn', text: user.emailVerified ? 'Verified' : 'Not verified' }))
-      : el('p', { class: 'form-help', text: 'No email on this account.' });
+      : el('p', { class: 'form-help', text: 'No email on this account yet. Add one for password resets.' });
     const pending = user.pendingEmail ? el('p', { class: 'form-help', text: `Waiting for you to follow the link sent to ${user.pendingEmail}.` }) : null;
-    const email = field('New email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX) }));
+    // Without email sending an unverified address can still be set (it claims nothing), a verified one stays until links work.
+    const unavailable = !methods.email && user.email && !user.emailVerified ? el('p', { class: 'form-help', text: 'Verification email is not available on this server yet. You can confirm your address once it is.' }) : null;
+    const canChange = methods.email || !user.emailVerified;
+    const email = field(user.email ? 'New email' : 'Email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX) }));
     const save = el('button', { type: 'submit', class: 'btn', text: user.email ? 'Change email' : 'Add email' });
-    // A new address takes effect through its confirmation link, so this needs email sending on the server.
-    const form = methods.email
+    const form = canChange
       ? el('form', { class: 'form-grid', novalidate: true }, email.row, el('div', { class: 'form-actions' }, save))
-      : el('p', { class: 'form-help', text: 'Email addresses can be added once this server sends email.' });
+      : el('p', { class: 'form-help', text: 'Your confirmed address can be changed once this server sends verification email.' });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!email.input.value.trim()) return status.show('Enter the new email.', 'error');
+      const next = email.input.value.trim();
+      if (!next) return status.show('Enter the new email.', 'error');
+      const problem = check(() => validEmail(next));
+      if (problem) return status.show(problem, 'error');
       await busy(save, status, async () => {
-        const r = await withReauth(() => api.changeEmail(email.input.value.trim()));
+        const r = await withReauth(() => api.changeEmail(next));
         session.user = r.user;
-        status.show('Follow the link we sent to the new address to finish the change.', 'ok');
-        renderAccount();
+        await renderAccount();
+        if (r.user.pendingEmail) notice.show(`Follow the link we sent to ${r.user.pendingEmail} to finish the change.`, 'ok');
+        else if (methods.email && !r.user.emailVerified) notice.show(`Saved. Follow the link we sent to ${r.user.email} to confirm it.`, 'ok');
+        else notice.show('Saved.', 'ok');
       }, errorText);
     });
     const actions = el('div', { class: 'form-actions' });
@@ -559,22 +586,11 @@ export async function mountAccountPage(root, deps = {}) {
       const resend = el('button', { type: 'button', class: 'btn btn-small', text: 'Send verification link' });
       resend.addEventListener('click', () => busy(resend, status, async () => {
         await api.resendVerification();
-        status.show('A new link is on its way.', 'ok');
+        status.show(`A new link is on its way to ${user.email}. It works once, for 24 hours.`, 'ok');
       }, errorText));
       actions.append(resend);
     }
-    if (user.email && !session.site?.registration?.emailVerificationRequired) {
-      const remove = el('button', { type: 'button', class: 'btn btn-small btn-danger', text: 'Remove email' });
-      remove.addEventListener('click', async () => {
-        if (!(await confirmDialog('Remove email', 'Without an email you cannot reset your password by email.', { confirmText: 'Remove', danger: true }))) return;
-        await busy(remove, status, async () => {
-          await withReauth(() => api.removeEmail());
-          renderAccount();
-        }, errorText);
-      });
-      actions.append(remove);
-    }
-    return section('Email', current, pending, status.node, form, actions.childNodes.length ? actions : null);
+    return section('Email', current, pending, unavailable, status.node, form, actions.childNodes.length ? actions : null);
   }
 
   function passwordSection(user) {
