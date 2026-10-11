@@ -152,10 +152,13 @@ test('hotkeys: register, dispatch, repeat and inputs', () => {
   assert.equal(reg.handle(ev('KeyB', 'b')), false, 'unbound');
   assert.equal(reg.handle(ev('KeyA', 'a', {}, { tagName: 'INPUT' })), false, 'typing in a field');
   assert.equal(reg.handle(ev('KeyA', 'a', {}, { tagName: 'BUTTON' })), true, 'a focused button does not block hotkeys');
-  assert.equal(reg.handle(ev('Tab', 'Tab', {}, { tagName: 'BUTTON' })), false, 'Tab keeps moving focus between buttons');
+  const tabbed = { tagName: 'BUTTON' };
+  reg.focus.element = tabbed; // focused with the keyboard (FocusOrigin; tests/hotkeys-dispatch.test.mjs drives it with events)
+  assert.equal(reg.handle(ev('Tab', 'Tab', {}, tabbed)), false, 'Tab keeps moving focus between buttons reached with Tab');
+  assert.equal(reg.handle(ev('Tab', 'Tab', {}, { tagName: 'BUTTON' })), true, 'a button clicked with the mouse leaves Tab to the game');
   assert.equal(reg.handle(ev('Tab', 'Tab')), true);
-  assert.deepEqual(calls, ['a', 'zoom', 'a', 'tab']);
-  assert.equal(prevented, 5);
+  assert.deepEqual(calls, ['a', 'zoom', 'a', 'tab', 'tab']);
+  assert.equal(prevented, 6);
   assert.throws(() => reg.registerAction('attackMove', 'B', () => {}), /already registered/);
   assert.throws(() => reg.registerAction('x', 'Bogus+Q', () => {}), /bad key/);
   assert.throws(() => reg.registerAction('y', 'Q'), /needs a handler/);

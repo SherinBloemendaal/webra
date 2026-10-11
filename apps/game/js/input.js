@@ -34,7 +34,7 @@ const TARGETS_OWN = new Set([
   ACTION.DISGUISE,
   ACTION.INFILTRATE,
 ]);
-import { hotkeys as defaultHotkeys } from './hotkeys.js';
+import { hotkeys as defaultHotkeys, focusKeepsKey } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups } from './controlgroups.js';
@@ -721,8 +721,9 @@ export class Input {
   }
 
   onKeyDown(e) {
-    const t = e.target;
-    if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+    // Typing in a text field, or a key that works the focused switch, slider
+    // or list: not the game's (js/hotkeys.js focusKeepsKey; Esc in a switch is).
+    if (focusKeepsKey(e)) return;
     if (this.suspended) return;
     this.keys.add(e.key);
     if (e.key === 'Escape') {
