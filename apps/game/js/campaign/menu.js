@@ -55,6 +55,7 @@ export class CampaignMenu {
    *   progress: import('./progress.js').CampaignProgress,
    *   onPlay(entry: object, options: Record<string, string>, gameSpeed: string): void,
    *   onClose?(): void,
+   *   lens?: () => import('../maplens/lens.js').MapLens,  a magnifier over the mission's map (js/maplens)
    * }} ctx
    */
   constructor(root, ctx) {
@@ -67,6 +68,8 @@ export class CampaignMenu {
     this.choices = new Map();
     this.gameSpeed = 'normal';
     this.previewToken = 0;
+    /** The magnifier over the mission's map, or null. */
+    this.lens = ctx.lens?.() ?? null;
     root.hidden = true;
     root.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -107,6 +110,9 @@ export class CampaignMenu {
     if (this.root.hidden) return;
     this.root.hidden = true;
     this.root.replaceChildren();
+    // The preview is gone: so is its lens, and the mission's map it read.
+    this.lens?.detach();
+    this.lens?.clearSource();
     this.ctx.onClose?.();
   }
 
@@ -178,6 +184,8 @@ export class CampaignMenu {
     canvas.height = 1;
     canvas.setAttribute('role', 'img');
     canvas.setAttribute('aria-label', `Map of ${entry.title}`);
+    this.lens?.attach(canvas);
+    this.lens?.clearSource();
     this.drawPreview(entry, canvas);
     const title = el('h2', 'campaign-mission-name', entry.title);
     const side = el('p', 'campaign-muted', entry.faction === 'soviet' ? 'Soviet mission' : 'Allied mission');
@@ -248,6 +256,8 @@ export class CampaignMenu {
       canvas.height = p.height;
       canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(p.rgba), p.width, p.height), 0, 0);
       canvas.style.aspectRatio = `${p.width} / ${p.height}`;
+      // The lens shows the mission as it starts: its map with the mission's actors.
+      this.lens?.setSource(`mission:${entry.id}:${entry.sha256}`, (art) => art.fromMission(text), { width: p.width, height: p.height });
     } catch (err) {
       if (token === this.previewToken) canvas.replaceWith(el('p', 'campaign-error', `The mission could not be loaded: ${err.message ?? err}`));
     }

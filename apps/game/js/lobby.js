@@ -368,6 +368,7 @@ export class Lobby {
    *     versions?: object,  the map format version registry (tests; the protocol's by default)
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
+   *   lens?: () => import('./maplens/lens.js').MapLens,  a magnifier over the preview (js/maplens)
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
    *   onCampaign?: () => void,  open the campaign screen
@@ -381,6 +382,7 @@ export class Lobby {
     this.colorNames = config.colorNames || [];
     this.maps = config.maps || null;
     this.legacyPreview = config.mapPreview || null;
+    this.lens = config.lens?.() ?? null;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
     this.onCampaign = config.onCampaign ?? null;
@@ -692,6 +694,7 @@ export class Lobby {
     this.previewFail = el('div', 'lobby-preview-fail', 'Preview unavailable');
     this.previewFail.hidden = true;
     frame.append(this.canvas, this.markers, this.previewFail);
+    this.lens?.attach(frame, this.canvas);
     this.caption = el('p', 'lobby-preview-caption');
 
     this.mapSizeSelect = el('select', 'lobby-select');
@@ -721,6 +724,8 @@ export class Lobby {
     this.techSelect.addEventListener('change', () => {
       this.state.techBuildings = this.techSelect.value;
       this.optionEdited();
+      // The lens shows the tech buildings the map gets.
+      this.schedulePreview();
     });
     // Weather applies to map files too (they bring their biome, not the weather).
     this.weatherSelect = buildSelect(WEATHER_MODES, 'lobby-select');
@@ -1417,13 +1422,43 @@ export class Lobby {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.previewFail.hidden = false;
       spawns = [];
+      this.lens?.clearSource();
+      this.renderMarkers(spawns, width, height);
+      return;
     }
-    this.renderMarkers(spawns, width, height);
+    const markers = this.renderMarkers(spawns, width, height);
+    this.setLensSource(file, width, height, n, markers);
   }
 
+  /**
+   * The lens over the preview shows the same map, read when the pointer
+   * first rests on it: a map file, or the generated map with the tech
+   * buildings a game gets. Actors of a start position take the colour of
+   * the player starting there.
+   */
+  setLensSource(file, width, height, players, markers) {
+    if (!this.lens) return;
+    const colors = markers.map((m) => (m.slot === null ? null : this.colors[m.color]));
+    const tint = colors.map((c) => (c ? c.join(':') : '-')).join(',');
+    if (file) {
+      const json = this.mapFile.json;
+      this.lens.setSource(`file:${tint}:${json}`, (art) => art.fromMap(json, { colors }), { width, height });
+    } else if (this.maps) {
+      const { seed, mapStyle: style, biome, techBuildings: tech } = this.state;
+      this.lens.setSource(`gen:${tint}:${seed}/${width}/${players}/${style}/${biome}/${tech}`, (art) => art.fromGenerated({ seed, size: width, players, style, biome, tech, colors }), { width, height });
+    } else {
+      this.lens.clearSource();
+    }
+  }
+
+  /** Lay the start markers over the preview (and into the lens); returns them (lobby-state spawnMarkers). */
   renderMarkers(spawns, width, height) {
     this.markers.textContent = '';
-    for (const m of spawnMarkers(spawns, width, height, this.state)) {
+    const list = spawnMarkers(spawns, width, height, this.state);
+    this.lens?.setMarkers(
+      list.map((m) => ({ x: m.x, y: m.y, label: m.number === null ? '' : String(m.number), color: m.slot === null ? null : this.colors[m.color] })),
+    );
+    for (const m of list) {
       const dot = el('span', 'lobby-marker', m.number === null ? '' : String(m.number));
       dot.style.left = `${m.left}%`;
       dot.style.top = `${m.top}%`;
@@ -1436,6 +1471,7 @@ export class Lobby {
       }
       this.markers.append(dot);
     }
+    return list;
   }
 
   // ---- Actions -------------------------------------------------------------------

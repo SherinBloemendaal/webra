@@ -754,6 +754,9 @@ export function spawnMarkers(spawnCells, width, height, state) {
   return spawnCells.map(([x, y], k) => {
     const a = at.get(k);
     return {
+      // The centre in cells (the map lens draws there) and in percent of the map.
+      x: x + 1.5,
+      y: y + 2,
       left: ((x + 1.5) / width) * 100,
       top: ((y + 2) / height) * 100,
       // Taken spawns show the player number; empty ones stay blank.
