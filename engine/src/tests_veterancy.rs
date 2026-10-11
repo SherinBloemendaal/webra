@@ -192,7 +192,13 @@ fn crushing_infantry_counts_as_a_kill() {
     let e1 = w.spawn_unit(ty(&w, "E1"), 1, x0 + 3 * CELL, y, 768);
     w.actors[tank].reload = [1_000_000; MAX_WEAPONS];
     w.actors[e1].reload = [1_000_000; MAX_WEAPONS];
-    w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(tank)], x: x0 + 6 * CELL, y, attack_move: false });
+    // Rock all around the soldier but on the tank's side: it cannot jump aside.
+    for (dx, dy) in [(2, -1), (3, -1), (4, -1), (2, 1), (3, 1), (4, 1), (4, 0)] {
+        let i = w.map.idx(20 + dx, 30 + dy);
+        w.pass.set_blocked(i, true);
+    }
+    w.pass.refresh(&w.map);
+    w.queue_order(Order::Move { player: 0, ids: vec![w.make_ref(tank)], x: x0 + 3 * CELL, y, attack_move: false });
     run(&mut w, 25 * 6);
     assert!(!w.actors[e1].alive, "crushed");
     assert_eq!(w.actors[tank].xp, 100 * 100);

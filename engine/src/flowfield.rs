@@ -42,8 +42,8 @@ pub const DIRS: [(i32, i32); 8] = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1
 pub const DIR_GOAL: u8 = 8;
 pub const DIR_NONE: u8 = 255;
 
-const COST_STRAIGHT: u32 = 100;
-const COST_DIAGONAL: u32 = 141;
+pub(crate) const COST_STRAIGHT: u32 = 100;
+pub(crate) const COST_DIAGONAL: u32 = 141;
 /// Most fields kept at once.
 const MAX_CACHED: usize = 256;
 /// Cells kept over all cached fields (three bytes each). Huge maps keep
@@ -406,6 +406,13 @@ impl FlowCache {
         Some(self.fields[i].dirs.as_slice())
     }
 
+    /// The cached field toward `goal` for locomotor `loco` and `crusher`,
+    /// if there is one. Read only: the caller asked for it with `field_at`
+    /// this tick (movement/search.rs reads its path lengths).
+    pub fn cached(&self, goal: u32, loco: u8, crusher: u8) -> Option<&FlowField> {
+        self.index.get(&(goal, loco, crusher)).map(|&i| &self.fields[i])
+    }
+
     /// Number of cached fields.
     pub fn len(&self) -> usize {
         self.fields.len()
@@ -554,7 +561,9 @@ fn compute(
     };
     let mut target_settled = target_cell.is_none();
     let mut complete = true;
-    let mut expanded = 0u64;
+    // The cells expanded, in order: exactly those with a final cost up to
+    // `limit` (a partial field sets directions on these only).
+    let mut settled: Vec<usize> = Vec::new();
     while let Some(Reverse((c, i))) = heap.pop() {
         let i = i as usize;
         if c > cost[i] {
@@ -568,7 +577,7 @@ fn compute(
             target_settled = true;
             limit = limit.max(c.saturating_add(BOUND_MARGIN));
         }
-        expanded += 1;
+        settled.push(i);
         let (x, y) = ((i as i32) % map.width, (i as i32) / map.width);
         let enter = cell_cost(i);
         for d in 0..8 {
@@ -592,8 +601,8 @@ fn compute(
     // one closer to the map centre; both stay the same under the mirrorings
     // and rotations a fair map uses.
     let (gx, gy) = ((g as i32) % map.width, (g as i32) / map.width);
-    for j in 0..n {
-        if cost[j] == u32::MAX || cost[j] > limit || j == g {
+    for &j in &settled {
+        if cost[j] > limit || j == g {
             continue;
         }
         // A step costs at least COST_STRAIGHT unless the terrain is faster
@@ -620,7 +629,7 @@ fn compute(
             dirs[j] = d;
         }
     }
-    (complete, limit, expanded)
+    (complete, limit, settled.len() as u64)
 }
 
 /// Squared distance of a cell to the map centre, in half cells. Used to break
@@ -722,6 +731,8 @@ mod tests {
             speeds: vec![100, 50, 88, 0, 125, 125, 50],
             crushes_infantry: true,
             crushes: vec!["infantry".into()],
+            shares_cell: false,
+            wait_average: 40,
         }];
         let mut cache = FlowCache::new();
         let goal = map.idx(15, 2) as u32;
@@ -750,6 +761,8 @@ mod tests {
             speeds: vec![100, 50, 88, 0, 125, 125, 50],
             crushes_infantry: true,
             crushes: vec!["infantry".into()],
+            shares_cell: false,
+            wait_average: 40,
         }];
         let mut cache = FlowCache::new();
         let goal = map.idx(15, 2) as u32;

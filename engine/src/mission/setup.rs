@@ -20,7 +20,7 @@ pub const ALLY: u8 = 1;
 pub const ENEMY: u8 = 2;
 
 /// The choices a mission starts with: lobby options (`difficulty`) by id.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MissionOptions {
     pub options: BTreeMap<String, String>,
     /// The mission's playable players taken by people, in engine order
@@ -30,6 +30,15 @@ pub struct MissionOptions {
     /// The engine player this screen belongs to (`IsLocalPlayer`, the UI's
     /// messages and camera). Presentation only: never part of the state hash.
     pub local_player: u8,
+    /// How units move among each other (movement/). Missions started now
+    /// play OpenRA's; saves and replays from before the option keep WebRA's.
+    pub movement: crate::movement::MovementModel,
+}
+
+impl Default for MissionOptions {
+    fn default() -> Self {
+        MissionOptions { options: BTreeMap::new(), humans: Vec::new(), local_player: 0, movement: crate::movement::MovementModel::OpenRA }
+    }
 }
 
 pub(crate) fn stance_of(name: &str) -> Option<Stance> {
@@ -114,6 +123,7 @@ impl World {
             bounty: false,
             separate_team_spawns: false,
             tech_buildings: crate::mapgen::settlements::TechBuildings::None,
+            movement: chosen.movement,
         };
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();

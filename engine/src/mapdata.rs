@@ -166,6 +166,7 @@ pub const MAP_OPTIONS: &[(&str, &[&str])] = &[
     ("techLevel", &["infonly", "low", "medium", "high", "unrestricted"]),
     ("gameSpeed", &["slowest", "slower", "normal", "fast", "faster", "fastest"]),
     ("timeLimit", &["0", "10", "20", "30", "40", "60", "90"]),
+    ("movement", &["openra", "webra"]),
     ("fog", BOOL),
     ("explored", BOOL),
     ("buildRadius", BOOL),

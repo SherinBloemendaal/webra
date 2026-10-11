@@ -103,6 +103,9 @@ fn all_idle(w: &World, units: &[usize]) -> bool {
 fn a_move_across_water_ends_on_the_near_shore() {
     for &n in &[1usize, 50, 200] {
         let mut w = arena(96, 64);
+        // The fields WebRA's movement model follows (movement/soft.rs); the
+        // OpenRA model's work is measured in movement/tests.rs.
+        w.options.movement = crate::movement::MovementModel::WebRA;
         river(&mut w, 48, &[]);
         let units = block(&mut w, "1TNK", 0, 6, 6, 20, n);
         w.order_move(&units, cell_center(90), cell_center(30), false);
@@ -256,10 +259,11 @@ fn guards_wait_at_the_bank_for_a_unit_across_the_water() {
     });
     assert!(units.iter().all(|&i| w.actors[i].activity == Activity::Guard), "{:?}", activities(&w, &units));
     assert!(work.worst_fields <= 3, "{work:?}");
-    // They follow along the bank, never onto the water.
+    // They follow along the bank, never onto the water. A hundred tanks
+    // holding a cell each (OpenRA movement) crowd more than 12 cells deep.
     for &i in &units {
         let x = w.actors[i].x;
-        assert!(x > 36 * CELL && x < 48 * CELL, "at the bank: cell {:?}", w.cell_of(x, w.actors[i].y));
+        assert!(x > 32 * CELL && x < 48 * CELL, "at the bank: cell {:?}", w.cell_of(x, w.actors[i].y));
     }
 }
 
@@ -435,7 +439,8 @@ fn a_harvester_without_a_reachable_refinery_waits_and_retries() {
     let mut w = arena(64, 48);
     river(&mut w, 32, &[]);
     let proc_ = ty(&w, "PROC");
-    w.spawn_building(proc_, 0, 40, 20).unwrap();
+    // Without its free truck, which would drive off the dock (no ore here).
+    w.spawn_building_with(proc_, 0, 40, 20, false, false).unwrap();
     let h = w.spawn_unit(ty(&w, "HARV"), 0, cell_center(20), cell_center(20), 0);
     w.actors[h].bales = 20;
     w.actors[h].activity = Activity::Harvest;
@@ -585,6 +590,10 @@ fn a_harvester_lets_go_of_a_refinery_whose_dock_is_cut_off() {
 #[test]
 fn a_crossing_cut_mid_route_stops_the_group_with_one_search() {
     let mut w = arena(96, 64);
+    // WebRA's movement model (movement/soft.rs): a move that settled for
+    // the near bank goes on once the way opens. The OpenRA model's moves end
+    // where they were blocked, as in OpenRA (movement/tests.rs).
+    w.options.movement = crate::movement::MovementModel::WebRA;
     river(&mut w, 48, &[32]);
     let units = block(&mut w, "1TNK", 0, 6, 22, 20, 200);
     w.order_move(&units, cell_center(90), cell_center(32), false);
@@ -625,6 +634,10 @@ fn a_crossing_cut_mid_route_stops_the_group_with_one_search() {
 #[test]
 fn a_move_cut_by_a_wreck_goes_on_once_the_wreck_is_gone() {
     let mut w = arena(96, 64);
+    // WebRA's movement model (movement/soft.rs): a move that settled for
+    // the near bank goes on once the way opens. The OpenRA model's moves end
+    // where they were blocked, as in OpenRA (movement/tests.rs).
+    w.options.movement = crate::movement::MovementModel::WebRA;
     river(&mut w, 48, &[32]);
     let units = block(&mut w, "1TNK", 0, 4, 22, 10, 60);
     let (gx, gy) = (cell_center(90), cell_center(32));
@@ -657,6 +670,9 @@ fn a_move_cut_by_a_wreck_goes_on_once_the_wreck_is_gone() {
 #[test]
 fn structures_elsewhere_do_not_recompute_fields_on_the_move() {
     let mut w = arena(128, 96);
+    // The fields WebRA's movement model follows (movement/soft.rs); the
+    // OpenRA model's work is measured in movement/tests.rs.
+    w.options.movement = crate::movement::MovementModel::WebRA;
     let units = block(&mut w, "1TNK", 0, 4, 4, 20, 200);
     let mut goals = Vec::new();
     for g in 0..40 {
@@ -847,6 +863,8 @@ fn tank_locos() -> Vec<crate::rules::Locomotor> {
         speeds: vec![100, 50, 88, 0, 125, 125, 50],
         crushes_infantry: true,
         crushes: vec!["infantry".into()],
+        shares_cell: false,
+        wait_average: 40,
     }]
 }
 

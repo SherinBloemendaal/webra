@@ -39818,7 +39818,9 @@
    "crushes": [
     "mine",
     "crate"
-   ]
+   ],
+   "shares_cell": true,
+   "wait_average": 40
   },
   {
    "name": "heavywheeled",
@@ -39837,7 +39839,9 @@
     "mine",
     "crate",
     "infantry"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "wheeled",
@@ -39854,7 +39858,9 @@
    "crushes": [
     "mine",
     "crate"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "tracked",
@@ -39873,7 +39879,9 @@
     "infantry",
     "mine",
     "crate"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "heavytracked",
@@ -39893,7 +39901,9 @@
     "mine",
     "crate",
     "heavywall"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "lighttracked",
@@ -39911,7 +39921,9 @@
     "wall",
     "mine",
     "crate"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "lcraft",
@@ -39927,7 +39939,9 @@
    ],
    "crushes": [
     "crate"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "naval",
@@ -39943,7 +39957,9 @@
    ],
    "crushes": [
     "crate"
-   ]
+   ],
+   "shares_cell": false,
+   "wait_average": 40
   },
   {
    "name": "air",
@@ -39957,7 +39973,9 @@
     100,
     100
    ],
-   "crushes": []
+   "crushes": [],
+   "shares_cell": false,
+   "wait_average": 40
   }
  ],
  "world": {

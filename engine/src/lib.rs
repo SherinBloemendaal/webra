@@ -49,6 +49,7 @@ pub mod mapgen;
 pub mod math;
 pub mod minimap;
 pub mod mission;
+pub mod movement;
 mod naval;
 pub mod neutral;
 pub mod observer;
@@ -1814,6 +1815,10 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         bounty: flag("bounty", false),
         separate_team_spawns: flag("separateTeamSpawns", true),
         ally_build_radius: flag("allyBuildRadius", true),
+        // Absent in games from before the option (saves, replays): they
+        // were played with WebRA's soft crowd separation and replay with it.
+        movement: movement::MovementModel::from_name(&name("movement", "webra")?)
+            .ok_or_else(|| "options.movement must be openra or webra".to_string())?,
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }

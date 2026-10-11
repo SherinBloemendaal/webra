@@ -634,7 +634,8 @@ fn units_route_over_the_bridge_and_around_when_it_is_gone() {
     w.damage(br, w.actors[br].hp);
     w.queue_order(Order::Move { player: 0, ids, x: cell_center(22), y: cell_center(10), attack_move: false });
     run(&mut w, 400);
-    assert!(w.actors[jeep].y > cell_center(22), "it stays on the south bank");
+    // The south bank begins at row 22 (the river is rows 20 and 21).
+    assert!(w.actors[jeep].y > 22 * CELL, "it stays on the south bank");
 }
 
 /// BR1, two BR3 spans and BR2 (a long bridge, OpenRA's LegacyBridgeLayer
@@ -879,11 +880,17 @@ fn generated_maps_get_mirrored_ore_mines_and_trees() {
 #[test]
 fn roads_are_fast_and_beaches_slow_wheels() {
     let drive = |terrain: Terrain| {
+        // A corridor of that terrain between rock (open at the east end,
+        // where the spawns meet): the way east.
         let mut w = world_with(
             |m| {
                 for x in 0..64 {
                     let i = m.idx(x, 30);
                     m.terrain[i] = terrain;
+                    for y in [29, 31] {
+                        let i = m.idx(x, y);
+                        m.terrain[i] = if x < 63 { Terrain::Rock } else { terrain };
+                    }
                 }
             },
             vec![],
