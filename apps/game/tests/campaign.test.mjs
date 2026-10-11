@@ -94,8 +94,11 @@ test('mission end of game dialogs offer the next mission, another try and the ca
   assert.match(won.text, /Next: 02: Five to One/);
   assert.deepEqual(
     won.buttons.map((b) => b.id),
-    ['next', 'continue', 'restart', 'stats', 'leave', 'exit'],
+    ['next', 'restart', 'stats', 'leave', 'exit'],
+    'a won mission is over: no playing on',
   );
+  flow.close();
+  assert.equal(flow.dialog, DIALOGS.VICTORY, 'the victory dialog cannot be closed');
   assert.equal(won.buttons.find((b) => b.id === 'leave').label, 'Back to the campaign');
   const lost = new EndGameFlow();
   lost.update({ won: false, defeated: true, winner: null });

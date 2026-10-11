@@ -133,11 +133,17 @@ test('victory, a defeat on the last tick, an ally winning after a defeat', () =>
   assert.equal(c.title, 'Mission accomplished');
   assert.deepEqual(
     c.buttons.map((b) => b.id),
-    ['continue', 'stats', 'restart', 'download', 'leave', 'exit'],
+    ['stats', 'restart', 'download', 'leave', 'exit'],
+    'a won game is over: no playing on',
   );
+  assert.equal(c.buttons[0].primary, true);
+  assert.match(c.text, /Me wins/);
+  assert.doesNotMatch(c.text, /paused/, 'nothing left to pause');
   assert.equal(c.buttons.find((b) => b.id === 'restart').label, 'Play again');
   assert.equal(win.spectate(), false, 'a winner does not spectate');
   win.close();
+  assert.equal(win.dialog, DIALOGS.VICTORY, 'the victory dialog cannot be closed');
+  assert.equal(win.paused, true, 'the local game stays stopped behind it');
   assert.equal(win.update({ defeated: false, won: true, winner: 0 }), null);
 
   // 1 against 1: defeated on the tick the game ends. One dialog, it is the final result.
