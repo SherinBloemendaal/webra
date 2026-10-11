@@ -34,7 +34,7 @@ const TARGETS_OWN = new Set([
   ACTION.DISGUISE,
   ACTION.INFILTRATE,
 ]);
-import { hotkeys as defaultHotkeys } from './hotkeys.js';
+import { hotkeys as defaultHotkeys, focusKeepsKey } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups } from './controlgroups.js';
@@ -60,6 +60,11 @@ export const MODES = Object.freeze(['sell', 'repair', 'powerDown', 'beacon']);
 export function nextInCycle(list, selection) {
   const i = list.findIndex((id) => selection.includes(id));
   return i >= 0 && i + 1 < list.length ? list[i + 1] : (list[0] ?? null);
+}
+
+/** OpenRA's selection hotkey feedback line ("selected-units-across-screen" and "-map"). */
+export function selectedUnitsText(count, where) {
+  return count === 1 ? `Selected one unit across ${where}.` : `Selected ${count} units across ${where}.`;
 }
 
 /** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
@@ -99,7 +104,8 @@ export class Input {
     this.rules = rules;
     this.player = player;
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
-    // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text) },
+    // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text),
+    // selectionClick() (the selection hotkeys' click), gameOver() -> bool },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
     // tips (js/hints.js): { onPlainMove(units, worldPoint) }
@@ -689,7 +695,7 @@ export class Input {
       this.finishClick(b, d);
       return;
     }
-    this.boxSelect(a, b, d.shift);
+    this.boxSelect(a, b, d);
   }
 
   /** Lay the minefield of the Minelayers' drag (`mineDrag`). */
@@ -738,14 +744,27 @@ export class Input {
       return true;
     }
     // Blocked deploy: nothing to do, the deploy cursor already shows why.
-    if (intent.kind !== 'blocked') await this.clickSelect(b, d.shift, d.ctrl, now);
+    if (intent.kind !== 'blocked') await this.clickSelect(b, d.shift, now, d);
     return false;
   }
 
-  /** Box selection from world point `a` to `b` (Shift: added to the selection). */
-  async boxSelect(a, b, shift) {
-    const ids = Array.from(await this.ask.select_box(this.player, a.x, a.y, b.x, b.y));
-    this.setSelection(shift ? this.selection.concat(ids) : ids);
+  /**
+   * The player a box or click selects for (engine: their actors first,
+   * other players' ranked lower), or 255 for a spectator watching everyone.
+   */
+  selectionViewer() {
+    return this.viewOwner() ?? 255;
+  }
+
+  /**
+   * OpenRA box selection (WorldInteractionControllerWidget): the visible
+   * actors in the box of the highest selection priority (engine/src/selection.rs);
+   * Ctrl or Alt held (`mods`) raise the actors that allow it. Shift adds them
+   * to the selection, otherwise they replace it.
+   */
+  async boxSelect(a, b, mods = {}) {
+    const ids = Array.from(await this.ask.select_box(this.selectionViewer(), a.x, a.y, b.x, b.y, !!mods.ctrl, !!mods.alt));
+    this.setSelection(mods.shift ? this.selection.concat(ids) : ids);
   }
 
   /** Whole map rectangle in world px, for map-wide selection. */
@@ -753,30 +772,35 @@ export class Input {
     return { x0: 0, y0: 0, x1: this.mapPx.w, y1: this.mapPx.h };
   }
 
-  /** Select what is at world point `w` (`now`: when it was clicked, for double clicks). */
-  async clickSelect(w, shift, ctrl = false, now = performance.now()) {
-    const v = ctrl ? this.mapRect() : this.viewRect();
-    const id = await this.ask.pick(this.player, w.x, w.y);
+  /**
+   * OpenRA's click selection: the actor at world point `w` of the highest
+   * selection priority less its distance (engine/src/selection.rs; Ctrl or
+   * Alt in `mods` raise the actors that allow it) replaces the selection, or
+   * nothing clears it; with Shift it is added or, when selected, taken out
+   * (and a click on nothing changes nothing). `now`: when it was clicked, for
+   * double clicks.
+   */
+  async clickSelect(w, shift, now = performance.now(), mods = {}) {
+    const id = await this.ask.select_at(this.selectionViewer(), w.x, w.y, !!mods.ctrl, !!mods.alt);
     if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
-      // Double click: same type on screen; Ctrl + double click: on the whole map.
       this.lastClick = { time: 0, id: NONE };
-      const same = Array.from(await this.ask.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
-      if (same.length) this.setSelection(same);
+      await this.selectSameClass(id);
       return;
     }
     this.lastClick = { time: now, id };
-    if (id === NONE) {
-      if (!shift) this.setSelection([]);
-      return;
-    }
-    const info = this.info(id);
-    const own = info && info.owner === this.player;
-    if (shift && own && !info.building) {
-      const has = this.selection.includes(id);
-      this.setSelection(has ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
-    } else {
-      this.setSelection([id]);
-    }
+    if (!shift) this.setSelection(id === NONE ? [] : [id]);
+    else if (id !== NONE) this.setSelection(this.selection.includes(id) ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
+  }
+
+  /**
+   * OpenRA double click (WorldInteractionControllerWidget): the actors on
+   * screen of the clicked actor's selection class join the selection, when
+   * the clicked actor is one the viewer selects for (selectionOwners).
+   */
+  async selectSameClass(id) {
+    const v = this.viewRect();
+    const same = Array.from(await this.ask.select_by_class(this.selectionOwners(), Uint32Array.from([id]), v.x0, v.y0, v.x1, v.y1));
+    if (same.length) this.setSelection(this.selection.concat(same));
   }
 
   onWheel(e) {
@@ -792,8 +816,9 @@ export class Input {
   }
 
   onKeyDown(e) {
-    const t = e.target;
-    if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+    // Typing in a text field, or a key that works the focused switch, slider
+    // or list: not the game's (js/hotkeys.js focusKeepsKey; Esc in a switch is).
+    if (focusKeepsKey(e)) return;
     if (this.suspended) return;
     this.keys.add(e.key);
     if (e.key === 'Escape') {
@@ -892,55 +917,75 @@ export class Input {
   }
 
   /**
-   * OpenRA SelectAllUnits: the player's combat units on screen; when that
-   * selects nothing new, every one of them on the map.
+   * The players whose actors the selection keys and double click pick
+   * (OpenRA GetPlayersToIncludeInSelection): the local player, the player a
+   * spectator watches, or every player when a spectator watches the whole map.
    */
-  async selectAllUnits() {
-    const v = this.viewRect();
-    let ids = Array.from(await this.ask.select_box(this.player, v.x0, v.y0, v.x1, v.y1));
-    let where = 'screen';
-    if (ids.length <= this.selection.length) {
-      const m = this.mapRect();
-      ids = Array.from(await this.ask.select_box(this.player, m.x0, m.y0, m.x1, m.y1));
-      where = 'map';
-    }
-    this.setSelection(ids);
-    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+  selectionOwners() {
+    const own = this.viewOwner();
+    if (own !== null) return Uint8Array.from([own]);
+    return Uint8Array.from({ length: this.game.player_count() }, (_, i) => i);
   }
 
-  /** Own units of the selected types inside `rect`. */
-  async selectSameTypes(rect) {
-    const seen = new Set();
-    const asks = [];
-    for (const id of this.selectedOwnUnits()) {
-      const type = this.info(id)?.type;
-      if (!type || seen.has(type)) continue;
-      seen.add(type);
-      asks.push(this.ask.select_same_type(this.player, id, rect.x0, rect.y0, rect.x1, rect.y1));
-    }
-    const out = [];
-    for (const ids of await Promise.all(asks)) out.push(...ids);
-    return out;
+  /** The selection hotkeys' feedback line and click (OpenRA ClickSound). */
+  selected(count, where) {
+    this.hooks.feedback?.(selectedUnitsText(count, where));
+    this.hooks.selectionClick?.();
   }
 
   /**
-   * OpenRA SelectUnitsByType: units of the selected types on screen; when
-   * that selects nothing new, on the whole map. Added to the selection.
+   * OpenRA SelectAllUnits: the actors on screen of the highest selection
+   * priority (combat units before support units, harvesters and
+   * structures); when that selects no more than is selected already (the
+   * key pressed again), the same across the whole map. `e`: the key, whose
+   * Ctrl or Alt raises the actors that allow it (OpenRA PriorityModifiers).
+   */
+  async selectAllUnits(e = null) {
+    if (this.hooks.gameOver?.()) return;
+    const owners = this.selectionOwners();
+    const ctrl = !!(e?.ctrlKey || e?.metaKey);
+    const alt = !!e?.altKey;
+    const v = this.viewRect();
+    let ids = Array.from(await this.ask.select_all(owners, v.x0, v.y0, v.x1, v.y1, ctrl, alt));
+    let where = 'screen';
+    if (ids.length <= this.selection.length) {
+      const m = this.mapRect();
+      ids = Array.from(await this.ask.select_all(owners, m.x0, m.y0, m.x1, m.y1, ctrl, alt));
+      where = 'map';
+    }
+    this.setSelection(ids);
+    this.selected(ids.length, where);
+  }
+
+  /**
+   * OpenRA SelectUnitsByType: the actors on screen of the selection classes
+   * of the selected ones, added to the selection; when that is no more than
+   * is selected already (the key pressed again), across the whole map.
    */
   async selectUnitsByType() {
+    if (this.hooks.gameOver?.()) return;
     if (!this.selection.length) {
+      // OpenRA plays ClickDisabledSound here, which is silent in Red Alert.
       this.hooks.feedback?.('Nothing selected.');
       return;
     }
-    if (!this.selectedOwnUnits().length) return;
-    let ids = await this.selectSameTypes(this.viewRect());
+    const owners = this.selectionOwners();
+    const owned = this.selection.filter((id) => {
+      const info = this.info(id);
+      return info !== null && owners.includes(info.owner);
+    });
+    if (!owned.length) return;
+    const types = Uint32Array.from(owned);
+    const v = this.viewRect();
+    let ids = Array.from(await this.ask.select_by_class(owners, types, v.x0, v.y0, v.x1, v.y1));
     let where = 'screen';
     if (ids.length <= this.selection.length) {
-      ids = await this.selectSameTypes(this.mapRect());
+      const m = this.mapRect();
+      ids = Array.from(await this.ask.select_by_class(owners, types, m.x0, m.y0, m.x1, m.y1));
       where = 'map';
     }
     this.setSelection(this.selection.concat(ids));
-    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+    this.selected(ids.length, where);
   }
 
   /** Select the next actor of `list` after the selected one and centre the camera on it. */
@@ -1007,7 +1052,7 @@ export class Input {
       if (at) this.centerOn(at.x, at.y);
     });
     reg('toSelection', 'ToSelection', () => this.centerOnUnits(this.selection));
-    reg('selectAll', 'SelectAllUnits', () => this.selectAllUnits());
+    reg('selectAll', 'SelectAllUnits', (e) => this.selectAllUnits(e));
     reg('selectByType', 'SelectUnitsByType', () => this.selectUnitsByType());
     reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());
     // Unit commands.

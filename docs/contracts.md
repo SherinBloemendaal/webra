@@ -1621,7 +1621,23 @@ id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`, and fo
 `base_actors(player)` (Construction Yards and MCVs, else the first
 structure), `harvesters(player)`, `production_buildings(player)` (no
 Construction Yards, by first production type) and `queue_producer(player,
-queue)` (the structure units of that tab come out of, or NONE). `actor_json`
+queue)` (the structure units of that tab come out of, or NONE). The selection
+keys and double click follow OpenRA's `Selectable` (engine/src/selection.rs):
+actors have `selection {priority, modifiers, class, bounds}` or null
+(tools/gen_rules.py; modifiers bits 1 Ctrl, 2 Alt; class: the actor's name
+unless the trait sets one; bounds `[w, h, x, y]` in world units or empty for
+the footprint or one cell); `select_all(owners, x0, y0, x1, y1, ctrl, alt)`
+returns the selectable actors of `owners` whose bounds touch the rectangle
+(pixels), those of the highest priority (OpenRA
+SubsetWithHighestSelectionPriority), and `select_by_class(owners, ids, x0, y0,
+x1, y1)` those of the classes of the actors of `ids` that `owners` own.
+`select_box(player, x0, y0, x1, y1, ctrl, alt)` (OpenRA box selection) returns
+the visible selectable actors whose bounds touch the box, those of the highest
+priority for `player` (other players' actors lowered by 30 for an ally, 60
+for a neutral, 90 for an enemy; a `player` past the players is a spectator
+watching everyone), and `select_at(player, x, y, ctrl, alt)` the actor a click
+selects (priority less the pixel distance to its bounds' centre) or NONE. Local
+queries: not in the state hash. `actor_json`
 has `repairing`, `repairers`, `poweredOff` and `canPowerDown`. Audio events
 (engine/src/sound_events.rs): 11 `RepairStarted` (owner: the repairing
 player, b: the structure's owner; the "Repairing" announcement), 12
@@ -2157,7 +2173,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).

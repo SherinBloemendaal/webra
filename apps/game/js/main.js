@@ -1129,6 +1129,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onMode: (mode) => sidebar?.setMode(mode),
     lastEvent: () => pings.last(),
     feedback: (text) => notices?.push(text),
+    // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
+    selectionClick: () => audio?.click(),
+    gameOver: () => flow.over,
     onMenu: () => menu.open(),
   }, { spectator: !!viewer });
   input.watchAll = !!viewer && view.player === OBSERVER_VIEW;

@@ -69,6 +69,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": true,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fact",
+    "bounds": [
+     3072,
+     3072,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -261,6 +272,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "powr",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -438,6 +460,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "apwr",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -615,6 +648,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "proc",
+    "bounds": [
+     3072,
+     2133,
+     0,
+     170
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -809,6 +853,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "silo",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -959,6 +1014,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "tent",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1163,6 +1229,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "barr",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1365,6 +1442,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "kenn",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1549,6 +1637,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "weap",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1746,6 +1845,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fix",
+    "bounds": [
+     2901,
+     1450,
+     0,
+     128
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -1915,6 +2025,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "dome",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2093,6 +2214,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "hpad",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2287,6 +2419,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "afld",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2560,6 +2703,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "afld",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -2833,6 +2987,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "syrd",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3035,6 +3200,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "spen",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3252,6 +3428,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "atek",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3471,6 +3658,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "stek",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3661,6 +3859,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "gap",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -3830,6 +4039,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "pdox",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4072,6 +4292,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "iron",
+    "bounds": [
+     2048,
+     2133,
+     0,
+     -170
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4271,6 +4502,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "mslo",
+    "bounds": [
+     2048,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4471,6 +4713,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4574,6 +4817,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4676,6 +4920,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -4781,6 +5026,17 @@
    "defense": true,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "pbox",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -4946,6 +5202,17 @@
    "defense": true,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "hbox",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -5126,6 +5393,17 @@
    "defense": true,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "gun",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -5293,6 +5571,17 @@
    "defense": true,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "ftur",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -5474,6 +5763,17 @@
    "defense": true,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "tsla",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -5650,6 +5950,17 @@
    "defense": true,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "agun",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -5810,6 +6121,17 @@
    "defense": true,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 4,
+    "modifiers": 0,
+    "class": "sam",
+    "bounds": [
+     2048,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [
@@ -5967,6 +6289,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fpwr",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6114,6 +6447,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "tenf",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6261,6 +6605,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "syrf",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6407,6 +6762,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "weaf",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6554,6 +6920,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "domf",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6701,6 +7078,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fixf",
+    "bounds": [
+     2901,
+     1450,
+     0,
+     128
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6837,6 +7225,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fapw",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -6984,6 +7383,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "atef",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -7131,6 +7541,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "pdof",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -7277,6 +7698,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "mslf",
+    "bounds": [
+     2048,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -7422,6 +7854,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "facf",
+    "bounds": [
+     3072,
+     3072,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -7561,6 +8004,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "E1",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -7746,6 +8200,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "e2",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -7932,6 +8397,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "E3",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8119,6 +8595,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "e4",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8302,6 +8789,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 8,
+    "modifiers": 3,
+    "class": "e6",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8500,6 +8998,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "e7",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8694,6 +9203,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "dog",
+    "bounds": [
+     512,
+     725,
+     -42,
+     -170
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -8868,6 +9388,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "medi",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -9049,6 +9580,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "mech",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -9248,6 +9790,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "spy",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -9438,6 +9991,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "spy.england",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -9625,6 +10189,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 8,
+    "modifiers": 3,
+    "class": "thf",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -9824,6 +10399,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "shok",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -10007,6 +10593,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 6,
+    "modifiers": 3,
+    "class": "harv",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 19,
    "self_heal": {
     "step": 100,
@@ -10114,6 +10711,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": true,
+   "selection": {
+    "priority": 8,
+    "modifiers": 3,
+    "class": "mcv",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -10214,6 +10822,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 8,
+    "modifiers": 3,
+    "class": "truk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -10311,6 +10930,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "jeep",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -10471,6 +11101,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "apc",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -10627,6 +11268,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "ftrk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -10776,6 +11428,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "1tnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -10925,6 +11588,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "2tnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -11074,6 +11748,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "3tnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -11225,6 +11910,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "4tnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": {
     "step": 100,
@@ -11380,6 +12076,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "v2rl",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 29,
    "self_heal": null,
    "turret_offsets": [],
@@ -11524,6 +12231,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "arty",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 31,
    "self_heal": null,
    "turret_offsets": [],
@@ -11665,6 +12383,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 8,
+    "modifiers": 3,
+    "class": "mnly",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
@@ -11822,6 +12551,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "mrj",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -11921,6 +12661,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "mgg",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -12020,6 +12771,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "ttnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -12164,6 +12926,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "dtrk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 35,
    "self_heal": null,
    "turret_offsets": [],
@@ -12262,6 +13035,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "ctnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -12410,6 +13194,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "stnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [
@@ -12585,6 +13380,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "qtnk",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 9,
    "self_heal": null,
    "turret_offsets": [],
@@ -12684,6 +13490,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "lst",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [],
@@ -12822,6 +13639,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "pt",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
@@ -12968,6 +13796,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "ss",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 44,
    "self_heal": null,
    "turret_offsets": [],
@@ -13126,6 +13965,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "dd",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
@@ -13275,6 +14125,17 @@
    "defense": false,
    "opportunity_fire": true,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "ca",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 40,
    "self_heal": null,
    "turret_offsets": [
@@ -13420,6 +14281,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "msub",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 44,
    "self_heal": null,
    "turret_offsets": [],
@@ -13574,6 +14446,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "tran",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -13752,6 +14635,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "hind",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -13929,6 +14823,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "mh60",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -14107,6 +15012,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "heli",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -14284,6 +15200,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "yak",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -14453,6 +15380,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "mig",
+    "bounds": [
+     1536,
+     1194,
+     0,
+     85
+    ]
+   },
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -14620,6 +15558,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "E1",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -14805,6 +15754,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "E3",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -14988,6 +15948,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -15092,6 +16053,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -15202,6 +16164,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -15301,6 +16264,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 32,
    "self_heal": null,
    "turret_offsets": [],
@@ -15373,6 +16337,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 58,
    "self_heal": null,
    "turret_offsets": [],
@@ -15445,6 +16410,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -15915,6 +16881,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -15991,6 +16958,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16068,6 +17036,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16137,6 +17106,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16206,6 +17176,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16322,6 +17293,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16438,6 +17410,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16555,6 +17528,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16671,6 +17645,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16787,6 +17762,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -16903,6 +17879,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17017,6 +17994,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17079,6 +18057,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17141,6 +18120,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17203,6 +18183,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17287,6 +18268,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "spef",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17434,6 +18426,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17611,6 +18614,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17783,6 +18797,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -17955,6 +18980,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18127,6 +19163,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18299,6 +19346,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18473,6 +19531,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18650,6 +19719,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18822,6 +19902,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -18994,6 +20085,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19166,6 +20268,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "CivInfantry",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19340,6 +20453,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "Technician",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19519,6 +20643,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 10,
+    "modifiers": 1,
+    "class": "Technician",
+    "bounds": [
+     768,
+     853,
+     0,
+     -256
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19696,6 +20831,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "fcom",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19827,6 +20973,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 0,
+    "modifiers": 0,
+    "class": "hosp",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -19958,6 +21115,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "bio",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20089,6 +21257,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 0,
+    "modifiers": 0,
+    "class": "miss",
+    "bounds": [
+     3072,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20221,6 +21400,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 0,
+    "modifiers": 0,
+    "class": "oilb",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": 62,
    "self_heal": null,
    "turret_offsets": [],
@@ -20344,6 +21534,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v01",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20460,6 +21656,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v02",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20573,6 +21775,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v03",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20686,6 +21894,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v04",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20799,6 +22013,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v05",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -20911,6 +22131,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v06",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21023,6 +22249,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v07",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21135,6 +22367,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v08",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21247,6 +22485,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v09",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21359,6 +22603,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v10",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21471,6 +22721,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v11",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21583,6 +22839,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21692,6 +22949,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21801,6 +23059,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -21910,6 +23169,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22019,6 +23279,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22128,6 +23389,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22237,6 +23499,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22346,6 +23609,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v19",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22456,6 +23725,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22561,6 +23831,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v20",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22673,6 +23949,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v21",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22785,6 +24067,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v22",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -22896,6 +24184,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v23",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23007,6 +24301,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v24",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23119,6 +24419,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v25",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23234,6 +24540,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v26",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23345,6 +24657,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v27",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23456,6 +24774,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v28",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23567,6 +24891,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v29",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23678,6 +25008,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v30",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23789,6 +25125,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v31",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -23900,6 +25242,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v32",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24011,6 +25359,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v33",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24122,6 +25476,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v34",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24233,6 +25593,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v35",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24344,6 +25710,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v36",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24455,6 +25827,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "v37",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24567,6 +25945,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24675,6 +26054,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "rushouse",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24787,6 +26172,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "asianhut",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -24898,6 +26289,12 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "snowhut",
+    "bounds": []
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -25010,6 +26407,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "lhus",
+    "bounds": [
+     1024,
+     2048,
+     0,
+     -682
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -25121,6 +26529,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "windmill",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     -597
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -25232,6 +26651,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -25327,6 +26747,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -25433,6 +26854,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 62,
    "self_heal": null,
    "turret_offsets": [],
@@ -25534,6 +26956,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 62,
    "self_heal": null,
    "turret_offsets": [],
@@ -25635,6 +27058,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -25740,6 +27164,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -25845,6 +27270,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": 50,
    "self_heal": null,
    "turret_offsets": [],
@@ -25950,6 +27376,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26131,6 +27558,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26305,6 +27733,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26461,6 +27890,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26617,6 +28047,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26773,6 +28204,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -26933,6 +28365,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27089,6 +28522,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27245,6 +28679,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27452,6 +28887,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27659,6 +29095,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27876,6 +29313,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "bridgehut",
+    "bounds": [
+     2048,
+     2048,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -27972,6 +29420,17 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "bridgehut.small",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28067,6 +29526,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28168,6 +29628,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28269,6 +29730,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28370,6 +29832,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28470,6 +29933,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28571,6 +30035,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28672,6 +30137,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28773,6 +30239,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28869,6 +30336,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -28968,6 +30436,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29069,6 +30538,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29170,6 +30640,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29271,6 +30742,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29372,6 +30844,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29473,6 +30946,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29574,6 +31048,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29675,6 +31150,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29776,6 +31252,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29873,6 +31350,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -29974,6 +31452,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30075,6 +31554,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30177,6 +31657,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30279,6 +31760,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30380,6 +31862,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30481,6 +31964,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30582,6 +32066,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30682,6 +32167,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30783,6 +32269,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30884,6 +32371,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -30985,6 +32473,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31081,6 +32570,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31180,6 +32670,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31281,6 +32772,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31382,6 +32874,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31483,6 +32976,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31584,6 +33078,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31685,6 +33180,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31786,6 +33282,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31887,6 +33384,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -31988,6 +33486,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32085,6 +33584,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32186,6 +33686,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32287,6 +33788,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32389,6 +33891,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32491,6 +33994,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32586,6 +34090,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32681,6 +34186,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32776,6 +34282,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32871,6 +34378,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -32966,6 +34474,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33061,6 +34570,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33156,6 +34666,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33251,6 +34762,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33346,6 +34858,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33445,6 +34958,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33544,6 +35058,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33642,6 +35157,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33740,6 +35256,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33838,6 +35355,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -33938,6 +35456,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34037,6 +35556,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34137,6 +35657,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34236,6 +35757,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34335,6 +35857,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34435,6 +35958,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34534,6 +36058,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34629,6 +36154,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34724,6 +36250,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34820,6 +36347,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -34916,6 +36444,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -35017,6 +36546,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -35118,6 +36648,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -35219,6 +36750,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],
@@ -35320,6 +36852,7 @@
    "defense": false,
    "opportunity_fire": false,
    "base_building": false,
+   "selection": null,
    "death_weapon": null,
    "self_heal": null,
    "turret_offsets": [],

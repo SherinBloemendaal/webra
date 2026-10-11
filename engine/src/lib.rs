@@ -64,6 +64,7 @@ mod repair;
 pub mod rng;
 pub mod rules;
 pub mod rules_options;
+pub mod selection;
 mod sell;
 pub mod smudges;
 pub mod sound_events;
@@ -135,6 +136,8 @@ mod tests_repair;
 mod tests_replay;
 #[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_selection;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
@@ -927,46 +930,52 @@ impl Game {
         self.world.actor_at(player, to_wu(x), to_wu(y)).map_or(NONE, |i| self.world.make_ref(i))
     }
 
-    /// Own units inside a world-pixel rectangle. When the box holds at least one
-    /// armed unit, unarmed ones (harvesters) are left out, so dragging over an
-    /// army never drags the economy along.
-    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let units = self.units_in_box(player, x0, y0, x1, y1);
+    /// OpenRA box selection (selection.rs `select_in_box`): the visible
+    /// selectable actors whose bounds touch the world-pixel rectangle, those
+    /// of the highest selection priority for `player` (own combat units before
+    /// support units, harvesters, structures and other players' actors;
+    /// `ctrl`, `alt`: the modifiers held, which raise the actors that allow
+    /// them). A `player` past the players is a spectator watching everyone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
         let w = &self.world;
-        let armed = |i: &usize| !w.rules.actors[w.actors[*i].ty as usize].weapons.is_empty();
-        let picked: Vec<usize> = if units.iter().any(armed) { units.into_iter().filter(armed).collect() } else { units };
-        picked.into_iter().map(|i| w.make_ref(i)).collect()
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.select_in_box(w.selection_viewer(player), area, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
-    fn units_in_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<usize> {
-        let (ax, bx) = (to_wu(x0.min(x1)), to_wu(x0.max(x1)));
-        let (ay, by) = (to_wu(y0.min(y1)), to_wu(y0.max(y1)));
+    /// OpenRA's click selection (selection.rs `select_at_point`): the actor a
+    /// click at the world-pixel point selects, or 0xFFFFFFFF.
+    pub fn select_at(&self, player: u8, x: f32, y: f32, ctrl: bool, alt: bool) -> u32 {
         let w = &self.world;
-        (0..w.actors.len())
-            .filter(|&i| {
-                let a = &w.actors[i];
-                a.alive
-                    && a.owner == player
-                    && a.is_unit()
-                    && a.in_world()
-                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
-                    && a.x >= ax
-                    && a.x <= bx
-                    && a.y >= ay
-                    && a.y <= by
-            })
-            .collect()
+        w.select_at_point(w.selection_viewer(player), to_wu(x), to_wu(y), selection::Mods { ctrl, alt }).map_or(NONE, |i| w.make_ref(i))
     }
 
-    /// All own units of the same type as `id` inside the view rectangle (double click).
-    pub fn select_same_type(&self, player: u8, id: u32, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let Some(t) = self.world.resolve(id) else { return Vec::new() };
-        let ty = self.world.actors[t].ty;
-        self.units_in_box(player, x0, y0, x1, y1)
-            .into_iter()
-            .filter(|&i| self.world.actors[i].ty == ty)
-            .map(|i| self.world.make_ref(i))
-            .collect()
+    /// OpenRA SelectAllUnits (selection.rs): the selectable actors of
+    /// `owners` (the players the viewer selects for) whose bounds touch the
+    /// world-pixel rectangle, those of the highest selection priority (combat
+    /// units before support units, harvesters and structures; `ctrl`, `alt`:
+    /// the modifiers held). The whole map's rectangle selects across the map.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_all(&self, owners: Vec<u8>, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        let found = w.selectable_actors(&owners, Some(area), None);
+        w.highest_selection_priority(found, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
+    /// OpenRA SelectUnitsByType and double click (selection.rs): the
+    /// selectable actors of `owners` whose bounds touch the world-pixel
+    /// rectangle and whose selection class is one of those of `ids` (the
+    /// selection, or the clicked actor) that `owners` own.
+    pub fn select_by_class(&self, owners: Vec<u8>, ids: Vec<u32>, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let picked: Vec<usize> = ids.iter().filter_map(|&r| w.resolve(r)).collect();
+        let classes = w.selection_classes(&owners, &picked);
+        if classes.is_empty() {
+            return Vec::new();
+        }
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.selectable_actors(&owners, Some(area), Some(&classes)).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
     /// Centre (world pixels, `[x, y]`) of the given actors that `player` owns

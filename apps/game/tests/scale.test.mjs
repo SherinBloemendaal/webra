@@ -281,6 +281,7 @@ function makeInput() {
     map_height: () => 128,
     set_selection() {},
     pick: () => 0xffffffff,
+    select_at: () => 0xffffffff,
   };
   const settings = memorySettings();
   const hotkeys = new HotkeyRegistry(settings);
