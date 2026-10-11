@@ -537,10 +537,12 @@ Game modes saved before it existed get it off. `movement` is how units
 move among each other ("Movement" in the lobbies, section 5 "Movement
 models"): `openra` (the default: OpenRA's cell occupancy, waiting and
 nudging) or `webra` (WebRA's soft crowd separation). It is part of the
-game's state (`state_hash`). The protocol accepts it left out, and the
-engine then plays `webra`: lobby states, saves and replays from before the
-option were made with WebRA's model and replay with it. Game modes include
-it; a mode saved before it existed takes `openra`. `team` 0 means no team (free for all);
+game's state (`state_hash`). Live lobby options (the `options` message
+and the lobby state) always carry it. Start options, saves and replays may
+leave it out, and the engine then plays `webra`: those from before the
+option were made with WebRA's model and replay with it; a lobby resuming
+such a save shows `webra`. Game modes include it; a mode saved before it
+existed takes `openra`. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
