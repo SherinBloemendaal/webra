@@ -115,7 +115,6 @@ impl World {
         // loading a save.
         let field = self.flow.cached(dest, loco_index as u8, self.flow_crusher(i));
         let covered = field.map_or(0, |f| if f.dist[from as usize] == DIST_NONE { 0 } else { f.dist[from as usize] });
-        let ship = loco.domain == crate::rules::Domain::Water;
         let w = self.map.width;
         let (dx, dy) = (dest as i32 % w, dest as i32 / w);
         let estimate = |c: usize| -> u32 {
@@ -130,7 +129,7 @@ impl World {
             let (lo, hi) = (ax.min(ay), ax.max(ay));
             (lo * COST_DIAGONAL + (hi - lo) * COST_STRAIGHT) * 80 / 100
         };
-        let enter_cost = |c: usize| -> u32 { 10_000 / loco.speeds[self.map.speed_class_for(c, ship)].max(1) as u32 };
+        let enter_cost = |c: usize| -> u32 { 10_000 / loco.speeds[self.map.speed_class(c)].max(1) as u32 };
         let blocked = |c: usize| !self.terrain_allows(i, c as u32);
         // Ties: nearer the goal, then nearer the map centre (mirror neutral).
         let tie = |c: usize| {

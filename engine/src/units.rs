@@ -567,8 +567,7 @@ impl World {
     /// infantry, panic, weather (None while it may not move: a dog eating).
     fn base_speed(&self, i: usize, ci: usize, unit: Drive) -> Option<i32> {
         let loco = &self.rules.locomotors[unit.locomotor];
-        let ship = loco.domain == crate::rules::Domain::Water;
-        let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
+        let speed_pct = loco.speeds[self.map.speed_class(ci)];
         // Rank speed bonus and prone infantry (veterancy.rs), panicking
         // civilians (neutral.rs), then weather (weather.rs).
         // Dogs stand still while they eat or reload and run while hunting (dog.rs).

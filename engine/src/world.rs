@@ -1713,7 +1713,7 @@ impl World {
 
     /// Whether terrain `t` is open to the locomotor of unit type `ty`
     /// (OpenRA Locomotor TerrainSpeeds; the terrain half of CanEnterCell).
-    /// Ships: water (and WebRA's fords); landing craft also beaches; ground
+    /// Ships: water (fords are land); landing craft also beaches; ground
     /// units passable land; aircraft anything. Structures stand on nothing.
     /// The passabilities are built from the same predicates
     /// (`Passability::water`, `landing`, `new`).
@@ -2165,8 +2165,10 @@ impl World {
         let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
         let from = self.cell_of(cx, cy);
         let (gx, gy) = self.cell_toward(x, y, cx, cy);
-        // Reachable goals per (domain, component, crushed walls), shared by the group.
-        let mut goals: Vec<((crate::rules::Domain, u32, u8), u32)> = Vec::new();
+        // Reachable goals per (domain, landing craft, component, crushed
+        // walls), shared by the group. A landing craft's components are
+        // labels of its own passability (beaches too), not the other ships'.
+        let mut goals: Vec<((crate::rules::Domain, bool, u32, u8), u32)> = Vec::new();
         for &i in units {
             if !self.actors[i].in_world() {
                 continue;
@@ -2179,11 +2181,12 @@ impl World {
                 self.pass_of(i).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
             };
             let crush = self.crush_mask(i);
-            let goal = match goals.iter().find(|(k, _)| *k == (d, comp, crush)) {
+            let key = (d, self.lands(i), comp, crush);
+            let goal = match goals.iter().find(|(k, _)| *k == key) {
                 Some(&(_, g)) => g,
                 None => {
                     let g = self.path_goal_from(i, gx, gy, from);
-                    goals.push(((d, comp, crush), g));
+                    goals.push((key, g));
                     g
                 }
             };
