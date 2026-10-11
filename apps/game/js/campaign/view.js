@@ -65,13 +65,15 @@ export class MissionView {
    *   movies?: { has(file: string): boolean, play(file: string, parent: HTMLElement): Promise<string>, stop(): void } | null,
    *     the original movies the player installed (content/movies.js createMoviePlayer); without one, or when it fails, a card
    *   onRestart(): void, onLeave(): void,
-   *   now?(): number,
+   *   now?(): number,  milliseconds of the page clock (message lines fade on it, like OpenRA's text notifications)
+   *   gameNow?(): number,  milliseconds of the simulation clock (js/simclock.js): floating texts count game ticks, so they stand still while the game is paused
    * }} o
    */
   constructor(o) {
     this.o = o;
     this.localPlayer = o.localPlayer ?? 0;
     this.now = o.now ?? (() => performance.now());
+    this.gameNow = o.gameNow ?? this.now;
     this.state = null;
     this.objectivesKey = '';
     this.panel = el('section', 'mission-panel');
@@ -130,7 +132,8 @@ export class MissionView {
       case 'speech':
         if (e.player === 255 || e.player === this.localPlayer) {
           const key = speechKey(e.name);
-          if (key) o.audio?.announce(key);
+          // The script's line: it waits while the game is paused (js/audio/announcer.js).
+          if (key) o.audio?.announce(key, { world: true });
         }
         break;
       case 'sound':
@@ -150,7 +153,7 @@ export class MissionView {
         this.renderText(e.text ? { text: e.text, color: e.color } : null);
         break;
       case 'floating_text':
-        this.floating.push({ text: e.text, x: e.x * o.pxPerCell, y: e.y * o.pxPerCell, color: e.color, until: this.now() + e.ticks * o.tickMs, node: null });
+        this.floating.push({ text: e.text, x: e.x * o.pxPerCell, y: e.y * o.pxPerCell, color: e.color, until: this.gameNow() + e.ticks * o.tickMs, node: null });
         break;
       case 'radar_ping': {
         const v = parseInt(e.color, 16);
@@ -211,7 +214,7 @@ export class MissionView {
   }
 
   renderFloating() {
-    const t = this.now();
+    const t = this.gameNow();
     this.floating = this.floating.filter((f) => {
       const at = t <= f.until ? this.o.toScreen(f.x, f.y) : null;
       if (!at) {

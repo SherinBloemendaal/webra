@@ -169,10 +169,11 @@ export class Director {
    * @param {number} o.pxPerWorld pixels per world unit
    * @param {(id: number) => { type: string, owner: number, building: boolean } | null} o.lookup actor info by id
    * @param {{ effect(sound, opts): void, voice(line): void, announce(key): void, notify?(name, opts): void }} o.sink
-   * @param {() => number} o.now seconds
+   * @param {() => number} o.now seconds (throttles and cooldowns only: nothing is scheduled on it)
+   * @param {number} [o.tickMs] milliseconds per simulation tick at the game's speed (the advice intervals count ticks)
    * @param {(owner: number) => boolean} [o.allied] whether a player is the local one or an ally
    */
-  constructor({ rules, player, side, pxPerWorld, lookup, sink, now, allied = (owner) => owner === player }) {
+  constructor({ rules, player, side, pxPerWorld, lookup, sink, now, tickMs = 40, allied = (owner) => owner === player }) {
     this.allied = allied;
     this.rules = rules;
     this.player = player;
@@ -181,16 +182,25 @@ export class Director {
     this.lookup = lookup;
     this.sink = sink;
     this.now = now;
+    this.tickMs = tickMs;
     this.batch = [];
     this.lastStart = new Map();
     this.lastVoice = -Infinity;
     this.lastEva = new Map();
     this.selection = new Set();
-    /** Low power (null before the first player state), and when its line last played. */
+    /** Low power (null before the first player state), and the tick its line last played. */
     this.lowPower = null;
     this.lowPowerAt = -Infinity;
-    /** When the silo warning was last checked (OpenRA ResourceStorageWarning). */
+    /** The tick the silo warning was last checked (OpenRA ResourceStorageWarning). */
     this.silosAt = null;
+    /** The simulation tick of the last player state. */
+    this.stateTick = null;
+    /**
+     * Whether the lines announced now come from the simulation (engine
+     * events, player state) rather than from the player's clicks: the
+     * announcer holds those while the game is paused (js/audio/announcer.js).
+     */
+    this.worldLines = false;
     /** Infantry deaths of this batch that were a crush (no scream: crushing is no DeathSounds death type). */
     this.crushed = [];
   }
@@ -208,8 +218,24 @@ export class Director {
     const t = this.now();
     if (t - (this.lastEva.get(key) ?? -Infinity) < line.cooldown) return false;
     this.lastEva.set(key, t);
-    this.sink.announce(key);
+    this.sink.announce(key, { world: this.worldLines });
     return true;
+  }
+
+  /** Run `fn` with its announcer lines marked as the simulation's (`worldLines`). */
+  inWorld(fn) {
+    const was = this.worldLines;
+    this.worldLines = true;
+    try {
+      fn();
+    } finally {
+      this.worldLines = was;
+    }
+  }
+
+  /** Simulation ticks in `seconds` of game time at this game's speed. */
+  ticksIn(seconds) {
+    return Math.max(1, Math.round((seconds * 1000) / this.tickMs));
   }
 
   /** A sound notification (notifications.yaml Sounds: LevelUp, RadarUp, ...) for the local player. */
@@ -309,7 +335,7 @@ export class Director {
 
   /** The game ended for the local player (OpenRA MissionObjectives Win/LoseNotification). */
   onGameOver(won) {
-    this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose);
+    this.inWorld(() => this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose));
   }
 
   /**
@@ -317,22 +343,41 @@ export class Director {
    * low power line (at once when power gets low, then every AdviceInterval
    * while it stays low) and ResourceStorageWarning (every AdviceInterval,
    * when the stored ore is above Threshold percent of the silo capacity).
+   *
+   * OpenRA checks both in ITick, so neither can play while the world is
+   * paused. Here the intervals count the state's simulation ticks (`tick`)
+   * instead of the page clock: the UI polls the state also while the game
+   * stands still (pause, the game menu, a hidden tab), and the same tick
+   * polled again is no time passing. After a pause the cadence goes on
+   * where it stopped. (OpenRA measures the interval itself in Game.RunTime,
+   * which goes on during a pause, so its first check after a long pause
+   * comes at once; counting ticks keeps the advice as far apart in game
+   * time as while playing.)
+   * @param {{ tick: number, lowPower?: boolean, resources?: number, storage?: number }} state
    */
   onPlayerState(state) {
-    const t = this.now();
-    const low = !!state.lowPower;
-    if (this.lowPower !== null && low && (!this.lowPower || t - this.lowPowerAt >= PLAYER_LINES.lowPowerInterval)) {
-      this.lowPowerAt = t;
-      this.announce(PLAYER_LINES.lowPower);
+    const tick = state.tick ?? 0;
+    // Back in time (a replay seek, a restart): the intervals count from here.
+    if (this.stateTick !== null && tick < this.stateTick) {
+      if (this.lowPowerAt > tick) this.lowPowerAt = tick;
+      if (this.silosAt !== null) this.silosAt = tick;
     }
-    if (this.lowPower === null && low) this.lowPowerAt = t;
-    this.lowPower = low;
-    if (this.silosAt === null) this.silosAt = t;
-    else if (t - this.silosAt > PLAYER_LINES.silosInterval) {
-      this.silosAt = t;
-      const storage = state.storage ?? 0;
-      if (storage > 0 && (state.resources ?? 0) > (PLAYER_LINES.silosThreshold * storage) / 100) this.announce(PLAYER_LINES.silos);
-    }
+    this.stateTick = tick;
+    this.inWorld(() => {
+      const low = !!state.lowPower;
+      if (this.lowPower !== null && low && (!this.lowPower || tick - this.lowPowerAt >= this.ticksIn(PLAYER_LINES.lowPowerInterval))) {
+        this.lowPowerAt = tick;
+        this.announce(PLAYER_LINES.lowPower);
+      }
+      if (this.lowPower === null && low) this.lowPowerAt = tick;
+      this.lowPower = low;
+      if (this.silosAt === null) this.silosAt = tick;
+      else if (tick - this.silosAt > this.ticksIn(PLAYER_LINES.silosInterval)) {
+        this.silosAt = tick;
+        const storage = state.storage ?? 0;
+        if (storage > 0 && (state.resources ?? 0) > (PLAYER_LINES.silosThreshold * storage) / 100) this.announce(PLAYER_LINES.silos);
+      }
+    });
   }
 
   // ---- Engine events --------------------------------------------------------------
@@ -345,6 +390,12 @@ export class Director {
    * @param {(x: number, y: number) => boolean} [visible] whether the player can see a pixel position
    */
   onEvents(events, view, visible = () => true) {
+    this.inWorld(() => this.handleEvents(events, visible));
+    this.flush(view);
+  }
+
+  /** The announcer lines, replies and positional sounds of a frame's events (onEvents). */
+  handleEvents(events, visible) {
     const k = this.pxPerWorld;
     this.crushed = [];
     for (let i = 0; i + STRIDE <= events.length; i += STRIDE) {
@@ -536,7 +587,6 @@ export class Director {
           break;
       }
     }
-    this.flush(view);
   }
 
   /**

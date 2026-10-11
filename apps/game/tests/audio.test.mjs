@@ -359,24 +359,100 @@ test('support powers: charging, ready, target and insufficient power lines per p
   assert.equal(powerNotifications('IRON', 'GrantExternalConditionPower@IRONCURTAIN').endChargeLine, 'ironCurtainReady');
 });
 
-test('low power repeats every AdviceInterval, silos are checked every 20 seconds (OpenRA)', () => {
-  const { d, calls, advance } = harness();
-  d.onPlayerState({ lowPower: false, resources: 0, storage: 1000 });
-  d.onPlayerState({ lowPower: true });
+test('low power repeats every AdviceInterval, silos are checked every 20 seconds, in game ticks (OpenRA)', () => {
+  // 40 ms ticks (normal speed): 10 seconds are 250 ticks, 20 seconds 500.
+  const { d: director, calls, advance } = harness();
+  // The page clock runs along with the game (the announcer's own cooldowns count it).
+  const d = { onPlayerState: (state) => (advance(2), director.onPlayerState(state)) };
+  d.onPlayerState({ tick: 0, lowPower: false, resources: 0, storage: 1000 });
+  d.onPlayerState({ tick: 1, lowPower: true });
   assert.deepEqual(calls.announce, ['lowPower'], 'at once when power gets low');
-  advance(5);
-  d.onPlayerState({ lowPower: true });
-  advance(5);
-  d.onPlayerState({ lowPower: true });
+  d.onPlayerState({ tick: 126, lowPower: true });
+  d.onPlayerState({ tick: 250, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower'], 'not before 10 seconds of game time');
+  d.onPlayerState({ tick: 251, lowPower: true });
   assert.deepEqual(calls.announce, ['lowPower', 'lowPower'], 'again after 10 seconds');
-  d.onPlayerState({ lowPower: false });
+  d.onPlayerState({ tick: 252, lowPower: false });
   calls.announce.length = 0;
-  advance(21);
-  d.onPlayerState({ lowPower: false, resources: 900, storage: 1000 });
+  d.onPlayerState({ tick: 500, lowPower: false, resources: 900, storage: 1000 });
+  assert.deepEqual(calls.announce, [], 'the first check comes after 20 seconds');
+  d.onPlayerState({ tick: 501, lowPower: false, resources: 900, storage: 1000 });
   assert.deepEqual(calls.announce, ['silosNeeded'], 'over 80 percent full');
-  advance(21);
-  d.onPlayerState({ lowPower: false, resources: 700, storage: 1000 });
+  d.onPlayerState({ tick: 1002, lowPower: false, resources: 700, storage: 1000 });
   assert.equal(calls.announce.length, 1, 'enough room');
+});
+
+test('a paused game says nothing: no silo or low power advice while the page clock runs on (user report)', () => {
+  // The UI polls the player state every 100 ms also while the game is paused
+  // (pause hotkey, the game menu, a hidden tab): the same tick, wall time passing.
+  const { d, calls, advance } = harness();
+  const state = (tick) => ({ tick, lowPower: true, resources: 950, storage: 1000 });
+  d.onPlayerState({ tick: 0, lowPower: false, resources: 950, storage: 1000 });
+  d.onPlayerState(state(10));
+  assert.deepEqual(calls.announce, ['lowPower']);
+  // Played until tick 400, then paused for ten minutes.
+  for (let t = 11; t <= 400; t += 3) {
+    d.onPlayerState(state(t));
+    advance(0.12);
+  }
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower'], 'the line every 10 seconds while playing');
+  calls.announce.length = 0;
+  for (let i = 0; i < 6000; i++) {
+    d.onPlayerState(state(400));
+    advance(0.1);
+  }
+  assert.deepEqual(calls.announce, [], 'nothing while paused');
+  // Resumed: the cadence goes on where it stopped (low power last at tick 260, silos first checked after tick 500).
+  d.onPlayerState(state(500));
+  assert.deepEqual(calls.announce, [], 'not at once on resume');
+  d.onPlayerState(state(501));
+  assert.deepEqual(calls.announce, ['silosNeeded'], 'the silo check 20 game seconds after the start');
+  d.onPlayerState(state(509));
+  assert.deepEqual(calls.announce, ['silosNeeded']);
+  d.onPlayerState(state(510));
+  assert.deepEqual(calls.announce, ['silosNeeded', 'lowPower'], 'low power 10 game seconds after the last one');
+  // A faster game speed (20 ms ticks): the same 10 seconds are 500 ticks.
+  const fast = [];
+  let wall = 0;
+  const f = new Director({ rules: RULES, player: 0, side: 'allies', pxPerWorld: 1, lookup: () => null, sink: { effect() {}, voice() {}, announce: (k) => fast.push(k) }, now: () => (wall += 2), tickMs: 20 });
+  f.onPlayerState({ tick: 0, lowPower: false });
+  f.onPlayerState({ tick: 1, lowPower: true });
+  f.onPlayerState({ tick: 300, lowPower: true });
+  assert.deepEqual(fast, ['lowPower']);
+  f.onPlayerState({ tick: 501, lowPower: true });
+  assert.deepEqual(fast, ['lowPower', 'lowPower']);
+  // Back in time (a replay seek or a reload): the intervals count from there.
+  f.onPlayerState({ tick: 10, lowPower: true });
+  f.onPlayerState({ tick: 509, lowPower: true });
+  assert.equal(fast.length, 2);
+  f.onPlayerState({ tick: 510, lowPower: true });
+  assert.equal(fast.length, 3);
+});
+
+test('the simulation\'s announcer lines are marked, the player\'s clicks are not', () => {
+  const lines = [];
+  const d = new Director({
+    rules: RULES,
+    player: 0,
+    side: 'allies',
+    pxPerWorld: 1,
+    lookup: () => null,
+    sink: { effect() {}, voice() {}, notify() {}, announce: (key, o) => lines.push([key, !!o?.world]) },
+    now: () => 0,
+  });
+  d.onEvents(ev([EV.INSUFFICIENT_FUNDS, 0, 0, 0, 0, 0]), VIEW);
+  d.onPlayerState({ tick: 0, lowPower: false });
+  d.onPlayerState({ tick: 1, lowPower: true });
+  d.onProductionClick('E1', 'queued');
+  d.onSelectTarget({ key: 'NukePower' });
+  d.onGameOver(true);
+  assert.deepEqual(lines, [
+    ['insufficientFunds', true],
+    ['lowPower', true],
+    ['training', false],
+    ['selectTarget', false],
+    ['win', true],
+  ]);
 });
 
 test('actor sounds and notifications of the rules play to the right player', () => {
@@ -519,6 +595,55 @@ test('the announcer plays one line at a time, drops duplicates and stale lines',
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(played, ['unitReady', 'baseUnderAttack']);
   assert.equal(a.push('baseUnderAttack'), false, 'the line playing now is not queued again');
+});
+
+test('while the game is paused the simulation\'s lines wait, the player\'s clicks still speak', async () => {
+  let t = 0;
+  const played = [];
+  const pending = [];
+  const a = new Announcer({
+    now: () => t,
+    play: (key) =>
+      new Promise((resolve) => {
+        played.push(key);
+        pending.push(resolve);
+      }),
+  });
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const finish = async () => {
+    pending.shift()();
+    await settle();
+  };
+  a.push('unitReady', { world: true });
+  a.push('unitLost', { world: true });
+  assert.deepEqual(played, ['unitReady']);
+  a.setPaused(true);
+  await finish();
+  assert.deepEqual(played, ['unitReady'], 'the line playing when the pause began finishes; the waiting one does not start');
+  t += 60;
+  a.push('baseUnderAttack', { world: true });
+  a.push('building');
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building'], 'a production click speaks during the pause');
+  await finish();
+  assert.deepEqual(played, ['unitReady', 'building'], 'nothing of the simulation starts during the pause');
+  // A click asks for a line the simulation's is waiting with: it plays now.
+  a.push('unitLost');
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building', 'unitLost']);
+  await finish();
+  t += 600;
+  a.setPaused(false);
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building', 'unitLost', 'baseUnderAttack'], 'held lines play after the pause: paused time is no waiting time');
+  await finish();
+  a.push('lowPower', { world: true });
+  a.push('silosNeeded', { world: true });
+  await settle();
+  assert.deepEqual(played.slice(4), ['lowPower']);
+  t += 5;
+  await finish();
+  assert.deepEqual(played.slice(4), ['lowPower'], 'running time still makes old lines stale');
 });
 
 // ---- Settings ------------------------------------------------------------------------------
