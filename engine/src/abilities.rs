@@ -491,7 +491,12 @@ impl World {
     /// Progress bookkeeping toward a cell, measured along the path; true
     /// when the unit has made no progress for too long or cannot reach the
     /// cell at all.
+    ///
+    /// In the OpenRA model: the move toward the cell stopped short.
     pub(crate) fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
+        if self.cell_moves() && self.occupies_cells(i) {
+            return !self.on_cell(i, ci) && self.move_settled(i, ci);
+        }
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.
@@ -607,12 +612,6 @@ impl World {
         best.map(|(_, j)| j)
     }
 
-    fn pad_cell(&self, b: usize) -> u32 {
-        let a = &self.actors[b];
-        let info = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-        self.map.idx(a.cx + info.width / 2, a.cy + info.height / 2) as u32
-    }
-
     fn go_rearm(&mut self, i: usize) {
         let Some(b) = self.rearm_building(i) else {
             // Nowhere to reload: keep the remaining minefield for a later order.
@@ -623,7 +622,7 @@ impl World {
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
         self.start_task(i, Task::Rearm);
         let r = self.make_ref(b);
-        let pad = self.pad_cell(b);
+        let pad = self.repair_pad_cell(b);
         let a = &mut self.actors[i];
         a.ab.minefield = field;
         a.ab.target = r;
@@ -651,7 +650,7 @@ impl World {
             }
             return;
         }
-        let pad = self.pad_cell(b);
+        let pad = self.repair_pad_cell(b);
         if self.on_cell(i, pad) {
             return; // rearm_on_pad reloads
         }
@@ -773,13 +772,17 @@ impl World {
         self.actors[i].ab.timer += 1;
         let t = self.actors[i].ab.timer;
         let (x, y) = (self.actors[i].x, self.actors[i].y);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
         if t % m.thump_interval.max(1) == 0 {
             self.percent_blast(i, m.thump_weapon);
             self.abil.fx.push(AbilityFx { x, y, kind: FxKind::Thump, ttl: 10, max: 10 });
         }
+        if t == m.charge_delay {
+            self.sound.push(SoundEventKind::MadTank, ty, x, y, owner, 0);
+        }
         if t >= m.charge_delay + m.detonation_delay {
+            self.sound.push(SoundEventKind::MadTank, ty, x, y, owner, 1);
             self.percent_blast(i, m.detonation_weapon);
-            let owner = self.actors[i].owner;
             if let Some(driver) = self.rules.actor_index(&m.driver) {
                 self.spawn_unit(driver as u16, owner, x, y, 512);
             }
@@ -916,18 +919,22 @@ impl World {
                 continue;
             }
             let charge = self.rules.actors[self.actors[i].ty as usize].abilities.portable_chrono.as_ref().unwrap().charge_delay;
-            self.teleport(i, cell_center(cx), cell_center(cy));
+            self.teleport(i, cell_center(cx), cell_center(cy), true);
             self.actors[i].ab.chrono_charge = charge;
         }
     }
 
-    /// Move unit `i` to (x, y) instantly with a chronoshift flash at both ends.
-    pub(crate) fn teleport(&mut self, i: usize, x: i32, y: i32) {
+    /// Move unit `i` to (x, y) instantly with a chronoshift flash and sound
+    /// at both ends (OpenRA Teleport); `portable` when a chrono tank jumps on
+    /// its own (PortableChrono's ChronoshiftSound, not Chronoshiftable's).
+    pub(crate) fn teleport(&mut self, i: usize, x: i32, y: i32, portable: bool) {
         self.release_dock(i);
         let (ox, oy) = (self.actors[i].x, self.actors[i].y);
+        let (ty, owner) = (self.actors[i].ty as i32, self.actors[i].owner);
         for (fx, fy) in [(ox, oy), (x, y)] {
             self.effects.push(Effect { x: fx, y: fy, tx: fx, ty: fy, kind: EffectKind::ChronoShimmer, ttl: 20, max: 20 });
             self.abil.fx.push(AbilityFx { x: fx, y: fy, kind: FxKind::Chrono, ttl: 12, max: 12 });
+            self.sound.push(SoundEventKind::Teleported, ty, fx, fy, owner, i32::from(portable));
         }
         let a = &mut self.actors[i];
         a.x = x;
@@ -1216,7 +1223,7 @@ impl World {
             }
             let origin = self.actors[i].ab.chrono_return.map_or((self.actors[i].x, self.actors[i].y), |(ox, oy, _)| (ox, oy));
             let (ox, oy) = (self.actors[i].x - cell_center(ux), self.actors[i].y - cell_center(uy));
-            self.teleport(i, cell_center(tx) + ox, cell_center(ty) + oy);
+            self.teleport(i, cell_center(tx) + ox, cell_center(ty) + oy, false);
             if info.duration > 0 {
                 self.actors[i].ab.chrono_return = Some((origin.0, origin.1, self.tick + info.duration as u32));
             }
@@ -1232,9 +1239,54 @@ impl World {
             }
             if self.tick >= t {
                 self.actors[i].ab.chrono_return = None;
-                self.teleport(i, x, y);
+                match self.chrono_return_spot(i, x, y) {
+                    Some((rx, ry)) => self.teleport(i, rx, ry, false),
+                    // Teleport killOnFailure: nowhere to go back to.
+                    None => self.kill(i),
+                }
             }
         }
+    }
+
+    /// Where a chronoshifted unit returns to (OpenRA Teleport.ChooseBestDestinationCell
+    /// without a maximum distance): its origin (x, y) while it can still
+    /// stand there, else the centre of the nearest explored cell its
+    /// locomotor may enter (a naval yard went up where the ship was, a
+    /// bridge came back over it), None when there is none.
+    pub(crate) fn chrono_return_spot(&self, i: usize, x: i32, y: i32) -> Option<(i32, i32)> {
+        if self.domain_of(i) == Domain::Air {
+            return Some((x, y));
+        }
+        let (cx, cy) = self.cell_of(x, y);
+        if !self.pass_of(i).blocked[self.map.idx(cx, cy)] {
+            return Some((x, y));
+        }
+        let explored = &self.players[self.actors[i].owner as usize].explored;
+        let pass = self.pass_of(i);
+        let range = self.map.width.max(self.map.height);
+        for r in 1..=range {
+            let mut best: Option<(i32, usize)> = None;
+            for ty in cy - r..=cy + r {
+                for tx in cx - r..=cx + r {
+                    if ((tx - cx).abs() != r && (ty - cy).abs() != r) || !self.map.contains(tx, ty) {
+                        continue;
+                    }
+                    let ci = self.map.idx(tx, ty);
+                    if pass.blocked[ci] || explored[ci] == 0 {
+                        continue;
+                    }
+                    let key = ((tx - cx).pow(2) + (ty - cy).pow(2), ci);
+                    if best.is_none_or(|b| key < b) {
+                        best = Some(key);
+                    }
+                }
+            }
+            if let Some((_, ci)) = best {
+                let w = self.map.width;
+                return Some((cell_center(ci as i32 % w), cell_center(ci as i32 / w)));
+            }
+        }
+        None
     }
 
     /// Iron Curtain (GrantExternalConditionPower invulnerability): actors in

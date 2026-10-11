@@ -281,8 +281,104 @@ export function migrateOverrides(raw) {
   return out;
 }
 
-const INTERACTIVE = new Set(['INPUT', 'SELECT', 'TEXTAREA']);
-const CONTROL = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A']);
+// ---- Which keys the focused element keeps ----------------------------------------------
+//
+// OpenRA sends a key to the focused widget first and to the hotkeys only when
+// the widget does not use it. Text fields use every key; a switch, slider or
+// list only the few keys that work it, so the hotkeys keep working while one
+// of them has the focus (the debug menu's switches, the replay's seek bar,
+// the observer's panel list). A focused element that is not drawn (a lobby
+// field after the game started: some browsers leave the focus there) and one
+// that is disabled or read-only use no key.
+
+/** Input types that take typed text. */
+const TEXT_TYPES = new Set(['text', 'search', 'email', 'number', 'password', 'url', 'tel', 'date', 'datetime-local', 'month', 'time', 'week']);
+const NAV_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+/** The keys (KeyboardEvent.key) that work a control without text, by input type or tag. */
+const CONTROL_KEYS = {
+  checkbox: new Set([' ']),
+  radio: new Set([' ', ...NAV_KEYS]),
+  range: new Set(NAV_KEYS),
+  color: new Set([' ', 'Enter']),
+  file: new Set([' ', 'Enter']),
+  select: new Set([' ', 'Enter', ...NAV_KEYS]),
+};
+/** Elements that are pressed with Enter or Space, or move the focus on with Tab. */
+const CONTROL = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'SUMMARY']);
+
+/** Whether `el` is drawn (not removed, not in a hidden or undisplayed part of the page). */
+function rendered(el) {
+  if (el.isConnected === false) return false;
+  if (typeof el.getClientRects === 'function') return el.getClientRects().length > 0;
+  return !el.closest?.('[hidden]');
+}
+
+function inputType(el) {
+  return String(el.type || el.getAttribute?.('type') || 'text').toLowerCase();
+}
+
+/**
+ * Whether the focused element (the event's target) uses this key itself, so
+ * no hotkey runs: every key in a text field the player can type in, the keys
+ * that work a switch, slider or list (`CONTROL_KEYS`), nothing elsewhere.
+ */
+export function focusKeepsKey(e) {
+  const t = e.target;
+  if (typeof t?.tagName !== 'string' || t.disabled || !rendered(t)) return false;
+  if (t.isContentEditable) return true;
+  if (t.tagName === 'TEXTAREA') return !t.readOnly;
+  const text = t.tagName === 'INPUT' && TEXT_TYPES.has(inputType(t));
+  if (text) return !t.readOnly;
+  // A control's own keys are plain ones: Alt+Arrow is still the map edge key.
+  if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
+  if (t.tagName === 'INPUT') return CONTROL_KEYS[inputType(t)]?.has(e.key) ?? false;
+  if (t.tagName === 'SELECT') return CONTROL_KEYS.select.has(e.key);
+  return false;
+}
+
+/**
+ * Where the focus came from: a control focused after a key (Tab, or a dialog
+ * that hands the focus back when Esc closes it) has the keyboard focus; one
+ * focused by a mouse or touch press (browsers keep the focus on a clicked
+ * button) does not. CSS :focus-visible cannot tell at keydown time: Chromium
+ * lets the focused element match it as soon as a key goes down. Like the
+ * :focus-visible polyfill, this follows the document's keys, presses and
+ * focus moves (in the capture phase, before any handler).
+ */
+export class FocusOrigin {
+  constructor() {
+    this.docs = new WeakSet();
+    this.keyboard = false;
+    this.element = null;
+  }
+
+  /** Follow `doc` (once). */
+  watch(doc) {
+    if (typeof doc?.addEventListener !== 'function' || this.docs.has(doc)) return;
+    this.docs.add(doc);
+    doc.addEventListener('keydown', (e) => {
+      if (!e.metaKey && !e.altKey && !e.ctrlKey) this.keyboard = true;
+    }, true);
+    // A press also ends a keyboard focus the press does not move (a click on
+    // the button that already has the focus fires no focusin).
+    const press = () => {
+      this.keyboard = false;
+      this.element = null;
+    };
+    for (const type of ['pointerdown', 'mousedown', 'touchstart']) doc.addEventListener(type, press, true);
+    doc.addEventListener('focusin', (e) => (this.element = this.keyboard ? e.target : null), true);
+  }
+
+  /** Whether `el` got the focus from the keyboard. */
+  fromKeyboard(el) {
+    return el !== null && el === this.element;
+  }
+}
+
+/** Whether a control has the keyboard focus (FocusOrigin), so it keeps Tab and Enter. */
+function keyboardFocused(el, origin) {
+  return !!el && CONTROL.has(el.tagName) && !el.disabled && rendered(el) && origin.fromKeyboard(el);
+}
 
 export class HotkeyRegistry {
   /** @param {{ get(key: string): any, set(key: string, value: any): any, subscribe(key: string, fn: Function): Function }} settings */
@@ -294,6 +390,9 @@ export class HotkeyRegistry {
     this.listeners = new Set();
     /** Held keys of `hold` actions: key name -> action name. */
     this.held = new Map();
+    /** Whether the focused control got the focus from the keyboard (`inControls`). */
+    this.focus = new FocusOrigin();
+    this.focus.watch(globalThis.document);
     settings.subscribe('hotkeys', () => this.changed());
   }
 
@@ -305,7 +404,9 @@ export class HotkeyRegistry {
    * - label, group: shown in the Controls page (default: from `openra`)
    * - context: 'player', 'spectator', 'menu' or 'chat-input' (default: from `openra`)
    * - repeat: also run on held-key repeats
-   * - inControls: also when a button has focus (default true)
+   * - inControls: also when a button or other control has the keyboard focus
+   *   (default true); false leaves the key to it (Tab moves the focus on,
+   *   Enter presses it). A control clicked with the mouse never keeps a key.
    * - modifiers: modifiers that may be added to the bound key and are handed
    *   to the handler through the event (production slots: Shift builds 5)
    * - hold: the action is held while its key is down (`isHeld`)
@@ -522,17 +623,18 @@ export class HotkeyRegistry {
   /**
    * Run the action bound to a keydown event. Returns true when it was handled
    * (the event's default is prevented then, so Ctrl+key browser shortcuts are
-   * held back where the browser allows it).
+   * held back where the browser allows it). Keys the focused element uses
+   * itself are left to it (`focusKeepsKey`).
    */
   handle(e) {
-    const tag = e.target?.tagName;
-    if (INTERACTIVE.has(tag)) return false;
+    this.focus.watch(e.target?.ownerDocument);
+    if (focusKeepsKey(e)) return false;
     const combo = comboFromEvent(e);
     if (!combo) return false;
     const name = this.resolve(combo);
     if (!name) return false;
     const a = this.actions.get(name);
-    if (!a.inControls && CONTROL.has(tag)) return false;
+    if (!a.inControls && keyboardFocused(e.target, this.focus)) return false;
     e.preventDefault?.();
     if (a.hold) {
       this.held.set(keyName(e), name);

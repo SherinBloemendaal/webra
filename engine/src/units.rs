@@ -1,4 +1,5 @@
-//! Per-tick unit behaviour: movement, crowd separation, combat, harvesting, repair.
+//! Per-tick unit behaviour: movement, combat, harvesting, repair. How units
+//! make room for each other is the game's movement model (movement/).
 
 use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::map::Resource;
@@ -9,7 +10,6 @@ use crate::world::{cell_center, Activity, HarvState, World, NONE};
 
 /// Vehicles stop to turn when the heading is off by more than this (45 degrees).
 const MOVE_WHILE_TURNING: i32 = 128;
-const MAX_PUSH: i32 = 96;
 const STUCK_LIMIT: i32 = 75;
 /// Ticks a unit of a group move must stall against stopped units before it
 /// stops too.
@@ -68,6 +68,10 @@ impl World {
                 Kind::Mine => continue,
                 _ => self.tick_unit_activity(i),
             }
+            // A step between cells is always finished (OpenRA model).
+            if self.cell_moves() && self.actors[i].alive && self.occupies_cells(i) {
+                self.finish_step(i);
+            }
             // Snow momentum and desert heat (weather.rs).
             if self.actors[i].alive && self.actors[i].kind == Kind::Vehicle {
                 self.tick_vehicle_weather(i);
@@ -92,7 +96,13 @@ impl World {
                 self.tick_cargo(i);
             }
         }
-        self.separate_units();
+        if self.cell_moves() {
+            // Units never push each other; the spatial hash follows the moves.
+            self.jammed.clear();
+            self.rebuild_hash();
+        } else {
+            self.separate_units();
+        }
     }
 
     /// The shared activity state machine (idle, move, attack, harvest, repair).
@@ -125,6 +135,10 @@ impl World {
     // ---- Activities --------------------------------------------------------
 
     fn tick_idle(&mut self, i: usize) {
+        // Off a cell it may not stay on (OpenRA model, movement/cellmove.rs).
+        if self.cell_moves() && self.cell_idle(i) {
+            return;
+        }
         if self.try_idle_target(i) {
             return;
         }
@@ -250,13 +264,23 @@ impl World {
         if goal == NONE {
             return true;
         }
-        let Some(dir) = self.flow_dir(i, goal) else { return true };
+        // The OpenRA model routes by its own searches (movement/search.rs):
+        // the connectivity labels tell whether the goal can be reached,
+        // without a flow field toward every chased target.
+        let reachable = if self.cell_moves() && self.occupies_cells(i) { self.reachable_by_area(i, goal) } else { None };
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
-        let pass = self.pass_of(i);
-        // Standing on a structure: step off it first (move_toward).
-        if dir != DIR_NONE || pass.blocked[ci] {
-            return true;
+        match reachable {
+            Some(true) => return true,
+            Some(false) => {}
+            None => {
+                let Some(dir) = self.flow_dir(i, goal) else { return true };
+                // Standing on a structure: step off it first (move_toward).
+                if dir != DIR_NONE || self.pass_of(i).blocked[ci] {
+                    return true;
+                }
+            }
         }
+        let pass = self.pass_of(i);
         let g = (goal as i32 % self.map.width, goal as i32 / self.map.width);
         // The same answer for every unit of a cut-off group (same goal,
         // same area, same walls it may crush): search once per tick.
@@ -363,7 +387,15 @@ impl World {
     /// still queue behind it (in a gap, say) would block them for good.
     /// Without `crowd`, a unit near the goal that has made no progress for a
     /// while gives up.
+    ///
+    /// In the OpenRA model the move itself decides (movement/cellmove.rs):
+    /// a move that reached its goal, or cannot reach it at all, is over; one
+    /// that stopped short is over for a group move (`crowd`), and tried
+    /// again after a cooldown otherwise (OpenRA MoveCooldownHelper).
     pub(crate) fn goal_reached(&mut self, i: usize, goal: u32, radius: i32, crowd: bool) -> bool {
+        if self.cell_moves() && self.occupies_cells(i) {
+            return self.cell_goal_reached(i, goal, crowd);
+        }
         let rest = match self.path_remaining(i, goal) {
             Some(r) => r,
             None => {
@@ -437,12 +469,17 @@ impl World {
         false
     }
 
-    /// One movement step along the flow field toward `goal`.
+    /// One movement step along the flow field toward `goal` (in the OpenRA
+    /// model, from cell to cell: movement/cellmove.rs).
     pub(crate) fn move_toward(&mut self, i: usize, goal: u32) {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let ci = self.cell_index(x, y);
         let unit = Drive::of(self.rules.actors[self.actors[i].ty as usize].unit.as_ref().unwrap());
         let domain = self.rules.locomotors[unit.locomotor].domain;
+        if domain != crate::rules::Domain::Air && self.cell_moves() && self.occupies_cells(i) {
+            self.cell_move(i, goal);
+            return;
+        }
         if domain == crate::rules::Domain::Air {
             // Aircraft fly straight to their goal.
             let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
@@ -507,9 +544,76 @@ impl World {
     }
 
     /// Turn and drive toward a world point, respecting turn rate and terrain
-    /// speed, and on snow the vehicle's momentum (weather.rs).
+    /// speed, and on snow the vehicle's momentum (weather.rs). In the OpenRA
+    /// model ground units and ships move to the point's cell instead.
     pub(crate) fn step_toward(&mut self, i: usize, wx: i32, wy: i32, unit: &crate::rules::UnitInfo) {
+        if self.cell_moves() && self.occupies_cells(i) {
+            let (cx, cy) = self.cell_of(wx, wy);
+            let goal = self.path_goal(i, cx, cy);
+            if goal != NONE {
+                self.cell_move(i, goal);
+            }
+            return;
+        }
         self.drive_toward(i, wx, wy, Drive::of(unit));
+    }
+
+    /// The movement stats of unit `i` (None for actors that do not move).
+    pub(crate) fn unit_drive(&self, i: usize) -> Option<Drive> {
+        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().map(Drive::of)
+    }
+
+    /// Speed of unit `i` on cell `ci` this tick: terrain, rank, prone
+    /// infantry, panic, weather (None while it may not move: a dog eating).
+    fn base_speed(&self, i: usize, ci: usize, unit: Drive) -> Option<i32> {
+        let loco = &self.rules.locomotors[unit.locomotor];
+        let speed_pct = loco.speeds[self.map.speed_class(ci)];
+        // Rank speed bonus and prone infantry (veterancy.rs), panicking
+        // civilians (neutral.rs), then weather (weather.rs).
+        // Dogs stand still while they eat or reload and run while hunting (dog.rs).
+        if self.movement_paused(i) {
+            return None;
+        }
+        Some(self.weather_speed(
+            i,
+            self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)) * self.world_speed_modifier(i) / 100,
+        ))
+    }
+
+    /// `base_speed` on cell `ci` with the vehicle's momentum on snow: speed
+    /// builds up and drops off gradually (weather.rs).
+    pub(crate) fn tick_speed(&mut self, i: usize, ci: usize, unit: Drive) -> Option<i32> {
+        let speed = self.base_speed(i, ci, unit)?;
+        let here = self.cell_index(self.actors[i].x, self.actors[i].y);
+        Some(match self.grip_of(i, here) {
+            Some((accel, brake, _)) => {
+                let (up, down) = ((unit.speed * accel / 100).max(1), (unit.speed * brake / 100).max(1));
+                let a = &mut self.actors[i];
+                let v = a.env.vel;
+                a.env.vel = if v < speed { (v + up).min(speed) } else { (v - down).max(speed) };
+                a.env.heading = a.facing;
+                a.env.vel
+            }
+            None => speed,
+        })
+    }
+
+    /// Turn rate of unit `i` where it stands (slower on snow and ice).
+    pub(crate) fn turn_rate(&self, i: usize) -> i32 {
+        let Some(unit) = self.unit_drive(i) else { return 0 };
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        self.grip_of(i, ci).map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1))
+    }
+
+    /// The turret follows the hull unless it aims at an attack target or at
+    /// a target of opportunity fire.
+    pub(crate) fn hull_turret(&mut self, i: usize) {
+        let Some(turret_speed) = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed else { return };
+        let a = &mut self.actors[i];
+        let turret_free = a.opportunity == NONE || a.activity != Activity::Move;
+        if (a.target == NONE || a.activity != Activity::Attack) && turret_free {
+            a.turret = turn_toward(a.turret, a.facing, turret_speed);
+        }
     }
 
     /// `step_toward` with the unit's movement stats copied out of the rules
@@ -518,19 +622,7 @@ impl World {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
-        let loco = &self.rules.locomotors[unit.locomotor];
-        let ship = loco.domain == crate::rules::Domain::Water;
-        let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
-        // Rank speed bonus and prone infantry (veterancy.rs), panicking
-        // civilians (neutral.rs), then weather (weather.rs).
-        // Dogs stand still while they eat or reload and run while hunting (dog.rs).
-        if self.movement_paused(i) {
-            return;
-        }
-        let speed = self.weather_speed(
-            i,
-            self.infantry_speed(i, self.modified_speed(i, unit.speed * speed_pct / 100)) * self.world_speed_modifier(i) / 100,
-        );
+        let Some(speed) = self.base_speed(i, ci, unit) else { return };
         let grip = self.grip_of(i, ci);
         let turn_speed = grip.map_or(unit.turn_speed, |(_, _, turn)| (unit.turn_speed * turn / 100).max(1));
         let turret_speed = self.rules.actors[self.actors[i].ty as usize].turret_turn_speed;
@@ -605,6 +697,10 @@ impl World {
     /// it heats up or cools down. Precise work (harvesting, docking, repair,
     /// boarding, abilities) stops dead instead of coasting.
     fn tick_vehicle_weather(&mut self, i: usize) {
+        // In the OpenRA model a vehicle stays on its cells: it does not slide.
+        if self.cell_moves() && !self.actors[i].moved {
+            self.actors[i].env.vel = 0;
+        }
         if self.actors[i].env.vel > 0 && !self.actors[i].moved {
             let a = &self.actors[i];
             let precise =
@@ -633,7 +729,7 @@ impl World {
     }
 
     /// Move to (nx, ny) unless that enters a blocked cell; slide along walls.
-    fn try_move(&mut self, i: usize, nx: i32, ny: i32) -> bool {
+    pub(crate) fn try_move(&mut self, i: usize, nx: i32, ny: i32) -> bool {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         for (tx, ty) in [(nx, ny), (nx, y), (x, ny)] {
             if (tx, ty) == (x, y) {
@@ -669,7 +765,12 @@ impl World {
     /// flow fields and connectivity labels use (`flowfield::step`), so units
     /// never slip into a pocket their fields cannot lead them out of. A unit
     /// on a blocked cell (a structure went up around it) may leave any way.
-    fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
+    ///
+    /// Every position change of a moving unit goes through it (`try_move`:
+    /// driving, crowd pushes, coasting on ice), so a push or nudge can never
+    /// put a ship on land or a tank in the sea. Other movement models call
+    /// it for the same guarantee.
+    pub(crate) fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
         let pass = self.pass_of(i);
         // Walls the unit crushes are open to it, as in its flow field (neutral.rs).
         let blocked = |ci: usize| pass.blocked[ci] && !(pass.crush[ci] != 0 && self.crushes_wall_at(i, ci));
@@ -691,6 +792,15 @@ impl World {
         let hv = info.harvester.clone().unwrap();
         match self.actors[i].harv {
             HarvState::Wait => {
+                // Off the dock while it waits, so other trucks can unload.
+                let goal = self.actors[i].goal;
+                if goal != NONE {
+                    if self.move_settled(i, goal) {
+                        self.actors[i].goal = NONE;
+                    } else {
+                        self.move_toward(i, goal);
+                    }
+                }
                 let a = &mut self.actors[i];
                 a.harv_timer -= 1;
                 if a.harv_timer <= 0 {
@@ -699,6 +809,7 @@ impl World {
             }
             HarvState::Search => {
                 let found = self.find_ore(i, &hv);
+                let unblock = if found.is_none() { self.dock_unblock_cell(i) } else { NONE };
                 let a = &mut self.actors[i];
                 match found {
                     Some(c) => {
@@ -718,6 +829,7 @@ impl World {
                         a.harv = HarvState::Wait;
                         a.harv_timer = 50;
                         a.harv_cell = NONE;
+                        a.goal = unblock;
                     }
                 }
             }
@@ -733,7 +845,7 @@ impl World {
                     a.harv_timer = hv.bale_load_delay;
                     return;
                 }
-                if self.goal_reached(i, c, 0, false) {
+                if self.move_settled(i, c) {
                     // Could not get onto that cell (crowded); pick another.
                     let a = &mut self.actors[i];
                     a.harv = HarvState::Search;
@@ -778,6 +890,7 @@ impl World {
                     let a = &mut self.actors[i];
                     a.harv = HarvState::Wait;
                     a.harv_timer = 50;
+                    a.goal = NONE;
                     return;
                 };
                 let dock = self.dock_cell(r);
@@ -794,19 +907,33 @@ impl World {
                     self.note_dock(i, true);
                     return;
                 }
-                // Wait outside while another harvester unloads.
-                let (dx, dy) = (cell_center(dock as i32 % self.map.width), cell_center(dock as i32 / self.map.width));
-                if busy && dist(self.actors[i].x, self.actors[i].y, dx, dy) < 3 * CELL {
-                    return;
+                // WebRA model: wait outside while another harvester unloads;
+                // the next in line reserves the dock before it drives on, so
+                // trucks do not shove each other over it (movement/soft.rs).
+                // In the OpenRA model the truck on the dock holds its cell and
+                // the others wait next to it (OpenRA MoveToDock).
+                if !self.cell_moves() || !self.occupies_cells(i) {
+                    let (dx, dy) = (cell_center(dock as i32 % self.map.width), cell_center(dock as i32 / self.map.width));
+                    let close = dist(self.actors[i].x, self.actors[i].y, dx, dy) < crate::movement::soft::QUEUE_RANGE * CELL;
+                    if busy && close {
+                        return;
+                    }
+                    if close {
+                        self.actors[r].dock_user = me;
+                    }
                 }
                 // The dock became unreachable on the way (a wall, a fallen
                 // bridge), or the truck is blocked for good: let go of this
                 // refinery and pick again after a pause.
                 if self.goal_reached(i, dock, 0, false) {
+                    if self.actors[r].dock_user == me {
+                        self.actors[r].dock_user = NONE;
+                    }
                     let a = &mut self.actors[i];
                     a.refinery = NONE;
                     a.harv = HarvState::Wait;
                     a.harv_timer = 50;
+                    a.goal = NONE;
                     return;
                 }
                 self.move_toward(i, dock);
@@ -841,6 +968,45 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Where an empty truck that found no ore goes while it waits, when it
+    /// stands on its refinery's dock: OpenRA FindAndDeliverResources moves
+    /// it to the nearest cell it may stay on around Harvester.UnblockCell
+    /// (four cells below the dock), so the dock stays free. NONE elsewhere.
+    fn dock_unblock_cell(&self, i: usize) -> u32 {
+        const UNBLOCK_CELL: (i32, i32) = (0, 4);
+        let Some(r) = self.resolve(self.actors[i].refinery) else { return NONE };
+        let dock = self.dock_cell(r);
+        if self.cell_index(self.actors[i].x, self.actors[i].y) as u32 != dock {
+            return NONE;
+        }
+        let w = self.map.width;
+        let (tx, ty) = (dock as i32 % w + UNBLOCK_CELL.0, dock as i32 / w + UNBLOCK_CELL.1);
+        let pass = self.pass_of(i);
+        let area = pass.component[dock as usize];
+        // OpenRA Mobile.NearestMoveableCell(target, 1, 5): the target, then
+        // the rings around it, nearest first.
+        for r in 0..=5i32 {
+            let mut best: Option<(i32, u32)> = None;
+            for y in ty - r..=ty + r {
+                for x in tx - r..=tx + r {
+                    if (x - tx).abs() != r && (y - ty).abs() != r || !self.map.contains(x, y) {
+                        continue;
+                    }
+                    let c = self.map.idx(x, y) as u32;
+                    let ok = !pass.blocked[c as usize] && pass.component[c as usize] == area && self.can_stay_in_cell(c);
+                    let d = (x - tx).pow(2) + (y - ty).pow(2);
+                    if ok && best.is_none_or(|(bd, bc)| (d, c) < (bd, bc)) {
+                        best = Some((d, c));
+                    }
+                }
+            }
+            if let Some((_, c)) = best {
+                return c;
+            }
+        }
+        NONE
     }
 
     pub(crate) fn at_cell_center(&self, i: usize, cell: u32) -> bool {
@@ -963,6 +1129,7 @@ impl World {
         let inside = |x: i32, y: i32| x >= x0 && x <= x1 && y >= y0 && y <= y1;
         let in_box = |x: i32, y: i32| (x - origin.0).abs() <= radius && (y - origin.1).abs() <= radius;
         let start = self.map.idx(ux, uy);
+        let cell_moves = self.cell_moves() && self.occupies_cells(i);
         let mut cost = vec![i32::MAX; self.map.cells()];
         let mut heap = std::collections::BinaryHeap::new();
         if !self.pass.blocked[start] {
@@ -975,7 +1142,10 @@ impl World {
                 continue;
             }
             let (x, y) = (ci as i32 % self.map.width, ci as i32 / self.map.width);
-            if in_box(x, y) && self.map.has_resource(ci) && !claimed.contains(&(ci as u32)) {
+            // OpenRA ClosestHarvestablePos searches with BlockedByActor.Stationary:
+            // a cell a standing unit holds is not a choice (OpenRA model).
+            let held = cell_moves && !self.can_enter_cell(i, ci as u32, crate::movement::occupancy::Blocking::Stationary);
+            if in_box(x, y) && self.map.has_resource(ci) && !claimed.contains(&(ci as u32)) && !held {
                 let key = (
                     c,
                     (x - ux).pow(2) + (y - uy).pow(2),
@@ -1038,6 +1208,14 @@ impl World {
         })
     }
 
+    /// The cell in the middle of the pad of service depot `d`, where
+    /// vehicles are repaired and minelayers rearm.
+    pub(crate) fn repair_pad_cell(&self, d: usize) -> u32 {
+        let depot = &self.actors[d];
+        let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
+        self.map.idx(depot.cx + binfo.width / 2, depot.cy + binfo.height / 2) as u32
+    }
+
     /// Whether vehicle `i` is being serviced on its depot's pad (it holds
     /// the pad): the crowd does not push it off.
     pub(crate) fn on_repair_pad(&self, i: usize) -> bool {
@@ -1053,9 +1231,20 @@ impl World {
         let depot = &self.actors[d];
         let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
         let rep = binfo.repairs.clone().unwrap();
-        let pad = self.map.idx(depot.cx + binfo.width / 2, depot.cy + binfo.height / 2) as u32;
+        let pad = self.repair_pad_cell(d);
         let holder = self.pad_holder(d, i);
         if !self.at_cell_center(i, pad) {
+            if self.cell_moves() && self.occupies_cells(i) {
+                // OpenRA Resupply: onto the pad. The vehicle on it holds the
+                // cell; the others wait next to it and try again
+                // (MoveCooldownHelper), unless the pad cannot be reached.
+                if self.goal_reached(i, pad, 0, false) {
+                    self.actors[i].activity = Activity::Idle;
+                    return;
+                }
+                self.move_toward(i, pad);
+                return;
+            }
             if holder.is_some() {
                 // Another vehicle is on the pad: wait close by for its turn
                 // (OpenRA Resupply waits for the reservation), without the
@@ -1065,10 +1254,16 @@ impl World {
                 a.best_dist = i32::MAX;
                 a.stuck_ticks = 0;
                 a.stall_ticks = 0;
-                if dist(a.x, a.y, px, py) > 3 * CELL {
+                if dist(a.x, a.y, px, py) > crate::movement::soft::QUEUE_RANGE * CELL {
                     self.move_toward(i, pad);
                 }
                 return;
+            }
+            // Next in line: reserve the pad before driving onto it, so the
+            // others wait instead of shoving each other over it (movement/soft.rs).
+            let (px, py) = (cell_center(pad as i32 % self.map.width), cell_center(pad as i32 / self.map.width));
+            if dist(self.actors[i].x, self.actors[i].y, px, py) <= crate::movement::soft::QUEUE_RANGE * CELL {
+                self.actors[d].dock_user = self.make_ref(i);
             }
             if self.goal_reached(i, pad, 0, false) {
                 self.actors[i].activity = Activity::Idle;
@@ -1136,160 +1331,15 @@ impl World {
             self.sound.push(SoundEventKind::UnitRepaired, ty, x, y, owner, by_ty);
         }
     }
-
-    // ---- Crowd separation --------------------------------------------------
-
-    fn separate_units(&mut self) {
-        self.rebuild_hash();
-        let n = self.actors.len();
-        let mut push = vec![(0i32, 0i32); n];
-        let mut jammed = vec![false; n];
-        // (victim, crusher): crushing counts as a kill by the crusher
-        // (veterancy.rs, and for its owner in the observer stats).
-        let mut crushed: Vec<(usize, usize)> = Vec::new();
-        for i in 0..n {
-            let a = &self.actors[i];
-            // Planes and paratroopers in the air never bump into anything (plane.rs); mines are not units.
-            // Leaping dogs and units walking into a target pass through the crowd (dog.rs, infantry.rs).
-            if !a.alive || !a.is_unit() || a.air.parachute || self.is_plane(i) || self.passes_through(i) {
-                continue;
-            }
-            let ra = self.rules.actors[a.ty as usize].unit.as_ref().unwrap().radius;
-            let (cx, cy) = self.cell_of(a.x, a.y);
-            for oy in -1..=1 {
-                for ox in -1..=1 {
-                    if !self.map.contains(cx + ox, cy + oy) {
-                        continue;
-                    }
-                    for &j in self.units_in_cell(self.map.idx(cx + ox, cy + oy)) {
-                        let j = j as usize;
-                        if j <= i {
-                            continue;
-                        }
-                        let b = &self.actors[j];
-                        // Only units in the same domain bump into each other
-                        // (aircraft fly over tanks, ships never meet tanks).
-                        if !b.alive
-                            || self.domain_of(i) != self.domain_of(j)
-                            || b.air.parachute
-                            || self.is_plane(j)
-                            || self.passes_through(j)
-                        {
-                            continue;
-                        }
-                        // A landed helicopter and one flying over it do not touch.
-                        if (a.altitude == 0) != (b.altitude == 0) {
-                            continue;
-                        }
-                        let rb = self.rules.actors[b.ty as usize].unit.as_ref().unwrap().radius;
-                        let min = ra + rb;
-                        let (dx, dy) = (b.x - a.x, b.y - a.y);
-                        let d2 = dx as i64 * dx as i64 + dy as i64 * dy as i64;
-                        if d2 >= (min as i64) * (min as i64) {
-                            continue;
-                        }
-                        // A moving crusher (tracked vehicles, ore truck) runs over
-                        // soldiers and civilians that are not its allies
-                        // (OpenRA Crushable: CrushedByFriendlies false).
-                        if !self.are_allies(a.owner, b.owner) {
-                            let crush_reach = (min as i64) * (min as i64) * 9 / 16;
-                            if d2 <= crush_reach {
-                                if a.moved && self.crushes(i, j) {
-                                    crushed.push((j, i));
-                                    continue;
-                                }
-                                if b.moved && self.crushes(j, i) {
-                                    crushed.push((i, j));
-                                    continue;
-                                }
-                            }
-                        }
-                        // A soldier or civilian a moving tank may crush stands in its way
-                        // like an enemy instead of being pushed aside.
-                        let crushable = !self.are_allies(a.owner, b.owner) && (self.crushes(i, j) || self.crushes(j, i));
-                        let friends = !self.are_enemies(a.owner, b.owner) && !crushable;
-                        if friends {
-                            jammed[i] |= b.moved;
-                            jammed[j] |= a.moved;
-                        }
-                        let d = isqrt(d2) as i32;
-                        let (nx, ny) = if d == 0 {
-                            // Deterministic split for exactly overlapping units.
-                            let f = (i * 7 + j * 13) % 8;
-                            (DIRS[f].0 * 1024, DIRS[f].1 * 1024)
-                        } else {
-                            (dx * 1024 / d, dy * 1024 / d)
-                        };
-                        let overlap = (min - d).min(MAX_PUSH * 2);
-                        // Moving units push standing friends aside, so a crowd that
-                        // stopped makes room for those still arriving instead of
-                        // plugging their way; standing enemies are walls.
-                        let (wa, wb) = match (a.moved, b.moved, friends) {
-                            (true, false, true) => (0, 100),
-                            (false, true, true) => (100, 0),
-                            (true, false, false) => (100, 0),
-                            (false, true, false) => (0, 100),
-                            _ => (50, 50),
-                        };
-                        let pa = overlap * wa / 100;
-                        let pb = overlap * wb / 100;
-                        push[i].0 -= nx * pa / 1024;
-                        push[i].1 -= ny * pa / 1024;
-                        push[j].0 += nx * pb / 1024;
-                        push[j].1 += ny * pb / 1024;
-                    }
-                }
-            }
-        }
-        self.jammed = jammed;
-        for (k, crusher) in crushed {
-            if self.actors[k].alive {
-                // Crushable.CrushSound, at the crusher (sound_events.rs).
-                let (c, v) = (&self.actors[crusher], &self.actors[k]);
-                let (vty, cx, cy, vowner, cowner) = (v.ty as i32, c.x, c.y, v.owner, c.owner);
-                self.sound.push(SoundEventKind::Crushed, vty, cx, cy, vowner, cowner as i32);
-                let source = self.make_ref(crusher);
-                // Crushed soldiers leave a flattened body (infantry_combat.rs).
-                self.note_crushed(k);
-                self.award_kill(k, source);
-                let by = self.actors[crusher].owner;
-                self.with_damage_source(by, |w| w.kill(k));
-            }
-        }
-        for (i, &(px, py)) in push.iter().enumerate() {
-            if px == 0 && py == 0 || !self.actors[i].alive {
-                continue;
-            }
-            let a = &self.actors[i];
-            // Units busy at a dock or repair pad hold their spot.
-            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting) || self.on_repair_pad(i) {
-                continue;
-            }
-            let (px, py) = (px.clamp(-MAX_PUSH, MAX_PUSH), py.clamp(-MAX_PUSH, MAX_PUSH));
-            let (x, y) = (a.x, a.y);
-            let moved = self.actors[i].moved;
-            self.try_move(i, x + px, y + py);
-            self.actors[i].moved = moved;
-        }
-    }
-
-    fn crushes(&self, a: usize, b: usize) -> bool {
-        let (ta, tb) = (&self.actors[a], &self.actors[b]);
-        if ta.kind != Kind::Vehicle || tb.kind != Kind::Infantry {
-            return false;
-        }
-        let loco = self.rules.actors[ta.ty as usize].unit.as_ref().unwrap().locomotor;
-        self.rules.locomotors[loco].crushes_infantry
-    }
 }
 
 /// The movement stats `step_toward` needs from a UnitInfo.
 #[derive(Clone, Copy)]
-struct Drive {
-    locomotor: usize,
-    speed: i32,
-    turn_speed: i32,
-    turn_in_place: bool,
+pub(crate) struct Drive {
+    pub locomotor: usize,
+    pub speed: i32,
+    pub turn_speed: i32,
+    pub turn_in_place: bool,
 }
 
 impl Drive {

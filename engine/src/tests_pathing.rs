@@ -128,13 +128,15 @@ fn a_structure_on_the_goal_sends_the_group_to_the_nearest_open_cell() {
     let units = spawn_block(&mut w, &["1TNK", "E1"], 0, 4, 4, 10, 60);
     let (gx, gy) = (cell_center(40), cell_center(40));
     w.order_move(&units, gx, gy, false);
+    let group = w.actors[units[0]].group;
     for _ in 0..50 {
         w.step();
     }
     let powr = ty(&w, "POWR");
     w.spawn_building(powr, 0, 39, 39).unwrap();
     let o = outcome(&mut w, &units, gx, gy, 8 * CELL, 25 * 60);
-    let mut goals: Vec<u32> = units.iter().map(|&i| w.actors[i].goal).collect();
+    // Units the OpenRA model nudged aside on the way took orders of their own.
+    let mut goals: Vec<u32> = units.iter().filter(|&&i| w.actors[i].group == group).map(|&i| w.actors[i].goal).collect();
     goals.sort();
     goals.dedup();
     assert_eq!((o.arrived, o.gave_up, o.still_moving), (60, 0, 0), "{o:?}");
@@ -152,6 +154,9 @@ fn a_structure_on_the_goal_sends_the_group_to_the_nearest_open_cell() {
 #[test]
 fn a_big_group_queues_through_a_gap_instead_of_stopping_short() {
     let mut w = arena(80, 64);
+    // WebRA's crowd movement (movement/soft.rs); the OpenRA model's group
+    // moves are tested in movement/tests.rs.
+    w.options.movement = crate::movement::MovementModel::WebRA;
     set_rock(&mut w, (0..64).filter(|&y| y != 32).map(|y| (30, y)));
     let units = spawn_block(&mut w, &["1TNK", "3TNK"], 0, 2, 4, 26, 400);
     let (gx, gy) = (cell_center(42), cell_center(32));
@@ -211,6 +216,9 @@ fn crowded_pathing_is_deterministic() {
 #[test]
 fn a_thousand_units_cross_a_generated_map_and_gather_at_the_goal() {
     let mut w = World::new_stress(3, 2, 120);
+    // WebRA's crowd movement (movement/soft.rs); the OpenRA model's group
+    // moves are tested in movement/tests.rs.
+    w.options.movement = crate::movement::MovementModel::WebRA;
     // The stress setup gives the other side a tank that attack-moves at us:
     // take it out, this is about getting there, not about who gets shot.
     for k in 0..w.actors.len() {

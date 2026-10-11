@@ -94,8 +94,11 @@ test('mission end of game dialogs offer the next mission, another try and the ca
   assert.match(won.text, /Next: 02: Five to One/);
   assert.deepEqual(
     won.buttons.map((b) => b.id),
-    ['next', 'continue', 'restart', 'stats', 'leave', 'exit'],
+    ['next', 'restart', 'stats', 'leave', 'exit'],
+    'a won mission is over: no playing on',
   );
+  flow.close();
+  assert.equal(flow.dialog, DIALOGS.VICTORY, 'the victory dialog cannot be closed');
   assert.equal(won.buttons.find((b) => b.id === 'leave').label, 'Back to the campaign');
   const lost = new EndGameFlow();
   lost.update({ won: false, defeated: true, winner: null });
@@ -202,7 +205,7 @@ test('the mission view shows objectives, messages, the mission text, movie cards
       field,
       hudButtons: hud,
       feed,
-      audio: { announce: (k) => heard.push(['speech', k]), notify: (n) => heard.push(['sound', n]), effect: () => heard.push(['file']) },
+      audio: { announce: (k) => heard.push(['speech', k]), notify: (n) => heard.push(['sound', n]), effect: () => heard.push(['file']), lowPowerQuiet: (q) => heard.push(['quiet', q]) },
       centerOn: (x, y) => centered.push([x, y]),
       ping: () => heard.push(['ping']),
       toScreen: (x, y) => [x, y],
@@ -216,6 +219,10 @@ test('the mission view shows objectives, messages, the mission text, movie cards
     feed.onFrame({ state: state([{ description: 'Rescue Einstein', type: 'Primary', required: true, state: 'incomplete' }]), events: null });
     view.frame();
     assert.equal(view.panel.hidden, true, 'the first objectives do not pop the panel open');
+    assert.deepEqual(heard.splice(0), [['quiet', false]], 'the low power line follows the script');
+    feed.onFrame({ state: state([{ description: 'Rescue Einstein', type: 'Primary', required: true, state: 'incomplete' }], { lowPowerQuiet: true }), events: null });
+    view.frame();
+    assert.deepEqual(heard.splice(0), [['quiet', true]], 'PlayLowPowerNotification = false silences it');
     view.toggle(true);
     assert.match(view.panel.textContent, /Rescue Einstein/);
     assert.equal(objectiveLabel({ required: false }), 'Secondary');
@@ -342,4 +349,19 @@ test('co-op missions: the catalog matches the mission files, and both players co
     a.free();
     b.free();
   }
+  // The lobby's movement model reaches the engine (left out: `webra`, as games before it).
+  const m = COOP_MISSIONS[0];
+  const mission = { id: m.id, hash: m.hash, options: { difficulty: m.options.difficulty.default } };
+  assert.equal(JSON.parse(coopStart(mission, 9, 0, 'openra')).movement, 'openra');
+  assert.equal('movement' in JSON.parse(coopStart(mission, 9, 0)), false);
+  const run = (movement) => {
+    const g = Game.from_mission(missionText(m.id), coopStart(mission, 9, 0, movement));
+    g.set_lockstep(true);
+    for (let t = 0; t < 100; t++) g.tick();
+    const h = g.state_hash();
+    g.free();
+    return h;
+  };
+  assert.equal(run(undefined), run('webra'));
+  assert.notEqual(run('openra'), run('webra'));
 });

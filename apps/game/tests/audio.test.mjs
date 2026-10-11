@@ -50,7 +50,7 @@ import { installFromFiles, installedSummary, categoryOf } from '../js/audio/inst
 import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { shuffle, Jukebox } from '../js/audio/music.js';
-import { AudioSystem, FOG_VISIBLE, CLICKABLE } from '../js/audio/index.js';
+import { AudioSystem, FOG_VISIBLE, CLICKABLE, holdsGameAudio } from '../js/audio/index.js';
 import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
 const wasm = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
@@ -127,10 +127,10 @@ test('every engine weapon has a sound class, and synthesized sounds exist for al
 });
 
 test('weapons map to their original OpenRA sound names', () => {
-  assert.deepEqual(fireSound('90mm'), { synth: 'cannon', originals: ['cannon1.aud'] });
+  assert.deepEqual(fireSound('90mm'), { synth: 'cannon', originals: ['cannon1.aud'], openra: true });
   assert.deepEqual(fireSound('M1Carbine').originals, ['gun11.aud']);
   assert.deepEqual(impactSound('90mm', false).originals, ['kaboom12.aud']);
-  assert.deepEqual(impactSound('90mm', true), { synth: 'splash', originals: ['splash9.aud'] });
+  assert.deepEqual(impactSound('90mm', true), { synth: 'splash', originals: ['splash9.aud'], openra: true });
   assert.equal(impactSound('M1Carbine', true).synth, 'splash_small');
   assert.equal(fireSound('Atomic').synth, null, 'no fire sound for a warhead');
   assert.equal(impactSound('Atomic', false).synth, 'explosion_huge');
@@ -359,24 +359,123 @@ test('support powers: charging, ready, target and insufficient power lines per p
   assert.equal(powerNotifications('IRON', 'GrantExternalConditionPower@IRONCURTAIN').endChargeLine, 'ironCurtainReady');
 });
 
-test('low power repeats every AdviceInterval, silos are checked every 20 seconds (OpenRA)', () => {
-  const { d, calls, advance } = harness();
-  d.onPlayerState({ lowPower: false, resources: 0, storage: 1000 });
-  d.onPlayerState({ lowPower: true });
+test('low power repeats every AdviceInterval, silos are checked every 20 seconds, in game ticks (OpenRA)', () => {
+  // 40 ms ticks (normal speed): 10 seconds are 250 ticks, 20 seconds 500.
+  const { d: director, calls, advance } = harness();
+  // The page clock runs along with the game (the announcer's own cooldowns count it).
+  const d = { onPlayerState: (state) => (advance(2), director.onPlayerState(state)) };
+  d.onPlayerState({ tick: 0, lowPower: false, resources: 0, storage: 1000 });
+  d.onPlayerState({ tick: 1, lowPower: true });
   assert.deepEqual(calls.announce, ['lowPower'], 'at once when power gets low');
-  advance(5);
-  d.onPlayerState({ lowPower: true });
-  advance(5);
-  d.onPlayerState({ lowPower: true });
+  d.onPlayerState({ tick: 126, lowPower: true });
+  d.onPlayerState({ tick: 250, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower'], 'not before 10 seconds of game time');
+  d.onPlayerState({ tick: 251, lowPower: true });
   assert.deepEqual(calls.announce, ['lowPower', 'lowPower'], 'again after 10 seconds');
-  d.onPlayerState({ lowPower: false });
+  d.onPlayerState({ tick: 252, lowPower: false });
   calls.announce.length = 0;
-  advance(21);
-  d.onPlayerState({ lowPower: false, resources: 900, storage: 1000 });
+  d.onPlayerState({ tick: 500, lowPower: false, resources: 900, storage: 1000 });
+  assert.deepEqual(calls.announce, [], 'the first check comes after 20 seconds');
+  d.onPlayerState({ tick: 501, lowPower: false, resources: 900, storage: 1000 });
   assert.deepEqual(calls.announce, ['silosNeeded'], 'over 80 percent full');
-  advance(21);
-  d.onPlayerState({ lowPower: false, resources: 700, storage: 1000 });
+  d.onPlayerState({ tick: 1002, lowPower: false, resources: 700, storage: 1000 });
   assert.equal(calls.announce.length, 1, 'enough room');
+});
+
+test('a paused game says nothing: no silo or low power advice while the page clock runs on (user report)', () => {
+  // The UI polls the player state every 100 ms also while the game is paused
+  // (pause hotkey, the game menu, a hidden tab): the same tick, wall time passing.
+  const { d, calls, advance } = harness();
+  const state = (tick) => ({ tick, lowPower: true, resources: 950, storage: 1000 });
+  d.onPlayerState({ tick: 0, lowPower: false, resources: 950, storage: 1000 });
+  d.onPlayerState(state(10));
+  assert.deepEqual(calls.announce, ['lowPower']);
+  // Played until tick 400, then paused for ten minutes.
+  for (let t = 11; t <= 400; t += 3) {
+    d.onPlayerState(state(t));
+    advance(0.12);
+  }
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower'], 'the line every 10 seconds while playing');
+  calls.announce.length = 0;
+  for (let i = 0; i < 6000; i++) {
+    d.onPlayerState(state(400));
+    advance(0.1);
+  }
+  assert.deepEqual(calls.announce, [], 'nothing while paused');
+  // Resumed: the cadence goes on where it stopped (low power last at tick 260, silos first checked after tick 500).
+  d.onPlayerState(state(500));
+  assert.deepEqual(calls.announce, [], 'not at once on resume');
+  d.onPlayerState(state(501));
+  assert.deepEqual(calls.announce, ['silosNeeded'], 'the silo check 20 game seconds after the start');
+  d.onPlayerState(state(509));
+  assert.deepEqual(calls.announce, ['silosNeeded']);
+  d.onPlayerState(state(510));
+  assert.deepEqual(calls.announce, ['silosNeeded', 'lowPower'], 'low power 10 game seconds after the last one');
+  // A faster game speed (20 ms ticks): the same 10 seconds are 500 ticks.
+  const fast = [];
+  let wall = 0;
+  const f = new Director({ rules: RULES, player: 0, side: 'allies', pxPerWorld: 1, lookup: () => null, sink: { effect() {}, voice() {}, announce: (k) => fast.push(k) }, now: () => (wall += 2), tickMs: 20 });
+  f.onPlayerState({ tick: 0, lowPower: false });
+  f.onPlayerState({ tick: 1, lowPower: true });
+  f.onPlayerState({ tick: 300, lowPower: true });
+  assert.deepEqual(fast, ['lowPower']);
+  f.onPlayerState({ tick: 501, lowPower: true });
+  assert.deepEqual(fast, ['lowPower', 'lowPower']);
+  // Back in time (a replay seek or a reload): the intervals count from there.
+  f.onPlayerState({ tick: 10, lowPower: true });
+  f.onPlayerState({ tick: 509, lowPower: true });
+  assert.equal(fast.length, 2);
+  f.onPlayerState({ tick: 510, lowPower: true });
+  assert.equal(fast.length, 3);
+});
+
+test('a mission that silences the low power line stays quiet (OpenRA PlayLowPowerNotification)', () => {
+  const { d: director, calls, advance } = harness();
+  const d = { onPlayerState: (state) => (advance(2), director.onPlayerState(state)) };
+  director.setLowPowerQuiet(true);
+  d.onPlayerState({ tick: 0, lowPower: false });
+  d.onPlayerState({ tick: 1, lowPower: true });
+  d.onPlayerState({ tick: 300, lowPower: true });
+  d.onPlayerState({ tick: 600, lowPower: true });
+  assert.deepEqual(calls.announce, [], 'not when power gets low, nor every 10 seconds');
+  // Allowed again while power stays low: the line was due long ago, so it plays at once, then on its interval.
+  director.setLowPowerQuiet(false);
+  d.onPlayerState({ tick: 601, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower']);
+  d.onPlayerState({ tick: 850, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower']);
+  d.onPlayerState({ tick: 851, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower']);
+  // Quiet again mid-way: nothing more, and the silo advice is not affected.
+  director.setLowPowerQuiet(true);
+  d.onPlayerState({ tick: 1200, lowPower: true, resources: 900, storage: 1000 });
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower', 'silosNeeded']);
+});
+
+test('the simulation\'s announcer lines are marked, the player\'s clicks are not', () => {
+  const lines = [];
+  const d = new Director({
+    rules: RULES,
+    player: 0,
+    side: 'allies',
+    pxPerWorld: 1,
+    lookup: () => null,
+    sink: { effect() {}, voice() {}, notify() {}, announce: (key, o) => lines.push([key, !!o?.world]) },
+    now: () => 0,
+  });
+  d.onEvents(ev([EV.INSUFFICIENT_FUNDS, 0, 0, 0, 0, 0]), VIEW);
+  d.onPlayerState({ tick: 0, lowPower: false });
+  d.onPlayerState({ tick: 1, lowPower: true });
+  d.onProductionClick('E1', 'queued');
+  d.onSelectTarget({ key: 'NukePower' });
+  d.onGameOver(true);
+  assert.deepEqual(lines, [
+    ['insufficientFunds', true],
+    ['lowPower', true],
+    ['training', false],
+    ['selectTarget', false],
+    ['win', false],
+  ]);
 });
 
 test('actor sounds and notifications of the rules play to the right player', () => {
@@ -484,7 +583,7 @@ test('rules data: lost lines, captures, infiltration, repairs and actor sound fi
 });
 
 test('sound notifications follow notifications.yaml: files, volumes and interrupt types', () => {
-  assert.deepEqual(notificationSound('ClickSound'), { synth: 'ui_click', originals: ['ramenu1.aud'], volume: 1, interrupt: 'Overlap' });
+  assert.deepEqual(notificationSound('ClickSound'), { synth: 'ui_click', originals: ['ramenu1.aud'], volume: 1, interrupt: 'Overlap', openra: true });
   assert.equal(notificationSound('ClickDisabledSound'), null, 'empty in RA: silent');
   assert.equal(notificationSound('CashTickUp').volume, 0.33);
   assert.equal(notificationSound('ChatLine').interrupt, 'Interrupt');
@@ -519,6 +618,84 @@ test('the announcer plays one line at a time, drops duplicates and stale lines',
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(played, ['unitReady', 'baseUnderAttack']);
   assert.equal(a.push('baseUnderAttack'), false, 'the line playing now is not queued again');
+});
+
+test('while the game is paused the simulation\'s lines wait, the player\'s clicks still speak', async () => {
+  let t = 0;
+  const played = [];
+  const pending = [];
+  const a = new Announcer({
+    now: () => t,
+    play: (key) =>
+      new Promise((resolve) => {
+        played.push(key);
+        pending.push(resolve);
+      }),
+  });
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const finish = async () => {
+    pending.shift()();
+    await settle();
+  };
+  a.push('unitReady', { world: true });
+  a.push('unitLost', { world: true });
+  assert.deepEqual(played, ['unitReady']);
+  a.setPaused(true);
+  await finish();
+  assert.deepEqual(played, ['unitReady'], 'the line playing when the pause began finishes; the waiting one does not start');
+  t += 60;
+  a.push('baseUnderAttack', { world: true });
+  a.push('building');
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building'], 'a production click speaks during the pause');
+  await finish();
+  assert.deepEqual(played, ['unitReady', 'building'], 'nothing of the simulation starts during the pause');
+  // A click asks for a line the simulation's is waiting with: it plays now.
+  a.push('unitLost');
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building', 'unitLost']);
+  await finish();
+  t += 600;
+  a.setPaused(false);
+  await settle();
+  assert.deepEqual(played, ['unitReady', 'building', 'unitLost', 'baseUnderAttack'], 'held lines play after the pause: paused time is no waiting time');
+  await finish();
+  a.push('lowPower', { world: true });
+  a.push('silosNeeded', { world: true });
+  await settle();
+  assert.deepEqual(played.slice(4), ['lowPower']);
+  t += 5;
+  await finish();
+  assert.deepEqual(played.slice(4), ['lowPower'], 'running time still makes old lines stale');
+});
+
+test('the Win and Lose lines play at once when the game ends, though the end of game dialog stands the game still (review)', async () => {
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
+  audio.prefs.set({ enabled: true });
+  const said = [];
+  audio.announcer.play = async (key) => said.push(key);
+  audio.attachGame({ game: { set_audio_events() {}, map_width: () => 64 }, rules: { actors: [], weapons: [], pxPerCell: 24, players: [] }, player: 0, worldUnitsPerCell: 1024 });
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  // main.js: the end of game flow opens its dialog (onChange: updatePaused), then the line comes.
+  assert.equal(holdsGameAudio({ endDialog: true }), false, 'the end of game dialog holds nothing');
+  assert.equal(holdsGameAudio({ menu: true, endDialog: true }), true, 'the player\'s pause does');
+  assert.equal(holdsGameAudio({ key: true }) && holdsGameAudio({ debug: true }) && holdsGameAudio({ replayPaused: true }), true);
+  // A mission's final speech of the last tick, waiting behind a line that plays: the end does not hold it.
+  audio.announce('objectiveMet', { world: true });
+  audio.announce('reinforcementsArrived', { world: true });
+  audio.setPaused(holdsGameAudio({ endDialog: true }));
+  audio.gameOver(true);
+  await settle();
+  await settle();
+  assert.deepEqual(said, ['objectiveMet', 'reinforcementsArrived', 'win'], 'all of them, in order, at once');
+  // Even inside a pause of the player's the Win or Lose line is not held (it is not a simulation line), and it comes once.
+  said.length = 0;
+  audio.setPaused(true);
+  audio.gameOver(false);
+  audio.gameOver(false);
+  await settle();
+  assert.deepEqual(said, ['lose']);
 });
 
 // ---- Settings ------------------------------------------------------------------------------
@@ -674,8 +851,9 @@ test('placing a structure plays every BuildSounds entry at once (OpenRA PlaceBui
   assert.ok(synth[0].buffer.samples.length > 1000);
 });
 
-test('the audio system plays every layer of a layered sound on the effects bus', () => {
+test('the audio system plays every layer of a layered sound on the effects bus', async () => {
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
   const played = [];
   audio.mixer.play = (buffer, opts) => played.push([buffer, opts.bus, opts.gain]);
   audio.bank.resolveAll = (sound) => sound.originals.map((n) => ({ buffer: n, rate: 1 }));
@@ -687,8 +865,8 @@ test('an MCV deploying plays its TransformSounds, a yard packing up its Undeploy
   assert.deepEqual(ACTOR_SOUNDS.MCV.transform, ['placbldg', 'build5'], 'vehicles.yaml MCV Transforms TransformSounds');
   assert.deepEqual(ACTOR_SOUNDS.FACT.undeploy, ['cashturn'], 'defaults.yaml ^Building UndeploySounds');
   assert.equal(ACTOR_SOUNDS.FACT.transform, undefined, 'the yard names no TransformSounds');
-  assert.deepEqual(transformSounds('MCV'), [{ synth: 'place_building', originals: ['placbldg.aud', 'build5.aud'], layered: true }]);
-  assert.deepEqual(transformSounds('FACT'), [{ synth: 'sell', originals: ['cashturn.aud'], layered: true }]);
+  assert.deepEqual(transformSounds('MCV'), [{ synth: 'place_building', originals: ['placbldg.aud', 'build5.aud'], layered: true, openra: true }]);
+  assert.deepEqual(transformSounds('FACT'), [{ synth: 'sell', originals: ['cashturn.aud'], layered: true, openra: true }]);
   assert.deepEqual(transformSounds('1TNK'), [], 'nothing named, nothing played');
   assert.deepEqual(deployBlocked('MCV'), { sound: null, announce: 'buildingCannotPlaceAudio' }, 'NoTransformNotification: BuildingCannotPlaceAudio');
   assert.deepEqual(EVA.buildingCannotPlaceAudio.originals, ['nodeply1.aud']);
@@ -872,6 +1050,7 @@ test('local orders through the watched game get replies; production speaks throu
 
 test('sound notifications honour DoNotPlay, Interrupt and Overlap, and the click setting', async () => {
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
   const handles = [];
   audio.mixer.play = (buffer, opts) => {
     let end;
@@ -1031,6 +1210,8 @@ test('the engine reports fire, impact and death events to the client', () => {
     allyBuildRadius: true,
     timeLimit: 0,
     reusableEngineers: false,
+    // Open land: the rush AIs meet within the two minutes whatever water a seed would bring.
+    mapStyle: 'land',
   };
   const game = Game.from_options(JSON.stringify(opts));
   const quiet = Game.from_options(JSON.stringify(opts));

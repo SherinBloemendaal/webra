@@ -52,11 +52,15 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 }
 ```
 
-- Terrain: a ford (5) is shallow water. Ground units cross it at rough
-  speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
-  so a ground route over a river never cuts the water network. Structures
-  never stand on a ford (naval yards need open water), and fords hold no ore
-  or gems. Generated maps put fords where ground routes cross water. A ford
+- Terrain: a ford (5) is a river crossing. Ground units cross it at rough
+  speed (the locomotor's `Rough` entry); to ships and the Transport it is
+  land, like OpenRA's ford templates (Rough and Road cells), so no ship ever
+  sails over one. Structures never stand on a ford (naval yards need open
+  water), and fords hold no ore or gems. Generated maps put fords where
+  ground routes cross water, never on a base's route to the shared sea.
+  Maps made before fords closed to ships keep their fords and need no
+  migration (the file format is unchanged): water that only a ford joined
+  is two bodies of water now. A ford
   is drawn as a crossing (WebRA's shallow ford tiles; with the original
   graphics rough ground with beach tiles, like Red Alert's ford templates),
   never as open water, since ground units walk on it.
@@ -69,7 +73,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   stop ground units and ships alike. The engine owns bridge cells: a
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
-  water under it (`engine/src/bridges.rs`).
+  water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
+  span's new terrain dies: a tank on a fallen span, a boat in the water gap
+  of a long bridge when the span is repaired (OpenRA kills only when a span
+  falls or a dead one is repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -97,8 +104,16 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   colour over the actor, for everyone who sees the spot) are `CashTick` (44)
   events that js/battlefx.js draws like the crate and bounty texts, from
   GivesCashOnCapture, CashTrickler, InfiltrateForCash and DeliversCash. Landing craft (the Transport, locomotor
-  `lcraft`) use their own passability (`World::pass_landing`: water, fords
-  and beaches), so they run up on beach cells to unload and other ships do not.
+  `lcraft`) use their own passability (`World::pass_landing`: water and
+  beaches), so they run up on beach cells to unload and other ships do not.
+  No ship is ever on a cell its locomotor cannot enter (OpenRA `naval`:
+  Water; `lcraft`: Water and Beach; `World::terrain_open_to`): every move
+  and crowd push goes through `World::may_enter`, a map actor drawn on
+  terrain it cannot use appears on the nearest cell it can (within 7 cells,
+  else it is left out; OpenRA leaves it stuck where it is), and the map
+  editor places ships and naval yards only on water (`rules_json` actors:
+  `terrain`, the terrain codes a ground unit or ship may stand on, and
+  `onWater` for structures).
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -363,8 +378,8 @@ refused (protocol and engine alike); leave it out for its default.
   locked to an AI or closed), and the playable slots are not all locked to
   the same team (`mapSlotsProblem`, the engine's `validate_setup`).
 - `options`: lobby options the map starts with, from `weather`,
-  `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`
-  and the boolean options (section 3), with their section 3 values; not
+  `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`,
+  `movement` and the boolean options (section 3), with their section 3 values; not
   the generator options (seed, size, style, biome, tech buildings).
   `lockedOptions`: options the lobbies keep at the map's value (each one
   the map sets, once).
@@ -486,7 +501,7 @@ human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?}],
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
-weather, techBuildings, map`.
+weather, techBuildings, movement, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -518,7 +533,16 @@ option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `reusableEngineers` is OpenRA's "Reusable
 Engineers" (default off): engineers capture from next to a structure after
 375 ticks instead of going in after 200, and stay (`Captures@REUSABLE`).
-Game modes saved before it existed get it off. `team` 0 means no team (free for all);
+Game modes saved before it existed get it off. `movement` is how units
+move among each other ("Movement" in the lobbies, section 5 "Movement
+models"): `openra` (the default: OpenRA's cell occupancy, waiting and
+nudging) or `webra` (WebRA's soft crowd separation). It is part of the
+game's state (`state_hash`). Live lobby options (the `options` message
+and the lobby state) always carry it. Start options, saves and replays may
+leave it out, and the engine then plays `webra`: those from before the
+option were made with WebRA's model and replay with it; a lobby resuming
+such a save shows `webra`. Game modes include it; a mode saved before it
+existed takes `openra`. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -597,8 +621,10 @@ base. All water of a map is one network (apart from decorative ponds).
 Generated 2-player maps are mirrored left to right with both bases at the
 same height, so mirror matches are fair: Red Alert structures face south
 (exits, refinery docks), which favours one side on a point symmetric map.
-On the water styles each base has a harbour bay along the map edge behind
-it, dug through to the network. Generated maps for 3 to 8 players are
+On the water styles each base has a harbour bay behind it, three cells off
+the map edge, dug through to the network (its channel leaves along the
+bay's columns and never along the map border, so land runs round behind
+the bay). Generated maps for 3 to 8 players are
 mirrored left to right too, and every base gets the same surroundings,
 shifted and never rotated (a clearing with its ore fields south of the yard,
 walls of three rows north and south, open sides): 3 and 4 players in two
@@ -615,7 +641,19 @@ dug through to it, nearly straight, and the other one becomes rock, so every
 base has exactly one harbour on the network and every harbour is about as far
 from the hub as its base is; a base below the middle gets the mirror image of
 its partner's channel and moat, a base on the middle row its own channel
-mirrored too. Ground routes that would be cut by water get fords. Last, every
+mirrored too. Channels never dig along the two cells of the map border.
+Ground routes that would be cut by water get fords, except on a base's sea
+route: per base the 3x3 naval yard site in its own bay or moat that ships
+reach from the hub soonest and the shortest water route from there to the
+hub, a cell wider either side and mirrored like the map
+(`mapgen::sea_routes`), which roads never cross; a large land region only a
+sea route could join is flooded instead. A finished map is checked
+(`mapgen::validate`: every base joined by ground, no land region of 60 cells
+or more cut off, and on the water styles every base with a naval yard site
+ships reach from the hub over open water); one that fails is made again
+from a seed derived from the map seed (up to 8 layouts, the style stays
+the one of the map seed), which the generator tests keep under 1 % of
+first layouts. Last, every
 base of a 3 to 8 player map gets as many ore cells within 14 cells of its yard
 (`mapgen::metrics::REACH`) as the richest one: ore grows next to existing
 fields on open ground that only that base (and its mirror image) is near and
@@ -680,7 +718,7 @@ Waves that do not fill up go after 90 s without growth or 120 s without a
 wave (after the eighth minute) and set the next wave to their size; an enemy
 without structures is hunted by the whole army; ground waves never aim at
 ships. Generated maps join every land region of 60 cells or more to the bases
-by fords, and the land the bases reach holds at least 4.5 % (two players) or
+by fords (or flood it, see above), and the land the bases reach holds at least 4.5 % (two players) or
 6 % ore and gems, a third more on the water styles.
 Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
@@ -1191,6 +1229,94 @@ amount shown, owner = killer), 39 TimeLimitExpired (owner = `ALL_PLAYERS`),
 my`) and 42 Flash (a = ticks, b = 1 nuke); they are presentation only (`apps/game/js/battlefx.js`, the audio director), and the
 Reduce motion setting turns the shake off and the flash down.
 
+### Movement models (`engine/src/movement`)
+
+The lobby option `movement` (section 3) picks how ground units and ships
+move among each other; aircraft fly over both. Both models follow the flow
+fields (`engine/src/flowfield.rs`) for the way to a goal, and both keep one
+invariant: no unit is ever moved, pushed or nudged onto a cell its
+locomotor cannot enter (water for land units, land for ships), and a
+diagonal step never cuts a blocked corner.
+
+**`openra` (default): OpenRA's Mobile, Locomotor and Move activity**
+(`movement/cellmove.rs`, `occupancy.rs`, `search.rs`).
+
+- A unit holds the cell it stands on; while it steps to the next cell it
+  holds both until it is half way, then only the new one (OpenRA
+  MoveFirstHalf, MoveSecondHalf, Mobile.OccupiedCells). It drives from cell
+  point to cell point and never pushes or is pushed.
+- Infantry share cells (Locomotor `SharesCell`): five sub-cells, the centre
+  first (OpenRA DefaultSubCell). Vehicles and ships hold the whole cell.
+- Who may enter a cell is OpenRA's Locomotor.CanMoveFreelyInto with
+  BlockedByActor `All`, `Stationary`, `Immovable` and `None`: allies that
+  can be asked to move do not count under `Immovable`, moving units not
+  under `Stationary`, and an enemy soldier a tracked vehicle may crush
+  never blocks it.
+- A move first searches a route around every unit, then around standing
+  ones, then around those that cannot be asked to move, else it follows the
+  flow field (Move.PathSearchOrder). Route searches are A* with the flow
+  field's remaining path length as the estimate and OpenRA's 125 % weight
+  (the straight distance for cells farther from the goal than the unit, so
+  that a route never depends on how far other units extended a partial
+  field); one search expands at most 4096 cells (then it counts as no
+  route).
+- When the next cell is taken (Move.PopPath): within `near` cells of the
+  destination the move gives up unless a free cell next to the blocker is
+  as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
+  rally point 1); an enemy or a unit that cannot move ends the move; else
+  the unit tells the blockers (idle allies step aside to a random free
+  neighbouring cell, OpenRA Nudge; busy ones are marked as blocking), waits
+  up to the locomotor's `WaitAverage` (40 ticks), and then searches a way
+  around every unit. Without one it backs out of the way if others wait for
+  it, else the move ends. A move that ended short is over for move orders;
+  other activities (repairs, docking, attacks) try again after 20 to 30
+  ticks (OpenRA MoveCooldownHelper). As in OpenRA, a unit kept waiting
+  behind units that do not move gives up once its destination is taken,
+  so a long column may leave a straggler.
+- Half way into a cell a moving unit already looks at the cell after it
+  (MoveFirstHalf.OnComplete): a route that a new structure cut is searched
+  again while it drives on.
+- Tracked vehicles crush enemy infantry on the cell they enter; soldiers
+  about to be run over jump to a free neighbouring cell three times in four
+  (Crushable.WarnProbability 75).
+- Scatter is a nudge of the unit itself (OpenRA Mobile `Scatter`).
+- The service depot's pad cells may be crossed but not stayed on
+  (footprint `+`, OccupiedPassableTransitOnly): an idle unit on one moves
+  off. Vehicles sent for repair drive onto the pad; the one on it holds
+  the cell and the others wait next to it and try again (OpenRA Resupply).
+  Ore trucks dock the same way; an empty truck that finds no ore leaves the
+  dock for a cell near four cells below it (Harvester.UnblockCell), and a
+  refinery's free truck belongs to that refinery.
+- A unit that other code placed (unloaded, teleported, landed from a leap,
+  produced on a crowded exit) takes the cell it stands on; when it may not
+  share it, it steps off once idle.
+- Differences from OpenRA: no arcs between cells; a vehicle turns while it
+  drives when the next cell is at most 45 degrees off its heading and on
+  the spot for sharper turns (OpenRA turns on the spot to the exact heading
+  when it starts and arcs on the way); on snow vehicles keep their slow
+  acceleration but never slide off their cells. For mirror fairness there
+  is no lane bias in route searches and equally good cells are taken
+  nearest the goal, then the map centre; the left sub-cells sit at -256
+  like the right ones at 256 (OpenRA -299) and a unit takes the free
+  sub-cell nearest to it (OpenRA: the first in index order); a cell left in
+  a tick is free from the next tick on, and units that want the same free
+  cell in a tick get it by a rank drawn from the game seed and the tick
+  (OpenRA: whoever acts first).
+
+**`webra`: WebRA's soft crowd separation, damped** (`movement/soft.rs`).
+Overlapping units of a domain push each other apart at the end of every
+tick, at most 96 world units a tick, and a moving crusher runs over enemy
+soldiers it overlaps. Two standing units only make room when they overlap
+by more than 16 world units, by half of it a tick and not at all below 8,
+so a crowd that arrived comes to rest and then does not move. A unit
+driving through a standing crowd on its way elsewhere pushes it aside; a
+unit within 4 cells (of path) of its destination stops against standing
+friends instead and arrives there, while one farther out pushes, so a big
+group funnels through a gap. Units waiting for a repair pad or a refinery
+dock stop within 3 cells of it; the next in line reserves
+the pad or dock before it drives on, so they come one at a time, and units
+holding a pad, a dock or an ore cell are never pushed.
+
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
 Close to OpenRA, and the same for every player whatever its slot:
@@ -1321,29 +1447,38 @@ engine's rules:
 **Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
 1v1 on generated 80 maps of random style with the standard tech buildings,
 each bot on both spawns, Normal difficulty, 90 minutes at most; wins of the
-first bot listed, then of the second, and game lengths in minutes):
+first bot listed, then of the second, and game lengths in minutes), with the
+OpenRA movement model (the default) and with the WebRA model
+(`AI_MOVEMENT=webra`):
 
-| Pairing | Wins | Unfinished | Mean | Median | Longest |
-|---|---|---|---|---|---|
-| Rush vs Rush | 7-9 | 0 | 14.9 | 14.1 | 26.2 |
-| Rush vs Normal | 11-5 | 0 | 17.6 | 18.6 | 25.1 |
-| Rush vs Turtle | 11-5 | 0 | 24.4 | 21.0 | 66.0 |
-| Rush vs Naval | 16-0 | 0 | 8.5 | 8.0 | 19.0 |
-| Normal vs Normal | 10-6 | 0 | 22.7 | 18.1 | 65.6 |
-| Normal vs Turtle | 12-4 | 0 | 29.3 | 27.8 | 54.6 |
-| Normal vs Naval | 13-3 | 0 | 12.8 | 12.0 | 23.3 |
-| Turtle vs Turtle | 4-11 | 1 (seed 8, lakes) | 39.7 | 38.7 | 78.2 |
-| Turtle vs Naval | 3-13 | 0 | 24.4 | 24.1 | 66.1 |
-| Naval vs Naval | 8-8 | 0 | 10.9 | 10.7 | 18.5 |
+| Pairing | OpenRA: wins | unfinished | mean | median | longest | WebRA: wins | unfinished | mean | median | longest |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Rush vs Rush | 11-5 | 0 | 17.9 | 16.0 | 45.3 | 7-9 | 0 | 14.0 | 12.9 | 31.3 |
+| Rush vs Normal | 7-9 | 0 | 20.0 | 18.1 | 48.8 | 7-9 | 0 | 17.3 | 18.7 | 32.5 |
+| Rush vs Turtle | 15-1 | 0 | 22.5 | 21.7 | 41.7 | 12-4 | 0 | 21.2 | 18.6 | 60.8 |
+| Rush vs Naval | 16-0 | 0 | 11.3 | 7.8 | 65.0 | 15-1 | 0 | 9.2 | 9.2 | 17.8 |
+| Normal vs Normal | 8-8 | 0 | 24.9 | 24.0 | 52.2 | 9-7 | 0 | 19.3 | 20.0 | 33.1 |
+| Normal vs Turtle | 7-9 | 0 | 34.2 | 33.8 | 66.9 | 8-8 | 0 | 36.3 | 31.0 | 70.7 |
+| Normal vs Naval | 15-0 | 1 (seed 6, rivers) | 13.0 | 12.7 | 22.5 | 15-1 | 0 | 14.0 | 12.7 | 24.1 |
+| Turtle vs Turtle | 8-8 | 0 | 48.5 | 49.0 | 83.9 | 7-9 | 0 | 50.1 | 51.1 | 82.3 |
+| Turtle vs Naval | 12-4 | 0 | 36.8 | 29.1 | 88.5 | 8-8 | 0 | 36.4 | 35.1 | 78.7 |
+| Naval vs Naval | 8-8 | 0 | 14.1 | 12.1 | 30.0 | 8-8 | 0 | 13.0 | 13.8 | 18.9 |
 
-Two Turtle AIs can outlast an hour and a half on water maps: Turtle AI forms
+Land games last a few minutes longer with OpenRA movement: an attack wave
+drives one unit per cell (five soldiers) and a squad that regroups waits for
+its stragglers to come through the crowd instead of shoving it aside, so
+waves arrive more strung out and a defence holds a little longer.
+
+A Turtle AI can make a game outlast an hour and a half: Turtle AI forms
 an attack force at most every 100000 ticks (MinimumAttackForceDelay, about
 67 minutes, the first at a random time) and the stalemate breaker only
 sends its units once they stop growing. Difficulty (Normal AI against
 Normal AI, same setup): Easy against Normal 5-11, Normal against Hard 7-9,
-Easy against Hard 3-13. Four player free for alls on 96 maps (the engine's
-whole-game tests) end after 20 to 66 minutes, 2v2s after 9 to 49;
-`ai_vs_ai -- 3` ends after 14:44.
+Easy against Hard 3-13 (difficulty and the free for alls below were
+measured before the movement models, with what is now the WebRA model).
+Four player free for alls on 96 maps (the engine's whole-game tests) end
+after 20 to 66 minutes, 2v2s after 9 to 49. `ai_vs_ai -- 3` (an hour at
+most) ends after 20:08 with the OpenRA model and 16:03 with the WebRA model.
 
 ### Skirmish AI target choice (`engine/src/ai.rs`)
 
@@ -1413,7 +1548,9 @@ Right clicks (`Game.cursor_action`, world.rs `SmartAction`): 8 capture, 9
 infiltrate, 10 C4, 11 engineer repair (structures and bridge huts), 12 heal,
 13 mechanic repair, 14 disguise, 15 blocked enter, 16 blocked engineer
 repair (undamaged), 17 capture from outside (reusable engineers, the lobby
-option `reusableEngineers`: OpenRA's Captures@REUSABLE). They go through the
+option `reusableEngineers`: OpenRA's Captures@REUSABLE), 18 blocked move
+(explored terrain none of the units' locomotors can enter, OpenRA
+MoveOrderTargeter `move-blocked`; the order is still a move). They go through the
 `Smart` order: no new order kinds. A forced attack of Tanya on a structure
 plants C4. `Game.actor_json` adds `disguise` (`{type, owner}` or null; only
 the owner and allies should be shown the spy behind it), `beingCaptured`,
@@ -1503,7 +1640,11 @@ engine leaves it out when there is none, and `null` counts as left out), wasm
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
 `ChronoshiftPower` takes the destination as (x, y) and the source area as
-(x2, y2) (both required), `GrantExternalConditionPower` (Iron Curtain) and
+(x2, y2) (both required; units whose target cell they cannot enter, ships
+over land, stay); when the Duration runs out a unit goes back to its origin,
+or to the nearest explored cell it can enter if the origin closed meanwhile
+(a naval yard went up there), and dies when there is none (OpenRA Teleport
+killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
 `NukePower` take the target as (x, y), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
@@ -1548,6 +1689,20 @@ enemy radar jammer (`jams_radar`, OpenRA `ProximityExternalCondition@JAMMER`,
 while visible and not cloaked, enemy structures also as remembered ghosts,
 and nothing hostile within range of an enemy jammer. Terrain and fog come
 from `terrain_ptr` and `fog_ptr`.
+
+Radar input is client side and adds no order kinds (OpenRA RadarWidget): a
+click on the radar is a click on that world spot (`Input.radarClick`), so
+it goes through the same order generators as the battlefield (support
+powers, sidebar modes, ability targeting, the command bar, minefields,
+attack move, `order_smart`, rally points) and the same `ui` game handle
+(unit replies, target lines; spectators' handles drop orders). Left is the
+action button; the right button gives unit orders only. Clicks that are no
+order there (nothing selected, an own unit, deploy, placement, spectators)
+move the camera. The radar cursor is `Input.radarCursor` (the battlefield's
+cursor for that cell, in the original cursors' `-minimap` variant when
+installed). Touch: a tap with units selected or a mode on gives the order
+(`TouchControls.radarTap`, with Add and Force); a drag, or any touch with
+nothing to order, moves the camera.
 
 Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
 `{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until
@@ -1605,7 +1760,23 @@ id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`, and fo
 `base_actors(player)` (Construction Yards and MCVs, else the first
 structure), `harvesters(player)`, `production_buildings(player)` (no
 Construction Yards, by first production type) and `queue_producer(player,
-queue)` (the structure units of that tab come out of, or NONE). `actor_json`
+queue)` (the structure units of that tab come out of, or NONE). The selection
+keys and double click follow OpenRA's `Selectable` (engine/src/selection.rs):
+actors have `selection {priority, modifiers, class, bounds}` or null
+(tools/gen_rules.py; modifiers bits 1 Ctrl, 2 Alt; class: the actor's name
+unless the trait sets one; bounds `[w, h, x, y]` in world units or empty for
+the footprint or one cell); `select_all(owners, x0, y0, x1, y1, ctrl, alt)`
+returns the selectable actors of `owners` whose bounds touch the rectangle
+(pixels), those of the highest priority (OpenRA
+SubsetWithHighestSelectionPriority), and `select_by_class(owners, ids, x0, y0,
+x1, y1)` those of the classes of the actors of `ids` that `owners` own.
+`select_box(player, x0, y0, x1, y1, ctrl, alt)` (OpenRA box selection) returns
+the visible selectable actors whose bounds touch the box, those of the highest
+priority for `player` (other players' actors lowered by 30 for an ally, 60
+for a neutral, 90 for an enemy; a `player` past the players is a spectator
+watching everyone), and `select_at(player, x, y, ctrl, alt)` the actor a click
+selects (priority less the pixel distance to its bounds' centre) or NONE. Local
+queries: not in the state hash. `actor_json`
 has `repairing`, `repairers`, `poweredOff` and `canPowerDown`. Audio events
 (engine/src/sound_events.rs): 11 `RepairStarted` (owner: the repairing
 player, b: the structure's owner; the "Repairing" announcement), 12
@@ -1647,7 +1818,12 @@ CrateCollected (a: `crate_action_code`, b: the crate's type), 37
 PilotEjected (a: the aircraft's type; its EjectOnDeath ChuteSound), 43
 KillAnnounced (a: the killer's type; its AnnounceOnKill voice line, to its
 owner), 44 CashTick (a: the amount; owner: whose colour; no sound, js/battlefx.js
-draws it). Kinds 32 to 36
+draws it), 45 MadTank (b: 0 when a deployed MAD tank starts charging,
+ChargeDelay ticks after deploying: MadTank.ChargeSound; 1 as it detonates:
+DetonationSound and its DetonationWeapon's impact), 46 Teleported (one
+event at each end of a teleport, OpenRA Teleport's ChronoshiftSound; b: 1 for
+a chrono tank's own jump, PortableChrono, 0 for the Chronosphere, its way
+back and the missions' chronoshifts, Chronoshiftable). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
@@ -1663,6 +1839,50 @@ every 30 s); sound notifications (RadarUp, LevelUp, ChatLine, ClickSound,
 near the camera where the player can see (WebRA's fog rule; OpenRA plays
 them regardless of the shroud). Lines that only exist as text in OpenRA
 (Unit promoted., Our ally is under attack.) are shown without sound.
+
+A paused game says and shows nothing new, as OpenRA's notifications come
+from world ticks: the low power and silo intervals count the `tick` of
+`player_json` (game time at the game's speed), not the page clock, so the
+state the UI polls during a pause (the same tick) never fires them and the
+cadence goes on after it. The announcer holds the simulation's lines (engine
+events, player state, mission speech; `announce(key, { world: true })`) while
+the player pauses (`AudioSystem.setPaused`, `holdsGameAudio`: the pause
+hotkey, the game menu and a hidden tab of a local game, a paused replay) and
+plays them after it; the player's own clicks (production, support powers)
+still speak, music and interface sounds go on. The end of game dialogs
+stand a local game still but hold nothing (OpenRA's world goes on at the
+end): the lines of the last ticks and the Win or Lose line, which is never
+held, play at once. Sounds asked for while the installed originals load
+(`defer`, only while the store may have any) are held the same way: the
+simulation's wait out a pause, the player's play when the load is done. Radar pings,
+floating texts, camera shake, the nuke flash, lightning, thunder, weather
+particles, water and building animations run on the simulation clock
+(js/simclock.js: tick and interpolation), so they stand still with the game.
+Interface timers (target lines, text lines, cursors, the radar's opening)
+keep the page clock, as OpenRA's widgets tick while paused. Online games
+have no pause (see section 4).
+
+Original sounds (catalog.js `openra`, bank.js `keepsOriginal`): every cue
+OpenRA defines (weapons, actors, speech and sound notifications, voices,
+support powers, including the C# defaults the yaml leaves out: MadTank
+madchrg2 and madexplo, Chronoshiftable chrono2, PortableChrono chrotnk1) is
+marked as OpenRA's. With original sounds in use (the setting is on and the
+player installed some), such a cue plays only originals: where OpenRA plays
+nothing (a bullet's impact, a flamethrower's shot, a tree falling, an empty
+notification, the support powers' targets) or only a file OpenRA made itself
+(data/source/bits.txt: bctrinit "Battle control online", unitsto "Unit
+stolen", enmydet, the thief's scandy, sclean1 and ssteal1, the spy's silppk),
+nothing plays and an announcer line only shows its text; the browser's
+speech never stands in for an original line or reply. A cue whose Red Alert
+file is just not installed (a partial install) and WebRA's own cues
+(thunder) keep WebRA's sound. Until the installed sounds are loaded
+(`AudioSystem.loaded`), effects, notifications and replies wait for them (at
+most DEFER_MAX_AGE, 1 s, then they are dropped) and announcer lines wait up
+to ANNOUNCE_WAIT (3 s) for them and for audio to start, so a game started
+right after the page opened begins with the original lines. The Tesla
+Coil's AttackTesla.ChargeAudio (tslachg2) plays with its zap: OpenRA plays it
+InitialChargeDelay (22 ticks) before the first zap of a burst, a charge phase
+the engine does not model (one zap per ReloadDelay).
 
 Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
 (`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
@@ -1749,7 +1969,9 @@ A mission replay or save (`mode: "mission"`) has no `map` (null) and names
 its mission file instead: `mission.id` (`[a-z0-9][a-z0-9-]{0,63}`, the file
 `apps/game/missions/<id>.json`) and `mission.hash` (SHA-256 of the file's
 text). Its `options` are the mission's start options, `{ seed, gameSpeed,
-options }` with at most 8 mission options (`options.difficulty`: `easy`,
+options, movement }` (`movement` as in section 3: missions started now play
+`openra`; left out by saves and replays from before it, which play `webra`)
+with at most 8 mission options (`options.difficulty`: `easy`,
 ...; keys and values `[a-z0-9][a-z0-9_-]{0,31}`, case-insensitive), not
 the game options of section 3. The person playing is player 0, so `player`
 is 0 and every frame carries player 0's orders only. The loader fetches the
@@ -2007,7 +2229,10 @@ then nothing (deaths). The facing comes from the instance angle:
 counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
 sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 + k` and the sprite is not rotated (interpolated facings turn it by
-OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
+OpenRA's `GetInterpolatedFacingRotation`, with the rest rounded to the
+nearest interpolated step where OpenRA truncates it: a heading a unit short
+of a frame showed that frame turned a whole step, and WebRA's ships hold
+their course a unit or two off, so submarines looked skewed sailing straight). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
 levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours
@@ -2124,7 +2349,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
-| The same queries plus `select_box`, `select_same_type`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
+| The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).
@@ -2301,14 +2526,15 @@ server share.
   message, validated against `COOP_MISSIONS`: a file of another version is
   refused). The first slots become the mission's playable players, people
   only (OpenRA `AllowBots: False`); later slots close; faction, colour and
-  team are the mission's. Only the game speed of the lobby options applies.
+  team are the mission's. Only the game speed and the movement model of the
+  lobby options apply.
   The game starts when every place holds a ready person. Choosing a map or
   a generated map goes back to a skirmish.
 - **Start.** `start.mission` names the mission; every client loads its own
   copy of the mission file from its own server, checks the hash and starts
   `Game.from_mission` with `humans` (the playable players, engine players 0
-  and 1) and `localPlayer` (its own seat). No client ever sends a script or a
-  mission file to another.
+  and 1), `localPlayer` (its own seat) and the lobby's `movement`. No client
+  ever sends a script or a mission file to another.
 - **Lockstep.** The scripts run on every client. `IsLocalPlayer` is true for
   each client's own player only, and the scripts use it for presentation
   (their objective messages, timer colours, the camera), so the interpreter

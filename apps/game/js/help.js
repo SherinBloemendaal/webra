@@ -57,6 +57,8 @@ export const HELP = Object.freeze({
   bounty: 'Destroying an enemy unit or structure pays 10 percent of its value to the player who did it.',
   timeLimit:
     'The game ends after this many minutes of game time; the announcer counts the last minutes down. Then the side with the most experience (kills, repairs for allies) wins; players without a team count as one side, of which only the best player wins.',
+  movement:
+    'How units make room for each other. OpenRA (as in OpenRA): every unit holds its own cell (up to five soldiers share one), never pushes; a unit whose way is blocked asks an idle friend to step aside, waits for it, then drives around, and a group moved to one spot stops around it. Vehicles at a Service Depot and ore trucks at a refinery dock one at a time while the others wait next to it. WebRA: units drive freely and nudge each other softly out of the way; once they arrive they stay put, and queues at the depot and refinery wait their turn.',
   oreRegrowth:
     'Ore mines grow a bale of ore every 3 s in their field and gem mines a bale of gems, so harvested fields grow back. Off: the mines stay dormant and harvested fields are gone for good.',
   reusableEngineers:
@@ -112,6 +114,14 @@ export const HELP = Object.freeze({
   'settings.mouseCaptureEscMenu':
     'Off: with the mouse captured, the first Esc only releases it and the next Esc opens the menu. On: one Esc releases the mouse and also cancels the current mode or opens the menu.',
 
+  // ---- Controls page notes (js/gamemenu.js CONTROLS_HELP_KEYS) --------------------------------
+  'controls.keys':
+    "The keys are OpenRA's Red Alert defaults, except where the browser keeps OpenRA's key: Shift+Tab is the next facility (Ctrl+Tab switches tabs), Alt+Shift+Q and Alt+Shift+W record bookmarks 1 and 2 (Ctrl+Q and Ctrl+W quit and close), and F11 and F12 have nothing (full screen and developer tools). Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.",
+  'controls.focus':
+    'Like OpenRA, a key goes to the game unless the focused control uses it. Typing in a text field (the chat line, a save name) takes every key. A switch, slider or list keeps only the keys that work it (Space; the arrows, Home and End; Enter in a list), so the hotkeys keep working after a click on one. A button clicked with the mouse keeps no key; one reached with Tab keeps Tab and Enter.',
+  'controls.selection':
+    "Select all (Q) picks your units on screen of OpenRA's highest selection priority: combat units first, then support units such as the MCV, harvesters, defences and other structures. Select by type (W) adds the units of the selected types on screen. Press either again for the whole map. A double click adds that type on screen.",
+
   // ---- Audio (js/audio/panel.js in the game menu) --------------------------------------------
   'audio.master': 'Turns every sound up or down at once: effects, voices and music.',
   'audio.effects': 'Weapons, explosions, thunder and the other sounds of the battlefield.',
@@ -120,7 +130,7 @@ export const HELP = Object.freeze({
   'audio.speech':
     "When no original voice line is installed, your browser speaks unit replies and announcements with your system's voices. Off: radio blips and chimes only.",
   'audio.original':
-    "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Off: WebRA's sounds even when the originals are installed.",
+    "Plays the original Red Alert sounds, voices and music installed from your own copy (Original content) instead of WebRA's own. Where Red Alert has no sound, as in OpenRA, it stays quiet, and lines OpenRA recorded itself (\"Battle control online\") show as text. Off: WebRA's sounds even when the originals are installed.",
   'audio.cashTicks': 'Plays a tick while the credits counter in the sidebar counts up or down, like Red Alert.',
   'audio.clickSounds': 'Plays a click on buttons, tabs and switches, like Red Alert. Production and support power buttons keep their own sounds.',
   'audio.musicOn': 'Plays music during games. Music needs installed original content or a texture pack with music.',

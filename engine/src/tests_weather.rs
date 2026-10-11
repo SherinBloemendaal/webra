@@ -56,6 +56,9 @@ fn run(w: &mut World, ticks: u32) {
 /// Distance a tank drives east in `ticks`, then how far it goes on after a stop order.
 fn drive_and_stop(biome: Biome, mode: WeatherMode, ground: Terrain, ticks: u32) -> (i32, i32) {
     let mut w = field(biome, mode, ground);
+    // Sliding on after a stop is WebRA's movement model: in OpenRA's a
+    // vehicle finishes the step to its next cell and stands (movement/tests.rs).
+    w.options.movement = crate::movement::MovementModel::WebRA;
     let t = unit(&mut w, "1TNK", 0, 4, 24, 256);
     let x0 = w.actors[t].x;
     order_move(&mut w, t, 44, 24);

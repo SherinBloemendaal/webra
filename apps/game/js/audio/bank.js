@@ -1,9 +1,12 @@
-// Turns a sound (catalog.js: { synth, originals }) into something playable:
-// an installed original file when the player has one and wants originals,
-// otherwise our synthesized sound. Both end up as cached AudioBuffers.
+// Turns a sound (catalog.js: { synth, originals, openra }) into something
+// playable: an installed original file when the player has one and wants
+// originals, otherwise our synthesized sound. Both end up as cached
+// AudioBuffers. With original sounds in use, a cue OpenRA defines never falls
+// back to our sound where OpenRA plays nothing a Red Alert copy has
+// (`keepsOriginal`).
 
 import { decodeAud } from './aud.js';
-import { MUSIC_FILES } from './catalog.js';
+import { MUSIC_FILES, OPENRA_MADE } from './catalog.js';
 import { render, variantRate, VARIANTS } from './synth.js';
 
 /** Sound files in the content store (graphics share it): .aud files and voice variants. */
@@ -22,6 +25,14 @@ export class SoundBank {
     this.synth = new Map(); // `${id}#${variant}` -> AudioBuffer
     /** Texture pack sounds (js/content/packs.js), decoded: key -> AudioBuffer. Keys are sound events or original names. */
     this.pack = new Map();
+    /** The installed sounds are being read from the content store (index.js reloadInstalled). */
+    this.loading = false;
+    /**
+     * Whether the store holds installed sounds, known once a load listed them:
+     * null until then, so sounds wait (index.js defer) only while there may be
+     * originals to wait for.
+     */
+    this.expecting = null;
   }
 
   /** A texture pack's sound for an original file name or a sound event, or null. */
@@ -31,9 +42,21 @@ export class SoundBank {
     return this.pack.get(key) ?? this.pack.get(key.replace(/\.aud$/, '')) ?? null;
   }
 
-  /** Load the installed effects, voices and announcer files (music streams from the store when played). */
-  async loadInstalled(store) {
-    const records = await store.getAll((name) => isSoundName(name) && !MUSIC_FILES.has(name));
+  /**
+   * Load the installed effects, voices and announcer files (music streams
+   * from the store when played). `onListed(expecting)` is called as soon as
+   * the store's names say whether there are any (`expecting`), before their
+   * bytes are read.
+   */
+  async loadInstalled(store, onListed = null) {
+    const wanted = (name) => isSoundName(name) && !MUSIC_FILES.has(name);
+    const listed = typeof store.names === 'function' ? (await store.names()).filter(wanted) : null;
+    if (listed) {
+      this.expecting = listed.length > 0;
+      onListed?.(this.expecting);
+    }
+    const records = listed && !listed.length ? [] : await store.getAll(wanted);
+    if (!listed) this.expecting = records.length > 0;
     this.originals.clear();
     this.decoded.clear();
     for (const r of records) this.originals.set(r.name, new Uint8Array(r.bytes));
@@ -42,6 +65,27 @@ export class SoundBank {
 
   hasOriginal(name) {
     return this.originals.has(name);
+  }
+
+  /** Whether original sounds are in use: the setting is on and the player installed some. */
+  get usingOriginals() {
+    return !!this.prefs().original && this.originals.size > 0;
+  }
+
+  /**
+   * Whether `sound` must not fall back to our own sound (synthesized or
+   * spoken): original sounds are in use, the cue is OpenRA's (`openra`), and
+   * either one of its originals is installed (it plays as soon as it can be
+   * decoded), or OpenRA plays nothing a copy of Red Alert has for it: no file
+   * at all (a bullet's impact, a tree falling, an empty notification) or only
+   * files OpenRA made itself (OPENRA_MADE: "Battle control online"). A cue
+   * whose Red Alert files are simply not installed (a partial install) still
+   * falls back.
+   */
+  keepsOriginal(sound) {
+    if (!sound?.openra || !this.usingOriginals) return false;
+    if (this.installed(sound).length) return true;
+    return (sound.originals ?? []).every((n) => OPENRA_MADE.has(n));
   }
 
   /** Installed candidates of a sound, when originals are on. */
@@ -106,6 +150,7 @@ export class SoundBank {
     if (own) return [{ buffer: own, rate: 1, original: false, pack: true }];
     const layers = names.map(original).filter(Boolean).map((buffer) => ({ buffer, rate: 1, original: true }));
     if (layers.length) return layers;
+    if (this.keepsOriginal(sound)) return [];
     const one = this.resolve({ synth: sound.synth, originals: [] }, random);
     return one ? [one] : [];
   }
@@ -125,7 +170,7 @@ export class SoundBank {
       const buffer = this.originalBuffer(names[Math.floor(random() * names.length)]);
       if (buffer) return { buffer, rate: 1, original: true };
     }
-    if (!sound.synth) return null;
+    if (!sound.synth || this.keepsOriginal(sound)) return null;
     const variant = Math.floor(random() * VARIANTS);
     const buffer = this.synthBuffer(sound.synth, variant);
     return buffer ? { buffer, rate: variantRate(variant), original: false } : null;

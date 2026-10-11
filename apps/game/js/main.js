@@ -27,6 +27,7 @@
 import init, { Game, base_rules_json, take_panic, version } from '../pkg/webra_sim.js';
 import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE } from './renderer.js';
 import { AnimClock } from './anim.js';
+import { SimClock } from './simclock.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
@@ -35,7 +36,7 @@ import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
-import { AudioSystem } from './audio/index.js';
+import { AudioSystem, holdsGameAudio } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { mountMusicPanel } from './audio/musicplayer.js';
@@ -665,7 +666,9 @@ async function startMission(entry, chosen, gameSpeed, lobby) {
     return lobby.showError(`Could not load the mission: ${loadErrorText(err)}`);
   }
   const speed = Object.hasOwn(SPEEDS, gameSpeed) ? gameSpeed : 'normal';
-  const options = { seed: Math.floor(Math.random() * 0x7fffffff), gameSpeed: speed, options: missionOptions(entry, chosen) };
+  // Missions play OpenRA's movement model (engine/src/movement); saves and
+  // replays keep the model they were made with.
+  const options = { seed: Math.floor(Math.random() * 0x7fffffff), gameSpeed: speed, options: missionOptions(entry, chosen), movement: 'openra' };
   const recording = records
     ? { mode: 'mission', options, map: null, mapHash: null, player: 0, engine: version(), title: entry.title.slice(0, 64), mission: { id: entry.id, hash: entry.sha256 } }
     : null;
@@ -983,7 +986,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const allied = (owner) => !viewer && allies(player, owner);
   // Spectators and replays have no player of their own: they hear no player's
   // private notifications (placement, deploy and sell sounds, "Unit ready", ...).
-  audio?.attachGame({ game, rules: { ...rules, actors: artActors }, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied });
+  audio?.attachGame({ game, rules: { ...rules, actors: artActors }, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied, tickMs });
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
   // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
@@ -1017,6 +1020,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     applyGameArt(game, atlas, original);
   };
   applyArt();
+  // The battlefield's presentation runs on simulated time (js/simclock.js): it
+  // stands still with the game. Building animations follow it too.
+  const simClock = new SimClock(tickMs);
   const animClock = new AnimClock();
   animClock.watchReducedMotion();
   // Health bars besides the selection and the hovered actor (game menu, Settings).
@@ -1060,7 +1066,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (gain) => audio?.thunder(gain) });
-  weather.update(sky, performance.now() / 1000);
+  weather.update(sky, simClock.seconds);
   let weatherText = '';
 
   let sidebar = null;
@@ -1125,6 +1131,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onMode: (mode) => sidebar?.setMode(mode),
     lastEvent: () => pings.last(),
     feedback: (text) => notices?.push(text),
+    // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
+    selectionClick: () => audio?.click(),
+    gameOver: () => flow.over,
     onMenu: () => menu.open(),
   }, { spectator: !!viewer });
   input.watchAll = !!viewer && view.player === OBSERVER_VIEW;
@@ -1170,6 +1179,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         pings,
         // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own).
         onRadar: viewer ? null : (online) => audio?.radar(online),
+        // Finger taps on the radar go through the touch controls (Add, Force; js/touch.js), made below.
+        touch: {
+          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {}, 0)),
+          radarMayOrder: () => (touch ? touch.radarMayOrder() : input.radarMayOrder()),
+        },
       });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
@@ -1227,7 +1241,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         feed: game.mission,
         audio,
         centerOn: (x, y) => input.centerOn(x, y),
-        ping: (x, y, rgb, ticks) => pings.add(x, y, rgb, ticks, performance.now()),
+        ping: (x, y, rgb, ticks) => pings.add(x, y, rgb, ticks, simClock.ms),
+        gameNow: () => simClock.ms,
         toScreen: (x, y) => {
           const c = input.camera;
           const sx = (x - c.x) * c.zoom;
@@ -1258,8 +1273,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let debugPaused = false;
   // OpenRA's Pause hotkey stops a local game without the menu (js/gamekeys.js).
   let keyPaused = false;
+  // Whether the game's own sounds and lines wait: the player's pause or a
+  // paused replay, not the end of game dialogs (js/audio/index.js holdsGameAudio).
+  const holdsAudio = () => holdsGameAudio({ menu: menuPaused, debug: debugPaused, key: keyPaused, endDialog: flow.paused, replayPaused: !!(replay && !replay.playing) });
   const updatePaused = () => {
     paused = menuPaused || debugPaused || keyPaused || flow.paused;
+    // At once, not only per frame: a hidden tab gets no animation frames.
+    audio?.setPaused(holdsAudio());
   };
   const debug = new DebugMenu($('field'), {
     game,
@@ -1748,6 +1768,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       requestAnimationFrame(frame);
       return;
     }
+    // Simulated time of this frame, and the time the world's presentation moved since the last one.
+    const simBefore = simClock.ms;
+    const simNow = simClock.update(f.tick, f.alpha);
+    const simSeconds = simNow / 1000;
+    // The game's own lines and sounds wait while the player paused it (js/audio/announcer.js).
+    audio?.setPaused(holdsAudio());
     const fresh = f.id !== drawn;
     if (fresh) {
       drawn = f.id;
@@ -1778,7 +1804,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         lastSky = f.weather;
         sky = JSON.parse(f.weather);
       }
-      if (sky) weather.update({ ...sky, tick: f.tick }, now / 1000, { x: (v.x0 + v.x1) / 2, y: (v.y0 + v.y1) / 2 });
+      if (sky) weather.update({ ...sky, tick: f.tick }, simSeconds, { x: (v.x0 + v.x1) / 2, y: (v.y0 + v.y1) / 2 });
       // The GPU path keeps one fog until it changes; the CPU path sends it every frame.
       const fog = f.fog();
       if (fog !== uploadedFog) renderer.uploadFog(fog);
@@ -1790,8 +1816,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
-    pings.onEvents(events, now);
-    battle.onEvents(events, BattleFx.ticksAt(now / 1000), (x, y) => {
+    pings.onEvents(events, simNow, now);
+    battle.onEvents(events, BattleFx.ticksAt(simSeconds), (x, y) => {
       // In sight now: the frame's fog (255 visible) of the cell.
       const cx = Math.floor(x / rules.pxPerCell);
       const cy = Math.floor(y / rules.pxPerCell);
@@ -1811,18 +1837,18 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const rects = new Float32Array(simRects.length + uiRects.length);
     rects.set(simRects);
     rects.set(uiRects, simRects.length);
-    // Building animations run on wall time but stop with the game (and for reduced motion).
-    animClock.advance(dt, paused);
+    // Building animations run on simulated time: they stop with the game (and for reduced motion).
+    animClock.advance(simNow - simBefore, false);
     const lines = f.lineCount ? f.lines() : null;
     const gpu = records ? { records, alpha: f.alpha, view: [v.x0, v.y0, v.x1, v.y1] } : null;
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
-    const fx = { ...weather.uniforms(now / 1000, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
+    const fx = { ...weather.uniforms(simSeconds, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
-    const fxTick = BattleFx.ticksAt(now / 1000);
+    const fxTick = BattleFx.ticksAt(simSeconds);
     const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
     const drawCamera = shakeX || shakeY ? { ...input.camera, x: input.camera.x + shakeX, y: input.camera.y + shakeY } : input.camera;
-    renderer.draw(drawCamera, now / 1000, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    renderer.draw(drawCamera, simSeconds, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
     battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
@@ -1833,7 +1859,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.
     debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
-    minimap?.frame(now);
+    minimap?.frame(now, simNow);
     missionView?.frame();
 
     fpsFrames++;

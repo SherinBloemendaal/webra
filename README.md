@@ -44,6 +44,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Custom maps and modded rules** (the rules.ini idea): a map can override unit and weapon values; players see a MODDED warning and must accept it before the map is installed, online and offline
 - [x] **OpenRA maps**: import `.oramap` files in the lobby and the map editor; the browser unpacks the package (with zip bomb limits), converts terrain from the Red Alert tilesets (roads, beaches, rivers, bridges), ore and gems, spawns and actors, including civilians, civilian and tech buildings, bridges, trees, barrels and ore mines, maps rules values onto WebRA's modded rules, and shows an import report of what was converted, skipped or not supported (Lua is never run)
 - [x] Lobby options like OpenRA: starting cash and units (MCV only, or OpenRA's light or heavy support per side: riflemen, rocket soldiers and a Ranger, light tank, APC or flak truck, plus medium or heavy tanks; or a construction yard), tech level, game speed, crates, short game, fog of war, explored map, build radius (also near allies), separate team spawns, redeployable MCVs, reusable engineers, kill bounties, ore regrowth, time limit and a handicap per player; plus map style, biome, tech buildings and weather. Game modes bundle them (Classic, Competitive, Rush, Turtle and more)
+- [x] **Movement like OpenRA** (lobby option, the default): every unit holds its own cell (up to five soldiers share one) and never pushes; a unit whose way is blocked asks idle friends to step aside, waits for them, then drives around or stops close to its goal, and tanks crush enemy soldiers that do not jump aside. Vehicles at a Service Depot and ore trucks at a refinery dock one at a time while the others wait next to it. The other choice, **WebRA**, keeps free movement with soft crowd separation, damped so that units that arrived stay put and queues at the depot and refinery wait their turn. Missions play OpenRA's; saves and replays keep the model they were made with
 - [x] **Crates** like OpenRA's Red Alert: dropped by a Badger or appearing on land and water, picked up by any ground unit or ship for cash, a unit (MCV when you have no base), veterancy, healing, cloaking, invulnerability, map reveal or hide, a napalm or explosive trap, and more, with OpenRA's weights and shares; a destroyed Supply Truck leaves a money crate
 - [x] **Time limit** with a countdown at the top of the battlefield and announcer warnings; when it runs out the player (or team) with the most experience wins. **Short game** ends a player's game when its structures are gone; **kill bounties** pay a part of each kill's value with a floating cash text; a **handicap** lowers a player's firepower, armour and build speed
 - [x] Stress test mode (tens of thousands of units)
@@ -68,7 +69,7 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Primary buildings**: with several barracks, war factories or other producers, select one and deploy it (or click it again) to make it primary (a PRIMARY tag, announced); new units leave from it
 - [x] **Wrecks and scorch marks**: medium, heavy and Mammoth tanks, MCVs, Mobile Gap Generators and ore trucks leave burning husks that block their cell, roll on a little and burn down (their capture rules are in the data for the engineer and Spy orders); explosions leave craters and scorch marks, some burn or smoke for a while, the Atom Bomb shakes the screen and flashes white (turned down by the Reduce motion setting), and some warheads destroy or create ore
 - [x] OpenRA weapon data: range and minimum range, burst, projectile speed and inaccuracy, warheads with spread, falloff, delays and armour versus tables (trees included), death explosions, cluster explosions, crushing of infantry, and of sandbags, fences and wire by tanks, ore trucks and MCVs (the Mammoth Tank also crushes concrete walls)
-- [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame; click or drag to move the camera, right click to send the selected units. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
+- [x] **Radar minimap** in the sidebar while you own a powered Radar Dome: terrain, ore and gems, shroud and fog, units and structures in team colours (only what you can see), the camera frame. Like OpenRA's radar, a click on it is a click on that spot of the battlefield: with units selected it gives the same order (move, attack, attack move, Shift waypoints, force fire and force move, guard, support powers and the sell, repair, power down and beacon modes), with the same cursor (a blocked move where the units cannot go), unit reply and target lines; a click that would give no order, or a drag, moves the camera. It opens and closes with an animation and shows static on low power or when an enemy **Mobile Radar Jammer** comes within 18 cells of the dome; jammers also hide everything hostile around them from enemy radar
 - [x] **Veterancy** like OpenRA: kills earn experience worth the victim's value; units rank up three times to veteran and then to elite (chevrons and a star over the unit, rank and experience in the selection panel) and gain firepower, armour, speed and faster reloads; elite units repair themselves
 - [x] **Infantry go prone** under fire: soldiers hit by bullets and explosions drop to the ground, take half damage and crawl at half speed until they have not been hit for two seconds
 - [x] **Fair fights like OpenRA**: shots of one tick land together, so mirrored armies are not decided by which side the engine processes first; tanks and other turreted units fire at enemies they pass on a plain move (infantry and artillery do not); an attack follows its target to where it was last seen; Defend and Return Fire only take on defences among structures. Use attack-move (A + click) to make units fight their way; a one-time tip says so the first time a plain move passes enemies
@@ -79,12 +80,12 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Fog of war and shroud with remembered enemy buildings; classic left-click orders with custom cursors, attack-move, rally points, control groups, numpad sidebar hotkeys, pause
 - [x] Red Alert style interface in the spirit of OpenRA: gunmetal chrome with bevels and rivets and one Red Alert red accent on every screen, a sidebar with command buttons, radar slot, money and game clock, a vertical power meter, production tab icons and a three-column build grid with clock-wipe progress, time left, queue counts and Ready labels; announcer lines also appear as text at the bottom of the screen ("Unit ready. (3)"), with sound on or off
 - [x] Fair generated maps: mirrored left to right; with 3 to 8 players every base gets the same pocket, shifted and never rotated, because Red Alert structures face south
-- [x] **Varied maps** per seed or picked in the lobby: open plains or cliffs and passes, river valleys with fords, lake districts, and islands with straits; water forms one connected network, every base gets an equal harbour on it, and ground routes over water become fords that ships still pass. Ore and gems follow the layout (river crossings, islands, passes), with an ore mine (or gem mine) at the heart of every field, tech buildings like OpenRA's map generator (an oil derrick in every base, a hospital in the middle, more with Extra or Oil rush) and villages of civilian buildings, all placed by the map's symmetry
+- [x] **Varied maps** per seed or picked in the lobby: open plains or cliffs and passes, river valleys with fords, lake districts, and islands with straits; water forms one connected network, every base gets an equal harbour on it, and ground routes over water become fords, which ships never cross: no fords on a base's route to the sea, and every map is checked for harbours and land routes before a game starts on it. Ore and gems follow the layout (river crossings, islands, passes), with an ore mine (or gem mine) at the heart of every field, tech buildings like OpenRA's map generator (an oil derrick in every base, a hospital in the middle, more with Extra or Oil rush) and villages of civilian buildings, all placed by the map's symmetry
 - [x] **Biomes**: temperate, snow and desert, each with its own terrain art (snow and ice, sand and dunes, cliffs drawn as raised plateaus lit from the top left, shorelines with foam, conifers, cacti and palms, scattered stones, craters and shrubs), stored in map files and chosen in the lobby or the map editor
 - [x] **Weather**, deterministic for every player: rain and thunderstorms (lightning and thunder, harmless), snowfall, sandstorms and heat waves. Modest effects: shorter sight in bad weather, vehicles slide on snow and ice, infantry wade a little slower, and in a heat wave vehicles that keep driving or firing overheat (slower and firing slower until they cool, with a heat shimmer). A HUD badge says what the weather does; the lobby can make weather cosmetic only or turn it off. Particles are drawn on the GPU and capped; lightning respects reduced motion
 
 ### Phones and tablets
-- [x] **Touch controls** with Pointer Events (mouse play unchanged): tap to select or give the order, double tap for every unit of that type on screen, drag to box select, two fingers to pan and pinch to zoom, long press to force attack or attack-move
+- [x] **Touch controls** with Pointer Events (mouse play unchanged): tap to select or give the order, double tap for every unit of that type on screen, drag to box select, two fingers to pan and pinch to zoom, long press to force attack or attack-move, tap the radar to send the selected units there (drag it to move the camera)
 - [x] Touch action bar for what the keyboard does on desktop: Add (Shift), attack move, force attack, stop, deploy, select all, cancel; building placement by dragging the footprint with Place and Cancel buttons; support powers aimed by tap
 - [x] Phone layouts: the build sidebar becomes a collapsible drawer (bottom in portrait, right in landscape), 44 px touch targets, safe-area insets for notches, compact HUD, Menu button for the game menu; the lobby and the website work at phone width
 - [x] Render resolution cap and a low quality setting for mobile GPUs
@@ -165,8 +166,18 @@ them (WebRA's own art and synthesized sounds).
   Esc, Space or Enter skips one); without them a card names the movie.
 - `desert.mix` from Tiberian Dawn adds desert terrain, as in OpenRA. The
   interior theater is not used (WebRA has no interior maps).
-- Effects, projectiles, mines and helicopter rotors keep WebRA art.
-  Generated maps store terrain types, not Red Alert templates, so the
+- Art Red Alert does not have keeps WebRA's: the Mobile Flak and the Black
+  Hawk (OpenRA's own units, unit and cameo), neutral decorations OpenRA drew
+  itself (huts, ammo boxes, poles, tank traps, the oil derrick, ...),
+  veterancy ranks, contrails, the chronoshift shimmer, ability markers and
+  the level up and heal crate animations. OpenRA's own files are not
+  shipped (see [data/CATALOG.md](data/CATALOG.md) for why).
+- With original sounds, a sound OpenRA does not have stays silent instead
+  of WebRA's (a bullet's impact, a tree falling), and so do the lines OpenRA
+  recorded itself ("Battle control online", "Unit stolen", the thief's
+  lines): the announcer shows them as text. Drop those files from an OpenRA
+  install (`mods/ra/bits`) on the game to hear them.
+- Generated maps store terrain types, not Red Alert templates, so the
   original terrain is matched per cell (plain tiles inside an area, shore
   and cliff tiles facing the right way at borders): close to the original,
   not hand-made.
@@ -220,7 +231,9 @@ flowchart LR
 
 **Pathfinding.** Movement uses flow fields: a Dijkstra integration field per goal cell and locomotor, computed only as far as the units that follow it and extended on demand. Fields are cached in an LRU of 256 entries; a passability change (a structure, a wreck, a bridge, ore mined out) recomputes only the fields that cover a changed cell, so the fields stay a pure function of the map and a client starting from an empty cache computes the same game. Connectivity labels detect unreachable goals, which snap to the nearest reachable cell; an attack on a target no reachable cell is in range of ends at once. Many units ordered to the same goal share one field.
 
-**Spatial hash.** Rebuilt every tick with a counting sort, it serves crowd separation, target scanning and splash damage.
+**Movement models.** How units make room for each other is a lobby option (`engine/src/movement`). OpenRA's model keeps a table of the cells each unit holds (infantry on five sub-cells) and runs OpenRA's Move activity on it: routes around units by A* searches that take the flow field's path length as their estimate, waiting, nudging idle friends aside and giving up when close enough. WebRA's model moves units freely along the flow fields and separates overlapping ones softly, damped so that a crowd comes to rest. Both never move a unit onto a cell its locomotor cannot enter. [docs/contracts.md](docs/contracts.md) (section 5, "Movement models") has the details and the differences from OpenRA.
+
+**Spatial hash.** Rebuilt every tick with a counting sort, it serves crowd separation (WebRA's movement model), target scanning and splash damage.
 
 **Simulation worker (`apps/game/js/sim`).** The game runs in a dedicated module Web Worker: the wasm `Game`, the driver that decides when it ticks (skirmish and saves, online lockstep, replays) and the recorder. The main thread keeps rendering, input and UI and never waits for a tick. It sends each animation frame's time with the camera rectangle and gets back the newest frame: instance buffers, fog, terrain changes, sound events, an actor table (owner, kind and type per actor) and answers to the UI's queries. UI code talks to a game handle with the `Game`'s method names: orders go to the worker in order, queries answer synchronously from the last frame (a frame old, like the picture), and clicks and keys ask the worker for fresh answers before they act. Render data travels through SharedArrayBuffers (a double buffer with sequence counters) when the page is cross-origin isolated, else as transferred ArrayBuffers, and the main thread runs the same code itself when module workers are unavailable. The debug menu's performance stats show the mode; `?sim=direct|transfer|shared` picks one for testing. [docs/contracts.md](docs/contracts.md) (section 8) has the boundary method by method.
 
@@ -294,15 +307,17 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 
 | Input | Action |
 |-------|--------|
-| Left click | Select. With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
-| Drag box | Select units. If the box contains combat units, only those are selected (ore trucks stay out of army drags) |
-| Shift + click / drag | Add to (or remove from) the selection |
-| Double click | Select all units of that type on screen |
-| Ctrl + double click | Select all units of that type on the map |
+| Left click | Select (where actors overlap, the one of the highest selection priority, the nearest on a tie, like OpenRA). With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
+| Drag box | Select what is in the box with OpenRA's selection priority: your combat units, else your support units (MCV, minelayers, engineers), else harvesters, then defences, then other structures; other players' actors only when none of yours is in the box. Ctrl + drag takes every unit that allows it (harvesters and MCVs with the army), Alt + drag only the support units and harvesters |
+| Shift + click | Add the actor to the selection, or take it out when it is selected |
+| Shift + drag | Add what the box selects to the selection |
+| Double click | Add all of that type on screen to the selection (OpenRA's selection class: the veteran rifleman counts as a rifleman, structures too). For the whole map, press W (select by type) twice |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
 | Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |
 | Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
-| Radar: left click or drag, right click | Move the camera there; order the selected units there |
+| Radar: left click | With units selected (or a mode on): the order the cursor shows for that spot, as a click there on the battlefield would give (Shift queues a waypoint, Ctrl force fires, Alt force moves). Otherwise: move the camera there |
+| Radar: right click | Order the selected units there (unit orders only: a sidebar mode or support power stays on and the camera moves) |
+| Radar: drag, or a click without an order | Move the camera |
 | Mouse wheel | Zoom |
 | Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu. With the mouse captured, the first Esc only releases it |
 | Click into the game | Capture the mouse (in fullscreen by default; Settings, Mouse capture), see the notes below |
@@ -319,8 +334,8 @@ Game commands (OpenRA defaults):
 | H | Next Construction Yard (or MCV): select it and centre the camera |
 | Space | Jump to the last radar event (base or units under attack, a beacon, a superweapon) |
 | Home | Centre on the selection |
-| Q | Select all combat units on screen; again (nothing new on screen): on the whole map |
-| W | Add the units of the selected types on screen; again: on the whole map |
+| Q | **Select all**: your actors on screen of the highest selection priority (OpenRA's: combat units, else support units such as the MCV, then harvesters, then defences, then other structures); pressed again (nothing more on screen): the same across the whole map. Says "Selected N units across screen/map." with a click |
+| W | **Select by type**: add your actors of the selected types on screen (OpenRA's selection classes); pressed again: across the whole map. With nothing selected it says "Nothing selected." |
 | N | Next harvester |
 | Pause | Pause and resume (single player; replays: play and pause) |
 | , (comma) | Cycle the health bars: selected only, damaged, all |
@@ -385,6 +400,8 @@ Touch and pen input works next to the mouse and keyboard; the touch action bar a
 | Two-finger drag | Pan the camera |
 | Pinch | Zoom |
 | Long press | Units selected: force attack the unit or building under the finger (your own too), or attack-move to the ground. Otherwise: cancel the current mode or clear the selection (the right click) |
+| Tap the radar | Units selected (or a mode on): give the order for that spot, like a tap there on the battlefield (**Add** queues it, **Force** force attacks). Nothing selected, or no order there: move the camera |
+| Drag on the radar | Move the camera (also with units selected; a finger that moves is never an order) |
 | **Add** | Stands in for Shift: taps and boxes add to (or remove from) the selection, attack move stays active, sidebar cards queue 5 (the sidebar modes, such as sell and repair, stay on anyway) |
 | **A-Move**, **Force** | Attack move or force attack with the next tap |
 | **Stop**, **Deploy**, **All**, **Cancel** | Stop; deploy, unload or use an ability; select everything on screen (twice: the whole map); cancel the mode or clear the selection |
@@ -398,9 +415,10 @@ Browser gestures (page scroll, pinch zoom, double-tap zoom) are turned off over 
 
 Notes on browsers:
 
-- **Pause.** Single player and skirmish pause while the menu is open, and Pause stops the game without it. Online games cannot pause: the lockstep server drops a player who holds the game up for more than 10 s (see [docs/contracts.md](docs/contracts.md)), so the menu opens over the running game and says so. A dropped player can rejoin (the tab reconnects by itself).
+- **Pause.** Single player and skirmish pause while the menu is open, and Pause stops the game without it. A paused game stands still like OpenRA's: no announcer lines of the game (Silos needed, Low power and the like count game time, not the clock), no radar pings, weather, lightning or thunder; music and interface sounds go on. Online games cannot pause: the lockstep server drops a player who holds the game up for more than 10 s (see [docs/contracts.md](docs/contracts.md)), so the menu opens over the running game and says so. A dropped player can rejoin (the tab reconnects by itself).
 - **Replays.** In the replay viewer, Pause plays and pauses; the bar at the bottom sets the speed (half to 8x) and seeks.
 - **Keys the browser keeps.** Ctrl + Tab switches tabs, so the next production facility is Shift + Tab; Ctrl + Q and Ctrl + W quit and close the tab, so bookmarks 1 and 2 are recorded with Alt + Shift + Q and Alt + Shift + W; F11 (full screen) and F12 (developer tools) have no game action (production slots 11 and 12, fast and maximum replay speed: bind other keys in Controls). WebRA holds back the other browser shortcuts it uses (Ctrl + P, Ctrl + R, Ctrl + E, F5, Ctrl + number) wherever the browser lets a page do that. In fullscreen, Chromium browsers lock Esc, Tab, the F keys and the digit row to the game (Keyboard Lock API; hold Esc to leave fullscreen). On macOS, Ctrl + number works as well as Cmd + number.
+- **Focus.** Like OpenRA, a key goes to the focused control first and to the hotkeys only when the control does not use it. Text fields (the chat line, save names) take every key while they show. A switch, slider or list takes only the keys that work it (Space for a switch; the arrows, Home and End for a slider; those plus Space and Enter for a list), so C, Z and the other hotkeys keep working after a click on the debug menu's switches, the replay's seek bar or the observer's panel list. A button clicked with the mouse keeps no key at all (Tab, Shift + Tab and Enter stay hotkeys); one reached with Tab keeps Tab, Shift + Tab and Enter. A field that is no longer shown (a lobby field after the game started) takes no key.
 - **Saved hotkeys.** Hotkeys changed in older versions keep working; the ones that were never changed (and keys an older version took away from an action when another one was rebound) move to OpenRA's defaults.
 - **Fullscreen.** F11 belongs to the browser, so the game uses Alt + Enter (or the button in the menu). Without the Fullscreen API the menu says so.
 - **Mouse capture.** Like desktop OpenRA's locked cursor, the game can keep the mouse from slipping onto another monitor (Pointer Lock API). Settings, Mouse capture: Off, In fullscreen (the default: entering fullscreen or a click into the game while fullscreen captures it) or Always (any click into the game). While captured the game draws its own cursor and the screen edges always scroll; everything else works as with the free pointer (selection boxes, orders, the radar, sidebar, command bar, chat line, tooltips). Alt + M (Option + M on macOS, rebindable) releases it and captures it again; Esc releases it, and only the next Esc opens the menu unless Settings, "Esc also opens the menu" is on. The menu, other dialogs, switching windows and leaving fullscreen release it too; a click into the game captures it again (browsers wait about a second after Esc). Captured mouse speed sets the pointer speed; Chromium passes raw movement without the system's acceleration, which can feel slower. Lists, sliders and pickers release the mouse when clicked, since they need the system pointer. Browsers without Pointer Lock (iOS Safari, phones and tablets without a mouse) do not show the setting, and touch input never goes through it.
@@ -431,6 +449,8 @@ Notes on browsers:
   | 10,000 | 3.5 ms | 11 ms |
   | 20,000 | 6.9 ms | 37 ms |
   | 50,000 | 18.6 ms | 74 ms |
+
+  These are the WebRA movement model (`STRESS_MOVEMENT=webra`). The OpenRA model (the default) also searches routes around units and builds a flow field toward each unit's own destination for them: measured side by side on one machine it costs 11 % more per tick on average at 10,000 units, 26 % at 20,000 and 40 % at 50,000, with worst ticks 1.3 to 1.6 times as long; at 2,000 units it is 24 % cheaper on average (1.27 against 1.66 ms) with a worst tick of 21 ms against 9 ms.
 
   WebAssembly runs the same code somewhat slower than native; the stress test HUD and the debug menu's performance stats show the live ms per tick.
 - **Main thread per frame.** `node tools/sim-bench.mjs 20000` (after `npm run build:wasm`) runs the 20,000 unit stress test headless with the whole map in view (15,000 sprites) and times what the main thread does per frame: step the simulation or post the step, handle the frame message, and copy the render data as the renderer's `writeBuffer` does. Measured on an Apple Silicon Mac with Node 26 (no browser, no GPU), CPU instance path at 60 fps:

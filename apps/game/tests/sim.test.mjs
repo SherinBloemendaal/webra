@@ -633,6 +633,57 @@ test('direct mode drives the same core on this thread', async () => {
   assert.throws(() => host.game.core.call('tick', []), /not a callable Game method/);
 });
 
+test('a paused local game stands still: no ticks, no sound events, orders wait, and it plays on identically', async () => {
+  // Reference: the same game and orders without a pause.
+  const ref = Game.from_options(JSON.stringify(OPTIONS));
+  const refDriver = new LocalDriver(ref, { player: 0 });
+  const PAUSE_AT = 300;
+  const END = 420;
+  const host = await newHost('direct');
+  await host.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  const game = host.game;
+  game.set_audio_events(true);
+  const step = (paused, dt = TICK_MS) => host.step({ dt, paused, view: 0, rect: [0, 0, 1536, 1536], audio: true });
+  let events = 0;
+  while (game.tick_count() < PAUSE_AT) {
+    const t = game.tick_count();
+    scriptedOrders(t, game, units(game, 0));
+    scriptedOrders(t, ref, units(ref, 0));
+    refDriver.tick();
+    events += step(false).audio?.length ?? 0;
+  }
+  assert.ok(events > 0, 'the game made sound events before the pause');
+  assert.equal(game.tick_count(), PAUSE_AT);
+  const hash = await host.command('stateHash');
+  const state = game.player_json(0);
+  assert.equal(JSON.parse(state).tick, PAUSE_AT);
+  // Ten minutes of animation frames while paused (single player pause, the
+  // game menu, a hidden tab), with an order given meanwhile.
+  game.order_move(0, Uint32Array.from(units(game, 0)), 700, 700, false);
+  ref.order_move(0, Uint32Array.from(units(ref, 0)), 700, 700, false);
+  for (let i = 0; i < 2400; i++) {
+    const f = step(true, 250);
+    assert.equal(f.ticks, 0);
+    assert.equal(f.audio, null, 'no sound events while paused');
+  }
+  assert.equal(game.tick_count(), PAUSE_AT);
+  assert.equal(await host.command('stateHash'), hash, 'nothing changed in the world');
+  assert.equal(game.player_json(0), state, 'nor for the player (cash, power, production, tick)');
+  // Going on: one frame's time is one tick, the paused time is not caught up.
+  assert.equal(step(false).ticks, 1);
+  refDriver.tick();
+  while (game.tick_count() < END) {
+    const t = game.tick_count();
+    scriptedOrders(t, game, units(game, 0));
+    scriptedOrders(t, ref, units(ref, 0));
+    refDriver.tick();
+    step(false);
+  }
+  assert.equal(ref.tick_count(), END);
+  assert.equal(await host.command('stateHash'), ref.state_hash(), 'the pause left no trace in the simulation');
+  host.dispose();
+});
+
 test('replay controller state is mirrored for the replay bar', () => {
   const handle = new ReplayHandle({ command: () => Promise.resolve() }, 100);
   handle.togglePlay();

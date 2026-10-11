@@ -59,6 +59,9 @@ struct RawActor {
     defense: bool,
     opportunity_fire: bool,
     base_building: bool,
+    /// OpenRA Selectable (selection.rs); null: cannot be selected.
+    #[serde(default)]
+    selection: Option<SelectionInfo>,
     death_weapon: Option<usize>,
     self_heal: Option<SelfHeal>,
     turret_offsets: Vec<Vec<i32>>,
@@ -82,6 +85,28 @@ struct RawActor {
     #[serde(flatten)]
     options: crate::rules_options::RawActorOptions,
 }
+
+/// OpenRA `Selectable` (selection.rs).
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SelectionInfo {
+    /// Selection priority: among the actors a hotkey or box finds, only those
+    /// of the highest priority are selected (combat units 10, support units 8,
+    /// harvesters 6, defences 4, other structures 2).
+    pub priority: i32,
+    /// `PriorityModifiers` bits (`SELECT_CTRL`, `SELECT_ALT`): holding that
+    /// key (and not the other) raises the priority above every other.
+    pub modifiers: u8,
+    /// Selection class: double click and the select by type hotkey pick the
+    /// actors of the same class (the actor's own name unless the trait sets one).
+    pub class: String,
+    /// `Bounds` in world units: width, height and the x, y offset of their
+    /// centre; empty: the footprint (structures) or one cell.
+    pub bounds: Vec<i32>,
+}
+
+/// `SelectionInfo::modifiers` bits.
+pub const SELECT_CTRL: u8 = 1;
+pub const SELECT_ALT: u8 = 2;
 
 /// OpenRA `ProducibleWithLevel`: produced with `levels` veterancy levels while
 /// the owner has every prerequisite (a spy infiltrated a barracks, say).
@@ -706,6 +731,15 @@ struct RawLocomotor {
     domain: String,
     speeds: Vec<i32>,
     crushes: Vec<String>,
+    #[serde(default)]
+    shares_cell: bool,
+    #[serde(default = "default_wait_average")]
+    wait_average: i32,
+}
+
+/// OpenRA LocomotorInfo.WaitAverage default.
+fn default_wait_average() -> i32 {
+    40
 }
 
 /// Where a unit moves: on land (ground flow fields), on water (naval flow fields) or in the air.
@@ -895,6 +929,10 @@ pub struct BuildingInfo {
     /// Cells that can be hit: the solid cells, or the whole pad for
     /// buildings without solid cells (the service depot).
     pub hit_cells: Vec<(i32, i32)>,
+    /// Footprint cells units may cross but not stop on (OpenRA footprint
+    /// `+`, OccupiedPassableTransitOnly: the service depot's pad), as
+    /// offsets from the top-left cell (movement/cellmove.rs).
+    pub transit_cells: Vec<(i32, i32)>,
     /// Placed on water (naval yards) instead of clear ground.
     pub on_water: bool,
     pub requires_base_provider: bool,
@@ -979,6 +1017,9 @@ pub struct ActorInfo {
     pub opportunity_fire: bool,
     /// OpenRA BaseBuilding (Construction Yard, MCV): the base hotkey cycles through them.
     pub base_building: bool,
+    /// OpenRA Selectable: what the selection hotkeys and double click pick
+    /// (selection.rs). None for actors that cannot be selected (walls, mines).
+    pub selection: Option<SelectionInfo>,
     pub death_weapon: Option<usize>,
     pub self_heal: Option<SelfHeal>,
     /// (forward, lateral) offset of each turret from the actor's centre (OpenRA Turreted.Offset).
@@ -1159,6 +1200,12 @@ pub struct Locomotor {
     pub crushes_infantry: bool,
     /// Every crush class of OpenRA `Crushes` (walls: `wall`, `heavywall`).
     pub crushes: Vec<String>,
+    /// OpenRA `SharesCell`: up to five units (infantry) share a cell, one
+    /// per sub-cell (movement/occupancy.rs).
+    pub shares_cell: bool,
+    /// OpenRA `WaitAverage`: ticks a move blocked by another unit waits for
+    /// it to leave before it looks for another way (movement/cellmove.rs).
+    pub wait_average: i32,
 }
 
 #[derive(Clone)]
@@ -1322,6 +1369,21 @@ impl Rules {
             self.weapon_ref(&n("death_weapon"), w)?;
         }
         count(&n("turret_offsets"), a.turret_offsets.len(), 8)?;
+        if let Some(sel) = &a.selection {
+            within(&n("selection.priority"), sel.priority, -1000, 1000)?;
+            if sel.modifiers & !(SELECT_CTRL | SELECT_ALT) != 0 {
+                return Err(n("selection.modifiers must be 0 to 3"));
+            }
+            if sel.class.is_empty() || sel.class.len() > 64 {
+                return Err(n("selection.class must be 1 to 64 bytes"));
+            }
+            if !sel.bounds.is_empty() && sel.bounds.len() != 4 {
+                return Err(n("selection.bounds must be empty or 4 values"));
+            }
+            for (i, &v) in sel.bounds.iter().enumerate() {
+                within(&n("selection.bounds"), v, if i < 2 { 0 } else { -8 * CELLS }, 8 * CELLS)?;
+            }
+        }
         for &(f, l) in &a.turret_offsets {
             within(&n("turret_offsets"), f, -8 * CELLS, 8 * CELLS)?;
             within(&n("turret_offsets"), l, -8 * CELLS, 8 * CELLS)?;
@@ -1857,8 +1919,12 @@ impl Rules {
                         return Err(n("building.footprint must have `height` rows of `width` cells"));
                     }
                     let mut footprint = Vec::new();
+                    let mut transit_cells = Vec::new();
                     for (y, row) in b.footprint.iter().enumerate() {
                         for (x, c) in row.chars().enumerate() {
+                            if c == '+' {
+                                transit_cells.push((x as i32, y as i32));
+                            }
                             let cell = match c {
                                 '_' => FootCell::Empty,
                                 'x' | 'X' => FootCell::Occupied,
@@ -1900,6 +1966,7 @@ impl Rules {
                         height: b.height,
                         footprint,
                         hit_cells,
+                        transit_cells,
                         on_water: b.terrain.iter().any(|t| t == "Water"),
                         requires_base_provider: b.requires_base_provider,
                         power: b.power,
@@ -1976,6 +2043,7 @@ impl Rules {
                 defense: a.defense,
                 opportunity_fire: a.opportunity_fire,
                 base_building: a.base_building,
+                selection: a.selection,
                 death_weapon: a.death_weapon,
                 self_heal: a.self_heal,
                 turret_offsets,
@@ -2069,6 +2137,8 @@ impl Rules {
                 },
                 name: l.name,
                 speeds: l.speeds,
+                shares_cell: l.shares_cell,
+                wait_average: l.wait_average.clamp(0, 1000),
             })
             .collect();
         let mut rules = Rules {

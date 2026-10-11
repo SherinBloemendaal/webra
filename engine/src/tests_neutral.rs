@@ -634,7 +634,8 @@ fn units_route_over_the_bridge_and_around_when_it_is_gone() {
     w.damage(br, w.actors[br].hp);
     w.queue_order(Order::Move { player: 0, ids, x: cell_center(22), y: cell_center(10), attack_move: false });
     run(&mut w, 400);
-    assert!(w.actors[jeep].y > cell_center(22), "it stays on the south bank");
+    // The south bank begins at row 22 (the river is rows 20 and 21).
+    assert!(w.actors[jeep].y > 22 * CELL, "it stays on the south bank");
 }
 
 /// BR1, two BR3 spans and BR2 (a long bridge, OpenRA's LegacyBridgeLayer
@@ -705,6 +706,32 @@ fn long_bridges_link_their_spans_and_a_fallen_shore_piece_takes_its_neighbour_al
     for i in [br1, spans[0], spans[1], br2] {
         assert_eq!(w.actors[i].hp, 0, "span {i} fell");
     }
+}
+
+/// A fallen span of a long bridge leaves open water (BR3 destroyed_north):
+/// boats sail into the gap, and the repaired span sinks the one under it
+/// (OpenRA Bridge.Repair: Resurrect, KillUnitsOnBridge where the actor
+/// cannot exist), while a Transport waiting next to it lives on.
+#[test]
+fn a_repaired_bridge_sinks_the_boat_under_it() {
+    let mut w = long_bridge_world();
+    let br1 = find(&w, "BR1")[0];
+    let span = find(&w, "BR3")[0];
+    w.damage(br1, w.actors[br1].hp);
+    assert_eq!(w.bridge_look(span), Some(BridgeLook::DestroyedNorth));
+    let b = w.bridge_of(span).unwrap();
+    let gap: Vec<usize> = w.neutral.bridges.bridges[b].cells.iter().map(|c| c.2).filter(|&c| w.map.terrain[c] == Terrain::Water).collect();
+    assert!(!gap.is_empty(), "open water where the span was");
+    let (gx, gy) = (gap[0] as i32 % w.map.width, gap[0] as i32 / w.map.width);
+    let pt = unit(&mut w, "PT", 1, gx, gy);
+    assert!(!w.pass_water.blocked[gap[0]], "boats may enter the gap");
+    let lst = unit(&mut w, "LST", 1, 20, 20);
+    let hut = find(&w, "BRIDGEHUT").into_iter().find(|&h| w.can_repair_bridge_at_hut(h)).expect("a hut to repair from");
+    assert!(w.repair_bridge_at_hut(hut, 0));
+    run(&mut w, 60);
+    assert_eq!(w.bridge_look(span), Some(BridgeLook::Healthy));
+    assert!(!w.actors[pt].alive, "the gunboat under the span sank");
+    assert!(w.actors[lst].alive, "the Transport out in the open water did not");
 }
 
 // ---- Ore mines --------------------------------------------------------------------------
@@ -879,11 +906,17 @@ fn generated_maps_get_mirrored_ore_mines_and_trees() {
 #[test]
 fn roads_are_fast_and_beaches_slow_wheels() {
     let drive = |terrain: Terrain| {
+        // A corridor of that terrain between rock (open at the east end,
+        // where the spawns meet): the way east.
         let mut w = world_with(
             |m| {
                 for x in 0..64 {
                     let i = m.idx(x, 30);
                     m.terrain[i] = terrain;
+                    for y in [29, 31] {
+                        let i = m.idx(x, y);
+                        m.terrain[i] = if x < 63 { Terrain::Rock } else { terrain };
+                    }
                 }
             },
             vec![],

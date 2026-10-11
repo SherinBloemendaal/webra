@@ -352,9 +352,14 @@ fn chrono_tank_teleports_within_range_and_recharges() {
     w.queue_order(Order::Teleport { player: 1, ids: ids.clone(), x: cell_center(30), y: cell_center(30) });
     run(&mut w, 1);
     assert_eq!(w.cell_of(w.actors[ct].x, w.actors[ct].y), (20, 30));
+    w.sound.set_enabled(true);
     w.queue_order(Order::Teleport { player: 0, ids: ids.clone(), x: cell_center(32), y: cell_center(30) });
     run(&mut w, 1);
     assert_eq!(w.cell_of(w.actors[ct].x, w.actors[ct].y), (32, 30), "12 cells: teleported");
+    // OpenRA Teleport plays PortableChrono's ChronoshiftSound where it leaves and where it lands.
+    let jumps = teleported(&mut w);
+    assert_eq!(jumps.iter().map(|e| (w.cell_of(e[2], e[3]), e[5])).collect::<Vec<_>>(), vec![((20, 30), 1), ((32, 30), 1)]);
+    w.sound.set_enabled(false);
     assert_eq!(w.actors[ct].ab.chrono_charge, 250 - 1, "ChargeDelay 250, counting down");
     w.queue_order(Order::Teleport { player: 0, ids: ids.clone(), x: cell_center(36), y: cell_center(30) });
     run(&mut w, 1);
@@ -406,6 +411,7 @@ fn mad_tank_thumps_vehicles_then_detonates_and_the_driver_bails_out() {
     let max = w.rules.actors[w.actors[tank].ty as usize].hp;
     let e1 = ty(&w, "E1");
     let drivers = |w: &World| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == e1).count();
+    w.sound.set_enabled(true);
     w.queue_order(Order::Deploy { player: 0, ids: refs(&w, &[mad]) });
     run(&mut w, 9);
     assert_eq!(w.actors[mad].ab.task, Task::MadDeploy);
@@ -416,10 +422,24 @@ fn mad_tank_thumps_vehicles_then_detonates_and_the_driver_bails_out() {
     run(&mut w, 25);
     assert_eq!(w.cell_of(w.actors[mad].x, w.actors[mad].y), (30, 30));
     let mref = w.make_ref(mad);
-    run(&mut w, 96 + 42 - 9 - 25 - 1);
+    // OpenRA MadTank: ChargeSound once ChargeDelay ticks after deploying, DetonationSound when it blows up.
+    let mad_events = |w: &mut World| -> Vec<i32> {
+        let events = w.sound.take();
+        events
+            .chunks(crate::sound_events::EVENT_STRIDE)
+            .filter(|e| e[0] == crate::sound_events::SoundEventKind::MadTank as i32)
+            .map(|e| e[5])
+            .collect()
+    };
+    mad_events(&mut w);
+    run(&mut w, 96 - 9 - 25);
+    assert_eq!(mad_events(&mut w), vec![0], "charging at ChargeDelay 96");
+    run(&mut w, 42 - 1);
     assert!(w.resolve(mref).is_some(), "not yet");
+    assert!(mad_events(&mut w).is_empty());
     run(&mut w, 1);
     assert!(w.resolve(mref).is_none(), "detonated after ChargeDelay + DetonationDelay");
+    assert_eq!(mad_events(&mut w), vec![1], "the detonation");
     assert_eq!(drivers(&w), 1, "the driver bails out");
     // 17 thumps (1%) and the detonation (19%), then the hull's own death explosion.
     let lost = max - w.actors[tank].hp;
@@ -546,8 +566,14 @@ fn chronosphere_shifts_vehicles_and_pulls_them_back_after_duration() {
     run(&mut w, 1);
     assert_eq!(w.cell_of(w.actors[t1].x, w.actors[t1].y), (20, 20));
     run(&mut w, 5);
+    w.sound.set_enabled(true);
+    teleported(&mut w);
     power(&mut w, 0, key, (40, 30), Some((20, 20)));
     run(&mut w, 1);
+    // Chronoshiftable's sound at both ends of every shifted vehicle (three of them).
+    let shifts = teleported(&mut w);
+    assert_eq!(shifts.len(), 6);
+    assert!(shifts.iter().all(|e| e[5] == 0));
     let cell = |w: &World, i: usize| w.cell_of(w.actors[i].x, w.actors[i].y);
     assert_eq!(cell(&w, t1), (40, 30));
     assert_eq!(cell(&w, t2), (41, 30));
@@ -558,6 +584,13 @@ fn chronosphere_shifts_vehicles_and_pulls_them_back_after_duration() {
     run(&mut w, 400);
     assert_eq!(cell(&w, t1), (20, 20), "back after Duration 400");
     assert_eq!(cell(&w, enemy), (20, 21));
+    assert_eq!(teleported(&mut w).len(), 6, "the way back sounds the same");
+}
+
+/// Teleported audio events since the last call.
+fn teleported(w: &mut World) -> Vec<Vec<i32>> {
+    use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
+    w.sound.take().chunks(EVENT_STRIDE).filter(|e| e[0] == SoundEventKind::Teleported as i32).map(<[i32]>::to_vec).collect()
 }
 
 #[test]

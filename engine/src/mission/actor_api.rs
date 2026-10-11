@@ -852,7 +852,7 @@ impl Ctx<'_> {
             return;
         }
         let (ox, oy) = (self.w.actors[i].x, self.w.actors[i].y);
-        self.w.teleport(i, x, y);
+        self.w.teleport(i, x, y, false);
         if kill_cargo {
             for p in self.w.passengers(i) {
                 self.w.kill(p);
@@ -1043,35 +1043,19 @@ impl Ctx<'_> {
         Ok(i)
     }
 
-    /// (x, y), or the center of the nearest cell a unit of type `t` can stand on.
+    /// (x, y), or the center of the nearest cell a unit of type `t` can
+    /// stand on (its locomotor's passability: ships on water, landing craft
+    /// also on beaches; World::open_cell_for).
     fn open_spot(&self, t: usize, x: i32, y: i32) -> (i32, i32) {
-        let Some(u) = self.w.rules.actors[t].unit.as_ref() else { return (x, y) };
-        let pass = self.w.pass_for(self.w.rules.locomotors[u.locomotor].domain);
         let (cx, cy) = (x.div_euclid(CELL), y.div_euclid(CELL));
-        if !self.w.map.contains(cx, cy) || !pass.blocked[self.w.map.idx(cx, cy)] {
+        if !self.w.map.contains(cx, cy) {
             return (x, y);
         }
-        for r in 1..8i32 {
-            let mut best: Option<(i32, (i32, i32))> = None;
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx.abs() != r && dy.abs() != r {
-                        continue;
-                    }
-                    let (nx, ny) = (cx + dx, cy + dy);
-                    if self.w.map.contains(nx, ny) && !pass.blocked[self.w.map.idx(nx, ny)] {
-                        let d = dx * dx + dy * dy;
-                        if best.is_none_or(|(bd, _)| d < bd) {
-                            best = Some((d, (nx, ny)));
-                        }
-                    }
-                }
-            }
-            if let Some((_, (nx, ny))) = best {
-                return (cell_center(nx), cell_center(ny));
-            }
+        match self.w.open_cell_for(t, cx, cy, 7) {
+            Some(c) if c == (cx, cy) => (x, y),
+            Some((nx, ny)) => (cell_center(nx), cell_center(ny)),
+            None => (x, y),
         }
-        (x, y)
     }
 
     // ---- Reinforcements (OpenRA ReinforcementsGlobal) ----------------------------------------

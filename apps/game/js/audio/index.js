@@ -50,8 +50,32 @@ export const GESTURE_EVENTS = Object.freeze(['pointerdown', 'pointerup', 'moused
 
 /** Seconds a background track (the menu's intro) fades out while the next track fades in, and the music fades when the player leaves a game. */
 export const MUSIC_FADE = 1.5;
+/**
+ * While the installed sounds load (right after the page opens, or after an
+ * install), sounds wait for them instead of playing our own in their place;
+ * ones that waited longer than this many seconds are dropped as old news.
+ */
+export const DEFER_MAX_AGE = 1;
+/** Sounds waiting for the installed sounds, at most. */
+export const MAX_DEFERRED = 32;
+/** Seconds an announcer line waits for the installed sounds to load, and then for audio to start, to play the original line. */
+export const ANNOUNCE_WAIT = 3;
 
 const now = () => performance.now() / 1000;
+
+/**
+ * Whether the game's own sounds and announcer lines wait now
+ * (AudioSystem.setPaused): the player paused the game (the Pause hotkey, the
+ * game menu, a hidden tab, the debug menu's pause) or the replay. The end of
+ * game dialogs stand a local game still too, but they are no pause of the
+ * player's: OpenRA's world goes on at the end, so the lines of the last ticks
+ * (an objective, a mission's final speech, a lost unit) and the Win or Lose
+ * line play as they come.
+ * @param {{ menu?: boolean, debug?: boolean, key?: boolean, endDialog?: boolean, replayPaused?: boolean }} o
+ */
+export function holdsGameAudio({ menu = false, debug = false, key = false, replayPaused = false } = {}) {
+  return !!(menu || debug || key || replayPaused);
+}
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
 export class AudioSystem {
@@ -93,6 +117,16 @@ export class AudioSystem {
     this.listeners = new Set();
     /** Announcer line listeners (the on-screen notifications), called even with sound off. */
     this.announceListeners = new Set();
+    /**
+     * Sounds asked for while the installed sounds load (playDeferred):
+     * { at, run, world, play }, `run` on the announcer's clock of running game.
+     */
+    this.deferred = [];
+    /** The game's own sounds wait (setPaused, holdsGameAudio). */
+    this.paused = false;
+    /** Loads of the installed sounds running now, and the promise of the last one. */
+    this.loads = 0;
+    this.loaded = Promise.resolve();
     let last = this.prefs.get();
     this.prefs.subscribe((p) => {
       // Volumes apply at once, also to the playing music track (mixer buses).
@@ -204,18 +238,79 @@ export class AudioSystem {
     return this.storePromise;
   }
 
-  async reloadInstalled() {
-    try {
-      const store = await this.store();
-      await this.bank.loadInstalled(store);
-      await this.jukebox.refresh();
-      // A removed track stops instead of playing on until it ends.
-      if (this.jukebox.playing && !this.jukebox.tracks.some((t) => t.title === this.jukebox.playing)) this.jukebox.stop();
-    } catch (err) {
-      this.storeError = err.message ?? String(err);
+  /**
+   * Read the installed sounds from the content store. Until they are loaded
+   * (`loaded`), sounds wait for them (`defer`) and announcer lines wait to
+   * play the original line, so the first sounds of a game started right
+   * after the page opened are the installed ones, not ours.
+   */
+  reloadInstalled() {
+    this.loads++;
+    this.bank.loading = true;
+    // Not known yet whether the store has sounds (installed or removed since the last load).
+    this.bank.expecting = null;
+    this.loaded = (async () => {
+      try {
+        const store = await this.store();
+        // Nothing installed: the sounds held meanwhile are ours, they play at once.
+        await this.bank.loadInstalled(store, (expecting) => expecting || this.playDeferred());
+        await this.jukebox.refresh();
+        // A removed track stops instead of playing on until it ends.
+        if (this.jukebox.playing && !this.jukebox.tracks.some((t) => t.title === this.jukebox.playing)) this.jukebox.stop();
+      } catch (err) {
+        this.storeError = err.message ?? String(err);
+      } finally {
+        if (--this.loads === 0) this.bank.loading = false;
+      }
+      if (!this.bank.loading) this.playDeferred();
+      this.syncMusic();
+      this.changed();
+    })();
+    return this.loaded;
+  }
+
+  /**
+   * Hold `play` while the installed sounds load and original sounds are on
+   * (it would otherwise play our own sound in place of an original); it runs
+   * once they are loaded. Only while there may be originals: once the store
+   * says it has none, nothing waits. `world`: the simulation's sound, which
+   * also waits out a pause (playDeferred). Returns whether it was held.
+   */
+  defer(play, world = false) {
+    const p = this.prefs.get();
+    if (!this.bank.loading || !p.enabled || !p.original || this.bank.expecting === false) return false;
+    if (this.deferred.length >= MAX_DEFERRED) this.deferred.shift();
+    this.deferred.push({ at: now(), run: this.announcer.clock(), world, play });
+    return true;
+  }
+
+  /**
+   * Play the sounds held while the installed sounds loaded, unless they
+   * waited too long. The simulation's sounds are held like its announcer
+   * lines: while the game is paused they wait (only running game time counts
+   * as waiting) and play when it goes on; the player's own (clicks, replies
+   * to orders) play at once.
+   */
+  playDeferred() {
+    const held = this.deferred;
+    this.deferred = [];
+    const t = now();
+    const run = this.announcer.clock();
+    for (const d of held) {
+      if (d.world) {
+        if (run - d.run > DEFER_MAX_AGE) continue;
+        if (this.paused) {
+          this.deferred.push(d);
+          continue;
+        }
+      } else if (t - d.at > DEFER_MAX_AGE) continue;
+      d.play();
     }
-    this.syncMusic();
-    this.changed();
+  }
+
+  /** Whether a sound asked for now is the simulation's: said so, or asked for by the director while it handles engine events. */
+  worldSound(world) {
+    return world ?? this.director?.worldLines ?? false;
   }
 
   /**
@@ -273,8 +368,9 @@ export class AudioSystem {
    * @param {object} o.rules parsed Game.rules_json()
    * @param {number} o.player local player, or NO_PLAYER (spectators and replays: nothing is their own)
    * @param {number} o.worldUnitsPerCell Game.world_units_per_cell()
+   * @param {number} [o.tickMs] milliseconds per simulation tick at the game's speed
    */
-  attachGame({ game, rules, player, worldUnitsPerCell, allied }) {
+  attachGame({ game, rules, player, worldUnitsPerCell, allied, tickMs = 40 }) {
     this.game = game;
     game.set_audio_events(true);
     const sideIndex = rules.players?.[player]?.side ?? 0;
@@ -296,6 +392,7 @@ export class AudioSystem {
       },
       sink: this,
       now,
+      tickMs,
       allied,
     });
     this.inGame = true;
@@ -363,6 +460,25 @@ export class AudioSystem {
     this.director?.onPlayerState(state);
   }
 
+  /** A mission silenced (true) or allowed again (false) the low power line (js/campaign/view.js, mission_state `lowPowerQuiet`). */
+  lowPowerQuiet(quiet) {
+    this.director?.setLowPowerQuiet(quiet);
+  }
+
+  /**
+   * The player paused the game or let it go on (holdsGameAudio: the Pause
+   * hotkey, the game menu, a hidden tab, a paused replay; not the end of game
+   * dialogs): announcer lines and held sounds of the simulation wait meanwhile
+   * (js/audio/announcer.js, playDeferred). Music and interface sounds go on,
+   * as in OpenRA.
+   */
+  setPaused(paused) {
+    this.paused = !!paused;
+    this.announcer.setPaused(this.paused);
+    // Going on: the simulation's sounds held through the pause (and loaded meanwhile) play now.
+    if (!this.paused && !this.bank.loading && this.deferred.length) this.playDeferred();
+  }
+
   /** @param {number[]} ids @param {{ byPlayer?: boolean }} [info] whether the player made this selection */
   selection(ids, info = {}) {
     this.director?.onSelection(ids, info);
@@ -406,7 +522,7 @@ export class AudioSystem {
 
   /** The radar came online or went offline (OpenRA IngameRadarDisplayLogic: RadarUp, RadarDown). */
   radar(online) {
-    this.notify(online ? 'RadarUp' : 'RadarDown');
+    this.notify(online ? 'RadarUp' : 'RadarDown', { world: true });
   }
 
   /** The game started, not from a save (OpenRA StartGameNotification: StartGame). */
@@ -457,11 +573,12 @@ export class AudioSystem {
 
   /** Thunder after a lightning flash (js/weather-fx.js), quieter far away. */
   thunder(gain = 1) {
-    this.effect({ synth: 'thunder', originals: [] }, { gain: Math.max(0, Math.min(1, gain)) * 0.9 });
+    this.effect({ synth: 'thunder', originals: [] }, { gain: Math.max(0, Math.min(1, gain)) * 0.9, world: true });
   }
 
-  effect(sound, { gain = 1, pan = 0 } = {}) {
-    if (!this.prefs.get().enabled) return;
+  /** A sound effect; `world`: the simulation's (default: whether the director is handling engine events). */
+  effect(sound, { gain = 1, pan = 0, world } = {}) {
+    if (!this.prefs.get().enabled || this.defer(() => this.effect(sound, { gain, pan }), this.worldSound(world))) return;
     // A layered sound (catalog.js placeSound) plays all of its parts at once.
     for (const r of this.bank.resolveAll(sound)) this.mixer.play(r.buffer, { bus: 'effects', gain, pan, rate: r.rate });
   }
@@ -479,13 +596,16 @@ export class AudioSystem {
    * Play a sound notification (notifications.yaml Sounds) as OpenRA's
    * PlayNotification does: InterruptType DoNotPlay skips it while the same
    * one plays, Interrupt stops that one first, Overlap just plays;
-   * VolumeModifier scales it. Returns whether it started.
+   * VolumeModifier scales it. Returns whether it started (one asked for
+   * while the installed sounds load starts once they are loaded).
+   * `world`: the simulation's notification (default: whether the director
+   * is handling engine events), held through a pause while sounds load.
    * @param {string} name
-   * @param {{ gain?: number }} [opts]
+   * @param {{ gain?: number, world?: boolean }} [opts]
    */
-  notify(name, { gain = 1 } = {}) {
+  notify(name, { gain = 1, world } = {}) {
     const sound = notificationSound(name);
-    if (!sound || !this.prefs.get().enabled) return false;
+    if (!sound || !this.prefs.get().enabled || this.defer(() => this.notify(name, { gain }), this.worldSound(world))) return false;
     const playing = this.notifications.get(name);
     if (playing?.length && sound.interrupt === 'DoNotPlay') return false;
     if (playing?.length && sound.interrupt === 'Interrupt') for (const h of playing) h.stop();
@@ -504,15 +624,20 @@ export class AudioSystem {
     return true;
   }
 
-  /** A unit reply: original voice, or radio blip with an optional spoken line. */
+  /**
+   * A unit reply: original voice, or radio blip with an optional spoken
+   * line. With original sounds in use, a reply OpenRA has (bank.keepsOriginal)
+   * is never spoken by the browser in its place.
+   */
   voice(line) {
     const p = this.prefs.get();
-    if (!p.enabled) return;
-    const original = this.bank.resolve({ synth: null, originals: line.originals });
+    if (!p.enabled || this.defer(() => this.voice(line), this.worldSound())) return;
+    const original = this.bank.resolve({ ...line, synth: null });
     if (original) {
       this.mixer.play(original.buffer, { bus: 'voices' });
       return;
     }
+    if (this.bank.keepsOriginal(line)) return;
     const speak = p.speech && this.speech.available && !this.announcer.busy && !this.speech.speaking;
     if (!speak) {
       this.playSynth(line.synth, 'voices');
@@ -523,7 +648,14 @@ export class AudioSystem {
     this.speech.speak(text, { role: 'unit', volume: busGain(p, 'voices') }).then(() => this.playSynth('radio_close', 'voices'));
   }
 
-  announce(key) {
+  /**
+   * An announcer line, shown as text and spoken. `world`: the simulation's
+   * line (an engine event, the player state, a mission script), which waits
+   * while the game is paused.
+   * @param {string} key
+   * @param {{ world?: boolean }} [o]
+   */
+  announce(key, { world = false } = {}) {
     for (const fn of this.announceListeners) {
       try {
         fn(key);
@@ -531,7 +663,7 @@ export class AudioSystem {
         console.warn('announce listener failed:', err);
       }
     }
-    if (this.prefs.get().enabled && EVA[key] && !EVA[key].textOnly) this.announcer.push(key);
+    if (this.prefs.get().enabled && EVA[key] && !EVA[key].textOnly) this.announcer.push(key, { world });
   }
 
   playSynth(id, bus, gain = 1) {
@@ -539,16 +671,32 @@ export class AudioSystem {
     return r ? this.mixer.play(r.buffer, { bus, gain, rate: 1 }) : null;
   }
 
-  /** Play one announcer line to the end (the announcer queue awaits this). */
-  async playAnnouncement(key) {
+  /**
+   * Play one announcer line to the end (the announcer queue awaits this).
+   * The original line, when installed: the line waits (at most
+   * ANNOUNCE_WAIT seconds) for the installed sounds to finish loading and
+   * for audio to start ("Battle control online" comes at once when a game
+   * starts). With original sounds in use, a line OpenRA has is never replaced
+   * by our chime and the browser's voice: without its file (OpenRA's own
+   * "Battle control online", or a line OpenRA leaves empty) only its text shows.
+   */
+  async playAnnouncement(key, maxWait = ANNOUNCE_WAIT) {
     const line = EVA[key];
+    const deadline = now() + maxWait;
+    if (this.bank.loading) {
+      let timer;
+      await Promise.race([this.loaded, new Promise((r) => (timer = setTimeout(r, maxWait * 1000)))]);
+      clearTimeout(timer);
+    }
+    while (this.bank.installed(line).length && !this.mixer.ready && now() < deadline) await wait(0.05);
     const p = this.prefs.get();
-    const original = this.bank.resolve({ synth: null, originals: line.originals });
+    const original = this.bank.resolve({ ...line, synth: null });
     if (original) {
       const h = this.mixer.play(original.buffer, { bus: 'voices' });
       if (h) await h.ended;
       return;
     }
+    if (this.bank.keepsOriginal(line)) return;
     const chime = this.playSynth(line.chime, 'voices', 0.8);
     if (p.speech && this.speech.available) {
       await wait(0.2);

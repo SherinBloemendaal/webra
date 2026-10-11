@@ -31,6 +31,7 @@ import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
 import { closeOpenTip, labelWithHelp } from './infotip.js';
+import { helpText } from './help.js';
 import { configured as reportsConfigured } from './telemetry/index.js';
 
 /**
@@ -57,6 +58,9 @@ export const MENU_HELP_KEYS = Object.freeze([
   'errorReports',
 ]);
 
+/** The notes under the Controls page's list (js/help.js `controls.<key>`). */
+export const CONTROLS_HELP_KEYS = Object.freeze(['keys', 'focus', 'selection']);
+
 /** The "?" of setting `key` beside the row's label, describing `control`. */
 const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
 
@@ -66,12 +70,18 @@ export function fixedControls(mac = isMac()) {
   return [
     ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu. With the mouse captured, the first Esc releases it'],
     ['Left click', 'Select, or give the order shown by the cursor'],
-    ['Left drag', 'Box select'],
-    ['Shift + click / drag', 'Add to or remove from the selection'],
-    ['Double click', 'Select all units of that type on screen'],
-    [`${ctrl} + double click`, 'Select all units of that type on the map'],
+    // OpenRA WorldInteractionControllerWidget: Shift + click toggles, Shift + drag adds; Ctrl or Alt raise the units that allow it.
+    ['Left drag', 'Box select (combat units first)'],
+    ['Shift + click', 'Add to or remove from the selection'],
+    ['Shift + drag', 'Add to the selection'],
+    ['Ctrl / Alt + drag', 'Box select with every unit / only support units and harvesters'],
+    // OpenRA double click: the clicked actor's selection class on screen, added to the selection (Q and W are the hotkeys).
+    ['Double click', 'Add all of that type on screen to the selection'],
     ['Right click', 'Cancel the current mode, or clear the selection'],
     ['Middle drag', 'Pan the map'],
+    ['Radar: left click', 'With units selected: the order the cursor shows for that spot (Shift, Ctrl and Alt as on the map); otherwise move the camera'],
+    ['Radar: right click', 'Order the selected units there; otherwise move the camera'],
+    ['Radar: drag', 'Move the camera'],
     ['Mouse wheel', 'Zoom'],
     ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],
@@ -760,13 +770,7 @@ export class GameMenu {
       touch.append(row);
     }
     list.append(touch);
-    list.append(
-      el(
-        'p',
-        'hint',
-        "The keys are OpenRA's Red Alert defaults, except where the browser keeps OpenRA's key: Shift+Tab is the next facility (Ctrl+Tab switches tabs), Alt+Shift+Q and Alt+Shift+W record bookmarks 1 and 2 (Ctrl+Q and Ctrl+W quit and close), and F11 and F12 have nothing (full screen and developer tools). Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.",
-      ),
-    );
+    for (const key of CONTROLS_HELP_KEYS) list.append(el('p', 'hint', helpText(`controls.${key}`)));
     c.append(list, button('Reset all hotkeys', null, () => reg.reset()), button('Back', 'primary', () => this.show('main')));
   }
 }

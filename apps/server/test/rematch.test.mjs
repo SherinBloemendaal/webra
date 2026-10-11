@@ -3,7 +3,7 @@
 // back to its lobby and the members come back with their rejoin keys.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_OPTIONS, parseServerMessage, PROTOCOL_VERSION, REMATCH_COOLDOWN_MS, REMATCH_RETURN_MS, REMATCH_VOTE_MS } from '@webra/protocol';
+import { DEFAULT_OPTIONS, parseClientMessage, parseServerMessage, PROTOCOL_VERSION, REMATCH_COOLDOWN_MS, REMATCH_RETURN_MS, REMATCH_VOTE_MS } from '@webra/protocol';
 import { makeSession } from './fake-do.mjs';
 import { Room, RoomError } from '../src/room.js';
 
@@ -102,6 +102,36 @@ test('room: rematches and resumed saves keep the OpenRA lobby options and handic
   assert.deepEqual(again.slots.map((s) => s.handicap), [25, 0, 10]);
   for (const k of ['crates', 'shortGame', 'bounty', 'timeLimit', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers']) assert.equal(again.options[k], options[k], k);
   assert.ok(parseServerMessage(JSON.stringify({ t: 'start', ...first })).ok);
+});
+
+test('room: the lobby always shows the movement model the game will play', () => {
+  // Options messages must carry it: one without it is refused before the room sees it.
+  const { movement: _m, ...old } = DEFAULT_OPTIONS;
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: old })).ok, false);
+  const room = Room.create({ maxPlayers: 3, seed: 5 });
+  const host = room.join('Host', { host: true, account: 'acc-host' }).client;
+  const guest = room.join('Guest', { account: 'acc-guest' }).client;
+  assert.equal(room.options.movement, 'openra');
+  room.setOptions(host, { ...DEFAULT_OPTIONS, movement: 'webra' });
+  assert.equal(room.options.movement, 'webra');
+  room.setReady(guest, true, null);
+  const first = room.start(host, () => 0);
+  assert.equal(first.options.movement, 'webra');
+  // A save from before the option: the lobby shows WebRA's model, which the
+  // saved options (without the key) play, and starts with them unchanged.
+  const { movement: _n, ...saved } = first.options;
+  const again = Room.create({ maxPlayers: 3, seed: 6 });
+  const h2 = again.join('Host', { host: true, account: 'acc-host' }).client;
+  again.loadResume(h2, { id: 'y'.repeat(16), title: 'Old save', createdAt: 1, ticks: 100, hash: 7, options: saved, seats: ['acc-host', 'acc-guest', null], chunks: 1 });
+  assert.equal(again.options.movement, 'webra');
+  again.join('Guest', { account: 'acc-guest' });
+  const resumed = again.startResume();
+  assert.equal('movement' in resumed.options, false);
+  // A save made with OpenRA's model shows OpenRA's.
+  const third = Room.create({ maxPlayers: 3, seed: 7 });
+  const h3 = third.join('Host', { host: true, account: 'acc-host' }).client;
+  third.loadResume(h3, { id: 'z'.repeat(16), title: 'New save', createdAt: 1, ticks: 100, hash: 7, options: { ...saved, movement: 'openra' }, seats: ['acc-host', 'acc-guest', null], chunks: 1 });
+  assert.equal(third.options.movement, 'openra');
 });
 
 test('room: seats that are away still answer; gone seats do not; players who did not come lose their slot', () => {

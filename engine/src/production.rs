@@ -556,6 +556,8 @@ impl World {
         }
         let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))));
         self.order_move(&[u], rx, ry, false);
+        // OpenRA LeaveProductionActivity: MoveTo(rally point, 1) (movement/cellmove.rs).
+        self.actors[u].mv.order_near = 1;
         Some(u)
     }
 

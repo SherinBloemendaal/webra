@@ -23,7 +23,11 @@ import { applyTransform, mirroredOwner, symmetricPositions, transformFacing, tra
 const CATALOG = {
   FACT: { kind: 'building', width: 3, height: 4, footprint: [[0, 0, 1], [1, 0, 1], [2, 0, 1], [0, 1, 1], [1, 1, 1], [2, 1, 1], [0, 2, 1], [1, 2, 1], [2, 2, 1], [0, 3, 2], [1, 3, 2], [2, 3, 2]] },
   SBAG: { kind: 'building', width: 1, height: 1, footprint: [[0, 0, 1]] },
-  '1TNK': { kind: 'vehicle', width: 1, height: 1, footprint: null },
+  '1TNK': { kind: 'vehicle', width: 1, height: 1, footprint: null, terrain: [0, 1, 5, 6, 7, 8] },
+  // Ships: `terrain` lists what their locomotor enters (engine rules_json; OpenRA naval: Water, lcraft also Beach).
+  PT: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3] },
+  LST: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3, 8] },
+  SYRD: { kind: 'building', onWater: true, width: 3, height: 3, footprint: [[0, 0, 1], [1, 0, 1], [2, 0, 1], [0, 1, 2], [1, 1, 2], [2, 1, 2], [0, 2, 1], [1, 2, 1], [2, 2, 1]] },
 };
 
 const newDoc = (w = 40, h = 32) => new MapDoc(createMap({ width: w, height: h, name: 'T', author: 'A' }));
@@ -471,6 +475,49 @@ test('map resize, crop, shift and turns keep cells, spawns and actors in step', 
 });
 
 import { findFixes, nearestYard } from '../editor/js/fixes.js';
+
+test('ships and naval yards go on water, the transport also on beaches; ground units not', () => {
+  const doc = newDoc();
+  doc.begin('coast');
+  fillRect(doc, 20, 0, 39, 31, TERRAIN.WATER, 'none');
+  fillRect(doc, 19, 0, 19, 31, TERRAIN.BEACH, 'none');
+  doc.commit();
+  assert.equal(placementProblem(doc, CATALOG, 'PT', 10, 10), 'needs water', 'no gunboat on land');
+  assert.equal(placementProblem(doc, CATALOG, 'PT', 19, 10), 'needs water', 'nor on the beach');
+  doc.begin('ford');
+  fillRect(doc, 30, 20, 30, 20, TERRAIN.FORD, 'none');
+  doc.commit();
+  assert.equal(placementProblem(doc, CATALOG, 'LST', 30, 20), 'needs water', 'fords are land to ships');
+  assert.equal(placementProblem(doc, CATALOG, '1TNK', 30, 20), null, 'tanks wade');
+  assert.equal(placementProblem(doc, CATALOG, 'PT', 25, 10), null);
+  assert.equal(placementProblem(doc, CATALOG, 'LST', 19, 10), null, 'the transport runs up on the beach');
+  assert.equal(placementProblem(doc, CATALOG, 'LST', 10, 10), 'needs water');
+  assert.equal(placementProblem(doc, CATALOG, '1TNK', 25, 10), 'needs passable ground', 'no tank in the sea');
+  assert.equal(placementProblem(doc, CATALOG, '1TNK', 19, 10), null, 'tanks drive on beaches');
+  assert.equal(placementProblem(doc, CATALOG, 'SYRD', 25, 10), null, 'a naval yard on water');
+  assert.equal(placementProblem(doc, CATALOG, 'SYRD', 18, 10), 'needs water', 'not over the shore');
+  assert.equal(placementProblem(doc, CATALOG, 'SYRD', 5, 10), 'needs water');
+  doc.begin('place');
+  assert.equal(placeActor(doc, CATALOG, { type: 'PT', owner: 0, x: 10, y: 10, facing: 0 }, 'none').length, 0, 'refused on land');
+  assert.equal(placeActor(doc, CATALOG, { type: 'PT', owner: 0, x: 30, y: 10, facing: 0 }, 'none').length, 1);
+  doc.commit();
+  // A map that already has a ship ashore: a warning, and the fix puts water under it.
+  doc.begin('ashore');
+  doc.touchObjects();
+  doc.actors.push({ type: 'PT', owner: -1, x: 8, y: 20, facing: 0 });
+  doc.commit();
+  const map = doc.toMap();
+  const r = validateMap(map, { catalog: CATALOG });
+  assert.ok(r.warnings.some((w) => w.includes('PT') && w.includes('cannot occupy')), r.warnings.join('; '));
+  assert.ok(!r.warnings.some((w) => w.includes('30,10')), 'the gunboat at sea is fine');
+  const fix = findFixes(doc, CATALOG).find((f) => f.key.startsWith('actor-ground'));
+  assert.equal(fix.fixes[0].label, 'Put water under it');
+  doc.begin(fix.fixes[0].label);
+  fix.fixes[0].apply(doc);
+  doc.commit();
+  assert.equal(t(doc, 8, 20), TERRAIN.WATER);
+  assert.ok(!findFixes(doc, CATALOG).some((f) => f.key.startsWith('actor-ground')));
+});
 
 test('quick fixes: spawn ground, overlapping spawns, foreign owners, actors off the ground; each is one undo step', () => {
   const doc = newDoc(48, 40);

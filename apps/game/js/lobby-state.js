@@ -64,6 +64,15 @@ export const WEATHER_MODES = [
 ];
 
 /**
+ * How units move among each other (engine/src/movement, packages/protocol
+ * MOVEMENT_MODELS): OpenRA's cell occupancy or WebRA's soft crowd separation.
+ */
+export const MOVEMENT_MODELS = [
+  { value: 'openra', label: 'OpenRA' },
+  { value: 'webra', label: 'WebRA' },
+];
+
+/**
  * Tech buildings of a generated map (engine/src/mapgen/settlements.rs, OpenRA's
  * map generator option "Buildings").
  */
@@ -197,6 +206,7 @@ export const DEFAULTS = {
   separateTeamSpawns: true,
   allyBuildRadius: true,
   timeLimit: 0,
+  movement: 'openra',
 };
 
 const DEFAULT_PLAYERS = [
@@ -218,6 +228,7 @@ export const LOBBY_SELECT_OPTIONS = [
   { key: 'techLevel', label: 'Tech level', choices: TECH_LEVELS },
   { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
   { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
+  { key: 'movement', label: 'Movement', choices: MOVEMENT_MODELS },
 ];
 
 export const LOBBY_TOGGLE_OPTIONS = [
@@ -376,6 +387,7 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     techLevel: oneOf(s.techLevel, TECH_LEVELS.map((o) => o.value), DEFAULTS.techLevel),
     gameSpeed: oneOf(s.gameSpeed, GAME_SPEEDS.map((o) => o.value), DEFAULTS.gameSpeed),
     timeLimit: oneOf(s.timeLimit, TIME_LIMITS.map((o) => o.value), DEFAULTS.timeLimit),
+    movement: oneOf(s.movement, MOVEMENT_MODELS.map((o) => o.value), DEFAULTS.movement),
     crates: bool('crates'),
     shortGame: bool('shortGame'),
     bounty: bool('bounty'),
@@ -631,6 +643,7 @@ export function buildOptions(state, mapJson = null) {
     techLevel: s.techLevel,
     gameSpeed: s.gameSpeed,
     timeLimit: s.timeLimit,
+    movement: s.movement,
     crates: s.crates,
     shortGame: s.shortGame,
     bounty: s.bounty,

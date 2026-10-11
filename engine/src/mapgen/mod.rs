@@ -26,8 +26,12 @@
 //! through and the other one becomes the usual rock wall; with the top to
 //! bottom mirror a base below the middle gets the mirror image of its
 //! partner's channel. Ground routes that have to cross water become fords
-//! (`Terrain::Ford`), which ships still sail over, so the ground network and
-//! the water network are both connected; roads are mirrored like the map.
+//! (`Terrain::Ford`), which are land to ships (OpenRA's ford templates), so
+//! no road crosses a base's route to the sea (`sea_routes`): land only a
+//! sea route could join is flooded, channels stay off the map border, and a
+//! finished map is checked (`validate`) and made again from a derived seed
+//! when a base lacks its harbour or land is cut off. Roads are mirrored
+//! like the map.
 
 use crate::map::{Map, Terrain};
 use crate::math::facing_vec;
@@ -666,7 +670,7 @@ pub(crate) fn cheapest_path(
     None
 }
 
-/// Cells reachable by ship from `starts` (4-connected over water and fords).
+/// Cells reachable by ship from `starts` (4-connected over open water).
 pub(crate) fn water_network(m: &Map, starts: &[usize]) -> Vec<bool> {
     let mut seen = vec![false; m.cells()];
     let mut stack: Vec<usize> = starts.iter().copied().filter(|&s| m.terrain[s].ship_passable()).collect();
@@ -755,6 +759,161 @@ pub(crate) fn dig_channel(m: &mut Map, path: &[usize], zone: &[bool]) {
     }
 }
 
+// ---- Sea routes and validation ------------------------------------------------
+
+/// Cells around each yard that count as the base's harbour (metrics::REACH).
+const HARBOUR_REACH: i32 = metrics::REACH;
+
+/// Ship distances (4-connected over open water) from the hub cells of the
+/// network, u32::MAX where no ship gets from the hub.
+fn hub_distances(m: &Map, hub: (i32, i32)) -> Vec<u32> {
+    let mut dist = vec![u32::MAX; m.cells()];
+    let mut queue = std::collections::VecDeque::new();
+    for x in [hub.0 - 1, hub.0] {
+        if m.contains(x, hub.1) && m.terrain[m.idx(x, hub.1)].ship_passable() {
+            let i = m.idx(x, hub.1);
+            dist[i] = 0;
+            queue.push_back(i);
+        }
+    }
+    while let Some(i) = queue.pop_front() {
+        let (x, y) = ((i as i32) % m.width, (i as i32) / m.width);
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            if m.contains(x + dx, y + dy) {
+                let j = m.idx(x + dx, y + dy);
+                if dist[j] == u32::MAX && m.terrain[j].ship_passable() {
+                    dist[j] = dist[i] + 1;
+                    queue.push_back(j);
+                }
+            }
+        }
+    }
+    dist
+}
+
+/// The naval yard site of the base whose yard top-left is `spawn`: the 3x3
+/// block of open water within `HARBOUR_REACH` of the yard that ships reach
+/// from the hub soonest, one in the base's own `harbour` (its bay or moat)
+/// first (ties: lowest cell), as its top-left cell.
+fn harbour_site(m: &Map, dist: &[u32], spawn: (i32, i32), harbour: &[bool]) -> Option<usize> {
+    let (cx, cy) = (spawn.0 + 1, spawn.1 + 2);
+    let water = |x: i32, y: i32| m.contains(x, y) && m.terrain[m.idx(x, y)] == Terrain::Water;
+    let mut best: Option<(bool, u32, usize)> = None;
+    for y in cy - HARBOUR_REACH..=cy + HARBOUR_REACH {
+        for x in cx - HARBOUR_REACH..=cx + HARBOUR_REACH {
+            if !water(x, y) || dist[m.idx(x, y)] == u32::MAX || !(0..3).all(|dy| (0..3).all(|dx| water(x + dx, y + dy))) {
+                continue;
+            }
+            let own = (0..3).all(|dy| (0..3).all(|dx| harbour[m.idx(x + dx, y + dy)]));
+            let key = (!own, dist[m.idx(x, y)], m.idx(x, y));
+            if best.is_none_or(|b| key < b) {
+                best = Some(key);
+            }
+        }
+    }
+    best.map(|b| b.2)
+}
+
+/// Naval styles: the water every base needs to reach the shared sea, which
+/// roads must never cross (a ford is land to ships, as OpenRA's ford
+/// templates are). Per base its naval yard site (`harbour_site`, in its own
+/// bay or moat from `harbour` where there is one) and the shortest ship
+/// route from there to the hub, a cell wider on each side where there is
+/// water; made symmetric like the map (left to right, with `flip_y` top to
+/// bottom too), so mirrored roads skip the same cells.
+pub(crate) fn sea_routes(m: &Map, hub: (i32, i32), flip_y: bool, harbour: &[bool]) -> Vec<bool> {
+    let (w, h) = (m.width, m.height);
+    let dist = hub_distances(m, hub);
+    let mut route = vec![false; m.cells()];
+    for &spawn in &m.spawns {
+        let Some(site) = harbour_site(m, &dist, spawn, harbour) else { continue };
+        let (sx, sy) = ((site as i32) % w, (site as i32) / w);
+        for dy in 0..3 {
+            for dx in 0..3 {
+                route[m.idx(sx + dx, sy + dy)] = true;
+            }
+        }
+        // Down the distances to the hub (ties: the first neighbour in a fixed order).
+        let mut i = site;
+        while dist[i] > 0 {
+            route[i] = true;
+            let (x, y) = ((i as i32) % w, (i as i32) / w);
+            let Some(j) = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .filter(|&&(dx, dy)| m.contains(x + dx, y + dy))
+                .map(|&(dx, dy)| m.idx(x + dx, y + dy))
+                .find(|&j| dist[j] == dist[i] - 1)
+            else {
+                break;
+            };
+            i = j;
+        }
+        route[i] = true;
+    }
+    // A cell of water either side.
+    let core = route.clone();
+    for (i, _) in core.iter().enumerate().filter(|(_, &c)| c) {
+        let (x, y) = ((i as i32) % w, (i as i32) / w);
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            if m.contains(x + dx, y + dy) && m.terrain[m.idx(x + dx, y + dy)].ship_passable() {
+                route[m.idx(x + dx, y + dy)] = true;
+            }
+        }
+    }
+    for i in 0..m.cells() {
+        if !route[i] {
+            continue;
+        }
+        let (x, y) = ((i as i32) % w, (i as i32) / w);
+        let mut images = vec![(w - 1 - x, y)];
+        if flip_y {
+            images.extend([(x, h - 1 - y), (w - 1 - x, h - 1 - y)]);
+        }
+        for (mx, my) in images {
+            let j = m.idx(mx, my);
+            if m.terrain[j].ship_passable() {
+                route[j] = true;
+            }
+        }
+    }
+    route
+}
+
+/// What a generated map must hold, checked after it is made (the generator
+/// tries another layout when it does not): every base reaches every other
+/// by ground, every land region of `MAINLAND_REGION` cells or more is
+/// joined to the bases, and in the naval styles every base has a naval yard
+/// site that ships reach from the hub of the shared sea, over open water
+/// only (fords are land).
+pub(crate) fn validate(m: &Map, style: MapStyle) -> Result<(), String> {
+    let Some(&first) = m.spawns.first() else { return Err("no bases".into()) };
+    for &s in &m.spawns {
+        if !m.connected(first, s) {
+            return Err(format!("base {s:?} cut off by ground"));
+        }
+    }
+    let label = land_components(m);
+    let main = label[m.idx(first.0 + 1, first.1 + 1)];
+    let mut sizes: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for &l in label.iter().filter(|&&l| l != u32::MAX && l != main) {
+        *sizes.entry(l).or_insert(0) += 1;
+    }
+    if let Some((_, n)) = sizes.iter().find(|(_, &n)| n >= MAINLAND_REGION) {
+        return Err(format!("a land region of {n} cells is cut off"));
+    }
+    if style.naval() {
+        let centres: Vec<(i32, i32)> = m.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
+        let (hub, _) = hub(m.width, m.height, &centres);
+        let dist = hub_distances(m, hub);
+        for &s in &m.spawns {
+            if harbour_site(m, &dist, s, &vec![false; m.cells()]).is_none() {
+                return Err(format!("base {s:?} has no naval yard site on the sea"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Make `b` reachable from `a` (yard top-left cells) by ground: carve the
 /// cheapest road three cells wide, clearing rock and trees and turning water
 /// into fords, mirrored left to right (with `flip_y` also top to bottom, as
@@ -791,8 +950,9 @@ pub(crate) const MAINLAND_REGION: usize = 60;
 /// Join every large land region to the bases' ground network: a channel or a
 /// strait may cut a region off (half the map, say), whose ore no ore truck
 /// could then reach. Each region of at least `MAINLAND_REGION` cells gets
-/// the cheapest road to the bases (fords over water, mirrored). Small
-/// islands stay islands.
+/// the cheapest road to the bases (fords over water, mirrored, never over a
+/// sea route in `keep`); a region only sea routes could join is flooded.
+/// Small islands stay islands.
 pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool], flip_y: bool) {
     for _ in 0..16 {
         let (w, h) = (m.width, m.height);
@@ -825,8 +985,32 @@ pub(crate) fn connect_land_regions(m: &mut Map, home: (i32, i32), keep: &[bool],
             }
         };
         let sources: Vec<usize> = (0..m.cells()).filter(|&i| label[i] == region).collect();
-        let Some((_, path)) = cheapest_path(w, h, &sources, &|j| label[j] == main, &cost) else { return };
-        carve_road(m, &path, keep, flip_y);
+        match cheapest_path(w, h, &sources, &|j| label[j] == main, &cost) {
+            Some((_, path)) => carve_road(m, &path, keep, flip_y),
+            None => {
+                // Enclosed by sea routes no road may cross (the strip between
+                // a base's channel and its mirror image, say): the land goes
+                // under water with its mirror images, unless a base stands on it.
+                let yards: Vec<usize> = m.spawns.iter().map(|&(x, y)| m.idx(x + 1, y + 1)).collect();
+                if yards.iter().any(|&y| label[y] == region) {
+                    return;
+                }
+                for &i in &sources {
+                    let (x, y) = ((i as i32) % w, (i as i32) / w);
+                    let mut images = vec![(x, y), (w - 1 - x, y)];
+                    if flip_y {
+                        images.extend([(x, h - 1 - y), (w - 1 - x, h - 1 - y)]);
+                    }
+                    for (mx, my) in images {
+                        let j = m.idx(mx, my);
+                        if m.terrain[j].passable() && !yards.contains(&j) {
+                            m.terrain[j] = Terrain::Water;
+                            m.clear_resource(j);
+                        }
+                    }
+                }
+            }
+        }
         let _ = size;
     }
 }

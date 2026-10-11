@@ -187,6 +187,8 @@ def load_ftl():
 
 
 AIR_LOCOMOTOR = 'air'
+# OpenRA LocomotorInfo.WaitAverage default: ticks a blocked move waits.
+LOCOMOTOR_WAIT_AVERAGE = 40
 
 
 def parse_locomotors():
@@ -206,6 +208,14 @@ def parse_locomotors():
         m = re.match(r'^\t\tCrushes: (.+)', line)
         if cur and m:
             locos[cur]['_crushes'] = [x.strip() for x in m.group(1).split(',')]
+            in_speeds = False
+            continue
+        # Cell sharing (infantry: five sub-cells) and the ticks a blocked
+        # move waits for its blocker (movement/cellmove.rs).
+        m = re.match(r'^\t\t(SharesCell|WaitAverage): (\S+)', line)
+        if cur and m:
+            key = '_shares_cell' if m.group(1) == 'SharesCell' else '_wait_average'
+            locos[cur][key] = m.group(2).lower() == 'true' if key == '_shares_cell' else int(m.group(2))
             in_speeds = False
             continue
         if cur and re.match(r'^\t\tTerrainSpeeds:', line):
@@ -268,13 +278,15 @@ def target_types(t):
 def locomotor_info(name, locos):
     """Speeds per terrain class and the movement domain (ground, water or air)."""
     if name == AIR_LOCOMOTOR:
-        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': []}
+        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': [],
+                'shares_cell': False, 'wait_average': LOCOMOTOR_WAIT_AVERAGE}
     l = locos[name]
     speeds = [l.get(tt, 0) for tt in TERRAIN_TYPES]
     on_land = any(speeds[:3])
     on_water = speeds[3] > 0
     domain = 'water' if on_water and not on_land else 'ground'
-    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
+    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes'],
+            'shares_cell': l.get('_shares_cell', False), 'wait_average': l.get('_wait_average', LOCOMOTOR_WAIT_AVERAGE)}
 
 
 # Warheads that change no health (combat.rs `land_shot`, smudges.rs): smudges
@@ -700,6 +712,38 @@ def first(t, name):
 
 def has(t, name):
     return bool(trait(t, name))
+
+
+# Selectable.PriorityModifiers as bits (rules.rs SelectionInfo).
+SELECTION_MODIFIERS = {'None': 0, 'Ctrl': 1, 'Alt': 2}
+
+
+def selection_info(t, aid):
+    """OpenRA Selectable (selection.rs): the selection priority, the modifier
+    keys that raise it to the top (bits: 1 Ctrl, 2 Alt), the selection class
+    (the actor's own name unless the trait names one: what double click and
+    the select by type hotkey match) and Bounds [width, height, x, y offset]
+    in world units ([]: the footprint, or one cell for a unit). None for
+    actors without Selectable (walls, mines, husks, crates)."""
+    sel = trait(t, 'Selectable')
+    if not sel:
+        return None
+    v = next(iter(sel.values()))
+    v = v if isinstance(v, dict) else {}
+    bits = 0
+    for m in tokens(v.get('PriorityModifiers')):
+        if m not in SELECTION_MODIFIERS:
+            raise SystemExit(f'{aid}: unknown Selectable.PriorityModifiers {m}')
+        bits |= SELECTION_MODIFIERS[m]
+    bounds = ints(v['Bounds']) if v.get('Bounds') else []
+    if bounds and len(bounds) not in (2, 4):
+        raise SystemExit(f'{aid}: Selectable.Bounds needs 2 or 4 values')
+    return {
+        'priority': int(v.get('Priority', 10)),
+        'modifiers': bits,
+        'class': v.get('Class') or aid.lower(),
+        'bounds': (bounds + [0, 0])[:4] if bounds else [],
+    }
 
 
 # OpenRA UnitStance names as the engine spells them (rules.rs Stance).
@@ -1359,6 +1403,8 @@ def main():
             'opportunity_fire': opportunity_fire(t),
             # BaseBuilding (Construction Yard, MCV): what the base hotkey cycles through.
             'base_building': 'BaseBuilding' in t,
+            # Selectable (selection.rs): the selection hotkeys and double click.
+            'selection': selection_info(t, aid),
             'death_weapon': None,
             'self_heal': None,
             # Forward/lateral offsets of each Turreted trait (render: ship turrets).

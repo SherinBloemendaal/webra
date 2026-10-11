@@ -221,6 +221,8 @@ pub struct Actor {
     pub leftover: crate::husks::Leftover,
     /// The owner's primary production structure (primary.rs, OpenRA PrimaryBuilding).
     pub primary: bool,
+    /// Cells held and the move under way in the OpenRA movement model (movement/cellmove.rs).
+    pub mv: crate::movement::Motion,
 }
 
 impl Actor {
@@ -309,6 +311,7 @@ impl Actor {
             inf: Default::default(),
             leftover: Default::default(),
             primary: false,
+            mv: Default::default(),
         }
     }
 
@@ -494,6 +497,9 @@ pub struct GameOptions {
     pub separate_team_spawns: bool,
     /// OpenRA `allybuild`: allied structures extend the build area too (production.rs).
     pub ally_build_radius: bool,
+    /// How units move among each other (movement/): OpenRA's cell
+    /// occupancy (the lobby default) or WebRA's soft crowd separation.
+    pub movement: crate::movement::MovementModel,
 }
 
 impl Default for GameOptions {
@@ -525,6 +531,7 @@ impl Default for GameOptions {
             separate_team_spawns: false,
             ally_build_radius: true,
             reusable_engineers: false,
+            movement: crate::movement::MovementModel::OpenRA,
         }
     }
 }
@@ -919,6 +926,9 @@ pub enum SmartAction {
     RepairBlocked = 16,
     /// Reusable engineer captures from outside (Captures@REUSABLE EnterCursor `ability`).
     CaptureOutside = 17,
+    /// A move to explored terrain none of the units can drive on (OpenRA
+    /// Mobile MoveOrderTargeter BlockedCursor `move-blocked`); still a move order.
+    MoveBlocked = 18,
 }
 
 #[derive(Clone)]
@@ -956,6 +966,13 @@ pub struct World {
     /// craft), crush mask, and the cell found. A cut-off group asks the
     /// same question once per unit; the answer only depends on these.
     pub(crate) retarget_memo: Vec<(u32, u32, u8, u8, u32)>,
+    /// Which units hold which cells (OpenRA movement model, movement/occupancy.rs).
+    pub(crate) occupancy: crate::movement::occupancy::Occupancy,
+    /// Bookkeeping of the route searches (movement/search.rs); never game state.
+    pub search: crate::movement::search::Scratch,
+    /// Salt of the per-tick ranks of units that want the same cell
+    /// (movement/cellmove.rs `claim_rank`), from the game seed.
+    pub(crate) claim_salt: u64,
     /// Nearest-cell searches run by `keep_goal_reachable` (a counter for
     /// tests, never part of the state hash).
     pub retarget_scans: u64,
@@ -1164,7 +1181,9 @@ impl World {
                     None
                 }
                 Kind::Husk => Some(self.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0)),
-                _ => Some(self.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024))),
+                _ => self
+                    .map_unit_cell(ty, a.x, a.y)
+                    .map(|(x, y)| self.spawn_unit(ty as u16, owner, cell_center(x), cell_center(y), a.facing.rem_euclid(1024))),
             };
             if let Some(i) = placed {
                 self.apply_map_actor_state(i, a);
@@ -1268,6 +1287,9 @@ impl World {
             terrain_dirty: true,
             jammed: Vec::new(),
             retarget_memo: Vec::new(),
+            occupancy: Default::default(),
+            search: Default::default(),
+            claim_salt: seed.wrapping_mul(0xD1B5_4A32_D192_ED03),
             retarget_scans: 0,
             tokens_dirty: true,
             next_group: 1,
@@ -1505,7 +1527,12 @@ impl World {
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
-            self.spawn_unit(ty as u16, owner, x, y, 512);
+            let h = self.spawn_unit(ty as u16, owner, x, y, 512);
+            // The free ore truck belongs to its refinery: it starts on the
+            // dock and leaves it while there is no ore (units.rs `dock_unblock_cell`).
+            if self.is_harvester(h) {
+                self.actors[h].refinery = self.make_ref(i);
+            }
         }
         Some(i)
     }
@@ -1658,7 +1685,12 @@ impl World {
     /// Whether unit `i` is a landing craft: a ship whose locomotor also
     /// drives on beaches (OpenRA `lcraft`, TerrainSpeeds Beach: the Transport).
     pub fn lands(&self, i: usize) -> bool {
-        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| {
+        self.type_lands(self.actors[i].ty as usize)
+    }
+
+    /// `lands` for actor type `ty`.
+    pub fn type_lands(&self, ty: usize) -> bool {
+        self.rules.actors[ty].unit.as_ref().is_some_and(|u| {
             let l = &self.rules.locomotors[u.locomotor];
             l.domain == crate::rules::Domain::Water && l.speeds.get(crate::map::SPEED_BEACH).is_some_and(|&s| s > 0)
         })
@@ -1666,11 +1698,82 @@ impl World {
 
     /// Passability for unit `i`: its domain's, or for landing craft water and beaches.
     pub fn pass_of(&self, i: usize) -> &Passability {
-        if self.lands(i) {
-            &self.pass_landing
-        } else {
-            self.pass_for(self.domain_of(i))
+        self.pass_of_type(self.actors[i].ty as usize)
+    }
+
+    /// `pass_of` for actor type `ty` (structures get the ground's; aircraft ignore it).
+    pub fn pass_of_type(&self, ty: usize) -> &Passability {
+        if self.type_lands(ty) {
+            return &self.pass_landing;
         }
+        let domain =
+            self.rules.actors[ty].unit.as_ref().map_or(crate::rules::Domain::Ground, |u| self.rules.locomotors[u.locomotor].domain);
+        self.pass_for(domain)
+    }
+
+    /// Whether terrain `t` is open to the locomotor of unit type `ty`
+    /// (OpenRA Locomotor TerrainSpeeds; the terrain half of CanEnterCell).
+    /// Ships: water (fords are land); landing craft also beaches; ground
+    /// units passable land; aircraft anything. Structures stand on nothing.
+    /// The passabilities are built from the same predicates
+    /// (`Passability::water`, `landing`, `new`).
+    pub fn terrain_open_to(&self, ty: usize, t: crate::map::Terrain) -> bool {
+        let Some(u) = self.rules.actors[ty].unit.as_ref() else { return false };
+        match self.rules.locomotors[u.locomotor].domain {
+            crate::rules::Domain::Air => true,
+            crate::rules::Domain::Water if self.type_lands(ty) => t.landing_passable(),
+            crate::rules::Domain::Water => t.ship_passable(),
+            crate::rules::Domain::Ground => t.passable(),
+        }
+    }
+
+    /// Nearest cell to (cx, cy), within `radius` rings, where a unit of type
+    /// `ty` may stand: open terrain for its locomotor and no structure (its
+    /// passability). (cx, cy) itself when it is such a cell; ties go to the
+    /// lowest cell index. Aircraft may be anywhere on the map. Used to put
+    /// units that would appear where they cannot be (map actors, mission
+    /// actors, a chronoshift back to a cell that closed) on open ground or
+    /// water instead, like OpenRA's Nudge and Teleport.ChooseBestDestinationCell.
+    /// The cell a map's pre-placed unit of type `ty` at (cx, cy) appears on:
+    /// that cell when its terrain is open to the unit's locomotor, else the
+    /// nearest open cell within 7 rings (a ship drawn onto the shore, a tank
+    /// in the sea), None when there is none (the unit is not placed). OpenRA
+    /// spawns such map actors where they are, stuck for good; the editor
+    /// warns about them (apps/game/editor/js/mapformat.js).
+    pub(crate) fn map_unit_cell(&self, ty: usize, cx: i32, cy: i32) -> Option<(i32, i32)> {
+        if !self.map.contains(cx, cy) {
+            return None;
+        }
+        // Actors without a locomotor (mines) lie where they are put.
+        if self.rules.actors[ty].unit.is_none() || self.terrain_open_to(ty, self.map.terrain[self.map.idx(cx, cy)]) {
+            return Some((cx, cy));
+        }
+        self.open_cell_for(ty, cx, cy, 7)
+    }
+
+    pub fn open_cell_for(&self, ty: usize, cx: i32, cy: i32, radius: i32) -> Option<(i32, i32)> {
+        let air =
+            self.rules.actors[ty].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].domain == crate::rules::Domain::Air);
+        let pass = self.pass_of_type(ty);
+        let open = |x: i32, y: i32| self.map.contains(x, y) && (air || !pass.blocked[self.map.idx(x, y)]);
+        for r in 0..=radius {
+            let mut best: Option<(i32, usize, (i32, i32))> = None;
+            for y in cy - r..=cy + r {
+                for x in cx - r..=cx + r {
+                    if ((x - cx).abs() != r && (y - cy).abs() != r) || !open(x, y) {
+                        continue;
+                    }
+                    let key = ((x - cx).pow(2) + (y - cy).pow(2), self.map.idx(x, y));
+                    if best.is_none_or(|(d, c, _)| key < (d, c)) {
+                        best = Some((key.0, key.1, (x, y)));
+                    }
+                }
+            }
+            if let Some((_, _, c)) = best {
+                return Some(c);
+            }
+        }
+        None
     }
 
     /// Rebuild every passability from the map (after replacing it wholesale; tests, harnesses).
@@ -2016,6 +2119,9 @@ impl World {
     /// Called for every new order to a unit: frees the refinery dock it held
     /// and ends helicopter tasks (landing, resupply) with their helipad reservation.
     pub(crate) fn release_dock(&mut self, i: usize) {
+        // The move under way ends; a step already begun is finished (movement/cellmove.rs).
+        self.actors[i].mv.cancel();
+        self.actors[i].mv.order_near = crate::movement::cellmove::ORDER_NEAR_ENOUGH;
         let me = self.make_ref(i);
         if let Some(r) = self.resolve(self.actors[i].refinery) {
             if self.actors[r].dock_user == me {
@@ -2059,8 +2165,10 @@ impl World {
         let cy = (units.iter().map(|&i| self.actors[i].y as i64).sum::<i64>() / n) as i32;
         let from = self.cell_of(cx, cy);
         let (gx, gy) = self.cell_toward(x, y, cx, cy);
-        // Reachable goals per (domain, component, crushed walls), shared by the group.
-        let mut goals: Vec<((crate::rules::Domain, u32, u8), u32)> = Vec::new();
+        // Reachable goals per (domain, landing craft, component, crushed
+        // walls), shared by the group. A landing craft's components are
+        // labels of its own passability (beaches too), not the other ships'.
+        let mut goals: Vec<((crate::rules::Domain, bool, u32, u8), u32)> = Vec::new();
         for &i in units {
             if !self.actors[i].in_world() {
                 continue;
@@ -2073,11 +2181,12 @@ impl World {
                 self.pass_of(i).component[self.cell_index(self.actors[i].x, self.actors[i].y)]
             };
             let crush = self.crush_mask(i);
-            let goal = match goals.iter().find(|(k, _)| *k == (d, comp, crush)) {
+            let key = (d, self.lands(i), comp, crush);
+            let goal = match goals.iter().find(|(k, _)| *k == key) {
                 Some(&(_, g)) => g,
                 None => {
                     let g = self.path_goal_from(i, gx, gy, from);
-                    goals.push(((d, comp, crush), g));
+                    goals.push((key, g));
                     g
                 }
             };
@@ -2240,7 +2349,25 @@ impl World {
         if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
+        // OpenRA MoveOrderTargeter: the blocked cursor over explored terrain the
+        // locomotor cannot enter (unexplored cells show the move cursor, MoveIntoShroud).
+        // With a mixed selection the move cursor wins while any unit can go there.
+        if self.players[player as usize].explored[ci] != 0 && !units.iter().any(|&i| self.terrain_open_for(i, ci)) {
+            return SmartAction::MoveBlocked;
+        }
         SmartAction::Move
+    }
+
+    /// Whether unit `i`'s locomotor can drive on cell `ci`'s terrain, ignoring
+    /// actors (OpenRA Locomotor.MovementCostForCell): the terrain half of `pass_of`.
+    pub fn terrain_open_for(&self, i: usize, ci: usize) -> bool {
+        let t = self.map.terrain[ci];
+        match self.domain_of(i) {
+            crate::rules::Domain::Air => true,
+            crate::rules::Domain::Water if self.lands(i) => t.landing_passable(),
+            crate::rules::Domain::Water => t.ship_passable(),
+            _ => t.passable(),
+        }
     }
 
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
@@ -2251,7 +2378,7 @@ impl World {
         let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
-            SmartAction::Move => self.order_move(units, x, y, false),
+            SmartAction::Move | SmartAction::MoveBlocked => self.order_move(units, x, y, false),
             SmartAction::Attack => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let (fighters, others): (Vec<usize>, Vec<usize>) =
@@ -2348,6 +2475,11 @@ impl World {
             a.pturret = a.turret;
         }
         self.rebuild_hash();
+        // Who holds which cells (OpenRA movement model), before this tick's
+        // orders and with last tick's moves (movement/occupancy.rs).
+        if self.cell_moves() {
+            self.occupancy_begin_tick();
+        }
         self.retarget_memo.clear();
         self.apply_orders();
         if self.tokens_dirty {
@@ -2464,6 +2596,10 @@ impl World {
                 mix(a.primary as i64);
                 // Infantry abilities (infantry.rs).
                 self.hash_infantry_actor(a, &mut mix);
+                // Cells and moves of the OpenRA movement model (movement/cellmove.rs).
+                if self.options.movement == crate::movement::MovementModel::OpenRA {
+                    a.mv.mix(&mut mix);
+                }
                 // The neutral world's traits (neutral.rs).
                 a.world.mix(&mut mix);
             }
@@ -2477,6 +2613,7 @@ impl World {
             mix(p.defeated as i64);
         }
         mix(self.game_over as i64);
+        mix(self.options.movement as i64);
         mix(self.crates.hash());
         mix(self.env.weather as i64);
         for p in &self.players {

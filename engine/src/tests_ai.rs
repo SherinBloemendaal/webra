@@ -695,6 +695,13 @@ fn bots_train_engineers_for_neutral_structures_and_capture_them() {
     let mut w = arena(64, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (52, 52)), ("allies", None, 0, (0, 0))]);
     w.players[2].neutral = true;
     w.ai[0].passive = true;
+    // The bot picks a random enemy or neutral player to capture from
+    // (OpenRA QueueCaptureOrders): the enemy keeps a soldier, no structure.
+    let yard = (0..w.actors.len())
+        .find(|&i| w.actors[i].alive && w.actors[i].owner == 1 && w.actors[i].kind == crate::rules::Kind::Building)
+        .unwrap();
+    w.remove(yard);
+    quiet_unit(&mut w, "E1", 1, 52, 52);
     complete_base(&mut w, 0);
     let target = put(&mut w, "POWR", 2, 26, 8);
     w.players[0].explored.iter_mut().for_each(|e| *e = 1);

@@ -83,12 +83,17 @@ fn units_cross_the_map_with_flow_fields() {
     let players = [crate::world::PlayerSetup::new("allies", None), crate::world::PlayerSetup::new("soviet", None)];
     let options = crate::world::GameOptions { map_style: crate::mapgen::MapStyle::Land, ..Default::default() };
     let mut w = World::with_options(5, 96, &players, options);
+    // WebRA's crowd movement (movement/soft.rs); the OpenRA model's group
+    // moves are tested in movement/tests.rs.
+    w.options.movement = crate::movement::MovementModel::WebRA;
     let tnk = ty(&w, "1TNK");
     let (sx, sy) = w.players[0].start;
     let (ex, ey) = w.players[1].start;
     let mut ids = Vec::new();
     for k in 0..12 {
         let u = w.spawn_unit(tnk, 0, cell_center(sx + 5 + k % 4), cell_center(sy + 6 + k / 4), 512);
+        // Not a fight: the crowd near the enemy yard must not start shooting at it.
+        w.actors[u].stance = crate::rules::Stance::HoldFire;
         ids.push(w.make_ref(u));
     }
     // Just in front of the enemy yard, on the side facing our base.
@@ -837,7 +842,10 @@ fn orders_round_trip_through_json_and_get_restamped() {
 fn four_player_free_for_all_ai_game_finishes() {
     let list = [("england", true, 0), ("russia", true, 0), ("germany", true, 0), ("ukraine", true, 0)];
     let mut w = World::with_options(12, 96, &setups(&list), opts());
-    for _ in 0..(25 * 60 * 25) {
+    // OpenRA movement (the default) makes land games a few minutes longer
+    // than the WebRA model (docs/contracts.md, AI measurements): the first
+    // player falls after 31 minutes here, after 12 with WebRA movement.
+    for _ in 0..(25 * 60 * 40) {
         w.step();
         if w.winner.is_some() {
             break;
@@ -846,7 +854,7 @@ fn four_player_free_for_all_ai_game_finishes() {
     let killed: u32 = w.losses.iter().sum();
     assert!(killed > 20, "fighting happened: {killed}");
     let defeated = w.players.iter().filter(|p| p.defeated).count();
-    assert!(defeated >= 1, "at least one player was eliminated in 25 minutes");
+    assert!(defeated >= 1, "at least one player was eliminated in 40 minutes");
 }
 
 // ---- Fairness ------------------------------------------------------------------

@@ -7,8 +7,9 @@
 // (data/source/audio/notifications.yaml), the voice sets with the voice line
 // of each order and death (data/source/audio/voices.yaml), the soundtrack
 // (data/source/audio/music.yaml), the player and world notification settings
-// (data/source/rules/player.yaml, world.yaml) and the texts of the
-// notifications (data/source/rules.ftl).
+// (data/source/rules/player.yaml, world.yaml), the texts of the
+// notifications (data/source/rules.ftl) and the sound files OpenRA made
+// itself (data/source/bits.txt).
 //
 // Only file NAMES are extracted; no audio is involved. The installer
 // (apps/game/js/audio/install.js) looks these names up in the player's own
@@ -154,7 +155,15 @@ function compact(o) {
 
 // ---- Weapons --------------------------------------------------------------------------------
 
-const isWater = (targets) => /\b(Water|Underwater)\b/.test(targets ?? '') && !/\bGround\b/.test(targets ?? '');
+// Where a warhead's ImpactSounds play (OpenRA Warhead.ValidTargets, default
+// "Ground, Water"): on open water when its targets include Water or
+// Underwater, anywhere else (ground, actors, trees, air) when they include
+// any other target. A warhead valid for both (Atomic's "Ground, Water, Air")
+// plays in both places.
+const WATER_TARGETS = new Set(['Water', 'Underwater']);
+const targetsOf = (h) => list(h.ValidTargets ?? 'Ground, Water');
+const hitsWater = (h) => targetsOf(h).some((t) => WATER_TARGETS.has(t));
+const hitsLand = (h) => targetsOf(h).some((t) => !WATER_TARGETS.has(t));
 
 const weaponSounds = {};
 for (const [name, w] of Object.entries(weapons)) {
@@ -162,7 +171,8 @@ for (const [name, w] of Object.entries(weapons)) {
   const water = [];
   for (const [key, h] of Object.entries(w)) {
     if (!key.startsWith('Warhead') || typeof h !== 'object' || !h.ImpactSounds) continue;
-    (isWater(h.ValidTargets) ? water : impact).push(...names(h.ImpactSounds));
+    if (hitsLand(h)) impact.push(...names(h.ImpactSounds));
+    if (hitsWater(h)) water.push(...names(h.ImpactSounds));
   }
   const entry = {};
   if (names(w.Report).length) entry.report = names(w.Report);
@@ -252,8 +262,9 @@ for (const [id, t] of Object.entries(actorRules)) {
   // explosion (FireWarheadsOnDeath); DamagedSounds play when it falls to Heavy.
   const sodt = traits(t, 'SoundOnDamageTransition').map(([, v]) => v);
   const death = new Set(sodt.flatMap((v) => names(v.DestroyedSounds)));
-  const deathWeapon = weaponByLower[String(t.FireWarheadsOnDeath?.Weapon ?? '').toLowerCase()];
-  for (const n of weaponSounds[deathWeapon]?.impact ?? []) death.add(n);
+  // A death weapon whose sounds only play on water (the submarines' UnitExplodeSubmarine) is heard there.
+  const deathWeapon = weaponSounds[weaponByLower[String(t.FireWarheadsOnDeath?.Weapon ?? '').toLowerCase()]];
+  for (const n of deathWeapon?.impact ?? deathWeapon?.water ?? []) death.add(n);
   e.death = [...death];
   e.damaged = [...new Set(sodt.flatMap((v) => names(v.DamagedSounds)))];
   // ActorLostNotification: its Notification (default UnitLost) to the owner.
@@ -274,6 +285,18 @@ for (const [id, t] of Object.entries(actorRules)) {
       .map(([, v]) => v.RearmSound)
       .find(Boolean),
   );
+  // MadTank: ChargeSound once it starts charging, DetonationSound as it blows up (C# defaults madchrg2, madexplo).
+  if (t.MadTank !== undefined) {
+    const m = fields(t.MadTank);
+    e.mad = { charge: one(m.ChargeSound) ?? 'madchrg2', detonate: one(m.DetonationSound) ?? 'madexplo', weapon: m.DetonationWeapon ?? 'MADTankDetonate' };
+  }
+  // Teleport's ChronoshiftSound at both ends: Chronoshiftable (the Chronosphere
+  // and the way back, C# default chrono2) and PortableChrono (the chrono tank's
+  // own jump, C# default chrotnk1).
+  if (t.Chronoshiftable !== undefined) e.chronoshift = one(fields(t.Chronoshiftable).ChronoshiftSound) ?? 'chrono2';
+  if (t.PortableChrono !== undefined) e.portableChrono = one(fields(t.PortableChrono).ChronoshiftSound) ?? 'chrotnk1';
+  // AttackTesla.ChargeAudio: the Tesla Coil charging before its zaps.
+  e.teslaCharge = one(t.AttackTesla?.ChargeAudio);
   if (t.GainsExperience) e.levelUp = { sound: t.GainsExperience.LevelUpNotification, text: text(t.GainsExperience.LevelUpTextNotification) };
   // CaptureNotification: Notification (default BuildingCaptured) to the new owner, LoseNotification to the old one.
   if (t.CaptureNotification !== undefined) {
@@ -498,6 +521,26 @@ const worldNotifications = compact({
   timeLimitWarnings: tl.TimeLimitWarnings,
 });
 
+// ---- What OpenRA defines, and the sounds only OpenRA has ----------------------------------
+
+/**
+ * Every weapon and actor of OpenRA's rules: their sound cues are OpenRA's, so
+ * with original sounds in use a cue whose rules name no sound stays silent
+ * (catalog.js `openra`) instead of playing WebRA's own sound.
+ */
+const openraWeapons = Object.keys(weapons).sort();
+const openraActors = Object.keys(actorRules).sort();
+/**
+ * Sound files OpenRA made and ships itself (data/source/bits.txt, mods/ra/bits):
+ * a player's copy of Red Alert never has them ("Battle control online",
+ * "Unit stolen", the thief's lines, the silenced pistol).
+ */
+const openraMadeSounds = readFileSync(`${SOURCE}bits.txt`, 'utf8')
+  .split(/\r?\n/)
+  .map((l) => l.trim().toLowerCase())
+  .filter((l) => l && !l.startsWith('#') && l.endsWith('.aud'))
+  .sort();
+
 const json = (v) => JSON.stringify(v, null, 2);
 const out = `// Generated by tools/gen-audio-catalog.mjs from data/weapons.json,
 // data/source/rules, data/source/audio and data/source/rules.ftl (OpenRA
@@ -534,6 +577,15 @@ export const WORLD_NOTIFICATIONS = ${json(worldNotifications)};
  * bases, per-faction file extensions, and lines that never use them.
  */
 export const VOICE_SETS = ${json(voiceSets)};
+
+/** Every weapon of OpenRA's rules (data/weapons.json), sounds or not. */
+export const OPENRA_WEAPONS = ${JSON.stringify(openraWeapons)};
+
+/** Every actor of OpenRA's rules (data/source/rules), sounds or not. */
+export const OPENRA_ACTORS = ${JSON.stringify(openraActors)};
+
+/** Sound files OpenRA made itself (data/source/bits.txt): no copy of Red Alert has them. */
+export const OPENRA_MADE_SOUNDS = ${json(openraMadeSounds)};
 `;
 writeFileSync(`${root}apps/game/js/audio/catalog-data.js`, out);
 console.log(

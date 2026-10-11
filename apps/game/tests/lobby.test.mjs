@@ -198,9 +198,12 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   const keys = ['seed', 'mapSize', 'mapStyle', 'biome', 'weather', 'startingCash', 'startingUnits', 'techLevel', 'gameSpeed', 'fog', 'explored', 'buildRadius', 'redeployableMcv', 'oreRegrowth', 'cheats'];
   // OpenRA's other lobby options.
   keys.push('timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers');
+  // The movement model (engine/src/movement): OpenRA's unless the player picks WebRA's.
+  keys.push('movement');
   for (const key of keys) {
     assert.ok(key in o, key);
   }
+  assert.equal(o.movement, 'openra');
   s.mapSource = 'file';
   assert.equal(buildOptions(s, '{"format":1}').map, '{"format":1}');
   const stored = storedSettings(s);
@@ -368,4 +371,28 @@ test('spawn markers follow separate team spawns', () => {
   s.players[2].team = 1;
   const columns = [[4, 4], [4, 40], [40, 4], [40, 40]];
   assert.deepEqual(spawnMarkers(columns, 48, 48, s).map((m) => m.number), [1, 3, 2, 4], 'generated: team 1 left, team 2 right');
+});
+
+test('the movement model: lobby default, stored choice, and what the engine plays', () => {
+  const s = fresh();
+  assert.equal(s.movement, 'openra', 'OpenRA by default');
+  s.movement = 'webra';
+  const back = sanitizeState(JSON.parse(JSON.stringify(storedSettings(s))), COLORS, () => 0);
+  assert.equal(back.movement, 'webra', 'the choice is stored');
+  assert.equal(sanitizeState({ ...storedSettings(s), movement: 'nonsense' }, COLORS, () => 0).movement, 'openra');
+  // The engine plays the chosen model; the model is part of the game state.
+  const hash = (movement) => {
+    const st = fresh();
+    st.mapSize = 64;
+    st.movement = movement;
+    st.players[0].faction = 'germany';
+    st.players[1].faction = 'russia';
+    const g = Game.from_options(JSON.stringify(buildOptions(st)));
+    for (let t = 0; t < 50; t++) g.tick();
+    const h = g.state_hash();
+    g.free();
+    return h;
+  };
+  assert.equal(hash('openra'), hash('openra'));
+  assert.notEqual(hash('openra'), hash('webra'));
 });

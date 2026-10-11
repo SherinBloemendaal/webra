@@ -48,7 +48,7 @@ test('frames run the UI ticks due and carry the rest; a long pause is not caught
   assert.equal(r.rest, 0);
 });
 
-test('cash tick sounds: OpenRA notifications, our own clicks, gain and the Cash ticks setting', () => {
+test('cash tick sounds: OpenRA notifications, our own clicks, gain and the Cash ticks setting', async () => {
   assert.deepEqual(CASH_TICK_SOUNDS.up.originals, ['cashup1.aud']);
   assert.deepEqual(CASH_TICK_SOUNDS.down.originals, ['cashdn1.aud']);
   for (const s of Object.values(CASH_TICK_SOUNDS)) assert.ok(RECIPES[s.synth], `${s.synth} is synthesized when the originals are missing`);
@@ -57,6 +57,8 @@ test('cash tick sounds: OpenRA notifications, our own clicks, gain and the Cash 
   assert.equal(CASH_TICK_GAIN, 0.33);
 
   const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  // Sounds wait while the installed sounds load (js/audio/index.js defer).
+  await audio.loaded;
   const played = [];
   // OpenRA notifications CashTickUp and CashTickDown (VolumeModifier 0.33, InterruptType Overlap).
   audio.bank.resolveAll = (sound) => [{ buffer: sound.synth, rate: 1 }];

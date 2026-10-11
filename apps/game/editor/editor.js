@@ -75,7 +75,7 @@ const MATERIAL_HINTS = {
   [TERRAIN.ROCK]: 'Rock and cliffs: nobody passes.',
   [TERRAIN.WATER]: 'Water: ships only. Shores get their tiles from the land around them.',
   [TERRAIN.TREE]: 'Trees: each cell becomes a tree in the game.',
-  [TERRAIN.FORD]: 'Ford: shallow water units can cross, ships too.',
+  [TERRAIN.FORD]: 'Ford: a river crossing for ground units; land to ships.',
   [TERRAIN.ROAD]: 'Road: faster, structures may stand on it. Pieces join up by themselves.',
   [TERRAIN.BEACH]: 'Beach: sand by the water; landing craft run up on it.',
   [TERRAIN.RIVER]: 'River: water that bridges can span.',
@@ -1481,7 +1481,10 @@ async function testPlay() {
   const text = canonicalJson(map);
   try {
     sessionStorage.setItem(TEST_MAP_KEY, text);
-    sessionStorage.setItem(TEST_SETUP_KEY, JSON.stringify({ players: setup.players, camera: setup.camera ? [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2] : null, autostart: setup.autostart }));
+    sessionStorage.setItem(
+      TEST_SETUP_KEY,
+      JSON.stringify({ players: setup.players, movement: setup.movement, camera: setup.camera ? [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2] : null, autostart: setup.autostart }),
+    );
   } catch {
     toast('Cannot hand the map to the game: browser storage is blocked.', true);
     return;

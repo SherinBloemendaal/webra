@@ -96,3 +96,33 @@ test('the modes use the new options where their names promise it', () => {
   assert.deepEqual([by.competitive.crates, by.competitive.shortGame, by.competitive.timeLimit, by.competitive.weather], [false, true, 60, 'off']);
   assert.equal(by.classic.crates, true, 'classic Red Alert had crates');
 });
+
+test('the movement model: OpenRA by default, WebRA for games from before it, nothing else', async () => {
+  const { MOVEMENT_MODELS, validateMissionOptions, MAP_OPTION_VALUES } = await import('../src/index.js');
+  assert.deepEqual(MOVEMENT_MODELS, ['openra', 'webra']);
+  assert.equal(DEFAULT_OPTIONS.movement, 'openra');
+  for (const m of MOVEMENT_MODELS) assert.equal(validateLobbyOptions({ ...DEFAULT_OPTIONS, movement: m }).movement, m);
+  assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, movement: 'push' }), /movement/);
+  assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, movement: true }), /movement/);
+  // Saves and replays from before the option keep it out: the engine plays them with `webra`.
+  const { movement: _m, ...old } = DEFAULT_OPTIONS;
+  assert.equal('movement' in validateLobbyOptions(old, 'options', { legacy: true }), false);
+  assert.equal('movement' in validateGameOptions({ ...old, players }), false);
+  // Live lobby options always carry it: a lobby never shows one model and plays another.
+  assert.throws(() => validateLobbyOptions(old), /options\.movement/);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: old })).ok, false);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: DEFAULT_OPTIONS })).ok, true);
+  assert.equal(validateGameOptions({ ...DEFAULT_OPTIONS, players }).movement, 'openra');
+  // Missions: optional the same way.
+  const mission = { seed: 3, gameSpeed: 'normal', options: { difficulty: 'hard' } };
+  assert.equal('movement' in validateMissionOptions(mission), false);
+  assert.equal(validateMissionOptions({ ...mission, movement: 'openra' }).movement, 'openra');
+  assert.throws(() => validateMissionOptions({ ...mission, movement: 'soft' }), /movement/);
+  // Game modes carry it; modes saved before it take OpenRA's.
+  assert.ok(PRESET_KEYS.includes('movement') && ADDED_PRESET_KEYS.includes('movement'));
+  const saved = presetOptions(DEFAULT_OPTIONS);
+  delete saved.movement;
+  assert.equal(validateSavedPresets([{ name: 'Before movement', options: saved }])[0].options.movement, 'openra');
+  // A map may set and lock it (map format version 2).
+  assert.deepEqual(MAP_OPTION_VALUES.movement, MOVEMENT_MODELS);
+});

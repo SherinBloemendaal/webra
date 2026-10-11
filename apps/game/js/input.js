@@ -19,7 +19,7 @@
 // one frame old there; what a click or key does asks fresh answers
 // (`this.ask`, promises) and acts when they arrive.
 
-import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, scrollCursor } from './cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, minimapCursor, scrollCursor } from './cursors.js';
 
 /** Smart orders that act on own actors (instead of selecting them). */
 const TARGETS_OWN = new Set([
@@ -34,7 +34,7 @@ const TARGETS_OWN = new Set([
   ACTION.DISGUISE,
   ACTION.INFILTRATE,
 ]);
-import { hotkeys as defaultHotkeys } from './hotkeys.js';
+import { hotkeys as defaultHotkeys, focusKeepsKey } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups } from './controlgroups.js';
@@ -46,6 +46,8 @@ const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
+/** Modifier keys (KeyboardEvent.key) the cursors follow in `keys`. */
+const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
 export { MIN_ZOOM, MAX_ZOOM };
 const BOOKMARKS = 4;
@@ -60,6 +62,11 @@ export const MODES = Object.freeze(['sell', 'repair', 'powerDown', 'beacon']);
 export function nextInCycle(list, selection) {
   const i = list.findIndex((id) => selection.includes(id));
   return i >= 0 && i + 1 < list.length ? list[i + 1] : (list[0] ?? null);
+}
+
+/** OpenRA's selection hotkey feedback line ("selected-units-across-screen" and "-map"). */
+export function selectedUnitsText(count, where) {
+  return count === 1 ? `Selected one unit across ${where}.` : `Selected ${count} units across ${where}.`;
 }
 
 /** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
@@ -99,7 +106,8 @@ export class Input {
     this.rules = rules;
     this.player = player;
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
-    // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text) },
+    // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text),
+    // selectionClick() (the selection hotkeys' click), gameOver() -> bool },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
     // tips (js/hints.js): { onPlainMove(units, worldPoint) }
@@ -536,28 +544,41 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
+    if (this.pressAction(w, e, p)) return;
+    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+  }
+
+  /**
+   * The action button (left) went down at world point `w` with the modifiers
+   * of `e`: the order generator in force takes it (support power, sidebar
+   * mode, placement, ability targeting, armed command bar mode, minefield,
+   * attack move). False when none did: the release then selects or gives the
+   * smart order (finishClick). `at`: the view position, where a support
+   * power's direction drag starts (null from the radar).
+   */
+  pressAction(w, e, at) {
     if (this.power) {
       // Target picked; mouse up fires it (a drag sets the direction).
-      this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
-      return;
+      this.powerDrag = { x: w.x, y: w.y, sx: at?.x ?? 0, sy: at?.y ?? 0 };
+      return true;
     }
     if (this.mode) {
       this.modeClick(w);
-      return;
+      return true;
     }
     if (this.placing) {
       const { cx, cy } = this.placementCell(w.x, w.y);
       this.placeAt(this.placing, cx, cy);
-      return;
+      return true;
     }
     if (this.targeting) {
       this.targetClick(w);
-      return;
+      return true;
     }
-    if (this.hooks.commandMouseDown?.(w, e)) return;
+    if (this.hooks.commandMouseDown?.(w, e)) return true;
     if ((e.ctrlKey || e.metaKey) && this.selectedMinelayers().length) {
       this.mineDrag = { sx: w.x, sy: w.y, ex: w.x, ey: w.y, units: this.selectedMinelayers() };
-      return;
+      return true;
     }
     if (this.attackMove) {
       const units = this.selectedOwnUnits();
@@ -568,9 +589,48 @@ export class Input {
         this.flashOrder(w, ACTION.ATTACK);
       }
       if (!e.shiftKey) this.attackMove = false;
-      return;
+      return true;
     }
-    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+    return false;
+  }
+
+  /**
+   * Whether a radar click may give an order: own units or a rally building
+   * selected, or an order generator in force. Touch screens wait for the
+   * tap there (js/touch.js radarTap); otherwise a touch pans at once.
+   */
+  radarMayOrder() {
+    if (this.suspended || this.spectator || this.placing) return false;
+    return !!(this.power || this.mode || this.targeting || this.attackMove || this.selectedOwnUnits().length || this.selectedRallyBuilding() !== null);
+  }
+
+  /**
+   * A click on the radar at world point `w` (js/minimap.js). OpenRA's
+   * RadarWidget hands the world a mouse down and up at that spot, so the
+   * order generator in force acts there as a click on the battlefield would:
+   * support powers, sidebar modes, ability targeting, the command bar's modes
+   * and modifiers (force move, force attack, guard, Shift waypoints),
+   * minefields, attack move, the smart order (move, attack, harvest, enter...)
+   * and rally points. `mods`: { shift, ctrl, alt }. `button` 0 is the action
+   * button (left, as on the battlefield); 2, the right button (the radar's
+   * order button before, and OpenRA's in its modern mouse style), gives only
+   * the selected units' orders. Selecting, deploying and placing structures
+   * stay on the battlefield (OpenRA places where the mouse is, not at the
+   * radar spot); spectators and replays give no orders. Resolves with true
+   * when the click was an order; false leaves it to the radar, which moves
+   * the camera there.
+   */
+  async radarClick(w, mods = {}, button = 0) {
+    if (this.suspended || this.spectator || this.placing) return false;
+    if ((this.power || this.mode || this.targeting) && button !== 0) return false;
+    const e = { shiftKey: !!mods.shift, ctrlKey: !!mods.ctrl, metaKey: false, altKey: !!mods.alt };
+    if (this.pressAction(w, e, null)) {
+      // A down and an up at one spot: a support power without a direction, a one-cell minefield.
+      if (this.powerDrag) this.firePower(null);
+      if (this.mineDrag) this.layMines();
+      return true;
+    }
+    return this.finishClick(w, { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey }, { radar: true });
   }
 
   /** Place structure `id` with its top-left cell at (cx, cy) when every footprint cell is free. */
@@ -618,20 +678,14 @@ export class Input {
       return;
     }
     if (e.button === 0 && this.mineDrag) {
-      const m = this.mineDrag;
-      this.mineDrag = null;
-      this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
-      this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+      this.layMines();
       return;
     }
     if (e.button === 0 && this.power && this.powerDrag) {
       const p = this.local(e);
       const t = this.powerDrag;
-      const w = this.toWorld(p.x, p.y);
       const dragged = Math.abs(p.x - t.sx) + Math.abs(p.y - t.sy) >= 12;
-      this.game.activate_power(this.player, this.power.key, t.x, t.y, dragged ? w.x : undefined, dragged ? w.y : undefined);
-      this.flashOrder(t, ACTION.ATTACK);
-      this.cancelPower();
+      this.firePower(dragged ? this.toWorld(p.x, p.y) : null);
       return;
     }
     if (e.button !== 0 || !this.drag) return;
@@ -643,14 +697,34 @@ export class Input {
       this.finishClick(b, d);
       return;
     }
-    this.boxSelect(a, b, d.shift);
+    this.boxSelect(a, b, d);
   }
 
-  /** A left click (no drag) at world point `b` with the drag's modifiers `d`. */
-  async finishClick(b, d) {
+  /** Lay the minefield of the Minelayers' drag (`mineDrag`). */
+  layMines() {
+    const m = this.mineDrag;
+    this.mineDrag = null;
+    this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
+    this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+  }
+
+  /** Fire the targeted support power at the picked spot, toward world point `dir` when dragged. */
+  firePower(dir) {
+    const t = this.powerDrag;
+    this.game.activate_power(this.player, this.power.key, t.x, t.y, dir ? dir.x : undefined, dir ? dir.y : undefined);
+    this.flashOrder(t, ACTION.ATTACK);
+    this.cancelPower();
+  }
+
+  /**
+   * A left click (no drag) at world point `b` with the drag's modifiers `d`.
+   * From the radar (`radar`) only orders count: what would select or deploy
+   * does nothing. Resolves with true when it gave an order.
+   */
+  async finishClick(b, d, { radar = false } = {}) {
     const now = performance.now();
     // Force move / force attack / queued orders (Alt, Ctrl, Shift + click).
-    if (await this.hooks.commandClick?.(b, d)) return;
+    if (await this.hooks.commandClick?.(b, d)) return true;
     const intent = d.shift ? { kind: 'select' } : await this.clickIntentNow(b);
     if (intent.kind === 'order') {
       // The reply depends on what the order does (capture, C4, heal...).
@@ -659,22 +733,40 @@ export class Input {
       this.flashOrder(b, intent.action);
       // A plain move: the attack-move tip may apply (js/hints.js).
       if (intent.action === ACTION.MOVE) this.hooks.onPlainMove?.(intent.units, b);
-    } else if (intent.kind === 'deploy') {
-      this.game.deploy(this.player, Uint32Array.from([intent.id]));
-    } else if (intent.kind === 'blocked') {
-      // Nothing to do: the deploy cursor already shows why.
-    } else if (intent.kind === 'rally') {
+      return true;
+    }
+    if (intent.kind === 'rally') {
       this.game.set_rally(this.player, this.selection[0], b.x, b.y);
       this.flashOrder(b, ACTION.MOVE);
-    } else {
-      await this.clickSelect(b, d.shift, d.ctrl, now);
+      return true;
     }
+    if (radar) return false;
+    if (intent.kind === 'deploy') {
+      this.game.deploy(this.player, Uint32Array.from([intent.id]));
+      return true;
+    }
+    // Blocked deploy: nothing to do, the deploy cursor already shows why.
+    if (intent.kind !== 'blocked') await this.clickSelect(b, d.shift, now, d);
+    return false;
   }
 
-  /** Box selection from world point `a` to `b` (Shift: added to the selection). */
-  async boxSelect(a, b, shift) {
-    const ids = Array.from(await this.ask.select_box(this.player, a.x, a.y, b.x, b.y));
-    this.setSelection(shift ? this.selection.concat(ids) : ids);
+  /**
+   * The player a box or click selects for (engine: their actors first,
+   * other players' ranked lower), or 255 for a spectator watching everyone.
+   */
+  selectionViewer() {
+    return this.viewOwner() ?? 255;
+  }
+
+  /**
+   * OpenRA box selection (WorldInteractionControllerWidget): the visible
+   * actors in the box of the highest selection priority (engine/src/selection.rs);
+   * Ctrl or Alt held (`mods`) raise the actors that allow it. Shift adds them
+   * to the selection, otherwise they replace it.
+   */
+  async boxSelect(a, b, mods = {}) {
+    const ids = Array.from(await this.ask.select_box(this.selectionViewer(), a.x, a.y, b.x, b.y, !!mods.ctrl, !!mods.alt));
+    this.setSelection(mods.shift ? this.selection.concat(ids) : ids);
   }
 
   /** Whole map rectangle in world px, for map-wide selection. */
@@ -682,30 +774,35 @@ export class Input {
     return { x0: 0, y0: 0, x1: this.mapPx.w, y1: this.mapPx.h };
   }
 
-  /** Select what is at world point `w` (`now`: when it was clicked, for double clicks). */
-  async clickSelect(w, shift, ctrl = false, now = performance.now()) {
-    const v = ctrl ? this.mapRect() : this.viewRect();
-    const id = await this.ask.pick(this.player, w.x, w.y);
+  /**
+   * OpenRA's click selection: the actor at world point `w` of the highest
+   * selection priority less its distance (engine/src/selection.rs; Ctrl or
+   * Alt in `mods` raise the actors that allow it) replaces the selection, or
+   * nothing clears it; with Shift it is added or, when selected, taken out
+   * (and a click on nothing changes nothing). `now`: when it was clicked, for
+   * double clicks.
+   */
+  async clickSelect(w, shift, now = performance.now(), mods = {}) {
+    const id = await this.ask.select_at(this.selectionViewer(), w.x, w.y, !!mods.ctrl, !!mods.alt);
     if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
-      // Double click: same type on screen; Ctrl + double click: on the whole map.
       this.lastClick = { time: 0, id: NONE };
-      const same = Array.from(await this.ask.select_same_type(this.player, id, v.x0, v.y0, v.x1, v.y1));
-      if (same.length) this.setSelection(same);
+      await this.selectSameClass(id);
       return;
     }
     this.lastClick = { time: now, id };
-    if (id === NONE) {
-      if (!shift) this.setSelection([]);
-      return;
-    }
-    const info = this.info(id);
-    const own = info && info.owner === this.player;
-    if (shift && own && !info.building) {
-      const has = this.selection.includes(id);
-      this.setSelection(has ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
-    } else {
-      this.setSelection([id]);
-    }
+    if (!shift) this.setSelection(id === NONE ? [] : [id]);
+    else if (id !== NONE) this.setSelection(this.selection.includes(id) ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
+  }
+
+  /**
+   * OpenRA double click (WorldInteractionControllerWidget): the actors on
+   * screen of the clicked actor's selection class join the selection, when
+   * the clicked actor is one the viewer selects for (selectionOwners).
+   */
+  async selectSameClass(id) {
+    const v = this.viewRect();
+    const same = Array.from(await this.ask.select_by_class(this.selectionOwners(), Uint32Array.from([id]), v.x0, v.y0, v.x1, v.y1));
+    if (same.length) this.setSelection(this.selection.concat(same));
   }
 
   onWheel(e) {
@@ -721,8 +818,12 @@ export class Input {
   }
 
   onKeyDown(e) {
-    const t = e.target;
-    if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+    // Held modifiers count wherever the focus is (the mine and command bar
+    // cursors after leaving the chat line with Ctrl held); keyup drops them.
+    if (MODIFIER_KEYS.has(e.key)) this.keys.add(e.key);
+    // Typing in a text field, or a key that works the focused switch, slider
+    // or list: not the game's (js/hotkeys.js focusKeepsKey; Esc in a switch is).
+    if (focusKeepsKey(e)) return;
     if (this.suspended) return;
     this.keys.add(e.key);
     if (e.key === 'Escape') {
@@ -821,55 +922,78 @@ export class Input {
   }
 
   /**
-   * OpenRA SelectAllUnits: the player's combat units on screen; when that
-   * selects nothing new, every one of them on the map.
+   * The players whose actors the selection keys and double click pick
+   * (OpenRA GetPlayersToIncludeInSelection): the local player, the player a
+   * spectator watches, or every player when a spectator watches the whole map.
    */
-  async selectAllUnits() {
-    const v = this.viewRect();
-    let ids = Array.from(await this.ask.select_box(this.player, v.x0, v.y0, v.x1, v.y1));
-    let where = 'screen';
-    if (ids.length <= this.selection.length) {
-      const m = this.mapRect();
-      ids = Array.from(await this.ask.select_box(this.player, m.x0, m.y0, m.x1, m.y1));
-      where = 'map';
-    }
-    this.setSelection(ids);
-    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+  selectionOwners() {
+    const own = this.viewOwner();
+    if (own !== null) return Uint8Array.from([own]);
+    return Uint8Array.from({ length: this.game.player_count() }, (_, i) => i);
   }
 
-  /** Own units of the selected types inside `rect`. */
-  async selectSameTypes(rect) {
-    const seen = new Set();
-    const asks = [];
-    for (const id of this.selectedOwnUnits()) {
-      const type = this.info(id)?.type;
-      if (!type || seen.has(type)) continue;
-      seen.add(type);
-      asks.push(this.ask.select_same_type(this.player, id, rect.x0, rect.y0, rect.x1, rect.y1));
-    }
-    const out = [];
-    for (const ids of await Promise.all(asks)) out.push(...ids);
-    return out;
+  /** The selection hotkeys' feedback line and click (OpenRA ClickSound). */
+  selected(count, where) {
+    this.hooks.feedback?.(selectedUnitsText(count, where));
+    this.hooks.selectionClick?.();
   }
 
   /**
-   * OpenRA SelectUnitsByType: units of the selected types on screen; when
-   * that selects nothing new, on the whole map. Added to the selection.
+   * OpenRA SelectAllUnits: the actors on screen of the highest selection
+   * priority (combat units before support units, harvesters and
+   * structures); when that selects no more than is selected already (the
+   * key pressed again), the same across the whole map. `e`: the key event.
+   * OpenRA hands the pressed key's modifiers to the priority
+   * (`SubsetWithHighestSelectionPriority(e.Modifiers)`); the default key Q
+   * has none, but bound to Ctrl+K (or Alt+Q) in Controls the key's Ctrl (Alt)
+   * raises the actors that allow it, as in OpenRA.
+   */
+  async selectAllUnits(e = null) {
+    if (this.hooks.gameOver?.()) return;
+    const owners = this.selectionOwners();
+    const ctrl = !!(e?.ctrlKey || e?.metaKey);
+    const alt = !!e?.altKey;
+    const v = this.viewRect();
+    let ids = Array.from(await this.ask.select_all(owners, v.x0, v.y0, v.x1, v.y1, ctrl, alt));
+    let where = 'screen';
+    if (ids.length <= this.selection.length) {
+      const m = this.mapRect();
+      ids = Array.from(await this.ask.select_all(owners, m.x0, m.y0, m.x1, m.y1, ctrl, alt));
+      where = 'map';
+    }
+    this.setSelection(ids);
+    this.selected(ids.length, where);
+  }
+
+  /**
+   * OpenRA SelectUnitsByType: the actors on screen of the selection classes
+   * of the selected ones, added to the selection; when that is no more than
+   * is selected already (the key pressed again), across the whole map.
    */
   async selectUnitsByType() {
+    if (this.hooks.gameOver?.()) return;
     if (!this.selection.length) {
+      // OpenRA plays ClickDisabledSound here, which is silent in Red Alert.
       this.hooks.feedback?.('Nothing selected.');
       return;
     }
-    if (!this.selectedOwnUnits().length) return;
-    let ids = await this.selectSameTypes(this.viewRect());
+    const owners = this.selectionOwners();
+    const owned = this.selection.filter((id) => {
+      const info = this.info(id);
+      return info !== null && owners.includes(info.owner);
+    });
+    if (!owned.length) return;
+    const types = Uint32Array.from(owned);
+    const v = this.viewRect();
+    let ids = Array.from(await this.ask.select_by_class(owners, types, v.x0, v.y0, v.x1, v.y1));
     let where = 'screen';
     if (ids.length <= this.selection.length) {
-      ids = await this.selectSameTypes(this.mapRect());
+      const m = this.mapRect();
+      ids = Array.from(await this.ask.select_by_class(owners, types, m.x0, m.y0, m.x1, m.y1));
       where = 'map';
     }
     this.setSelection(this.selection.concat(ids));
-    this.hooks.feedback?.(`Selected ${ids.length} ${ids.length === 1 ? 'unit' : 'units'} across ${where}.`);
+    this.selected(ids.length, where);
   }
 
   /** Select the next actor of `list` after the selected one and centre the camera on it. */
@@ -936,7 +1060,7 @@ export class Input {
       if (at) this.centerOn(at.x, at.y);
     });
     reg('toSelection', 'ToSelection', () => this.centerOnUnits(this.selection));
-    reg('selectAll', 'SelectAllUnits', () => this.selectAllUnits());
+    reg('selectAll', 'SelectAllUnits', (e) => this.selectAllUnits(e));
     reg('selectByType', 'SelectUnitsByType', () => this.selectUnitsByType());
     reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());
     // Unit commands.
@@ -1061,46 +1185,71 @@ export class Input {
   }
 
   updateCursor() {
-    let cursor = CURSORS.select;
-    if (this.edgeScroll) {
-      // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
-      cursor = scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked);
-    } else if (this.mode) {
-      // Sidebar modes: their cursor where they can act, the blocked one elsewhere.
-      const [ok, blocked] = MODE_CURSORS[this.mode];
-      cursor = this.mouse.inside && this.modeTarget(this.toWorld(this.mouse.x, this.mouse.y)) ? ok : blocked;
-    } else if (this.targeting && this.mouse.inside) {
-      const w = this.toWorld(this.mouse.x, this.mouse.y);
-      const t = this.targeting;
-      if (t.kind === 'teleport') cursor = this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y) ? CURSORS.teleport : CURSORS.blocked;
-      else cursor = POWER_CURSORS[t.power] ?? CURSORS.select;
-    } else if (this.mineDrag || ((this.keys.has('Control') || this.keys.has('Meta')) && this.mouse.inside && !this.drag && this.selectedMinelayers().length)) {
-      cursor = CURSORS.mine;
-    } else if (this.power) cursor = CURSORS.attack;
-    else if (this.placing) {
-      // The footprint preview shows the cells; the cursor shows the spot.
-      if (this.mouse.inside) cursor = this.placementValid() ? CURSORS.place : CURSORS.blocked;
-    } else if (this.attackMove) cursor = CURSORS.attackMove;
-    else if (this.mouse.inside && !this.drag && !this.pan) {
-      const command = this.commandBarCursor();
-      const intent = command ? { kind: 'command' } : this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
-      if (command) cursor = command;
-      else if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
-      else if (intent.kind === 'rally') cursor = CURSORS.rally;
-      else if (intent.kind === 'deploy') cursor = CURSORS.deploy;
-      else if (intent.kind === 'blocked') cursor = CURSORS.blocked;
-    }
+    // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
+    const cursor = this.edgeScroll
+      ? scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked)
+      : this.cursorAt(this.mouse.inside ? this.toWorld(this.mouse.x, this.mouse.y) : null, this.heldMods(), { busy: !!(this.drag || this.pan) });
     if (this.cursor !== cursor) {
       this.cursor = cursor;
       this.canvas.style.cursor = cursor;
     }
   }
 
-  /** Command bar cursor (armed mode or held Ctrl / Alt / Shift), or null. */
-  commandBarCursor() {
+  /** The held modifier keys: { ctrl, alt, shift } (Cmd counts as Ctrl). */
+  heldMods() {
     const k = this.keys;
-    const mods = { ctrl: k.has('Control') || k.has('Meta'), alt: k.has('Alt'), shift: k.has('Shift') };
-    return this.hooks.commandCursor?.(this.toWorld(this.mouse.x, this.mouse.y), mods) ?? null;
+    return { ctrl: k.has('Control') || k.has('Meta'), alt: k.has('Alt'), shift: k.has('Shift') };
+  }
+
+  /**
+   * The cursor over world point `w` (null: the mouse is off the battlefield)
+   * with modifiers `mods`: what the order generator in force would do there
+   * (OpenRA IOrderGenerator.GetCursor). `busy`: a box selection or pan is
+   * under way. `radar`: the radar asks (radarCursor), where only orders show
+   * their cursor, since a click there that is no order moves the camera.
+   */
+  cursorAt(w, mods, { busy = false, radar = false } = {}) {
+    if (this.mode) {
+      // Sidebar modes: their cursor where they can act, the blocked one elsewhere.
+      const [ok, blocked] = MODE_CURSORS[this.mode];
+      return w && this.modeTarget(w) ? ok : blocked;
+    }
+    if (this.targeting && w) {
+      const t = this.targeting;
+      if (t.kind === 'teleport') return this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y) ? CURSORS.teleport : CURSORS.blocked;
+      return POWER_CURSORS[t.power] ?? CURSORS.select;
+    }
+    if (this.mineDrag || (mods.ctrl && w && !busy && this.selectedMinelayers().length)) return CURSORS.mine;
+    if (this.power) return CURSORS.attack;
+    if (this.placing) {
+      // The footprint preview shows the cells; the cursor shows the spot.
+      if (!w || radar) return CURSORS.select;
+      return this.placementValid() ? CURSORS.place : CURSORS.blocked;
+    }
+    if (this.attackMove) return CURSORS.attackMove;
+    if (!w || busy) return CURSORS.select;
+    // Command bar: an armed mode or held Ctrl / Alt / Shift.
+    const command = this.hooks.commandCursor?.(w, mods) ?? null;
+    if (command) return command;
+    const intent = this.clickIntent(w);
+    if (intent.kind === 'order') return ACTION_CURSORS[intent.action] ?? CURSORS.select;
+    if (intent.kind === 'rally') return CURSORS.rally;
+    if (radar) return CURSORS.select;
+    if (intent.kind === 'deploy') return CURSORS.deploy;
+    if (intent.kind === 'blocked') return CURSORS.blocked;
+    return CURSORS.select;
+  }
+
+  /**
+   * The cursor over the radar at world point `w` with modifiers `mods`
+   * (OpenRA RadarWidget.GetCursor): the cursor a left click there would get
+   * on the battlefield, in its radar variant ("move-minimap" ...) when the
+   * installed cursors have one; the plain arrow where a click moves the
+   * camera (no order there, spectators, placing a structure).
+   */
+  radarCursor(w, mods) {
+    const cursor = this.suspended || this.spectator ? CURSORS.select : this.cursorAt(w, mods, { radar: true });
+    return minimapCursor(cursor);
   }
 
   /** Short marker where an order was given, like the original's flashing target. */

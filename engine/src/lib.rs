@@ -49,6 +49,7 @@ pub mod mapgen;
 pub mod math;
 pub mod minimap;
 pub mod mission;
+pub mod movement;
 mod naval;
 pub mod neutral;
 pub mod observer;
@@ -64,6 +65,7 @@ mod repair;
 pub mod rng;
 pub mod rules;
 pub mod rules_options;
+pub mod selection;
 mod sell;
 pub mod smudges;
 pub mod sound_events;
@@ -114,6 +116,8 @@ mod tests_mission;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
+mod tests_naval_terrain;
+#[cfg(test)]
 mod tests_neutral;
 #[cfg(test)]
 mod tests_nuke;
@@ -135,6 +139,8 @@ mod tests_repair;
 mod tests_replay;
 #[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_selection;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
@@ -588,7 +594,8 @@ impl Game {
         let actors: Vec<_> = r
             .actors
             .iter()
-            .map(|a| {
+            .enumerate()
+            .map(|(ty_index, a)| {
                 let b = a.building.as_ref();
                 json!({
                     "id": a.id,
@@ -620,6 +627,16 @@ impl Game {
                     "power": b.map_or(0, |b| b.power),
                     "turret": a.turret_turn_speed.is_some(),
                     "radius": a.unit.as_ref().map_or(0, |u| u.radius),
+                    // Terrain codes (map::Terrain) a ground unit or ship may stand on, by
+                    // its locomotor (World::terrain_open_to): the map editor places ships
+                    // on water. None for aircraft and actors that do not move.
+                    "terrain": a.unit.as_ref().filter(|u| r.locomotors[u.locomotor].domain != rules::Domain::Air).map(|_| {
+                        (0..map::TERRAIN_COUNT)
+                            .filter(|&t| self.world.terrain_open_to(ty_index, map::Terrain::from_u8(t).unwrap()))
+                            .collect::<Vec<_>>()
+                    }),
+                    // Naval yards stand on water, other structures on clear ground and roads.
+                    "onWater": b.is_some_and(|b| b.on_water),
                     "harvester": a.unit.as_ref().is_some_and(|u| u.harvester.is_some()),
                     "refinery": b.is_some_and(|b| b.refinery.is_some()),
                     "repairs": b.is_some_and(|b| b.repairs.is_some()),
@@ -927,46 +944,52 @@ impl Game {
         self.world.actor_at(player, to_wu(x), to_wu(y)).map_or(NONE, |i| self.world.make_ref(i))
     }
 
-    /// Own units inside a world-pixel rectangle. When the box holds at least one
-    /// armed unit, unarmed ones (harvesters) are left out, so dragging over an
-    /// army never drags the economy along.
-    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let units = self.units_in_box(player, x0, y0, x1, y1);
+    /// OpenRA box selection (selection.rs `select_in_box`): the visible
+    /// selectable actors whose bounds touch the world-pixel rectangle, those
+    /// of the highest selection priority for `player` (own combat units before
+    /// support units, harvesters, structures and other players' actors;
+    /// `ctrl`, `alt`: the modifiers held, which raise the actors that allow
+    /// them). A `player` past the players is a spectator watching everyone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
         let w = &self.world;
-        let armed = |i: &usize| !w.rules.actors[w.actors[*i].ty as usize].weapons.is_empty();
-        let picked: Vec<usize> = if units.iter().any(armed) { units.into_iter().filter(armed).collect() } else { units };
-        picked.into_iter().map(|i| w.make_ref(i)).collect()
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.select_in_box(w.selection_viewer(player), area, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
-    fn units_in_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<usize> {
-        let (ax, bx) = (to_wu(x0.min(x1)), to_wu(x0.max(x1)));
-        let (ay, by) = (to_wu(y0.min(y1)), to_wu(y0.max(y1)));
+    /// OpenRA's click selection (selection.rs `select_at_point`): the actor a
+    /// click at the world-pixel point selects, or 0xFFFFFFFF.
+    pub fn select_at(&self, player: u8, x: f32, y: f32, ctrl: bool, alt: bool) -> u32 {
         let w = &self.world;
-        (0..w.actors.len())
-            .filter(|&i| {
-                let a = &w.actors[i];
-                a.alive
-                    && a.owner == player
-                    && a.is_unit()
-                    && a.in_world()
-                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
-                    && a.x >= ax
-                    && a.x <= bx
-                    && a.y >= ay
-                    && a.y <= by
-            })
-            .collect()
+        w.select_at_point(w.selection_viewer(player), to_wu(x), to_wu(y), selection::Mods { ctrl, alt }).map_or(NONE, |i| w.make_ref(i))
     }
 
-    /// All own units of the same type as `id` inside the view rectangle (double click).
-    pub fn select_same_type(&self, player: u8, id: u32, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let Some(t) = self.world.resolve(id) else { return Vec::new() };
-        let ty = self.world.actors[t].ty;
-        self.units_in_box(player, x0, y0, x1, y1)
-            .into_iter()
-            .filter(|&i| self.world.actors[i].ty == ty)
-            .map(|i| self.world.make_ref(i))
-            .collect()
+    /// OpenRA SelectAllUnits (selection.rs): the selectable actors of
+    /// `owners` (the players the viewer selects for) whose bounds touch the
+    /// world-pixel rectangle, those of the highest selection priority (combat
+    /// units before support units, harvesters and structures; `ctrl`, `alt`:
+    /// the modifiers held). The whole map's rectangle selects across the map.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_all(&self, owners: Vec<u8>, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        let found = w.selectable_actors(&owners, Some(area), None);
+        w.highest_selection_priority(found, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
+    /// OpenRA SelectUnitsByType and double click (selection.rs): the
+    /// selectable actors of `owners` whose bounds touch the world-pixel
+    /// rectangle and whose selection class is one of those of `ids` (the
+    /// selection, or the clicked actor) that `owners` own.
+    pub fn select_by_class(&self, owners: Vec<u8>, ids: Vec<u32>, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let picked: Vec<usize> = ids.iter().filter_map(|&r| w.resolve(r)).collect();
+        let classes = w.selection_classes(&owners, &picked);
+        if classes.is_empty() {
+            return Vec::new();
+        }
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.selectable_actors(&owners, Some(area), Some(&classes)).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
     /// Centre (world pixels, `[x, y]`) of the given actors that `player` owns
@@ -1056,7 +1079,8 @@ impl Game {
     /// 5 repair, 6 load (enter a transport), 7 deliver cash, 8 capture, 9
     /// infiltrate, 10 C4, 11 engineer repair, 12 heal, 13 mechanic repair, 14
     /// disguise, 15 blocked enter, 16 blocked engineer repair, 17 capture from
-    /// outside (reusable engineers) (world.rs SmartAction).
+    /// outside (reusable engineers), 18 blocked move (terrain none of them can
+    /// enter; still a move) (world.rs SmartAction).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()
@@ -1814,6 +1838,10 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         bounty: flag("bounty", false),
         separate_team_spawns: flag("separateTeamSpawns", true),
         ally_build_radius: flag("allyBuildRadius", true),
+        // Absent in games from before the option (saves, replays): they
+        // were played with WebRA's soft crowd separation and replay with it.
+        movement: movement::MovementModel::from_name(&name("movement", "webra")?)
+            .ok_or_else(|| "options.movement must be openra or webra".to_string())?,
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }
