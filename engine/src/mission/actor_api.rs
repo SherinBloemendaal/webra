@@ -852,7 +852,7 @@ impl Ctx<'_> {
             return;
         }
         let (ox, oy) = (self.w.actors[i].x, self.w.actors[i].y);
-        self.w.teleport(i, x, y);
+        self.w.teleport(i, x, y, false);
         if kill_cargo {
             for p in self.w.passengers(i) {
                 self.w.kill(p);
