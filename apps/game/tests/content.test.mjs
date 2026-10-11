@@ -435,10 +435,10 @@ test('ship hulls show the heading they sail on, a unit or two off a straight cou
 
 test('rules_json lists the terrain each ship and ground unit may stand on, for the map editor', () => {
   const byId = Object.fromEntries(ACTORS.map((a) => [a.id, a]));
-  // Terrain codes: 3 water, 5 ford, 8 beach (engine map.rs Terrain).
-  for (const id of ['DD', 'CA', 'PT', 'SS', 'MSUB']) assert.deepEqual(byId[id].terrain, [3, 5], id);
-  assert.deepEqual(byId.LST.terrain, [3, 5, 8], 'the Transport runs up on beaches');
-  assert.ok(byId['2TNK'].terrain.includes(0) && !byId['2TNK'].terrain.includes(3));
+  // Terrain codes: 3 water, 5 ford, 8 beach (engine map.rs Terrain). Fords are land to ships.
+  for (const id of ['DD', 'CA', 'PT', 'SS', 'MSUB']) assert.deepEqual(byId[id].terrain, [3], id);
+  assert.deepEqual(byId.LST.terrain, [3, 8], 'the Transport runs up on beaches');
+  assert.ok(byId['2TNK'].terrain.includes(0) && byId['2TNK'].terrain.includes(5) && !byId['2TNK'].terrain.includes(3));
   assert.equal(byId.HELI.terrain, null, 'aircraft: no list');
   assert.equal(byId.SYRD.onWater, true);
   assert.equal(byId.POWR.onWater, false);

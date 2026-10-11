@@ -25,8 +25,8 @@ const CATALOG = {
   SBAG: { kind: 'building', width: 1, height: 1, footprint: [[0, 0, 1]] },
   '1TNK': { kind: 'vehicle', width: 1, height: 1, footprint: null, terrain: [0, 1, 5, 6, 7, 8] },
   // Ships: `terrain` lists what their locomotor enters (engine rules_json; OpenRA naval: Water, lcraft also Beach).
-  PT: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3, 5] },
-  LST: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3, 5, 8] },
+  PT: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3] },
+  LST: { kind: 'ship', width: 1, height: 1, footprint: null, terrain: [3, 8] },
   SYRD: { kind: 'building', onWater: true, width: 3, height: 3, footprint: [[0, 0, 1], [1, 0, 1], [2, 0, 1], [0, 1, 2], [1, 1, 2], [2, 1, 2], [0, 2, 1], [1, 2, 1], [2, 2, 1]] },
 };
 
@@ -484,6 +484,11 @@ test('ships and naval yards go on water, the transport also on beaches; ground u
   doc.commit();
   assert.equal(placementProblem(doc, CATALOG, 'PT', 10, 10), 'needs water', 'no gunboat on land');
   assert.equal(placementProblem(doc, CATALOG, 'PT', 19, 10), 'needs water', 'nor on the beach');
+  doc.begin('ford');
+  fillRect(doc, 30, 20, 30, 20, TERRAIN.FORD, 'none');
+  doc.commit();
+  assert.equal(placementProblem(doc, CATALOG, 'LST', 30, 20), 'needs water', 'fords are land to ships');
+  assert.equal(placementProblem(doc, CATALOG, '1TNK', 30, 20), null, 'tanks wade');
   assert.equal(placementProblem(doc, CATALOG, 'PT', 25, 10), null);
   assert.equal(placementProblem(doc, CATALOG, 'LST', 19, 10), null, 'the transport runs up on the beach');
   assert.equal(placementProblem(doc, CATALOG, 'LST', 10, 10), 'needs water');

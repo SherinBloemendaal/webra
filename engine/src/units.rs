@@ -519,8 +519,7 @@ impl World {
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
         let loco = &self.rules.locomotors[unit.locomotor];
-        let ship = loco.domain == crate::rules::Domain::Water;
-        let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
+        let speed_pct = loco.speeds[self.map.speed_class(ci)];
         // Rank speed bonus and prone infantry (veterancy.rs), panicking
         // civilians (neutral.rs), then weather (weather.rs).
         // Dogs stand still while they eat or reload and run while hunting (dog.rs).

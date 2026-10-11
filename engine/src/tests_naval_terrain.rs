@@ -3,8 +3,8 @@
 //! world.yaml: `naval` (Destroyer, Cruiser, Gunboat, Submarine, Missile
 //! Submarine) has TerrainSpeeds Water only, `lcraft` (the Transport) Water
 //! and Beach, so it runs up on beaches to load and unload. Fords are WebRA's
-//! own river crossings on generated maps, shared by wading ground units and
-//! ships (map.rs Terrain::Ford).
+//! own river crossings on generated maps: land to every ship, as OpenRA's
+//! ford templates (Rough and Road) are (map.rs Terrain::Ford).
 
 use crate::map::{Map, Terrain};
 use crate::mapdata::{MapActor, MapData};
@@ -154,7 +154,7 @@ fn ship_locomotors_open_water_and_only_the_transport_beaches() {
         assert_eq!(loco.name, if id == "LST" { "lcraft" } else { "naval" }, "{id}");
         let open: Vec<Terrain> =
             (0..crate::map::TERRAIN_COUNT).map(|v| Terrain::from_u8(v).unwrap()).filter(|&tt| w.terrain_open_to(t, tt)).collect();
-        let want = if id == "LST" { vec![Terrain::Water, Terrain::Ford, Terrain::Beach] } else { vec![Terrain::Water, Terrain::Ford] };
+        let want = if id == "LST" { vec![Terrain::Water, Terrain::Beach] } else { vec![Terrain::Water] };
         assert_eq!(open, want, "{id}");
         assert_eq!(w.type_lands(t), id == "LST");
     }
@@ -196,6 +196,34 @@ fn ships_sail_around_headlands_and_never_cut_across_land() {
             assert_eq!(t, Terrain::Water, "{id} stopped at the shore");
         }
     }
+}
+
+/// A ford across a sound (a generated map's river crossing): tanks drive
+/// over it, no ship sails over it, the Transport included; every ship
+/// ordered to the far side stops at the ford.
+#[test]
+fn no_ship_sails_over_a_ford() {
+    let mut w = harbour();
+    // From the beach (the Transport's way round) to the far shore.
+    for x in 18..64 {
+        let i = w.map.idx(x, 36);
+        w.map.terrain[i] = Terrain::Ford;
+    }
+    w.reset_passability();
+    let ships: Vec<usize> = SHIPS.iter().enumerate().map(|(k, id)| ship(&mut w, id, 0, 24 + k as i32 * 5, 30)).collect();
+    let tank = {
+        let t = ty(&w, "2TNK");
+        w.spawn_unit(t, 0, cell_center(21), cell_center(36), 0)
+    };
+    order_move(&mut w, &ships, 40, 44);
+    order_move(&mut w, &[tank], 60, 36);
+    run_checked(&mut w, 25 * 40, "toward the ford");
+    for &i in &ships {
+        let (_, cy) = w.cell_of(w.actors[i].x, w.actors[i].y);
+        assert!(cy < 36, "{} stayed north of the ford", w.rules.actors[w.actors[i].ty as usize].id);
+    }
+    let (tx, _) = w.cell_of(w.actors[tank].x, w.actors[tank].y);
+    assert!(tx >= 55, "the tank drove along the ford, at column {tx}");
 }
 
 /// Crowd separation: two fleets meet head-on in a channel two cells wide and
@@ -399,7 +427,7 @@ fn chronoshifted_ships_never_land_on_land() {
 
 // ---- The whole game ---------------------------------------------------------------------------
 
-/// Naval bots on generated naval maps (islands, lakes with fords, rivers):
+/// Naval bots on generated naval maps (islands, lakes and rivers with fords):
 /// fleets built at yards, sent to fight, retreating, repaired and sunk;
 /// every tick every ship is on water. The same game run twice ends with
 /// the same state hash.
@@ -416,15 +444,23 @@ fn naval_bots_keep_every_ship_on_water() {
         let mut w = World::with_options(seed, 96, &players, options);
         let what = format!("{style:?} seed {seed}");
         let mut most = 0;
+        let mut on_fords = 0;
+        let fords = w.map.terrain.iter().filter(|&&t| t == Terrain::Ford).count();
         let mut steps = Steps::new(&w);
         for _ in 0..ticks {
             w.step();
+            on_fords += w
+                .actors
+                .iter()
+                .filter(|a| a.alive && a.kind == Kind::Ship && w.map.terrain[w.cell_index(a.x, a.y)] == Terrain::Ford)
+                .count();
             let bad = ships_off_their_water(&w);
             assert!(bad.is_empty(), "{what}: {:?}", &bad[..bad.len().min(5)]);
             steps.check(&w, &what);
             most = most.max(w.actors.iter().filter(|a| a.alive && a.kind == Kind::Ship).count());
         }
         assert!(most >= 2, "{what}: the bots built ships ({most})");
+        assert_eq!(on_fords, 0, "{what}: ship-ticks on the map's {fords} ford cells");
         w.state_hash()
     };
     let minutes = 25 * 60;
