@@ -151,11 +151,21 @@ export function angleDiffToStep(angle, facings) {
   return (a % step) - Math.floor(step / 2);
 }
 
-/** OpenRA GetInterpolatedFacingRotation as a WAngle (0..1023, counter-clockwise). */
+/**
+ * OpenRA GetInterpolatedFacingRotation as a WAngle (0..1023, counter-clockwise):
+ * what is left after the nearest frame, rounded to the nearest interpolated
+ * step. OpenRA truncates the wrapped rest instead, so a facing one unit short
+ * of a frame's angle shows that frame turned a whole step (11.25 degrees for
+ * the submarines' 16 frames and 32 interpolated facings). OpenRA's units
+ * hold exact headings on a straight run; WebRA's free movement leaves ships a
+ * unit or two off, and the submarines looked skewed while sailing straight.
+ * Facings on a whole step turn exactly as in OpenRA.
+ */
 export function interpolatedRotation(angle, facings, interpolated) {
   const step = Math.floor(1024 / interpolated);
-  const diff = angleDiffToStep(angle, facings) & 1023;
-  return (Math.floor(diff / step) * step) & 1023;
+  const diff = angleDiffToStep(angle, facings);
+  // floor((diff + step / 2) / step) * step without negative division (1024 is a multiple of step).
+  return ((Math.floor((diff + Math.floor(step / 2) + 1024) / step) * step) - 1024) & 1023;
 }
 
 const f32 = Math.fround;

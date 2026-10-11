@@ -348,6 +348,11 @@ const ref = {
     const diff = ((((a + step / 2) & 1023) % step) - step / 2) & 1023;
     return (((diff / (1024 / m)) | 0) * (1024 / m)) & 1023;
   },
+  /** The signed rest after the nearest frame (AngleDiffToStep before WAngle wraps it). */
+  rest: (a, n) => {
+    const step = 1024 / n;
+    return (((a + step / 2) & 1023) % step) - step / 2;
+  },
 };
 
 test('facing frames: every WebRA facing picks the frame OpenRA picks, as the shader computes it', () => {
@@ -361,7 +366,14 @@ test('facing frames: every WebRA facing picks the frame OpenRA picks, as the sha
     assert.equal(classicIndexFacing(ora, 32), ref.classic(ora));
     assert.equal(facingFrame(radians, { facings: 32, classic: true }).facing, ref.classic(ora));
     assert.equal(facingFrame(radians, { facings: 8 }).facing, ref.index(ora, 8));
-    for (const [n, m] of [[16, 64], [16, 32]]) assert.equal(interpolatedRotation(ora, n, m), ref.rotation(ora, n, m));
+    for (const [n, m] of [[16, 64], [16, 32]]) {
+      // The rest is rounded to the nearest interpolated step (OpenRA truncates
+      // it): the same rotation as OpenRA whenever the facing lies on a step.
+      const rest = ref.rest(ora, n);
+      const istep = 1024 / m;
+      assert.equal(interpolatedRotation(ora, n, m), (Math.round(rest / istep + 1e-9) * istep) & 1023, `${ora} ${n}/${m}`);
+      if (rest % istep === 0) assert.equal(interpolatedRotation(ora, n, m), ref.rotation(ora, n, m));
+    }
   }
   // Facing 0 (north) is frame 0; a quarter turn clockwise (east) is frame 24 of 32, three quarters (west) frame 8.
   assert.equal(facingFrame(0, { facings: 32 }).facing, 0);
@@ -373,6 +385,68 @@ test('facing frames: every WebRA facing picks the frame OpenRA picks, as the sha
   // Sprites with one facing never turn unless they ask to.
   assert.deepEqual(facingFrame(1.2, { facings: 1 }), { facing: 0, rotation: 0 });
   assert.deepEqual(facingFrame(1.2, { facings: 1, rotate: true }), { facing: 0, rotation: 1.2 });
+});
+
+/** The OpenRA angle a sprite shows for an instance angle: its frame's angle plus the rotation left on it. */
+function shownAngle(radians, def) {
+  const { facing, rotation } = facingFrame(radians, { facings: def.facings, classic: !!def.classic, interpolatedFacings: def.interpolatedFacings ?? 0 });
+  if (def.facings <= 1) return null;
+  const frameAngle = def.classic ? null : facing * (1024 / def.facings);
+  // `rotation` is clockwise radians; OpenRA angles turn counter-clockwise.
+  return frameAngle === null ? null : (frameAngle - (rotation * 1024) / (Math.PI * 2) + 2048) % 1024;
+}
+
+const angleGap = (a, b) => Math.min(Math.abs(a - b), 1024 - Math.abs(a - b));
+
+test('ship hulls show the heading they sail on, a unit or two off a straight course included', () => {
+  const f32 = Math.fround;
+  const ships = ['ss', 'msub', 'dd', 'ca', 'pt', 'lst'];
+  for (const id of ships) {
+    const def = SEQUENCES[id].idle;
+    assert.ok(def, `${id}.idle`);
+    if (def.facings <= 1) {
+      // The transport has one frame (OpenRA's lst.shp idle): it never turns.
+      assert.deepEqual(facingFrame(1.1, { facings: def.facings }), { facing: 0, rotation: 0 }, id);
+      continue;
+    }
+    for (let heading = 0; heading < 1024; heading += 128) {
+      // WebRA's ships hold a straight course up to a couple of units off (units.rs drive_toward).
+      for (const drift of [-2, -1, 0, 1, 2]) {
+        const raw = heading + drift;
+        const radians = f32(f32(raw * f32(Math.PI * 2)) / 1024);
+        const ora = (((1024 - raw) % 1024) + 1024) % 1024;
+        const shown = shownAngle(radians, def);
+        assert.ok(angleGap(shown, ora) <= 2.01, `${id} heading ${raw}: shows ${shown}, sails ${ora}`);
+      }
+    }
+    // Every heading: off by at most half an interpolated step (half a frame without interpolation).
+    const tolerance = 1024 / (def.interpolatedFacings || def.facings) / 2 + 0.01;
+    for (let raw = 0; raw < 1024; raw++) {
+      const radians = f32(f32(raw * f32(Math.PI * 2)) / 1024);
+      const ora = (((1024 - raw) % 1024) + 1024) % 1024;
+      assert.ok(angleGap(shownAngle(radians, def), ora) <= tolerance, `${id} heading ${raw}`);
+    }
+  }
+  // OpenRA's truncation would show a submarine one unit off east as turned a whole step.
+  const east = 768 - 1;
+  assert.equal(ref.rotation(east, 16, 32), 1024 - 32);
+  assert.equal(interpolatedRotation(east, 16, 32), 0);
+});
+
+test('rules_json lists the terrain each ship and ground unit may stand on, for the map editor', () => {
+  const byId = Object.fromEntries(ACTORS.map((a) => [a.id, a]));
+  // Terrain codes: 3 water, 5 ford, 8 beach (engine map.rs Terrain).
+  for (const id of ['DD', 'CA', 'PT', 'SS', 'MSUB']) assert.deepEqual(byId[id].terrain, [3, 5], id);
+  assert.deepEqual(byId.LST.terrain, [3, 5, 8], 'the Transport runs up on beaches');
+  assert.ok(byId['2TNK'].terrain.includes(0) && !byId['2TNK'].terrain.includes(3));
+  assert.equal(byId.HELI.terrain, null, 'aircraft: no list');
+  assert.equal(byId.SYRD.onWater, true);
+  assert.equal(byId.POWR.onWater, false);
+});
+
+test('the shader rounds interpolated facings like the JavaScript mirror', () => {
+  const body = SPRITE_WGSL.match(/fn interpolated_rotation[\s\S]*?\n}/)[0];
+  assert.match(body, /\(\(diff \+ istep \/ 2 \+ 1024\) \/ istep\) \* istep - 1024/);
 });
 
 test('the shader and the JavaScript mirror share their constants', () => {
