@@ -365,6 +365,11 @@ export class AudioSystem {
     this.director?.onPlayerState(state);
   }
 
+  /** A mission silenced (true) or allowed again (false) the low power line (js/campaign/view.js, mission_state `lowPowerQuiet`). */
+  lowPowerQuiet(quiet) {
+    this.director?.setLowPowerQuiet(quiet);
+  }
+
   /**
    * The game paused or went on (single player pause, the game menu, a hidden
    * tab, the end of game dialogs): announcer lines of the simulation wait

@@ -191,6 +191,11 @@ export class Director {
     /** Low power (null before the first player state), and the tick its line last played. */
     this.lowPower = null;
     this.lowPowerAt = -Infinity;
+    /**
+     * A mission script silenced the low power line (OpenRA Lua
+     * `player.PlayLowPowerNotification = false`: PowerManager skips it).
+     */
+    this.lowPowerQuiet = false;
     /** The tick the silo warning was last checked (OpenRA ResourceStorageWarning). */
     this.silosAt = null;
     /** The simulation tick of the last player state. */
@@ -333,6 +338,11 @@ export class Director {
     return powerNotifications(provider?.id, key);
   }
 
+  /** A mission silences (true) or allows again (false) the local player's low power line (mission_state `lowPowerQuiet`). */
+  setLowPowerQuiet(quiet) {
+    this.lowPowerQuiet = !!quiet;
+  }
+
   /** The game ended for the local player (OpenRA MissionObjectives Win/LoseNotification). */
   onGameOver(won) {
     this.inWorld(() => this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose));
@@ -365,11 +375,15 @@ export class Director {
     this.stateTick = tick;
     this.inWorld(() => {
       const low = !!state.lowPower;
-      if (this.lowPower !== null && low && (!this.lowPower || tick - this.lowPowerAt >= this.ticksIn(PLAYER_LINES.lowPowerInterval))) {
+      // Power just got low: the line is due at once (OpenRA UpdatePowerState), also
+      // when a mission keeps it quiet now and allows it later while power stays low.
+      if (this.lowPower === false && low) this.lowPowerAt = -Infinity;
+      if (this.lowPower === null && low) this.lowPowerAt = tick;
+      // OpenRA PowerManager.Tick: PlayLowPowerNotification && isLowPower && the interval passed.
+      if (this.lowPower !== null && low && !this.lowPowerQuiet && tick - this.lowPowerAt >= this.ticksIn(PLAYER_LINES.lowPowerInterval)) {
         this.lowPowerAt = tick;
         this.announce(PLAYER_LINES.lowPower);
       }
-      if (this.lowPower === null && low) this.lowPowerAt = tick;
       this.lowPower = low;
       if (this.silosAt === null) this.silosAt = tick;
       else if (tick - this.silosAt > this.ticksIn(PLAYER_LINES.silosInterval)) {

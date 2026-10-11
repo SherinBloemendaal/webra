@@ -429,6 +429,29 @@ test('a paused game says nothing: no silo or low power advice while the page clo
   assert.equal(fast.length, 3);
 });
 
+test('a mission that silences the low power line stays quiet (OpenRA PlayLowPowerNotification)', () => {
+  const { d: director, calls, advance } = harness();
+  const d = { onPlayerState: (state) => (advance(2), director.onPlayerState(state)) };
+  director.setLowPowerQuiet(true);
+  d.onPlayerState({ tick: 0, lowPower: false });
+  d.onPlayerState({ tick: 1, lowPower: true });
+  d.onPlayerState({ tick: 300, lowPower: true });
+  d.onPlayerState({ tick: 600, lowPower: true });
+  assert.deepEqual(calls.announce, [], 'not when power gets low, nor every 10 seconds');
+  // Allowed again while power stays low: the line was due long ago, so it plays at once, then on its interval.
+  director.setLowPowerQuiet(false);
+  d.onPlayerState({ tick: 601, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower']);
+  d.onPlayerState({ tick: 850, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower']);
+  d.onPlayerState({ tick: 851, lowPower: true });
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower']);
+  // Quiet again mid-way: nothing more, and the silo advice is not affected.
+  director.setLowPowerQuiet(true);
+  d.onPlayerState({ tick: 1200, lowPower: true, resources: 900, storage: 1000 });
+  assert.deepEqual(calls.announce, ['lowPower', 'lowPower', 'silosNeeded']);
+});
+
 test('the simulation\'s announcer lines are marked, the player\'s clicks are not', () => {
   const lines = [];
   const d = new Director({

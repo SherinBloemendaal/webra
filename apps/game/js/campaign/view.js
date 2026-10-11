@@ -117,6 +117,8 @@ export class MissionView {
       }
       this.renderText(s.missionText);
       if (s.error && !this.error) this.showError(s.error);
+      // The script's PlayLowPowerNotification for this screen's player (OpenRA PowerManager).
+      this.o.audio?.lowPowerQuiet?.(!!s.lowPowerQuiet);
     }
     for (const e of this.o.feed.take()) this.event(e);
     this.tickMessages();
